@@ -26,7 +26,7 @@
         "@tauri-apps/plugin-process": "^2.3.1",
         "@tauri-apps/plugin-shell": "^2.3.5",
         "@tauri-apps/plugin-updater": "^2.10.1",
-        "@thesvg/react": "^3.2.11",
+        "@thesvg/react": "^3.2.12",
         "@xterm/addon-attach": "^0.12.0",
         "@xterm/addon-fit": "^0.11.0",
         "@xterm/addon-unicode11": "^0.9.0",
@@ -531,7 +531,7 @@
 
     "@testing-library/user-event": ["@testing-library/user-event@14.6.1", "", { "peerDependencies": { "@testing-library/dom": ">=7.21.4" } }, "sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw=="],
 
-    "@thesvg/react": ["@thesvg/react@3.2.11", "", { "peerDependencies": { "react": ">=18" } }, "sha512-3oZryJV0M7bSFXe54dolh5mgJhBOcQER00sPjG039JDb6YDuOPmlzYUskX5sVXCG7FOrFCKNmwjxtddE4yfuZg=="],
+    "@thesvg/react": ["@thesvg/react@3.2.12", "", { "peerDependencies": { "react": ">=18" } }, "sha512-cnMoaUW/MSc/s+DIbpCUtX/4JxHNhHB09ccuhBdIpS3S9b+KvvWiWgWZg+TwC/jLO1c4UHSPLGKJyqnqst6ORw=="],
 
     "@ts-morph/common": ["@ts-morph/common@0.27.0", "", { "dependencies": { "fast-glob": "^3.3.3", "minimatch": "^10.0.1", "path-browserify": "^1.0.1" } }, "sha512-Wf29UqxWDpc+i61k3oIOzcUfQt79PIT9y/MWfAGlrkjg6lBC1hwDECLXPVJAhWjiGbfBCxZd65F/LIZF3+jeJQ=="],
 
