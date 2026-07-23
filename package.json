@@ -76,7 +76,7 @@
     "remark-gfm": "^4.0.1",
     "remark-mark-highlight": "^0.1.1",
     "remark-math": "^6.0.0",
-    "shadcn": "^4.13.1",
+    "shadcn": "^4.14.0",
     "smiles-drawer": "^2.4.1",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.6.0",
