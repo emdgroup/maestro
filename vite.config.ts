@@ -9,6 +9,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
   resolve: {
+    // Sonner and React DOM must resolve React to this application's single
+    // module instance. Without this, the macOS WebKit bundle can load a second
+    // copy and trigger React's "Invalid hook call" error at startup.
+    dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
   },
   test: {
