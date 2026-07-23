@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { SshAuthModal } from "../ssh-auth-modal/SshAuthModal";
-import { useSshConnectionManager } from "@/utils/hooks/useSshConnectionManager";
+import { useConnectionManager } from "@/utils/hooks/useConnectionManager";
 import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import type { Connection } from "@/contexts/ConnectionContext";
@@ -32,7 +32,7 @@ export function ConnectionList() {
     handleNewConnection,
     handleAuthSubmit,
     handleAuthCancel,
-  } = useSshConnectionManager({ onConnectionSuccess: handleConnectionClick });
+  } = useConnectionManager({ onConnectionSuccess: handleConnectionClick });
 
   const panelOffset = screen === "list" ? 0 : screen === "type-picker" ? -(100 / 3) : -(200 / 3);
 

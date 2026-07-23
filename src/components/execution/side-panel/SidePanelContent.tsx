@@ -15,6 +15,7 @@ import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execut
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey, DiffTarget } from "@/types/bindings";
+import { Skeleton } from "@/ui/skeleton";
 import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
 import { useWslConnections } from "@/services/connection.service";
 import { api } from "@/lib/tauri-utils";
@@ -296,10 +297,17 @@ export function SidePanelContent({
                   </div>
                 )}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                  {activeSurface && activeSurface.components.length > 0 ? (
-                    <CanvasRenderer surface={activeSurface} />
-                  ) : (
+                  {!activeSurface ? (
                     <p className="text-xs text-muted-foreground">No canvas active</p>
+                  ) : activeSurface.components.length === 0 ? (
+                    <div className="flex flex-col gap-3 p-1">
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-32 w-full" />
+                      <Skeleton className="h-6 w-1/2" />
+                      <Skeleton className="h-24 w-full" />
+                    </div>
+                  ) : (
+                    <CanvasRenderer surface={activeSurface} />
                   )}
                 </div>
               </div>

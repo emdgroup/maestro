@@ -19,6 +19,8 @@ The application rendering your output supports rich content. Use these formats w
     {your fence JSON here}
     CEOF
   If any ERROR lines appear, fix them and re-validate before outputting the fence. Never output an unvalidated fence.
+  Read .maestro/canvas-base-skill.md for the canvas generation policy, data pipeline ordering, design rules, and anti-patterns.
+  If .maestro/canvas-skills.md exists, read it for project-specific canvas patterns before building any canvas.
   The Html component receives Maestro's theme CSS variables injected automatically into the iframe:
     --background, --foreground, --card, --card-foreground,
     --muted, --muted-foreground, --border,

@@ -33,7 +33,7 @@ Straight to a pull request — no prior discussion required for documentation fi
 **Prerequisites:**
 
 - Node.js 20+
-- pnpm (`npm install -g pnpm`)
+- Bun — used as the script runner (`curl -fsSL https://bun.sh/install | bash`)
 - Rust stable ([rustup.rs](https://rustup.rs))
 - Tauri v2 CLI (`cargo install tauri-cli --version "^2"`)
 - Platform-specific Tauri deps — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
@@ -43,8 +43,8 @@ Straight to a pull request — no prior discussion required for documentation fi
 ```bash
 git clone https://github.com/emdgroup/maestro.git
 cd maestro
-pnpm install
-pnpm tauri:dev
+bun install
+bun run tauri:dev
 ```
 
 This starts both the Vite dev server and the Rust backend with hot-reload.
@@ -83,16 +83,25 @@ test: cover task status transitions
 **Checks to run before pushing:**
 
 ```bash
-pnpm lint          # oxlint
-pnpm format        # oxfmt
-pnpm test          # Vitest unit tests
-cargo test         # Rust tests (run from repo root or src-tauri/)
+bun run lint          # oxlint
+bun run lint:fix      # auto-fix lint issues
+bun run format        # check formatting with oxfmt
+bun run format:fix    # fix formatting with oxfmt
+bun run test          # Vitest unit tests
+bun run test:e2e      # Playwright E2E tests
+cargo test            # Rust tests (run from repo root or src-tauri/)
+```
+
+**Build for production:**
+
+```bash
+bun run build         # TypeScript check + Vite production build
 ```
 
 **Changed a Rust model?** Regenerate TypeScript bindings:
 
 ```bash
-pnpm tauri:gen
+bun run tauri:gen
 ```
 
 Commit the updated `src/types/bindings.ts` alongside your model change.

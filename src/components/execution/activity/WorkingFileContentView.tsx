@@ -165,33 +165,53 @@ export function WorkingFileContentView({
         : null
     : null;
 
+  const isAbsoluteOutsideCwd = absolutePath !== null && relativePath === null;
+
   const viewType = filePath ? getFileViewType(filePath) : null;
   const isBinary = viewType === "image";
 
   const baseDir = absolutePath ? absolutePath.replace(/\/[^/]+$/, "") : undefined;
 
   useEffect(() => {
-    if (!relativePath) return;
+    if (!relativePath && !isAbsoluteOutsideCwd) return;
     setLoading(true);
     setContent(null);
     setLoadError(null);
-  }, [relativePath, sessionKey, isBinary]);
+  }, [relativePath, isAbsoluteOutsideCwd, sessionKey, isBinary]);
 
   useEffect(() => {
-    if (!relativePath) return;
-    const loader = isBinary
-      ? api.readSessionFileBinary(sessionKey, relativePath)
-      : api.readSessionFile(sessionKey, relativePath);
+    if (!relativePath && !isAbsoluteOutsideCwd) return;
+    // Wait for session cwd before loading absolute paths — without cwd we can't
+    // determine if the path is inside the session, and a local read of a remote
+    // path produces a spurious "path not found" error.
+    if (filePath?.startsWith("/") && cwd === null) return;
+    const loader = isAbsoluteOutsideCwd
+      ? isBinary
+        ? api.readLocalFileBinary(absolutePath!)
+        : api.readLocalFile(absolutePath!)
+      : isBinary
+        ? api.readSessionFileBinary(sessionKey, relativePath!)
+        : api.readSessionFile(sessionKey, relativePath!);
     loader
       .then((data) => {
         setLoading(false);
         setContent((prev) => (prev === data ? prev : data));
+        setLoadError(null);
       })
       .catch((err) => {
         setLoadError(String(err));
         setLoading(false);
       });
-  }, [relativePath, sessionKey, isBinary, refreshTick]);
+  }, [
+    relativePath,
+    isAbsoluteOutsideCwd,
+    absolutePath,
+    sessionKey,
+    isBinary,
+    refreshTick,
+    filePath,
+    cwd,
+  ]);
 
   function copyPath() {
     if (!absolutePath) return;
@@ -228,13 +248,13 @@ export function WorkingFileContentView({
         )}
       >
         {loading && <div className="text-xs text-muted-foreground animate-pulse">Loading...</div>}
-        {!loading && filePath && !relativePath && !loadError && (
+        {!loading && filePath && !relativePath && !isAbsoluteOutsideCwd && !loadError && (
           <div className="text-xs text-muted-foreground animate-pulse">Resolving path...</div>
         )}
         {!loading && !filePath && (
           <div className="text-xs text-muted-foreground">No file selected</div>
         )}
-        {!loading && filePath && loadError && (
+        {!loading && filePath && loadError && content === null && (
           <div className="text-xs text-destructive">{loadError}</div>
         )}
         {!loading && content !== null && viewType !== null && (

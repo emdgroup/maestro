@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, memo } from "react";
-import { Terminal, X } from "lucide-react";
+import { BotOff, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -113,6 +113,7 @@ interface SessionRowProps {
   session: ActiveSessionInfo;
   isSelected: boolean;
   onSelect: (sessionKey: number) => void;
+  onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   sidebarCollapsed?: boolean;
@@ -122,6 +123,7 @@ const SessionRow = memo(function SessionRow({
   session,
   isSelected,
   onSelect,
+  onClose,
   agentIcons,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
@@ -133,7 +135,7 @@ const SessionRow = memo(function SessionRow({
     <div
       onClick={() => onSelect(session.session_key)}
       className={cn(
-        "pr-row flex items-stretch cursor-pointer transition-colors",
+        "pr-row group relative flex items-stretch cursor-pointer transition-colors",
         isSelected && "selected-session-item selected",
       )}
     >
@@ -148,10 +150,10 @@ const SessionRow = memo(function SessionRow({
               <AgentIcon
                 agentId={session.agent_id}
                 src={agentIcons?.[session.agent_id]}
-                className="w-8 h-8 rounded-md"
+                className="w-8 h-8 rounded-md bg-muted/40"
               />
             ) : (
-              <div className="w-8 h-8 rounded-md bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
                 <Terminal className="w-4 h-4 text-accent" />
               </div>
             )}
@@ -170,7 +172,7 @@ const SessionRow = memo(function SessionRow({
       <div className="session-text-col flex-1 min-w-0 py-2.5 pr-3 pl-2 flex flex-col justify-center gap-0.75">
         <div className="flex items-baseline justify-between gap-2 min-w-0">
           <span className="session-item-name text-sm font-medium truncate">{name}</span>
-          <span className="text-xs font-mono text-muted-foreground/40 shrink-0">
+          <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover:opacity-0">
             #{session.session_key}
           </span>
         </div>
@@ -180,14 +182,32 @@ const SessionRow = memo(function SessionRow({
               {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
             </span>
             {activityInfo && (
-              <ElapsedTime
-                status={activityInfo.status}
-                stateChangedAt={activityInfo.stateChangedAt}
-              />
+              <span className="transition-opacity group-hover:opacity-0">
+                <ElapsedTime
+                  status={activityInfo.status}
+                  stateChangedAt={activityInfo.stateChangedAt}
+                />
+              </span>
             )}
           </div>
         )}
       </div>
+
+      {/* Close button — fades in on row hover, vertically centered */}
+      {onClose && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-1.5 inset-y-0 my-auto h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose(session);
+          }}
+          disabled={session.task_prevents_close}
+        >
+          <X className="w-3.5 h-3.5" />
+        </Button>
+      )}
     </div>
   );
 });
@@ -293,7 +313,7 @@ export function AgentMonitor({
             className="w-10 h-10 rounded-sm shrink-0"
           />
         ) : (
-          <div className="w-10 h-10 rounded-sm shrink-0 bg-[oklch(23%_0.01_250)] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-sm shrink-0 bg-muted/40 border border-border flex items-center justify-center">
             <Terminal className="w-5 h-5 text-accent" />
           </div>
         )}
@@ -419,7 +439,9 @@ export function AgentMonitor({
       >
         <ScrollArea className="flex-1">
           {filteredSessions.length === 0 && (
-            <div className="text-xs text-muted-foreground py-8 text-center">No active sessions</div>
+            <div className="flex justify-center py-8 text-muted-foreground/30">
+              <BotOff className="size-8" strokeWidth={1.5} />
+            </div>
           )}
           {grouped.map(([branchName, sessionList]) => (
             <div key={branchName || "_none"}>
@@ -434,6 +456,7 @@ export function AgentMonitor({
                   session={session}
                   isSelected={session.session_key === selectedSessionKey}
                   onSelect={onSelect}
+                  onClose={onClose}
                   agentIcons={agentIcons}
                   agentNames={agentNames}
                   sidebarCollapsed={sidebarCollapsed}

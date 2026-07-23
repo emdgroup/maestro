@@ -521,7 +521,7 @@ export const commands = {
     }
   },
   /**
-   * Drain the Ready queue for auto-mode execution
+   * Drain the Queue column for auto-mode execution
    *
    * Checks if auto_mode is enabled in settings. If so, counts currently running
    * executions for the project and returns task IDs that should be started next,
@@ -1894,6 +1894,17 @@ export const commands = {
     }
   },
   /**
+   * Delete a WSL connection and its associated project history.
+   */
+  async deleteWslConnection(connectionId: number): Promise<Result<null, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("delete_wsl_connection", { connectionId }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * List all saved WSL connections from the database.
    */
   async listWslConnections(): Promise<Result<WslConnection[], string>> {
@@ -2399,12 +2410,12 @@ export const commands = {
     }
   },
   /**
-   * Stop the active ACP or PTY session for a task and move the task back to Backlog.
+   * Stop the active ACP or PTY session for a task and move the task back to Planning.
    *
    * Searches ACP sessions and PTY session metadata for an entry associated with the
    * given task_id. If found, replicates the teardown logic from cancel_acp_session or
    * close_pty_session respectively. After all async work is done, updates the task
-   * status to Backlog via the sync DB mutex (never held across an await point).
+   * status to Planning via the sync DB mutex (never held across an await point).
    */
   async interruptTask(taskId: number): Promise<Result<null, string>> {
     try {
@@ -2586,6 +2597,7 @@ export type AppSettings = {
   agent_stream_width?: AgentStreamWidth;
   updated_at: string;
   auto_update?: boolean;
+  ui_scale?: string | null;
 };
 /**
  * Single authentication method exposed to the frontend.
@@ -2927,7 +2939,7 @@ export type TaskReviewWithComments = {
   comments: ReviewCommentEntry[];
   created_at: string;
 };
-export type TaskStatus = "Backlog" | "Ready" | "InProgress" | "Review" | "Done" | "Cancelled";
+export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled";
 export type TerminalColorMode = "follow_theme" | "default";
 export type ToolCheckEntry = {
   tool: string;

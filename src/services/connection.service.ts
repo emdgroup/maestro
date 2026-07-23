@@ -439,6 +439,17 @@ export function useSaveWslConnection() {
   });
 }
 
+export function useDeleteWslConnection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (connectionId: number) => api.deleteWslConnection(connectionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: wslQueryKeys.connections() });
+    },
+    onError: createErrorToastHandler("Failed to remove WSL connection"),
+  });
+}
+
 export const dockerQueryKeys = {
   base: ["docker"] as const,
   containers: () => [...dockerQueryKeys.base, "containers"] as const,

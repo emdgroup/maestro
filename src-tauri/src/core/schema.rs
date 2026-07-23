@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result as SqlResult};
 
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
-pub const SCHEMA_V23_FULL: &str = r#"
+pub const SCHEMA_V24_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     project_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
-    status TEXT NOT NULL DEFAULT 'Backlog',
+    status TEXT NOT NULL DEFAULT 'Planning',
     priority TEXT NOT NULL DEFAULT 'Medium',
     base_branch TEXT NOT NULL,
     archived_at TEXT,
@@ -206,7 +206,7 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V23_FULL)?;
+        conn.execute_batch(SCHEMA_V24_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -227,9 +227,9 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V23_FULL)?;
+        conn.execute_batch(SCHEMA_V24_FULL)?;
     } else {
-        // current_version == 22: apply incremental migrations
+        // current_version >= 22: apply incremental migrations
         run_migrations(conn, current_version)?;
     }
 
@@ -245,6 +245,17 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 23 {
         migrate_to_v23(conn)?;
     }
+    if from < 24 {
+        migrate_to_v24(conn)?;
+    }
+    Ok(())
+}
+
+fn migrate_to_v24(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "UPDATE tasks SET status = 'Planning' WHERE status = 'Backlog';
+         UPDATE tasks SET status = 'Queue' WHERE status = 'Ready';",
+    )?;
     Ok(())
 }
 
@@ -324,7 +335,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 23);
+        assert_eq!(version, 24);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns

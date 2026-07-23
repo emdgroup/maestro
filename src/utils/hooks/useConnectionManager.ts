@@ -21,7 +21,7 @@ import {
 } from "@/services/connection.service";
 import type { AuthSubmission } from "@/views/project-picker/ssh-auth-modal/SshAuthModal";
 
-interface sshConnectionManagerProps {
+interface connectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
 }
 
@@ -32,7 +32,7 @@ function toSshAuthMethod(auth: AuthSubmission): SshAuthMethod {
   return "Agent";
 }
 
-export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionManagerProps) {
+export function useConnectionManager({ onConnectionSuccess }: connectionManagerProps) {
   const [username, setUsername] = useState("");
   const [connectionId, setConnectionId] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -94,10 +94,12 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
   );
 
   const connections = useMemo(() => {
-    const wslItems = wslDistros.map((distro) => {
-      const saved = wslConnections.find((c) => c.distro_name === distro.name);
-      return buildWslConnection(distro.name, saved);
-    });
+    const wslItems = wslDistros
+      .filter((distro) => wslConnections.some((c) => c.distro_name === distro.name))
+      .map((distro) => {
+        const saved = wslConnections.find((c) => c.distro_name === distro.name)!;
+        return buildWslConnection(distro.name, saved);
+      });
     const dockerItems = dockerConnections.map(buildDockerConnection);
     return [local.current, ...wslItems, ...dockerItems, ...sshConnections.map(buildConnection)];
   }, [
@@ -205,10 +207,9 @@ export function useSshConnectionManager({ onConnectionSuccess }: sshConnectionMa
     } else if (connection.type === "wsl") {
       setLoading(true);
       try {
-        const saved = await saveWslConnection({
-          distroName: connection.displayName,
-          displayName: null,
-        });
+        const saved =
+          connection.wslConnection ??
+          (await saveWslConnection({ distroName: connection.displayName, displayName: null }));
         const wslConn: Connection = { ...connection, wslConnection: saved };
         onConnectionSuccess(wslConn);
       } finally {

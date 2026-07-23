@@ -60,7 +60,7 @@ fn create_task_impl(
          agent_id, priority, auto_approve, isolated_worktree, model_override, labels, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
-            project_id, &title, &description, &skills_json, "Backlog", &base_branch,
+            project_id, &title, &description, &skills_json, "Planning", &base_branch,
             &agent_id,
             priority.as_deref().unwrap_or("Medium"),
             auto_approve,
@@ -377,7 +377,7 @@ mod tests {
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
         assert_eq!(task.project_id, project_id);
-        assert!(matches!(task.status, crate::models::TaskStatus::Backlog));
+        assert!(matches!(task.status, crate::models::TaskStatus::Planning));
     }
 
     #[test]

@@ -18,8 +18,9 @@ import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/proje
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { Folder, Loader2, Terminal, Container } from "lucide-react";
+import { Folder, Loader2, Container } from "lucide-react";
 import { ConnectionHeader } from "../connection-list/ConnectionHeader";
+import { WslConnectionHeader } from "./WslConnectionHeader";
 import { FilePicker } from "../file-picker/FilePicker";
 import { GitInitDialog } from "./GitInitDialog";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -224,12 +225,10 @@ export function ProjectList() {
                 onDelete={navigateToConnections}
               />
             ) : activeConnection.type === "wsl" && activeConnection.wslConnection ? (
-              <>
-                <Terminal className="w-5 h-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold">
-                  WSL — {activeConnection.wslConnection.distro_name}
-                </h2>
-              </>
+              <WslConnectionHeader
+                connectionId={activeConnection.wslConnection.id}
+                onDelete={navigateToConnections}
+              />
             ) : activeConnection.type === "docker" && activeConnection.dockerConnection ? (
               <>
                 <Container className="w-5 h-5 text-muted-foreground" />

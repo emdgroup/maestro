@@ -39,8 +39,8 @@ import { DescriptionWithAttachments } from "@/components/kanban/shared/Descripti
 import { BranchSection } from "@/components/kanban/shared/BranchSection";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 
-const ALL_STATUSES: TaskStatus[] = ["Backlog", "Ready", "InProgress", "Review", "Done"];
-const SELECTABLE_STATUSES = new Set<TaskStatus>(["Backlog", "Ready"]);
+const ALL_STATUSES: TaskStatus[] = ["Planning", "Queue", "InProgress", "Review", "Done"];
+const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
 
 interface TaskDraft {
   title: string;
@@ -162,7 +162,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   function handleStatusChange(newStatus: string | null) {
     if (!newStatus || !task) return;
-    if (newStatus === "Ready" && !task.agent_id && !defaultAgent) {
+    if (newStatus === "Queue" && !task.agent_id && !defaultAgent) {
       setAgentError("Assign an agent to this task, or set a project default in Settings.");
       return;
     }

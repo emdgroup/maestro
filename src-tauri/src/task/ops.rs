@@ -40,12 +40,12 @@ pub async fn list_project_branches(
     Ok((branches, current_branch))
 }
 
-/// Stop the active ACP or PTY session for a task and move the task back to Backlog.
+/// Stop the active ACP or PTY session for a task and move the task back to Planning.
 ///
 /// Searches ACP sessions and PTY session metadata for an entry associated with the
 /// given task_id. If found, replicates the teardown logic from cancel_acp_session or
 /// close_pty_session respectively. After all async work is done, updates the task
-/// status to Backlog via the sync DB mutex (never held across an await point).
+/// status to Planning via the sync DB mutex (never held across an await point).
 #[tauri::command]
 #[specta::specta]
 pub async fn interrupt_task(
@@ -122,7 +122,7 @@ pub async fn interrupt_task(
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "UPDATE tasks SET status = 'Backlog', updated_at = ? WHERE id = ?",
+            "UPDATE tasks SET status = 'Planning', updated_at = ? WHERE id = ?",
             rusqlite::params![&now, task_id],
         )
         .map_err(|e| e.to_string())?;

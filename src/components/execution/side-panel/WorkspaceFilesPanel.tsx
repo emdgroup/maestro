@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Files, Pin, ExternalLink, X, RefreshCw } from "lucide-react";
+import { Files, Pin, ExternalLink, X, RefreshCw, FolderDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
@@ -10,7 +10,7 @@ import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { openFileWithConnection } from "@/lib/file-opener";
+import { openFileWithConnection, downloadFileToFolder } from "@/lib/file-opener";
 
 interface WorkspaceFilesPanelProps {
   projectPath: string;
@@ -141,6 +141,31 @@ export function WorkspaceFilesPanel({
     }
   }
 
+  async function handleDownload() {
+    if (!fullPath || dlState.status === "downloading" || connection.type !== "ssh") return;
+    const transferId = `dl-${Date.now()}`;
+    setDlState({ status: "downloading", progress: 0 });
+    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
+      `sftp://transfer-progress/${transferId}`,
+      (e) => {
+        const pct =
+          e.payload.total_bytes > 0
+            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
+            : 0;
+        setDlState({ status: "downloading", progress: pct });
+      },
+    );
+    try {
+      await downloadFileToFolder(connection.id, fullPath, transferId);
+      setDlState({ status: "idle" });
+    } catch {
+      setDlState({ status: "error" });
+      setTimeout(() => setDlState({ status: "idle" }), 2000);
+    } finally {
+      unlisten();
+    }
+  }
+
   const pinButton = (
     <Tooltip>
       <TooltipTrigger
@@ -257,6 +282,19 @@ export function WorkspaceFilesPanel({
                     : "Open in default application"}
               </TooltipContent>
             </Tooltip>
+            {connection.type === "ssh" && (
+              <Tooltip>
+                <TooltipTrigger
+                  type="button"
+                  onClick={() => void handleDownload()}
+                  disabled={dlState.status === "downloading"}
+                  className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                >
+                  <FolderDown className="w-3.5 h-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Download to…</TooltipContent>
+              </Tooltip>
+            )}
           </>
         )}
       </div>

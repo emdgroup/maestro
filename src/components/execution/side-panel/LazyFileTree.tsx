@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, ChevronRight, X } from "lucide-react";
+import { Loader2, ChevronRight, X, Folder, FolderOpen, File } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useListDirContents, useListWorkspaceFiles } from "@/services/connection.service";
@@ -68,13 +68,14 @@ export function LazyFileTree({
                     type="button"
                     onClick={() => onSelectFile(relativePath)}
                     className={cn(
-                      "w-full flex items-center py-1 text-left border-l-2 transition-colors",
+                      "w-full flex items-center py-1 text-left border-l-2 transition-colors gap-1",
                       isSelected
                         ? "border-ring selected-file-item text-foreground"
-                        : "border-transparent text-foreground/80 hover:bg-muted/10",
+                        : "border-transparent text-foreground/80 file-tree-item hover:text-foreground",
                     )}
                     style={{ paddingLeft: "20px" }}
                   >
+                    <File className="w-3 h-3 shrink-0" />
                     <span className="text-xs truncate">{name}</span>
                   </TooltipTrigger>
                   <TooltipContent>{relativePath}</TooltipContent>
@@ -153,12 +154,17 @@ function DirContents({
                   else next.add(childAbsolute);
                   onExpandedFoldersChange(next);
                 }}
-                className="w-full flex items-center gap-1 py-1 text-left text-muted-foreground hover:text-foreground hover:bg-muted/10 transition-colors"
+                className="w-full flex items-center gap-1 py-1 text-left text-muted-foreground hover:text-foreground file-tree-item transition-colors"
                 style={{ paddingLeft: `${indent + 8}px` }}
               >
                 <ChevronRight
                   className={cn("w-3 h-3 shrink-0 transition-transform", isExpanded && "rotate-90")}
                 />
+                {isExpanded ? (
+                  <FolderOpen className="w-3 h-3 shrink-0" />
+                ) : (
+                  <Folder className="w-3 h-3 shrink-0" />
+                )}
                 <span className="text-xs truncate">{entry.name}</span>
               </button>
               {isExpanded && (
@@ -185,13 +191,14 @@ function DirContents({
             type="button"
             onClick={() => onSelectFile(childRelative)}
             className={cn(
-              "w-full flex items-center py-1 text-left border-l-2 transition-colors",
+              "w-full flex items-center py-1 text-left border-l-2 transition-colors gap-1",
               isSelected
                 ? "border-ring selected-file-item text-foreground"
-                : "border-transparent text-foreground/80 hover:bg-muted/10",
+                : "border-transparent text-foreground/80 file-tree-item hover:text-foreground",
             )}
             style={{ paddingLeft: `${indent + 20}px` }}
           >
+            <File className="w-3 h-3 shrink-0" />
             <span className="text-xs truncate">{entry.name}</span>
           </button>
         );

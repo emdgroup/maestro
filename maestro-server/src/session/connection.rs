@@ -447,8 +447,12 @@ pub(crate) async fn pre_initialize_agent(
         let exit_msg = exit_status
             .map(|s| format!(" exit={s}"))
             .unwrap_or_default();
-        if result.is_err() {
-            crate::send_diag("error", format!("[agent] ACP connection closed with error{exit_msg}: {result:?}"));
+        if let Err(ref e) = result {
+            if acp::is_incoming_transport_closed(e) {
+                crate::send_diag("info", format!("[agent] ACP connection closed (EOF){exit_msg}"));
+            } else {
+                crate::send_diag("error", format!("[agent] ACP connection closed with error{exit_msg}: {e}"));
+            }
         } else {
             crate::send_diag("info", format!("[agent] ACP connection closed{exit_msg}"));
         }

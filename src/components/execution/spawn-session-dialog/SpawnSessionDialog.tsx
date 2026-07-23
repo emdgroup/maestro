@@ -149,7 +149,7 @@ export function SpawnSessionDialog({
                       : "border-border/60 hover:bg-muted/20 hover:border-border",
                   )}
                 >
-                  <div className="w-7 h-7 rounded-md bg-[oklch(23%_0.01_250)] flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 rounded-md bg-muted/40 border border-border flex items-center justify-center shrink-0">
                     <TerminalIcon className="w-3.5 h-3.5 text-accent" />
                   </div>
                   <div className="min-w-0">
@@ -201,13 +201,13 @@ export function SpawnSessionDialog({
                             : "border-border/60 hover:bg-muted/20 hover:border-border",
                       )}
                     >
-                      <div className="w-7 h-7 rounded-md bg-muted/40 flex items-center justify-center shrink-0">
+                      <div className="w-7 h-7 rounded-md border border-border bg-muted/40 flex items-center justify-center shrink-0">
                         {hasBrandIcon(agent.id) ? (
                           <BrandIcon slug={agent.id} className="w-4 h-4" />
                         ) : agent.icon ? (
                           <img
                             src={agent.icon}
-                            className="w-4 h-4 rounded-sm dark:[filter:invert(1)]"
+                            className="w-4 h-4 rounded-sm border border-border dark:filter-[invert(1)]"
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display = "none";
                             }}

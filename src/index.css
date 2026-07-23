@@ -390,6 +390,15 @@
   );
 }
 
+.file-tree-item:hover:not(.selected-file-item) {
+  background: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--accent) 14%, transparent),
+    color-mix(in oklch, var(--accent) 4%, transparent) 55%,
+    transparent
+  );
+}
+
 @property --ha {
   syntax: "<percentage>";
   initial-value: 0%;

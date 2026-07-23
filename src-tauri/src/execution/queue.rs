@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::core::AppState;
 
-/// Drain the Ready queue for auto-mode execution
+/// Drain the Queue column for auto-mode execution
 ///
 /// Checks if auto_mode is enabled in settings. If so, counts currently running
 /// executions for the project and returns task IDs that should be started next,
@@ -52,11 +52,11 @@ pub async fn drain_ready_queue(
         return Ok(vec![]);
     }
 
-    // Get Ready tasks ordered by priority then created_at
+    // Get Queue tasks ordered by priority then created_at
     // Priority order: Urgent=0, High=1, Medium=2, Low=3
     let mut stmt = conn.prepare(
         "SELECT id FROM tasks
-         WHERE project_id = ? AND status = 'Ready'
+         WHERE project_id = ? AND status = 'Queue'
          ORDER BY CASE priority
              WHEN 'Urgent' THEN 0
              WHEN 'High' THEN 1

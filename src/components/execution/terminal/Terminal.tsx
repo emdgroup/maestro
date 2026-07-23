@@ -3,9 +3,11 @@ import { Channel } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { api } from "@/lib/tauri-utils";
 import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
+import { useTheme } from "@/providers/ThemeProvider";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
@@ -18,6 +20,8 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
   const channelRef = useRef<Channel<string> | null>(null);
   const { data: settings } = useSettings();
   const terminalColorMode = settings?.terminal_color_mode ?? "follow_theme";
+  const { theme, systemTheme } = useTheme();
+  const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -41,6 +45,12 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
     // Open terminal in container
     terminal.open(terminalRef.current);
+
+    // WebGL renderer gives consistent per-pixel character grid, fixing
+    // monospace alignment issues in FiraCode's canvas renderer.
+    const webglAddon = new WebglAddon();
+    webglAddon.onContextLoss(() => webglAddon.dispose());
+    terminal.loadAddon(webglAddon);
 
     xtermRef.current = terminal;
 
@@ -116,12 +126,12 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
-  // Update theme in-place when color mode changes — no PTY detach/reattach needed.
+  // Update theme in-place when color mode or light/dark changes — no PTY detach/reattach needed.
   useEffect(() => {
     const terminal = xtermRef.current;
     if (!terminal) return;
     terminal.options.theme = getTerminalThemeOnly(terminalColorMode);
-  }, [terminalColorMode]);
+  }, [terminalColorMode, effectiveTheme]);
 
   return (
     <div className="pt-2 pl-2 h-full w-full">
