@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/emdgroup/maestro/compare/v0.11.0...v0.11.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* dedupe React in Vite ([4a9564c](https://github.com/emdgroup/maestro/commit/4a9564c0afaf68331031c8fc9c1e46e9cad3e7fd))
+* prevent blank macOS startup window ([c026d58](https://github.com/emdgroup/maestro/commit/c026d58dd1fc8a0147421b11fa593be03ffea325))
+
 ## [0.11.0](https://github.com/emdgroup/maestro/compare/v0.10.0...v0.11.0) (2026-07-23)
 
 
