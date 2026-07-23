@@ -10,6 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 load_env
 require_cmd xcrun
+require_cmd codesign
+require_cmd spctl
 
 ARTIFACT="${1:-}"
 [[ -n "$ARTIFACT" ]] || die "usage: staple.sh <path to .app/.dmg/.pkg>"
@@ -21,11 +23,19 @@ xcrun stapler staple "$ARTIFACT"
 log "validating staple"
 xcrun stapler validate "$ARTIFACT"
 
-# Independent Gatekeeper assessment: apps are 'execute', disk images are 'open'.
+# A stapled ticket is not sufficient if the bundle was modified after signing.
+# Verify the final artifact before publishing it.
 if [[ "$ARTIFACT" == *.app ]]; then
-  spctl --assess --type execute --verbose=2 "$ARTIFACT" || warn "spctl assessment reported issues"
+  log "verifying final app signature"
+  codesign --verify --deep --strict --verbose=2 "$ARTIFACT"
+
+  log "assessing app with Gatekeeper"
+  spctl --assess --type execute --verbose=2 "$ARTIFACT"
 else
-  spctl --assess --type open --context context:primary-signature --verbose=2 "$ARTIFACT" \
-    || warn "spctl assessment reported issues"
+  log "verifying final container signature"
+  codesign --verify --verbose=2 "$ARTIFACT"
+
+  log "assessing container with Gatekeeper"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$ARTIFACT"
 fi
 log "stapled OK: $ARTIFACT"
