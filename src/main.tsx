@@ -14,8 +14,6 @@ const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 if (prefersDark) {
   document.documentElement.classList.add("dark");
 }
-await getCurrentWindow().show();
-
 //document.addEventListener('contextmenu', e => e.preventDefault());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -30,3 +28,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryProvider>
   </React.StrictMode>,
 );
+
+// The window starts hidden to avoid a flash of unstyled content. Never block
+// React startup on this native IPC call: a failed or delayed window show must
+// not leave a visible but empty webview.
+void getCurrentWindow().show().catch((error: unknown) => {
+  console.error("Failed to show the main window:", error);
+});
