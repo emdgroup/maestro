@@ -150,6 +150,8 @@ pub struct AppSettings {
     pub updated_at: String,
     #[serde(default)]
     pub auto_update: bool,
+    #[serde(default)]
+    pub ui_scale: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -166,6 +168,7 @@ impl Default for AppSettings {
             agent_stream_width: AgentStreamWidth::Full,
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
+            ui_scale: None,
         }
     }
 }

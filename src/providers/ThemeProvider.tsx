@@ -3,6 +3,7 @@ import type { AppSettings } from "@/types/bindings";
 import { oklch } from "culori";
 import { api } from "@/lib/tauri-utils";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export type ThemeValue = "light" | "dark" | "system";
 
@@ -14,6 +15,8 @@ export interface ThemeContextValue {
   accentHue: number | null;
   systemAccentHue: number | null;
   setAccentColor: (hue: number | null) => Promise<void>;
+  uiScale: string | null;
+  setUiScale: (scale: string) => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -30,6 +33,13 @@ function applyTheme(theme: ThemeValue, systemTheme: "light" | "dark"): void {
   } else {
     document.documentElement.classList.remove("dark");
   }
+}
+
+function applyUiScale(scale: string | null | undefined): void {
+  const factor = scale ? parseInt(scale, 10) / 100 : 1;
+  getCurrentWebview()
+    .setZoom(factor)
+    .catch(() => {});
 }
 
 function applyAccentHue(hue: number): void {
@@ -58,6 +68,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
   const [isReady, setIsReady] = useState(false);
   const [accentHue, setAccentHueState] = useState<number | null>(null);
+  const [uiScale, setUiScaleState] = useState<string | null>(null);
   const [systemAccentHue, setSystemAccentHue] = useState<number | null>(null);
   const settingsQuery = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
@@ -87,6 +98,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (customHue != null) {
       applyAccentHue(customHue);
     }
+
+    const savedScale = settingsQuery.data.ui_scale ?? null;
+    setUiScaleState(savedScale);
+    applyUiScale(savedScale);
 
     setIsReady(true);
   }, [settingsQuery.data, isReady, systemTheme]);
@@ -135,6 +150,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     await saveSettings.mutateAsync(updatedSettings);
   }
 
+  async function handleSetUiScale(scale: string): Promise<void> {
+    const currentSettings = settingsQuery.data;
+    if (!currentSettings) return;
+
+    setUiScaleState(scale);
+    applyUiScale(scale);
+
+    const updatedSettings: AppSettings = {
+      ...currentSettings,
+      ui_scale: scale,
+      updated_at: new Date().toISOString(),
+    };
+    await saveSettings.mutateAsync(updatedSettings);
+  }
+
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = async (e: MediaQueryListEvent) => {
@@ -159,6 +189,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     accentHue,
     systemAccentHue,
     setAccentColor: handleSetAccentColor,
+    uiScale,
+    setUiScale: handleSetUiScale,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

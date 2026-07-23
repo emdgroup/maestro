@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type { ConnectionKey, DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
@@ -52,6 +52,17 @@ export function useSessionHistory({
   const [selectedWorktreePath, setSelectedWorktreePath] = useState(repoPath);
   const [worktreeFilter, setWorktreeFilter] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setAgentId(defaultAgentId ?? agents[0]?.id ?? null);
+      setPreset("all");
+      setQuery("");
+      setTicked(new Set());
+    }
+    // only fires on open toggle; defaultAgentId/agents are intentionally excluded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const {
     data: sessionListResult,
