@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.11.0](https://github.com/emdgroup/maestro/compare/v0.10.0...v0.11.0) (2026-07-23)
+
+
+### Features
+
+* add Chart canvas component and canvas skill system ([57a1976](https://github.com/emdgroup/maestro/commit/57a197618f33043c99b87dfb1b9e1b2d5a1c54ac))
+* add scatter, radar, radialBar, funnel, treemap, composed, sunburst chart types ([4b356b4](https://github.com/emdgroup/maestro/commit/4b356b4a46a3c4142ae2d78f7ea650d6cafb7b81))
+* add SSH file download, search icon, and UI polish ([01b8cb2](https://github.com/emdgroup/maestro/commit/01b8cb21b35de062fb684f6f282d2e6308128766))
+* add UI scale presets to Appearance settings ([9646ecb](https://github.com/emdgroup/maestro/commit/9646ecb5f6f7609ec290351c0455b70c22201dab))
+* add WSL connection delete and fix connection list filtering ([181699f](https://github.com/emdgroup/maestro/commit/181699fd79e797e7484a737ee0680c445b366e29))
+* redesign file tree with folder/file icons and refined hover ([eb26d68](https://github.com/emdgroup/maestro/commit/eb26d6841421c935a1c0769246fad00e9046e595))
+* remove preset hint labels from appearance settings ([2f8e3f6](https://github.com/emdgroup/maestro/commit/2f8e3f69f1f9b958db76a02204275762ca0b41b9))
+* rename Backlog→Planning and Ready→Queue task statuses ([300ac90](https://github.com/emdgroup/maestro/commit/300ac90f3f63049efb9607945e3ee678a90f54f3))
+* show close button on session row hover ([285c809](https://github.com/emdgroup/maestro/commit/285c80962fcb7a5dcdb629fd1bf71144a866a02b))
+* show History icon in empty session history state ([39d2752](https://github.com/emdgroup/maestro/commit/39d2752103341ae8266481fe674fef2bc8c43058))
+
+
+### Bug Fixes
+
+* add One Dark/Light ANSI palette and live theme switching to xterm ([486519f](https://github.com/emdgroup/maestro/commit/486519f158da8b368914f1a62b713197172fbb54))
+* keep session close button vertically centered when held ([1458e7f](https://github.com/emdgroup/maestro/commit/1458e7f637ee49e58cd4614f9eeff9262aef895d))
+* load artifacts outside cwd and pass sshConnectionId in overview ([3520c1f](https://github.com/emdgroup/maestro/commit/3520c1fe8861ffd48c47604c32450dd9e1299473))
+* reset agent selection and filters when session history reopens ([60318d1](https://github.com/emdgroup/maestro/commit/60318d1a3ceb7ff1e282d1bbec5dd928ca4fffd0))
+* show skeleton when canvas surface has no components yet ([ecff90d](https://github.com/emdgroup/maestro/commit/ecff90dfd06ff63ccbdbeb884140c078666d2c54))
+* skip format/lint hook when node_modules is missing ([2d28c1d](https://github.com/emdgroup/maestro/commit/2d28c1de7603014d4590f2aabb618cb3009e40f9))
+* strip nested markdown fences before remark parsing ([a9e18d0](https://github.com/emdgroup/maestro/commit/a9e18d012ae244860929d8b657b56bf4915eae61))
+* suppress spurious artifact errors on SSH remote connections ([785d7f8](https://github.com/emdgroup/maestro/commit/785d7f8af91ceccaed94b61a36c18f21f759d320))
+* switch xterm to WebGL renderer for consistent font alignment ([7cc2ca5](https://github.com/emdgroup/maestro/commit/7cc2ca564a11e448756d69841eb91452747e79a3))
+
 ## [0.10.0](https://github.com/emdgroup/maestro/compare/v0.9.0...v0.10.0) (2026-07-19)
 
 ### Features
