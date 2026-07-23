@@ -26,8 +26,12 @@ TARGET="${1:-$(find_app)}"
 ENTITLEMENTS="${ENTITLEMENTS:-$SCRIPT_DIR/entitlements.plist}"
 
 TMP_KEYCHAIN=""
+ORIGINAL_KEYCHAINS=()
 cleanup() {
   if [[ -n "$TMP_KEYCHAIN" ]]; then
+    if [[ ${#ORIGINAL_KEYCHAINS[@]} -gt 0 ]]; then
+      security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" 2>/dev/null || true
+    fi
     security delete-keychain "$TMP_KEYCHAIN" 2>/dev/null || true
   fi
 }
@@ -83,9 +87,10 @@ if [[ -z "$SIGN_ID" && ( -n "${APPLE_CERTIFICATE_P12:-}" || -n "${APPLE_CERTIFIC
   # Allow codesign to use the imported key without an interactive prompt.
   security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pw" "$TMP_KEYCHAIN" >/dev/null
   # Add our keychain to the search list so the identity is discoverable.
-  existing_keychains="$(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')"
-  # shellcheck disable=SC2086
-  security list-keychains -d user -s "$TMP_KEYCHAIN" $existing_keychains
+  while IFS= read -r keychain; do
+    ORIGINAL_KEYCHAINS+=("$keychain")
+  done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+  security list-keychains -d user -s "$TMP_KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
   [[ -n "$tmp_p12" ]] && rm -f "$tmp_p12"
   SIGN_ID="$(hash_for "${APPLE_SIGNING_IDENTITY:-}" "$TMP_KEYCHAIN" || true)"
 fi

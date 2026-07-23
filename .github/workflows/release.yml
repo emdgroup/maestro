@@ -144,6 +144,29 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Sign and notarize macOS release
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          api_key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$api_key"
+          chmod 600 "$api_key"
+          export APPLE_API_KEY_PATH="$api_key"
+
+          scripts/macos/release-macos.sh
+
+          app="$(find target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          archive="${app}.tar.gz"
+          rm -f "$archive" "${archive}.sig"
+          tar -czf "$archive" -C "$(dirname "$app")" "$(basename "$app")"
+          bun run tauri signer sign "$archive"
+
       - name: Upload maestro-server binary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
