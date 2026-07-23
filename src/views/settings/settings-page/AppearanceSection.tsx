@@ -19,7 +19,6 @@ export function AppearanceSection() {
   const terminalColorMode = appSettings?.terminal_color_mode ?? "follow_theme";
   const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
   const activeScale = uiScale ?? "100";
-  const activePreset = UI_SCALE_PRESETS.find((p) => p.value === activeScale) ?? UI_SCALE_PRESETS[0];
 
   function handleTerminalColorModeChange(value: string | null) {
     if (!appSettings || !value) return;
@@ -49,9 +48,6 @@ export function AppearanceSection() {
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label className="text-sm font-medium">UI Scale</Label>
-          <span className="text-xs text-muted-foreground">
-            {activePreset.hint} — {activePreset.label}
-          </span>
         </div>
         <div className="grid grid-cols-3 gap-2">
           {UI_SCALE_PRESETS.map((preset) => {
@@ -80,7 +76,6 @@ export function AppearanceSection() {
                   Aa
                 </span>
                 <span className="text-xs font-medium leading-none">{preset.label}</span>
-                <span className="text-[10px] leading-none opacity-60">{preset.hint}</span>
               </button>
             );
           })}
