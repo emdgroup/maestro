@@ -9,6 +9,7 @@
     "dialog:default",
     "core:window:allow-show",
     "updater:default",
-    "process:default"
+    "process:default",
+    "core:webview:allow-set-webview-zoom"
   ]
 }

@@ -2597,6 +2597,7 @@ export type AppSettings = {
   agent_stream_width?: AgentStreamWidth;
   updated_at: string;
   auto_update?: boolean;
+  ui_scale?: string | null;
 };
 /**
  * Single authentication method exposed to the frontend.
