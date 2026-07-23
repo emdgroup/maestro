@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { Check, Pencil, RefreshCw, Search } from "lucide-react";
+import { Check, History, Pencil, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -136,8 +136,15 @@ export function SessionHistoryList({
           <div className="text-xs text-destructive py-8 text-center">Failed to load history</div>
         )}
         {!isLoading && !isError && entries.length === 0 && (
-          <div className="text-xs text-muted-foreground py-8 text-center">
-            {query ? "No results" : "No sessions"}
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground/40">
+            {query ? (
+              <span className="text-xs text-muted-foreground">No results</span>
+            ) : (
+              <>
+                <History className="size-8" strokeWidth={1.5} />
+                <span className="text-xs text-muted-foreground">No sessions</span>
+              </>
+            )}
           </div>
         )}
         <div className="py-1">

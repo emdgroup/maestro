@@ -135,6 +135,38 @@ type ImageProxyContextValue = { projectId: number; baseDir: string | undefined }
 export const ImageProxyContext = createContext<ImageProxyContextValue>(undefined);
 const InsideAnchorContext = createContext(false);
 
+function stripMarkdownFences(text: string): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/^`{3,}(markdown|md)\s*$/.test(lines[i])) {
+      let rangeEnd = lines.length;
+      for (let k = i + 1; k < lines.length; k++) {
+        if (/^`{3,}(markdown|md)\s*$/.test(lines[k])) {
+          rangeEnd = k;
+          break;
+        }
+      }
+      let closeIdx = -1;
+      for (let k = rangeEnd - 1; k > i; k--) {
+        if (/^`{3,}\s*$/.test(lines[k])) {
+          closeIdx = k;
+          break;
+        }
+      }
+      if (closeIdx !== -1) {
+        result.push(...lines.slice(i + 1, closeIdx));
+        i = closeIdx + 1;
+        continue;
+      }
+    }
+    result.push(lines[i]);
+    i++;
+  }
+  return result.join("\n");
+}
+
 export const MarkdownBlock = memo(function MarkdownBlock({
   text,
   breaks,
@@ -156,6 +188,8 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     [projectId, baseDir],
   );
 
+  const processedText = useMemo(() => stripMarkdownFences(text), [text]);
+
   const content = (
     <Markdown
       remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}
@@ -164,7 +198,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
       // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
       components={components as any}
     >
-      {text}
+      {processedText}
     </Markdown>
   );
 

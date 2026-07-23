@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, memo } from "react";
-import { Terminal, X } from "lucide-react";
+import { BotOff, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -198,7 +198,7 @@ const SessionRow = memo(function SessionRow({
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
+          className="absolute right-1.5 inset-y-0 my-auto h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
           onClick={(e) => {
             e.stopPropagation();
             onClose(session);
@@ -439,7 +439,9 @@ export function AgentMonitor({
       >
         <ScrollArea className="flex-1">
           {filteredSessions.length === 0 && (
-            <div className="text-xs text-muted-foreground py-8 text-center">No active sessions</div>
+            <div className="flex justify-center py-8 text-muted-foreground/30">
+              <BotOff className="size-8" strokeWidth={1.5} />
+            </div>
           )}
           {grouped.map(([branchName, sessionList]) => (
             <div key={branchName || "_none"}>
