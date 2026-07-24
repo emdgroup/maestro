@@ -32,6 +32,7 @@ futures = "0.3"
 ignore = "0.4"
 jsonschema = { version = "0.48", default-features = false }
 which = "8.0.2"
+ureq = { version = "3", features = ["platform-verifier"] }
 
 [build-dependencies]
 ureq = { version = "3", features = ["platform-verifier"] }

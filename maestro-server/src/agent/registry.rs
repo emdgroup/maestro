@@ -1,4 +1,5 @@
 use maestro_protocol::{AcpRegistry, AgentDistribution};
+use std::time::Duration;
 
 const REGISTRY_JSON: &str = include_str!("../assets/registry.json");
 
@@ -15,6 +16,33 @@ pub struct DiscoveredAgentWithSpawn {
 
 const CLAUDE_AGENT_ID: &str = "claude-acp";
 const OLLAMA_CLAUDE_AGENT_ID: &str = "ollama-claude-acp";
+
+/// Returns the installed Ollama model names and the Claude ACP adapter settings
+/// needed to expose them as its model selector.
+fn ollama_model_settings(tags: &serde_json::Value) -> Option<(String, String)> {
+    let models: Vec<String> = tags
+        .get("models")?
+        .as_array()?
+        .iter()
+        .filter_map(|model| model.get("name")?.as_str().map(str::to_owned))
+        .collect();
+    let default_model = models.first()?.clone();
+    let config = serde_json::json!({ "availableModels": models }).to_string();
+    Some((default_model, config))
+}
+
+/// Reads the local Ollama model inventory. A short timeout avoids delaying ACP
+/// discovery when Ollama is not running.
+fn local_ollama_model_settings() -> Option<(String, String)> {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_millis(500)))
+        .build();
+    let agent: ureq::Agent = config.into();
+    let mut response = agent.get("http://127.0.0.1:11434/api/tags").call().ok()?;
+    let body = response.body_mut().read_to_string().ok()?;
+    let tags: serde_json::Value = serde_json::from_str(&body).ok()?;
+    ollama_model_settings(&tags)
+}
 
 /// Create a Claude ACP profile that targets Ollama's Anthropic-compatible API.
 ///
@@ -35,6 +63,13 @@ fn ollama_claude_agent(claude: &DiscoveredAgentWithSpawn) -> DiscoveredAgentWith
             "1".to_string(),
         ),
     ]);
+
+    // The Claude ACP adapter otherwise exposes Anthropic's built-in model
+    // aliases. Supply Ollama's installed models and select one explicitly.
+    if let Some((default_model, model_config)) = local_ollama_model_settings() {
+        spawn_env.insert("ANTHROPIC_MODEL".to_string(), default_model);
+        spawn_env.insert("CLAUDE_MODEL_CONFIG".to_string(), model_config);
+    }
 
     DiscoveredAgentWithSpawn {
         id: OLLAMA_CLAUDE_AGENT_ID.to_string(),
@@ -231,6 +266,22 @@ mod tests {
         assert_eq!(
             ollama.spawn_env.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"),
             Some(&"1".to_string())
+        );
+    }
+
+    #[test]
+    fn ollama_model_settings_use_installed_model_names() {
+        let tags = serde_json::json!({
+            "models": [{ "name": "qwen3-coder:latest" }, { "name": "gpt-oss:20b" }]
+        });
+
+        let (default_model, config) = ollama_model_settings(&tags).expect("model settings");
+
+        assert_eq!(default_model, "qwen3-coder:latest");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&config).expect("valid JSON")
+                ["availableModels"],
+            serde_json::json!(["qwen3-coder:latest", "gpt-oss:20b"])
         );
     }
 }
