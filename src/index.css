@@ -451,10 +451,10 @@
   height: 52px;
 }
 .session-sidebar-collapsed .session-group-label {
-  display: none;
+  visibility: hidden;
 }
 .session-sidebar-collapsed:hover .session-group-label {
-  display: block;
+  visibility: visible;
 }
 
 .shimmer-thinking-icon {
