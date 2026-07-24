@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.3](https://github.com/emdgroup/maestro/compare/v0.11.2...v0.11.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* emit replay-drained for late-mounting panels ([a0aa3c5](https://github.com/emdgroup/maestro/commit/a0aa3c5a6db60aea0f461766af2ccc1a91e5d34a))
+* normalize collapsed session rail row height and show group labels on hover ([d30f5e2](https://github.com/emdgroup/maestro/commit/d30f5e299bc0b8c9d7870ad42983e05724e21bf8))
+* pin last user message above viewport in agent stream ([41fef73](https://github.com/emdgroup/maestro/commit/41fef73098876ca675f31656935102eb16a6fab2))
+* prevent silent auto-approval of plan permissions ([9fb4c97](https://github.com/emdgroup/maestro/commit/9fb4c974a1a7e4f489c2b313e8a9fbcfe221dfe7))
+* show red dots for failed/interrupted subagents in overview ([1793d88](https://github.com/emdgroup/maestro/commit/1793d880dec9797c8c85ba1ba534ba0403a1212c))
+
 ## [0.11.2](https://github.com/emdgroup/maestro/compare/v0.11.1...v0.11.2) (2026-07-24)
 
 
