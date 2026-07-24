@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -242,7 +243,10 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: artifacts/
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
 
       - name: Generate latest.json and upload
         env:
