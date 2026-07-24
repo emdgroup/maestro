@@ -87,11 +87,19 @@ fn normalize_binary_cmd(raw_cmd: &str) -> String {
 }
 
 /// Returns (spawn_cmd, spawn_args, spawn_env, spawn_deps).
-/// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npx"] or ["uvx"]).
+/// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npm"] or ["uvx"]).
 /// Binary agents have no external dep so spawn_deps is empty.
 fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>, Vec<String>)> {
     if let Some(npx) = &dist.npx {
-        let mut args: Vec<String> = vec!["-y".to_string(), "--".to_string(), npx.package.clone()];
+        // `npx` may be an obsolete standalone installation, independent of the
+        // system's current npm. `npm exec` is bundled with npm and is the
+        // supported equivalent of `npx -y -- <package>`.
+        let mut args: Vec<String> = vec![
+            "exec".to_string(),
+            "--yes".to_string(),
+            "--".to_string(),
+            npx.package.clone(),
+        ];
         if let Some(extra) = &npx.args {
             args.extend(extra.iter().cloned());
         }
@@ -99,12 +107,12 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::
         // On Windows, npx is a .cmd batch file — CreateProcess can't find it without cmd.exe
         #[cfg(windows)]
         {
-            let mut cmd_args = vec!["/c".to_string(), "npx".to_string()];
+            let mut cmd_args = vec!["/c".to_string(), "npm".to_string()];
             cmd_args.extend(args);
-            return Some(("cmd".to_string(), cmd_args, env, vec!["npx".to_string()]));
+            return Some(("cmd".to_string(), cmd_args, env, vec!["npm".to_string()]));
         }
         #[cfg(not(windows))]
-        return Some(("npx".to_string(), args, env, vec!["npx".to_string()]));
+        return Some(("npm".to_string(), args, env, vec!["npm".to_string()]));
     }
     let key = current_platform_key();
     if !key.is_empty() {
