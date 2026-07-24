@@ -310,13 +310,13 @@ pub async fn drain_acp_replay(
             .map_err(|e| format!("Lock poisoned: {}", e))?;
         buf.take()
     };
+    let is_initialized = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id)
+            .and_then(|s| s.initialized.lock().ok().map(|g| *g))
+            .unwrap_or(false)
+    };
     if let Some(events) = buffered {
-        let is_initialized = {
-            let sessions = app_state.acp.sessions.lock().await;
-            sessions.get(&log_id)
-                .and_then(|s| s.initialized.lock().ok().map(|g| *g))
-                .unwrap_or(false)
-        };
         for payload in events {
             let _ = app_state.app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
         }
@@ -324,6 +324,12 @@ pub async fn drain_acp_replay(
             emit_init_events_from_session(log_id, &app_state).await;
             let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
         }
+    } else if is_initialized {
+        // Buffer already consumed (no replay buffer for new sessions, or drained before
+        // panel mounted). Emit replay-drained so late-mounting panels complete
+        // initialization instead of waiting for the 15 s stale timeout.
+        emit_init_events_from_session(log_id, &app_state).await;
+        let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
     }
     Ok(())
 }
