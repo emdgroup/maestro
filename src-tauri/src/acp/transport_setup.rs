@@ -5,6 +5,38 @@ use tokio::process::ChildStdin;
 use crate::acp::transport::{
     MaestroRpcMessage, ServerRequest, HandshakeRequest, PROTOCOL_VERSION, write_message,
 };
+
+/// Extend the PATH inherited by Finder-launched macOS apps with common user tool locations.
+/// Shell startup files are not evaluated for GUI apps, so without this `npx`, Bun, Cargo, and
+/// Homebrew tools installed by the user are otherwise unavailable to maestro-server.
+#[cfg(target_os = "macos")]
+fn local_server_path() -> std::ffi::OsString {
+    use std::path::PathBuf;
+
+    let original_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths: Vec<PathBuf> = std::env::split_paths(&original_path).collect();
+    let mut additions = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        additions.extend([
+            home.join(".local/bin"),
+            home.join(".bun/bin"),
+            home.join(".cargo/bin"),
+        ]);
+    }
+
+    for directory in additions {
+        if !paths.iter().any(|path| path == &directory) {
+            paths.push(directory);
+        }
+    }
+
+    std::env::join_paths(paths).unwrap_or(original_path)
+}
 use crate::acp::transport_types::{AcpReadSource, write_to_acp_session_raw, perform_handshake};
 
 /// Shared post-spawn logic for subprocess transports (local and WSL).
@@ -45,7 +77,11 @@ pub(crate) async fn open_local_transport(
     let server_path = crate::acp::deploy::ensure_local_server(&app_state.app_handle).await?;
 
     use crate::command_ext::NoConsoleWindow;
-    let child = tokio::process::Command::new(server_path)
+    let mut command = tokio::process::Command::new(server_path);
+    #[cfg(target_os = "macos")]
+    command.env("PATH", local_server_path());
+
+    let child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
