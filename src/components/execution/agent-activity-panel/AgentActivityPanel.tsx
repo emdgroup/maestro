@@ -8,6 +8,10 @@ import { useSelectedProject } from "@/store/projectStore";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import {
+  extractPlanToolCallId,
+  extractBodyTextFromToolCallItem,
+} from "../activity/permission-prompt-utils";
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
 import {
   groupToolCalls,
@@ -189,6 +193,16 @@ export function AgentActivityPanel({
     (item) => item.type === "error" && item.item.stopReason === "auth_required",
   );
 
+  // Computed before usePermissionHandlers so we can pass it in to suppress auto-approval
+  // Falls back to toolCallMap content when the permission payload snapshot lacks body text
+  const isPlanPermWithBody = (() => {
+    if (!pendingPermission || !isPlanPermission(pendingPermission.payload)) return false;
+    if (extractBodyText(pendingPermission.payload) !== null) return true;
+    const id = extractPlanToolCallId(pendingPermission.payload);
+    const item = id ? liveState.toolCallMap.get(id) : undefined;
+    return !!(item && extractBodyTextFromToolCallItem(item) !== null);
+  })();
+
   const {
     liveElicitationSummaries,
     livePermissionResponses,
@@ -203,13 +217,7 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
-  );
-
-  // Computed early so useSidePanelState can receive it before useSidePanelTabs
-  const isPlanPermWithBody = !!(
-    pendingPermission &&
-    isPlanPermission(pendingPermission.payload) &&
-    extractBodyText(pendingPermission.payload) !== null
+    isPlanPermWithBody,
   );
 
   const {

@@ -4,7 +4,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
-import { PermissionPrompt } from "@/components/execution/activity/PermissionPrompt";
+import { extractBodyText } from "@/components/execution/activity/PermissionPrompt";
+import {
+  extractOptions,
+  extractPlanToolCallId,
+  extractBodyTextFromToolCallItem,
+} from "@/components/execution/activity/permission-prompt-utils";
+import { PlanPermissionOverlay } from "@/components/execution/activity/PlanPermissionOverlay";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AcpTerminalView } from "@/components/execution/terminal/AcpTerminalView";
 import { OverviewPanel } from "./OverviewPanel";
@@ -196,10 +202,16 @@ export function SidePanelContent({
             {kind === "plan" && (
               <div className="absolute inset-0 flex flex-col overflow-hidden">
                 {sidePanelPlan ? (
-                  <PermissionPrompt
-                    fullHeight
+                  <PlanPermissionOverlay
                     requestId={sidePanelPlan.requestId}
-                    payload={sidePanelPlan.payload}
+                    bodyText={(() => {
+                      const fromPayload = extractBodyText(sidePanelPlan.payload);
+                      if (fromPayload !== null) return fromPayload;
+                      const id = extractPlanToolCallId(sidePanelPlan.payload);
+                      const item = id ? toolCallMap.get(id) : undefined;
+                      return item ? extractBodyTextFromToolCallItem(item) : null;
+                    })()}
+                    options={extractOptions(sidePanelPlan.payload)}
                     onRespond={onPlanRespond}
                   />
                 ) : planContent ? (

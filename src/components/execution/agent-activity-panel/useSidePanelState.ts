@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { extractBodyText } from "../activity/PermissionPrompt";
 
 interface UseSidePanelStateArgs {
   isSelected: boolean;
@@ -74,7 +73,6 @@ export function useSidePanelState({
 
   useEffect(() => {
     if (!isPlanPermWithBody || !pendingPermission) return;
-    if (!extractBodyText(pendingPermission.payload)) return;
     setSidePanelPlan({
       requestId: pendingPermission.requestId,
       payload: pendingPermission.payload,
@@ -83,14 +81,13 @@ export function useSidePanelState({
   }, [isPlanPermWithBody, pendingPermission]);
 
   const handleOpenPlanOverlaySplit = useCallback(() => {
-    if (!pendingPermission) return;
-    if (!extractBodyText(pendingPermission.payload)) return;
+    if (!pendingPermission || !isPlanPermWithBody) return;
     setSidePanelPlan({
       requestId: pendingPermission.requestId,
       payload: pendingPermission.payload,
     });
     setSidePanelCollapsed(false);
-  }, [pendingPermission]);
+  }, [pendingPermission, isPlanPermWithBody]);
 
   const handlePlanRespond = useCallback(
     (requestId: string, optionId: string | null) => {

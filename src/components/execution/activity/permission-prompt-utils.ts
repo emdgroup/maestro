@@ -6,6 +6,21 @@ export interface PermissionOption {
   kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
 }
 
+export function extractPlanToolCallId(payload: Record<string, unknown>): string | null {
+  const toolCall = payload.toolCall as Record<string, unknown> | undefined;
+  return typeof toolCall?.toolCallId === "string" ? (toolCall.toolCallId as string) : null;
+}
+
+export function extractBodyTextFromToolCallItem(item: ToolCallItem): string | null {
+  if (typeof item.rawInput?.plan === "string" && (item.rawInput.plan as string).length > 0) {
+    return item.rawInput.plan as string;
+  }
+  const texts = item.content.flatMap((c) =>
+    c.type === "content" && c.content.type === "text" ? [c.content.text] : [],
+  );
+  return texts.length > 0 ? texts.join("\n\n") : null;
+}
+
 export function isAllowKind(kind: string): boolean {
   return kind === "allow_once" || kind === "allow_always";
 }
@@ -37,6 +52,13 @@ export function extractTitle(payload: Record<string, unknown>): string {
 
 export function extractBodyText(payload: Record<string, unknown>): string | null {
   const toolCall = payload.toolCall as Record<string, unknown> | undefined;
+
+  // ExitPlanMode sends plan text in rawInput.plan
+  const rawInput = toolCall?.rawInput as Record<string, unknown> | undefined;
+  if (typeof rawInput?.plan === "string" && (rawInput.plan as string).length > 0) {
+    return rawInput.plan as string;
+  }
+
   const content = toolCall?.content as Array<Record<string, unknown>> | undefined;
   if (!content) return null;
   const texts: string[] = [];

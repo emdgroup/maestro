@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
-import { isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import { isPlanPermission } from "../activity/PermissionPrompt";
 import { isRejectOption, getOptionName, formatFieldAnswer } from "../activity/utils";
 import { parseElicitationFields } from "../activity/ElicitationPrompt";
 import type { PermissionResponseItem, ElicitationSummaryItem } from "../activity/types";
@@ -30,6 +30,7 @@ export function usePermissionHandlers(
   setPendingPermission: React.Dispatch<React.SetStateAction<PendingPermission | null>>,
   pendingElicitation: PendingElicitation | null,
   setPendingElicitation: React.Dispatch<React.SetStateAction<PendingElicitation | null>>,
+  isPlanPermWithBody: boolean,
 ): PermissionHandlers {
   const { setActivity } = useSessionActivityActions();
   const [liveElicitationSummaries, setLiveElicitationSummaries] = useState<
@@ -75,7 +76,7 @@ export function usePermissionHandlers(
   // Auto-respond plan permissions that have no body text to display
   useEffect(() => {
     if (!pendingPermission || !isPlanPermission(pendingPermission.payload)) return;
-    if (extractBodyText(pendingPermission.payload) !== null) return;
+    if (isPlanPermWithBody) return;
     const options = pendingPermission.payload.options as
       | Array<{ optionId: string; kind: string }>
       | undefined;
@@ -83,7 +84,7 @@ export function usePermissionHandlers(
     if (allowOpt) {
       void handlePermissionRespond(pendingPermission.requestId, allowOpt.optionId);
     }
-  }, [pendingPermission, handlePermissionRespond]);
+  }, [pendingPermission, isPlanPermWithBody, handlePermissionRespond]);
 
   const handleElicitationSubmit = useCallback(
     async (requestId: string, values: Record<string, unknown>) => {
