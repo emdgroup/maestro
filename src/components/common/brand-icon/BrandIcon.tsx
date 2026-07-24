@@ -38,6 +38,7 @@ const BRAND_ICONS: Record<string, SvgIcon> = {
   azuredevops: AzureAzureDevops,
   "amp-acp": Amp,
   "claude-acp": ClaudeCode,
+  "ollama-claude-acp": ClaudeCode,
   "qwen-code": Qwen,
   cline: Cline,
   "codex-acp": CodexOpenai,

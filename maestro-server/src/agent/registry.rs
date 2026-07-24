@@ -13,6 +13,40 @@ pub struct DiscoveredAgentWithSpawn {
     pub spawn_deps: Vec<String>,
 }
 
+const CLAUDE_AGENT_ID: &str = "claude-acp";
+const OLLAMA_CLAUDE_AGENT_ID: &str = "ollama-claude-acp";
+
+/// Create a Claude ACP profile that targets Ollama's Anthropic-compatible API.
+///
+/// The underlying ACP adapter remains identical to the regular Claude profile, but Ollama's
+/// endpoint and gateway model discovery are supplied to the Claude Agent SDK at launch time.
+/// This lets the existing ACP model selector show models exposed by the local Ollama server.
+fn ollama_claude_agent(claude: &DiscoveredAgentWithSpawn) -> DiscoveredAgentWithSpawn {
+    let mut spawn_env = claude.spawn_env.clone();
+    spawn_env.extend([
+        ("ANTHROPIC_AUTH_TOKEN".to_string(), "ollama".to_string()),
+        ("ANTHROPIC_API_KEY".to_string(), String::new()),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            "http://localhost:11434".to_string(),
+        ),
+        (
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_string(),
+            "1".to_string(),
+        ),
+    ]);
+
+    DiscoveredAgentWithSpawn {
+        id: OLLAMA_CLAUDE_AGENT_ID.to_string(),
+        name: "Claude Code (Ollama)".to_string(),
+        icon: claude.icon.clone(),
+        spawn_cmd: claude.spawn_cmd.clone(),
+        spawn_args: claude.spawn_args.clone(),
+        spawn_env,
+        spawn_deps: claude.spawn_deps.clone(),
+    }
+}
+
 fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     { return "darwin-aarch64"; }
@@ -126,12 +160,17 @@ pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> 
             spawn_deps,
         });
     }
+
+    if let Some(claude) = result.iter().find(|agent| agent.id == CLAUDE_AGENT_ID).cloned() {
+        result.push(ollama_claude_agent(&claude));
+    }
+
     result
 }
 
 #[cfg(test)]
 mod tests {
-    
+    use super::*;
 
     // Test filename extraction only; which resolution depends on PATH in the test environment.
     fn extract_filename(raw_cmd: &str) -> &str {
@@ -157,5 +196,33 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(extract_filename(input), expected, "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn ollama_claude_profile_uses_ollama_and_preserves_the_acp_adapter() {
+        let claude = DiscoveredAgentWithSpawn {
+            id: CLAUDE_AGENT_ID.to_string(),
+            name: "Claude Agent".to_string(),
+            icon: "claude.svg".to_string(),
+            spawn_cmd: "npx".to_string(),
+            spawn_args: vec!["-y".to_string(), "@agentclientprotocol/claude-agent-acp".to_string()],
+            spawn_env: Default::default(),
+            spawn_deps: vec!["npx".to_string()],
+        };
+
+        let ollama = ollama_claude_agent(&claude);
+
+        assert_eq!(ollama.id, OLLAMA_CLAUDE_AGENT_ID);
+        assert_eq!(ollama.name, "Claude Code (Ollama)");
+        assert_eq!(ollama.spawn_cmd, claude.spawn_cmd);
+        assert_eq!(ollama.spawn_args, claude.spawn_args);
+        assert_eq!(ollama.spawn_deps, claude.spawn_deps);
+        assert_eq!(ollama.spawn_env.get("ANTHROPIC_AUTH_TOKEN"), Some(&"ollama".to_string()));
+        assert_eq!(ollama.spawn_env.get("ANTHROPIC_API_KEY"), Some(&String::new()));
+        assert_eq!(ollama.spawn_env.get("ANTHROPIC_BASE_URL"), Some(&"http://localhost:11434".to_string()));
+        assert_eq!(
+            ollama.spawn_env.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"),
+            Some(&"1".to_string())
+        );
     }
 }
