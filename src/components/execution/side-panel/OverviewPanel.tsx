@@ -51,9 +51,8 @@ function PipRow({ items }: { items: ToolCallItem[] }) {
           key={item.toolCallId}
           className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", {
             "bg-success": item.status === "completed",
-            "bg-accent animate-pulse": item.status === "in_progress",
-            "bg-muted-foreground/30 border border-border":
-              item.status === "pending" || item.status === "error" || item.status === "interrupted",
+            "bg-accent animate-pulse": item.status === "in_progress" || item.status === "pending",
+            "bg-destructive": item.status === "error" || item.status === "interrupted",
           })}
         />
       ))}
