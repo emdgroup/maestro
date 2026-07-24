@@ -311,6 +311,11 @@ export function AgentActivityPanel({
     [sessionKey],
   );
 
+  const handleOpenPlanOverlay = useCallback(() => {
+    handleOpenPlanOverlaySplit();
+    openTabKind("plan");
+  }, [handleOpenPlanOverlaySplit, openTabKind]);
+
   const handleOpenFile = useCallback(
     (uri: string) => {
       const abs = uri.startsWith("file://") ? uri.slice(7) : uri;
@@ -529,7 +534,7 @@ export function AgentActivityPanel({
               agentSections={agentSections}
               toolCallMap={liveState.toolCallMap}
               canvasMap={liveState.canvasMap}
-              onOpenPlanOverlay={handleOpenPlanOverlaySplit}
+              onOpenPlanOverlay={handleOpenPlanOverlay}
               onOpenFile={handleOpenFile}
               inlinePermission={inlinePermission}
               bottomPadding={composeBarHeight}
