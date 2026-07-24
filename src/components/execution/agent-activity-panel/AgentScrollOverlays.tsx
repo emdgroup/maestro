@@ -19,7 +19,8 @@ import {
 } from "@/ui/message-scroller";
 
 interface AgentScrollOverlaysProps {
-  lastUserMessage: UserMessageItem | null;
+  userMessages: UserMessageItem[];
+  orderedSectionIds: string[];
   isCenteredCompose: boolean;
   planOverlay: React.ReactNode;
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
@@ -38,7 +39,8 @@ interface AgentScrollOverlaysProps {
 }
 
 export function AgentScrollOverlays({
-  lastUserMessage,
+  userMessages,
+  orderedSectionIds,
   isCenteredCompose,
   planOverlay,
   composeBarRef,
@@ -61,16 +63,33 @@ export function AgentScrollOverlays({
 
   const showScrollFab = scrollable.end;
   const hasUnread = scrollable.end && isProcessing;
-  const isLastUserMsgPinned =
-    lastUserMessage !== null && !visibility.visibleMessageIds.includes(lastUserMessage.id);
+
+  const pinnedUserMessage = (() => {
+    if (!userMessages.length) return null;
+    // Any user message visible → no pin
+    if (userMessages.some((m) => visibility.visibleMessageIds.includes(m.id))) return null;
+    // Index of first visible section
+    const firstVisibleIdx = visibility.visibleMessageIds.reduce<number>((min, id) => {
+      const idx = orderedSectionIds.indexOf(id);
+      return idx !== -1 && idx < min ? idx : min;
+    }, Infinity);
+    if (firstVisibleIdx === Infinity) return null;
+    // Last user message whose section is before the first visible section
+    let result: UserMessageItem | null = null;
+    for (const msg of userMessages) {
+      const idx = orderedSectionIds.indexOf(msg.id);
+      if (idx !== -1 && idx < firstVisibleIdx) result = msg;
+    }
+    return result;
+  })();
 
   const scrollToBottom = useCallback(() => scrollToEnd({ behavior: "smooth" }), [scrollToEnd]);
 
-  const scrollToLastUserMsg = useCallback(() => {
-    if (lastUserMessage) {
-      scrollToMessage(lastUserMessage.id, { align: "start", behavior: "smooth" });
+  const scrollToPinnedMsg = useCallback(() => {
+    if (pinnedUserMessage) {
+      scrollToMessage(pinnedUserMessage.id, { align: "start", behavior: "smooth" });
     }
-  }, [lastUserMessage, scrollToMessage]);
+  }, [pinnedUserMessage, scrollToMessage]);
 
   return (
     <>
@@ -118,7 +137,7 @@ export function AgentScrollOverlays({
       )}
 
       <AnimatePresence>
-        {isLastUserMsgPinned && lastUserMessage && (
+        {pinnedUserMessage && (
           <motion.button
             key="pinned-user-msg"
             type="button"
@@ -126,7 +145,7 @@ export function AgentScrollOverlays({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            onClick={scrollToLastUserMsg}
+            onClick={scrollToPinnedMsg}
             className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-xs bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
             aria-label="Scroll to last message"
           >
@@ -134,7 +153,7 @@ export function AgentScrollOverlays({
               <User className="w-2.5 h-2.5 text-accent/70" />
             </div>
             <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
-              {parseUserContent(lastUserMessage.content).text}
+              {parseUserContent(pinnedUserMessage.content).text}
             </span>
             <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 opacity-50" />
           </motion.button>

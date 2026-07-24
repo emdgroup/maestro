@@ -15,7 +15,7 @@ import {
   mergeLiveItems,
   isSubagentToolCall,
 } from "../activity/utils";
-import type { UsageState, ToolCallItem } from "../activity/types";
+import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
@@ -324,6 +324,35 @@ export function AgentActivityPanel({
     return null;
   }, [agentSections]);
 
+  const userMessages = useMemo(() => {
+    const msgs: UserMessageItem[] = [];
+    for (const section of agentSections) {
+      if (
+        section.type === "standalone" &&
+        section.item.type === "solo" &&
+        section.item.item.type === "userMessage"
+      ) {
+        msgs.push(section.item.item.item);
+      }
+    }
+    return msgs;
+  }, [agentSections]);
+
+  const orderedSectionIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const section of agentSections) {
+      if (section.type === "standalone") {
+        const gi = section.item;
+        if (gi.type === "solo" && gi.item.type === "userMessage") {
+          ids.push(gi.item.item.id);
+        }
+      } else {
+        ids.push(getItemKey(section.items[0]));
+      }
+    }
+    return ids;
+  }, [agentSections]);
+
   useEffect(() => {
     if (lastItem?.type === "error" && lastItem.item.stopReason === "auth_required" && agentId) {
       setAuthRequired(effectiveAuthKey, agentId, connection, lastUserMessage?.content ?? null);
@@ -508,7 +537,8 @@ export function AgentActivityPanel({
               {...sharedComposeBarProps}
             />
             <AgentScrollOverlays
-              lastUserMessage={lastUserMessage}
+              userMessages={userMessages}
+              orderedSectionIds={orderedSectionIds}
               isCenteredCompose={isCenteredCompose}
               planOverlay={null}
               composeBarRef={composeBarRef}
