@@ -447,8 +447,14 @@
     0 0 0 2px var(--card),
     0 0 0 3.5px var(--accent);
 }
+.session-sidebar-collapsed:not(:hover) .pr-row {
+  height: 52px;
+}
 .session-sidebar-collapsed .session-group-label {
   display: none;
+}
+.session-sidebar-collapsed:hover .session-group-label {
+  display: block;
 }
 
 .shimmer-thinking-icon {
