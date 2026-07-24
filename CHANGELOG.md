@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/emdgroup/maestro/compare/v0.11.1...v0.11.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* download release artifacts across reruns ([#99](https://github.com/emdgroup/maestro/issues/99)) ([1853cda](https://github.com/emdgroup/maestro/commit/1853cda6d24d3ff753b465db834169927de618d5))
+
 ## [0.11.1](https://github.com/emdgroup/maestro/compare/v0.11.0...v0.11.1) (2026-07-23)
 
 
