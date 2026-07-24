@@ -309,7 +309,14 @@ pub(crate) async fn fetch_and_filter_agents(
 
     let detected_tool_names: std::collections::HashMap<String, String> = detected
         .agents.iter().map(|d| (d.agent_id.clone(), d.tool_name.clone())).collect();
-    let detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
+    let mut detected_ids: HashSet<String> = detected.agents.iter().map(|d| d.agent_id.clone()).collect();
+
+    // The Ollama profile uses the same Claude Code ACP adapter as claude-acp;
+    // it does not have a separate executable for DetectInstalledAgents to find.
+    // Make it available whenever Claude Code itself is installed.
+    if detected_ids.contains("claude-acp") {
+        detected_ids.insert("ollama-claude-acp".to_owned());
+    }
 
     let agents: Vec<DiscoveredAgent> = all_agents.into_iter()
         .filter(|a| detected_ids.contains(&a.id))
