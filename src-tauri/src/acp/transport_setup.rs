@@ -15,10 +15,19 @@ fn local_server_path() -> std::ffi::OsString {
 
     let original_path = std::env::var_os("PATH").unwrap_or_default();
     let mut paths: Vec<PathBuf> = std::env::split_paths(&original_path).collect();
-    let mut additions = vec![
+    let priority_paths = [
         PathBuf::from("/opt/homebrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ];
+
+    // `npx` commonly uses `#!/usr/bin/env node`. Ensure it resolves the Node.js installation
+    // beside npx rather than Bun's compatibility shim when both are installed.
+    for directory in priority_paths.into_iter().rev() {
+        paths.retain(|path| path != &directory);
+        paths.insert(0, directory);
+    }
+
+    let mut additions = Vec::new();
 
     if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
