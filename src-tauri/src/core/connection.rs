@@ -49,6 +49,10 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
         .map_err(|e| format!("Failed to configure database pragmas: {}", e))?;
 
+    // Snapshot before migrating: an upgrade that goes wrong is otherwise unrecoverable, and
+    // databases older than v22 are still dropped and recreated rather than migrated.
+    crate::core::schema::backup_before_migration(&conn, &db_path)?;
+
     // Initialize schema
     initialize_schema(&conn)
         .map_err(|e| format!("Failed to initialize schema: {}", e))?;
