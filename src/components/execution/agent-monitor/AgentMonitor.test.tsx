@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SidebarProvider } from "@/ui/sidebar";
 import { AgentMonitor } from "./AgentMonitor";
 
 vi.mock("../agent-activity-panel/AgentActivityPanel", () => ({
@@ -43,7 +44,9 @@ function renderMonitor(props: Parameters<typeof AgentMonitor>[0]) {
   });
   return render(
     <QueryClientProvider client={qc}>
-      <AgentMonitor {...props} />
+      <SidebarProvider>
+        <AgentMonitor {...props} />
+      </SidebarProvider>
     </QueryClientProvider>,
   );
 }
