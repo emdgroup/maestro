@@ -56,7 +56,14 @@ export function useActivityStatusManager(
         } else {
           setActivity(sessionKey, "acting", toolKindCategory(tc.kind));
         }
+      } else {
+        // Tool completed — agent is processing the result before the next step.
+        setActivity(sessionKey, "thinking");
       }
+    } else {
+      // isTurnActive=true but all items finalized — race artifact from replay or
+      // agent between steps. "spawning" must not persist; idle is safe here.
+      setActivity(sessionKey, "idle");
     }
   }, [
     liveState.items,
@@ -71,10 +78,14 @@ export function useActivityStatusManager(
   // Spawning timeout: if isInitializing hasn't cleared after 15s (spawn-ok or session-error
   // never arrived), transition to stale so the user sees a warning instead of an infinite spinner.
   useEffect(() => {
-    if (!liveState.isInitializing || liveState.sessionEnded) return;
+    if (!liveState.isInitializing) return;
+    if (liveState.sessionEnded) {
+      removeActivity(sessionKey);
+      return;
+    }
     const id = setTimeout(() => setActivity(sessionKey, "stale"), 15_000);
     return () => clearTimeout(id);
-  }, [liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivity]);
+  }, [liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivity, removeActivity]);
 
   // Stale connection detector: if a turn is active but no new events arrive for 45s,
   // mark the session stale so the UI can show a warning and offer a force-end action.
