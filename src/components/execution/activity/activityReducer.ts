@@ -30,7 +30,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       const interrupted = interruptStalledToolCalls(flushed);
       return {
         ...interrupted,
-        items: finalizeLastStreaming(interrupted.items),
+        items: finalizeStreaming(interrupted.items),
         isTurnActive: false,
         sessionEnded: true,
         endReason: "completed",
@@ -41,7 +41,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       const interrupted = interruptStalledToolCalls(flushed);
       return {
         ...interrupted,
-        items: finalizeLastStreaming(interrupted.items),
+        items: finalizeStreaming(interrupted.items),
         isTurnActive: false,
       };
     }
@@ -54,7 +54,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return { ...state, items: [...state.items, { type: "error", item: errorItem }] };
     }
     case "finalize_streaming":
-      return { ...state, items: finalizeLastStreaming(state.items) };
+      return { ...state, items: finalizeStreaming(state.items) };
     case "set_initialized":
       return { ...state, isInitializing: false };
     case "terminal_output": {
@@ -188,10 +188,7 @@ function processEvent(
         text: payload.content.text,
         isStreaming: true,
       };
-      newState.items = [
-        ...finalizeLastStreaming(newState.items),
-        { type: "thinking", item: thought },
-      ];
+      newState.items = [...finalizeStreaming(newState.items), { type: "thinking", item: thought }];
       return newState;
     }
 
@@ -212,7 +209,7 @@ function processEvent(
       } else {
         // Finalize the streaming block — a thinking block, or the message this chunk just
         // declared finished by carrying a different messageId.
-        const items = finalizeLastStreaming(newState.items);
+        const items = finalizeStreaming(newState.items);
         const msg: MessageItem = {
           id: `msg-${crypto.randomUUID()}`,
           text: payload.content.text,
@@ -225,7 +222,7 @@ function processEvent(
     }
 
     case "tool_call": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const parentToolCallId = extractAgentMeta(raw).parentToolCallId;
       const tc: ToolCallItem = {
         toolCallId: payload.toolCallId,
@@ -296,7 +293,7 @@ function processEvent(
     }
 
     case "tool_call_update": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const newMap = new Map(newState.toolCallMap);
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
@@ -358,7 +355,7 @@ function processEvent(
     }
 
     case "plan": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       return {
         ...newState,
         items,
@@ -387,7 +384,7 @@ function processEvent(
       if (state.suppressUserChunks) {
         return newState;
       }
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const lastItem = items[items.length - 1];
       if (
         lastItem &&
@@ -427,7 +424,7 @@ function processEvent(
       };
       const newCanvasMap = new Map(newState.canvasMap);
       newCanvasMap.set(payload.surfaceId, surface);
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       return {
         ...newState,
         items: [...items, { type: "canvas", item: { surfaceId: payload.surfaceId } }],
@@ -479,17 +476,20 @@ function extractPlanTitle(payload: {
   return match ? match[1].trim() : null;
 }
 
-function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
-  if (items.length === 0) return items;
-  const last = items[items.length - 1];
-  if (last.type === "message" && last.item.isStreaming) {
-    return [...items.slice(0, -1), { type: "message", item: { ...last.item, isStreaming: false } }];
-  }
-  if (last.type === "thinking" && last.item.isStreaming) {
-    return [
-      ...items.slice(0, -1),
-      { type: "thinking", item: { ...last.item, isStreaming: false } },
-    ];
-  }
-  return items;
+/**
+ * Clears `isStreaming` on every item, not just the tail. Resuming a thought that a tool call
+ * interrupted re-marks an item that is no longer last, and a tail-only sweep would leave that
+ * flag set for the rest of the session — the block shimmers as "Thinking" forever and never
+ * becomes collapsible. A resumed thought re-sets the flag on its next chunk, so sweeping the
+ * whole list costs nothing.
+ */
+function finalizeStreaming(items: ActivityItem[]): ActivityItem[] {
+  const isStreaming = (entry: ActivityItem) =>
+    (entry.type === "message" || entry.type === "thinking") && entry.item.isStreaming;
+  if (!items.some(isStreaming)) return items;
+  return items.map((entry) =>
+    isStreaming(entry)
+      ? ({ type: entry.type, item: { ...entry.item, isStreaming: false } } as ActivityItem)
+      : entry,
+  );
 }

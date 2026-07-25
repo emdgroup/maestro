@@ -287,6 +287,52 @@ describe("activityReducer — finalize_streaming", () => {
     expect(state.items).toBe(items);
   });
 
+  it("clears the flag on an item that is no longer last", () => {
+    // Resuming a thought re-marks an item buried behind the tool call that interrupted it.
+    // A tail-only sweep would strand that flag: ActivityThinkingBlock renders a streaming
+    // thought as a shimmering, non-collapsible panel, so it would never settle.
+    const state = activityReducer(
+      makeState({
+        items: [
+          thinkingItem("resumed", true, "msg-1"),
+          { type: "toolCall", item: toolCall("tc-1") },
+        ],
+      }),
+      { type: "finalize_streaming" },
+    );
+    expect(state.items[0].item).toMatchObject({ isStreaming: false });
+  });
+
+  it("settles a thought resumed after a tool call once the turn ends", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "start" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "tc-1", title: "Read", kind: "read" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: " end" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(state, { type: "turn_ended" });
+
+    expect(state.items[0]).toMatchObject({
+      type: "thinking",
+      item: { text: "start end", isStreaming: false },
+    });
+  });
+
   it("is a no-op on an empty transcript", () => {
     const state = activityReducer(makeState(), { type: "finalize_streaming" });
     expect(state.items).toHaveLength(0);
