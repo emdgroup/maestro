@@ -1,6 +1,5 @@
 pub mod command_ext;
 pub mod core;
-pub mod error;
 pub mod models;
 pub mod project;
 pub mod task;

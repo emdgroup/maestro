@@ -2,6 +2,11 @@ use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 
+/// Marks the one error the frontend branches on rather than just displaying.
+/// `isProjectLockedError` in `src/utils/helpers/error-utils.ts` matches this prefix, so the
+/// two must be changed together.
+pub const PROJECT_LOCKED_PREFIX: &str = "PROJECT_LOCKED:";
+
 fn lock_file_path(app_data_dir: &Path, project_id: i32) -> PathBuf {
     app_data_dir.join("locks").join(format!("{}.lock", project_id))
 }
@@ -9,7 +14,7 @@ fn lock_file_path(app_data_dir: &Path, project_id: i32) -> PathBuf {
 /// Acquire an exclusive advisory lock on the project lock file.
 /// Returns the open File handle — the lock is held as long as this handle is alive.
 /// Dropping the File releases the lock automatically (on crash, kill -9, or clean exit).
-/// Returns Err with "PROJECT_LOCKED:<id>" if another process holds the lock.
+/// Returns Err with `PROJECT_LOCKED_PREFIX` followed by the id if another process holds the lock.
 pub fn acquire_project_lock(app_data_dir: &Path, project_id: i32) -> Result<File, String> {
     let lock_path = lock_file_path(app_data_dir, project_id);
 
@@ -26,7 +31,7 @@ pub fn acquire_project_lock(app_data_dir: &Path, project_id: i32) -> Result<File
         .map_err(|e| format!("Failed to open lock file: {}", e))?;
 
     file.try_lock_exclusive()
-        .map_err(|_| format!("PROJECT_LOCKED:{}", project_id))?;
+        .map_err(|_| format!("{}{}", PROJECT_LOCKED_PREFIX, project_id))?;
 
     Ok(file)
 }
@@ -148,7 +153,9 @@ mod tests {
         ba.wait();
         let result = acquire_project_lock(&dir, 4);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("PROJECT_LOCKED"));
+        // The frontend matches on this exact prefix to distinguish "already open elsewhere"
+        // from a generic failure, so the shape of the message is part of the contract.
+        assert_eq!(result.unwrap_err(), format!("{}4", PROJECT_LOCKED_PREFIX));
         br.wait();
 
         t.join().unwrap();

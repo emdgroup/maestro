@@ -17,6 +17,7 @@ import {
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
+import { getErrorMessage, isProjectLockedError } from "@/lib/error-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2, Container } from "lucide-react";
 import { ConnectionHeader } from "../connection-list/ConnectionHeader";
@@ -114,11 +115,10 @@ export function ProjectList() {
         setShowGitInitDialog(true);
       }
     } catch (error) {
-      const msg = String(error);
-      if (msg.includes("PROJECT_LOCKED:")) {
+      if (isProjectLockedError(error)) {
         toast.error("Project already open in another Maestro instance");
       } else {
-        toast.error(`Failed to open project: ${msg}`);
+        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
       }
     } finally {
       setProjectLoading(false);
@@ -165,11 +165,10 @@ export function ProjectList() {
         false,
       );
     } catch (error) {
-      const msg = String(error);
-      if (msg.includes("PROJECT_LOCKED:")) {
+      if (isProjectLockedError(error)) {
         toast.error("Project already open in another Maestro instance");
       } else {
-        toast.error(`Failed to open project: ${msg}`);
+        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
       }
     } finally {
       setProjectLoading(false);
@@ -193,11 +192,10 @@ export function ProjectList() {
       ]);
       setSelectedProject(project, isGitRepo);
     } catch (error) {
-      const msg = String(error);
-      if (msg.includes("PROJECT_LOCKED:")) {
+      if (isProjectLockedError(error)) {
         toast.error("Project already open in another Maestro instance");
       } else {
-        toast.error(`Failed to open project: ${msg}`);
+        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
       }
     } finally {
       setProjectLoading(false);
