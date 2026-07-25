@@ -78,6 +78,18 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
   }
 }
 
+/**
+ * ACP treats a change in `messageId` as the start of a new message, so a chunk carrying a
+ * different id must not extend the block currently streaming.
+ *
+ * A chunk without an id carries no boundary information: many agents never send the field,
+ * and treating that as a boundary would split every one of their messages per chunk. Only a
+ * genuine disagreement between two known ids ends a block.
+ */
+function continuesMessage(existing: string | undefined, incoming: string | undefined): boolean {
+  return existing === undefined || incoming === undefined || existing === incoming;
+}
+
 function interruptStalledToolCalls(state: ActivityState): ActivityState {
   const stalledIds: string[] = [];
   for (const [id, tc] of state.toolCallMap) {
@@ -130,8 +142,18 @@ function processEvent(
 
       // Fast path: last item is the streaming thought (no interleaving, common case)
       const lastItem = newState.items[newState.items.length - 1];
-      if (lastItem?.type === "thinking" && lastItem.item.isStreaming) {
-        const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
+      if (
+        lastItem?.type === "thinking" &&
+        lastItem.item.isStreaming &&
+        continuesMessage(lastItem.item.messageId, messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          text: lastItem.item.text + payload.content.text,
+          // Adopt the first id we learn, so a later chunk can still resume this block
+          // after an interleaved tool call.
+          messageId: lastItem.item.messageId ?? messageId,
+        };
         newState.items = [...newState.items.slice(0, -1), { type: "thinking", item: updated }];
         return newState;
       }
@@ -175,16 +197,27 @@ function processEvent(
 
     case "agent_message_chunk": {
       const lastItem = newState.items[newState.items.length - 1];
-      if (lastItem && lastItem.type === "message" && lastItem.item.isStreaming) {
-        const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
+      if (
+        lastItem &&
+        lastItem.type === "message" &&
+        lastItem.item.isStreaming &&
+        continuesMessage(lastItem.item.messageId, payload.messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          text: lastItem.item.text + payload.content.text,
+          messageId: lastItem.item.messageId ?? payload.messageId,
+        };
         newState.items = [...newState.items.slice(0, -1), { type: "message", item: updated }];
       } else {
-        // Finalize any streaming thinking block before starting agent message
+        // Finalize the streaming block — a thinking block, or the message this chunk just
+        // declared finished by carrying a different messageId.
         const items = finalizeLastStreaming(newState.items);
         const msg: MessageItem = {
           id: `msg-${crypto.randomUUID()}`,
           text: payload.content.text,
           isStreaming: true,
+          messageId: payload.messageId,
         };
         newState.items = [...items, { type: "message", item: msg }];
       }
@@ -356,8 +389,16 @@ function processEvent(
       }
       const items = finalizeLastStreaming(newState.items);
       const lastItem = items[items.length - 1];
-      if (lastItem && lastItem.type === "userMessage") {
-        const updated = { ...lastItem.item, content: lastItem.item.content + payload.content.text };
+      if (
+        lastItem &&
+        lastItem.type === "userMessage" &&
+        continuesMessage(lastItem.item.messageId, payload.messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          content: lastItem.item.content + payload.content.text,
+          messageId: lastItem.item.messageId ?? payload.messageId,
+        };
         return {
           ...newState,
           items: [...items.slice(0, -1), { type: "userMessage", item: updated }],
@@ -367,6 +408,7 @@ function processEvent(
         id: `user-${crypto.randomUUID()}`,
         content: payload.content.text,
         sentAt: Date.now(),
+        messageId: payload.messageId,
       };
       return {
         ...newState,

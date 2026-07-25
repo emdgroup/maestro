@@ -144,21 +144,123 @@ describe("activityReducer — streaming text", () => {
     });
   });
 
-  it("appends to a still-streaming thought even when the messageId differs", () => {
-    // Documents the fast path: an unfinalized trailing thought wins before messageId is
-    // consulted. Reaching this requires two thoughts to stream back to back with no
-    // intervening event, which is what finalizeLastStreaming normally prevents.
+  it("starts a new thought when a differing messageId arrives mid-stream", () => {
+    // ACP: "A change in messageId indicates a new message has started." The previous
+    // thought is still streaming, but the id says it is over.
     const state = activityReducer(
       makeState({ items: [thinkingItem("older", true, "msg-1")] }),
       event({
         sessionUpdate: "agent_thought_chunk",
-        content: { type: "text", text: " newer" },
+        content: { type: "text", text: "newer" },
         messageId: "msg-2",
       }),
     );
 
+    expect(state.items).toHaveLength(2);
+    expect(state.items[0].item).toMatchObject({ text: "older", isStreaming: false });
+    expect(lastItem(state).item).toMatchObject({ text: "newer", messageId: "msg-2" });
+  });
+
+  it("keeps two agent messages separate when their messageIds differ", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "first" },
+        messageId: "A",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "second" },
+        messageId: "B",
+      }),
+    );
+
+    expect(state.items.map((i) => (i.item as MessageItem).text)).toEqual(["first", "second"]);
+    expect(state.items[0].item).toMatchObject({ isStreaming: false });
+  });
+
+  it("keeps merging chunks from agents that never send a messageId", () => {
+    // The field is optional in ACP. Treating "absent" as a boundary would split every
+    // message of every agent that omits it.
+    let state = makeState();
+    for (const text of ["a", "b", "c"]) {
+      state = activityReducer(
+        state,
+        event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } }),
+      );
+    }
+
     expect(state.items).toHaveLength(1);
-    expect(lastItem(state).item).toMatchObject({ text: "older newer", messageId: "msg-1" });
+    expect((lastItem(state).item as MessageItem).text).toBe("abc");
+  });
+
+  it("adopts the first messageId it learns so a later chunk can resume the block", () => {
+    // A block opened by an id-less chunk would otherwise never match again.
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "start" } }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: " more" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "tc-1", title: "T", kind: "read" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: " end" },
+        messageId: "msg-1",
+      }),
+    );
+
+    const thoughts = state.items.filter((i) => i.type === "thinking");
+    expect(thoughts).toHaveLength(1);
+    expect(thoughts[0].item).toMatchObject({ text: "start more end", messageId: "msg-1" });
+  });
+
+  it("does not split a user message that arrives as several chunks of one message", () => {
+    let state = makeState({ suppressUserChunks: false });
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "one " },
+        messageId: "u1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "two" },
+        messageId: "u1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "separate" },
+        messageId: "u2",
+      }),
+    );
+
+    const contents = state.items.map((i) => (i.item as UserMessageItem).content);
+    expect(contents).toEqual(["one two", "separate"]);
   });
 
   it("marks the turn active on any event", () => {
