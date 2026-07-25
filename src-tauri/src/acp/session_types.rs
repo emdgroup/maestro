@@ -10,6 +10,14 @@ use crate::acp::transport::{PreInitializeResponse, SessionListOkResponse, CheckT
 use crate::acp::canvas::{PreambleFilterState, CanvasFenceExtractor};
 use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
 
+/// Reply slot for a request that can only be in flight one at a time.
+/// `None` means no request is outstanding.
+pub type PendingReply<T> = Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>;
+
+/// Reply slots for requests that can be in flight concurrently, keyed by request id.
+pub type PendingReplyMap<T> =
+    Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<Result<T, String>>>>>;
+
 /// Single authentication method exposed to the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -60,24 +68,22 @@ pub enum AcpTransportWriter {
 /// Arc-wrapped so the reader task can hold clones without borrowing the server.
 #[derive(Clone)]
 pub struct PendingChannels {
-    pub pre_init: Arc<std::sync::Mutex<HashMap<String,
-        oneshot::Sender<Result<PreInitializeResponse, String>>>>>,
-    pub list_agents: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<Vec<crate::acp::registry::DiscoveredAgent>, String>>>>>,
-    pub session_list: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<SessionListOkResponse, String>>>>>,
-    pub session_close: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>>,
-    pub session_delete: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<(), String>>>>>,
-    pub check_tools: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<CheckToolsResponse, String>>>>>,
-    pub detect_installed: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectInstalledAgentsResponse, String>>>>>,
-    pub detect_project: Arc<std::sync::Mutex<Option<
-        oneshot::Sender<Result<DetectProjectAgentsResponse, String>>>>>,
-    pub authenticate: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<(), String>>>>>,
-    pub logout: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<(), String>>>>>,
+    pub pre_init: PendingReplyMap<PreInitializeResponse>,
+    pub list_agents: PendingReply<Vec<crate::acp::registry::DiscoveredAgent>>,
+    pub session_list: PendingReply<SessionListOkResponse>,
+    pub session_close: PendingReply<()>,
+    pub session_delete: PendingReply<()>,
+    pub check_tools: PendingReply<CheckToolsResponse>,
+    pub detect_installed: PendingReply<DetectInstalledAgentsResponse>,
+    pub detect_project: PendingReply<DetectProjectAgentsResponse>,
+    pub authenticate: PendingReply<()>,
+    pub logout: PendingReply<()>,
+}
+
+impl Default for PendingChannels {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PendingChannels {
@@ -158,9 +164,9 @@ pub struct AcpProcess {
     /// Working directory on the server host — passed in FileSearch/FileRead requests.
     pub cwd: String,
     /// Pending file search response channel. One request at a time.
-    pub pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
+    pub pending_file_search: PendingReply<Vec<String>>,
     /// Pending file read response channel. One request at a time.
-    pub pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    pub pending_file_read: PendingReply<String>,
     // Session metadata
     pub session_name: Option<String>,
     pub agent_id_meta: String,
@@ -202,6 +208,7 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
+#[derive(Default)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -209,11 +216,6 @@ pub struct TaskMetadata {
     pub session_start_sha: Option<String>,
 }
 
-impl Default for TaskMetadata {
-    fn default() -> Self {
-        Self { task_id: None, task_name: None, branch_name: None, session_start_sha: None }
-    }
-}
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
 /// from the Arc-wrapped caches, which `AcpProcess::create` allocates uniformly.
@@ -253,8 +255,8 @@ pub struct ReaderTaskContext {
     pub app_state: Arc<crate::core::AppState>,
     pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
     pub current_mode_id: Arc<std::sync::Mutex<Option<String>>>,
-    pub pending_file_search: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
-    pub pending_file_read: Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    pub pending_file_search: PendingReply<Vec<String>>,
+    pub pending_file_read: PendingReply<String>,
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
     pub initialized: Arc<std::sync::Mutex<bool>>,

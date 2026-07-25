@@ -28,6 +28,12 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
+impl Default for TokenManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TokenManager {
     pub fn new() -> Self {
         TokenManager {

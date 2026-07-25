@@ -17,6 +17,9 @@ pub struct SpawnSessionResult {
 
 #[tauri::command]
 #[specta::specta]
+// Argument list is the IPC contract: collapsing it into a struct would change the
+// generated bindings and every frontend call site.
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_acp_session(
     app_state: State<'_, Arc<AppState>>,
     agent_id: String,
@@ -107,7 +110,7 @@ pub async fn spawn_acp_session(
         crate::acp::spawn_connection_server(
             ConnectionKey::Local,
             crate::acp::TransportTarget::Local,
-            &*app_state,
+            &app_state,
         ).await?;
     }
     if crate::acp::try_spawn_via_connection_server(
@@ -270,6 +273,8 @@ pub async fn interrupt_acp_turn(
 }
 
 /// Inner implementation shared by the IPC handler and warmup session restore.
+// Kept in step with the IPC handler's argument list so the two stay easy to compare.
+#[allow(clippy::too_many_arguments)]
 pub async fn restore_acp_session(
     app_state: &Arc<AppState>,
     agent_id: String,
@@ -410,6 +415,9 @@ pub async fn restore_acp_session(
 /// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
 #[tauri::command]
 #[specta::specta]
+// Argument list is the IPC contract: collapsing it into a struct would change the
+// generated bindings and every frontend call site.
+#[allow(clippy::too_many_arguments)]
 pub async fn load_acp_session(
     app_state: State<'_, Arc<AppState>>,
     agent_id: String,

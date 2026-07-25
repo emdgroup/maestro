@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use maestro_protocol::{
     DetectInstalledAgentsResponse, DetectProjectAgentsResponse, DetectedAgentInfo, ProjectAgentMarker,
@@ -215,9 +215,9 @@ pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
         let binary_result = entry.binary.map(|b| {
             binary_results.get(b).cloned().unwrap_or(None)
         });
-        let config_dir = entry.config_dir.map(|d| {
+        let config_dir = entry.config_dir.and_then(|d| {
             home.as_ref().map(|h| h.join(d))
-        }).flatten();
+        });
         (entry, binary_result, config_dir)
     }).collect();
 
@@ -318,16 +318,14 @@ async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'s
         })
         .collect();
 
-    for handle in futures::future::join_all(handles).await {
-        if let Ok((binary, path)) = handle {
-            result.insert(binary, path);
-        }
+    for (binary, path) in futures::future::join_all(handles).await.into_iter().flatten() {
+        result.insert(binary, path);
     }
     result
 }
 
 /// Well-known binary install locations not always on PATH.
-fn extra_binary_candidates(home: &PathBuf, binary: &str) -> Vec<PathBuf> {
+fn extra_binary_candidates(home: &Path, binary: &str) -> Vec<PathBuf> {
     #[cfg(not(windows))]
     {
         vec![

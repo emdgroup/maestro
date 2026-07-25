@@ -111,35 +111,32 @@ pub fn spawn_heartbeat_task(
                         }
 
                         let password = session.session_password.lock().await.as_ref().map(|p| p.to_string());
-                        match session.connect(password).await {
-                            Ok(()) => {
-                                let _ = app_handle.emit("ssh-reconnected", connection_id);
-                                reconnected = true;
+                        if let Ok(()) = session.connect(password).await {
+                            let _ = app_handle.emit("ssh-reconnected", connection_id);
+                            reconnected = true;
 
-                                let restore_state = Arc::clone(&app_state);
-                                let restore_handle = app_handle.clone();
-                                tokio::spawn(async move {
-                                    if let Err(_) = crate::acp::restore_acp_sessions(connection_id, &restore_state).await {
-                                        let remaining: Vec<crate::acp::RestorableSession> = restore_state
-                                            .acp
-                                            .restorable_sessions
-                                            .lock()
-                                            .await
-                                            .remove(&connection_id)
-                                            .unwrap_or_default();
-                                        for s in remaining {
-                                            let _ = restore_state.app_handle.emit(
-                                                &format!("acp://session-ended/{}", s.log_id), ()
-                                            );
-                                        }
-                                        restore_state.app_handle.emit("sessions-changed", ()).ok();
+                            let restore_state = Arc::clone(&app_state);
+                            let restore_handle = app_handle.clone();
+                            tokio::spawn(async move {
+                                if crate::acp::restore_acp_sessions(connection_id, &restore_state).await.is_err() {
+                                    let remaining: Vec<crate::acp::RestorableSession> = restore_state
+                                        .acp
+                                        .restorable_sessions
+                                        .lock()
+                                        .await
+                                        .remove(&connection_id)
+                                        .unwrap_or_default();
+                                    for s in remaining {
+                                        let _ = restore_state.app_handle.emit(
+                                            &format!("acp://session-ended/{}", s.log_id), ()
+                                        );
                                     }
-                                    let _ = restore_handle.emit("acp-sessions-restored", connection_id);
-                                });
+                                    restore_state.app_handle.emit("sessions-changed", ()).ok();
+                                }
+                                let _ = restore_handle.emit("acp-sessions-restored", connection_id);
+                            });
 
-                                break;
-                            }
-                            Err(_) => {}
+                            break;
                         }
                     }
 

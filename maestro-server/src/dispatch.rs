@@ -36,7 +36,7 @@ pub(crate) async fn dispatch_message(
     msg: MaestroRpcMessage,
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
-    agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
+    agents_with_spawn: &mut [agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>>,
@@ -780,7 +780,7 @@ pub(crate) async fn dispatch_message(
                 };
                 (cmd, args)
             };
-            let all_args: Vec<String> = spawn_args.into_iter().chain(method.args.into_iter()).collect();
+            let all_args: Vec<String> = spawn_args.into_iter().chain(method.args).collect();
             let stdout_task = Arc::clone(stdout);
             let auth_terminals_task = Arc::clone(auth_terminals);
             let agent_connections_task = Arc::clone(agent_connections);
