@@ -215,13 +215,10 @@ async fn collect_stale_project_ids(
             let mut stale = Vec::new();
             for project in projects {
                 let cmd = format!("test -d {} && echo ok || echo missing", shell_quote(&project.path));
-                match session.execute_command(&cmd).await {
-                    Ok(output) => {
-                        if output.trim() != "ok" {
-                            stale.push(project.id);
-                        }
+                if let Ok(output) = session.execute_command(&cmd).await {
+                    if output.trim() != "ok" {
+                        stale.push(project.id);
                     }
-                    Err(_) => {}
                 }
             }
             stale

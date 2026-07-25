@@ -64,18 +64,20 @@ pub async fn list_integrations(
     for &provider in KNOWN_PROVIDERS {
         let ids = registry.get(provider).cloned().unwrap_or_default();
         for id in ids {
-            match KeychainStore::get_integration_by_id(provider, &id, app_data_dir) {
-                Ok(KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds))) => {
-                    statuses.push(IntegrationStatus {
-                        id,
-                        provider: provider.to_string(),
-                        connected: true,
-                        display_name: creds.display_name,
-                        source: Some(creds.source),
-                        instance_url: creds.instance_url,
-                    });
-                }
-                _ => {}
+            let outcome = KeychainStore::get_integration_by_id(provider, &id, app_data_dir);
+            if let Ok(
+                KeychainOutcome::Keychain(Some(creds))
+                | KeychainOutcome::FileFallback(Some(creds)),
+            ) = outcome
+            {
+                statuses.push(IntegrationStatus {
+                    id,
+                    provider: provider.to_string(),
+                    connected: true,
+                    display_name: creds.display_name,
+                    source: Some(creds.source),
+                    instance_url: creds.instance_url,
+                });
             }
         }
 

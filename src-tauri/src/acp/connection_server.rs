@@ -24,6 +24,9 @@ use maestro_protocol::{
 use tokio::sync::oneshot;
 
 /// Generic helper: lock→insert→send→await pattern shared by all connection-server query functions.
+// Each caller supplies its own pending-channel accessor and three distinct error strings, so the
+// arguments vary per call site rather than forming a reusable group.
+#[allow(clippy::too_many_arguments)]
 async fn query_via_server<T: Send + 'static>(
     connection_key: crate::acp::ConnectionKey,
     app_state: &Arc<crate::core::AppState>,

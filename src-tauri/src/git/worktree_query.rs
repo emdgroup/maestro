@@ -307,7 +307,7 @@ pub async fn get_worktree_diff_stats(
     let (mut file_count, mut insertions, mut deletions) = (0u32, 0u32, 0u32);
     // The last non-empty line of `git diff --stat` is the summary, e.g.:
     // " 3 files changed, 42 insertions(+), 7 deletions(-)"
-    if let Some(summary) = stat_output.lines().filter(|l| !l.trim().is_empty()).last() {
+    if let Some(summary) = stat_output.lines().rfind(|l| !l.trim().is_empty()) {
         for part in summary.split(',') {
             let part = part.trim();
             if part.contains("file") {

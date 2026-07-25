@@ -25,6 +25,8 @@ pub fn get_tasks(
     Ok(tasks)
 }
 
+// Arguments map one-to-one onto the inserted task columns.
+#[allow(clippy::too_many_arguments)]
 fn create_task_impl(
     conn: &rusqlite::Connection,
     project_id: i32,

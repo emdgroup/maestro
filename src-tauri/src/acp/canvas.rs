@@ -57,6 +57,12 @@ pub struct CanvasFenceExtractor {
     in_fence: bool,
 }
 
+impl Default for CanvasFenceExtractor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CanvasFenceExtractor {
     pub fn new() -> Self {
         Self { buffer: String::new(), in_fence: false }
@@ -470,9 +476,7 @@ mod tests {
     fn multiple_fences_in_one_chunk() {
         let mut ex = CanvasFenceExtractor::new();
         let j1 = canvas_create_json("m1");
-        let j2 = format!(
-            r#"{{"sessionUpdate":"canvas_data","surfaceId":"m1","path":"/rows","value":[]}}"#
-        );
+        let j2 = r#"{"sessionUpdate":"canvas_data","surfaceId":"m1","path":"/rows","value":[]}"#.to_string();
         let input = format!(
             "```maestro-canvas\n{}\n```\n```maestro-canvas\n{}\n```\n",
             j1, j2

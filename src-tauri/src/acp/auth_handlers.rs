@@ -98,14 +98,14 @@ pub async fn acp_authenticate(
             Err("Authentication timed out".to_string())
         }
         Ok(inner) => {
-            let outcome = inner
+            inner
                 .map_err(|_| "Authentication response channel dropped".to_string())??;
             // Mark as authenticated in state.
             let mut map = app_state.acp.agent_auth_info.lock().await;
             if let Some(info) = map.get_mut(&(connection, agent_id)) {
                 info.authenticated = true;
             }
-            Ok(outcome)
+            Ok(())
         }
     }
 }
@@ -154,13 +154,13 @@ pub async fn acp_logout(
             Err("Logout timed out".to_string())
         }
         Ok(inner) => {
-            let outcome = inner
+            inner
                 .map_err(|_| "Logout response channel dropped".to_string())??;
             let mut map = app_state.acp.agent_auth_info.lock().await;
             if let Some(info) = map.get_mut(&(connection, agent_id)) {
                 info.authenticated = false;
             }
-            Ok(outcome)
+            Ok(())
         }
     }
 }

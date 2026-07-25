@@ -44,7 +44,7 @@ fn current_platform_key() -> &'static str {
 /// the filename and resolve to an absolute path via `which`.
 fn normalize_binary_cmd(raw_cmd: &str) -> String {
     let filename = raw_cmd
-        .rsplit(|c| c == '/' || c == '\\')
+        .rsplit(['/', '\\'])
         .next()
         .unwrap_or(raw_cmd);
     which::which(filename)
@@ -52,10 +52,12 @@ fn normalize_binary_cmd(raw_cmd: &str) -> String {
         .unwrap_or_else(|_| filename.to_string())
 }
 
-/// Returns (spawn_cmd, spawn_args, spawn_env, spawn_deps).
+/// `(spawn_cmd, spawn_args, spawn_env, spawn_deps)`
+type ResolvedSpawn = (String, Vec<String>, std::collections::HashMap<String, String>, Vec<String>);
+
 /// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npx"] or ["uvx"]).
 /// Binary agents have no external dep so spawn_deps is empty.
-fn resolve_spawn(dist: &AgentDistribution) -> Option<(String, Vec<String>, std::collections::HashMap<String, String>, Vec<String>)> {
+fn resolve_spawn(dist: &AgentDistribution) -> Option<ResolvedSpawn> {
     if let Some(npx) = &dist.npx {
         let mut args: Vec<String> = vec!["-y".to_string(), "--".to_string(), npx.package.clone()];
         if let Some(extra) = &npx.args {
@@ -136,7 +138,7 @@ mod tests {
     // Test filename extraction only; which resolution depends on PATH in the test environment.
     fn extract_filename(raw_cmd: &str) -> &str {
         raw_cmd
-            .rsplit(|c| c == '/' || c == '\\')
+            .rsplit(['/', '\\'])
             .next()
             .unwrap_or(raw_cmd)
     }

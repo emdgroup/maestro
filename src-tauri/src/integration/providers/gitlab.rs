@@ -81,12 +81,11 @@ fn parse_glab_auth_status(output: &str) -> Option<(String, Option<String>, Optio
         }
 
         // Hostname: first non-indented, non-empty line (status lines are indented with spaces).
-        if hostname.is_none() && !line.starts_with(' ') && !line.starts_with('\t') {
-            if !trimmed.starts_with('✓') && !trimmed.starts_with('✗') && !trimmed.starts_with('#') {
+        if hostname.is_none() && !line.starts_with(' ') && !line.starts_with('\t')
+            && !trimmed.starts_with('✓') && !trimmed.starts_with('✗') && !trimmed.starts_with('#') {
                 hostname = Some(trimmed.to_string());
                 continue;
             }
-        }
 
         // Token: line containing "Token:"
         if let Some(pos) = trimmed.find("Token:") {

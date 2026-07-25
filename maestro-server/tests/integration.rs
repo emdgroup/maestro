@@ -1,21 +1,21 @@
-/// Integration tests for maestro-server binary via stdin/stdout pipe.
-///
-/// Spawns the actual binary and communicates using the maestro-protocol wire format
-/// (4-byte LE length prefix + JSON body). Tests the error paths that don't require
-/// a real ACP agent subprocess, verifying:
-///
-/// - Protocol framing works end-to-end (client write → server read → server write → client read)
-/// - SpawnRequest with unknown agent returns a structured Error response (not a hang or crash)
-/// - PromptRequest for an unknown session returns Error "unknown session: ..."
-/// - PermitResponse/Cancel for unknown sessions are silently ignored (no crash, no response)
-/// - Server exits cleanly when stdin closes (EOF)
-///
-/// Happy-path tests (successful spawn + forwarded prompt + unblocked permission) require
-/// a live ACP agent subprocess and are covered by manual verification in VALIDATION.md.
-///
-/// Timeout strategy: tests expecting a response block on read_exact (server MUST respond).
-/// Tests expecting NO response close stdin, wait for server exit, then assert stdout was empty.
-/// This avoids needing set_read_timeout (unavailable on ChildStdout).
+//! Integration tests for maestro-server binary via stdin/stdout pipe.
+//!
+//! Spawns the actual binary and communicates using the maestro-protocol wire format
+//! (4-byte LE length prefix + JSON body). Tests the error paths that don't require
+//! a real ACP agent subprocess, verifying:
+//!
+//! - Protocol framing works end-to-end (client write → server read → server write → client read)
+//! - SpawnRequest with unknown agent returns a structured Error response (not a hang or crash)
+//! - PromptRequest for an unknown session returns Error "unknown session: ..."
+//! - PermitResponse/Cancel for unknown sessions are silently ignored (no crash, no response)
+//! - Server exits cleanly when stdin closes (EOF)
+//!
+//! Happy-path tests (successful spawn + forwarded prompt + unblocked permission) require
+//! a live ACP agent subprocess and are covered by manual verification in VALIDATION.md.
+//!
+//! Timeout strategy: tests expecting a response block on read_exact (server MUST respond).
+//! Tests expecting NO response close stdin, wait for server exit, then assert stdout was empty.
+//! This avoids needing set_read_timeout (unavailable on ChildStdout).
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -127,6 +127,7 @@ fn test_spawn_unknown_agent_returns_error() {
     }
 
     let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// After a failed SpawnRequest the server loop continues.
@@ -174,6 +175,7 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     }
 
     let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// PermitResponse for an unknown session must be silently ignored.
@@ -265,6 +267,7 @@ fn test_protocol_framing_large_prompt_payload() {
     );
 
     let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Server exits cleanly (code 0) when stdin closes — simulates Tauri host exit.
@@ -309,4 +312,5 @@ fn test_list_agents_returns_ok_response() {
     }
 
     let _ = child.kill();
+    let _ = child.wait();
 }

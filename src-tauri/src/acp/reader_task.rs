@@ -12,7 +12,7 @@ use crate::acp::transport::{
 };
 use crate::acp::transport_types::{AcpReadSource, serialize_message};
 use crate::acp::session_types::{
-    PendingChannels, ReaderTaskContext, RestorableSession,
+    PendingChannels, PendingReply, ReaderTaskContext, RestorableSession,
 };
 use crate::acp::canvas::{
     CanvasFenceExtractor, PreambleFilterState,
@@ -126,8 +126,11 @@ async fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> b
     .unwrap_or(0) > 0
 }
 
+/// `(project_id, path, connection_id, wsl_connection_id, docker_connection_id)`
+type ProjectLocationRow = (i32, String, Option<i32>, Option<i32>, Option<i32>);
+
 async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i32) -> bool {
-    let result: Option<(i32, String, Option<i32>, Option<i32>, Option<i32>)> = app_state.db.lock().ok().and_then(|conn| {
+    let result: Option<ProjectLocationRow> = app_state.db.lock().ok().and_then(|conn| {
         conn.query_row(
             "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id \
              FROM tasks t JOIN projects p ON t.project_id = p.id \
@@ -244,14 +247,17 @@ fn emit_session_init_events(
 
 /// Emit Tauri events for a parsed server response. Updates per-session current model/mode IDs.
 /// Returns the native ACP session ID when a SpawnOk message is processed, None otherwise.
+// Takes the session's shared state as individual borrows because callers hold some of these
+// fields separately; passing ReaderTaskContext here would force them to reassemble it.
+#[allow(clippy::too_many_arguments)]
 fn handle_server_message(
     msg: MaestroRpcMessage,
     log_id: i32,
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
     current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
-    pending_file_search: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<Vec<String>, String>>>>>,
-    pending_file_read: &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    pending_file_search: &PendingReply<Vec<String>>,
+    pending_file_read: &PendingReply<String>,
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
     initialized: &Arc<std::sync::Mutex<bool>>,
@@ -503,8 +509,8 @@ pub(crate) async fn update_session_from_response(
                 session.config_options = r.config_options.clone();
             }
         }
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
-            if upd.payload.get("sessionUpdate").and_then(|v| v.as_str()) == Some("config_option_update") {
+        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd))
+            if upd.payload.get("sessionUpdate").and_then(|v| v.as_str()) == Some("config_option_update") => {
                 if let Some(options_val) = upd.payload.get("configOptions") {
                     if let Ok(options) = serde_json::from_value::<Vec<serde_json::Value>>(options_val.clone()) {
                         let mut sessions = app_state.acp.sessions.lock().await;
@@ -514,7 +520,6 @@ pub(crate) async fn update_session_from_response(
                     }
                 }
             }
-        }
         _ => {}
     }
 }

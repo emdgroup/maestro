@@ -29,6 +29,9 @@ fn make_basic_auth(email: &str, token: &str) -> String {
 /// Returns the display name of the authenticated user.
 /// - Cloud: instance_url is None, validates against api.bitbucket.org
 /// - Server/Data Center: instance_url is Some, validates against the self-hosted instance
+// Signature matches the other providers' validate_and_store; Bitbucket needs two extra
+// path components (workspace and repo_slug) which pushes it over the threshold.
+#[allow(clippy::too_many_arguments)]
 pub async fn validate_and_store(
     project_id: i32,
     instance_url: Option<&str>,
@@ -100,7 +103,7 @@ pub async fn validate_and_store(
         }
     };
 
-    let stored_instance_url = instance_url.map(|u| normalize_instance_url(u));
+    let stored_instance_url = instance_url.map(normalize_instance_url);
 
     let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Bitbucket(BitbucketConfig {

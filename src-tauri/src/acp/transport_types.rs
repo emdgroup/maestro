@@ -110,10 +110,7 @@ pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage
     // Drain first so a corrupt frame never loops — caller retries with the next frame.
     let frame_bytes = buf[4..4 + len].to_vec();
     buf.drain(..4 + len);
-    match serde_json::from_slice::<MaestroRpcMessage>(&frame_bytes) {
-        Ok(msg) => Some(msg),
-        Err(_) => None,
-    }
+    serde_json::from_slice::<MaestroRpcMessage>(&frame_bytes).ok()
 }
 
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.
