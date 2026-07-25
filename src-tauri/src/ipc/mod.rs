@@ -19,3 +19,4 @@ pub use crate::acp::discovery_handlers::*;
 pub use crate::acp::file_handlers::*;
 pub use crate::acp::meta_handlers::*;
 pub use crate::acp::auth_handlers::*;
+pub use crate::acp::canvas_handlers::*;

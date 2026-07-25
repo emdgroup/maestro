@@ -1,7 +1,9 @@
-import React, { useEffect, useReducer } from "react";
+import React, { useCallback, useEffect, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
+import { loadSavedCanvases } from "@/services/canvas.service";
+import { useSelectedProject } from "@/store/projectStore";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import type { SessionUpdatePayload, ActivityState } from "./types";
 import { activityReducer } from "./activityReducer";
@@ -16,6 +18,17 @@ export function useAcpActivity(
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
+  const selectedProject = useSelectedProject();
+  const projectId = selectedProject?.id ?? null;
+
+  const tryRestoreCanvases = useCallback(() => {
+    if (projectId == null || logId == null) return;
+    loadSavedCanvases(projectId, logId)
+      .then((surfaces) => {
+        if (surfaces.length > 0) dispatch({ type: "restore_canvases", surfaces });
+      })
+      .catch(console.error);
+  }, [projectId, logId]);
 
   useEffect(() => {
     if (logId == null) return;
@@ -47,10 +60,12 @@ export function useAcpActivity(
       listen<null>(`acp://replay-drained/${logId}`, () => {
         dispatch({ type: "turn_ended" });
         dispatch({ type: "set_initialized" });
+        tryRestoreCanvases();
       }),
       listen<null>(`acp://spawn-ok/${logId}`, () => {
         dispatch({ type: "turn_ended" });
         dispatch({ type: "set_initialized" });
+        tryRestoreCanvases();
       }),
       listen<string>(`acp://session-error/${logId}`, (event) => {
         if (!event.payload.includes("session/load failed")) {
@@ -71,7 +86,7 @@ export function useAcpActivity(
         if (fns) for (const fn of fns) fn();
       });
     };
-  }, [logId, sessionUpdateRef]);
+  }, [logId, sessionUpdateRef, tryRestoreCanvases]);
 
   return [state, dispatch];
 }

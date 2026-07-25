@@ -11,6 +11,7 @@ pub mod meta_handlers;
 pub mod attachment_handlers;
 pub mod auth_handlers;
 pub mod canvas;
+pub mod canvas_handlers;
 pub mod transport_types;
 pub mod session_types;
 pub mod transport_setup;

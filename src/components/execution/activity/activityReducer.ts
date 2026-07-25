@@ -18,7 +18,8 @@ export type ActivityAction =
   | { type: "finalize_streaming" }
   | { type: "set_initialized" }
   | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
-  | { type: "terminal_output"; terminalId: string; output: string };
+  | { type: "terminal_output"; terminalId: string; output: string }
+  | { type: "restore_canvases"; surfaces: CanvasSurface[] };
 
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
@@ -60,6 +61,17 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       const newBuffers = new Map(state.terminalBuffers);
       newBuffers.set(action.terminalId, (newBuffers.get(action.terminalId) ?? "") + action.output);
       return { ...state, terminalBuffers: newBuffers };
+    }
+    case "restore_canvases": {
+      const newCanvasMap = new Map(state.canvasMap);
+      const newItems = [...state.items];
+      for (const surface of action.surfaces) {
+        if (!newCanvasMap.has(surface.surfaceId)) {
+          newCanvasMap.set(surface.surfaceId, surface);
+          newItems.push({ type: "canvas", item: { surfaceId: surface.surfaceId } });
+        }
+      }
+      return { ...state, canvasMap: newCanvasMap, items: newItems };
     }
     default:
       return state;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
@@ -24,6 +24,10 @@ import type { ConnectionKey, DiffTarget } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
 import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
 import { useWslConnections } from "@/services/connection.service";
+import {
+  useSaveCanvasSurfaceMutation,
+  useDeleteCanvasSurfaceMutation,
+} from "@/services/canvas.service";
 import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
 
@@ -75,6 +79,8 @@ export function SidePanelContent({
   terminalBuffers,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
+  const saveCanvasMutation = useSaveCanvasSurfaceMutation();
+  const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
   const [sessionMeta, setSessionMeta] = useState<{
     projectId: number | null;
     cwd: string | null;
@@ -281,29 +287,75 @@ export function SidePanelContent({
             )}
             {kind === "canvas" && (
               <div className="absolute inset-0 flex flex-col overflow-hidden">
-                {canvasEntries.length > 1 && (
+                {canvasEntries.length > 0 && (
                   <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border">
                     <span className="text-xs text-muted-foreground">
-                      {canvasIdx + 1} / {canvasEntries.length}
+                      {canvasEntries.length > 1
+                        ? `${canvasIdx + 1} / ${canvasEntries.length}`
+                        : (activeSurface?.title ?? "Canvas")}
                     </span>
                     <div className="flex gap-1">
+                      {canvasEntries.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={canvasIdx === 0}
+                            onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={canvasIdx >= canvasEntries.length - 1}
+                            onClick={() =>
+                              setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
+                            }
+                            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
-                        disabled={canvasIdx === 0}
-                        onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
+                        title="Save canvas to disk"
+                        disabled={
+                          saveCanvasMutation.isPending ||
+                          !activeSurface ||
+                          sessionMeta.projectId == null
+                        }
+                        onClick={() => {
+                          if (!activeSurface || sessionMeta.projectId == null) return;
+                          saveCanvasMutation.mutate({
+                            projectId: sessionMeta.projectId,
+                            logId: sessionKey,
+                            surface: activeSurface,
+                          });
+                        }}
                         className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
                       >
-                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <Save className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
-                        disabled={canvasIdx >= canvasEntries.length - 1}
-                        onClick={() =>
-                          setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
+                        title="Delete saved canvas"
+                        disabled={
+                          deleteCanvasMutation.isPending ||
+                          !activeSurface ||
+                          sessionMeta.projectId == null
                         }
+                        onClick={() => {
+                          if (!activeSurface || sessionMeta.projectId == null) return;
+                          deleteCanvasMutation.mutate({
+                            projectId: sessionMeta.projectId,
+                            logId: sessionKey,
+                            surfaceId: activeSurface.surfaceId,
+                          });
+                        }}
                         className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
                       >
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

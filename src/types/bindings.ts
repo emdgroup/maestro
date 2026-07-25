@@ -1780,6 +1780,48 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  async saveCanvasSurface(
+    projectId: number,
+    logId: number,
+    surfaceId: string,
+    surface: JsonValue,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("save_canvas_surface", { projectId, logId, surfaceId, surface }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async deleteCanvasSurface(
+    projectId: number,
+    logId: number,
+    surfaceId: string,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("delete_canvas_surface", { projectId, logId, surfaceId }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async loadSavedCanvases(projectId: number, logId: number): Promise<Result<JsonValue[], string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("load_saved_canvases", { projectId, logId }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   /**
    * Upload a local file to the remote host via SFTP.
    *
@@ -2666,7 +2708,7 @@ export type CreateTaskRequest = {
   isolated_worktree: boolean;
   model_override: string | null;
 };
-export type CredentialSource = "manual" | "gh_cli";
+export type CredentialSource = "manual" | "gh_cli" | "glab_cli";
 /**
  * Controls what get_worktree_diff compares against.
  *
