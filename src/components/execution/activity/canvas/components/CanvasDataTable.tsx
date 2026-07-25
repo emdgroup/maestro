@@ -1,6 +1,5 @@
 import { ScrollArea } from "@/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
-import type { CanvasSurface } from "../../types";
 
 interface Column {
   key: string;
@@ -10,13 +9,14 @@ interface Column {
 
 interface Props {
   columns?: Column[];
-  rows?: string;
-  surface: CanvasSurface;
+  rows?: string | unknown[][];
   [key: string]: unknown;
 }
 
-export function CanvasDataTable({ columns = [], rows, surface }: Props) {
-  const rowData = rows ? ((surface.data[rows] as unknown[][] | undefined) ?? []) : [];
+export function CanvasDataTable({ columns = [], rows }: Props) {
+  // `rows` arrives already resolved by resolveDataBindings — if it is still a
+  // string, the pointer had no data yet, so render the empty state.
+  const rowData = Array.isArray(rows) ? (rows as unknown[][]) : [];
 
   return (
     <ScrollArea className="max-h-80 rounded-md border">

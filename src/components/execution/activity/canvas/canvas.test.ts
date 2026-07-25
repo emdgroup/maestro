@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { activityReducer } from "../useAcpActivity";
 import { INITIAL_ACTIVITY_STATE } from "../types";
+import { resolveDataBindings } from "./CanvasRenderer";
 
 function makeEvent(payload: Record<string, unknown>) {
   return {
@@ -106,6 +107,45 @@ describe("canvas reducer", () => {
       ["a", "b"],
       ["c", "d"],
     ]);
+  });
+
+  it("resolveDataBindings resolves a /rows pointer to the stored array", () => {
+    let state = activityReducer(
+      INITIAL_ACTIVITY_STATE,
+      makeEvent({
+        sessionUpdate: "canvas_create",
+        surfaceId: "s1",
+        catalogId: "maestro-canvas/v1",
+        title: "T",
+      }),
+    );
+
+    state = activityReducer(
+      state,
+      makeEvent({
+        sessionUpdate: "canvas_data",
+        surfaceId: "s1",
+        path: "/rows",
+        value: [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+      }),
+    );
+
+    const surface = state.canvasMap.get("s1")!;
+    const props = resolveDataBindings({ rows: "/rows" }, surface.data);
+
+    // DataTable consumes the resolved array directly — no second lookup
+    expect(props.rows).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+    expect(Array.isArray(props.rows)).toBe(true);
+
+    // An unresolvable pointer stays a string, which renders as empty
+    const missing = resolveDataBindings({ rows: "/missing" }, surface.data);
+    expect(missing.rows).toBe("/missing");
   });
 
   it("canvas_update on unknown surfaceId is a no-op", () => {

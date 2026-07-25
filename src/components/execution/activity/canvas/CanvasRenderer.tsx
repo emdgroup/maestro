@@ -95,7 +95,7 @@ export function CanvasComponentNode({ surface, componentId, depth = 0 }: Rendere
     case "DateTimeInput":
       return <CanvasDateTimeInput {...props} />;
     case "DataTable":
-      return <CanvasDataTable {...props} surface={surface} />;
+      return <CanvasDataTable {...props} />;
     case "Chart":
       return <CanvasChart {...props} surface={surface} />;
     case "Markdown":
