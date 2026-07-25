@@ -160,4 +160,49 @@ mod tests {
             assert_eq!(extract_filename(input), expected, "input: {input:?}");
         }
     }
+
+    /// The bundled registry is the only source of agent definitions, and `load_registry`
+    /// falls back to an empty list rather than failing when it cannot be parsed — so a
+    /// malformed file would surface as "no agents available" with nothing reporting why.
+    /// This is also what makes the scheduled registry-update workflow a real check: a CDN
+    /// payload that no longer matches `AcpRegistry` fails here instead of shipping.
+    #[test]
+    fn bundled_registry_parses_and_is_populated() {
+        let registry = super::load_registry();
+
+        assert!(
+            !registry.agents.is_empty(),
+            "bundled registry.json did not parse into any agents"
+        );
+        assert!(
+            !registry.version.is_empty() && registry.version != "0.0.0",
+            "registry version looks like the parse-failure fallback: {:?}",
+            registry.version
+        );
+
+        for entry in &registry.agents {
+            assert!(!entry.id.is_empty(), "agent entry has an empty id");
+            assert!(!entry.name.is_empty(), "agent {:?} has an empty name", entry.id);
+        }
+    }
+
+    /// Every bundled agent should yield a launch command on at least one platform. An entry
+    /// that resolves nowhere is dead weight in the picker.
+    #[test]
+    fn bundled_registry_agents_are_launchable() {
+        let registry = super::load_registry();
+        let launchable = super::discover_agents(&registry);
+
+        assert!(
+            !launchable.is_empty(),
+            "no agent in the bundled registry resolves to a spawn command on this platform"
+        );
+        for agent in &launchable {
+            assert!(
+                !agent.spawn_cmd.is_empty(),
+                "agent {:?} resolved to an empty spawn command",
+                agent.id
+            );
+        }
+    }
 }

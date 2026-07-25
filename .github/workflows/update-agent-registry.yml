@@ -1,0 +1,105 @@
+name: Update agent registry
+
+# The ACP agent registry used to be fetched by maestro-server/build.rs on every build and
+# written straight into the tracked source tree. That made builds unreproducible and let
+# agent package versions — which decide what gets executed on a user's machine — land in
+# unrelated commits without review. The registry is vendored instead, and this job proposes
+# updates as a reviewable pull request.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-agent-registry
+  cancel-in-progress: false
+
+env:
+  REGISTRY_URL: https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json
+  REGISTRY_PATH: maestro-server/src/assets/registry.json
+
+jobs:
+  update:
+    name: Fetch, validate, propose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Fetch registry
+        run: |
+          curl -fsSL --max-time 30 "$REGISTRY_URL" -o /tmp/registry.json
+          # Reject an empty or reshaped payload before it reaches the working tree.
+          jq -e 'has("version") and (.agents | type == "array") and (.agents | length > 0)' \
+            /tmp/registry.json > /dev/null
+          cp /tmp/registry.json "$REGISTRY_PATH"
+
+      # The committed copy is oxfmt-formatted; the CDN body is not. Without this the
+      # formatting gate in CI would fail on the generated file.
+      - run: bun run format:fix
+
+      # The real gate. maestro-server needs no Tauri system libraries, so this runs on a
+      # bare runner. load_registry() falls back to an empty agent list rather than failing,
+      # so a payload that no longer matches AcpRegistry would otherwise ship as "no agents
+      # available" — bundled_registry_parses_and_is_populated catches that here instead.
+      # It matters that this runs in this job: pull requests opened with GITHUB_TOKEN do
+      # not trigger further workflow runs, so the resulting PR gets no CI of its own.
+      - run: cargo test -p maestro-server
+
+      - name: Open a pull request if the registry changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- "$REGISTRY_PATH"; then
+            echo "Registry is already up to date; nothing to propose."
+            exit 0
+          fi
+
+          branch="chore/agent-registry-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$REGISTRY_PATH"
+          git commit -m "chore: update bundled ACP agent registry"
+          git push --force-with-lease --set-upstream origin "$branch"
+
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "Pull request for $branch already exists; pushed the update to it."
+            exit 0
+          fi
+
+          gh pr create --base main --head "$branch" \
+            --title "Update bundled ACP agent registry" \
+            --body "$(cat <<'BODY'
+          Automated refresh of `maestro-server/src/assets/registry.json` from the ACP registry CDN.
+
+          **Review the diff as a supply-chain change, not a data blob.** Entries here decide which
+          executable and arguments `maestro-server` spawns, so look at changed `package`, `version`,
+          `args`, `cmd` and `archive` values.
+
+          Already validated by the workflow that opened this PR:
+
+          - payload is well-formed JSON with a non-empty `agents` array
+          - `cargo test -p maestro-server` passes, so the file still deserializes into `AcpRegistry`
+            and every agent resolves to a launch command
+
+          GitHub does not run workflows on pull requests opened with `GITHUB_TOKEN`, so the checks
+          above are the ones that ran. Push an empty commit if you want the normal CI run too.
+
+          Release Notes:
+
+          - N/A
+          BODY
+          )"

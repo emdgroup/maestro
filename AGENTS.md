@@ -202,8 +202,18 @@ Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro
 Rust test run rewrites `src/types/bindings.ts` — as unformatted output, which then differs from the
 oxfmt-formatted committed copy. A diff there after running tests is usually formatting churn, not a
 stale-bindings signal; compare the exported command/type names before assuming it is out of date.
-The same applies to `maestro-server/src/assets/registry.json`, which `maestro-server/build.rs`
-overwrites from a CDN on every build.
+
+### Bundled ACP agent registry
+
+`maestro-server/src/assets/registry.json` is vendored: it is committed, `include_str!`'d by
+`agent/registry.rs`, and never fetched during a build. Entries in it decide which executable and
+arguments `maestro-server` spawns, so treat changes to `package`, `version`, `args`, `cmd` and
+`archive` fields as supply-chain changes and review them as such.
+
+Refresh it through the `Update agent registry` workflow (weekly, or run it manually), which
+fetches, validates and opens a pull request. Do not reintroduce a build-time fetch: writing to the
+tracked file on every build made builds unreproducible and let agent version bumps ride along in
+unrelated commits.
 
 ### Project-Local Storage (`.maestro/`)
 
