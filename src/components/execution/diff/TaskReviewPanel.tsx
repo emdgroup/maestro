@@ -141,10 +141,7 @@ export function TaskReviewPanel({
   }, [uncommittedDiffQuery.data]);
 
   // Untracked files from diff result
-  const untrackedFiles = useMemo(
-    () => diffQuery.data?.untracked_files ?? [],
-    [diffQuery.data],
-  );
+  const untrackedFiles = useMemo(() => diffQuery.data?.untracked_files ?? [], [diffQuery.data]);
   const totalFileCount = diffFiles.length + untrackedFiles.length;
 
   // Filter files by search

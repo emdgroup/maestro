@@ -4,8 +4,14 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
-import { ScrollArea } from "@/ui/scroll-area";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
+import {
+  SidebarContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuAction,
+  useSidebar,
+} from "@/ui/sidebar";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
@@ -116,7 +122,6 @@ interface SessionRowProps {
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
-  sidebarCollapsed?: boolean;
 }
 
 const SessionRow = memo(function SessionRow({
@@ -127,88 +132,86 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
+  const { state } = useSidebar();
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
   const name =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
 
   return (
-    <div
-      onClick={() => onSelect(session.session_key)}
-      className={cn(
-        "pr-row group relative flex items-stretch cursor-pointer transition-colors",
-        isSelected && "selected-session-item selected",
-      )}
-    >
-      {/* Avatar column */}
-      <div className="pr-avatar-col flex items-center shrink-0 p-3">
-        <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
-          {/* Ring rendered first — avatar (later in DOM) sits on top, covering center */}
-          {ringClass && <div className={ringClass} />}
-          {/* Icon + #N strip inside overflow:hidden */}
-          <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card">
-            {session.execution_mode === "acp" && session.agent_id ? (
-              <AgentIcon
-                agentId={session.agent_id}
-                src={agentIcons?.[session.agent_id]}
-                className="w-8 h-8 rounded-md bg-muted/40"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
-                <Terminal className="w-4 h-4 text-accent" />
-              </div>
+    <SidebarMenuItem>
+      <Tooltip>
+        <TooltipTrigger render={<span className="block" />}>
+          <div
+            onClick={() => onSelect(session.session_key)}
+            className={cn(
+              "pr-row relative flex items-stretch cursor-pointer transition-colors",
+              isSelected && "selected-session-item selected",
             )}
-            {/* #N strip — shown in collapsed rail via CSS, hidden by default */}
-            <div
-              className="session-id-strip hidden absolute bottom-0 left-0 right-0 text-center text-[9px] font-mono font-semibold leading-none py-0.5 text-white/93 rounded-b-md backdrop-blur-sm"
-              style={{ background: "rgba(0,0,0,0.22)" }}
-            >
-              #{session.session_key}
+          >
+            {/* Avatar column */}
+            <div className="pr-avatar-col flex items-center shrink-0 p-3">
+              <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
+                {ringClass && <div className={ringClass} />}
+                <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card">
+                  {session.execution_mode === "acp" && session.agent_id ? (
+                    <AgentIcon
+                      agentId={session.agent_id}
+                      src={agentIcons?.[session.agent_id]}
+                      className="w-8 h-8 rounded-md bg-muted/40"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-md bg-muted/40 border border-border flex items-center justify-center">
+                      <Terminal className="w-4 h-4 text-accent" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Text column */}
+            <div className="session-text-col flex-1 min-w-0 pr-3 pl-2 py-2.5 flex flex-col justify-center gap-0.75">
+              <div className="flex items-baseline justify-between gap-2 min-w-0">
+                <span className="session-item-name text-sm font-medium truncate">{name}</span>
+                <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
+                  #{session.session_key}
+                </span>
+              </div>
+              {session.execution_mode === "acp" && (
+                <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
+                  <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
+                    {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+                  </span>
+                  {activityInfo && (
+                    <span className="transition-opacity group-hover/menu-item:opacity-0">
+                      <ElapsedTime
+                        status={activityInfo.status}
+                        stateChangedAt={activityInfo.stateChangedAt}
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Text column */}
-      <div className="session-text-col flex-1 min-w-0 py-2.5 pr-3 pl-2 flex flex-col justify-center gap-0.75">
-        <div className="flex items-baseline justify-between gap-2 min-w-0">
-          <span className="session-item-name text-sm font-medium truncate">{name}</span>
-          <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover:opacity-0">
-            #{session.session_key}
-          </span>
-        </div>
-        {session.execution_mode === "acp" && (
-          <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
-            <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
-              {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
-            </span>
-            {activityInfo && (
-              <span className="transition-opacity group-hover:opacity-0">
-                <ElapsedTime
-                  status={activityInfo.status}
-                  stateChangedAt={activityInfo.stateChangedAt}
-                />
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Close button — fades in on row hover, vertically centered */}
+        </TooltipTrigger>
+        <TooltipContent side="right" hidden={state !== "collapsed"}>
+          {name}
+        </TooltipContent>
+      </Tooltip>
       {onClose && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="session-close-btn absolute right-1.5 inset-y-0 my-auto h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
+        <SidebarMenuAction
+          showOnHover
+          className="inset-y-0 my-auto top-auto right-1.5 h-6 w-6 [&>svg]:size-3.5 text-muted-foreground hover:text-foreground hover:bg-transparent disabled:opacity-30"
           onClick={(e) => {
             e.stopPropagation();
             onClose(session);
           }}
           disabled={session.task_prevents_close}
         >
-          <X className="w-3.5 h-3.5" />
-        </Button>
+          <X />
+        </SidebarMenuAction>
       )}
-    </div>
+    </SidebarMenuItem>
   );
 });
 
@@ -222,8 +225,6 @@ interface AgentMonitorProps {
   agentNames?: Record<string, string>;
   projectId?: number;
   newSessionKey?: number | null;
-  sidebarCollapsed?: boolean;
-  onSidebarCollapsedChange?: (v: boolean) => void;
   onSpawnShell?: (
     branchName: string | null,
     taskId: number | null,
@@ -242,10 +243,10 @@ export function AgentMonitor({
   agentNames,
   projectId,
   newSessionKey,
-  sidebarCollapsed = false,
   onSpawnShell,
   connection,
 }: AgentMonitorProps) {
+  const { state } = useSidebar();
   const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -421,31 +422,30 @@ export function AgentMonitor({
     <div className="flex h-full">
       {/* Sidebar */}
       <div
-        className={cn(
-          "session-sidebar flex flex-col bg-card shrink-0 overflow-hidden",
-          "transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]",
-          sidebarCollapsed ? "session-sidebar-collapsed w-13" : "w-72",
-        )}
+        data-state={state}
+        data-collapsible={state === "collapsed" ? "icon" : ""}
+        className="group session-sidebar flex flex-col bg-card shrink-0 overflow-hidden transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]"
       >
-        <ScrollArea className="flex-1">
+        <SidebarContent className="gap-0">
           {filteredSessions.length === 0 && (
             <div className="flex justify-center py-8 text-muted-foreground/30">
               <BotOff className="size-8" strokeWidth={1.5} />
             </div>
           )}
-          {filteredSessions.map((session) => (
-            <SessionRow
-              key={session.session_key}
-              session={session}
-              isSelected={session.session_key === selectedSessionKey}
-              onSelect={onSelect}
-              onClose={onClose}
-              agentIcons={agentIcons}
-              agentNames={agentNames}
-              sidebarCollapsed={sidebarCollapsed}
-            />
-          ))}
-        </ScrollArea>
+          <SidebarMenu className="gap-0">
+            {filteredSessions.map((session) => (
+              <SessionRow
+                key={session.session_key}
+                session={session}
+                isSelected={session.session_key === selectedSessionKey}
+                onSelect={onSelect}
+                onClose={onClose}
+                agentIcons={agentIcons}
+                agentNames={agentNames}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarContent>
       </div>
 
       {/* Content pane */}

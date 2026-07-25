@@ -86,6 +86,7 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
         { text: "Enter a name, optional expiry, and select scopes:", code: false },
         { text: "read_api, read_user, read_repository", code: true },
         { text: "Click Create personal access token and copy it immediately" },
+        { text: "Tip: if glab CLI is authenticated, Maestro will auto-detect your token." },
       ];
     case "forgejo":
       return [

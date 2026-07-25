@@ -32,6 +32,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 // The window starts hidden to avoid a flash of unstyled content. Never block
 // React startup on this native IPC call: a failed or delayed window show must
 // not leave a visible but empty webview.
-void getCurrentWindow().show().catch((error: unknown) => {
-  console.error("Failed to show the main window:", error);
-});
+void getCurrentWindow()
+  .show()
+  .catch((error: unknown) => {
+    console.error("Failed to show the main window:", error);
+  });

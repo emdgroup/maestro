@@ -30,6 +30,7 @@ import {
 } from "@/services/canvas.service";
 import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
+import { useSelectedProject } from "@/store/projectStore";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -79,6 +80,7 @@ export function SidePanelContent({
   terminalBuffers,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
+  const selectedProject = useSelectedProject();
   const saveCanvasMutation = useSaveCanvasSurfaceMutation();
   const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
   const [sessionMeta, setSessionMeta] = useState<{
@@ -321,14 +323,12 @@ export function SidePanelContent({
                         type="button"
                         title="Save canvas to disk"
                         disabled={
-                          saveCanvasMutation.isPending ||
-                          !activeSurface ||
-                          sessionMeta.projectId == null
+                          saveCanvasMutation.isPending || !activeSurface || selectedProject == null
                         }
                         onClick={() => {
-                          if (!activeSurface || sessionMeta.projectId == null) return;
+                          if (!activeSurface || selectedProject == null) return;
                           saveCanvasMutation.mutate({
-                            projectId: sessionMeta.projectId,
+                            projectId: selectedProject.id,
                             logId: sessionKey,
                             surface: activeSurface,
                           });
@@ -343,12 +343,12 @@ export function SidePanelContent({
                         disabled={
                           deleteCanvasMutation.isPending ||
                           !activeSurface ||
-                          sessionMeta.projectId == null
+                          selectedProject == null
                         }
                         onClick={() => {
-                          if (!activeSurface || sessionMeta.projectId == null) return;
+                          if (!activeSurface || selectedProject == null) return;
                           deleteCanvasMutation.mutate({
-                            projectId: sessionMeta.projectId,
+                            projectId: selectedProject.id,
                             logId: sessionKey,
                             surfaceId: activeSurface.surfaceId,
                           });

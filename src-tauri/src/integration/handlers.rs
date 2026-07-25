@@ -93,6 +93,20 @@ pub async fn list_integrations(
                 });
             }
         }
+
+        // glab CLI: ephemeral, not stored in keyring — probe each call
+        if provider == "gitlab" {
+            if let Some((_token, instance_url, display_name)) = crate::integration::gitlab::try_glab_cli_credentials().await {
+                statuses.push(IntegrationStatus {
+                    id: "glab_cli".to_string(),
+                    provider: "gitlab".to_string(),
+                    connected: true,
+                    display_name,
+                    source: Some(CredentialSource::GlabCli),
+                    instance_url,
+                });
+            }
+        }
     }
 
     Ok(statuses)

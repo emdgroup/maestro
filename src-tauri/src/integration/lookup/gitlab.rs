@@ -11,12 +11,7 @@ use crate::models::issue_tracking::GitLabProjectOption;
 pub async fn list_gitlab_projects(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<GitLabProjectOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("gitlab", &app_state)?;
-    let instance_url = creds
-        .instance_url
-        .as_deref()
-        .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
-    let base = crate::integration::normalize_instance_url(instance_url);
+    let (token, base) = super::get_gitlab_creds(&app_state).await?;
 
     let client = crate::integration::build_http_client()?;
     let base_url = format!(
@@ -35,7 +30,7 @@ pub async fn list_gitlab_projects(
     let projects: Vec<GitLabProject> = super::fetch_all_pages(
         &client,
         &base_url,
-        &[("PRIVATE-TOKEN", creds.token.as_str())],
+        &[("PRIVATE-TOKEN", token.as_str())],
         "page",
         "per_page",
         50,

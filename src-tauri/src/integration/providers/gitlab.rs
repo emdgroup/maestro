@@ -1,3 +1,5 @@
+use tokio::process::Command as TokioCommand;
+use crate::command_ext::NoConsoleWindow;
 use crate::models::issue_tracking::{GitLabConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
 use crate::models::project::now_rfc3339;
 use crate::integration::token_manager::StoredToken;
@@ -39,6 +41,99 @@ fn gitlab_issue_type_display(raw: &str) -> String {
 }
 
 use super::normalize_instance_url;
+
+/// Try to retrieve credentials from the glab CLI via `glab auth status --show-token`.
+/// Returns `(token, instance_url, display_name)` or `None` if glab is unavailable,
+/// unauthenticated, or the output cannot be parsed. Never returns Err.
+pub async fn try_glab_cli_credentials() -> Option<(String, Option<String>, Option<String>)> {
+    if which::which("glab").is_err() {
+        return None;
+    }
+    let output = TokioCommand::new("glab")
+        .args(["auth", "status", "--show-token"])
+        .no_console_window()
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_glab_auth_status(&stdout)
+}
+
+/// Parse the output of `glab auth status --show-token` to extract credentials.
+/// Expected format (ANSI codes stripped):
+///   gitlab.com
+///     ✓ Logged in to gitlab.com as username (Personal access token)
+///     ✓ Token: glpat-xxxx
+fn parse_glab_auth_status(output: &str) -> Option<(String, Option<String>, Option<String>)> {
+    let mut token: Option<String> = None;
+    let mut hostname: Option<String> = None;
+    let mut username: Option<String> = None;
+
+    for line in output.lines() {
+        let stripped = strip_ansi(line);
+        let trimmed = stripped.trim();
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Hostname: first non-indented, non-empty line (status lines are indented with spaces).
+        if hostname.is_none() && !line.starts_with(' ') && !line.starts_with('\t') {
+            if !trimmed.starts_with('✓') && !trimmed.starts_with('✗') && !trimmed.starts_with('#') {
+                hostname = Some(trimmed.to_string());
+                continue;
+            }
+        }
+
+        // Token: line containing "Token:"
+        if let Some(pos) = trimmed.find("Token:") {
+            let token_value = trimmed[pos + "Token:".len()..].trim().to_string();
+            if !token_value.is_empty() {
+                token = Some(token_value);
+            }
+        }
+
+        // Username: line containing "Logged in to ... as <name>"
+        if username.is_none() {
+            if let Some(as_pos) = trimmed.find(" as ") {
+                let after_as = trimmed[as_pos + 4..].trim();
+                let name_end = after_as
+                    .find(|c: char| c.is_whitespace() || c == '(')
+                    .unwrap_or(after_as.len());
+                let name = &after_as[..name_end];
+                if !name.is_empty() {
+                    username = Some(name.to_string());
+                }
+            }
+        }
+    }
+
+    let token = token?;
+    let instance_url = hostname.map(|h| format!("https://{}", h));
+    Some((token, instance_url, username))
+}
+
+/// Strip ANSI escape sequences from a string slice.
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            for c2 in chars.by_ref() {
+                if c2.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
 
 /// Validate a GitLab PAT, resolve the numeric project ID from the project path,
 /// save the IssueTrackingConfig, and store the token.
@@ -287,5 +382,44 @@ mod tests {
         let body = "No images here";
         let result = normalize_gitlab_upload_urls(body, "https://gitlab.com/g/p");
         assert_eq!(result, "No images here");
+    }
+
+    #[test]
+    fn test_parse_glab_auth_status_cloud() {
+        let output = "gitlab.com\n  ✓ Logged in to gitlab.com as myusername (Personal access token)\n  ✓ Token: glpat-xxxx\n";
+        let result = parse_glab_auth_status(output);
+        assert!(result.is_some());
+        let (token, instance_url, username) = result.unwrap();
+        assert_eq!(token, "glpat-xxxx");
+        assert_eq!(instance_url, Some("https://gitlab.com".to_string()));
+        assert_eq!(username, Some("myusername".to_string()));
+    }
+
+    #[test]
+    fn test_parse_glab_auth_status_self_hosted() {
+        let output = "gitlab.mycompany.com\n  ✓ Logged in to gitlab.mycompany.com as devuser (Personal access token)\n  ✓ Token: glpat-selfhosted\n";
+        let result = parse_glab_auth_status(output);
+        assert!(result.is_some());
+        let (token, instance_url, _) = result.unwrap();
+        assert_eq!(token, "glpat-selfhosted");
+        assert_eq!(instance_url, Some("https://gitlab.mycompany.com".to_string()));
+    }
+
+    #[test]
+    fn test_parse_glab_auth_status_no_token_returns_none() {
+        let output = "gitlab.com\n  ✓ Logged in to gitlab.com as someone (OAuth)\n";
+        let result = parse_glab_auth_status(output);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_strip_ansi_removes_escape_sequences() {
+        let input = "\x1b[32mgitlab.com\x1b[0m";
+        assert_eq!(strip_ansi(input), "gitlab.com");
+    }
+
+    #[test]
+    fn test_strip_ansi_passthrough_plain_text() {
+        assert_eq!(strip_ansi("plain text"), "plain text");
     }
 }

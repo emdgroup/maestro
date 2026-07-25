@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
+import { SidebarProvider } from "@/ui/sidebar";
 import { SessionHistoryModal } from "@/components/execution/session-history/SessionHistoryModal";
 import { SpawnSessionDialog } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
@@ -60,7 +61,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [lastSpawnedKey, setLastSpawnedKey] = useState<number | null>(null);
 
@@ -282,17 +283,22 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <SidebarProvider
+      open={sidebarOpen}
+      onOpenChange={setSidebarOpen}
+      className="!min-h-0 h-full flex-col"
+      style={{ "--sidebar-width": "288px", "--sidebar-width-icon": "52px" } as React.CSSProperties}
+    >
       {/* Action bar */}
       <div className="h-12 bg-card flex items-center justify-between pl-2.5 pr-4 gap-2 shrink-0">
         <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger
               type="button"
-              onClick={() => setSidebarCollapsed((v) => !v)}
+              onClick={() => setSidebarOpen((v) => !v)}
               className={cn(
                 "p-1.5 rounded-md transition-colors",
-                sidebarCollapsed
+                !sidebarOpen
                   ? "bg-muted/60 text-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
               )}
@@ -300,14 +306,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
               <Menu className="w-4 h-4" />
             </TooltipTrigger>
             <TooltipContent>
-              {sidebarCollapsed ? "Expand session list" : "Collapse session list"}
+              {!sidebarOpen ? "Expand session list" : "Collapse session list"}
             </TooltipContent>
           </Tooltip>
           <ShortcutHint shortcutId="focus-search">
             <InputGroup
               className={cn(
                 "overflow-hidden transition-[width] duration-200",
-                sidebarCollapsed
+                !sidebarOpen
                   ? "w-8 hover:w-48 focus-within:w-48 hover:bg-muted! focus-within:bg-muted!"
                   : "w-48 bg-muted!",
               )}
@@ -431,8 +437,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           agentNames={agentNames}
           onClose={handleCloseSession}
           projectId={projectId}
-          sidebarCollapsed={sidebarCollapsed}
-          onSidebarCollapsedChange={setSidebarCollapsed}
           onSpawnShell={spawnShell}
           connection={connection}
         />
@@ -464,6 +468,6 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           setLastSpawnedKey(key);
         }}
       />
-    </div>
+    </SidebarProvider>
   );
 };

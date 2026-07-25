@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
@@ -14,6 +15,7 @@ export function useSaveCanvasSurfaceMutation() {
       logId: number;
       surface: CanvasSurface;
     }) => api.saveCanvasSurface(projectId, logId, surface.surfaceId, surface as never),
+    onSuccess: () => toast.success("Canvas saved"),
     onError: createErrorToastHandler("Failed to save canvas"),
   });
 }
@@ -29,6 +31,7 @@ export function useDeleteCanvasSurfaceMutation() {
       logId: number;
       surfaceId: string;
     }) => api.deleteCanvasSurface(projectId, logId, surfaceId),
+    onSuccess: () => toast.success("Saved canvas deleted"),
     onError: createErrorToastHandler("Failed to delete canvas"),
   });
 }

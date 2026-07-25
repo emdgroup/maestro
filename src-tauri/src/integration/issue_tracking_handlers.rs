@@ -93,18 +93,28 @@ pub async fn list_remote_issues(
         }
 
         "gitlab" => {
-            let creds = get_integration_creds_for_project("gitlab", &ticketing, &app_state)?;
-            let instance_url = creds
-                .instance_url
-                .as_deref()
-                .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
+            let (token, instance_url) = match get_integration_creds_for_project("gitlab", &ticketing, &app_state) {
+                Ok(creds) => {
+                    let url = creds
+                        .instance_url
+                        .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
+                    (creds.token, url)
+                }
+                Err(_) => {
+                    let (cli_token, cli_url, _) = crate::integration::gitlab::try_glab_cli_credentials()
+                        .await
+                        .ok_or_else(|| "No GitLab credentials found".to_string())?;
+                    let url = cli_url.unwrap_or_else(|| "https://gitlab.com".to_string());
+                    (cli_token, url)
+                }
+            };
             let gitlab_project_id: i64 = ticketing
                 .project_key
                 .as_deref()
                 .ok_or_else(|| "GitLab: project_key (numeric id) required in project ticketing config".to_string())?
                 .parse()
                 .map_err(|_| "GitLab: project_key must be a numeric project id".to_string())?;
-            crate::integration::gitlab::fetch_issues(instance_url, gitlab_project_id, &creds.token).await
+            crate::integration::gitlab::fetch_issues(&instance_url, gitlab_project_id, &token).await
         }
 
         "forgejo" => {

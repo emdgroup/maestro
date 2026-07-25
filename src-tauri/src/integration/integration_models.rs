@@ -21,6 +21,7 @@ pub struct IntegrationStatus {
 pub enum CredentialSource {
     Manual,
     GhCli,
+    GlabCli,
 }
 
 /// Stored as JSON blob in keyring or encrypted file fallback. NOT exported to TS.
