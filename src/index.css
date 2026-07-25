@@ -447,14 +447,19 @@
     0 0 0 2px var(--card),
     0 0 0 3.5px var(--accent);
 }
-.session-sidebar-collapsed:not(:hover) .pr-row {
-  height: 52px;
+.session-sidebar-collapsed [data-slot="scroll-area-viewport"] {
+  overflow-x: hidden !important;
+  scrollbar-width: none !important;
 }
-.session-sidebar-collapsed .session-group-label {
-  visibility: hidden;
+.session-sidebar-collapsed [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
 }
-.session-sidebar-collapsed:hover .session-group-label {
-  visibility: visible;
+.session-sidebar-collapsed .pr-avatar-col {
+  padding-block: 0;
+}
+.session-sidebar-collapsed:hover .session-close-btn {
+  transition-delay: 200ms;
 }
 
 .shimmer-thinking-icon {

@@ -140,7 +140,7 @@ const SessionRow = memo(function SessionRow({
       )}
     >
       {/* Avatar column */}
-      <div className="pr-avatar-col flex items-center shrink-0 p-2.5">
+      <div className="pr-avatar-col flex items-center shrink-0 p-3">
         <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
           {/* Ring rendered first — avatar (later in DOM) sits on top, covering center */}
           {ringClass && <div className={ringClass} />}
@@ -198,7 +198,7 @@ const SessionRow = memo(function SessionRow({
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-1.5 inset-y-0 my-auto h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
+          className="session-close-btn absolute right-1.5 inset-y-0 my-auto h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30"
           onClick={(e) => {
             e.stopPropagation();
             onClose(session);
@@ -290,16 +290,6 @@ export function AgentMonitor({
           .includes(search.toLowerCase()),
     );
   }, [sessions, search]);
-
-  const grouped = useMemo(() => {
-    const groups = new Map<string, ActiveSessionInfo[]>();
-    for (const session of filteredSessions) {
-      const key = session.branch_name ?? "";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(session);
-    }
-    return [...groups.entries()];
-  }, [filteredSessions]);
 
   const selectedSession = sessions.find((s) => s.session_key === selectedSessionKey);
 
@@ -443,26 +433,17 @@ export function AgentMonitor({
               <BotOff className="size-8" strokeWidth={1.5} />
             </div>
           )}
-          {grouped.map(([branchName, sessionList]) => (
-            <div key={branchName || "_none"}>
-              {grouped.length > 1 && (
-                <div className="session-group-label px-3 py-1 text-[10px] font-mono text-muted-foreground/50 bg-muted/10 border-b border-border/30 sticky top-0">
-                  {branchName || "no branch"}
-                </div>
-              )}
-              {sessionList.map((session) => (
-                <SessionRow
-                  key={session.session_key}
-                  session={session}
-                  isSelected={session.session_key === selectedSessionKey}
-                  onSelect={onSelect}
-                  onClose={onClose}
-                  agentIcons={agentIcons}
-                  agentNames={agentNames}
-                  sidebarCollapsed={sidebarCollapsed}
-                />
-              ))}
-            </div>
+          {filteredSessions.map((session) => (
+            <SessionRow
+              key={session.session_key}
+              session={session}
+              isSelected={session.session_key === selectedSessionKey}
+              onSelect={onSelect}
+              onClose={onClose}
+              agentIcons={agentIcons}
+              agentNames={agentNames}
+              sidebarCollapsed={sidebarCollapsed}
+            />
           ))}
         </ScrollArea>
       </div>
