@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 log()  { printf '\033[1;34m[notarize]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m[notarize] WARN:\033[0m %s\n' "$*" >&2; }

@@ -160,7 +160,7 @@ jobs:
           chmod 600 "$api_key"
           export APPLE_API_KEY_PATH="$api_key"
 
-          scripts/macos/release-macos.sh
+          .github/scripts/macos/release-macos.sh
 
           app="$(find target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
           archive="${app}.tar.gz"
