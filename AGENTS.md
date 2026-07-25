@@ -105,9 +105,22 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V24 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V24. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
+
+`initialize_schema()` picks one of three paths based on `PRAGMA user_version`:
+
+| Stored version      | Behaviour                                                                  |
+| ------------------- | -------------------------------------------------------------------------- |
+| `0` (fresh install) | create the full schema from `SCHEMA_V24_FULL`                              |
+| `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
+| `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
+
+So bumping `SCHEMA_VERSION` does _not_ wipe user data. Add a `migrate_to_vN()` function and
+extend `run_migrations()` with a matching `if from < N` guard; use `CREATE TABLE IF NOT EXISTS`
+and check `pragma_table_info` before `ALTER TABLE` so the step is safe to re-run. Only databases
+predating v22 still take the drop path.
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
 
@@ -239,13 +252,12 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Migration is destructive (drops all tables on version mismatch)
+- Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
 - All IPC commands use `Arc<AppState>` for thread-safe DB access
 - ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
-- Schema migration drops all tables on version mismatch (no data preservation strategy)
 - Projects have three connection types: local, SSH (via `ssh_connections`), WSL (via `wsl_connections`)
 - Handlers needing both a `Project` and `GitConnection` use `get_project_with_git_conn()` from `core/connection.rs`
 - `AcpState` manages: active sessions, discovery cache, connection servers, agent cache, session pool, deploy locks, restorable sessions
