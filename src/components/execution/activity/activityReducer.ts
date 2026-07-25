@@ -30,7 +30,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       const interrupted = interruptStalledToolCalls(flushed);
       return {
         ...interrupted,
-        items: finalizeLastStreaming(interrupted.items),
+        items: finalizeStreaming(interrupted.items),
         isTurnActive: false,
         sessionEnded: true,
         endReason: "completed",
@@ -41,7 +41,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       const interrupted = interruptStalledToolCalls(flushed);
       return {
         ...interrupted,
-        items: finalizeLastStreaming(interrupted.items),
+        items: finalizeStreaming(interrupted.items),
         isTurnActive: false,
       };
     }
@@ -54,7 +54,7 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return { ...state, items: [...state.items, { type: "error", item: errorItem }] };
     }
     case "finalize_streaming":
-      return { ...state, items: finalizeLastStreaming(state.items) };
+      return { ...state, items: finalizeStreaming(state.items) };
     case "set_initialized":
       return { ...state, isInitializing: false };
     case "terminal_output": {
@@ -76,6 +76,18 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     default:
       return state;
   }
+}
+
+/**
+ * ACP treats a change in `messageId` as the start of a new message, so a chunk carrying a
+ * different id must not extend the block currently streaming.
+ *
+ * A chunk without an id carries no boundary information: many agents never send the field,
+ * and treating that as a boundary would split every one of their messages per chunk. Only a
+ * genuine disagreement between two known ids ends a block.
+ */
+function continuesMessage(existing: string | undefined, incoming: string | undefined): boolean {
+  return existing === undefined || incoming === undefined || existing === incoming;
 }
 
 function interruptStalledToolCalls(state: ActivityState): ActivityState {
@@ -130,8 +142,18 @@ function processEvent(
 
       // Fast path: last item is the streaming thought (no interleaving, common case)
       const lastItem = newState.items[newState.items.length - 1];
-      if (lastItem?.type === "thinking" && lastItem.item.isStreaming) {
-        const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
+      if (
+        lastItem?.type === "thinking" &&
+        lastItem.item.isStreaming &&
+        continuesMessage(lastItem.item.messageId, messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          text: lastItem.item.text + payload.content.text,
+          // Adopt the first id we learn, so a later chunk can still resume this block
+          // after an interleaved tool call.
+          messageId: lastItem.item.messageId ?? messageId,
+        };
         newState.items = [...newState.items.slice(0, -1), { type: "thinking", item: updated }];
         return newState;
       }
@@ -166,25 +188,33 @@ function processEvent(
         text: payload.content.text,
         isStreaming: true,
       };
-      newState.items = [
-        ...finalizeLastStreaming(newState.items),
-        { type: "thinking", item: thought },
-      ];
+      newState.items = [...finalizeStreaming(newState.items), { type: "thinking", item: thought }];
       return newState;
     }
 
     case "agent_message_chunk": {
       const lastItem = newState.items[newState.items.length - 1];
-      if (lastItem && lastItem.type === "message" && lastItem.item.isStreaming) {
-        const updated = { ...lastItem.item, text: lastItem.item.text + payload.content.text };
+      if (
+        lastItem &&
+        lastItem.type === "message" &&
+        lastItem.item.isStreaming &&
+        continuesMessage(lastItem.item.messageId, payload.messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          text: lastItem.item.text + payload.content.text,
+          messageId: lastItem.item.messageId ?? payload.messageId,
+        };
         newState.items = [...newState.items.slice(0, -1), { type: "message", item: updated }];
       } else {
-        // Finalize any streaming thinking block before starting agent message
-        const items = finalizeLastStreaming(newState.items);
+        // Finalize the streaming block — a thinking block, or the message this chunk just
+        // declared finished by carrying a different messageId.
+        const items = finalizeStreaming(newState.items);
         const msg: MessageItem = {
           id: `msg-${crypto.randomUUID()}`,
           text: payload.content.text,
           isStreaming: true,
+          messageId: payload.messageId,
         };
         newState.items = [...items, { type: "message", item: msg }];
       }
@@ -192,7 +222,7 @@ function processEvent(
     }
 
     case "tool_call": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const parentToolCallId = extractAgentMeta(raw).parentToolCallId;
       const tc: ToolCallItem = {
         toolCallId: payload.toolCallId,
@@ -263,7 +293,7 @@ function processEvent(
     }
 
     case "tool_call_update": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const newMap = new Map(newState.toolCallMap);
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
@@ -325,7 +355,7 @@ function processEvent(
     }
 
     case "plan": {
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       return {
         ...newState,
         items,
@@ -354,10 +384,18 @@ function processEvent(
       if (state.suppressUserChunks) {
         return newState;
       }
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       const lastItem = items[items.length - 1];
-      if (lastItem && lastItem.type === "userMessage") {
-        const updated = { ...lastItem.item, content: lastItem.item.content + payload.content.text };
+      if (
+        lastItem &&
+        lastItem.type === "userMessage" &&
+        continuesMessage(lastItem.item.messageId, payload.messageId)
+      ) {
+        const updated = {
+          ...lastItem.item,
+          content: lastItem.item.content + payload.content.text,
+          messageId: lastItem.item.messageId ?? payload.messageId,
+        };
         return {
           ...newState,
           items: [...items.slice(0, -1), { type: "userMessage", item: updated }],
@@ -367,6 +405,7 @@ function processEvent(
         id: `user-${crypto.randomUUID()}`,
         content: payload.content.text,
         sentAt: Date.now(),
+        messageId: payload.messageId,
       };
       return {
         ...newState,
@@ -385,7 +424,7 @@ function processEvent(
       };
       const newCanvasMap = new Map(newState.canvasMap);
       newCanvasMap.set(payload.surfaceId, surface);
-      const items = finalizeLastStreaming(newState.items);
+      const items = finalizeStreaming(newState.items);
       return {
         ...newState,
         items: [...items, { type: "canvas", item: { surfaceId: payload.surfaceId } }],
@@ -437,17 +476,20 @@ function extractPlanTitle(payload: {
   return match ? match[1].trim() : null;
 }
 
-function finalizeLastStreaming(items: ActivityItem[]): ActivityItem[] {
-  if (items.length === 0) return items;
-  const last = items[items.length - 1];
-  if (last.type === "message" && last.item.isStreaming) {
-    return [...items.slice(0, -1), { type: "message", item: { ...last.item, isStreaming: false } }];
-  }
-  if (last.type === "thinking" && last.item.isStreaming) {
-    return [
-      ...items.slice(0, -1),
-      { type: "thinking", item: { ...last.item, isStreaming: false } },
-    ];
-  }
-  return items;
+/**
+ * Clears `isStreaming` on every item, not just the tail. Resuming a thought that a tool call
+ * interrupted re-marks an item that is no longer last, and a tail-only sweep would leave that
+ * flag set for the rest of the session — the block shimmers as "Thinking" forever and never
+ * becomes collapsible. A resumed thought re-sets the flag on its next chunk, so sweeping the
+ * whole list costs nothing.
+ */
+function finalizeStreaming(items: ActivityItem[]): ActivityItem[] {
+  const isStreaming = (entry: ActivityItem) =>
+    (entry.type === "message" || entry.type === "thinking") && entry.item.isStreaming;
+  if (!items.some(isStreaming)) return items;
+  return items.map((entry) =>
+    isStreaming(entry)
+      ? ({ type: entry.type, item: { ...entry.item, isStreaming: false } } as ActivityItem)
+      : entry,
+  );
 }

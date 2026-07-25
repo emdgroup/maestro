@@ -19,6 +19,8 @@ export type ConfigOption = {
 export type AgentMessageChunk = {
   sessionUpdate: "agent_message_chunk";
   content: { type: "text"; text: string };
+  /** ACP: chunks of one message share this; a change means a new message started. */
+  messageId?: string;
 };
 
 export type AgentThoughtChunk = {
@@ -92,6 +94,8 @@ export type UserMessagePayload = {
 export type UserMessageChunkPayload = {
   sessionUpdate: "user_message_chunk";
   content: { type: "text"; text: string };
+  /** ACP: chunks of one message share this; a change means a new message started. */
+  messageId?: string;
 };
 
 export type ConfigOptionUpdatePayload = {
@@ -146,6 +150,7 @@ export type MessageItem = {
   id: string;
   text: string;
   isStreaming: boolean;
+  messageId?: string;
 };
 
 export type ThinkingItem = {
@@ -160,6 +165,7 @@ export type UserMessageItem = {
   content: string;
   attachments?: string[];
   sentAt: number;
+  messageId?: string;
 };
 
 export type ToolCallItem = {
