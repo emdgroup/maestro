@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result as SqlResult};
+use std::path::{Path, PathBuf};
 
 pub const SCHEMA_VERSION: u32 = 24;
 
@@ -189,20 +190,77 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status)
 CREATE INDEX IF NOT EXISTS idx_session_aliases_lookup ON session_aliases(project_id, agent_id);
 "#;
 
-pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
-    // Enable foreign keys
-    conn.execute("PRAGMA foreign_keys = ON;", [])?;
+fn read_user_version(conn: &Connection) -> u32 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0)
+}
 
-    // Get current schema version
-    let current_version: u32 = conn.query_row(
-        "PRAGMA user_version",
-        [],
-        |row| row.get(0),
-    ).unwrap_or(0);
+/// Snapshot the database before an upgrade so a bad migration can be undone by hand.
+///
+/// Returns the backup path, or `None` when there is nothing to migrate. Uses `VACUUM INTO`
+/// rather than copying the file: in WAL mode the most recent commits may still live in
+/// `maestro.db-wal`, so a plain copy can produce a snapshot that is missing data.
+pub fn backup_before_migration(
+    conn: &Connection,
+    db_path: &Path,
+) -> Result<Option<PathBuf>, String> {
+    let current_version = read_user_version(conn);
+    if current_version == 0 || current_version >= SCHEMA_VERSION {
+        return Ok(None);
+    }
+
+    let file_name = db_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("Database path has no file name: {}", db_path.display()))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since_epoch| since_epoch.as_secs())
+        .unwrap_or(0);
+    let backup_path =
+        db_path.with_file_name(format!("{file_name}.bak-v{current_version}-{stamp}"));
+
+    // VACUUM INTO refuses to write an existing file.
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path)
+            .map_err(|e| format!("Failed to replace stale database backup: {e}"))?;
+    }
+
+    conn.execute("VACUUM INTO ?1", [backup_path.to_string_lossy().as_ref()])
+        .map_err(|e| format!("Failed to back up database before migration: {e}"))?;
+
+    Ok(Some(backup_path))
+}
+
+pub fn initialize_schema(conn: &Connection) -> Result<(), String> {
+    // Enable foreign keys. This is per-connection state, so it has to happen on every call and
+    // not only when there is schema work to do.
+    conn.execute("PRAGMA foreign_keys = ON;", [])
+        .map_err(|e| e.to_string())?;
+
+    let current_version = read_user_version(conn);
 
     if current_version == SCHEMA_VERSION {
         return Ok(());
     }
+
+    // Refusing here is what keeps the unconditional `PRAGMA user_version` write below from
+    // relabelling a newer database as this version, which would make a later upgrade re-run
+    // migrations that have already been applied.
+    if current_version > SCHEMA_VERSION {
+        return Err(format!(
+            "This database was created by a newer version of Maestro (schema v{current_version}, \
+             this build supports v{SCHEMA_VERSION}). Update Maestro to continue, or move \
+             maestro.db aside to start with an empty database."
+        ));
+    }
+
+    apply_schema(conn, current_version).map_err(|e| e.to_string())
+}
+
+fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
+    // Enable foreign keys
+    conn.execute("PRAGMA foreign_keys = ON;", [])?;
 
     if current_version == 0 {
         // Fresh install: create full schema
@@ -229,8 +287,16 @@ pub fn initialize_schema(conn: &Connection) -> SqlResult<()> {
         "#)?;
         conn.execute_batch(SCHEMA_V24_FULL)?;
     } else {
-        // current_version >= 22: apply incremental migrations
-        run_migrations(conn, current_version)?;
+        // current_version >= 22: apply incremental migrations.
+        // Committing the migrations and the version bump together means a failure part-way
+        // through cannot leave a half-migrated database behind. The two branches above are
+        // deliberately outside a transaction: they toggle `PRAGMA foreign_keys`, which SQLite
+        // ignores inside one.
+        let transaction = conn.unchecked_transaction()?;
+        run_migrations(&transaction, current_version)?;
+        transaction.execute(&format!("PRAGMA user_version = {}", SCHEMA_VERSION), [])?;
+        transaction.commit()?;
+        return Ok(());
     }
 
     conn.execute(
@@ -371,5 +437,148 @@ mod tests {
         assert!(task_columns.contains(&"auto_approve".to_string()));
         assert!(task_columns.contains(&"isolated_worktree".to_string()));
         assert!(task_columns.contains(&"agent_id".to_string()));
+    }
+
+    /// Foreign keys are per-connection, so the early return for an already-current database must
+    /// still enable them.
+    #[test]
+    fn test_foreign_keys_enabled_when_schema_already_current() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute("PRAGMA foreign_keys = OFF;", []).unwrap();
+
+        // Second call takes the "already at SCHEMA_VERSION" path.
+        initialize_schema(&conn).unwrap();
+
+        let fk_enabled: u32 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk_enabled, 1, "foreign keys must be on after every call");
+    }
+
+    /// A database written by a newer build must be refused rather than relabelled, otherwise the
+    /// version bump would silently claim the newer schema is this version.
+    #[test]
+    fn test_newer_schema_version_is_rejected() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(&format!("PRAGMA user_version = {}", SCHEMA_VERSION + 1), [])
+            .unwrap();
+
+        let result = initialize_schema(&conn);
+
+        assert!(result.is_err(), "a newer schema version must not be accepted");
+        let message = result.unwrap_err();
+        assert!(
+            message.contains("newer version of Maestro"),
+            "error should explain the cause, got: {message}"
+        );
+        let version = read_user_version(&conn);
+        assert_eq!(
+            version,
+            SCHEMA_VERSION + 1,
+            "the stored version must be left untouched"
+        );
+    }
+
+    /// The v22+ path migrates in place, so existing rows must survive.
+    #[test]
+    fn test_incremental_migration_preserves_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        // Rewind to the first version that migrates rather than drops.
+        conn.execute("PRAGMA user_version = 22", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let surviving: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(surviving, 1, "migrating from v22 must not drop project rows");
+        assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
+    }
+
+    /// v24 renamed two task statuses; the migration must rewrite existing rows.
+    #[test]
+    fn test_migration_to_v24_renames_task_statuses() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'legacy backlog', 'Backlog', 'main', '2026-01-01', '2026-01-01'), \
+                    (2, 1, 'legacy ready', 'Ready', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("PRAGMA user_version = 23", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let statuses: Vec<String> = conn
+            .prepare("SELECT status FROM tasks ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(statuses, vec!["Planning".to_string(), "Queue".to_string()]);
+    }
+
+    #[test]
+    fn test_backup_written_only_when_migration_is_pending() {
+        let dir = std::env::temp_dir().join(format!(
+            "maestro-schema-backup-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("maestro.db");
+        let _ = std::fs::remove_file(&db_path);
+
+        let conn = Connection::open(&db_path).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        // Already current: nothing to snapshot.
+        assert!(backup_before_migration(&conn, &db_path).unwrap().is_none());
+
+        conn.execute("PRAGMA user_version = 22", []).unwrap();
+        let backup = backup_before_migration(&conn, &db_path)
+            .unwrap()
+            .expect("a pending migration must produce a backup");
+
+        assert!(backup.exists(), "backup file should be on disk");
+        assert!(
+            backup.file_name().unwrap().to_string_lossy().contains("bak-v22"),
+            "backup name should record the version it came from: {}",
+            backup.display()
+        );
+
+        // The snapshot must be a usable database, not a truncated file.
+        let restored = Connection::open(&backup).unwrap();
+        let table_count: i64 = restored
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='projects'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 1, "backup should contain the schema");
+
+        drop(restored);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
