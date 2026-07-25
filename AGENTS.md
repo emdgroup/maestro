@@ -69,30 +69,33 @@ cargo check           # Check compilation without building
 - `views/` — top-level route views (KanbanView, AgentsView, WorktreesView, SettingsView, ProjectPickerView)
 - `components/` — reusable UI components organized by domain (kanban/, execution/, task/, common/, ui/, views/)
   - `components/views/` — sub-view components rendered inside route views (BoardView, ArchiveView); distinct from top-level `src/views/`
-- `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, issue-tracking-lookup.service)
-- `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, sessionActivityStore)
+- `services/` — IPC service layer with co-located TanStack Query hooks (task.service, worktree.service, execution.service, project.service, connection.service, settings.service, integration.service, integration-lookup.service, acp-auth.service, canvas.service)
+- `store/` — Zustand stores (boardStore, configStore, navigationStore, projectStore, reviewStore, sessionActivityStore, shortcutStore)
 - `contexts/` — React contexts (ConnectionContext, KanbanContext)
 - `providers/` — Provider components (QueryProvider, ThemeProvider)
 - `utils/` — hooks/ (useExecuteTask, useKeyboardNavigation, usePathNavigation, etc.; not TanStack Query — those live in services/), helpers/, constants/
 
 **Rust backend (`src-tauri/src/`):**
 
-- `ipc/` — Tauri command handlers, one file per domain (`task_handlers.rs`, `project_handlers.rs`, `worktree_handlers.rs`, `execution_handlers.rs`, `review_handlers.rs`, `acp_handlers.rs`, `ssh_handlers.rs`, `integration_handlers.rs`, `issue_tracking_handlers.rs`, `issue_tracking_lookup_handlers.rs`, `filesystem_handlers.rs`, `sftp_handlers.rs`, `settings_handlers.rs`)
-- `models/` — Data models with ts-rs derive
-- `db/` — SQLite schema, storage, migrations
-- `acp/` — ACP session management (manager, registry, transport)
-- `ssh/` — SSH connections (session, password manager)
-- `git/` — Git remote operations
-- `process/` — PTY/process spawning (local + remote)
-- `streaming/` — WebSocket streaming to frontend
-- `issue_tracking/` — provider-specific issue sync logic
-- `wsl.rs` — WSL distro detection and connection helpers
-- `project_lock.rs` — file-based single-instance project locking
-- `error.rs` — shared error types
+Code is organized by **domain**, not by layer. Each domain module owns its own
+handlers (`handlers.rs` or `*_handlers.rs`), models (`models.rs` or `*_models.rs`),
+and logic, so a feature touches one directory rather than three.
+
+- `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
+- `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (file-based single-instance locking), `session_state.rs`, `prime.rs`
+- `task/` — task CRUD, handlers, models, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
+- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`
+- `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `canvas.rs`, and session/prompt/discovery/file/meta/auth handlers
+- `execution/` — PTY/process spawning (local + remote), `queue.rs`, `streaming.rs`, handlers, models
+- `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
+- `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
+- `settings/` — app settings handlers and models
+- `error.rs` — shared `MaestroError` type
+- `ipc/mod.rs`, `models/mod.rs` — thin re-export shims only (no code), kept so `lib.rs`'s `collect_commands![]` and older `crate::models::*` paths keep resolving. New code should import from the owning domain module directly.
 
 **maestro-server (`maestro-server/src/`):**
 
-Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry, message routing), `session_handler.rs` (ACP session lifecycle), `agent.rs` (subprocess spawn), `detection.rs` (agent discovery), `registry.rs` (session registry), `sessions.rs` (session types), `terminal.rs` (terminal I/O), `file_ops.rs` (file operations).
+Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry), `dispatch.rs` (message routing), `session/` (`handlers.rs` ACP session lifecycle, `connection.rs`, `command_loop.rs`), `sessions.rs` (session types), `agent/` (`spawn.rs` subprocess spawn, `detection.rs` agent discovery, `registry.rs` agent registry), `agent_restart.rs`, `terminal.rs` (terminal I/O), `file_ops.rs` (file operations), `validate_canvas.rs`, `tool_check.rs`.
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
@@ -102,9 +105,11 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V19 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V24 (destructive migration on version mismatch). Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `session_aliases`
+`SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
+
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
 
 ### IPC Communication
 
@@ -114,7 +119,7 @@ All IPC uses TanStack Query — components never call `invoke()` directly. The p
 Component → TanStack Query hook → service function (invoke()) → Rust #[tauri::command]
 ```
 
-Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]`, split across domain files in `src-tauri/src/ipc/`, registered via `tauri-specta`'s `collect_commands![]` in `lib.rs`.
+Service functions in `src/services/` wrap `invoke()` and export TanStack Query hooks directly (useQuery/useMutation co-located with the invoke call). `src/utils/hooks/` contains non-query custom hooks (keyboard nav, path nav, etc.). Rust handlers marked `#[tauri::command]` live in the handler file of their owning domain module (e.g. `task/handlers.rs`, `git/review_handlers.rs`, `acp/session_handlers.rs`); `ipc/mod.rs` re-exports them all so `lib.rs` can register them via `tauri-specta`'s `collect_commands![]` (currently ~171 commands).
 
 `src/types/bindings.ts` is fully generated — do not edit manually. It exports both TypeScript types (all Rust model structs/enums annotated with `#[derive(TS)]`) and a `commands` const object (typed wrappers for every registered IPC command). Import types with `import type { Task } from "@/types/bindings"`.
 
@@ -176,9 +181,16 @@ No `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug 
 
 When modifying Rust models:
 
-1. Run `pnpm tauri:gen` (runs `cargo test generate_typescript_bindings`)
+1. Run `bun run tauri:gen` (runs `cargo test generate_typescript_bindings`)
 2. TS types appear in `src/types/bindings.ts`
 3. Import in React components
+
+Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro --lib`, so any
+Rust test run rewrites `src/types/bindings.ts` — as unformatted output, which then differs from the
+oxfmt-formatted committed copy. A diff there after running tests is usually formatting churn, not a
+stale-bindings signal; compare the exported command/type names before assuming it is out of date.
+The same applies to `maestro-server/src/assets/registry.json`, which `maestro-server/build.rs`
+overwrites from a CDN on every build.
 
 ### Project-Local Storage (`.maestro/`)
 
@@ -227,7 +239,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory
-- Schema version: 19. Migration is destructive (drops all tables on version mismatch)
+- Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Migration is destructive (drops all tables on version mismatch)
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
@@ -235,7 +247,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 - ACP sessions require `maestro-server` binary on PATH; absence surfaces as "maestro-server not found" in UI
 - Schema migration drops all tables on version mismatch (no data preservation strategy)
 - Projects have three connection types: local, SSH (via `ssh_connections`), WSL (via `wsl_connections`)
-- Handlers needing both a `Project` and `GitConnection` use `get_project_with_git_conn()` from `db/connection.rs`
+- Handlers needing both a `Project` and `GitConnection` use `get_project_with_git_conn()` from `core/connection.rs`
 - `AcpState` manages: active sessions, discovery cache, connection servers, agent cache, session pool, deploy locks, restorable sessions
 
 # Pull request hygiene
