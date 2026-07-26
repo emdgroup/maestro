@@ -1017,9 +1017,10 @@ pub(crate) async fn dispatch_message(
             .await);
         }
 
-        MaestroRpcMessage::Request(ServerRequest::Pong { seq }) => {
-            eprintln!("[heartbeat] pong ack seq={seq}");
-        }
+        // The host logs both sides of the heartbeat at trace; echoing it here would either be
+        // discarded (this process is spawned with a null stderr on one path) or, if forwarded as
+        // a diagnostic, put every ping on the IPC channel.
+        MaestroRpcMessage::Request(ServerRequest::Pong { seq: _ }) => {}
 
         MaestroRpcMessage::Response(_) => {}
     }

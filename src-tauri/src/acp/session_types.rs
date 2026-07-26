@@ -18,6 +18,14 @@ pub type PendingReply<T> = Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T,
 pub type PendingReplyMap<T> =
     Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<Result<T, String>>>>>;
 
+/// Session-update payloads held until the frontend listener registers and drains them.
+///
+/// Stored pre-serialized rather than as `serde_json::Value`: nothing reads a payload while it
+/// is buffered — `drain_acp_replay` only re-emits it — and a parsed `Value` tree costs several
+/// times the raw JSON it was built from. A replayed session buffers its entire transcript, so
+/// that multiplier is the difference between a few MB and tens of MB per unopened session.
+pub type ReplayBuffer = Arc<std::sync::Mutex<Option<Vec<Box<serde_json::value::RawValue>>>>>;
+
 /// Single authentication method exposed to the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -184,7 +192,7 @@ pub struct AcpProcess {
     /// Replay buffer for session-load sessions. `Some(vec)` while waiting for the frontend
     /// listener to register; `None` after drain — events emit directly.
     /// Fresh spawn sessions use `None` (no buffering needed).
-    pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    pub replay_buffer: ReplayBuffer,
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
@@ -258,7 +266,7 @@ pub struct ReaderTaskContext {
     pub pending_file_search: PendingReply<Vec<String>>,
     pub pending_file_read: PendingReply<String>,
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
-    pub replay_buffer: Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
     pub preamble_injected: Arc<AtomicBool>,
     pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,

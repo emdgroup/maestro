@@ -231,16 +231,12 @@ pub async fn attach_terminal(
         };
 
         // Sender runs concurrently with the reader, forwarding output to the frontend in real time.
-        // It also accumulates output for DB persistence once the session ends.
         let sender_task = tokio::spawn(async move {
-            let mut accumulated = String::new();
             while let Some(output) = rx.recv().await {
-                accumulated.push_str(&output);
                 if output_channel.send(output).is_err() {
                     break;
                 }
             }
-            accumulated
         });
 
         // PTY reader in a blocking thread — std::io::Read::read() is a blocking syscall and

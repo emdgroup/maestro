@@ -86,7 +86,7 @@ pub async fn git_diff(
     branch: &str,
     base_branch: &str,
 ) -> Result<String, String> {
-    crate::acp::manager::append_debug_log(&format!(
+    log::debug!(
         "[git] diff branch={branch:?} base={base_branch:?} conn={}",
         match conn {
             GitConnection::Local { path } => format!("local path={path}"),
@@ -94,7 +94,7 @@ pub async fn git_diff(
             GitConnection::Wsl { distro, path } => format!("wsl distro={distro} path={path}"),
             GitConnection::Docker { container_name, path } => format!("docker container={container_name} path={path}"),
         }
-    ));
+    );
     let result = match conn {
         GitConnection::Local { path } => {
             git_diff_local(path, branch, base_branch).await
@@ -114,7 +114,7 @@ pub async fn git_diff(
         }
     };
     if let Err(ref e) = result {
-        crate::acp::manager::append_debug_log(&format!("[git] diff FAILED: {e}"));
+        log::warn!("[git] diff FAILED: {e}");
     }
     result
 }

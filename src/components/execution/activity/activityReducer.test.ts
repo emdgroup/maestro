@@ -608,6 +608,35 @@ describe("activityReducer — canvases and terminals", () => {
     expect(state.terminalBuffers.get("t2")).toBe("other\n");
   });
 
+  it("bounds the catch-up buffer once it passes the trim trigger", () => {
+    // 60 chars per line; 30k lines is ~1.8M chars, well past the 1M trigger.
+    const line = `${"x".repeat(59)}\n`;
+    let state = makeState();
+    for (let i = 0; i < 30_000; i++) {
+      state = activityReducer(state, { type: "terminal_output", terminalId: "t1", output: line });
+    }
+
+    const buffer = state.terminalBuffers.get("t1")!;
+    expect(buffer.length).toBeLessThanOrEqual(1_000_000);
+    // The most recent output is what a late-opening tab needs, so the tail must survive.
+    expect(buffer.endsWith(line)).toBe(true);
+    // Trimming cuts at a line boundary, never mid-line.
+    expect(buffer.startsWith("x".repeat(59))).toBe(true);
+  });
+
+  it("leaves short terminal output untouched", () => {
+    let state = makeState();
+    for (let i = 0; i < 100; i++) {
+      state = activityReducer(state, {
+        type: "terminal_output",
+        terminalId: "t1",
+        output: `line ${i}\n`,
+      });
+    }
+    expect(state.terminalBuffers.get("t1")).toContain("line 0\n");
+    expect(state.terminalBuffers.get("t1")).toContain("line 99\n");
+  });
+
   it("merges canvas components by id instead of appending duplicates", () => {
     let state = activityReducer(
       makeState(),

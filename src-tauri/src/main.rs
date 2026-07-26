@@ -5,11 +5,50 @@ use maestro_lib::core::{init_db, AppState};
 use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+
+/// A bundled app has no terminal attached, so anything written to stderr is discarded — which is
+/// why a log file exists at all: it is the only thing a user can send back with a bug report.
+///
+/// The level is deliberately conservative. `trace` carries the raw ACP frames, and those contain
+/// prompt text, agent output and the contents of files the agent read, so it stays off unless
+/// someone sets `MAESTRO_LOG` for a debugging session.
+fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    let level = std::env::var("MAESTRO_LOG")
+        .ok()
+        .and_then(|requested| requested.parse::<log::LevelFilter>().ok())
+        .unwrap_or(log::LevelFilter::Info);
+
+    tauri_plugin_log::Builder::new()
+        // The default targets are stdout plus the log directory; stderr is the conventional
+        // stream for diagnostics and keeps stdout free for anything that needs to pipe.
+        .clear_targets()
+        .target(Target::new(TargetKind::Stderr))
+        .target(Target::new(TargetKind::LogDir { file_name: None }))
+        // Dependencies only get a say when something is wrong. At debug they are a firehose —
+        // keyring narrates every credential lookup, rustls every handshake, the updater dumps the
+        // whole release manifest — and `MAESTRO_LOG=debug` would bury our own lines in it.
+        .level(log::LevelFilter::Warn)
+        .level_for("maestro", level)
+        .level_for("maestro_lib", level)
+        // The plugin defaults to a 40 KB file and keeps one. At trace level that truncates to
+        // the last few seconds, which is useless for the session that produced a bug.
+        .max_file_size(5 * 1024 * 1024)
+        .rotation_strategy(RotationStrategy::KeepSome(2))
+        .build()
+}
 
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = app.path().app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    // First line of every log: the two facts a bug report is useless without.
+    log::info!(
+        "Maestro {} starting; data dir {}",
+        env!("CARGO_PKG_VERSION"),
+        app_data_dir.display()
+    );
+
     let db_path = app_data_dir.join("maestro.db");
 
     // Initialize database — init_db returns Result<Connection, String>
@@ -36,6 +75,8 @@ fn main() {
     let tauri_builder = tauri_builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     let app = tauri_builder
+        // Registered first so failures in the plugins and setup below are captured.
+        .plugin(log_plugin())
         .setup(setup)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

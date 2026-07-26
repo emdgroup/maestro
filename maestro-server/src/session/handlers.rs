@@ -77,7 +77,7 @@ macro_rules! configure_acp_builder {
                             let handle = terminals.get(&terminal_id_str).ok_or_else(|| {
                                 acp::Error::new(-32603, "unknown terminal")
                             })?;
-                            let output = handle.output_buf.lock().await.clone();
+                            let output = handle.output_buf.lock().await.contents();
                             let truncated = handle.truncated.load(std::sync::atomic::Ordering::Relaxed);
                             let exit_status =
                                 handle.exit_status.lock().await.as_ref().map(|info| {

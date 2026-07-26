@@ -530,18 +530,32 @@ export function AgentActivityPanel({
             lastAgentSectionId={lastAgentSectionId}
           />
           <div className="flex-1 relative min-h-0 overflow-hidden">
-            <AgentStreamContent
-              agentSections={agentSections}
-              toolCallMap={liveState.toolCallMap}
-              canvasMap={liveState.canvasMap}
-              onOpenPlanOverlay={handleOpenPlanOverlay}
-              onOpenFile={handleOpenFile}
-              inlinePermission={inlinePermission}
-              bottomPadding={composeBarHeight}
-              onAuthLogin={
-                hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
-              }
-            />
+            {/*
+              Only the selected session's conversation is rendered. AgentMonitor keeps a panel
+              mounted for every ACP session so its listeners and reducer state survive
+              navigation, which means without this gate every session's full message tree —
+              rendered Markdown, Shiki, KaTeX, Mermaid — sits in the DOM at once.
+
+              Scoped to the message list rather than the whole panel on purpose: ComposeBar
+              holds the unsent draft in local state, and the side panel owns live xterm
+              instances, so unmounting either would lose user-visible content. Switching
+              sessions re-renders the list from `liveState`, which the still-mounted hooks
+              have kept up to date; nothing is refetched.
+            */}
+            {isSelected && (
+              <AgentStreamContent
+                agentSections={agentSections}
+                toolCallMap={liveState.toolCallMap}
+                canvasMap={liveState.canvasMap}
+                onOpenPlanOverlay={handleOpenPlanOverlay}
+                onOpenFile={handleOpenFile}
+                inlinePermission={inlinePermission}
+                bottomPadding={composeBarHeight}
+                onAuthLogin={
+                  hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
+                }
+              />
+            )}
             <AgentBottomBar
               isSessionDead={isSessionDead}
               showCompose={showCompose}

@@ -1,16 +1,67 @@
 use ignore::WalkBuilder;
 use maestro_protocol::{FileReadRequest, FileSearchRequest};
+use std::collections::VecDeque;
 
-/// Truncate `buf` from the beginning to at most `limit` bytes, on a UTF-8 char boundary.
-pub(crate) fn truncate_buf(buf: &mut String, limit: usize) {
-    if buf.len() > limit {
-        let excess = buf.len() - limit;
-        let safe_pos = buf
-            .char_indices()
-            .map(|(i, _)| i)
-            .find(|&i| i >= excess)
-            .unwrap_or(buf.len());
-        *buf = buf[safe_pos..].to_string();
+/// Retained terminal output, held as discrete lines with a running byte total.
+///
+/// Lines rather than one `String` because trimming must stay cheap: an agent may request a
+/// byte cap and then produce far more output than that, so the cap is hit once and then on
+/// every subsequent line. Popping whole lines off the front is O(1) amortized — each line is
+/// pushed once and popped once. Trimming a single `String` in place is not: it costs a rescan
+/// and a copy of the whole retained buffer per line, which is quadratic in the total output.
+pub(crate) struct OutputBuffer {
+    lines: VecDeque<String>,
+    bytes: usize,
+}
+
+impl OutputBuffer {
+    pub(crate) fn new() -> Self {
+        Self { lines: VecDeque::new(), bytes: 0 }
+    }
+
+    /// Append `chunk`, dropping whole lines from the front while `limit` is exceeded.
+    /// Returns true if anything was dropped, so the caller can set the `truncated` flag.
+    pub(crate) fn push(&mut self, chunk: String, limit: Option<usize>) -> bool {
+        self.bytes += chunk.len();
+        self.lines.push_back(chunk);
+
+        let Some(limit) = limit else {
+            return false;
+        };
+
+        let mut truncated = false;
+        while self.bytes > limit && self.lines.len() > 1 {
+            if let Some(front) = self.lines.pop_front() {
+                self.bytes -= front.len();
+                truncated = true;
+            }
+        }
+
+        // A single line longer than the whole cap still has to be trimmed, or the cap would
+        // be a suggestion. Only reachable for one oversized line, so the in-place cost is fine.
+        if self.bytes > limit {
+            if let Some(last) = self.lines.back_mut() {
+                let excess = last.len() - limit;
+                let mut split = excess;
+                while split < last.len() && !last.is_char_boundary(split) {
+                    split += 1;
+                }
+                last.drain(..split);
+                self.bytes = last.len();
+                truncated = true;
+            }
+        }
+
+        truncated
+    }
+
+    /// The retained output as a single string, oldest line first.
+    pub(crate) fn contents(&self) -> String {
+        let mut out = String::with_capacity(self.bytes);
+        for line in &self.lines {
+            out.push_str(line);
+        }
+        out
     }
 }
 
@@ -128,4 +179,67 @@ pub(crate) async fn handle_file_read(req: &FileReadRequest) -> Result<String, St
     tokio::fs::read_to_string(&canonical)
         .await
         .map_err(|e| format!("Cannot read file: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputBuffer;
+
+    #[test]
+    fn no_limit_retains_everything() {
+        let mut buf = OutputBuffer::new();
+        for i in 0..1000 {
+            assert!(!buf.push(format!("line {i}\n"), None));
+        }
+        assert!(buf.contents().starts_with("line 0\n"));
+        assert!(buf.contents().ends_with("line 999\n"));
+    }
+
+    #[test]
+    fn under_limit_is_not_truncated() {
+        let mut buf = OutputBuffer::new();
+        assert!(!buf.push("hello\n".to_string(), Some(100)));
+        assert!(!buf.push("world\n".to_string(), Some(100)));
+        assert_eq!(buf.contents(), "hello\nworld\n");
+    }
+
+    #[test]
+    fn drops_oldest_lines_and_reports_truncation() {
+        let mut buf = OutputBuffer::new();
+        // Each line is 8 bytes ("line N\n" is 7 for single digits); cap at 30 bytes.
+        let mut ever_truncated = false;
+        for i in 0..20 {
+            ever_truncated |= buf.push(format!("line {i}\n"), Some(30));
+        }
+        assert!(ever_truncated);
+        let contents = buf.contents();
+        assert!(contents.len() <= 30, "retained {} bytes", contents.len());
+        assert!(contents.ends_with("line 19\n"));
+        assert!(!contents.contains("line 0\n"));
+    }
+
+    #[test]
+    fn single_line_longer_than_cap_is_trimmed_to_cap() {
+        let mut buf = OutputBuffer::new();
+        assert!(buf.push("x".repeat(500), Some(100)));
+        assert_eq!(buf.contents().len(), 100);
+    }
+
+    #[test]
+    fn trimming_an_oversized_line_respects_char_boundaries() {
+        let mut buf = OutputBuffer::new();
+        // 2-byte chars: a cap that lands mid-char must round forward, not panic or split.
+        buf.push("é".repeat(200), Some(101));
+        let contents = buf.contents();
+        assert!(contents.len() <= 101);
+        assert!(contents.chars().all(|c| c == 'é'));
+    }
+
+    #[test]
+    fn newest_line_survives_even_when_cap_is_tiny() {
+        let mut buf = OutputBuffer::new();
+        buf.push("old\n".to_string(), Some(4));
+        buf.push("new\n".to_string(), Some(4));
+        assert_eq!(buf.contents(), "new\n");
+    }
 }
