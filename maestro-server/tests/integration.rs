@@ -108,6 +108,7 @@ fn test_spawn_unknown_agent_returns_error() {
         agent_id: "nonexistent-acp-agent-xyz-12345".to_string(),
         session_id: "session-1".to_string(),
         cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
     })));
 
     let resp = read_msg(stdout);
@@ -146,6 +147,7 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
         agent_id: "no-such-agent".to_string(),
         session_id: "session-99".to_string(),
         cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
     })));
     let spawn_resp = read_msg(stdout);
     assert!(
@@ -250,6 +252,7 @@ fn test_protocol_framing_large_prompt_payload() {
         agent_id: "no-agent".to_string(),
         session_id: "session-large".to_string(),
         cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
     })));
     let _ = read_msg(stdout);
 

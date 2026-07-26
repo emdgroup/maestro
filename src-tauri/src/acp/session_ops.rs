@@ -34,6 +34,25 @@ pub fn upsert_session_alias(
     ).map(|_| ())
 }
 
+/// Extra workspace roots for this session, read from the project's `.maestro/settings.json`.
+///
+/// Best-effort by design: a session must still start when the settings file is missing or
+/// unreadable, so a failure here yields no directories rather than aborting the spawn. Paths are
+/// passed through verbatim — `~` is expanded by `maestro-server`, which runs on the machine the
+/// paths refer to.
+async fn additional_directories_for(req: &SessionRequest) -> Vec<String> {
+    let Some(project_id) = req.project_id else {
+        return Vec::new();
+    };
+    match crate::project::settings::load_project_config_for(&req.app_state, project_id).await {
+        Ok(config) => config.additional_directories.unwrap_or_default(),
+        Err(e) => {
+            log::warn!("could not read additional directories for project {project_id}: {e}");
+            Vec::new()
+        }
+    }
+}
+
 /// Fast path: route a new session through a running `ConnectionServer`.
 ///
 /// Returns `true` if the session was registered via the shared server,
@@ -54,6 +73,7 @@ pub async fn try_spawn_via_connection_server(
         agent_id: req.agent_id.clone(),
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
+        additional_directories: additional_directories_for(req).await,
     }));
     let bytes = serialize_message(&spawn_req)?;
     writer_tx
@@ -160,6 +180,7 @@ pub async fn spawn_acp_session_cold(
         agent_id: req.agent_id.clone(),
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
+        additional_directories: additional_directories_for(req).await,
     }));
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
@@ -176,6 +197,7 @@ pub async fn load_acp_session_cold(
         session_id: format!("session-{}", req.log_id),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
+        additional_directories: additional_directories_for(req).await,
     }));
     launch_cold_session(
         target,
@@ -273,6 +295,7 @@ pub async fn try_session_load_via_connection_server(
         session_id: format!("session-{}", req.log_id),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
+        additional_directories: additional_directories_for(req).await,
     }));
     let bytes = serialize_message(&load_msg)?;
 

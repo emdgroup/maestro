@@ -101,6 +101,7 @@ pub struct AgentCapabilities {
     pub supports_auth_logout: bool,
     /// Which MCP transports this agent can connect to, for gating `.mcp.json` entries.
     pub mcp_transports: crate::mcp_config::McpTransportSupport,
+    pub supports_additional_directories: bool,
 }
 
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods
@@ -170,6 +171,8 @@ pub struct ActiveSession {
     pub agent_id: String,
     /// Working directory this session was started in.
     pub cwd: String,
+    /// Extra workspace roots this session was started with, replayed when the agent restarts.
+    pub additional_directories: Vec<String>,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

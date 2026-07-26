@@ -28,17 +28,17 @@ pub(crate) async fn handle_agent_restart(
     }
 
     // Fast-path sessions (shared connection, have cleanup) are candidates for restore.
-    let to_restore: Vec<(String, String, String)> = sessions
+    let to_restore: Vec<(String, String, String, Vec<String>)> = sessions
         .iter()
         .filter(|(_, s)| s.agent_id == dead_agent_id)
         .filter_map(|(sid, s)| {
             s.cleanup
                 .as_ref()
-                .map(|c| (sid.clone(), c.acp_session_id.clone(), s.cwd.clone()))
+                .map(|c| (sid.clone(), c.acp_session_id.clone(), s.cwd.clone(), s.additional_directories.clone()))
         })
         .collect();
 
-    for (maestro_sid, _, _) in &to_restore {
+    for (maestro_sid, _, _, _) in &to_restore {
         if let Some(session) = sessions.remove(maestro_sid) {
             session.task.abort();
             let _ = send_response(
@@ -91,18 +91,20 @@ pub(crate) async fn handle_agent_restart(
 
     if new_conn.capabilities.supports_session_load {
         let conn_handle = AgentConnectionHandle::from(&new_conn);
-        for (maestro_sid, acp_session_id, session_cwd) in &to_restore {
+        for (maestro_sid, acp_session_id, session_cwd, session_roots) in &to_restore {
             let result = load_session_on_connection(
                 &conn_handle,
                 maestro_sid.clone(),
                 acp_session_id.clone(),
                 session_cwd,
+                session_roots,
                 Arc::clone(stdout),
             )
             .await;
             if let Ok(Some((mut session, models, modes, prompt_caps, config_options))) = result {
                 session.agent_id = dead_agent_id.clone();
                 session.cwd = session_cwd.clone();
+                session.additional_directories = session_roots.clone();
                 sessions.insert(maestro_sid.clone(), session);
                 let _ = send_response(
                     stdout,

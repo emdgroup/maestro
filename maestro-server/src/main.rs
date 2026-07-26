@@ -20,6 +20,7 @@ mod sessions;
 mod terminal;
 mod tool_check;
 mod validate_canvas;
+mod workspace_roots;
 
 #[cfg(test)]
 mod tests;
