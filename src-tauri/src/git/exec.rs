@@ -196,3 +196,77 @@ pub async fn run_git_in_dir_lossy(
 ) -> Result<String, String> {
     run_git_in_dir_inner(conn, abs_path, args, true).await
 }
+
+/// Run several git commands in the same directory, returning one stdout per
+/// command. A failed command yields an empty string instead of failing the batch.
+///
+/// For WSL/SSH/Docker connections every invocation pays the full interop
+/// round-trip (wsl.exe spawn, ssh exec, docker exec), so the commands are joined
+/// into a single delimiter-separated shell script and executed in one round-trip.
+/// Local git spawns are cheap; they just run sequentially.
+pub async fn run_git_commands_lossy(
+    conn: &GitConnection,
+    abs_path: &str,
+    commands: &[&[&str]],
+) -> Vec<String> {
+    const DELIM: &str = "__MAESTRO_GIT_BATCH_7f3a9c__";
+
+    let build_script = |git_prefix: String| {
+        commands
+            .iter()
+            .map(|args| {
+                let quoted: Vec<String> = args.iter().map(|a| remote::shell_quote(a)).collect();
+                format!("{} {} 2>/dev/null", git_prefix, quoted.join(" "))
+            })
+            .collect::<Vec<_>>()
+            .join(&format!("; echo {}; ", DELIM))
+            // Force a zero exit so runners that treat non-zero as an error still
+            // return the partial output (e.g. rev-list on a branch with no upstream).
+            + "; true"
+    };
+
+    let output = match conn {
+        GitConnection::Local { .. } => {
+            let mut results = Vec::with_capacity(commands.len());
+            for args in commands {
+                results.push(run_git_in_dir(conn, abs_path, args).await.unwrap_or_default());
+            }
+            return results;
+        }
+        GitConnection::Remote { ssh, .. } => {
+            let script = build_script(format!("git -C {}", remote::shell_quote(abs_path)));
+            ssh.execute_command(&script).await.unwrap_or_default()
+        }
+        GitConnection::Wsl { distro, .. } => {
+            let script = build_script(format!(
+                "git -c http.sslVerify=false -C {}",
+                remote::shell_quote(abs_path)
+            ));
+            TokioCommand::new("wsl.exe")
+                .args(["-d", distro, "--", "sh", "-c", &script])
+                .no_console_window()
+                .output()
+                .await
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default()
+        }
+        GitConnection::Docker { container_name, .. } => {
+            let script = build_script(format!("git -C {}", remote::shell_quote(abs_path)));
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
+            TokioCommand::new(cli.binary())
+                .args(["exec", "-i", container_name, "sh", "-c", &script])
+                .output()
+                .await
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default()
+        }
+    };
+
+    let mut results: Vec<String> = output
+        .split(&format!("{}\n", DELIM))
+        .map(|s| s.to_string())
+        .collect();
+    results.resize(commands.len(), String::new());
+    results
+}

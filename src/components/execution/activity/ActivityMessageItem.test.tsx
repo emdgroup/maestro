@@ -12,6 +12,7 @@ vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }
 vi.mock("katex/dist/katex.min.css", () => ({}));
 
 import { ActivityMessageItem, getCompleteBlocksText } from "./ActivityMessageItem";
+import { splitAtSectionStarts, splitSvgBlocks } from "./markdown-stream-utils";
 import type { MessageItem } from "./types";
 
 function makeMessage(text: string): MessageItem {
@@ -59,6 +60,87 @@ describe("getCompleteBlocksText", () => {
   it("handles heading followed by paragraph", () => {
     const text = "# Heading\n\nParagraph\n\nIncomplete";
     expect(getCompleteBlocksText(text)).toBe("# Heading\n\nParagraph");
+  });
+});
+
+describe("splitAtSectionStarts", () => {
+  it("keeps plain paragraphs as a single section", () => {
+    expect(splitAtSectionStarts("Para1\n\nPara2\n\nPara3")).toEqual(["Para1\n\nPara2\n\nPara3"]);
+  });
+
+  it("cuts before a heading", () => {
+    expect(splitAtSectionStarts("Intro\n\n# Title\n\nBody")).toEqual(["Intro", "# Title\n\nBody"]);
+  });
+
+  it("cuts before a top-level code fence", () => {
+    expect(splitAtSectionStarts("Intro\n\n```js\nconst x = 1;\n```")).toEqual([
+      "Intro",
+      "```js\nconst x = 1;\n```",
+    ]);
+  });
+
+  it("does not cut inside a code fence", () => {
+    const text = "```md\nline\n\n# not a heading\n```\n\nAfter";
+    expect(splitAtSectionStarts(text)).toEqual([text]);
+  });
+
+  it("does not cut a loose numbered list apart", () => {
+    const text = "1. first\n\n2. second\n\n3. third";
+    expect(splitAtSectionStarts(text)).toEqual([text]);
+  });
+
+  it("does not treat hashes without a space as a heading", () => {
+    const text = "Para\n\n#hashtag not heading";
+    expect(splitAtSectionStarts(text)).toEqual([text]);
+  });
+
+  it("keeps earlier sections stable as text grows", () => {
+    const shorter = "Intro\n\n# One\n\nBody one";
+    const longer = "Intro\n\n# One\n\nBody one\n\n# Two\n\nBody two";
+    const before = splitAtSectionStarts(shorter);
+    const after = splitAtSectionStarts(longer);
+    expect(after.slice(0, before.length - 1)).toEqual(before.slice(0, -1));
+    expect(after).toEqual(["Intro", "# One\n\nBody one", "# Two\n\nBody two"]);
+  });
+});
+
+describe("splitSvgBlocks", () => {
+  it("leaves plain text untouched", () => {
+    expect(splitSvgBlocks("just prose")).toEqual([{ type: "text", content: "just prose" }]);
+  });
+
+  it("extracts a standalone raw <svg> as its own segment", () => {
+    const text = "before <svg><rect /></svg> after";
+    expect(splitSvgBlocks(text)).toEqual([
+      { type: "text", content: "before " },
+      { type: "svg", content: "<svg><rect /></svg>" },
+      { type: "text", content: " after" },
+    ]);
+  });
+
+  it("does not swallow prose between an inline `<svg>` mention and a </svg> in a fence", () => {
+    const text =
+      "That overlay `<svg>` contains only the arc circle, so rotating it wobbles.\n\n" +
+      "The fix is to carry the origin over explicitly:\n\n" +
+      '```tsx\n<svg viewBox="0 0 42 42">\n  <circle />\n</svg>\n```';
+    // The whole message stays as text; nothing is lifted into an svg segment.
+    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+  });
+
+  it("does not treat a <svg> inside a fenced code block as renderable", () => {
+    const text = "```html\n<svg><rect /></svg>\n```";
+    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+  });
+
+  it("does not treat an inline `<svg>...</svg>` code span as renderable", () => {
+    const text = "use `<svg></svg>` for that";
+    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+  });
+
+  it("still extracts a real <svg> that follows a fenced code sample", () => {
+    const text = "```html\n<svg><rect /></svg>\n```\n\n<svg><circle /></svg>";
+    const segments = splitSvgBlocks(text);
+    expect(segments).toContainEqual({ type: "svg", content: "<svg><circle /></svg>" });
   });
 });
 
