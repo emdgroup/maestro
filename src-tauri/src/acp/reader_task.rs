@@ -259,7 +259,7 @@ fn handle_server_message(
     pending_file_search: &PendingReply<Vec<String>>,
     pending_file_read: &PendingReply<String>,
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
-    replay_buffer: &Arc<std::sync::Mutex<Option<Vec<serde_json::Value>>>>,
+    replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
     preamble_injected: &Arc<AtomicBool>,
     preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,

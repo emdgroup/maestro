@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { ChevronDown, TriangleAlert } from "lucide-react";
 import { parseDiffString } from "@/lib/diff-utils";
@@ -119,9 +120,32 @@ export function TaskReviewPanel({
     }
   }, [scope, baseBranch, startSha]);
 
-  // Data queries
-  const diffQuery = useWorktreeDiffQuery(projectId, worktreePath, diffTarget);
-  const uncommittedDiffQuery = useWorktreeDiffQuery(projectId, worktreePath, { type: "Head" });
+  // Data queries.
+  // App.tsx keeps every view mounted, so ungated intervals would re-fetch and re-parse both of
+  // these diffs every 10s for as long as the app runs — including while the user is on another
+  // tab. Poll only while this view is on screen, then refetch on the way back in so returning
+  // never shows a stale diff (same approach as WorktreesView's worktree list).
+  const isViewActive = useActiveTab() === "kanban";
+  const diffPolling = { refetchInterval: isViewActive ? 10000 : (false as const) };
+
+  const diffQuery = useWorktreeDiffQuery(projectId, worktreePath, diffTarget, diffPolling);
+  const uncommittedDiffQuery = useWorktreeDiffQuery(
+    projectId,
+    worktreePath,
+    { type: "Head" },
+    diffPolling,
+  );
+
+  const { refetch: refetchDiff } = diffQuery;
+  const { refetch: refetchUncommittedDiff } = uncommittedDiffQuery;
+  const wasViewActiveRef = useRef(isViewActive);
+  useEffect(() => {
+    if (isViewActive && !wasViewActiveRef.current) {
+      void refetchDiff();
+      void refetchUncommittedDiff();
+    }
+    wasViewActiveRef.current = isViewActive;
+  }, [isViewActive, refetchDiff, refetchUncommittedDiff]);
   const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
   const commits = commitsQuery.data || [];
 

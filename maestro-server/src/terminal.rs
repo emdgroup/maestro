@@ -11,7 +11,7 @@ use acp::schema::v1::{
 use maestro_protocol::{MaestroRpcMessage, ServerResponse, TerminalOutput};
 use tokio::sync::{mpsc, Mutex, Notify};
 
-use crate::file_ops::truncate_buf;
+use crate::file_ops::OutputBuffer;
 use crate::send_response;
 use crate::sessions::{TerminalExitInfo, TerminalHandle};
 
@@ -74,7 +74,7 @@ pub(crate) async fn handle_create_terminal(
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
-    let output_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let output_buf: Arc<Mutex<OutputBuffer>> = Arc::new(Mutex::new(OutputBuffer::new()));
     let truncated: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let exit_status: Arc<Mutex<Option<TerminalExitInfo>>> = Arc::new(Mutex::new(None));
     let exit_notify: Arc<Notify> = Arc::new(Notify::new());
@@ -129,22 +129,19 @@ pub(crate) async fn handle_create_terminal(
                     match item {
                         Some(line) => {
                             let chunk = format!("{}\n", line);
-                            // T-42-03: Respect output_byte_limit — truncate from beginning
+                            let bytes = chunk.as_bytes().to_vec();
+                            // T-42-03: Respect output_byte_limit — drop oldest lines first
                             {
                                 let mut buf = output_buf_bg.lock().await;
-                                buf.push_str(&chunk);
-                                if let Some(limit) = output_byte_limit {
-                                    if buf.len() > limit as usize {
-                                        truncate_buf(&mut buf, limit as usize);
-                                        truncated_bg.store(true, Ordering::Relaxed);
-                                    }
+                                if buf.push(chunk, output_byte_limit.map(|l| l as usize)) {
+                                    truncated_bg.store(true, Ordering::Relaxed);
                                 }
                             }
                             let msg = MaestroRpcMessage::Response(
                                 ServerResponse::TerminalOutput(TerminalOutput {
                                     session_id: maestro_session_id.clone(),
                                     terminal_id: terminal_id_bg.clone(),
-                                    bytes: chunk.into_bytes(),
+                                    bytes,
                                 }),
                             );
                             if let Err(e) = send_response(&stdout_bg, &msg).await {

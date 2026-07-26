@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { CheckCheck } from "lucide-react";
 import { parseDiffString, computeFileStats, countHunks } from "@/lib/diff-utils";
@@ -67,11 +68,26 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
   const commits = commitsQuery.data || [];
 
+  // App.tsx keeps every view mounted, so an ungated interval would re-fetch, re-parse and
+  // re-render the whole diff every 10s for as long as the app runs — including while the user
+  // is on another tab. Poll only while this view is on screen, then refetch on the way back in
+  // so returning never shows a stale diff (same approach as WorktreesView's worktree list).
+  const isViewActive = useActiveTab() === "worktrees";
+
   const {
     data: diffResult,
     isLoading: diffLoading,
     error: diffError,
-  } = useWorktreeDiffQuery(projectId, worktreePath, diffTarget);
+    refetch: refetchDiff,
+  } = useWorktreeDiffQuery(projectId, worktreePath, diffTarget, {
+    refetchInterval: isViewActive ? 10000 : false,
+  });
+
+  const wasViewActiveRef = useRef(isViewActive);
+  useEffect(() => {
+    if (isViewActive && !wasViewActiveRef.current) void refetchDiff();
+    wasViewActiveRef.current = isViewActive;
+  }, [isViewActive, refetchDiff]);
 
   const diffString = diffResult?.diff ?? null;
   const untrackedFiles = diffResult?.untracked_files ?? [];

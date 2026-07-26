@@ -17,7 +17,7 @@ pub enum SessionCommand {
 }
 
 pub struct TerminalHandle {
-    pub output_buf: Arc<Mutex<String>>,
+    pub output_buf: Arc<Mutex<crate::file_ops::OutputBuffer>>,
     pub truncated: Arc<AtomicBool>,
     pub exit_status: Arc<Mutex<Option<TerminalExitInfo>>>,
     pub exit_notify: Arc<Notify>,

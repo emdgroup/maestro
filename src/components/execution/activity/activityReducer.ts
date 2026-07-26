@@ -21,6 +21,33 @@ export type ActivityAction =
   | { type: "terminal_output"; terminalId: string; output: string }
   | { type: "restore_canvases"; surfaces: CanvasSurface[] };
 
+/**
+ * `terminalBuffers` is a catch-up buffer, not a scrollback. Its only consumer is
+ * `SidePanelContent`, which passes it to `AcpTerminalView` as `initialOutput` so a terminal tab
+ * opened after a command started still shows what it missed. Once that view mounts it keeps its
+ * own xterm scrollback (5000 lines) and its own `acp://terminal-output` listener, so every byte
+ * held here is already held a second time.
+ *
+ * The bound is sized against that sink rather than against a UX policy: xterm discards anything
+ * past 5000 lines on write, which at a typical 80-column line is ~400k chars. Keeping 750k means
+ * a late-opening tab still receives more than it can display, while the buffer stops growing for
+ * the lifetime of the session.
+ */
+const CATCH_UP_TRIM_TO_CHARS = 750_000;
+/**
+ * Trim only once well past the target so the O(n) scan is amortised over many chunks rather than
+ * running on every one.
+ */
+const CATCH_UP_TRIM_TRIGGER_CHARS = 1_000_000;
+
+function trimCatchUpBuffer(buffer: string): string {
+  if (buffer.length <= CATCH_UP_TRIM_TRIGGER_CHARS) return buffer;
+  // Prefer cutting at a line boundary so the replayed head isn't a partial line.
+  const cutFrom = buffer.length - CATCH_UP_TRIM_TO_CHARS;
+  const newlineAt = buffer.indexOf("\n", cutFrom);
+  return newlineAt === -1 ? buffer.slice(cutFrom) : buffer.slice(newlineAt + 1);
+}
+
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
     case "event":
@@ -59,7 +86,8 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
       return { ...state, isInitializing: false };
     case "terminal_output": {
       const newBuffers = new Map(state.terminalBuffers);
-      newBuffers.set(action.terminalId, (newBuffers.get(action.terminalId) ?? "") + action.output);
+      const appended = (newBuffers.get(action.terminalId) ?? "") + action.output;
+      newBuffers.set(action.terminalId, trimCatchUpBuffer(appended));
       return { ...state, terminalBuffers: newBuffers };
     }
     case "restore_canvases": {
