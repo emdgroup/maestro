@@ -191,15 +191,39 @@ Use the `log` crate — `log::error!`, `warn!`, `info!`, `debug!`, `trace!`. Do 
 and do not add `eprintln!` or `println!` for diagnostics: a bundled app has no terminal attached,
 so anything on stderr is discarded and a user cannot send it to you.
 
-`tauri-plugin-log` is configured in `main.rs`. It writes to stderr and to a rotating file (5 MB,
-two kept) in the OS log directory — `~/.local/share/com.maestro.app/logs/Maestro.log` on Linux,
-`~/Library/Logs/com.maestro.app/` on macOS, `%LOCALAPPDATA%\com.maestro.app\logs\` on Windows.
+`tauri-plugin-log` is wired up in `core/logging.rs`; `main.rs` only calls into it. It writes to
+stderr and to `Maestro.log` in a directory the user can choose. Rotation is 5 MB per file keeping
+two archives **alongside** the live one — three files, a ~15 MB ceiling, no age-based purge.
 
-Dependencies are pinned at `warn`, because at `debug` `keyring`, `rustls` and `reqwest` bury
-everything we write. Our own crates default to `info` and are raised with the `MAESTRO_LOG`
-environment variable (`MAESTRO_LOG=trace bun run tauri:dev`). Two `level_for` entries carry that
-— `maestro` for `main.rs` and `maestro_lib` for everything else — so a new crate in the workspace
-needs its own entry or it will sit at `warn`.
+The default directory is Tauri's `app_log_dir()`, passed through untouched — note macOS has no
+trailing `logs` segment, which is Tauri's convention and not something to "fix":
+
+| Platform | Default                                |
+| -------- | -------------------------------------- |
+| Linux    | `~/.local/share/com.maestro.app/logs/` |
+| macOS    | `~/Library/Logs/com.maestro.app/`      |
+| Windows  | `%LOCALAPPDATA%\com.maestro.app\logs\` |
+
+`resolve_log_dir` exists only to choose between that default and the user's override, and to treat
+a blank setting as unset — a blank string used as a path would drop the log file in the process
+working directory.
+
+**The logger is installed from `setup()`, not the builder chain**, because the level and directory
+come from the settings table and the database is only open by then. The cost is that records
+emitted before `setup` — other plugins' initialisation — are dropped. Do not "fix" this by moving
+the plugin back into the builder: it would take the user's configuration with it.
+
+Level resolution is `MAESTRO_LOG` → the stored `log_level` setting → `info`, with an unparseable
+value falling through rather than failing. Dependencies are pinned at `warn`, because at `debug`
+`keyring`, `rustls` and `reqwest` bury everything we write.
+
+The user-selected level applies **without a restart**, and the mechanism matters: fern's own
+filtering is fixed once built, so `core/logging.rs` lets our crates through at `trace` via two
+`level_for` entries (`maestro` for `main.rs`, `maestro_lib` for the rest) and does the real gating
+with `log::set_max_level`. A new crate in the workspace needs its own `level_for` entry or it will
+sit at `warn`. A directory change cannot work this way and needs a restart — `get_log_directory`
+returns the active and configured paths separately so the UI can say so rather than pointing a
+user at a folder that is still empty.
 
 Picking a level:
 

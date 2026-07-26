@@ -127,6 +127,19 @@ impl std::str::FromStr for AgentStreamWidth {
     }
 }
 
+/// Where logs go now versus where they will go next launch.
+///
+/// Two fields rather than one because a directory change needs a restart, and the UI has to be
+/// able to say so instead of pointing at a folder that is still empty.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct LogLocation {
+    /// Directory the running logger is writing to. Empty if logging failed to start.
+    pub active_directory: String,
+    /// Directory that will be used at the next launch.
+    pub configured_directory: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct AppSettings {
@@ -152,6 +165,13 @@ pub struct AppSettings {
     pub auto_update: bool,
     #[serde(default)]
     pub ui_scale: Option<String>,
+    /// One of `core::logging::LOG_LEVELS`. `None` means the `info` default.
+    #[serde(default)]
+    pub log_level: Option<String>,
+    /// `None` means the OS log directory. Only read at startup — fern's targets are fixed once
+    /// built, so a change here needs a restart.
+    #[serde(default)]
+    pub log_directory: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -169,6 +189,8 @@ impl Default for AppSettings {
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
             ui_scale: None,
+            log_level: None,
+            log_directory: None,
         }
     }
 }

@@ -366,6 +366,26 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  /**
+   * The levels the UI offers, quietest first.
+   */
+  async getLogLevels(): Promise<string[]> {
+    return await TAURI_INVOKE("get_log_levels");
+  },
+  /**
+   * Where logs are being written, and where they will be written next launch.
+   *
+   * This doubles as the answer to "where are my logs" — a user cannot attach a file they cannot
+   * find, and the path differs on every platform.
+   */
+  async getLogDirectory(): Promise<Result<LogLocation, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("get_log_directory") };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async listWorktreesWithStatus(
     projectId: number,
     repoPath: string,
@@ -2640,6 +2660,15 @@ export type AppSettings = {
   updated_at: string;
   auto_update?: boolean;
   ui_scale?: string | null;
+  /**
+   * One of `core::logging::LOG_LEVELS`. `None` means the `info` default.
+   */
+  log_level?: string | null;
+  /**
+   * `None` means the OS log directory. Only read at startup — fern's targets are fixed once
+   * built, so a change here needs a restart.
+   */
+  log_directory?: string | null;
 };
 /**
  * Single authentication method exposed to the frontend.
@@ -2797,6 +2826,22 @@ export type JsonValue =
  * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
  */
 export type LinearTeam = { id: string; name: string; key: string };
+/**
+ * Where logs go now versus where they will go next launch.
+ *
+ * Two fields rather than one because a directory change needs a restart, and the UI has to be
+ * able to say so instead of pointing at a folder that is still empty.
+ */
+export type LogLocation = {
+  /**
+   * Directory the running logger is writing to. Empty if logging failed to start.
+   */
+  active_directory: string;
+  /**
+   * Directory that will be used at the next launch.
+   */
+  configured_directory: string;
+};
 /**
  * Typed response for approve_task_and_merge IPC command
  */

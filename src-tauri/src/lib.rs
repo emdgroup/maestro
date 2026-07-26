@@ -46,6 +46,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_linux_install_type,
             crate::ipc::get_settings,
             crate::ipc::save_settings,
+            crate::ipc::get_log_levels,
+            crate::ipc::get_log_directory,
             crate::ipc::list_worktrees_with_status,
             crate::ipc::get_worktree_diff,
             crate::ipc::get_worktree_diff_stats,

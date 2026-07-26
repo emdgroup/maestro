@@ -1,60 +1,86 @@
 // Tauri build script marker
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
-use maestro_lib::core::{init_db, AppState};
+use maestro_lib::core::{init_db, load_settings, logging, AppState};
 use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;
-use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
-/// A bundled app has no terminal attached, so anything written to stderr is discarded — which is
-/// why a log file exists at all: it is the only thing a user can send back with a bug report.
+/// Bring up logging from the stored settings.
 ///
-/// The level is deliberately conservative. `trace` carries the raw ACP frames, and those contain
-/// prompt text, agent output and the contents of files the agent read, so it stays off unless
-/// someone sets `MAESTRO_LOG` for a debugging session.
-fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
-    let level = std::env::var("MAESTRO_LOG")
-        .ok()
-        .and_then(|requested| requested.parse::<log::LevelFilter>().ok())
-        .unwrap_or(log::LevelFilter::Info);
+/// A bundled app has no terminal attached, so anything written to stderr is discarded — the log
+/// file is the only thing a user can send back with a bug report. Both the level and the directory
+/// are user-settable, which is why this runs after the database is open rather than in the builder
+/// chain.
+///
+/// A bad custom directory must not stop the app from starting, so it falls back to the OS location
+/// and says so once logging is up.
+fn setup_logging(app: &tauri::App, settings: &maestro_lib::models::AppSettings) {
+    let level = logging::effective_level(settings.log_level.as_deref());
+    let handle = app.handle();
 
-    tauri_plugin_log::Builder::new()
-        // The default targets are stdout plus the log directory; stderr is the conventional
-        // stream for diagnostics and keeps stdout free for anything that needs to pipe.
-        .clear_targets()
-        .target(Target::new(TargetKind::Stderr))
-        .target(Target::new(TargetKind::LogDir { file_name: None }))
-        // Dependencies only get a say when something is wrong. At debug they are a firehose —
-        // keyring narrates every credential lookup, rustls every handshake, the updater dumps the
-        // whole release manifest — and `MAESTRO_LOG=debug` would bury our own lines in it.
-        .level(log::LevelFilter::Warn)
-        .level_for("maestro", level)
-        .level_for("maestro_lib", level)
-        // The plugin defaults to a 40 KB file and keeps one. At trace level that truncates to
-        // the last few seconds, which is useless for the session that produced a bug.
-        .max_file_size(5 * 1024 * 1024)
-        .rotation_strategy(RotationStrategy::KeepSome(2))
-        .build()
+    let configured = settings
+        .log_directory
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if let Some(custom) = configured {
+        match logging::install(handle, std::path::Path::new(custom), level) {
+            Ok(()) => return,
+            Err(error) => {
+                if install_default_logging(handle, level) {
+                    log::error!("Log directory {custom} is unusable, using the default: {error}");
+                } else {
+                    // Nowhere left to report this — logging itself is what failed, and in a
+                    // bundled app stderr goes nowhere, which is the situation being reported.
+                    eprintln!("Logging is disabled: {error}");
+                }
+                return;
+            }
+        }
+    }
+
+    if !install_default_logging(handle, level) {
+        eprintln!("Logging is disabled: the default log directory could not be opened");
+    }
+}
+
+fn install_default_logging(handle: &tauri::AppHandle, level: log::LevelFilter) -> bool {
+    logging::current_log_dir(handle, None)
+        .and_then(|directory| logging::install(handle, &directory, level))
+        .is_ok()
 }
 
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = app.path().app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    // First line of every log: the two facts a bug report is useless without.
-    log::info!(
-        "Maestro {} starting; data dir {}",
-        env!("CARGO_PKG_VERSION"),
-        app_data_dir.display()
-    );
-
     let db_path = app_data_dir.join("maestro.db");
 
     // Initialize database — init_db returns Result<Connection, String>
     // Use map_err to convert String -> Box<dyn Error> since String doesn't impl Error
     let conn = init_db(db_path)
         .map_err(|e| format!("Failed to initialize database: {}", e))?;
+
+    // Settings drive the log level and directory, so this has to come before any logging.
+    let settings = load_settings(&conn).unwrap_or_default();
+    setup_logging(app, &settings);
+
+    // First lines of every log: the facts a bug report is useless without. The level and directory
+    // are among them — they are user-settable, so a reader cannot assume the defaults.
+    log::info!(
+        "Maestro {} starting; data dir {}",
+        env!("CARGO_PKG_VERSION"),
+        app_data_dir.display()
+    );
+    log::info!(
+        "Logging at {} to {}",
+        log::max_level(),
+        logging::active_directory()
+            .map(|directory| directory.display().to_string())
+            .unwrap_or_else(|| "(disabled)".to_string())
+    );
 
     let app_state = Arc::new(AppState::new(conn, app.handle().clone(), app_data_dir.clone()));
 
@@ -75,8 +101,8 @@ fn main() {
     let tauri_builder = tauri_builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     let app = tauri_builder
-        // Registered first so failures in the plugins and setup below are captured.
-        .plugin(log_plugin())
+        // The log plugin is not here: its level and directory come from the settings table, so it
+        // is installed from `setup` once the database is open. See `setup_logging`.
         .setup(setup)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

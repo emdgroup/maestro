@@ -34,10 +34,6 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
             .map_err(|e| format!("Failed to create app data directory: {}", e))?;
     }
 
-    // Which database was opened is the first question worth answering when a user reports
-    // missing projects — the app data directory moves between packaging formats.
-    log::debug!("[db] opening {}", db_path.display());
-
     // Open or create database
     let conn = Connection::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
