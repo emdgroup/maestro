@@ -258,31 +258,41 @@ pub async fn ensure_wsl_server(
         .await
         .map_err(|e| format!("Cannot read cached binary: {}", e))?;
 
+    // rm -f before writing: the destination can be a symlink left by a previous
+    // Linux-side install (dangling once its target cache is deleted, which makes
+    // `cat >` fail with "Directory nonexistent"), and unlinking first also avoids
+    // ETXTBSY when a running server still holds the old inode.
     let mut child = tokio::process::Command::new("wsl.exe")
         .args([
             "-d", distro, "--",
             "sh", "-c",
-            &format!("mkdir -p '{}' && cat > '{}' && chmod +x '{}'", abs_dir, abs_path, abs_path),
+            &format!("mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'", abs_dir, abs_path),
         ])
         .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn WSL deploy shell: {}", e))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(&binary_bytes).await.map_err(|e| format!("Binary pipe write failed: {}", e))?;
-    }
+    // If the shell fails early the stdin write breaks with EPIPE; defer that error
+    // so the shell's stderr (the actionable message) wins.
+    let write_result = match child.stdin.take() {
+        Some(mut stdin) => stdin.write_all(&binary_bytes).await,
+        None => Ok(()),
+    };
 
-    let status = tokio::time::timeout(
+    let output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        child.wait(),
+        child.wait_with_output(),
     )
     .await
     .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
     .map_err(|e| format!("WSL deploy process failed: {}", e))?;
-    if !status.success() {
-        return Err(format!("WSL deploy exited with status: {}", status));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("WSL deploy failed ({}): {}", output.status, stderr.trim()));
     }
+    write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
 
     Ok(DeployResult { path: abs_path, deployed: true })
 }
@@ -351,30 +361,35 @@ pub async fn ensure_container_server(
         .await
         .map_err(|e| format!("Cannot read cached binary: {}", e))?;
 
+    // rm -f before writing for the same symlink/ETXTBSY reasons as the WSL deploy.
     let mut child = tokio::process::Command::new(cli.binary())
         .args([
             "exec", "-i", container_name,
             "sh", "-c",
-            &format!("mkdir -p '{}' && cat > '{}' && chmod +x '{}'", abs_dir, abs_path, abs_path),
+            &format!("mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'", abs_dir, abs_path),
         ])
         .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn container deploy shell: {}", e))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(&binary_bytes).await.map_err(|e| format!("Binary pipe write failed: {}", e))?;
-    }
+    let write_result = match child.stdin.take() {
+        Some(mut stdin) => stdin.write_all(&binary_bytes).await,
+        None => Ok(()),
+    };
 
-    let status = tokio::time::timeout(
+    let output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        child.wait(),
+        child.wait_with_output(),
     )
     .await
     .map_err(|_| format!("Container deploy timed out for {}", container_name))?
     .map_err(|e| format!("Container deploy process failed: {}", e))?;
-    if !status.success() {
-        return Err(format!("Container deploy exited with status: {}", status));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Container deploy failed ({}): {}", output.status, stderr.trim()));
     }
+    write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
 
     Ok(DeployResult { path: abs_path, deployed: true })
 }
