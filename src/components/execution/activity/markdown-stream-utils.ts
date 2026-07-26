@@ -1,30 +1,59 @@
-type Segment = { type: "text"; content: string } | { type: "svg"; content: string };
+/**
+ * Fenced-code ranges per CommonMark: ``` or ~~~ runs of 3+, up to 3 spaces of
+ * indent, closed only by a run of the same character at least as long as the
+ * opener with nothing else on the line. A backtick fence's info string cannot
+ * contain a backtick. An unclosed fence extends to the end of the text — which
+ * is exactly what streaming needs: content inside a still-open fence is never a
+ * safe place to cut.
+ *
+ * This is the single fence model shared by every streaming-split helper here.
+ * It does not model container nesting (fences inside blockquotes/lists), so a
+ * blank line inside such a fence can still be mistaken for a boundary — these
+ * helpers only affect transient frames during streaming; the final render
+ * always parses the full text with remark, which is authoritative.
+ */
+function findFenceRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let open: { char: string; len: number; start: number } | null = null;
+  let lineStart = 0;
+
+  while (lineStart <= text.length) {
+    const newline = text.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? text.length : newline;
+    const line = text.slice(lineStart, lineEnd);
+
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (match) {
+      const char = match[1][0];
+      const len = match[1].length;
+      const info = match[2];
+      if (!open) {
+        if (!(char === "`" && info.includes("`"))) {
+          open = { char, len, start: lineStart };
+        }
+      } else if (char === open.char && len >= open.len && info.trim() === "") {
+        ranges.push([open.start, lineEnd]);
+        open = null;
+      }
+    }
+
+    if (newline === -1) break;
+    lineStart = newline + 1;
+  }
+
+  if (open) ranges.push([open.start, text.length]);
+  return ranges;
+}
 
 export function getCompleteBlocksText(text: string): string {
   if (!text.includes("\n\n")) return "";
 
-  let fenceCount = 0;
+  const fences = findFenceRanges(text);
+  const insideFence = (idx: number) => fences.some(([s, e]) => idx >= s && idx < e);
+
   let lastSafeBoundary = -1;
-  let i = 0;
-
-  while (i < text.length) {
-    if (text.startsWith("```", i) && (i === 0 || text[i - 1] === "\n")) {
-      fenceCount++;
-      i += 3;
-      while (i < text.length && text[i] !== "\n") i++;
-      continue;
-    }
-
-    if (text[i] === "\n" && i + 1 < text.length && text[i + 1] === "\n") {
-      if (fenceCount % 2 === 0) {
-        lastSafeBoundary = i + 2;
-      }
-      i += 2;
-      while (i < text.length && text[i] === "\n") i++;
-      continue;
-    }
-
-    i++;
+  for (let idx = text.indexOf("\n\n"); idx !== -1; idx = text.indexOf("\n\n", idx + 1)) {
+    if (!insideFence(idx)) lastSafeBoundary = idx + 2;
   }
 
   if (lastSafeBoundary <= 0) return "";
@@ -44,95 +73,29 @@ export function getCompleteBlocksText(text: string): string {
  * points never move, so section strings are append-stable.
  */
 export function splitAtSectionStarts(text: string): string[] {
+  const fences = findFenceRanges(text);
+  const insideFence = (idx: number) => fences.some(([s, e]) => idx >= s && idx < e);
+
   const sections: string[] = [];
-  let insideFence = false;
   let sectionStart = 0;
-  let i = 0;
+  let i = text.indexOf("\n\n");
 
-  while (i < text.length) {
-    if (text.startsWith("```", i) && (i === 0 || text[i - 1] === "\n")) {
-      insideFence = !insideFence;
-      i += 3;
-      while (i < text.length && text[i] !== "\n") i++;
+  while (i !== -1) {
+    if (insideFence(i)) {
+      i = text.indexOf("\n\n", i + 1);
       continue;
     }
-
-    if (!insideFence && text[i] === "\n" && text[i + 1] === "\n") {
-      let j = i + 2;
-      while (j < text.length && text[j] === "\n") j++;
-      const next = text.slice(j, j + 7);
-      if (/^#{1,6}[ \t]/.test(next) || next.startsWith("```")) {
-        sections.push(text.slice(sectionStart, i));
-        sectionStart = j;
-      }
-      i = j;
-      continue;
+    let j = i + 2;
+    while (j < text.length && text[j] === "\n") j++;
+    const next = text.slice(j, j + 7);
+    if (/^#{1,6}[ \t]/.test(next) || next.startsWith("```") || next.startsWith("~~~")) {
+      sections.push(text.slice(sectionStart, i));
+      sectionStart = j;
     }
-
-    i++;
+    i = text.indexOf("\n\n", j);
   }
 
   const tail = text.slice(sectionStart);
   if (tail) sections.push(tail);
   return sections.length > 0 ? sections : [text];
-}
-
-/**
- * Ranges that hold code, not renderable markup: fenced ``` blocks and inline
- * `code` spans. A raw <svg> here is a code sample (e.g. a ```tsx block or a
- * `<svg>` mention in prose), not something to lift out and render.
- */
-function getCodeRanges(text: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-
-  const fenceMatches = [...text.matchAll(/^```[^\n]*$/gm)];
-  for (let i = 0; i + 1 < fenceMatches.length; i += 2) {
-    const start = fenceMatches[i].index!;
-    const end = fenceMatches[i + 1].index! + fenceMatches[i + 1][0].length;
-    ranges.push([start, end]);
-  }
-
-  // Inline code spans: `x`, ``x`y``, etc. The backreference keeps the opening
-  // and closing runs the same length.
-  for (const match of text.matchAll(/(`+)(?:(?!\1)[\s\S])*?\1/g)) {
-    ranges.push([match.index!, match.index! + match[0].length]);
-  }
-
-  return ranges;
-}
-
-export function splitSvgBlocks(text: string): Segment[] {
-  if (!text.includes("<svg")) return [{ type: "text", content: text }];
-
-  const codeRanges = getCodeRanges(text);
-  const svgRe = /<svg[\s\S]*?<\/svg>/gi;
-
-  const segments: Segment[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = svgRe.exec(text)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-
-    // Skip a match that starts inside, or spans into, a code range. The
-    // non-greedy `</svg>` can land in a later fenced block (e.g. a `<svg>`
-    // mentioned in prose whose closing tag lives in a following ```tsx block),
-    // which would otherwise swallow all the prose in between. Resume scanning
-    // past the offending range so a genuine <svg> after it is still found.
-    const crossed = codeRanges.find(([s, e]) => start < e && s < end);
-    if (crossed) {
-      svgRe.lastIndex = Math.max(crossed[1], start + 1);
-      continue;
-    }
-
-    if (start > lastIndex) {
-      segments.push({ type: "text", content: text.slice(lastIndex, start) });
-    }
-    segments.push({ type: "svg", content: match[0] });
-    lastIndex = end;
-  }
-  if (lastIndex < text.length) {
-    segments.push({ type: "text", content: text.slice(lastIndex) });
-  }
-  return segments.length > 0 ? segments : [{ type: "text", content: text }];
 }

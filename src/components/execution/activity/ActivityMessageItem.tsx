@@ -2,13 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Check, Copy } from "lucide-react";
 import type { MessageItem } from "./types";
 import { Button } from "@/ui/button";
-import {
-  MarkdownBlock,
-  SvgBlock,
-  getCompleteBlocksText,
-  splitSvgBlocks,
-  useCopyToClipboard,
-} from "./MarkdownBlock";
+import { MarkdownBlock, getCompleteBlocksText, useCopyToClipboard } from "./MarkdownBlock";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
 
 export { getCompleteBlocksText } from "./MarkdownBlock";
@@ -62,22 +56,13 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
     [message.text, isActivelyStreaming],
   );
 
-  const segments = useMemo(() => {
-    const textToRender = isActivelyStreaming ? completedText : message.text;
-    if (!textToRender) return [];
-    // While streaming, cut at section starts so earlier sections keep stable
-    // string identity and their memoized MarkdownBlocks skip re-parsing.
-    const parts = isActivelyStreaming ? splitAtSectionStarts(textToRender) : [textToRender];
-    return parts.flatMap((part) => splitSvgBlocks(part));
-  }, [message.text, isActivelyStreaming, completedText]);
-  const hasSvg = segments.some((s) => s.type === "svg");
-
-  const renderedSegments = segments.map((seg, i) =>
-    seg.type === "svg" ? (
-      <SvgBlock key={i} code={seg.content} />
-    ) : (
-      <MarkdownBlock key={i} text={seg.content} />
-    ),
+  // While streaming, cut at section starts so earlier sections keep stable
+  // string identity and their memoized MarkdownBlocks skip re-parsing. Raw
+  // <svg> needs no pre-pass: rehypeRaw + the sanitize schema's SVG allowlist
+  // handle it inside the markdown pipeline.
+  const sections = useMemo(
+    () => (completedText ? splitAtSectionStarts(completedText) : []),
+    [completedText],
   );
 
   return (
@@ -85,11 +70,11 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
       <div className="text-sm leading-relaxed text-foreground">
         {message.isStreaming && isActivelyStreaming ? (
           <>
-            {renderedSegments}
+            {sections.map((section, i) => (
+              <MarkdownBlock key={i} text={section} />
+            ))}
             <TypingDots className="ml-1" />
           </>
-        ) : hasSvg ? (
-          renderedSegments
         ) : (
           <MarkdownBlock text={message.text} />
         )}

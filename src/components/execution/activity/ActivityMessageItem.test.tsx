@@ -12,7 +12,7 @@ vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }
 vi.mock("katex/dist/katex.min.css", () => ({}));
 
 import { ActivityMessageItem, getCompleteBlocksText } from "./ActivityMessageItem";
-import { splitAtSectionStarts, splitSvgBlocks } from "./markdown-stream-utils";
+import { splitAtSectionStarts } from "./markdown-stream-utils";
 import type { MessageItem } from "./types";
 
 function makeMessage(text: string): MessageItem {
@@ -61,6 +61,26 @@ describe("getCompleteBlocksText", () => {
     const text = "# Heading\n\nParagraph\n\nIncomplete";
     expect(getCompleteBlocksText(text)).toBe("# Heading\n\nParagraph");
   });
+
+  it("ignores double newline inside unclosed ~~~ fence", () => {
+    const text = "Para\n\n~~~\nline1\n\nline2\n";
+    expect(getCompleteBlocksText(text)).toBe("Para");
+  });
+
+  it("ignores double newline inside unclosed indented fence", () => {
+    const text = "Para\n\n  ```js\nline1\n\nline2\n";
+    expect(getCompleteBlocksText(text)).toBe("Para");
+  });
+
+  it("does not close a 4-backtick fence with a 3-backtick line", () => {
+    const text = "Para\n\n````md\n```js\ncode\n```\n\nstill inside\n";
+    expect(getCompleteBlocksText(text)).toBe("Para");
+  });
+
+  it("treats a matching-length close of a 4-backtick fence as complete", () => {
+    const text = "Para\n\n````md\n```js\ncode\n```\n````\n\nNext";
+    expect(getCompleteBlocksText(text)).toBe("Para\n\n````md\n```js\ncode\n```\n````");
+  });
 });
 
 describe("splitAtSectionStarts", () => {
@@ -94,6 +114,20 @@ describe("splitAtSectionStarts", () => {
     expect(splitAtSectionStarts(text)).toEqual([text]);
   });
 
+  it("does not cut inside a ~~~ fence", () => {
+    const text = "~~~md\nline\n\n# not a heading\n~~~\n\nAfter";
+    expect(splitAtSectionStarts(text)).toEqual([text]);
+  });
+
+  it("cuts before a ~~~ fence", () => {
+    expect(splitAtSectionStarts("Intro\n\n~~~\ncode\n~~~")).toEqual(["Intro", "~~~\ncode\n~~~"]);
+  });
+
+  it("does not cut inside a 4-backtick fence containing ``` lines", () => {
+    const text = "````md\n```js\ncode\n```\n\n# not a heading\n````\n\nAfter";
+    expect(splitAtSectionStarts(text)).toEqual([text]);
+  });
+
   it("keeps earlier sections stable as text grows", () => {
     const shorter = "Intro\n\n# One\n\nBody one";
     const longer = "Intro\n\n# One\n\nBody one\n\n# Two\n\nBody two";
@@ -104,43 +138,137 @@ describe("splitAtSectionStarts", () => {
   });
 });
 
-describe("splitSvgBlocks", () => {
-  it("leaves plain text untouched", () => {
-    expect(splitSvgBlocks("just prose")).toEqual([{ type: "text", content: "just prose" }]);
+describe("raw svg rendering", () => {
+  // Note: lucide icons (copy button etc.) are also <svg>, so assertions use
+  // viewBox-specific selectors rather than bare "svg".
+
+  it("renders a raw <svg> between paragraphs as a graphic", () => {
+    const text = 'Before\n\n<svg viewBox="0 0 10 10"><rect width="5" height="5" /></svg>\n\nAfter';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    const svg = container.querySelector('svg[viewBox="0 0 10 10"]');
+    expect(svg).not.toBeNull();
+    expect(svg!.querySelector("rect")).not.toBeNull();
+    expect(screen.getByText("Before")).toBeInTheDocument();
+    expect(screen.getByText("After")).toBeInTheDocument();
   });
 
-  it("extracts a standalone raw <svg> as its own segment", () => {
-    const text = "before <svg><rect /></svg> after";
-    expect(splitSvgBlocks(text)).toEqual([
-      { type: "text", content: "before " },
-      { type: "svg", content: "<svg><rect /></svg>" },
-      { type: "text", content: " after" },
-    ]);
+  it("preserves allowed presentation attributes through sanitization", () => {
+    const text =
+      '<svg viewBox="0 0 4 4"><path d="M0 0L4 4" stroke="red" stroke-width="2" stroke-linecap="round" /></svg>';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    const path = container.querySelector('svg[viewBox="0 0 4 4"] path');
+    expect(path).not.toBeNull();
+    expect(path!.getAttribute("stroke-width")).toBe("2");
+    expect(path!.getAttribute("stroke-linecap")).toBe("round");
   });
 
-  it("does not swallow prose between an inline `<svg>` mention and a </svg> in a fence", () => {
+  it("strips event handlers and script elements from raw svg", () => {
+    const text =
+      '<svg viewBox="0 0 8 8" onclick="alert(1)"><script>alert(2)</script><rect onmouseover="x()" /></svg>';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    const svg = container.querySelector('svg[viewBox="0 0 8 8"]');
+    expect(svg).not.toBeNull();
+    expect(svg!.getAttribute("onclick")).toBeNull();
+    expect(svg!.querySelector("script")).toBeNull();
+    expect(svg!.querySelector("rect")?.getAttribute("onmouseover") ?? null).toBeNull();
+  });
+
+  it("does not render prose as an error blob when `<svg>` is mentioned inline before a fence containing </svg>", () => {
     const text =
       "That overlay `<svg>` contains only the arc circle, so rotating it wobbles.\n\n" +
       "The fix is to carry the origin over explicitly:\n\n" +
       '```tsx\n<svg viewBox="0 0 42 42">\n  <circle />\n</svg>\n```';
-    // The whole message stays as text; nothing is lifted into an svg segment.
-    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(screen.getByText(/contains only the arc circle/)).toBeInTheDocument();
+    expect(container.querySelector('svg[viewBox="0 0 42 42"]')).toBeNull();
+    expect(container.querySelector(".text-destructive")).toBeNull();
   });
 
-  it("does not treat a <svg> inside a fenced code block as renderable", () => {
-    const text = "```html\n<svg><rect /></svg>\n```";
-    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+  it("keeps <svg> inside a ~~~ fence as code, not a graphic", () => {
+    const text = '~~~\n<svg viewBox="0 0 9 9"><rect /></svg>\n~~~';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('svg[viewBox="0 0 9 9"]')).toBeNull();
   });
 
-  it("does not treat an inline `<svg>...</svg>` code span as renderable", () => {
+  it("keeps <svg> inside a blockquoted fence as code, not a graphic", () => {
+    const text = '> ```html\n> <svg viewBox="0 0 9 9"></svg>\n> ```';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('svg[viewBox="0 0 9 9"]')).toBeNull();
+  });
+
+  it("keeps an inline `<svg></svg>` code span as code, not a graphic", () => {
     const text = "use `<svg></svg>` for that";
-    expect(splitSvgBlocks(text)).toEqual([{ type: "text", content: text }]);
+    render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(screen.getByText("<svg></svg>")).toBeInTheDocument();
+    expect(screen.getByText(/for that/)).toBeInTheDocument();
   });
 
-  it("still extracts a real <svg> that follows a fenced code sample", () => {
-    const text = "```html\n<svg><rect /></svg>\n```\n\n<svg><circle /></svg>";
-    const segments = splitSvgBlocks(text);
-    expect(segments).toContainEqual({ type: "svg", content: "<svg><circle /></svg>" });
+  it("renders a real <svg> that follows a fenced code sample", () => {
+    const text =
+      '```html\n<svg viewBox="0 0 9 9"></svg>\n```\n\n<svg viewBox="0 0 3 3"><circle r="1" /></svg>';
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('svg[viewBox="0 0 3 3"]')).not.toBeNull();
+    expect(container.querySelector('svg[viewBox="0 0 9 9"]')).toBeNull();
+  });
+});
+
+describe("markdown fence unwrapping", () => {
+  it("renders a top-level ```markdown fence as markdown", () => {
+    const text = "```markdown\n# Real heading\n\nBody text\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).not.toBeNull();
+    expect(screen.getByText("Real heading")).toBeInTheDocument();
+  });
+
+  it("does not unwrap a ```markdown example nested inside an outer fence", () => {
+    const text = "Example:\n\n````text\n```markdown\n# Not a real heading\n```\n````";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).toBeNull();
+    // The example's fence lines survive verbatim inside the code block
+    expect(screen.getByText(/```markdown/)).toBeInTheDocument();
+  });
+
+  it("handles a ```markdown fence containing a nested fence", () => {
+    const text = "```markdown\n# Title\n\n```js\nconst x = 1;\n```\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).not.toBeNull();
+    expect(screen.getByText("const x = 1;")).toBeInTheDocument();
+  });
+});
+
+describe("code block vs inline chip styling", () => {
+  it("styles a single-line fence without a language as a code block, not an inline chip", () => {
+    const text = "~~~\nsingle line of code\n~~~";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('[class*="group/code"]')).not.toBeNull();
+  });
+
+  it("still styles inline code spans as chips", () => {
+    const { container } = render(
+      <ActivityMessageItem message={makeMessage("prose with `inline code` here")} />,
+    );
+    expect(container.querySelector('[class*="group/code"]')).toBeNull();
+    expect(screen.getByText("inline code")).toBeInTheDocument();
+  });
+
+  it("does not leak block styling into inline code nested in a ```markdown fence", () => {
+    const text = "```markdown\nprose with `nested inline` code\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('[class*="group/code"]')).toBeNull();
+    expect(screen.getByText("nested inline")).toBeInTheDocument();
+  });
+});
+
+describe("math rendering", () => {
+  it("renders KaTeX HTML output without duplicated MathML text", () => {
+    const { container } = render(
+      <ActivityMessageItem message={makeMessage("Euler: $e^{i\\pi} + 1 = 0$ inline.")} />,
+    );
+    expect(container.querySelector(".katex-html")).not.toBeNull();
+    // No MathML branch: the sanitize schema would unwrap it into raw text,
+    // tripling the formula in textContent (copy-paste + screen-reader soup).
+    expect(container.querySelector(".katex-mathml")).toBeNull();
+    expect(container.textContent).not.toContain("e^{i\\pi}");
   });
 });
 
