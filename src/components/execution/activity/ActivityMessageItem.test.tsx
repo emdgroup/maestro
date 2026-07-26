@@ -212,6 +212,66 @@ describe("raw svg rendering", () => {
   });
 });
 
+describe("markdown fence unwrapping", () => {
+  it("renders a top-level ```markdown fence as markdown", () => {
+    const text = "```markdown\n# Real heading\n\nBody text\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).not.toBeNull();
+    expect(screen.getByText("Real heading")).toBeInTheDocument();
+  });
+
+  it("does not unwrap a ```markdown example nested inside an outer fence", () => {
+    const text = "Example:\n\n````text\n```markdown\n# Not a real heading\n```\n````";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).toBeNull();
+    // The example's fence lines survive verbatim inside the code block
+    expect(screen.getByText(/```markdown/)).toBeInTheDocument();
+  });
+
+  it("handles a ```markdown fence containing a nested fence", () => {
+    const text = "```markdown\n# Title\n\n```js\nconst x = 1;\n```\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector("h1")).not.toBeNull();
+    expect(screen.getByText("const x = 1;")).toBeInTheDocument();
+  });
+});
+
+describe("code block vs inline chip styling", () => {
+  it("styles a single-line fence without a language as a code block, not an inline chip", () => {
+    const text = "~~~\nsingle line of code\n~~~";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('[class*="group/code"]')).not.toBeNull();
+  });
+
+  it("still styles inline code spans as chips", () => {
+    const { container } = render(
+      <ActivityMessageItem message={makeMessage("prose with `inline code` here")} />,
+    );
+    expect(container.querySelector('[class*="group/code"]')).toBeNull();
+    expect(screen.getByText("inline code")).toBeInTheDocument();
+  });
+
+  it("does not leak block styling into inline code nested in a ```markdown fence", () => {
+    const text = "```markdown\nprose with `nested inline` code\n```";
+    const { container } = render(<ActivityMessageItem message={makeMessage(text)} />);
+    expect(container.querySelector('[class*="group/code"]')).toBeNull();
+    expect(screen.getByText("nested inline")).toBeInTheDocument();
+  });
+});
+
+describe("math rendering", () => {
+  it("renders KaTeX HTML output without duplicated MathML text", () => {
+    const { container } = render(
+      <ActivityMessageItem message={makeMessage("Euler: $e^{i\\pi} + 1 = 0$ inline.")} />,
+    );
+    expect(container.querySelector(".katex-html")).not.toBeNull();
+    // No MathML branch: the sanitize schema would unwrap it into raw text,
+    // tripling the formula in textContent (copy-paste + screen-reader soup).
+    expect(container.querySelector(".katex-mathml")).toBeNull();
+    expect(container.textContent).not.toContain("e^{i\\pi}");
+  });
+});
+
 describe("table sorting", () => {
   it("renders a GFM table with sortable headers", () => {
     const md = `

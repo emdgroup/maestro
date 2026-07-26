@@ -37,6 +37,13 @@ export { MermaidBlock } from "./MermaidBlock";
 export { SvgBlock } from "./SvgBlock";
 export { SmilesBlock } from "./SmilesBlock";
 
+// react-markdown v9+ no longer passes an `inline` flag to the code renderer.
+// Fenced and indented code always arrives wrapped in <pre>, inline code never
+// does, so the pre override marks its subtree and the code renderer reads that
+// instead of guessing from className/newlines (which misstyled single-line
+// fences without a language tag as inline chips).
+const InsidePreContext = createContext(false);
+
 function MarkdownCodeComponent({
   children,
   className,
@@ -47,7 +54,7 @@ function MarkdownCodeComponent({
   const match = /language-([\w-]+)/.exec(className ?? "");
   const lang = match ? match[1] : "";
   const rawCode = String(children).replace(/\n$/, "");
-  const isBlock = Boolean(className?.startsWith("language-")) || rawCode.includes("\n");
+  const isBlock = useContext(InsidePreContext);
   if (isBlock) {
     if (lang === "markdown") return <MarkdownBlock text={rawCode} />;
     if (lang === "svg") return <SvgBlock code={rawCode} />;
@@ -159,22 +166,33 @@ type ImageProxyContextValue = { projectId: number; baseDir: string | undefined }
 export const ImageProxyContext = createContext<ImageProxyContextValue>(undefined);
 const InsideAnchorContext = createContext(false);
 
+/**
+ * Unwrap top-level ```markdown fences so their content renders as markdown.
+ * Exists because remark cannot parse a markdown fence containing nested fences
+ * (the first inner bare ``` would close it), so the close is found heuristically:
+ * the last bare fence line before the next markdown fence or EOF.
+ *
+ * Fences with any other info string are skipped wholesale (copied through to
+ * their closing line, CommonMark rules: same char, run at least as long), so a
+ * ```markdown example shown inside an outer fence is never unwrapped.
+ */
 function stripMarkdownFences(text: string): string {
   const lines = text.split("\n");
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^`{3,}(markdown|md)\s*$/.test(lines[i])) {
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (fence && /^(markdown|md)\s*$/.test(fence[2]) && fence[1][0] === "`") {
       let rangeEnd = lines.length;
       for (let k = i + 1; k < lines.length; k++) {
-        if (/^`{3,}(markdown|md)\s*$/.test(lines[k])) {
+        if (/^ {0,3}`{3,}(markdown|md)\s*$/.test(lines[k])) {
           rangeEnd = k;
           break;
         }
       }
       let closeIdx = -1;
       for (let k = rangeEnd - 1; k > i; k--) {
-        if (/^`{3,}\s*$/.test(lines[k])) {
+        if (/^ {0,3}`{3,}\s*$/.test(lines[k])) {
           closeIdx = k;
           break;
         }
@@ -184,6 +202,21 @@ function stripMarkdownFences(text: string): string {
         i = closeIdx + 1;
         continue;
       }
+    } else if (fence && fence[2].trim() !== "" && !fence[2].includes(fence[1][0])) {
+      // Non-markdown fence: copy it and its body through the closing line so
+      // nothing inside (including ```markdown lines) is treated as an opener.
+      const char = fence[1][0];
+      const len = fence[1].length;
+      const closeRe = new RegExp(`^ {0,3}\\${char}{${len},}\\s*$`);
+      result.push(lines[i]);
+      i++;
+      while (i < lines.length) {
+        result.push(lines[i]);
+        const closed = closeRe.test(lines[i]);
+        i++;
+        if (closed) break;
+      }
+      continue;
     }
     result.push(lines[i]);
     i++;
@@ -214,16 +247,22 @@ export const MarkdownBlock = memo(function MarkdownBlock({
 
   const processedText = useMemo(() => stripMarkdownFences(text), [text]);
 
+  // Reset the pre marker: a MarkdownBlock nested via a ```markdown fence sits
+  // inside the outer document's <pre> provider, but starts a fresh document.
   const content = (
-    <Markdown
-      remarkPlugins={breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark}
-      rehypePlugins={MARKDOWN_PLUGINS.rehype}
-      urlTransform={markdownUrlTransform}
-      // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
-      components={components as any}
-    >
-      {processedText}
-    </Markdown>
+    <InsidePreContext.Provider value={false}>
+      <Markdown
+        remarkPlugins={
+          breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark
+        }
+        rehypePlugins={MARKDOWN_PLUGINS.rehype}
+        urlTransform={markdownUrlTransform}
+        // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
+        components={components as any}
+      >
+        {processedText}
+      </Markdown>
+    </InsidePreContext.Provider>
   );
 
   if (!ctxValue) return content;
@@ -377,9 +416,14 @@ function MarkdownImgComponent({
 
 export const MARKDOWN_PLUGINS = {
   remark: [remarkGfm, remarkMath, remarkMark] as Parameters<typeof Markdown>[0]["remarkPlugins"],
-  rehype: [rehypeKatex, rehypeRaw, rehypeSlug, [rehypeSanitize, sanitizeSchema]] as Parameters<
-    typeof Markdown
-  >[0]["rehypePlugins"],
+  // KaTeX emits HTML only: its MathML output contains tags the sanitize schema
+  // strips, which unwrapped them into duplicated raw formula text in the DOM.
+  rehype: [
+    [rehypeKatex, { output: "html" }],
+    rehypeRaw,
+    rehypeSlug,
+    [rehypeSanitize, sanitizeSchema],
+  ] as Parameters<typeof Markdown>[0]["rehypePlugins"],
 };
 
 export const MARKDOWN_COMPONENTS = {
@@ -414,7 +458,9 @@ export const MARKDOWN_COMPONENTS = {
       {children}
     </h6>
   ),
-  pre: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  pre: ({ children }: { children?: ReactNode }) => (
+    <InsidePreContext.Provider value={true}>{children}</InsidePreContext.Provider>
+  ),
   p: ({ children, align }: { children?: ReactNode; align?: string }) => (
     <p
       className="mb-2 last:mb-0"
