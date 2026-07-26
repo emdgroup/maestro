@@ -6,7 +6,7 @@ use acp::schema::ProtocolVersion;
 use acp::schema::v1::{
     ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
     DeleteSessionRequest, Implementation, InitializeRequest, KillTerminalRequest,
-    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, NewSessionRequest,
+    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer, NewSessionRequest,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, TerminalExitStatus,
     TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
@@ -22,6 +22,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::agent;
+use crate::mcp_config::McpTransportSupport;
 use crate::send_response;
 use crate::sessions::{
     ActiveSession, AgentCapabilities, AgentConnection, AgentConnectionHandle, SessionCommand,
@@ -45,6 +46,28 @@ pub(crate) struct SpawnResult {
     pub(crate) supports_session_delete: bool,
     pub(crate) acp_session_id: String,
     pub(crate) config_options: Option<Vec<serde_json::Value>>,
+}
+
+/// Load `.mcp.json` for `cwd` and report what was dropped and why.
+///
+/// Shared by `session/new` and `session/load` so a resumed session sees the same servers as a
+/// fresh one — an agent that reconnects its MCP servers on load would otherwise lose them.
+async fn mcp_servers_for(cwd: &str, support: McpTransportSupport) -> Vec<McpServer> {
+    let loaded = crate::mcp_config::load_mcp_servers(cwd, support).await;
+    for reason in &loaded.skipped {
+        crate::send_diag("warn", format!("[mcp] skipped {reason}"));
+    }
+    if !loaded.servers.is_empty() {
+        crate::send_diag(
+            "info",
+            format!(
+                "[mcp] forwarding {} server(s) from {}",
+                loaded.servers.len(),
+                crate::mcp_config::MCP_CONFIG_FILE
+            ),
+        );
+    }
+    loaded.servers
 }
 
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
@@ -116,8 +139,11 @@ pub(crate) async fn create_session_on_connection(
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
     crate::send_diag("info", format!("[session] session/new maestro_id={maestro_session_id}"));
+    let mcp_servers = mcp_servers_for(cwd, conn.capabilities.mcp_transports).await;
     let session_response = match cx
-        .send_request(NewSessionRequest::new(std::path::PathBuf::from(cwd)))
+        .send_request(
+            NewSessionRequest::new(std::path::PathBuf::from(cwd)).mcp_servers(mcp_servers),
+        )
         .block_task()
         .await
     {
@@ -244,7 +270,8 @@ pub(crate) async fn load_session_on_connection(
     let load_req = LoadSessionRequest::new(
         resume_session_id.clone(),
         std::path::PathBuf::from(cwd),
-    );
+    )
+    .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await);
     let load_response = match cx.send_request(load_req).block_task().await {
         Ok(r) => r,
         Err(e) => {
@@ -443,11 +470,16 @@ pub(crate) async fn pre_initialize_agent(
                     supports_session_delete: init_response.agent_capabilities.session_capabilities.delete.is_some(),
                     auth_methods,
                     supports_auth_logout,
+                    mcp_transports: McpTransportSupport {
+                        http: init_response.agent_capabilities.mcp_capabilities.http,
+                        sse: init_response.agent_capabilities.mcp_capabilities.sse,
+                    },
                 };
                 crate::send_diag("info", format!(
-                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={}",
+                    "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={} mcp_http={} mcp_sse={}",
                     caps.supports_session_list, caps.supports_session_load, caps.supports_session_close, caps.supports_session_delete,
-                    caps.auth_methods.len(), caps.supports_auth_logout
+                    caps.auth_methods.len(), caps.supports_auth_logout,
+                    caps.mcp_transports.http, caps.mcp_transports.sse
                 ));
                 // Send the live connection handle out — caller uses it to create sessions.
                 let _ = ready_tx.send(Ok((caps, cx)));

@@ -99,6 +99,8 @@ pub struct AgentCapabilities {
     pub supports_session_delete: bool,
     pub auth_methods: Vec<AuthMethodInfo>,
     pub supports_auth_logout: bool,
+    /// Which MCP transports this agent can connect to, for gating `.mcp.json` entries.
+    pub mcp_transports: crate::mcp_config::McpTransportSupport,
 }
 
 /// Cloneable subset of `AgentConnection` used by spawned tasks that need to call ACP methods

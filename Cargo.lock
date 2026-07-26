@@ -3603,6 +3603,7 @@ dependencies = [
  "ignore",
  "jsonschema",
  "maestro-protocol",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-util",
