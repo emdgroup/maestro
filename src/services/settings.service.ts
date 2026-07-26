@@ -18,6 +18,8 @@ const settingsQueryKeys = {
   base: ["settings"] as const,
   lists: () => [...settingsQueryKeys.base, "list"] as const,
   accentColor: () => [...settingsQueryKeys.base, "accentColor"] as const,
+  logLevels: () => [...settingsQueryKeys.base, "logLevels"] as const,
+  logDirectory: () => [...settingsQueryKeys.base, "logDirectory"] as const,
 };
 
 /**
@@ -28,6 +30,31 @@ export function useSettings() {
   return useQuery({
     queryKey: settingsQueryKeys.lists(),
     queryFn: () => api.getSettings(),
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Query hook for the log levels the backend accepts.
+ * Fetched rather than hardcoded so the UI cannot offer a level Rust will not parse.
+ */
+export function useLogLevels() {
+  return useQuery({
+    queryKey: settingsQueryKeys.logLevels(),
+    queryFn: () => api.getLogLevels(),
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Query hook for the directory logs are actually being written to.
+ * This is how a user finds the file to attach to a bug report, so it resolves the same path the
+ * logger uses rather than reconstructing it in the frontend.
+ */
+export function useLogDirectory() {
+  return useQuery({
+    queryKey: settingsQueryKeys.logDirectory(),
+    queryFn: () => api.getLogDirectory(),
     staleTime: Infinity,
   });
 }
@@ -60,6 +87,8 @@ export function useSaveSettings({ successToast = true }: { successToast: boolean
       }
       // Invalidate settings list so it refetches with updated values
       void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.lists() });
+      // The resolved log path depends on log_directory, so it can go stale on any save.
+      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.logDirectory() });
     },
     onError: createErrorToastHandler("Failed to save settings"),
   });

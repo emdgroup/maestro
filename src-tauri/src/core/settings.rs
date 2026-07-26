@@ -83,6 +83,8 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .unwrap_or_default();
 
     let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
+    let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
+    let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
 
     Ok(AppSettings {
         theme_preference,
@@ -97,6 +99,8 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         updated_at,
         auto_update,
         ui_scale,
+        log_level,
+        log_directory,
     })
 }
 
@@ -117,6 +121,8 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let agent_stream_width_str = settings.agent_stream_width.to_string();
     let auto_update_str = if settings.auto_update { "true" } else { "false" };
     let ui_scale_str = settings.ui_scale.as_deref().unwrap_or("").to_string();
+    let log_level_str = settings.log_level.as_deref().unwrap_or("").to_string();
+    let log_directory_str = settings.log_directory.as_deref().unwrap_or("").to_string();
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -129,6 +135,8 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("agent_stream_width", agent_stream_width_str.as_str()),
         ("auto_update", auto_update_str),
         ("ui_scale", ui_scale_str.as_str()),
+        ("log_level", log_level_str.as_str()),
+        ("log_directory", log_directory_str.as_str()),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -181,10 +189,28 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             auto_update: false,
             ui_scale: None,
+            log_level: Some("debug".to_string()),
+            log_directory: Some("/tmp/maestro-logs".to_string()),
         };
 
         save_settings(&mut conn, &settings).unwrap();
         let loaded = load_settings(&conn).unwrap();
         assert_eq!(loaded.theme_preference, settings.theme_preference);
+        assert_eq!(loaded.log_level, settings.log_level);
+        assert_eq!(loaded.log_directory, settings.log_directory);
+    }
+
+    /// An unset directory must come back as `None`, not `Some("")` — the empty string would be
+    /// resolved as a path and send the log file to the process working directory.
+    #[test]
+    fn unset_log_settings_round_trip_as_none() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
+
+        save_settings(&mut conn, &AppSettings::default()).unwrap();
+        let loaded = load_settings(&conn).unwrap();
+
+        assert_eq!(loaded.log_level, None);
+        assert_eq!(loaded.log_directory, None);
     }
 }

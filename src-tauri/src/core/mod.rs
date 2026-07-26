@@ -1,4 +1,5 @@
 pub mod connection;
+pub mod logging;
 pub mod schema;
 pub mod settings;
 pub mod project_storage;

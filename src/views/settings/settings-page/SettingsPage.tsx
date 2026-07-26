@@ -10,6 +10,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
+import { DiagnosticsSection } from "./DiagnosticsSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
 
@@ -128,6 +129,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 issueTrackingIntegrations={issueTrackingIntegrations}
                 onValidityChange={setIsIssueTrackingValid}
               />
+              <DiagnosticsSection />
               <div className="flex justify-end">
                 <div onMouseEnter={startSaveHoverTimer} onMouseLeave={cancelSaveHoverTimer}>
                   <Button
