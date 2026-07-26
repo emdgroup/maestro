@@ -6,39 +6,39 @@ use crate::connectivity::wsl::{WslConnection, WslDistro};
 /// List installed WSL distros. Returns empty vec on non-Windows.
 #[tauri::command]
 #[specta::specta]
-pub fn list_wsl_distros() -> Result<Vec<WslDistro>, String> {
-    crate::connectivity::wsl::list_distros()
+pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, String> {
+    crate::connectivity::wsl::list_distros().await
 }
 
 /// List entries in a WSL distro directory.
 #[tauri::command]
 #[specta::specta]
-pub fn list_wsl_directories(distro: String, path: String) -> Result<Vec<String>, String> {
-    crate::connectivity::wsl::list_directories(&distro, &path)
+pub async fn list_wsl_directories(distro: String, path: String) -> Result<Vec<String>, String> {
+    crate::connectivity::wsl::list_directories(&distro, &path).await
 }
 
 /// Get the home directory for the default user in a WSL distro.
 #[tauri::command]
 #[specta::specta]
-pub fn get_wsl_home(distro: String) -> Result<String, String> {
-    crate::connectivity::wsl::get_home_dir(&distro)
+pub async fn get_wsl_home(distro: String) -> Result<String, String> {
+    crate::connectivity::wsl::get_home_dir(&distro).await
 }
 
 /// List files and directories inside a WSL distro path.
 #[tauri::command]
 #[specta::specta]
-pub fn list_wsl_contents(
+pub async fn list_wsl_contents(
     distro: String,
     path: String,
 ) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
-    crate::connectivity::wsl::list_contents(&distro, &path)
+    crate::connectivity::wsl::list_contents(&distro, &path).await
 }
 
 /// Upsert a WSL connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]
-pub fn save_wsl_connection(
-    app_state: State<Arc<AppState>>,
+pub async fn save_wsl_connection(
+    app_state: State<'_, Arc<AppState>>,
     distro_name: String,
     display_name: Option<String>,
 ) -> Result<WslConnection, String> {
@@ -65,7 +65,7 @@ pub fn save_wsl_connection(
     Ok(row)
 }
 
-fn get_wsl_distro(app_state: &State<Arc<AppState>>, connection_id: i32) -> Result<String, String> {
+fn get_wsl_distro(app_state: &State<'_, Arc<AppState>>, connection_id: i32) -> Result<String, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
     conn.query_row(
         "SELECT distro_name FROM wsl_connections WHERE id = ?",
@@ -77,44 +77,44 @@ fn get_wsl_distro(app_state: &State<Arc<AppState>>, connection_id: i32) -> Resul
 /// List all non-hidden workspace files in a WSL distro path.
 #[tauri::command]
 #[specta::specta]
-pub fn list_wsl_workspace_files(
-    app_state: State<Arc<AppState>>,
+pub async fn list_wsl_workspace_files(
+    app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
     path: String,
 ) -> Result<Vec<String>, String> {
     let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::list_workspace_files(&distro, &path)
+    crate::connectivity::wsl::list_workspace_files(&distro, &path).await
 }
 
 /// Read a text file from a WSL distro. Rejects binary files and files over 512 KB.
 #[tauri::command]
 #[specta::specta]
-pub fn read_wsl_file(
-    app_state: State<Arc<AppState>>,
+pub async fn read_wsl_file(
+    app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
     path: String,
 ) -> Result<String, String> {
     let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::read_file(&distro, &path)
+    crate::connectivity::wsl::read_file(&distro, &path).await
 }
 
 /// Read a file from a WSL distro as base64. Rejects files over 10 MB.
 #[tauri::command]
 #[specta::specta]
-pub fn read_wsl_file_binary(
-    app_state: State<Arc<AppState>>,
+pub async fn read_wsl_file_binary(
+    app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
     path: String,
 ) -> Result<String, String> {
     let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::read_file_binary(&distro, &path)
+    crate::connectivity::wsl::read_file_binary(&distro, &path).await
 }
 
 /// Delete a WSL connection and its associated project history.
 #[tauri::command]
 #[specta::specta]
-pub fn delete_wsl_connection(
-    app_state: State<Arc<AppState>>,
+pub async fn delete_wsl_connection(
+    app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
@@ -138,7 +138,7 @@ pub fn delete_wsl_connection(
 /// List all saved WSL connections from the database.
 #[tauri::command]
 #[specta::specta]
-pub fn list_wsl_connections(app_state: State<Arc<AppState>>) -> Result<Vec<WslConnection>, String> {
+pub async fn list_wsl_connections(app_state: State<'_, Arc<AppState>>) -> Result<Vec<WslConnection>, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
     let mut stmt = conn
         .prepare("SELECT id, distro_name, display_name, last_used_at, created_at FROM wsl_connections ORDER BY last_used_at DESC")

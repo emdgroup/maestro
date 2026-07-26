@@ -92,17 +92,24 @@ pub async fn list_worktrees_with_status(
                 let wt_path = wt.path.clone();
                 let conn = git_conn.clone();
                 tokio::spawn(async move {
-                    let status_output = crate::git::run_git_in_dir(&conn, &wt_path, &["status", "--porcelain"])
-                        .await
-                        .unwrap_or_default();
+                    // One batched round-trip: on WSL/SSH/Docker each git call pays a
+                    // full interop spawn, and this runs per worktree on a 10s poll.
+                    let mut outputs = crate::git::run_git_commands_lossy(
+                        &conn,
+                        &wt_path,
+                        &[
+                            &["status", "--porcelain"],
+                            &["diff", "--shortstat"],
+                            &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
+                        ],
+                    )
+                    .await
+                    .into_iter();
+                    let status_output = outputs.next().unwrap_or_default();
+                    let diff_stat_raw = outputs.next().unwrap_or_default();
+                    let ahead_behind_raw = outputs.next().unwrap_or_default();
                     let changed_files_count = status_output.lines().filter(|l| !l.is_empty()).count() as u32;
-                    let diff_stat_raw = crate::git::run_git_in_dir(&conn, &wt_path, &["diff", "--shortstat"])
-                        .await
-                        .unwrap_or_default();
                     let diff_stat = if diff_stat_raw.trim().is_empty() { None } else { Some(diff_stat_raw.trim().to_string()) };
-                    let ahead_behind_raw = crate::git::run_git_in_dir(
-                        &conn, &wt_path, &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
-                    ).await.unwrap_or_default();
                     let ahead_behind: Option<AheadBehind> = ahead_behind_raw
                         .trim()
                         .split_once('\t')

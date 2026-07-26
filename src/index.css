@@ -226,15 +226,6 @@
     font-family: "FiraCode Nerd Font Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
   }
 
-  /* Respect user's motion preference for accessibility */
-  @media (prefers-reduced-motion: reduce) {
-    * {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
-
   /* Custom scrollbar styling */
   .custom-scrollbar::-webkit-scrollbar {
     width: 8px;

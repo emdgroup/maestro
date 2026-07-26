@@ -9,6 +9,7 @@ import {
   splitSvgBlocks,
   useCopyToClipboard,
 } from "./MarkdownBlock";
+import { splitAtSectionStarts } from "./markdown-stream-utils";
 
 export { getCompleteBlocksText } from "./MarkdownBlock";
 
@@ -64,7 +65,10 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
   const segments = useMemo(() => {
     const textToRender = isActivelyStreaming ? completedText : message.text;
     if (!textToRender) return [];
-    return splitSvgBlocks(textToRender);
+    // While streaming, cut at section starts so earlier sections keep stable
+    // string identity and their memoized MarkdownBlocks skip re-parsing.
+    const parts = isActivelyStreaming ? splitAtSectionStarts(textToRender) : [textToRender];
+    return parts.flatMap((part) => splitSvgBlocks(part));
   }, [message.text, isActivelyStreaming, completedText]);
   const hasSvg = segments.some((s) => s.type === "svg");
 
@@ -81,13 +85,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
       <div className="text-sm leading-relaxed text-foreground">
         {message.isStreaming && isActivelyStreaming ? (
           <>
-            {completedText ? (
-              hasSvg ? (
-                renderedSegments
-              ) : (
-                <MarkdownBlock text={completedText} />
-              )
-            ) : null}
+            {renderedSegments}
             <TypingDots className="ml-1" />
           </>
         ) : hasSvg ? (

@@ -50,14 +50,15 @@ pub fn is_wsl_available() -> bool {
 ///
 /// Returns an empty vec when WSL is unavailable or no distros are installed.
 /// Verbose mode outputs a header followed by one distro per line with name, state, and version.
-pub fn list_distros() -> Result<Vec<WslDistro>, String> {
+pub async fn list_distros() -> Result<Vec<WslDistro>, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["--list", "--verbose"])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
         let text = decode_wsl_output(&output.stdout)?;
@@ -73,14 +74,15 @@ pub fn list_distros() -> Result<Vec<WslDistro>, String> {
 /// Runs `wsl.exe -d <distro> -- ls -1aF <path>` and returns the raw names.
 /// Trailing `/` on directories and `*` on executables are preserved so the
 /// frontend can distinguish directories from files without a separate stat.
-pub fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String> {
+pub async fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "ls", "-1aF", path])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
         if !output.status.success() {
@@ -104,14 +106,15 @@ pub fn list_directories(distro: &str, path: &str) -> Result<Vec<String>, String>
 
 /// List files and directories inside a WSL distro path. Dirs first, then files, each sorted.
 /// Hidden entries (starting with `.`) are excluded.
-pub fn list_contents(distro: &str, path: &str) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
+pub async fn list_contents(distro: &str, path: &str) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "ls", "-1aF", path])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
         if !output.status.success() {
@@ -148,14 +151,15 @@ pub fn list_contents(distro: &str, path: &str) -> Result<Vec<crate::connectivity
 }
 
 /// Get the home directory for a WSL distro's default user.
-pub fn get_home_dir(distro: &str) -> Result<String, String> {
+pub async fn get_home_dir(distro: &str) -> Result<String, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "sh", "-c", "echo $HOME"])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
 
         if !output.status.success() {
@@ -174,7 +178,7 @@ pub fn get_home_dir(distro: &str) -> Result<String, String> {
 
 /// Recursively list all non-hidden files under `path` inside a WSL distro.
 /// Returns paths relative to `path`, normalized to `/`. Caps at depth 8 and 2000 files.
-pub fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, String> {
+pub async fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
@@ -183,10 +187,11 @@ pub fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, Str
             "cd {} && find . -maxdepth 8 -type f -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/target/*' -not -path '*/dist/*' 2>/dev/null | sed 's|^\\./||' | sort | head -2000",
             shell_quote(path)
         );
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "sh", "-c", &cmd])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
         let text = decode_wsl_output(&output.stdout)?;
         Ok(text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
@@ -199,7 +204,7 @@ pub fn list_workspace_files(distro: &str, path: &str) -> Result<Vec<String>, Str
 }
 
 /// Read a file's raw content from a WSL distro as base64. Rejects files over 10 MB.
-pub fn read_file_binary(distro: &str, path: &str) -> Result<String, String> {
+pub async fn read_file_binary(distro: &str, path: &str) -> Result<String, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
@@ -208,10 +213,11 @@ pub fn read_file_binary(distro: &str, path: &str) -> Result<String, String> {
         let cmd = format!(
             "s=$(wc -c < {quoted} 2>/dev/null); if [ \"${{s:-0}}\" -gt 10485760 ]; then echo 'ERR:too_large'; else base64 -w0 < {quoted}; fi"
         );
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "sh", "-c", &cmd])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -232,16 +238,17 @@ pub fn read_file_binary(distro: &str, path: &str) -> Result<String, String> {
 }
 
 /// Read a file's text content from a WSL distro. Rejects binary files and files over 512 KB.
-pub fn read_file(distro: &str, path: &str) -> Result<String, String> {
+pub async fn read_file(distro: &str, path: &str) -> Result<String, String> {
     #[cfg(windows)]
     {
         use crate::command_ext::NoConsoleWindow;
         use crate::git::remote::shell_quote;
         let cmd = format!("head -c 524288 {}", shell_quote(path));
-        let output = std::process::Command::new("wsl.exe")
+        let output = tokio::process::Command::new("wsl.exe")
             .args(["-d", distro, "--", "sh", "-c", &cmd])
             .no_console_window()
             .output()
+            .await
             .map_err(|e| format!("Failed to run wsl.exe: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

@@ -389,7 +389,18 @@ export function ComposeBar({
                     <svg
                       viewBox="0 0 42 42"
                       className="absolute pointer-events-none"
-                      style={{ inset: "-5px", width: "42px", height: "42px", overflow: "visible" }}
+                      style={{
+                        inset: "-5px",
+                        width: "42px",
+                        height: "42px",
+                        overflow: "visible",
+                        // Animate the svg root, not the circle: transform animations on
+                        // SVG child elements run on the renderer main thread and freeze
+                        // under load, while the root element composites. Origin matches
+                        // the circle's center so the arc traces the same path.
+                        animation: "arc-spin-cw 0.9s linear infinite",
+                        transformOrigin: "20px 20px",
+                      }}
                     >
                       <circle
                         cx="20"
@@ -401,11 +412,6 @@ export function ComposeBar({
                         strokeWidth={1.8}
                         strokeLinecap="round"
                         strokeDasharray="22 79"
-                        style={{
-                          transformBox: "fill-box",
-                          transformOrigin: "center",
-                          animation: "arc-spin-cw 0.9s linear infinite",
-                        }}
                       />
                     </svg>
                     <svg className="w-3.5 h-3.5 relative" viewBox="0 0 24 24" fill="currentColor">

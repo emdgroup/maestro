@@ -4,6 +4,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::connectivity::docker_handlers::run_blocking;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct FileEntry {
     pub name: String,
@@ -14,49 +16,55 @@ pub struct FileEntry {
 /// Hidden entries (starting with `.`) are excluded.
 #[tauri::command]
 #[specta::specta]
-pub fn list_local_contents(path: String) -> Result<Vec<FileEntry>, String> {
-    let dir_path = Path::new(&path);
-    if !dir_path.is_dir() {
-        return Err(format!("Not a directory: {}", path));
-    }
-    let entries = fs::read_dir(dir_path)
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
-    let mut dirs: Vec<String> = Vec::new();
-    let mut files: Vec<String> = Vec::new();
-    for entry in entries.flatten() {
-        let name = match entry.file_name().into_string() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        if name.starts_with('.') {
-            continue;
+pub async fn list_local_contents(path: String) -> Result<Vec<FileEntry>, String> {
+    run_blocking(move || {
+        let dir_path = Path::new(&path);
+        if !dir_path.is_dir() {
+            return Err(format!("Not a directory: {}", path));
         }
-        match entry.metadata() {
-            Ok(m) if m.is_dir() => dirs.push(name),
-            Ok(_) => files.push(name),
-            Err(_) => continue,
+        let entries = fs::read_dir(dir_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let mut dirs: Vec<String> = Vec::new();
+        let mut files: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let name = match entry.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            if name.starts_with('.') {
+                continue;
+            }
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => dirs.push(name),
+                Ok(_) => files.push(name),
+                Err(_) => continue,
+            }
         }
-    }
-    dirs.sort();
-    files.sort();
-    let mut result: Vec<FileEntry> = dirs.into_iter().map(|n| FileEntry { name: n, is_dir: true }).collect();
-    result.extend(files.into_iter().map(|n| FileEntry { name: n, is_dir: false }));
-    Ok(result)
+        dirs.sort();
+        files.sort();
+        let mut result: Vec<FileEntry> = dirs.into_iter().map(|n| FileEntry { name: n, is_dir: true }).collect();
+        result.extend(files.into_iter().map(|n| FileEntry { name: n, is_dir: false }));
+        Ok(result)
+    })
+    .await
 }
 
 /// Recursively list all non-hidden files under root, returning paths relative to root.
 /// Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
 #[tauri::command]
 #[specta::specta]
-pub fn list_workspace_files(root: String) -> Result<Vec<String>, String> {
-    let root_path = Path::new(&root);
-    if !root_path.is_dir() {
-        return Err(format!("Not a directory: {}", root));
-    }
-    let mut output = Vec::new();
-    walk_files(root_path, root_path, 0, &mut output).map_err(|e| e.to_string())?;
-    output.sort();
-    Ok(output)
+pub async fn list_workspace_files(root: String) -> Result<Vec<String>, String> {
+    run_blocking(move || {
+        let root_path = Path::new(&root);
+        if !root_path.is_dir() {
+            return Err(format!("Not a directory: {}", root));
+        }
+        let mut output = Vec::new();
+        walk_files(root_path, root_path, 0, &mut output).map_err(|e| e.to_string())?;
+        output.sort();
+        Ok(output)
+    })
+    .await
 }
 
 fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> io::Result<()> {
@@ -99,72 +107,81 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
 /// Read a local file's text content. Rejects binary files and files over 512 KB.
 #[tauri::command]
 #[specta::specta]
-pub fn read_local_file(path: String) -> Result<String, String> {
-    use std::io::Read;
-    let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut sample = [0u8; 512];
-    let n = file.read(&mut sample).map_err(|e| e.to_string())?;
-    if sample[..n].contains(&0u8) {
-        return Err("Binary file".to_string());
-    }
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    if bytes.len() > 524_288 {
-        return Err("File too large".to_string());
-    }
-    String::from_utf8(bytes).map_err(|e| e.to_string())
+pub async fn read_local_file(path: String) -> Result<String, String> {
+    run_blocking(move || {
+        use std::io::Read;
+        let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
+        let mut sample = [0u8; 512];
+        let n = file.read(&mut sample).map_err(|e| e.to_string())?;
+        if sample[..n].contains(&0u8) {
+            return Err("Binary file".to_string());
+        }
+        let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+        if bytes.len() > 524_288 {
+            return Err("File too large".to_string());
+        }
+        String::from_utf8(bytes).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Read a local file's raw content as a base64-encoded string. Rejects files over 10 MB.
 #[tauri::command]
 #[specta::specta]
-pub fn read_local_file_binary(path: String) -> Result<String, String> {
-    use base64::engine::general_purpose::STANDARD;
-    use base64::Engine;
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    if bytes.len() > 10_485_760 {
-        return Err("File too large".to_string());
-    }
-    Ok(STANDARD.encode(&bytes))
+pub async fn read_local_file_binary(path: String) -> Result<String, String> {
+    run_blocking(move || {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+        if bytes.len() > 10_485_760 {
+            return Err("File too large".to_string());
+        }
+        Ok(STANDARD.encode(&bytes))
+    })
+    .await
 }
 
 /// List subdirectories in a local filesystem path
 #[tauri::command]
 #[specta::specta]
-pub fn list_local_directories(path: String) -> Result<Vec<String>, String> {
-    let dir_path = Path::new(&path);
+pub async fn list_local_directories(path: String) -> Result<Vec<String>, String> {
+    run_blocking(move || {
+        let dir_path = Path::new(&path);
 
-    // Check if path exists and is a directory
-    if !dir_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
+        // Check if path exists and is a directory
+        if !dir_path.exists() {
+            return Err(format!("Path does not exist: {}", path));
+        }
 
-    if !dir_path.is_dir() {
-        return Err(format!("Path is not a directory: {}", path));
-    }
+        if !dir_path.is_dir() {
+            return Err(format!("Path is not a directory: {}", path));
+        }
 
-    // Read directory entries
-    let entries = fs::read_dir(dir_path)
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
+        // Read directory entries
+        let entries = fs::read_dir(dir_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
 
-    // Filter for directories only
-    let mut directories: Vec<String> = Vec::new();
-    for entry in entries.flatten() {
-        if let Ok(metadata) = entry.metadata() {
-            if metadata.is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    // Skip . and .. (though these shouldn't appear from read_dir)
-                    if name != "." && name != ".." {
-                        directories.push(name.to_string());
+        // Filter for directories only
+        let mut directories: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        // Skip . and .. (though these shouldn't appear from read_dir)
+                        if name != "." && name != ".." {
+                            directories.push(name.to_string());
+                        }
                     }
                 }
             }
         }
-    }
 
-    // Sort alphabetically
-    directories.sort();
+        // Sort alphabetically
+        directories.sort();
 
-    Ok(directories)
+        Ok(directories)
+    })
+    .await
 }
 
 /// Get the default file picker path based on the current platform
@@ -193,28 +210,32 @@ pub fn get_default_file_picker_path() -> Result<String, String> {
 /// List available drives (Windows only)
 #[tauri::command]
 #[specta::specta]
-pub fn list_drives() -> Result<Vec<String>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut drives = Vec::new();
+pub async fn list_drives() -> Result<Vec<String>, String> {
+    // Probing A:-Z: can block for seconds on unreachable network/removable drives
+    run_blocking(|| {
+        #[cfg(target_os = "windows")]
+        {
+            let mut drives = Vec::new();
 
-        // Check common drive letters A-Z
-        for letter in b'A'..=b'Z' {
-            let drive = format!("{}:/", letter as char);
-            // Try to read the drive root to see if it exists
-            if fs::metadata(&drive).is_ok() {
-                drives.push(drive);
+            // Check common drive letters A-Z
+            for letter in b'A'..=b'Z' {
+                let drive = format!("{}:/", letter as char);
+                // Try to read the drive root to see if it exists
+                if fs::metadata(&drive).is_ok() {
+                    drives.push(drive);
+                }
             }
+
+            Ok(drives)
         }
 
-        Ok(drives)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        // On non-Windows systems, return empty list
-        Ok(Vec::new())
-    }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // On non-Windows systems, return empty list
+            Ok(Vec::new())
+        }
+    })
+    .await
 }
 
 /// Get system accent color as RGB values
@@ -306,9 +327,12 @@ pub fn open_path_native(app: tauri::AppHandle, path: String) -> Result<(), Strin
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_file_size(path: String) -> Result<u64, String> {
-    fs::metadata(&path)
-        .map(|m| m.len())
-        .map_err(|e| e.to_string())
+pub async fn get_file_size(path: String) -> Result<u64, String> {
+    run_blocking(move || {
+        fs::metadata(&path)
+            .map(|m| m.len())
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
