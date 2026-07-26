@@ -27,6 +27,7 @@ pub(crate) struct ConnectionHandlers {
     pub terminal_counter: Arc<AtomicU64>,
     pub stdout: Arc<Mutex<tokio::io::Stdout>>,
     pub elicit_counter: Arc<AtomicU64>,
+    pub permission_counter: Arc<AtomicU64>,
 }
 
 macro_rules! configure_acp_builder {
@@ -121,8 +122,11 @@ macro_rules! configure_acp_builder {
                                     (Arc::clone(&h.exit_status), Arc::clone(&h.exit_notify))
                                 })
                             };
+                            // An empty exit status here would read as "it exited, no code" and let
+                            // an agent that raced release against wait believe the command
+                            // finished cleanly. Match terminal/output and report the unknown id.
                             let (exit_status_arc, exit_notify_arc) = match maybe_arcs {
-                                None => return responder.respond(WaitForTerminalExitResponse::new(TerminalExitStatus::new())),
+                                None => return Err(acp::Error::new(-32603, "unknown terminal")),
                                 Some(arcs) => arcs,
                             };
                             {
@@ -196,6 +200,7 @@ impl ConnectionHandlers {
             terminal_counter: Arc::new(AtomicU64::new(0)),
             stdout,
             elicit_counter: Arc::new(AtomicU64::new(0)),
+            permission_counter: Arc::new(AtomicU64::new(0)),
         };
         (handlers, router)
     }
@@ -213,7 +218,13 @@ impl ConnectionHandlers {
             .await
             .ok_or_else(|| acp::Error::new(-32603, format!("unknown session: {acp_sid}")))?;
 
-        let request_id = request.tool_call.tool_call_id.to_string();
+        // Not the tool call id: one tool call may request permission more than once (per-file
+        // approval, say), and reusing the id would overwrite the first request's sender — which
+        // drops it, resolving the still-open first prompt as Cancelled behind the user's back.
+        let request_id = format!(
+            "perm-{}",
+            self.permission_counter.fetch_add(1, Ordering::Relaxed) + 1
+        );
         let (tx, rx) = oneshot::channel::<Option<String>>();
 
         let payload = serde_json::to_value(&request)

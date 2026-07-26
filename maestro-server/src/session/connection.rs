@@ -392,6 +392,19 @@ pub(crate) async fn pre_initialize_agent(
                         return Ok(());
                     }
                 };
+                // An agent that cannot speak the version we asked for answers with the latest it
+                // supports. Continuing would send v1 requests to, say, a v2-only agent and fail
+                // later with unrelated parse errors, so stop here and say why.
+                if init_response.protocol_version != ProtocolVersion::V1 {
+                    let _ = ready_tx.send(Err(format!(
+                        "This agent speaks ACP protocol version {}, but Maestro only supports \
+                         version {}. Update Maestro, or use an agent version that supports ACP v{}.",
+                        init_response.protocol_version,
+                        ProtocolVersion::V1,
+                        ProtocolVersion::V1,
+                    )));
+                    return Ok(());
+                }
                 let auth_methods: Vec<AuthMethodInfo> = init_response.auth_methods
                     .iter()
                     .filter_map(|m| match m {
