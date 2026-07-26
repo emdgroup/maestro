@@ -25,6 +25,10 @@ log "=== 3/7 staple app ==="
 "$SCRIPT_DIR/staple.sh" "$APP"
 
 log "=== 4/7 package dmg ==="
+# `tauri build` already dropped an unsigned dmg here. Drop it first so the
+# notarized one replaces it and the bundle dir holds exactly one distributable —
+# otherwise whoever globs *.dmg next may pick up the unsigned one.
+rm -f "$(bundle_dir)"/dmg/*.dmg
 DMG="$("$SCRIPT_DIR/package-dmg.sh" "$APP")"
 
 log "=== 5/7 sign dmg ==="
