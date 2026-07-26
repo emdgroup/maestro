@@ -14,6 +14,7 @@ mod command_ext;
 mod dispatch;
 mod file_ops;
 mod helpers;
+mod mcp_config;
 mod session;
 mod sessions;
 mod terminal;
