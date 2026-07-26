@@ -7,6 +7,7 @@ import {
   useContext,
   type ReactNode,
   type CSSProperties,
+  type SVGProps,
 } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -30,7 +31,7 @@ import { SvgBlock } from "./SvgBlock";
 import { SmilesBlock } from "./SmilesBlock";
 
 export { sanitizeSvg, extractText } from "./markdown-sanitize";
-export { getCompleteBlocksText, splitSvgBlocks } from "./markdown-stream-utils";
+export { getCompleteBlocksText } from "./markdown-stream-utils";
 export { useCopyToClipboard, HighlightedCode, CodeBlockWrapper } from "./HighlightedCode";
 export { MermaidBlock } from "./MermaidBlock";
 export { SvgBlock } from "./SvgBlock";
@@ -61,6 +62,29 @@ function MarkdownCodeComponent({
     >
       {children}
     </code>
+  );
+}
+
+// Raw <svg> parsed out of the markdown by rehypeRaw and sanitized by
+// rehypeSanitize's SVG allowlist. Rendered from the sanitized tree directly —
+// no dangerouslySetInnerHTML. Mirrors SvgBlock's zoomable presentation.
+function MarkdownSvgComponent({
+  node: _node,
+  children,
+  ...props
+}: SVGProps<SVGSVGElement> & { node?: unknown }) {
+  return (
+    <ZoomableContent
+      className="my-2 overflow-x-auto"
+      ariaLabel="SVG graphic"
+      lightboxContent={
+        <div className="[&_svg]:max-w-none [&_svg]:h-auto">
+          <svg {...props}>{children}</svg>
+        </div>
+      }
+    >
+      <svg {...props}>{children}</svg>
+    </ZoomableContent>
   );
 }
 
@@ -414,6 +438,7 @@ export const MARKDOWN_COMPONENTS = {
   ),
   a: MarkdownAnchorComponent,
   img: MarkdownImgComponent,
+  svg: MarkdownSvgComponent,
   table: ({ children }: { children?: ReactNode }) => (
     <InteractiveTable>{children}</InteractiveTable>
   ),
