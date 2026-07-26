@@ -28,7 +28,14 @@ fn main() {
     // Generate TypeScript bindings in debug builds
     let builder = maestro_lib::create_builder();
 
-    let app = tauri::Builder::default()
+    let tauri_builder = tauri::Builder::default();
+
+    // Only present in `--features wdio` builds; a shipped binary must not expose an automation
+    // server that can drive the UI and reach every IPC command.
+    #[cfg(feature = "wdio")]
+    let tauri_builder = tauri_builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    let app = tauri_builder
         .setup(setup)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

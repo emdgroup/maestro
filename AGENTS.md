@@ -25,8 +25,7 @@ bun run dev           # Start Vite dev server (port 5173)
 bun run build         # TypeScript check + Vite production build
 bun run test          # Run Vitest unit tests
 bun run test <pattern>   # Run single test file (e.g. bun run test usePathNavigation)
-bun run test:e2e      # Run Playwright E2E tests
-bun run test:e2e:ui   # Run Playwright tests with interactive UI
+bun run test:e2e      # Build the real binary and run the WebdriverIO E2E suite (needs a display)
 bun run lint          # Run oxlint
 bun run lint:fix      # Auto-fix lint issues
 bun run format        # Check formatting with oxfmt
@@ -189,6 +188,20 @@ Tabs and Popover in `src/components/ui/` are from `@base-ui-components/react`, *
 ### No Rust Logging
 
 No `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug via IPC return values or frontend console.
+
+### End-to-end tests and the `wdio` feature
+
+`tests/e2e/` drives the **real** binary through WebdriverIO — real Rust backend, real SQLite,
+real webview. It needs a display and is **not** in CI, so it only runs when someone runs it. See
+`tests/e2e/README.md`. Keep it thin: anything provable against mocked IPC belongs in a vitest
+file, which does run per commit.
+
+The suite depends on the `wdio` Cargo feature, which registers `tauri_plugin_wdio_webdriver` in
+`main.rs`. That plugin exposes an automation server able to drive the UI and call every IPC
+command, so it is optional and off by default — verify with
+`cargo tree -i tauri-plugin-wdio-webdriver`, which finds nothing without `--features wdio`.
+**Never ship a binary built with that flag**, and do not move the dependency out of `[features]`
+to match upstream's example, which is a throwaway test app.
 
 ### Type Generation Workflow
 

@@ -41,3 +41,7 @@ brainstorm-img/
 target/
 # Added by code-review-graph
 .code-review-graph/
+
+# WebdriverIO E2E artifacts
+logs/
+.wdio-*/
