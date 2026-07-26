@@ -148,7 +148,10 @@ pub(crate) async fn handle_create_terminal(
                                 }),
                             );
                             if let Err(e) = send_response(&stdout_bg, &msg).await {
-                                eprintln!("[terminal] send TerminalOutput failed: {e}");
+                                crate::helpers::send_diag(
+                                    "warn",
+                                    format!("[terminal] send TerminalOutput failed: {e}"),
+                                );
                             }
                         }
                         None => break false,

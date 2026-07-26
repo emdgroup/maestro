@@ -16,7 +16,6 @@ use crate::acp::transport_setup::{
 #[cfg(windows)]
 use crate::acp::transport_setup::open_wsl_transport;
 use crate::acp::reader_task::spawn_shared_reader_task;
-use crate::acp::manager::append_debug_log;
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse,
     DetectProjectAgentsRequest, DetectProjectAgentsResponse,
@@ -204,7 +203,7 @@ pub async fn spawn_connection_server(
         }
     }
 
-    append_debug_log(&format!("[acp] spawning connection server for {connection_key:?}"));
+    log::debug!("[acp] spawning connection server for {connection_key:?}");
 
     let (write_tx, source, child) = match target {
         TransportTarget::Local => {

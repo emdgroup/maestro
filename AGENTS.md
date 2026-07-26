@@ -185,9 +185,43 @@ Tabs and Popover in `src/components/ui/` are from `@base-ui-components/react`, *
 </PopoverTrigger>
 ```
 
-### No Rust Logging
+### Rust logging
 
-No `tracing::`, or `log::` calls in Rust code. No logging infra wired up; debug via IPC return values or frontend console.
+Use the `log` crate — `log::error!`, `warn!`, `info!`, `debug!`, `trace!`. Do not use `tracing::`,
+and do not add `eprintln!` or `println!` for diagnostics: a bundled app has no terminal attached,
+so anything on stderr is discarded and a user cannot send it to you.
+
+`tauri-plugin-log` is configured in `main.rs`. It writes to stderr and to a rotating file (5 MB,
+two kept) in the OS log directory — `~/.local/share/com.maestro.app/logs/Maestro.log` on Linux,
+`~/Library/Logs/com.maestro.app/` on macOS, `%LOCALAPPDATA%\com.maestro.app\logs\` on Windows.
+
+Dependencies are pinned at `warn`, because at `debug` `keyring`, `rustls` and `reqwest` bury
+everything we write. Our own crates default to `info` and are raised with the `MAESTRO_LOG`
+environment variable (`MAESTRO_LOG=trace bun run tauri:dev`). Two `level_for` entries carry that
+— `maestro` for `main.rs` and `maestro_lib` for everything else — so a new crate in the workspace
+needs its own entry or it will sit at `warn`.
+
+Picking a level:
+
+| Level   | Use for                                                                     |
+| ------- | --------------------------------------------------------------------------- |
+| `error` | The user's action failed and the app cannot recover it                      |
+| `warn`  | A best-effort step failed — a dropped event emit, an unreachable connection |
+| `info`  | Once-per-run facts: startup, version, chosen paths                          |
+| `debug` | Session and connection lifecycle                                            |
+| `trace` | Per-message and per-heartbeat detail                                        |
+
+**Raw ACP frames stay at `trace`.** `transport_types.rs` and `reader_task.rs` serialise whole
+protocol messages, which carry prompt text, agent output and the contents of files the agent
+read. `trace` is off by default and that is the only thing keeping that content out of a file
+users attach to bug reports. Do not promote those sites, and do not log message bodies at a
+level above `trace`.
+
+`maestro-server` is a separate process, spawned with a null stderr on one transport path, so its
+`eprintln!` output goes nowhere. Report from there with `helpers::send_diag(level, message)`,
+which forwards over the protocol's `Diagnostic` message; the host re-logs it at a matching level.
+The `validate-canvas` subcommand and `--version` are genuine CLI output and correctly use
+`println!`/`eprintln!`.
 
 ### End-to-end tests and the `wdio` feature
 

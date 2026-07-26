@@ -7,14 +7,13 @@ use crate::acp::transport::{
     MaestroRpcMessage, ServerResponse, ServerRequest,
     read_message, write_message,
 };
-use crate::acp::manager::append_debug_log;
 
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
     let json_bytes = serde_json::to_vec(msg)
         .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
     if !matches!(msg, MaestroRpcMessage::Request(ServerRequest::Pong { .. })) {
         if let Ok(json) = std::str::from_utf8(&json_bytes) {
-            append_debug_log(&format!("[acp] >> {json}"));
+            log::trace!("[acp] >> {json}");
         }
     }
     let len = json_bytes.len() as u32;

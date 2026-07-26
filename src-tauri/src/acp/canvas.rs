@@ -196,7 +196,7 @@ pub(crate) fn emit_or_buffer_payload(
         }
     }
     if let Err(e) = app_handle.emit(&format!("acp://session-update/{}", log_id), &payload) {
-        eprintln!("[acp] emit session-update/{log_id} failed: {e}");
+        log::warn!("[acp] emit session-update/{log_id} failed: {e}");
     }
 }
 

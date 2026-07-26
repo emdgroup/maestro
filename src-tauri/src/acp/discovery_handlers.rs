@@ -231,10 +231,10 @@ pub async fn preflight_connection(
                 .filter(|a| a.spawn_deps.contains(&r.tool))
                 .map(|a| a.id.clone())
                 .collect();
-            crate::acp::manager::append_debug_log(&format!(
+            log::debug!(
                 "[preflight] tool={} available={} version={:?}",
                 r.tool, r.available, r.version
-            ));
+            );
             ToolCheckEntry {
                 mandatory: mandatory_tools.contains(r.tool.as_str()),
                 tool: r.tool,
@@ -321,10 +321,10 @@ pub(crate) async fn fetch_and_filter_agents(
         })
         .collect();
 
-    crate::acp::manager::append_debug_log(&format!(
+    log::debug!(
         "[preflight] agents after filter: {:?}",
         agents.iter().map(|a| &a.id).collect::<Vec<_>>()
-    ));
+    );
 
     (agents, list_error)
 }

@@ -479,7 +479,7 @@ pub async fn ensure_wsl_base_skill(distro: &str, project_path: &str) -> Result<(
 pub async fn ensure_local_server(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     let cached = ensure_cached_binary(app_handle, crate::acp::HOST_TRIPLE, Some(0)).await?;
     if let Err(e) = install_local_link(&cached).await {
-        eprintln!("Warning: failed to install ~/.local/bin/maestro-server: {}", e);
+        log::warn!("Warning: failed to install ~/.local/bin/maestro-server: {}", e);
     }
     Ok(cached)
 }
