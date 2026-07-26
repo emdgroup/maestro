@@ -72,6 +72,13 @@ pub struct ProjectConfig {
     pub reopen_sessions: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_tab: Option<String>,
+    /// Extra workspace roots handed to every agent alongside the session's own directory.
+    ///
+    /// Absolute paths on the machine the agent runs on, or `~`-relative; `~` is expanded there,
+    /// not here, because for an SSH or WSL project that is a different machine. Kept out of
+    /// `ProjectConfigResponse` deliberately — this is edited in the file, not the settings UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_directories: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -245,5 +252,54 @@ impl ProjectState {
             schema_version: 1,
             restorable_sessions: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `update_project_settings` writes the whole struct back after setting the three fields the
+    /// settings UI owns. Additional directories are edited only in the file, so a round-trip that
+    /// dropped them would silently erase a user's configuration the next time they touched any
+    /// unrelated setting.
+    #[test]
+    fn additional_directories_survive_a_settings_ui_save() {
+        let on_disk = r#"{
+            "default_agent": "claude-acp",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "additional_directories": ["/srv/shared", "~/notes"]
+        }"#;
+
+        let mut config: ProjectConfig =
+            serde_json::from_str(on_disk).expect("settings.json should parse");
+        assert_eq!(
+            config.additional_directories.as_deref(),
+            Some(["/srv/shared".to_string(), "~/notes".to_string()].as_slice())
+        );
+
+        config.default_agent = Some("other-acp".to_string());
+        let written = serde_json::to_string(&config).expect("config should serialize");
+        let reloaded: ProjectConfig =
+            serde_json::from_str(&written).expect("written config should parse");
+
+        assert_eq!(reloaded.additional_directories, config.additional_directories);
+    }
+
+    #[test]
+    fn a_settings_file_without_the_key_still_parses() {
+        let config: ProjectConfig = serde_json::from_str(r#"{"updated_at": ""}"#)
+            .expect("a config predating additional_directories should still load");
+        assert!(config.additional_directories.is_none());
+    }
+
+    #[test]
+    fn absent_directories_are_not_written_back() {
+        let config = ProjectConfig::default();
+        let written = serde_json::to_string(&config).expect("config should serialize");
+        assert!(
+            !written.contains("additional_directories"),
+            "an unset key should stay absent rather than appear as null: {written}"
+        );
     }
 }

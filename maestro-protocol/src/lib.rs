@@ -81,6 +81,15 @@ pub struct SpawnRequest {
     pub agent_id: String,
     pub session_id: String,
     pub cwd: String,
+    /// Extra workspace roots from the project's `.maestro/settings.json`, verbatim.
+    ///
+    /// `~` is deliberately left unexpanded: these are resolved on the machine the agent runs
+    /// on, which for an SSH or WSL project is not the one Tauri runs on.
+    ///
+    /// `default` so a Tauri and a `maestro-server` of different vintages still talk — the
+    /// deployed binary is per project and can lag the app.
+    #[serde(default)]
+    pub additional_directories: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -383,6 +392,9 @@ pub struct SessionLoadRequest {
     /// The agent's real session ID to restore (e.g. a claude-code conversation ID).
     pub resume_session_id: String,
     pub cwd: String,
+    /// See [`SpawnRequest::additional_directories`].
+    #[serde(default)]
+    pub additional_directories: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -683,6 +695,7 @@ mod tests {
             agent_id: "claude-acp".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
+            additional_directories: Vec::new(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -862,6 +875,7 @@ mod tests {
             agent_id: "gemini".to_string(),
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -1029,6 +1043,7 @@ mod tests {
             agent_id: "test".to_string(),
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

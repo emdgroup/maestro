@@ -70,6 +70,26 @@ async fn mcp_servers_for(cwd: &str, support: McpTransportSupport) -> Vec<McpServ
     loaded.servers
 }
 
+/// Resolve the project's extra workspace roots and report what was dropped and why.
+async fn additional_directories_for(
+    raw: &[String],
+    supported: bool,
+) -> Vec<std::path::PathBuf> {
+    let home = crate::workspace_roots::home_dir();
+    let (dirs, skipped) = crate::workspace_roots::resolve_additional_directories(
+        raw,
+        supported,
+        home.as_deref(),
+    );
+    for reason in &skipped {
+        crate::send_diag("warn", format!("[roots] skipped {reason}"));
+    }
+    if !dirs.is_empty() {
+        crate::send_diag("info", format!("[roots] {} additional workspace root(s)", dirs.len()));
+    }
+    dirs
+}
+
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
 pub(crate) async fn session_list_on_connection(
     conn: &AgentConnectionHandle,
@@ -135,14 +155,22 @@ pub(crate) async fn create_session_on_connection(
     conn: &AgentConnectionHandle,
     maestro_session_id: String,
     cwd: &str,
+    additional_directories: &[String],
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
     crate::send_diag("info", format!("[session] session/new maestro_id={maestro_session_id}"));
     let mcp_servers = mcp_servers_for(cwd, conn.capabilities.mcp_transports).await;
+    let roots = additional_directories_for(
+        additional_directories,
+        conn.capabilities.supports_additional_directories,
+    )
+    .await;
     let session_response = match cx
         .send_request(
-            NewSessionRequest::new(std::path::PathBuf::from(cwd)).mcp_servers(mcp_servers),
+            NewSessionRequest::new(std::path::PathBuf::from(cwd))
+                .mcp_servers(mcp_servers)
+                .additional_directories(roots),
         )
         .block_task()
         .await
@@ -223,6 +251,7 @@ pub(crate) async fn create_session_on_connection(
             }),
             agent_id: String::new(),
             cwd: String::new(),
+            additional_directories: Vec::new(),
         },
         models,
         modes,
@@ -247,6 +276,7 @@ pub(crate) async fn load_session_on_connection(
     maestro_session_id: String,
     resume_session_id: String,
     cwd: &str,
+    additional_directories: &[String],
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Result<Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, Option<Vec<serde_json::Value>>)>, ()> {
     let cx = conn.connection.clone();
@@ -271,7 +301,14 @@ pub(crate) async fn load_session_on_connection(
         resume_session_id.clone(),
         std::path::PathBuf::from(cwd),
     )
-    .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await);
+    .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await)
+    .additional_directories(
+        additional_directories_for(
+            additional_directories,
+            conn.capabilities.supports_additional_directories,
+        )
+        .await,
+    );
     let load_response = match cx.send_request(load_req).block_task().await {
         Ok(r) => r,
         Err(e) => {
@@ -334,6 +371,7 @@ pub(crate) async fn load_session_on_connection(
             }),
             agent_id: String::new(),
             cwd: String::new(),
+            additional_directories: Vec::new(),
         },
         models,
         modes,
@@ -474,6 +512,11 @@ pub(crate) async fn pre_initialize_agent(
                         http: init_response.agent_capabilities.mcp_capabilities.http,
                         sse: init_response.agent_capabilities.mcp_capabilities.sse,
                     },
+                    supports_additional_directories: init_response
+                        .agent_capabilities
+                        .session_capabilities
+                        .additional_directories
+                        .is_some(),
                 };
                 crate::send_diag("info", format!(
                     "[agent] initialize ok session_list={} session_load={} session_close={} session_delete={} auth_methods={} auth_logout={} mcp_http={} mcp_sse={}",

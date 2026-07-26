@@ -7,13 +7,14 @@ use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
 use crate::command_ext::NoConsoleWindow;
 
-/// Get project-level configuration from .maestro/settings.json
-#[tauri::command]
-#[specta::specta]
-pub async fn get_project_settings(
-    app_state: State<'_, Arc<AppState>>,
+/// Read `.maestro/settings.json` for a project, from whichever machine the project lives on.
+///
+/// A missing or unparseable file yields the default config: a project that has never opened the
+/// settings UI has no file at all, and that is not an error.
+pub async fn load_project_config_for(
+    app_state: &Arc<AppState>,
     project_id: i32,
-) -> Result<crate::models::ProjectConfigResponse, String> {
+) -> Result<crate::models::ProjectConfig, String> {
     let (path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
@@ -71,6 +72,17 @@ pub async fn get_project_settings(
         }
     };
 
+    Ok(config)
+}
+
+/// Get project-level configuration from .maestro/settings.json
+#[tauri::command]
+#[specta::specta]
+pub async fn get_project_settings(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<crate::models::ProjectConfigResponse, String> {
+    let config = load_project_config_for(&app_state, project_id).await?;
     Ok(crate::models::ProjectConfigResponse {
         default_agent: config.default_agent,
         reopen_sessions: config.reopen_sessions,

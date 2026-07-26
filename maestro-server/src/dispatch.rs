@@ -109,6 +109,7 @@ pub(crate) async fn dispatch_message(
                     &conn_handle,
                     req.session_id.clone(),
                     &req.cwd,
+                    &req.additional_directories,
                     Arc::clone(&stdout_task),
                 )
                 .await;
@@ -144,6 +145,7 @@ pub(crate) async fn dispatch_message(
                 };
                 result.session.agent_id = req.agent_id;
                 result.session.cwd = req.cwd;
+                result.session.additional_directories = req.additional_directories;
                 if send_response(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
@@ -426,6 +428,7 @@ pub(crate) async fn dispatch_message(
                     req.session_id.clone(),
                     req.resume_session_id.clone(),
                     &req.cwd,
+                    &req.additional_directories,
                     Arc::clone(&stdout_task),
                 )
                 .await;
@@ -444,6 +447,7 @@ pub(crate) async fn dispatch_message(
                     Ok(Some((mut session, models, modes, prompt_caps, config_options))) => {
                         session.agent_id = req.agent_id;
                         session.cwd = req.cwd;
+                        session.additional_directories = req.additional_directories;
                         let session_id = req.session_id.clone();
                         if send_response(
                             &stdout_task,
