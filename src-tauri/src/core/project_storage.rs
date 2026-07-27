@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use crate::git::remote::shell_quote;
 use crate::models::{ProjectConfig, ProjectState};
 
 pub const CANVAS_CATALOG: &str = include_str!("../../assets/canvas-catalog.json");
@@ -31,7 +32,10 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::
             temp.write_all(contents)?;
             temp.sync_all()?;
             drop(temp);
-            replace_file(&temp_path, path)
+            // `fs::rename` replaces the destination on every platform we ship — on Windows it
+            // is MoveFileExW with MOVEFILE_REPLACE_EXISTING. The temporary always lives in the
+            // destination's own directory, so this is a same-volume metadata rename.
+            fs::rename(&temp_path, path)
         })();
         if result.is_err() {
             let _ = fs::remove_file(&temp_path);
@@ -45,38 +49,24 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::
     ))
 }
 
-#[cfg(not(windows))]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), std::io::Error> {
-    fs::rename(source, destination)
-}
-
-#[cfg(windows)]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), std::io::Error> {
-    use std::os::windows::ffi::OsStrExt;
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-    }
-
-    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
-
-    // SAFETY: both pointers reference NUL-terminated UTF-16 buffers for the duration of the call.
-    let replaced = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if replaced == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+/// Build a shell command that writes `contents` to `path` through a temporary file in the same
+/// directory, for the SSH, WSL and container paths where we cannot use [`atomic_write`].
+///
+/// Deliberately plain: no variable assignment, no `$$`, no `trap`. SSH runs this through the
+/// user's *login* shell rather than `sh -c`, so anything beyond `&&`, `printf` and redirection
+/// would break on a host whose login shell is not POSIX. A fixed temporary name is safe here —
+/// `.maestro/` is gitignored, and a leftover from an interrupted write is overwritten by the
+/// next one rather than being read by anything.
+pub(crate) fn atomic_write_script(dir: &str, path: &str, contents: &str) -> String {
+    let temp_path = format!("{path}.tmp");
+    format!(
+        "mkdir -p {} && printf '%s' {} > {} && mv -f {} {}",
+        shell_quote(dir),
+        shell_quote(contents),
+        shell_quote(&temp_path),
+        shell_quote(&temp_path),
+        shell_quote(path),
+    )
 }
 
 /// Write the default commit template to .maestro/commit-template.txt if it doesn't exist.
@@ -189,7 +179,33 @@ pub fn ensure_maestro_folder_exists(project_path: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::atomic_write;
+    use super::{atomic_write, atomic_write_script};
+
+    /// SSH runs this through the user's login shell, not `sh -c`, so the script has to stay
+    /// within the subset every common login shell understands. An earlier version used
+    /// `tmp=…`, `$$` and `trap`, none of which are valid in fish — and every SSH call site
+    /// discards the error, so the breakage would have been silent.
+    #[test]
+    fn atomic_write_script_stays_portable_across_login_shells() {
+        let script = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
+
+        assert_eq!(
+            script,
+            "mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > '/srv/p/.maestro/state.json.tmp' \
+             && mv -f '/srv/p/.maestro/state.json.tmp' '/srv/p/.maestro/state.json'"
+        );
+        for construct in ["trap", "$$", "tmp="] {
+            assert!(!script.contains(construct), "{construct} is not portable: {script}");
+        }
+    }
+
+    #[test]
+    fn atomic_write_script_quotes_paths_and_contents() {
+        let script = atomic_write_script("/a b/.maestro", "/a b/.maestro/s.json", "{\"k\":\"it's\"}");
+
+        assert!(script.contains("'/a b/.maestro/s.json.tmp'"), "{script}");
+        assert!(script.contains(r#"'{"k":"it'\''s"}'"#), "{script}");
+    }
 
     #[test]
     fn atomic_write_replaces_existing_contents_without_leaving_a_temp_file() {

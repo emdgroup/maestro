@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use rusqlite::params;
 use crate::core::AppState;
+use crate::core::project_storage::atomic_write_script;
 use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
 use crate::command_ext::NoConsoleWindow;
@@ -70,13 +71,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
     match connection_key {
         ConnectionKey::Ssh { id: conn_id } => {
             if let Some(session) = app_state.ssh.get_session(conn_id).await {
-                session.execute_command(&format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                )).await.ok();
+                session.execute_command(&atomic_write_script(&maestro_dir, &state_path, &json)).await.ok();
             }
         }
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -88,13 +83,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
                 ).ok()
             });
             if let Some(distro) = distro {
-                let script = format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                );
+                let script = atomic_write_script(&maestro_dir, &state_path, &json);
                 tokio::process::Command::new("wsl.exe")
                     .args(["-d", &distro, "--", "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
@@ -115,13 +104,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
             });
             if let Some(container_name) = container_name {
                 let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                let script = format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                );
+                let script = atomic_write_script(&maestro_dir, &state_path, &json);
                 tokio::process::Command::new(cli.binary())
                     .args(["exec", &container_name, "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
@@ -302,13 +285,7 @@ pub(crate) async fn read_and_clear_restorable_sessions(
     match connection_key {
         ConnectionKey::Ssh { id: conn_id } => {
             if let Some(session) = app_state.ssh.get_session(conn_id).await {
-                let _ = session.execute_command(&format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                )).await;
+                let _ = session.execute_command(&atomic_write_script(&maestro_dir, &state_path, &json)).await;
             }
         }
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -320,13 +297,7 @@ pub(crate) async fn read_and_clear_restorable_sessions(
                 ).ok()
             });
             if let Some(distro) = distro {
-                let script = format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                );
+                let script = atomic_write_script(&maestro_dir, &state_path, &json);
                 let _ = tokio::process::Command::new("wsl.exe")
                     .args(["-d", &distro, "--", "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
@@ -346,13 +317,7 @@ pub(crate) async fn read_and_clear_restorable_sessions(
             });
             if let Some(container_name) = container_name {
                 let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                let script = format!(
-                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
-                    shell_quote(&maestro_dir),
-                    shell_quote(&state_path),
-                    shell_quote(&json),
-                    shell_quote(&state_path),
-                );
+                let script = atomic_write_script(&maestro_dir, &state_path, &json);
                 let _ = tokio::process::Command::new(cli.binary())
                     .args(["exec", &container_name, "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
