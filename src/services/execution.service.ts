@@ -165,7 +165,8 @@ export function useCloseStoredAcpSessionMutation() {
 }
 
 /**
- * Mutation hook for spawning an interactive (task-free) PTY session on a branch.
+ * Spawn a user-controlled interactive shell on a branch.
+ * Managed AI-agent sessions use ACP instead of this PTY path.
  * Returns the session_key for attach_terminal.
  */
 export function useSpawnInteractiveExecutionMutation() {

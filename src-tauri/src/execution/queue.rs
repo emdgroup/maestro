@@ -6,9 +6,12 @@ use crate::core::AppState;
 /// Drain the Queue column for auto-mode execution
 ///
 /// Checks if auto_mode is enabled in settings. If so, counts currently running
-/// executions for the project and returns task IDs that should be started next,
+/// ACP executions for the project and returns task IDs that should be started next,
 /// up to max_concurrent_agents. Tasks are ordered by priority (Urgent, High,
 /// Medium, Low) then creation date.
+///
+/// Task-associated user shells also consume a concurrency slot, but queue draining does not
+/// start agents through PTY. ACP is the sole managed agent execution path.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with database connection
@@ -16,7 +19,7 @@ use crate::core::AppState;
 /// * `project_path` - Repository path (reserved for future use)
 ///
 /// # Returns
-/// Vec of task_ids that should be executed. Frontend calls spawn_interactive_execution for each.
+/// Vec of task_ids that should be started through ACP by the frontend.
 /// Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
 #[tauri::command]
 #[specta::specta]

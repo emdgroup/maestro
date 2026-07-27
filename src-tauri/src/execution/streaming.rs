@@ -1,8 +1,8 @@
 use crate::execution::remote::RemoteProcessHandle;
 
-/// Attach listener to remote PTY channel and forward bytes to WebSocket broadcaster
+/// Attach a listener to a legacy direct remote process.
 ///
-/// Spawns a background task that reads from the SSH PTY channel and forwards
+/// This is not used by ACP-managed agents. It polls remote output and forwards
 /// chunks of bytes to a broadcast channel for WebSocket distribution.
 ///
 /// # Arguments
@@ -14,7 +14,7 @@ use crate::execution::remote::RemoteProcessHandle;
 ///
 /// # Behavior
 /// - Spawns background tokio task for non-blocking operation
-/// - Reads from SSH PTY channel until EOF or error
+/// - Polls remote output until EOF or error
 /// - Each chunk forwarded to broadcast_sender callback
 /// - Bytes appear in real-time on frontend xterm.js terminal
 pub async fn attach_remote_stream_listener(
@@ -29,7 +29,7 @@ pub async fn attach_remote_stream_listener(
     Ok(())
 }
 
-/// Stop streaming from remote PTY by killing the remote process.
+/// Stop streaming from a legacy direct remote process by killing it.
 ///
 /// Kills the remote process, which causes the background polling loop in
 /// attach_remote_stream_listener to detect EOF and stop naturally.

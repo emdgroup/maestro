@@ -41,10 +41,11 @@ fn resolve_windows_shell() -> String {
     "cmd.exe".to_string()
 }
 
-/// Spawn an interactive (task-free) PTY session on a specific branch.
+/// Spawn a user-controlled interactive shell on a specific branch.
 ///
 /// This creates an execution log with NULL task_id, finds or creates a worktree for the
-/// given branch, and spawns an interactive PTY session keyed by log_id.
+/// given branch, and spawns an interactive PTY session keyed by log_id. It does not start
+/// or manage an AI agent; managed agents use ACP.
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with database connection
