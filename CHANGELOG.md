@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.12.0](https://github.com/emdgroup/maestro/compare/v0.11.0...v0.12.0) (2026-07-27)
+
+
+### Features
+
+* add glab CLI credential detection and refactor agent session sidebar ([a96eb6f](https://github.com/emdgroup/maestro/commit/a96eb6f3e0aa3118f830526f698b6097b1faf908))
+* forward project additional workspace roots to ACP agents ([#118](https://github.com/emdgroup/maestro/issues/118)) ([c260c9b](https://github.com/emdgroup/maestro/commit/c260c9bc7ba65321fa73b8486e8e80060de05acb))
+* forward project MCP servers to ACP agents ([#117](https://github.com/emdgroup/maestro/issues/117)) ([ee2c725](https://github.com/emdgroup/maestro/commit/ee2c725e5a9cd294c5beae1552c66d31b77bf5fe))
+* let users choose the log level and location ([#114](https://github.com/emdgroup/maestro/issues/114)) ([7734d16](https://github.com/emdgroup/maestro/commit/7734d166f6b6740b015e489f457afa8416e3fde1))
+* persist canvas surfaces to .maestro/canvases/ and restore on session load ([2db716a](https://github.com/emdgroup/maestro/commit/2db716a049491e088f797a09dd88ed68e2995df1))
+
+
+### Bug Fixes
+
+* correct three ACP v1 client conformance bugs ([#116](https://github.com/emdgroup/maestro/issues/116)) ([c9b0616](https://github.com/emdgroup/maestro/commit/c9b061631a3843f98f874012f85ca724946d9b6e))
+* dedupe React in Vite ([4a9564c](https://github.com/emdgroup/maestro/commit/4a9564c0afaf68331031c8fc9c1e46e9cad3e7fd))
+* download release artifacts across reruns ([#99](https://github.com/emdgroup/maestro/issues/99)) ([1853cda](https://github.com/emdgroup/maestro/commit/1853cda6d24d3ff753b465db834169927de618d5))
+* emit replay-drained for late-mounting panels ([a0aa3c5](https://github.com/emdgroup/maestro/commit/a0aa3c5a6db60aea0f461766af2ccc1a91e5d34a))
+* give release assets stable, version-free names ([#115](https://github.com/emdgroup/maestro/issues/115)) ([af46b5d](https://github.com/emdgroup/maestro/commit/af46b5dc1a7c85a56daa50976542f5f4b159253d))
+* harden database schema migration ([#104](https://github.com/emdgroup/maestro/issues/104)) ([f9939bb](https://github.com/emdgroup/maestro/commit/f9939bbde35a7865e98b07fb8cc33780325db3c6))
+* move macOS signing scripts to .github and fix REPO_ROOT path ([bac185c](https://github.com/emdgroup/maestro/commit/bac185cbbc98ed000c580ab640f1594113c3b087))
+* navigate to plan tab when clicking plan ready card in agent stream ([e468f55](https://github.com/emdgroup/maestro/commit/e468f55b27fe5ac9520c08ce571d7c3719a33653))
+* normalize collapsed session rail row height and close button timing ([92537d4](https://github.com/emdgroup/maestro/commit/92537d4ae8a9cd767bf754784ad19ac1b0b30284))
+* normalize collapsed session rail row height and show group labels on hover ([d30f5e2](https://github.com/emdgroup/maestro/commit/d30f5e299bc0b8c9d7870ad42983e05724e21bf8))
+* pin last user message above viewport in agent stream ([41fef73](https://github.com/emdgroup/maestro/commit/41fef73098876ca675f31656935102eb16a6fab2))
+* preserve group label layout in collapsed session rail ([31ebe6b](https://github.com/emdgroup/maestro/commit/31ebe6bada4986e06b79076a5b7223802e8958da))
+* prevent blank macOS startup window ([c026d58](https://github.com/emdgroup/maestro/commit/c026d58dd1fc8a0147421b11fa593be03ffea325))
+* prevent sessions from staying stuck at Starting status on load ([5282a7c](https://github.com/emdgroup/maestro/commit/5282a7cceb44d84ec3a7a801e078da430c3a85a2))
+* prevent silent auto-approval of plan permissions ([9fb4c97](https://github.com/emdgroup/maestro/commit/9fb4c974a1a7e4f489c2b313e8a9fbcfe221dfe7))
+* render canvas DataTable rows from resolved data bindings ([56a3367](https://github.com/emdgroup/maestro/commit/56a3367d603de74cc333a51f950fd65c412b2902))
+* show red dots for failed/interrupted subagents in overview ([1793d88](https://github.com/emdgroup/maestro/commit/1793d880dec9797c8c85ba1ba534ba0403a1212c))
+
 ## [0.11.2](https://github.com/emdgroup/maestro/compare/v0.11.1...v0.11.2) (2026-07-24)
 
 ### Bug Fixes
