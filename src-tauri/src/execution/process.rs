@@ -15,7 +15,10 @@ pub struct ProcessOutput {
 
 use crate::models::{GitConnection, Task, Worktree};
 
-/// Dispatcher: spawns agent execution on local or remote based on GitConnection
+/// Legacy direct-process dispatcher, retained for internal compatibility.
+///
+/// This is not the managed agent path. Managed AI-agent sessions use ACP for every
+/// connection type. New code must not route agent execution through this module.
 ///
 /// # Arguments
 /// * `git_conn` - GitConnection enum (Local or Remote with SSH)
@@ -26,10 +29,6 @@ use crate::models::{GitConnection, Task, Worktree};
 /// # Returns
 /// ProcessOutput with execution results and optional remote_pid
 ///
-/// # Behavior
-/// Routes to local or remote spawning based on GitConnection type:
-/// - Local: Uses spawn_agent_cli_pty (existing local spawner)
-/// - Remote: Uses spawn_remote_agent_execution (new SSH spawner)
 pub async fn spawn_agent_execution(
     git_conn: &GitConnection,
     worktree: &Worktree,
@@ -41,7 +40,7 @@ pub async fn spawn_agent_execution(
             Err("Local agent spawning via process/mod is not implemented — use execution_handlers::spawn_agent_execution for local execution".to_string())
         }
         GitConnection::Remote { ssh, remote_path } => {
-            // Remote execution: use SSH PTY spawner
+            // Legacy direct SSH process spawning; managed agents use ACP.
             let remote_worktree_path = format!("{}/{}", remote_path, worktree.path);
 
             let handle = remote::spawn_remote_agent_execution(

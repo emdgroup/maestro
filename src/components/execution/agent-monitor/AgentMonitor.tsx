@@ -495,7 +495,7 @@ export function AgentMonitor({
             <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_7px]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 <Empty>
-                  <EmptyDescription>Select an agent to view its terminal</EmptyDescription>
+                  <EmptyDescription>Select a session to view its activity</EmptyDescription>
                 </Empty>
               </div>
             </div>

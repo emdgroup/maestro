@@ -51,7 +51,9 @@ pub struct WorktreeWithStatus {
     pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
 }
 
-/// How a session is executed: via the Agent Control Protocol or a raw PTY.
+/// Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
+///
+/// The serialized `pty` name is retained for IPC compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "lowercase")]
@@ -98,7 +100,7 @@ pub struct SessionListEntryDto {
     pub updated_at: Option<String>,
 }
 
-/// Metadata stored alongside a PTY session for get_active_sessions
+/// Metadata stored alongside a user-controlled PTY shell for get_active_sessions.
 #[derive(Debug, Clone)]
 pub struct PtySessionMeta {
     pub session_name: Option<String>,

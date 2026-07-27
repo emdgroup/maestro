@@ -69,7 +69,7 @@ pub async fn get_active_sessions(
         }
     }
 
-    // PTY sessions
+    // User-controlled PTY shells. These share the session list but are not ACP-managed agents.
     {
         let pty_meta = app_state.pty.session_meta.lock().await;
         for (key, meta) in pty_meta.iter() {

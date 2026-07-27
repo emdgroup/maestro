@@ -63,10 +63,14 @@ pub struct PtySession {
     pub child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>>,
 }
 
-/// Spawn an agent CLI process in a pseudo-terminal (PTY)
+/// Spawn a user-controlled shell process in a pseudo-terminal (PTY).
 ///
 /// Creates a PTY pair, spawns the command in the slave end, and returns
-/// a PtySession for management and I/O.
+/// a PtySession for terminal lifecycle and I/O. Managed AI agents are
+/// started through ACP instead of this PTY path.
+///
+/// The function name is retained for Rust API compatibility; it now spawns
+/// the caller-provided shell command, not a managed agent CLI.
 ///
 /// # Arguments
 /// * `task_id` - Task ID for tracking

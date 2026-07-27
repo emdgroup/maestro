@@ -2,7 +2,7 @@ use crate::models::Task;
 use crate::connectivity::ssh::RemoteSshSession;
 use std::sync::Arc;
 
-/// Configuration for agent execution (model, mcp_allowlist, skills)
+/// Legacy configuration for direct agent process execution.
 #[derive(Debug, Clone)]
 pub struct ExecutionConfig {
     pub model_override: Option<String>,
@@ -18,7 +18,10 @@ pub struct RemoteProcessHandle {
     pub channel_id: u32,  // SSH channel identifier for stream reading
 }
 
-/// Spawn Claude Code CLI on remote machine via SSH PTY
+/// Legacy direct Claude Code launcher, not the managed agent execution path.
+///
+/// Managed AI-agent sessions use ACP. This helper is retained only for the legacy
+/// process module and must not be used for new session flows.
 ///
 /// # Arguments
 /// * `ssh` - SSH session to use for remote execution
@@ -127,7 +130,7 @@ pub async fn poll_remote_log(
     }
 }
 
-/// Stream remote process output via SSH PTY channel
+/// Stream output from the legacy direct remote process.
 ///
 /// Reads from SSH channel in a loop and forwards bytes to callback
 /// Continues until channel EOF or error
