@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils.ts";
 import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
 import { useUpdater } from "@/hooks/useUpdater";
+import { useProjectStartupTab } from "@/hooks/useProjectStartupTab";
 import { UpdateSplashScreen } from "@/components/execution/UpdateSplashScreen";
 import "./App.css";
 
@@ -56,7 +57,6 @@ function App() {
   const currentProject = useSelectedProject();
   const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
   const settingsPageRef = useRef<SettingsPageHandle>(null);
-  const startupTabAppliedForRef = useRef<number | null>(null);
 
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError, data: appSettings } = useSettings();
@@ -195,17 +195,7 @@ function App() {
 
   // Startup preferences — applied once per project open.
   const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);
-
-  useEffect(() => {
-    if (!currentProject || !projectSettings?.startup_tab) return;
-    if (startupTabAppliedForRef.current === currentProject.id) return;
-    startupTabAppliedForRef.current = currentProject.id;
-    const validTabs = new Set<ViewType>(["kanban", "agents", "worktrees", "settings"]);
-    const tab = projectSettings.startup_tab as ViewType;
-    if (validTabs.has(tab)) {
-      setActiveTab(tab);
-    }
-  }, [currentProject, projectSettings?.startup_tab, setActiveTab]);
+  useProjectStartupTab(currentProject?.id ?? null, projectSettings?.startup_tab, setActiveTab);
 
   if (settingsLoading) {
     return (
