@@ -12,8 +12,7 @@
 
 ---
 
-<!-- Product demo: follow docs/presentation-assets.md, then enable public/demo/maestro-workflow.webp here. -->
-<!-- <p align="center"><img src="public/demo/maestro-workflow.webp" alt="Creating a task, running an agent, and reviewing its changes in Maestro" width="960" /></p> -->
+<p align="center"><img src="docs/assets/maestro-workflow.webp" alt="Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro" width="960" /></p>
 
 ---
 
@@ -60,22 +59,19 @@ The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates.
 
 ### Parallel agents, zero conflicts
 
-<!-- Screenshot: public/screenshots/kanban-board.webp (see docs/presentation-assets.md) -->
-<!-- <img src="public/screenshots/kanban-board.webp" alt="Maestro Kanban board with several agents working on isolated tasks" width="960" /> -->
+<img src="docs/assets/kanban-board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
 
 Each task runs in its own git worktree. Agents work independently — no branch conflicts, no clobbering each other's changes. Run as many as you want simultaneously.
 
 ### Live visibility
 
-<!-- Screenshot: public/screenshots/live-execution.webp (see docs/presentation-assets.md) -->
-<!-- <img src="public/screenshots/live-execution.webp" alt="Live agent terminal and activity feed in Maestro" width="960" /> -->
+<img src="docs/assets/live-execution.webp" alt="A running Maestro session showing the agent activity feed, its tool calls, and the changed files panel" width="960" />
 
 Live terminal output, a structured activity feed, and a file tree — all updating in real time. You see exactly what every agent is doing at every step.
 
 ### Surgical diff review
 
-<!-- Screenshot: public/screenshots/diff-review.webp (see docs/presentation-assets.md) -->
-<!-- <img src="public/screenshots/diff-review.webp" alt="Maestro diff review with hunk-level staging controls" width="960" /> -->
+<img src="docs/assets/diff-review.webp" alt="Maestro diff viewer showing two hunks of an agent's change with per-hunk staging controls" width="960" />
 
 When an agent finishes, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
 
@@ -85,8 +81,7 @@ Connect Maestro to a remote Linux server over SSH, or to a WSL distro on Windows
 
 ### Pull from your issue tracker
 
-<!-- Screenshot: public/screenshots/issue-import.webp (see docs/presentation-assets.md) -->
-<!-- <img src="public/screenshots/issue-import.webp" alt="Importing an issue into Maestro as an agent task" width="960" /> -->
+<!-- Still to capture: docs/assets/issue-import.webp — needs a tracker connection, see docs/presentation-assets.md -->
 
 Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
 
