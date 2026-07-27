@@ -3,6 +3,7 @@ use tauri::State;
 use rusqlite::params;
 use chrono::Utc;
 use crate::core::AppState;
+use crate::core::project_storage::atomic_write_script;
 use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
 use crate::command_ext::NoConsoleWindow;
@@ -125,12 +126,7 @@ pub async fn update_project_settings(
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
-            session.execute_command(&format!(
-                "mkdir -p {} && printf '%s' {} > {}",
-                shell_quote(&maestro_dir),
-                shell_quote(&json),
-                shell_quote(&settings_path),
-            )).await.map_err(|e| format!("SSH write failed: {}", e))?;
+            session.execute_command(&atomic_write_script(&maestro_dir, &settings_path, &json)).await.map_err(|e| format!("SSH write failed: {}", e))?;
         }
         ConnectionKey::Wsl { id: wsl_id } => {
             let distro: String = {
@@ -161,12 +157,7 @@ pub async fn update_project_settings(
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
-            let script = format!(
-                "mkdir -p {} && printf '%s' {} > {}",
-                shell_quote(&maestro_dir),
-                shell_quote(&json),
-                shell_quote(&settings_path),
-            );
+            let script = atomic_write_script(&maestro_dir, &settings_path, &json);
             let output = tokio::process::Command::new("wsl.exe")
                 .args(["-d", &distro, "--", "sh", "-c", &script])
                 .stdout(std::process::Stdio::piped())
@@ -196,12 +187,7 @@ pub async fn update_project_settings(
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
-            let script = format!(
-                "mkdir -p {} && printf '%s' {} > {}",
-                shell_quote(&maestro_dir),
-                shell_quote(&json),
-                shell_quote(&settings_path),
-            );
+            let script = atomic_write_script(&maestro_dir, &settings_path, &json);
             let output = tokio::process::Command::new(cli.binary())
                 .args(["exec", &container_name, "sh", "-c", &script])
                 .stdout(std::process::Stdio::piped())

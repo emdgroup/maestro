@@ -207,7 +207,7 @@ impl IssueTrackingConfig {
             format!("Serialization failed: {}", e)
         })?;
 
-        fs::write(&config_path, json).map_err(|e| {
+        crate::core::project_storage::atomic_write(&config_path, json.as_bytes()).map_err(|e| {
             format!("Failed to write issue_tracking.json: {}", e)
         })
     }
