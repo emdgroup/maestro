@@ -363,42 +363,51 @@ Release Notes:
 - N/A
 ```
 
-<!-- code-review-graph MCP tools -->
+## MCP Tools: codegraph
 
-## MCP Tools: code-review-graph
+**This project has a pre-indexed knowledge graph. Call `codegraph_explore`
+BEFORE Grep/Glob/Read when exploring the codebase.** It returns the verbatim
+source of the relevant symbols plus the call paths between them in one capped
+call, which is cheaper and more structurally aware than a search/Read loop.
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
+The index covers the whole workspace from the repo root — frontend (`src/`) and
+all three Rust crates (`src-tauri`, `maestro-server`, `maestro-protocol`) are in
+one graph, so no `projectPath` argument is needed.
 
-### When to use graph tools FIRST
+### The only exposed tool
 
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
+`codegraph_explore` is the entire MCP surface — there is no separate search,
+callers, or impact tool registered. Do not invent tool names; anything else
+must be done with Grep/Glob/Read.
 
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+| Param         | Use                                                                                                                                          |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`       | Required. Symbol/file names (`"AcpState session_handlers deploy"`) or a natural-language question. For a flow, name the symbols spanning it. |
+| `maxFiles`    | Optional, default 12. Raise when surveying a broad area.                                                                                     |
+| `projectPath` | Optional. Only for querying a codebase outside this repo.                                                                                    |
 
-### Key Tools
+### Rules
 
-| Tool                        | Use when                                               |
-| --------------------------- | ------------------------------------------------------ |
-| `detect_changes`            | Reviewing code changes — gives risk-scored analysis    |
-| `get_review_context`        | Need source snippets for review — token-efficient      |
-| `get_impact_radius`         | Understanding blast radius of a change                 |
-| `get_affected_flows`        | Finding which execution paths are impacted             |
-| `query_graph`               | Tracing callers, callees, imports, tests, dependencies |
-| `semantic_search_nodes`     | Finding functions/classes by name or keyword           |
-| `get_architecture_overview` | Understanding high-level codebase structure            |
-| `refactor_tool`             | Planning renames, finding dead code                    |
+- **Treat returned source as already Read.** Do not re-open those files — that
+  discards the whole point of the call.
+- Reach for it when asking how something works, where something lives, what a
+  change will affect, or what you are about to edit.
+- Fall back to Grep/Glob/Read when the graph misses — non-code assets, config,
+  markdown, generated files, and anything the parser did not resolve.
+- Rust extraction is the weaker half of this graph (its cross-file resolution
+  trails TS/TSX). Verify with Grep before relying on a negative result — "no
+  callers found" in Rust is not proof there are none.
 
-### Workflow
+### Freshness
 
-1. The graph auto-updates on file changes (via hooks).
-2. Use `detect_changes` for code review.
-3. Use `get_affected_flows` to understand impact.
-4. Use `query_graph` pattern="tests_for" to check coverage.
+A file watcher syncs the graph automatically; there is no update hook and
+nothing to run by hand. Two caveats:
+
+- If a response carries a **staleness banner** naming files with pending edits,
+  read those files directly rather than trusting the shown source.
+- On Windows, NTFS access-time updates can make plain reads look like edits, so
+  those banners may appear spuriously (upstream issue #1451). The following
+  sync is a harmless no-op.
+
+Run `codegraph sync` only if auto-sync reports itself disabled; `codegraph
+status` shows index state.

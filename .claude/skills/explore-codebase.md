@@ -5,24 +5,28 @@ description: Navigate and understand codebase structure using the knowledge grap
 
 ## Explore Codebase
 
-Use the code-review-graph MCP tools to explore and understand the codebase.
+Use the `codegraph_explore` MCP tool to explore and understand the codebase. It
+is the only graph tool exposed — it returns the verbatim source of the matching
+symbols, grouped by file, plus the call paths between them.
 
 ### Steps
 
-1. Run `list_graph_stats` to see overall codebase metrics.
-2. Run `get_architecture_overview` for high-level community structure.
-3. Use `list_communities` to find major modules, then `get_community` for details.
-4. Use `semantic_search_nodes` to find specific functions or classes.
-5. Use `query_graph` with patterns like `callers_of`, `callees_of`, `imports_of` to trace relationships.
-6. Use `list_flows` and `get_flow` to understand execution paths.
+1. Call `codegraph_explore` with the symbols, files, or question you are
+   starting from. A bag of names works as well as a sentence.
+2. Read the returned source and call paths. **Do not re-open those files** —
+   the source shown is Read-equivalent.
+3. If the answer spans further than what came back, call again naming the
+   symbols at the edge of what you learned, or raise `maxFiles` (default 12)
+   when surveying a broad area.
+4. Drop to Grep/Glob/Read for anything the graph does not carry: config,
+   markdown, generated files, assets, and unresolved references.
 
 ### Tips
 
-- Start broad (stats, architecture) then narrow down to specific areas.
-- Use `children_of` on a file to see all its functions and classes.
-- Use `find_large_functions` to identify complex code.
-
-## Token Efficiency Rules
-- ALWAYS start with `get_minimal_context(task="<your task>")` before any other graph tool.
-- Use `detail_level="minimal"` on all calls. Only escalate to "standard" when minimal is insufficient.
-- Target: complete any review/debug/refactor task in ≤5 tool calls and ≤800 total output tokens.
+- Name the symbols spanning a flow to trace it end to end
+  (e.g. `"execute_task spawn_pty stream_output"`).
+- The graph covers the frontend and all three Rust crates from the repo root,
+  so `projectPath` is not needed.
+- Rust resolution is weaker than TS/TSX here. Confirm a negative result with
+  Grep before concluding nothing calls a function.
+- If a response flags files with pending edits, read those directly.

@@ -41,8 +41,6 @@ brainstorm-img/
 target/
 # Staged by .github/scripts/stage-release-assets.sh
 release/
-# Added by code-review-graph
-.code-review-graph/
 
 # WebdriverIO E2E artifacts
 logs/
