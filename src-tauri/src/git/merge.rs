@@ -469,3 +469,62 @@ pub(crate) async fn reject_merge_on_conflict(
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use std::process::Command;
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("git should be installed for merge tests");
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    #[tokio::test]
+    async fn squash_merge_conflict_restores_clean_target_branch() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        git(repo, &["init", "-b", "main"]);
+        git(repo, &["config", "user.name", "Maestro Test"]);
+        git(repo, &["config", "user.email", "maestro@example.test"]);
+
+        std::fs::write(repo.join("shared.txt"), "base\n").expect("write base file");
+        git(repo, &["add", "shared.txt"]);
+        git(repo, &["commit", "-m", "base"]);
+
+        git(repo, &["checkout", "-b", "task-1"]);
+        std::fs::write(repo.join("shared.txt"), "task change\n").expect("write task file");
+        git(repo, &["commit", "-am", "task change"]);
+
+        git(repo, &["checkout", "main"]);
+        std::fs::write(repo.join("shared.txt"), "main change\n").expect("write main file");
+        git(repo, &["commit", "-am", "main change"]);
+
+        let connection = GitConnection::Local {
+            path: repo.to_string_lossy().into_owned(),
+        };
+        let result = squash_merge_to_base(&connection, "task-1", "main", "merge task")
+            .await
+            .expect("conflicts should be returned as a merge result");
+
+        assert!(!result.success);
+        assert_eq!(result.task_status, "InProgress");
+        assert_eq!(result.conflicts, vec!["shared.txt"]);
+        assert_eq!(git(repo, &["status", "--porcelain"]), "");
+        assert_eq!(
+            std::fs::read_to_string(repo.join("shared.txt")).expect("read restored file"),
+            "main change\n"
+        );
+    }
+}
