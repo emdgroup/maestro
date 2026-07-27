@@ -126,8 +126,9 @@ pub async fn update_project_settings(
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
             session.execute_command(&format!(
-                "mkdir -p {} && printf '%s' {} > {}",
+                "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                 shell_quote(&maestro_dir),
+                shell_quote(&settings_path),
                 shell_quote(&json),
                 shell_quote(&settings_path),
             )).await.map_err(|e| format!("SSH write failed: {}", e))?;
@@ -162,8 +163,9 @@ pub async fn update_project_settings(
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
             let script = format!(
-                "mkdir -p {} && printf '%s' {} > {}",
+                "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                 shell_quote(&maestro_dir),
+                shell_quote(&settings_path),
                 shell_quote(&json),
                 shell_quote(&settings_path),
             );
@@ -197,8 +199,9 @@ pub async fn update_project_settings(
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
             let script = format!(
-                "mkdir -p {} && printf '%s' {} > {}",
+                "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                 shell_quote(&maestro_dir),
+                shell_quote(&settings_path),
                 shell_quote(&json),
                 shell_quote(&settings_path),
             );

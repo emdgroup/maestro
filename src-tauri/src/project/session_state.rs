@@ -71,8 +71,9 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
         ConnectionKey::Ssh { id: conn_id } => {
             if let Some(session) = app_state.ssh.get_session(conn_id).await {
                 session.execute_command(&format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 )).await.ok();
@@ -88,8 +89,9 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
             });
             if let Some(distro) = distro {
                 let script = format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 );
@@ -114,8 +116,9 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
             if let Some(container_name) = container_name {
                 let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
                 let script = format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 );
@@ -300,8 +303,9 @@ pub(crate) async fn read_and_clear_restorable_sessions(
         ConnectionKey::Ssh { id: conn_id } => {
             if let Some(session) = app_state.ssh.get_session(conn_id).await {
                 let _ = session.execute_command(&format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 )).await;
@@ -317,8 +321,9 @@ pub(crate) async fn read_and_clear_restorable_sessions(
             });
             if let Some(distro) = distro {
                 let script = format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 );
@@ -342,8 +347,9 @@ pub(crate) async fn read_and_clear_restorable_sessions(
             if let Some(container_name) = container_name {
                 let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
                 let script = format!(
-                    "mkdir -p {} && printf '%s' {} > {}",
+                    "mkdir -p {} && tmp={}.tmp.$$ && trap 'rm -f \"$tmp\"' EXIT HUP INT TERM && printf '%s' {} > \"$tmp\" && mv -f \"$tmp\" {} && trap - EXIT",
                     shell_quote(&maestro_dir),
+                    shell_quote(&state_path),
                     shell_quote(&json),
                     shell_quote(&state_path),
                 );

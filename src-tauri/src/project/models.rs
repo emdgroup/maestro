@@ -127,7 +127,7 @@ impl ProjectConfig {
             format!("Serialization failed: {}", e)
         })?;
 
-        fs::write(&config_path, json).map_err(|e| {
+        crate::core::project_storage::atomic_write(&config_path, json.as_bytes()).map_err(|e| {
             format!("Failed to write settings.json: {}", e)
         })
     }
@@ -238,7 +238,7 @@ impl ProjectState {
             format!("Serialization failed: {}", e)
         })?;
 
-        fs::write(&state_path, json).map_err(|e| {
+        crate::core::project_storage::atomic_write(&state_path, json.as_bytes()).map_err(|e| {
             format!("Failed to write state.json: {}", e)
         })
     }
@@ -301,5 +301,22 @@ mod tests {
             !written.contains("additional_directories"),
             "an unset key should stay absent rather than appear as null: {written}"
         );
+    }
+
+    #[test]
+    fn settings_and_state_saves_replace_existing_json() {
+        let dir = tempfile::tempdir().expect("temp directory");
+        let maestro_dir = dir.path().join(".maestro");
+        std::fs::create_dir(&maestro_dir).expect("create .maestro");
+        std::fs::write(maestro_dir.join("settings.json"), "stale settings").expect("seed settings");
+        std::fs::write(maestro_dir.join("state.json"), "stale state").expect("seed state");
+        let project_path = dir.path().to_str().expect("UTF-8 path");
+
+        ProjectConfig::default().save_to_project(project_path).expect("save settings");
+        ProjectState::empty().save_to_project(project_path).expect("save state");
+
+        ProjectConfig::load_from_project(project_path).expect("load settings");
+        ProjectState::load_from_project(project_path).expect("load state");
+        assert_eq!(std::fs::read_dir(maestro_dir).expect("list .maestro").count(), 2);
     }
 }
