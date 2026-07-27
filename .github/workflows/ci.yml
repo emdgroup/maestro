@@ -48,9 +48,12 @@ jobs:
             librsvg2-dev \
             libxdo-dev
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          # Toolchain version comes from rust-toolchain.toml.
           components: clippy
+          cache: false # Swatinem/rust-cache is invoked explicitly below.
+          rustflags: "" # Keep -D warnings scoped to the clippy step.
 
       - uses: Swatinem/rust-cache@v2
 
