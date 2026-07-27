@@ -34,11 +34,7 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          # Toolchain version comes from rust-toolchain.toml.
-          cache: false # Swatinem/rust-cache is invoked explicitly below.
-          rustflags: "" # The action would otherwise set -D warnings globally.
+      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
