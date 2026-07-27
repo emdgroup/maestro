@@ -1,0 +1,39 @@
+name: Dependency security
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  rustsec:
+    name: RustSec audit
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # No fixed rsa release is available; keep every other vulnerability blocking.
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ignore: RUSTSEC-2023-0071
