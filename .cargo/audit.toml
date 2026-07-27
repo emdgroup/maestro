@@ -1,0 +1,17 @@
+# cargo-audit configuration. Read by CI and by a plain `cargo audit` run from
+# the repo root, so both agree on what is ignored and why.
+
+[advisories]
+ignore = [
+  # rsa: the Marvin attack, a timing sidechannel in RSA private-key
+  # operations (CVSS 5.9). No fixed release exists — upstream is still
+  # migrating to a constant-time implementation. rsa reaches us twice, and
+  # neither path hands an attacker a usable timing oracle:
+  #
+  #   rsa 0.9.10       <- jsonwebtoken <- octocrab  (GitHub App JWT signing)
+  #   rsa 0.10.0-rc.18 <- russh, ssh-key            (SSH client)
+  #
+  # Both are still flagged — the 0.10 release candidates do not carry the fix
+  # either — so re-check once rsa 0.10.0 ships for real, not when russh moves.
+  "RUSTSEC-2023-0071",
+]

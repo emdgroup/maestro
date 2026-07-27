@@ -10,30 +10,45 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
+  cargo-audit:
+    name: Cargo audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
+      - uses: dtolnay/rust-toolchain@1.97.1
 
-  rustsec:
-    name: RustSec audit
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Ignored advisories, and the reasoning for each, live in
+      # .cargo/audit.toml so that a local `cargo audit` behaves identically.
+      - run: cargo audit
+
+  bun-audit:
+    name: Bun audit
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      contents: read
-      issues: write
     steps:
       - uses: actions/checkout@v7
 
-      # No fixed rsa release is available; keep every other vulnerability blocking.
-      - uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ignore: RUSTSEC-2023-0071
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      # These four advisories reach only dev and build tooling — wdio, the
+      # shadcn CLI, commitlint, and vite's postcss — and none of them ship in
+      # the bundle. `bun audit` has no --omit=dev, so they are listed here
+      # rather than filtered out. Drop entries as dependency bumps clear
+      # them; that belongs in a dependency PR, not a CI one.
+      - run: |
+          bun audit --audit-level=high \
+            --ignore GHSA-5c6j-r48x-rmvq \
+            --ignore GHSA-v2hh-gcrm-f6hx \
+            --ignore GHSA-mh99-v99m-4gvg \
+            --ignore GHSA-r28c-9q8g-f849
