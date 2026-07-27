@@ -498,6 +498,13 @@ mod tests {
         git(repo, &["init", "-b", "main"]);
         git(repo, &["config", "user.name", "Maestro Test"]);
         git(repo, &["config", "user.email", "maestro@example.test"]);
+        // Pin the settings the assertions below depend on, because the code under test runs git
+        // itself and would otherwise pick these up from the developer's global config. With
+        // core.autocrlf=true — the Git for Windows installer default — `reset --hard` restores
+        // the file with CRLF endings; gpgsign or a global hooksPath fail the commits outright.
+        git(repo, &["config", "core.autocrlf", "false"]);
+        git(repo, &["config", "commit.gpgsign", "false"]);
+        git(repo, &["config", "core.hooksPath", ""]);
 
         std::fs::write(repo.join("shared.txt"), "base\n").expect("write base file");
         git(repo, &["add", "shared.txt"]);
