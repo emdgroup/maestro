@@ -67,8 +67,13 @@ export function AcpTerminalView({
       fitAddon.fit();
     });
 
-    const resizeObserver = new ResizeObserver(() => {
+    // Hidden tabs report 0x0 (display:none); fitting on that reflows the buffer
+    // to junk. On the way back, cols/rows are unchanged so nothing would repaint
+    // the stale WebGL raster — refresh explicitly.
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === 0 || entry.contentRect.height === 0) return;
       fitAddon.fit();
+      terminal.refresh(0, terminal.rows - 1);
     });
     resizeObserver.observe(containerRef.current);
 
