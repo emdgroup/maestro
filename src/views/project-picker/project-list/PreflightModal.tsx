@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronLeft, ChevronRight, XCircle, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, XCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
@@ -153,36 +153,6 @@ export function PreflightModal() {
               mandatory
             />
           )}
-          {!serverFailed && failedTools.length > 0 && (
-            <ol className="mb-5 flex items-center" aria-label="Missing binaries">
-              {failedTools.map((tool, index) => {
-                const skipped = skippedTools.includes(tool.tool);
-                const active = index === boundedStep;
-                return (
-                  <li key={tool.tool} className="flex min-w-0 flex-1 items-center last:flex-none">
-                    <button
-                      type="button"
-                      className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors ${
-                        active
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : skipped
-                            ? "border-amber-400/60 bg-amber-400/10 text-amber-500"
-                            : "border-border bg-muted text-muted-foreground"
-                      }`}
-                      aria-current={active ? "step" : undefined}
-                      aria-label={`${tool.tool}${skipped ? ", skipped" : ""}`}
-                      onClick={() => setCurrentStep(index)}
-                    >
-                      {skipped ? <Check className="size-3.5" /> : index + 1}
-                    </button>
-                    {index < failedTools.length - 1 && (
-                      <span className="mx-2 h-px min-w-4 flex-1 bg-border" />
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
           {!serverFailed &&
             currentTool &&
             (activeConnection ? (
@@ -197,12 +167,37 @@ export function PreflightModal() {
             ))}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
-          <Button variant="outline" size="sm" onClick={handleGoBack}>
-            Go Back
-          </Button>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-border/60 pt-4 max-sm:grid-cols-[auto_1fr]">
+          <div className="justify-self-start max-sm:col-start-1 max-sm:row-start-2">
+            <Button variant="outline" size="sm" onClick={handleGoBack}>
+              Go Back
+            </Button>
+          </div>
           {!serverFailed && failedTools.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div
+              className="flex items-center justify-center gap-2.5 max-sm:col-span-2 max-sm:col-start-1 max-sm:row-start-1"
+              aria-label="Missing binaries"
+            >
+              {failedTools.map((tool, index) => {
+                const skipped = skippedTools.includes(tool.tool);
+                const active = index === boundedStep;
+                return (
+                  <button
+                    key={tool.tool}
+                    type="button"
+                    className={`size-2.5 rounded-full transition-[color,transform] hover:scale-125 ${
+                      active ? "scale-125 bg-primary" : skipped ? "bg-amber-400" : "bg-border"
+                    }`}
+                    aria-current={active ? "step" : undefined}
+                    aria-label={`${tool.tool}${skipped ? ", skipped" : ""}`}
+                    onClick={() => setCurrentStep(index)}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {!serverFailed && failedTools.length > 0 && (
+            <div className="flex items-center justify-self-end gap-2 max-sm:col-start-2 max-sm:row-start-2">
               <Button
                 type="button"
                 variant="ghost"
