@@ -81,11 +81,7 @@ pub async fn spawn_interactive_execution(
     let repo_path = if is_remote {
         repo_path
     } else {
-        std::path::Path::new(&repo_path)
-            .canonicalize()
-            .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
-            .to_string_lossy()
-            .to_string()
+        crate::git::canonicalize_repo_path(&repo_path)?
     };
 
     let worktree_abs_path: String = if let Some(wt_id) = worktree_id {

@@ -6,6 +6,37 @@ use chrono::{Duration, Utc};
 use crate::models::{Worktree, WORKTREE_DIR};
 use crate::core::AppState;
 
+/// Canonicalize a local repository path, resolving symlinks and relative segments.
+///
+/// `std::fs::canonicalize` returns an extended-length `\\?\` path on Windows, which the object
+/// manager consumes verbatim: a forward slash anywhere after the prefix is rejected as
+/// `ERROR_INVALID_NAME` (os error 123), and such a path is silently ignored when handed to
+/// `CreateProcess` as a working directory. Worktree paths are assembled as `{repo}/{relative}`
+/// strings, so the prefix has to come back off.
+///
+/// ponytail: stripping the prefix also gives up long-path support past 260 chars; add the
+/// length guard the `dunce` crate uses if that ever bites.
+pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|e| {
+            format!("Invalid repository path '{}': {}. Ensure the project directory exists.", path, e)
+        })?
+        .to_string_lossy()
+        .to_string();
+
+    #[cfg(windows)]
+    if let Some(stripped) = canonical.strip_prefix(r"\\?\UNC\") {
+        return Ok(format!(r"\\{}", stripped));
+    }
+    #[cfg(windows)]
+    if let Some(stripped) = canonical.strip_prefix(r"\\?\") {
+        return Ok(stripped.to_string());
+    }
+
+    Ok(canonical)
+}
+
 // ============================================================================
 // create_worktree — REQ-08
 // ============================================================================
@@ -84,11 +115,7 @@ pub async fn create_worktree_for_task(
     let repo_path = if is_remote {
         repo_path.to_string()
     } else {
-        std::path::Path::new(repo_path)
-            .canonicalize()
-            .map_err(|e| format!("Invalid repository path '{}': {}. Ensure the project directory exists.", repo_path, e))?
-            .to_string_lossy()
-            .to_string()
+        canonicalize_repo_path(repo_path)?
     };
     let repo_path = repo_path.as_str();
 
@@ -300,4 +327,28 @@ pub async fn delete_worktree_for_task(
 
     app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonicalize_repo_path;
+
+    /// Worktree paths are built as `{repo}/{relative}` strings; an extended-length `\?\` repo
+    /// path makes that combination illegal on Windows (os error 123).
+    #[test]
+    fn canonicalized_repo_path_accepts_forward_slash_children() {
+        let repo = std::env::temp_dir().join("maestro_canonicalize_test");
+        std::fs::create_dir_all(&repo).expect("create temp repo");
+
+        let canonical = canonicalize_repo_path(&repo.to_string_lossy()).expect("canonicalize");
+        assert!(
+            !canonical.starts_with(r"\\?\"),
+            "extended-length prefix leaked: {canonical}"
+        );
+
+        let child = format!("{}/{}", canonical, ".maestro/worktrees");
+        let created = std::fs::create_dir_all(&child);
+        std::fs::remove_dir_all(&repo).ok();
+        created.unwrap_or_else(|e| panic!("create_dir_all({child}) failed: {e}"));
+    }
 }
