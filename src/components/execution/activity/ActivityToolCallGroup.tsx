@@ -58,7 +58,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   // Aliases like execute/bash/shell share a label — treat them as the same category.
   const allSameKind =
     items.length > 0 &&
-    items.every((i) => (KIND_LABEL[i.kind] ?? i.kind) === (KIND_LABEL[items[0].kind] ?? items[0].kind));
+    items.every(
+      (i) => (KIND_LABEL[i.kind] ?? i.kind) === (KIND_LABEL[items[0].kind] ?? items[0].kind),
+    );
 
   // Only a real tool call title gets its action word bolded — the count summary
   // has no action, and bolding its digit would just be noise.
