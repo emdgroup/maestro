@@ -10,6 +10,29 @@ import {
 } from "./ToolCallTimeline";
 import type { ToolCallItem } from "./types";
 
+const KIND_LABEL: Record<string, string> = {
+  read: "read files",
+  read_file: "read files",
+  edit: "edited files",
+  write_file: "edited files",
+  edit_file: "edited files",
+  create_file: "edited files",
+  delete: "deleted files",
+  move: "moved files",
+  search: "file searches",
+  execute: "executed commands",
+  bash: "executed commands",
+  shell: "executed commands",
+  run_terminal: "executed commands",
+  fetch: "fetched URLs",
+  switch_mode: "mode switches",
+};
+
+function kindGroupLabel(kind: string, count: number): string {
+  const label = KIND_LABEL[kind] ?? "tool calls";
+  return `${count} ${label}`;
+}
+
 interface ActivityToolCallGroupProps {
   items: ToolCallItem[];
 }
@@ -59,7 +82,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
       {title != null ? (
         <ToolCallTitle title={title} className={labelClass} />
       ) : (
-        <span className={labelClass}>{items.length} tool calls</span>
+        <span className={labelClass}>
+          {allSameKind ? kindGroupLabel(items[0].kind, items.length) : `${items.length} tool calls`}
+        </span>
       )}
       {!isSingle && errorCount > 0 && (
         <span className="shrink-0 text-[10px] text-destructive">· {errorCount} failed</span>
