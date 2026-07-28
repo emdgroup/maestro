@@ -79,12 +79,38 @@ function statusIcon(tc: ToolCallItem): string {
  * Vertical rail of tool calls, one fit-content row each, every row expanding to
  * its own content. Shared by ActivityToolCallGroup and SubagentCard — keep it at
  * a single prop; a second one means the seam is in the wrong place.
+ *
+ * `inline` — when the parent already shows the single item's title as a group
+ * header, skip the redundant inner title row and render content directly.
  */
-export function ToolCallTimeline({ items }: { items: ToolCallItem[] }) {
+export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inline?: boolean }) {
   // A lone call opens straight to its content, so it stays a one-click read.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(items.length === 1 && hasRowContent(items[0]) ? [items[0].toolCallId] : []),
   );
+
+  // Inline single-item path: parent header is the toggle, render content directly.
+  // Must come after all hook calls.
+  if (inline && items.length === 1) {
+    const tc = items[0];
+    return (
+      <ContentErrorBoundary>
+        <div className="space-y-1.5 pt-1 pb-1.5 pl-1">
+          {isTerminalKind(tc.kind) && tc.title && (
+            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-[11px] break-words whitespace-pre-wrap">
+              {tc.title}
+            </pre>
+          )}
+          {tc.content.map((c, i) => (
+            <ToolCallContentBlock key={i} content={c} />
+          ))}
+          {tc.status === "error" && tc.content.length === 0 && (
+            <span className="text-xs text-destructive italic">Tool call failed</span>
+          )}
+        </div>
+      </ContentErrorBoundary>
+    );
+  }
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {

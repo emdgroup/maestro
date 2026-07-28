@@ -45,7 +45,8 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
       : Wrench;
 
   // A group with nothing to open (a bare switch_mode, say) stays plain text.
-  const expandable = items.some(hasRowContent);
+  // Multiple items are always expandable so users can see which files were read.
+  const expandable = items.length > 1 || items.some(hasRowContent);
 
   const labelClass = cn(
     "truncate",
@@ -91,7 +92,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
       </button>
       {open && (
         <div className="mt-1 ml-1.5">
-          <ToolCallTimeline items={items} />
+          <ToolCallTimeline items={items} inline={isSingle} />
         </div>
       )}
     </div>
