@@ -14,9 +14,6 @@ import { cn } from "@/lib/utils";
 
 interface AgentStreamItemProps {
   gi: GroupedDisplayItem;
-  index: number;
-  allItems: GroupedDisplayItem[];
-  nextSectionStartsWithMessage: boolean;
   onOpenPlanOverlay: () => void;
   toolCallMap: Map<string, ToolCallItem>;
   onAuthLogin?: () => void;
@@ -24,9 +21,6 @@ interface AgentStreamItemProps {
 
 export function AgentStreamItem({
   gi,
-  index,
-  allItems,
-  nextSectionStartsWithMessage,
   onOpenPlanOverlay,
   toolCallMap,
   onAuthLogin,
@@ -43,16 +37,10 @@ export function AgentStreamItem({
       );
     }
 
-    const hasSubsequentMessage =
-      allItems
-        .slice(index + 1)
-        .some((later) => later.type === "solo" && later.item.type === "message") ||
-      nextSectionStartsWithMessage;
-
     const groupKey = `tg-${gi.items[0].toolCallId}`;
     return (
       <div key={groupKey} className="space-y-3 pb-1">
-        <ActivityToolCallGroup items={gi.items} hasSubsequentMessage={hasSubsequentMessage} />
+        <ActivityToolCallGroup items={gi.items} />
       </div>
     );
   }

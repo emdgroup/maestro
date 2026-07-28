@@ -69,7 +69,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const saveSettings = useSaveSettings({ successToast: false });
 
   const thinkingVisibility = settings?.thinking_visibility ?? "auto";
-  const toolCallVisibility = settings?.tool_call_visibility ?? "auto";
+  const toolCallsVisible = settings?.tool_call_visibility !== "hide";
   const isCompact = settings?.agent_stream_width === "compact";
 
   function handleThinkingVisibilityChange(value: ActivityVisibility | null) {
@@ -81,11 +81,11 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     });
   }
 
-  function handleToolCallVisibilityChange(value: ActivityVisibility | null) {
-    if (!settings || !value) return;
+  function handleToolCallsToggle(checked: boolean) {
+    if (!settings) return;
     saveSettings.mutate({
       ...settings,
-      tool_call_visibility: value,
+      tool_call_visibility: checked ? "show" : "hide",
       updated_at: new Date().toISOString(),
     });
   }
@@ -378,28 +378,13 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
                 <label className="text-xs text-muted-foreground">Tool calls</label>
-                <Select value={toolCallVisibility} onValueChange={handleToolCallVisibilityChange}>
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue>
-                      {
-                        {
-                          auto: "Auto",
-                          show: "Show expanded",
-                          collapse: "Collapsed",
-                          hide: "Hidden",
-                        }[toolCallVisibility]
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto</SelectItem>
-                    <SelectItem value="show">Show expanded</SelectItem>
-                    <SelectItem value="collapse">Collapsed</SelectItem>
-                    <SelectItem value="hide">Hidden</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Switch
+                  checked={toolCallsVisible}
+                  onCheckedChange={handleToolCallsToggle}
+                  className="data-unchecked:bg-muted data-unchecked:border-border/50"
+                />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs text-muted-foreground">Compact stream</label>
