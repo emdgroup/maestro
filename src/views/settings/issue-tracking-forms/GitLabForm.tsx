@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Label } from "@/ui/label";
 import {
   Combobox,
@@ -20,6 +20,15 @@ export function GitLabForm({ fields, onFieldsChange, showValidation }: Props) {
   const projectPath = fields.project_path ?? "";
   const { data: projects = [], isLoading } = useListGitlabProjects();
   const [search, setSearch] = useState("");
+
+  // A project path can arrive without its numeric id — from git-remote detection that
+  // couldn't reach the API, or a hand-edited settings.json. fetch_remote_issues needs the
+  // id, so backfill it as soon as the project list is here.
+  useEffect(() => {
+    if (!projectPath || fields.project_key) return;
+    const match = projects.find((p) => p.path_with_namespace === projectPath);
+    if (match) onFieldsChange({ ...fields, project_key: String(match.id) });
+  }, [projectPath, fields, projects, onFieldsChange]);
 
   const q = search.toLowerCase();
   const filteredProjects = q

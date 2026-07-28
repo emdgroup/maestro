@@ -2279,6 +2279,28 @@ export const commands = {
     }
   },
   /**
+   * Work out the project's issue tracking config from its git remote, and write it into
+   * `.maestro/settings.json` when everything needed is available.
+   *
+   * Idempotent: a project that already has `issue_tracking` is never overwritten, so a
+   * repeated call (React StrictMode, a second project open) reports `applied: false` and
+   * changes nothing. Returns `None` when the remote is missing or its host maps to no
+   * provider we can track issues with.
+   */
+  async detectProjectIssueTracking(
+    projectId: number,
+  ): Promise<Result<DetectedIssueTracking | null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("detect_project_issue_tracking", { projectId }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Fetch remote issues using the global keychain for credentials and per-project
    * ticketing config for provider-specific fields (repo, project_key, etc.).
    */
@@ -2780,6 +2802,30 @@ export type CreateTaskRequest = {
   model_override: string | null;
 };
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli";
+/**
+ * What `detect_project_issue_tracking` worked out from the project's git remote.
+ */
+export type DetectedIssueTracking = {
+  /**
+   * Provider the remote host belongs to.
+   */
+  provider: string;
+  /**
+   * Whether credentials for that provider are already available.
+   */
+  connected: boolean;
+  /**
+   * Whether this call wrote the config into .maestro/settings.json. False when the
+   * project already had one, when the user opted out, when nothing is connected, or
+   * when a required field could not be resolved.
+   */
+  applied: boolean;
+  /**
+   * Fields recovered from the remote URL — used to prefill the settings form when
+   * the config was not applied.
+   */
+  config: ProjectIssueTrackingConfig;
+};
 /**
  * Controls what get_worktree_diff compares against.
  *

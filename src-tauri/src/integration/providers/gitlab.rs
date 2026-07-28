@@ -134,6 +134,39 @@ fn strip_ansi(s: &str) -> String {
     result
 }
 
+/// Resolve a `group/subgroup/project` path to the numeric project id the issues API needs.
+pub async fn resolve_project_id(
+    instance_url: &str,
+    project_path: &str,
+    token: &str,
+) -> Result<i64, String> {
+    let base = normalize_instance_url(instance_url);
+    let client = super::build_http_client()?;
+
+    let response = client
+        .get(format!("{}/api/v4/projects/{}", base, urlencoding::encode(project_path)))
+        .header("PRIVATE-TOKEN", token)
+        .send()
+        .await
+        .map_err(|e| format!("Network error fetching project: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(format!(
+            "GitLab project lookup error {}: {}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown")
+        ));
+    }
+
+    let project: GitLabProjectResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitLab project response: {}", e))?;
+
+    Ok(project.id)
+}
+
 /// Validate a GitLab PAT, resolve the numeric project ID from the project path,
 /// save the IssueTrackingConfig, and store the token.
 /// Returns the authenticated GitLab username on success.
@@ -170,33 +203,13 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Failed to parse GitLab user response: {}", e))?;
 
-    let encoded_path = urlencoding::encode(project_path);
-    let project_response = client
-        .get(format!("{}/api/v4/projects/{}", base, encoded_path))
-        .header("PRIVATE-TOKEN", token)
-        .send()
-        .await
-        .map_err(|e| format!("Network error fetching project: {}", e))?;
-
-    if !project_response.status().is_success() {
-        let status = project_response.status();
-        return Err(format!(
-            "GitLab project lookup error {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
-    }
-
-    let project_info: GitLabProjectResponse = project_response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitLab project response: {}", e))?;
+    let resolved_project_id = resolve_project_id(instance_url, project_path, token).await?;
 
     let config = IssueTrackingConfig {
         provider: Some(ProviderConfig::Gitlab(GitLabConfig {
             instance_url: base,
             project_path: project_path.to_string(),
-            project_id: project_info.id,
+            project_id: resolved_project_id,
         })),
         updated_at: now_rfc3339(),
     };

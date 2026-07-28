@@ -68,6 +68,10 @@ pub struct ProjectConfig {
     pub default_agent: Option<String>,
     pub updated_at: String,
     pub issue_tracking: Option<ProjectIssueTrackingConfig>,
+    /// Set to `false` when the user explicitly clears `issue_tracking`, so that
+    /// `detect_project_issue_tracking` doesn't put it straight back on next open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue_tracking_auto_detect: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reopen_sessions: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
