@@ -349,7 +349,7 @@
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-.shimmer-thinking-text {
+.shimmer-text {
   background: linear-gradient(
     90deg,
     oklch(from var(--muted-foreground) calc(l * 0.5) c h) 25%,
@@ -435,8 +435,16 @@
     0 0 0 2px var(--card),
     0 0 0 3.5px var(--accent);
 }
-.session-sidebar[data-state="collapsed"] .pr-avatar-col {
-  padding-block: 0;
+/* Row geometry is identical collapsed and expanded, so hover-expanding never
+   shifts an avatar: the avatar column is exactly the collapsed rail width. */
+/* Fixed, not min-height: while the rail animates, the text column is squeezed
+   to 0 width and its content would otherwise reflow and drive the row taller. */
+.pr-row {
+  height: 60px;
+  overflow: hidden;
+}
+.pr-avatar-col {
+  width: var(--sidebar-width-icon, 52px);
 }
 
 .shimmer-thinking-icon {

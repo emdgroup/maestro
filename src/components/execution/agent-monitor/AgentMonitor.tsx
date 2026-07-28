@@ -1,17 +1,11 @@
-import { useMemo, useState, useCallback, useRef, memo } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
 import { BotOff, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
-import {
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuAction,
-  useSidebar,
-} from "@/ui/sidebar";
+import { SidebarContent, SidebarMenu, SidebarMenuItem, useSidebar } from "@/ui/sidebar";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AgentActivityPanel } from "@/components/execution/agent-activity-panel/AgentActivityPanel";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
@@ -132,10 +126,21 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
-  const { state } = useSidebar();
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
   const name =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
+
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [isNameTruncated, setIsNameTruncated] = useState(false);
+  useEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+    const checkTruncated = () => setIsNameTruncated(el.scrollWidth > el.clientWidth);
+    checkTruncated();
+    const observer = new ResizeObserver(checkTruncated);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [name]);
 
   return (
     <SidebarMenuItem>
@@ -149,7 +154,7 @@ const SessionRow = memo(function SessionRow({
             )}
           >
             {/* Avatar column */}
-            <div className="pr-avatar-col flex items-center shrink-0 p-3">
+            <div className="pr-avatar-col flex items-center justify-center shrink-0">
               <div className="pr-avatar-wrap relative w-8 h-8 shrink-0">
                 {ringClass && <div className={ringClass} />}
                 <div className="pr-avatar-icon w-8 h-8 rounded-md overflow-hidden relative bg-card">
@@ -171,7 +176,9 @@ const SessionRow = memo(function SessionRow({
             {/* Text column */}
             <div className="session-text-col flex-1 min-w-0 pr-3 pl-2 py-2.5 flex flex-col justify-center gap-0.75">
               <div className="flex items-baseline justify-between gap-2 min-w-0">
-                <span className="session-item-name text-sm font-medium truncate">{name}</span>
+                <span ref={nameRef} className="session-item-name text-sm font-medium truncate">
+                  {name}
+                </span>
                 <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
                   #{session.session_key}
                 </span>
@@ -194,22 +201,28 @@ const SessionRow = memo(function SessionRow({
             </div>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="right" hidden={state !== "collapsed"}>
+        <TooltipContent side="right" hidden={!isNameTruncated}>
           {name}
         </TooltipContent>
       </Tooltip>
       {onClose && (
-        <SidebarMenuAction
-          showOnHover
-          className="inset-y-0 my-auto top-auto right-1.5 h-6 w-6 [&>svg]:size-3.5 text-muted-foreground hover:text-foreground hover:bg-transparent disabled:opacity-30"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose(session);
-          }}
-          disabled={session.task_prevents_close}
-        >
-          <X />
-        </SidebarMenuAction>
+        // right-3 matches the text column's pr-3 so the X lands exactly where
+        // #N and the elapsed time were. Opacity lives on the wrapper so the
+        // Button's own disabled:opacity-50 stays unambiguous.
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/menu-item:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose(session);
+            }}
+            disabled={session.task_prevents_close}
+          >
+            <X className="size-4" />
+          </Button>
+        </span>
       )}
     </SidebarMenuItem>
   );

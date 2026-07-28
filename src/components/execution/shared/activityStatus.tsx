@@ -45,7 +45,7 @@ export const ElapsedTime = memo(function ElapsedTime({
     return () => clearInterval(id);
   }, []);
   return (
-    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">
+    <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0 whitespace-nowrap">
       {status === "idle"
         ? formatTimeAgo(now - stateChangedAt)
         : formatElapsedCompact(now - stateChangedAt)}
