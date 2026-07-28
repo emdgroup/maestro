@@ -26,6 +26,21 @@ export class ContentErrorBoundary extends Component<
   }
 }
 
+/**
+ * Tool results are machine output — stdout, grep hits, file contents — and
+ * markdown mangles them: soft newlines collapse into spaces, `#` becomes a
+ * heading, `$` becomes KaTeX. Only text an agent deliberately fenced is treated
+ * as markdown.
+ *
+ * ponytail: an opening fence at line start is the whole test — no matching
+ * close, no streaming-aware state. Output that merely *contains* a fence line
+ * (a grep over a markdown file) renders as markdown; tighten to a matched pair
+ * if that shows up in practice.
+ */
+export function hasCodeFence(text: string): boolean {
+  return /^ {0,3}(?:`{3,}|~{3,})/m.test(text);
+}
+
 export function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
   switch (content.type) {
     case "content": {
@@ -33,7 +48,13 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
       if (!text) return null;
       return (
         <div className="max-h-64 overflow-y-auto custom-scrollbar text-[11px]">
-          <MarkdownBlock text={text} />
+          {hasCodeFence(text) ? (
+            <MarkdownBlock text={text} />
+          ) : (
+            // Wraps rather than scrolling sideways: a horizontal scrollbar nested
+            // in this vertical scroller sits below the fold and cannot be reached.
+            <pre className="font-mono text-[11px] break-words whitespace-pre-wrap">{text}</pre>
+          )}
         </div>
       );
     }
