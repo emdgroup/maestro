@@ -110,9 +110,15 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       });
     });
 
-    // Auto-resize terminal when container changes size
-    const resizeObserver = new ResizeObserver(() => {
+    // Auto-resize terminal when container changes size.
+    // Tabs are hidden with display:none, which reports 0x0 — fitting on that
+    // reflows the buffer to junk dimensions. Skip it, and force a repaint on
+    // the way back since the WebGL canvas raster is stale but cols/rows are
+    // unchanged, so no resize event would trigger a redraw on its own.
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === 0 || entry.contentRect.height === 0) return;
       fitAddon.fit();
+      terminal.refresh(0, terminal.rows - 1);
     });
     resizeObserver.observe(terminalRef.current);
 
