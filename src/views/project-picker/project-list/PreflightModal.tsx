@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { XCircle, AlertTriangle } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, XCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
@@ -65,7 +65,7 @@ function MissingToolPath({
   };
 
   return (
-    <div className="space-y-2 py-3">
+    <div className="space-y-4">
       <IssueRow
         label={`${tool.tool} not found`}
         detail={
@@ -74,6 +74,10 @@ function MissingToolPath({
         mandatory={tool.mandatory}
       />
       <div className="pl-7 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Install this binary and run preflight again, or enter its absolute path if it is already
+          installed but could not be detected.
+        </p>
         <Input
           className="font-mono text-xs"
           value={path}
@@ -97,6 +101,8 @@ function MissingToolPath({
 }
 
 export function PreflightModal() {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [skippedTools, setSkippedTools] = useState<string[]>([]);
   const {
     activeConnection,
     preflightResult,
@@ -115,6 +121,9 @@ export function PreflightModal() {
   const serverFailed = preflightError !== null || !preflightResult?.maestro_server.ok;
   const failedTools = preflightResult?.tool_checks.filter((t) => !t.available) ?? [];
   const hasMandatoryFail = serverFailed || failedTools.some((t) => t.mandatory);
+  const boundedStep = Math.min(currentStep, Math.max(failedTools.length - 1, 0));
+  const currentTool = failedTools[boundedStep];
+  const isLastStep = boundedStep === failedTools.length - 1;
   const connectionKey: ConnectionKey =
     activeConnection?.type === "docker" && activeConnection.dockerConnection
       ? { type: "docker", id: activeConnection.dockerConnection.id }
@@ -127,9 +136,14 @@ export function PreflightModal() {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[2px] rounded-lg z-10">
       <div className="bg-card border border-border rounded-xl p-5 w-[85%] max-w-md shadow-xl">
-        <h3 className="text-sm font-semibold mb-3">Environment Issues</h3>
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold">Environment Issues</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Resolve or review each missing binary before continuing.
+          </p>
+        </div>
 
-        <div className="flex flex-col divide-y divide-border/50 mb-4">
+        <div className="mb-5">
           {(preflightError || serverFailed) && (
             <IssueRow
               label="maestro-server"
@@ -139,37 +153,96 @@ export function PreflightModal() {
               mandatory
             />
           )}
-          {failedTools.map((tool) =>
-            activeConnection ? (
+          {!serverFailed && failedTools.length > 0 && (
+            <ol className="mb-5 flex items-center" aria-label="Missing binaries">
+              {failedTools.map((tool, index) => {
+                const skipped = skippedTools.includes(tool.tool);
+                const active = index === boundedStep;
+                return (
+                  <li key={tool.tool} className="flex min-w-0 flex-1 items-center last:flex-none">
+                    <button
+                      type="button"
+                      className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors ${
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : skipped
+                            ? "border-amber-400/60 bg-amber-400/10 text-amber-500"
+                            : "border-border bg-muted text-muted-foreground"
+                      }`}
+                      aria-current={active ? "step" : undefined}
+                      aria-label={`${tool.tool}${skipped ? ", skipped" : ""}`}
+                      onClick={() => setCurrentStep(index)}
+                    >
+                      {skipped ? <Check className="size-3.5" /> : index + 1}
+                    </button>
+                    {index < failedTools.length - 1 && (
+                      <span className="mx-2 h-px min-w-4 flex-1 bg-border" />
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {!serverFailed &&
+            currentTool &&
+            (activeConnection ? (
               <MissingToolPath
-                key={tool.tool}
-                tool={tool}
+                key={currentTool.tool}
+                tool={currentTool}
                 connection={connectionKey}
                 onSaved={() => startPreflight(activeConnection)}
               />
             ) : (
-              <IssueRow
-                key={tool.tool}
-                label={`${tool.tool} not found`}
-                mandatory={tool.mandatory}
-              />
-            ),
-          )}
+              <IssueRow label={`${currentTool.tool} not found`} mandatory={currentTool.mandatory} />
+            ))}
         </div>
 
-        <div className="flex gap-2 justify-end">
+        <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
           <Button variant="outline" size="sm" onClick={handleGoBack}>
             Go Back
           </Button>
-          {!hasMandatoryFail && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-amber-400/50 text-amber-400 hover:bg-amber-400/10 hover:border-amber-400"
-              onClick={ignoreWarnings}
-            >
-              Ignore
-            </Button>
+          {!serverFailed && failedTools.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={boundedStep === 0}
+                onClick={() => setCurrentStep(boundedStep - 1)}
+              >
+                <ChevronLeft className="size-3.5" />
+                Previous
+              </Button>
+              {!isLastStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={currentTool.mandatory}
+                  onClick={() => {
+                    setSkippedTools((tools) =>
+                      tools.includes(currentTool.tool) ? tools : [...tools, currentTool.tool],
+                    );
+                    setCurrentStep(boundedStep + 1);
+                  }}
+                >
+                  Skip
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              ) : (
+                !hasMandatoryFail && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-400/50 text-amber-500 hover:border-amber-400 hover:bg-amber-400/10"
+                    onClick={ignoreWarnings}
+                  >
+                    Continue anyway
+                  </Button>
+                )
+              )}
+            </div>
           )}
         </div>
       </div>
