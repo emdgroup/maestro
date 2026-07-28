@@ -153,6 +153,70 @@ describe("ActivityToolCallGroup", () => {
     expect(count()).toBe(1);
   });
 
+  it("opens a call whose only output came as rawOutput", () => {
+    const tc: ToolCallItem = {
+      ...makeCall("a", "Edit index.css", "completed", "edit"),
+      meta: { output: "The file src/index.css has been updated successfully." },
+    };
+    render(<ActivityToolCallGroup items={[tc]} />);
+    fireEvent.click(groupLine());
+    expect(screen.getByText(/updated successfully/)).toBeTruthy();
+  });
+
+  it("says a refused call was blocked, not that it failed", () => {
+    const tc: ToolCallItem = {
+      ...makeCall("a", "Bash rmdir /s /q", "error", "execute"),
+      meta: { blocked: true, errorText: "[Irreversible Local Destruction] mirrors a junction" },
+    };
+    render(<ActivityToolCallGroup items={[tc]} />);
+    fireEvent.click(groupLine());
+    expect(screen.getByText(/Irreversible Local Destruction/)).toBeTruthy();
+    expect(screen.queryByText("Failed")).toBeNull();
+  });
+
+  it("splits a summary by tool when one kind covers two of them", () => {
+    const edit = (id: string, toolName: string): ToolCallItem => ({
+      ...makeCall(id, `${toolName} a.ts`, "completed", "edit"),
+      meta: { toolName },
+    });
+    render(
+      <ActivityToolCallGroup items={[edit("a", "Edit"), edit("b", "Edit"), edit("c", "Write")]} />,
+    );
+    expect(screen.getByText("2 edited · 1 created")).toBeTruthy();
+  });
+
+  it("labels a command with why it ran, keeping the command for the open state", () => {
+    const cmd = "git diff --stat -- src/components/execution/agent-monitor/AgentMonitor.tsx";
+    const tc: ToolCallItem = {
+      ...makeCommandCall(cmd),
+      meta: { description: "Inspect possibly pre-existing changes" },
+    };
+    const { container } = render(<ActivityToolCallGroup items={[tc]} />);
+    const count = () => container.textContent!.split(cmd).length - 1;
+    expect(screen.getByText(/Inspect/)).toBeTruthy();
+    expect(count()).toBe(0);
+
+    fireEvent.click(groupLine());
+    // The description keeps the header line; the command appears once, in the card.
+    expect(screen.getByText(/Inspect/)).toBeTruthy();
+    expect(count()).toBe(1);
+  });
+
+  it("opens a read to the excerpt the agent saw", () => {
+    const tc: ToolCallItem = {
+      ...makeCall("a", "Read ToolCallTimeline.tsx (60 - 62)", "completed", "read"),
+      // Unfenced, so ToolCallContentBlock takes its plain branch and shiki stays out.
+      content: [{ type: "content", content: { type: "text", text: "60\texport function" } }],
+      meta: { toolName: "Read", fileTotalLines: 171 },
+    };
+    render(<ActivityToolCallGroup items={[tc]} />);
+    // The row line reports the file's length, not the range already in the title.
+    expect(screen.getByText("171 lines")).toBeTruthy();
+
+    fireEvent.click(groupLine());
+    expect(screen.getByText(/export function/)).toBeTruthy();
+  });
+
   it("renders a group with nothing to open as plain text", () => {
     render(
       <ActivityToolCallGroup items={[makeCall("a", "Plan mode", "completed", "switch_mode")]} />,

@@ -1,6 +1,8 @@
 // ACP SessionUpdate payload types — frontend-only, not generated from Rust.
 // The backend emits serde_json::Value payloads; these types narrow them.
 
+import type { AgentMeta } from "./agentMeta";
+
 export type ConfigOptionValue = {
   name: string;
   value: string;
@@ -43,6 +45,8 @@ export type ToolCallCreated = {
   content?: ToolCallContent[];
   locations?: ToolCallLocation[];
   rawInput?: Record<string, unknown>;
+  /** Unstructured tool output — read through `AgentMeta.output`, not directly. */
+  rawOutput?: unknown;
 };
 
 export type ToolCallContent =
@@ -58,6 +62,8 @@ export type ToolCallUpdate = {
   content?: ToolCallContent[];
   locations?: ToolCallLocation[];
   rawInput?: Record<string, unknown>;
+  /** Unstructured tool output — read through `AgentMeta.output`, not directly. */
+  rawOutput?: unknown;
 };
 
 export type PlanEntry = {
@@ -178,6 +184,8 @@ export type ToolCallItem = {
   rawInput?: Record<string, unknown>;
   parentToolCallId?: string;
   childToolCallIds?: string[];
+  /** Everything the agent said about the call beyond title/kind/content. */
+  meta?: AgentMeta;
 };
 
 export type PermissionResponseItem = {
