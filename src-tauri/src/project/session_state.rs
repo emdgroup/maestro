@@ -109,6 +109,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
                     .args(["exec", &container_name, "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
+                    .no_console_window()
                     .output()
                     .await
                     .ok();
@@ -322,6 +323,7 @@ pub(crate) async fn read_and_clear_restorable_sessions(
                     .args(["exec", &container_name, "sh", "-c", &script])
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
+                    .no_console_window()
                     .output()
                     .await;
             }

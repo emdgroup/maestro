@@ -192,6 +192,7 @@ pub async fn update_project_settings(
                 .args(["exec", &container_name, "sh", "-c", &script])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to exec into container: {}", e))?;

@@ -33,6 +33,7 @@ pub async fn git_init_project(
             .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_console_window()
             .output()
             .await
             .map_err(|e| format!("Failed to exec into container: {}", e))?;
@@ -43,6 +44,7 @@ pub async fn git_init_project(
             .args(["exec", &container_name, "git", "init", "-b", "main", &path])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_console_window()
             .output()
             .await
             .map_err(|e| format!("Failed to exec into container: {}", e))?;
@@ -155,6 +157,7 @@ pub async fn check_is_git_repo(
             .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_console_window()
             .output()
             .await
             .map_err(|e| format!("Failed to exec into container: {}", e))?;
@@ -353,6 +356,7 @@ pub async fn clone_project(
                 .args(["exec", &container_name, "sh", "-c", &git_cmd])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to exec into container: {}", e))?;
@@ -468,6 +472,7 @@ pub async fn create_new_project(
                 .args(["exec", &container_name, "sh", "-c", &script])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
+                .no_console_window()
                 .output()
                 .await
                 .map_err(|e| format!("Failed to exec into container: {}", e))?;

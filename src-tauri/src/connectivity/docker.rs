@@ -1,3 +1,4 @@
+use crate::command_ext::NoConsoleWindow;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -33,6 +34,7 @@ fn which_exists(binary: &str) -> bool {
         .arg(binary)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .no_console_window()
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -140,6 +142,7 @@ pub fn list_containers(cli: &ContainerCli) -> Result<Vec<DockerContainer>, Strin
         .args(["ps", "--all", "--format", "json"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .output()
         .map_err(|e| format!("Failed to run {} ps: {}", cli.binary(), e))?;
 
@@ -155,6 +158,7 @@ pub fn get_home_dir(cli: &ContainerCli, container_name: &str) -> Result<String, 
         .args(["exec", container_name, "sh", "-c", "echo $HOME"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .output()
         .map_err(|e| format!("Failed to exec: {}", e))?;
     if !output.status.success() {
@@ -168,6 +172,7 @@ pub fn read_file(cli: &ContainerCli, container_name: &str, path: &str) -> Result
         .args(["exec", container_name, "sh", "-c", &format!("head -c 524288 {}", crate::git::remote::shell_quote(path))])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .output()
         .map_err(|e| format!("Failed to exec: {}", e))?;
     if !output.status.success() {
@@ -181,6 +186,7 @@ pub fn read_file_binary(cli: &ContainerCli, container_name: &str, path: &str) ->
         .args(["exec", container_name, "base64", path])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .output()
         .map_err(|e| format!("Failed to exec: {}", e))?;
     if !output.status.success() {
@@ -195,6 +201,7 @@ pub fn list_directories(cli: &ContainerCli, container_name: &str, path: &str) ->
         .args(["exec", container_name, "sh", "-c", &script])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .output()
         .map_err(|e| format!("Failed to exec: {}", e))?;
     if !output.status.success() {

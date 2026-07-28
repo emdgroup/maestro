@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use maestro_protocol::{ToolCheckResult, ToolPathSource};
+use crate::command_ext::NoConsoleWindow;
 
 pub(crate) async fn check_tool(tool: String) -> ToolCheckResult {
     let mut configured_path = match crate::tool_config::get(&tool) {
@@ -286,6 +287,7 @@ async fn probe(path: &Path) -> Result<Option<String>, String> {
     prepend_parent_to_path(&mut command, path, None);
     let output = command
         .stdin(std::process::Stdio::null())
+        .no_console_window()
         .output()
         .await
         .map_err(|error| format!("Failed to execute {}: {error}", path.display()))?;

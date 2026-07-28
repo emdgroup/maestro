@@ -10,6 +10,7 @@ pub(super) async fn run_docker_git(container_name: &str, path: &str, args: &[&st
     cmd_args.extend_from_slice(args);
     let output = TokioCommand::new(cli.binary())
         .args(&cmd_args)
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to run {} exec git: {}", cli.binary(), e))?;
@@ -32,6 +33,7 @@ async fn run_docker_git_with_stdin(container_name: &str, path: &str, args: &[&st
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to run {} exec git: {}", cli.binary(), e))?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -256,6 +258,7 @@ pub async fn run_git_commands_lossy(
                 .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
             TokioCommand::new(cli.binary())
                 .args(["exec", "-i", container_name, "sh", "-c", &script])
+                .no_console_window()
                 .output()
                 .await
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())

@@ -21,6 +21,7 @@ use crate::session::{
 use crate::sessions::{
     ActiveSession, AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections,
 };
+use crate::command_ext::NoConsoleWindow;
 use crate::tool_check::check_tools;
 
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
@@ -713,7 +714,8 @@ pub(crate) async fn dispatch_message(
                         .args(&method.args)
                         .stdin(std::process::Stdio::null())
                         .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped());
+                        .stderr(std::process::Stdio::piped())
+                        .no_console_window();
                     if req.force_no_browser {
                         child_cmd.env("NO_BROWSER", "1");
                     }
@@ -866,7 +868,8 @@ pub(crate) async fn dispatch_message(
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .env("NO_BROWSER", "1")
-                    .env("TERM", "xterm-256color");
+                    .env("TERM", "xterm-256color")
+                    .no_console_window();
                 let mut child = match child_cmd.spawn() {
                     Ok(c) => c,
                     Err(e) => {

@@ -1,3 +1,4 @@
+use crate::command_ext::NoConsoleWindow;
 use std::sync::Arc;
 use tauri::State;
 use crate::core::AppState;
@@ -122,6 +123,7 @@ pub async fn list_docker_workspace_files(
             .args(["exec", &container_name, "sh", "-c", &script])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_console_window()
             .output()
             .map_err(|e| format!("Failed to exec in container: {e}"))?;
         if !output.status.success() {

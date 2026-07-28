@@ -1,5 +1,6 @@
 //! Transport channel setup: open local, remote, and WSL connections to maestro-server.
 
+use crate::command_ext::NoConsoleWindow;
 use tokio::io::{AsyncWriteExt, BufWriter, BufReader};
 use tokio::process::ChildStdin;
 use crate::acp::transport::{
@@ -44,7 +45,6 @@ pub(crate) async fn open_local_transport(
     // On the normal path (preflight already ran), this is a fast version-check hit.
     let server_path = crate::acp::deploy::ensure_local_server(&app_state.app_handle).await?;
 
-    use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new(server_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -108,7 +108,6 @@ pub(crate) async fn open_wsl_transport(
     server_path: &str,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
-    use crate::command_ext::NoConsoleWindow;
     let child = tokio::process::Command::new("wsl.exe")
         .args(["-d", distro, "--", "bash", "-lc", server_path])
         .stdin(Stdio::piped())
@@ -137,6 +136,7 @@ pub(crate) async fn open_container_transport(
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn container maestro-server in {}: {}", container_name, e))?;
 

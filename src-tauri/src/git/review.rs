@@ -262,6 +262,7 @@ pub async fn reject_review(
                             .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
                         let _ = tokio::process::Command::new(cli.binary())
                             .args(["exec", container_name, "git", "-C", path, "branch", "-D", &branch_name])
+                            .no_console_window()
                             .output()
                             .await;
                     }

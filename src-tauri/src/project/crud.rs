@@ -80,6 +80,7 @@ pub(crate) fn register_project_in_db(
                     .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
+                    .no_console_window()
                     .status();
             }
         }
@@ -280,6 +281,7 @@ async fn collect_stale_project_ids(
             for project in projects {
                 let output = tokio::process::Command::new(cli.binary())
                     .args(["exec", &container_name, "test", "-d", &project.path])
+                    .no_console_window()
                     .output()
                     .await;
                 match output {
@@ -516,6 +518,7 @@ pub fn create_project(
                     .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
+                    .no_console_window()
                     .status();
             }
         }

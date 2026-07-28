@@ -1,3 +1,4 @@
+use crate::command_ext::NoConsoleWindow;
 use tauri::{AppHandle, Emitter, Manager};
 
 const REMOTE_INSTALL_DIR: &str = ".local/bin";
@@ -220,7 +221,6 @@ pub async fn ensure_wsl_server(
 ) -> Result<DeployResult, String> {
     use tokio::io::AsyncWriteExt;
 
-    use crate::command_ext::NoConsoleWindow;
     let probe_out = tokio::time::timeout(
         std::time::Duration::from_secs(15),
         tokio::process::Command::new("wsl.exe")
@@ -333,6 +333,7 @@ pub async fn ensure_container_server(
                     REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
                 ),
             ])
+            .no_console_window()
             .output(),
     )
     .await
@@ -371,6 +372,7 @@ pub async fn ensure_container_server(
     // Detect the container arch via uname before downloading the right binary.
     let arch_out = tokio::process::Command::new(cli.binary())
         .args(["exec", container_name, "uname", "-m"])
+        .no_console_window()
         .output()
         .await
         .map_err(|e| format!("Failed to probe container arch: {}", e))?;
@@ -397,6 +399,7 @@ pub async fn ensure_container_server(
         ])
         .stdin(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .no_console_window()
         .spawn()
         .map_err(|e| format!("Failed to spawn container deploy shell: {}", e))?;
 
@@ -460,6 +463,7 @@ pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), 
             "-c",
             &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
         ])
+        .no_console_window()
         .status()
         .await
         .map_err(|e| format!("Failed to spawn WSL catalog write: {}", e))?;
@@ -503,6 +507,7 @@ pub async fn ensure_wsl_base_skill(distro: &str, project_path: &str) -> Result<(
             "-c",
             &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
         ])
+        .no_console_window()
         .status()
         .await
         .map_err(|e| format!("Failed to spawn WSL base skill write: {}", e))?;
@@ -646,6 +651,7 @@ fn cached_binary_path(app_handle: &AppHandle, triple: &str) -> Result<std::path:
 async fn check_cached_version(path: &std::path::Path) -> Option<String> {
     let output = tokio::process::Command::new(path)
         .arg("--app-version")
+        .no_console_window()
         .output()
         .await
         .ok()?;
