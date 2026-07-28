@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, type MutableRefObject } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
@@ -23,6 +23,7 @@ export function useMessageSender({
   composeBarRef,
   isCenteredCompose,
   onCenteredTransition,
+  pendingSendRef,
 }: {
   sessionKey: number;
   isProcessing: boolean;
@@ -36,6 +37,7 @@ export function useMessageSender({
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
   isCenteredCompose: boolean;
   onCenteredTransition: () => void;
+  pendingSendRef: MutableRefObject<boolean>;
 }): {
   handleSend: (content: string, contentBlocks?: JsonValue) => Promise<void>;
   handleCancel: () => Promise<void>;
@@ -54,6 +56,7 @@ export function useMessageSender({
         await handlePermissionRespond(pendingPermission.requestId, rejectOpt?.optionId ?? null);
       }
       liveDispatch({ type: "finalize_streaming" });
+      pendingSendRef.current = true;
       setActivity(sessionKey, "thinking");
       try {
         if (contentBlocks) {
@@ -62,6 +65,7 @@ export function useMessageSender({
           await api.sendAcpPrompt(sessionKey, content);
         }
       } catch {
+        pendingSendRef.current = false;
         setActivity(sessionKey, "idle");
       }
     },
@@ -72,6 +76,7 @@ export function useMessageSender({
       setActivity,
       pendingPermission,
       handlePermissionRespond,
+      pendingSendRef,
     ],
   );
 

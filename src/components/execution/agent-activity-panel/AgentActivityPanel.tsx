@@ -171,7 +171,8 @@ export function AgentActivityPanel({
 
   const [, setScrollRestoreToken] = useState(0);
 
-  useActivityStatusManager(sessionKey, liveState);
+  const pendingSendRef = useRef(false);
+  useActivityStatusManager(sessionKey, liveState, pendingSendRef);
   const { workingFiles: localWorkingFiles, sessionChangedFiles: localChangedFiles } =
     useWorkingFileTracker(sessionKey, liveState.items);
 
@@ -300,6 +301,7 @@ export function AgentActivityPanel({
     composeBarRef,
     isCenteredCompose,
     onCenteredTransition: () => setHasSentFirstMessage(true),
+    pendingSendRef,
   });
 
   const handleConfigChange = useCallback(

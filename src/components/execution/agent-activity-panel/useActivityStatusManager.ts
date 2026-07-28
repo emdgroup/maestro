@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MutableRefObject } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import type { ActivityState } from "../activity/types";
@@ -17,6 +17,7 @@ function toolKindCategory(kind: string): string {
 export function useActivityStatusManager(
   sessionKey: number,
   liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
+  pendingSendRef: MutableRefObject<boolean>,
 ): void {
   const { setActivity, removeActivity, resetIfStale } = useSessionActivityActions();
 
@@ -37,9 +38,13 @@ export function useActivityStatusManager(
     const lastItem = items[items.length - 1];
 
     if (!lastItem || !liveState.isTurnActive) {
-      setActivity(sessionKey, "idle");
+      if (!pendingSendRef.current) {
+        setActivity(sessionKey, "idle");
+      }
       return;
     }
+    // Turn became active — clear pending flag set by useMessageSender
+    pendingSendRef.current = false;
 
     if (
       (lastItem.type === "thinking" || lastItem.type === "message") &&
