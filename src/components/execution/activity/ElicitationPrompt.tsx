@@ -104,6 +104,16 @@ export function ElicitationPrompt({
     setCurrentIndex(index);
   };
 
+  // single-select is unambiguous — advance for the user, after a beat so the pick is visible
+  const advanceAfterPick = () => {
+    if (currentIndex >= fields.length - 1) return;
+    const next = currentIndex + 1;
+    setTimeout(() => {
+      setDirection(1);
+      setCurrentIndex(next);
+    }, 200);
+  };
+
   const handleSubmit = () => {
     if (unansweredCount > 0 && !submitAttempted) {
       setSubmitAttempted(true);
@@ -215,7 +225,10 @@ export function ElicitationPrompt({
                             name={currentField.key}
                             className="sr-only"
                             checked={selected}
-                            onChange={() => set(currentField.key, opt.const)}
+                            onChange={() => {
+                              set(currentField.key, opt.const);
+                              advanceAfterPick();
+                            }}
                           />
                           <div
                             className={cn(
