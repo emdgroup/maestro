@@ -242,6 +242,21 @@ export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boole
   });
 }
 
+export function useSetToolPathMutation() {
+  return useMutation({
+    mutationFn: ({
+      connection,
+      tool,
+      path,
+    }: {
+      connection: ConnectionKey;
+      tool: string;
+      path: string | null;
+    }) => api.setToolPath(connection, tool, path),
+    onError: createErrorToastHandler("Failed to update binary path"),
+  });
+}
+
 /**
  * Mutation hook for spawning an ACP session for a given agent and worktree path.
  */

@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::command_ext::NoConsoleWindow;
+use std::path::Path;
 
 /// Spawn an ACP agent as a child subprocess with piped stdin/stdout/stderr.
 ///
@@ -29,22 +29,56 @@ pub async fn spawn_agent_subprocess(
         return Err(format!("cwd does not exist: {}", cwd));
     }
 
-    // Prepend our own directory to PATH so agents can call `maestro-server validate-canvas` etc.
-    let path_with_server = std::env::current_exe().ok()
-        .and_then(|exe| exe.parent().map(|dir| {
-            let base = env.get("PATH")
-                .cloned()
-                .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
-            let sep = if cfg!(windows) { ";" } else { ":" };
-            format!("{}{}{}", dir.display(), sep, base)
-        }));
+    let executable = if Path::new(command).components().count() == 1 {
+        crate::tool_check::resolve_tool_path(command).await?
+    } else {
+        Path::new(command).to_path_buf()
+    };
 
-    crate::send_diag("info", format!("[spawn] spawning cmd={command:?} args={args:?} cwd={cwd:?}"));
-    let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args)
-        .current_dir(cwd_path)
-        .envs(env);
-    if let Some(path) = path_with_server {
+    // Include the launcher directory for sibling runtimes and our directory for canvas validation.
+    let mut path_entries = Vec::new();
+    if let Ok(server) = std::env::current_exe() {
+        if let Some(parent) = server.parent() {
+            path_entries.push(parent.to_path_buf());
+        }
+    }
+    if let Some(parent) = executable.parent() {
+        path_entries.push(parent.to_path_buf());
+    }
+    let base_path = env
+        .get("PATH")
+        .map(String::as_str)
+        .map(std::ffi::OsString::from)
+        .or_else(|| std::env::var_os("PATH"));
+    if let Some(base) = base_path {
+        path_entries.extend(std::env::split_paths(&base));
+    }
+    let child_path = std::env::join_paths(path_entries).ok();
+
+    crate::send_diag(
+        "info",
+        format!("[spawn] spawning cmd={executable:?} args={args:?} cwd={cwd:?}"),
+    );
+    #[cfg(windows)]
+    let mut cmd = {
+        let extension = executable
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat") {
+            let mut cmd = tokio::process::Command::new(
+                std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()),
+            );
+            cmd.arg("/d").arg("/c").arg(&executable);
+            cmd
+        } else {
+            tokio::process::Command::new(&executable)
+        }
+    };
+    #[cfg(not(windows))]
+    let mut cmd = tokio::process::Command::new(&executable);
+    cmd.args(args).current_dir(cwd_path).envs(env);
+    if let Some(path) = child_path {
         cmd.env("PATH", path);
     }
     let child = cmd
@@ -55,7 +89,7 @@ pub async fn spawn_agent_subprocess(
         .no_console_window()
         .spawn()
         .map_err(|e| {
-            crate::send_diag("error", format!("[spawn] FAILED cmd={command:?}: {e}"));
+            crate::send_diag("error", format!("[spawn] FAILED cmd={executable:?}: {e}"));
             format!("failed to spawn agent '{}': {}", command, e)
         })?;
     crate::send_diag("info", format!("[spawn] ok pid={:?}", child.id()));

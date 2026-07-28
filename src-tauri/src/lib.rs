@@ -1,25 +1,33 @@
+pub mod acp;
 pub mod command_ext;
+pub mod connectivity;
 pub mod core;
+pub mod execution;
+pub mod git;
+pub mod integration;
+pub mod ipc;
 pub mod models;
 pub mod project;
-pub mod task;
-pub mod connectivity;
-pub mod execution;
-pub mod integration;
 pub mod settings;
-pub mod ipc;
-pub mod git;
-pub mod acp;
+pub mod task;
 
-pub use core::{init_db, AppState, SshState, AcpState, PtyState, get_git_connection, get_project_with_git_conn};
-pub use models::{Project, Task, Worktree, AppSettings, ProjectStatus, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, TaskAttachment, WorktreeWithStatus, ActiveSessionInfo, SessionListEntryDto, ReviewFeedback, ReviewComment, ReviewDecision, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, GitConnection, ProjectConfig, ProjectState, SessionSnapshot, TaskSnapshot, WorktreeSnapshot, IssueTrackingConfig, RemoteIssue, IntegrationStatus, CredentialSource, WORKTREE_DIR, WORKTREE_PATH_PREFIX, worktree_path_for_task};
-pub use execution::{ProcessOutput, spawn_agent_cli_pty, PtySession};
+pub use core::{
+    get_git_connection, get_project_with_git_conn, init_db, AcpState, AppState, PtyState, SshState,
+};
+pub use execution::{spawn_agent_cli_pty, ProcessOutput, PtySession};
+pub use models::{
+    worktree_path_for_task, ActiveSessionInfo, AppSettings, CredentialSource, GitConnection,
+    IntegrationStatus, IssueTrackingConfig, Project, ProjectConfig, ProjectConfigRequest,
+    ProjectConfigResponse, ProjectState, ProjectStatus, RemoteIssue, ReviewComment, ReviewDecision,
+    ReviewFeedback, SessionListEntryDto, SessionSnapshot, Task, TaskAttachment, TaskConfigRequest,
+    TaskInstruction, TaskPriority, TaskRelationship, TaskSnapshot, TaskStatus, Worktree,
+    WorktreeSnapshot, WorktreeWithStatus, WORKTREE_DIR, WORKTREE_PATH_PREFIX,
+};
 
 use tauri_specta::{collect_commands, Builder};
 
 pub fn create_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
-        .commands(collect_commands![
+    Builder::<tauri::Wry>::new().commands(collect_commands![
             crate::ipc::get_projects,
             crate::ipc::get_connection_projects,
             crate::ipc::create_project,
@@ -118,6 +126,9 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::cancel_acp_session,
             crate::ipc::interrupt_acp_turn,
             crate::ipc::preflight_connection,
+        crate::ipc::check_required_tools,
+        crate::ipc::set_tool_path,
+        crate::ipc::test_tool_path,
             crate::ipc::detect_project_agents,
             crate::ipc::discover_agents,
             crate::ipc::set_acp_model,
@@ -213,8 +224,10 @@ mod tests {
     fn generate_typescript_bindings() {
         create_builder()
             .export(
-                Typescript::default().header("// @ts-nocheck").bigint(BigIntExportBehavior::Number),
-                "../src/types/bindings.ts"
+                Typescript::default()
+                    .header("// @ts-nocheck")
+                    .bigint(BigIntExportBehavior::Number),
+                "../src/types/bindings.ts",
             )
             .expect("Failed to export TypeScript bindings");
 

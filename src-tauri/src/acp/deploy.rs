@@ -37,7 +37,9 @@ fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
         ("Darwin", "arm64") | ("Darwin", "aarch64") => Ok("aarch64-apple-darwin"),
         ("Darwin", other) => Err(format!("Unsupported macOS architecture: {}", other)),
         (os, "x86_64") if os.contains("NT") => Ok("x86_64-pc-windows-msvc"),
-        (os, arch) if os.contains("NT") => Err(format!("Unsupported Windows architecture: {}", arch)),
+        (os, arch) if os.contains("NT") => {
+            Err(format!("Unsupported Windows architecture: {}", arch))
+        }
         (_, "x86_64")                 => Ok("x86_64-unknown-linux-gnu"),
         (_, "aarch64") | (_, "arm64") => Ok("aarch64-unknown-linux-gnu"),
         (_, other)                    => Err(format!("Unsupported remote architecture: {}", other)),
@@ -138,7 +140,7 @@ pub async fn ensure_remote_server(
 
     let remote_triple = triple_for_remote(os, arch)?;
     let binary_name = remote_binary_name(remote_triple);
-    let local_version = env!("CARGO_PKG_VERSION").to_string();
+    let local_version = deployment_version();
 
     if remote_version == local_version {
         let abs_path = format!("{}/{}/{}", home, REMOTE_INSTALL_DIR, binary_name);
@@ -244,12 +246,15 @@ pub async fn ensure_wsl_server(
     }
     let (home, remote_version) = (parts[0].trim(), parts[1].trim());
 
-    let local_version = env!("CARGO_PKG_VERSION").to_string();
+    let local_version = deployment_version();
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 
     if remote_version == local_version {
-        return Ok(DeployResult { path: abs_path, deployed: false });
+        return Ok(DeployResult {
+            path: abs_path,
+            deployed: false,
+        });
     }
 
     // WSL on Windows runs x86_64 Linux in all common configurations.
@@ -264,9 +269,15 @@ pub async fn ensure_wsl_server(
     // ETXTBSY when a running server still holds the old inode.
     let mut child = tokio::process::Command::new("wsl.exe")
         .args([
-            "-d", distro, "--",
-            "sh", "-c",
-            &format!("mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'", abs_dir, abs_path),
+            "-d",
+            distro,
+            "--",
+            "sh",
+            "-c",
+            &format!(
+                "mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'",
+                abs_dir, abs_path
+            ),
         ])
         .stdin(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -281,20 +292,24 @@ pub async fn ensure_wsl_server(
         None => Ok(()),
     };
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        child.wait_with_output(),
-    )
+    let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
     .await
     .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
     .map_err(|e| format!("WSL deploy process failed: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("WSL deploy failed ({}): {}", output.status, stderr.trim()));
+        return Err(format!(
+            "WSL deploy failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
     }
     write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
 
-    Ok(DeployResult { path: abs_path, deployed: true })
+    Ok(DeployResult {
+        path: abs_path,
+        deployed: true,
+    })
 }
 
 /// Ensure maestro-server exists inside a container with the correct version.
@@ -335,16 +350,22 @@ pub async fn ensure_container_server(
     let text = String::from_utf8_lossy(&probe_out.stdout);
     let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
     if parts.len() != 2 {
-        return Err(format!("Unexpected container probe output: {}", text.trim()));
+        return Err(format!(
+            "Unexpected container probe output: {}",
+            text.trim()
+        ));
     }
     let (home, remote_version) = (parts[0].trim(), parts[1].trim());
 
-    let local_version = env!("CARGO_PKG_VERSION").to_string();
+    let local_version = deployment_version();
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
     let abs_path = format!("{}/{}", abs_dir, REMOTE_BINARY_NAME);
 
     if remote_version == local_version {
-        return Ok(DeployResult { path: abs_path, deployed: false });
+        return Ok(DeployResult {
+            path: abs_path,
+            deployed: false,
+        });
     }
 
     // Detect the container arch via uname before downloading the right binary.
@@ -364,9 +385,15 @@ pub async fn ensure_container_server(
     // rm -f before writing for the same symlink/ETXTBSY reasons as the WSL deploy.
     let mut child = tokio::process::Command::new(cli.binary())
         .args([
-            "exec", "-i", container_name,
-            "sh", "-c",
-            &format!("mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'", abs_dir, abs_path),
+            "exec",
+            "-i",
+            container_name,
+            "sh",
+            "-c",
+            &format!(
+                "mkdir -p '{0}' && rm -f '{1}' && cat > '{1}' && chmod +x '{1}'",
+                abs_dir, abs_path
+            ),
         ])
         .stdin(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -378,20 +405,24 @@ pub async fn ensure_container_server(
         None => Ok(()),
     };
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        child.wait_with_output(),
-    )
+    let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
     .await
     .map_err(|_| format!("Container deploy timed out for {}", container_name))?
     .map_err(|e| format!("Container deploy process failed: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Container deploy failed ({}): {}", output.status, stderr.trim()));
+        return Err(format!(
+            "Container deploy failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
     }
     write_result.map_err(|e| format!("Binary pipe write failed: {}", e))?;
 
-    Ok(DeployResult { path: abs_path, deployed: true })
+    Ok(DeployResult {
+        path: abs_path,
+        deployed: true,
+    })
 }
 
 /// Write the bundled canvas catalog to `.maestro/canvas-catalog.json` on a remote host.
@@ -401,7 +432,8 @@ pub async fn ensure_remote_catalog(
     project_path: &str,
 ) -> Result<(), String> {
     use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
+    let encoded = base64::engine::general_purpose::STANDARD
+        .encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
     let dest = format!("{}/.maestro/canvas-catalog.json", project_path);
     ssh.execute_command(&format!(
         "printf '%s' '{}' | base64 -d > '{}'",
@@ -416,12 +448,16 @@ pub async fn ensure_remote_catalog(
 #[cfg(windows)]
 pub async fn ensure_wsl_catalog(distro: &str, project_path: &str) -> Result<(), String> {
     use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
+    let encoded = base64::engine::general_purpose::STANDARD
+        .encode(crate::core::project_storage::CANVAS_CATALOG.as_bytes());
     let dest = format!("{}/.maestro/canvas-catalog.json", project_path);
     let status = tokio::process::Command::new("wsl.exe")
         .args([
-            "-d", distro, "--",
-            "sh", "-c",
+            "-d",
+            distro,
+            "--",
+            "sh",
+            "-c",
             &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
         ])
         .status()
@@ -439,7 +475,8 @@ pub async fn ensure_remote_base_skill(
     project_path: &str,
 ) -> Result<(), String> {
     use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
+    let encoded = base64::engine::general_purpose::STANDARD
+        .encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
     let dest = format!("{}/.maestro/canvas-base-skill.md", project_path);
     ssh.execute_command(&format!(
         "printf '%s' '{}' | base64 -d > '{}'",
@@ -454,19 +491,26 @@ pub async fn ensure_remote_base_skill(
 #[cfg(windows)]
 pub async fn ensure_wsl_base_skill(distro: &str, project_path: &str) -> Result<(), String> {
     use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
+    let encoded = base64::engine::general_purpose::STANDARD
+        .encode(crate::core::project_storage::CANVAS_BASE_SKILL.as_bytes());
     let dest = format!("{}/.maestro/canvas-base-skill.md", project_path);
     let status = tokio::process::Command::new("wsl.exe")
         .args([
-            "-d", distro, "--",
-            "sh", "-c",
+            "-d",
+            distro,
+            "--",
+            "sh",
+            "-c",
             &format!("printf '%s' '{}' | base64 -d > '{}'", encoded, dest),
         ])
         .status()
         .await
         .map_err(|e| format!("Failed to spawn WSL base skill write: {}", e))?;
     if !status.success() {
-        return Err(format!("WSL base skill write exited with status: {}", status));
+        return Err(format!(
+            "WSL base skill write exited with status: {}",
+            status
+        ));
     }
     Ok(())
 }
@@ -479,7 +523,10 @@ pub async fn ensure_wsl_base_skill(distro: &str, project_path: &str) -> Result<(
 pub async fn ensure_local_server(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     let cached = ensure_cached_binary(app_handle, crate::acp::HOST_TRIPLE, Some(0)).await?;
     if let Err(e) = install_local_link(&cached).await {
-        log::warn!("Warning: failed to install ~/.local/bin/maestro-server: {}", e);
+        log::warn!(
+            "Warning: failed to install ~/.local/bin/maestro-server: {}",
+            e
+        );
     }
     Ok(cached)
 }
@@ -507,9 +554,12 @@ async fn install_local_link(src: &std::path::Path) -> Result<(), String> {
         let dest = bin_dir.join("maestro-server");
         // Remove stale symlink or file before recreating.
         let _ = tokio::fs::remove_file(&dest).await;
-        tokio::fs::symlink(src, &dest)
-            .await
-            .map_err(|e| format!("Failed to create symlink ~/.local/bin/maestro-server: {}", e))?;
+        tokio::fs::symlink(src, &dest).await.map_err(|e| {
+            format!(
+                "Failed to create symlink ~/.local/bin/maestro-server: {}",
+                e
+            )
+        })?;
     }
 
     #[cfg(windows)]
@@ -547,7 +597,7 @@ async fn ensure_cached_binary(
     emit_connection_id: Option<i32>,
 ) -> Result<std::path::PathBuf, String> {
     let dest = cached_binary_path(app_handle, triple)?;
-    let local_version = env!("CARGO_PKG_VERSION");
+    let local_version = deployment_version();
 
     if let Some(id) = emit_connection_id {
         emit_status(app_handle, id, "checking", None);
@@ -575,14 +625,21 @@ async fn ensure_cached_binary(
     Ok(dest)
 }
 
+fn deployment_version() -> String {
+    format!(
+        "{}-protocol-{}",
+        env!("CARGO_PKG_VERSION"),
+        maestro_protocol::PROTOCOL_VERSION
+    )
+}
+
 fn cached_binary_path(app_handle: &AppHandle, triple: &str) -> Result<std::path::PathBuf, String> {
     let dir = app_handle
         .path()
         .app_data_dir()
         .map_err(|e| format!("Cannot resolve app data dir: {}", e))?
         .join("bin");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Cannot create server cache dir: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create server cache dir: {}", e))?;
     Ok(dir.join(asset_filename(triple)))
 }
 

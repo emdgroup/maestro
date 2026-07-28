@@ -4,7 +4,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -67,13 +67,17 @@ pub enum ServerRequest {
     Authenticate(AuthenticateRequest),
     Logout(LogoutRequest),
     CheckTools(CheckToolsRequest),
+    SetToolPath(SetToolPathRequest),
+    TestToolPath(TestToolPathRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
     DetectProjectAgents(DetectProjectAgentsRequest),
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
     KillAuthTerminal(KillAuthTerminalRequest),
     AuthTerminalInput(AuthTerminalInputRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
-    Pong { seq: u64 },
+    Pong {
+        seq: u64,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -110,12 +114,45 @@ pub struct CheckToolsRequest {
     pub tools: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetToolPathRequest {
+    pub tool: String,
+    /// `None` removes the override and restores automatic detection.
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TestToolPathRequest {
+    pub tool: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolPathSource {
+    Override,
+    Path,
+    SystemEnvironment,
+    KnownLocation,
+    ShellEnvironment,
+    #[default]
+    NotFound,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCheckResult {
     pub tool: String,
     pub available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configured_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_path: Option<String>,
+    #[serde(default)]
+    pub source: ToolPathSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -254,10 +291,14 @@ pub enum ServerResponse {
     AuthTerminalExit(AuthTerminalExitResponse),
     AgentConnectionLost(AgentConnectionLost),
     CheckToolsOk(CheckToolsResponse),
+    SetToolPathOk(ToolCheckResult),
+    TestToolPathOk(ToolCheckResult),
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
-    Ping { seq: u64 },
+    Ping {
+        seq: u64,
+    },
     /// Unsolicited diagnostic event from maestro-server for logging and observability.
     Diagnostic(DiagnosticPayload),
 }
@@ -562,7 +603,12 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = serde_json::to_vec(msg)?;
     if bytes.len() > MAX_MESSAGE_SIZE {
-        return Err(format!("Message too large to send: {} bytes (max {})", bytes.len(), MAX_MESSAGE_SIZE).into());
+        return Err(format!(
+            "Message too large to send: {} bytes (max {})",
+            bytes.len(),
+            MAX_MESSAGE_SIZE
+        )
+        .into());
     }
     let len = bytes.len() as u32;
     stream.write_all(&len.to_le_bytes()).await?;
@@ -577,7 +623,11 @@ pub async fn read_message<R: AsyncRead + Unpin>(
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_le_bytes(len_buf) as usize;
     if len > MAX_MESSAGE_SIZE {
-        return Err(format!("Message too large: {} bytes (max {})", len, MAX_MESSAGE_SIZE).into());
+        return Err(format!(
+            "Message too large: {} bytes (max {})",
+            len, MAX_MESSAGE_SIZE
+        )
+        .into());
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
@@ -599,7 +649,11 @@ pub fn read_message_sync<R: std::io::Read>(
     stream.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;
     if len > MAX_MESSAGE_SIZE {
-        return Err(format!("Message too large: {} bytes (max {})", len, MAX_MESSAGE_SIZE).into());
+        return Err(format!(
+            "Message too large: {} bytes (max {})",
+            len, MAX_MESSAGE_SIZE
+        )
+        .into());
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
@@ -835,7 +889,8 @@ mod tests {
 
     #[test]
     fn roundtrip_permission_request() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
+        let msg =
+            MaestroRpcMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
             session_id: "sess-1".to_string(),
             request_id: "perm-42".to_string(),
             payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
@@ -897,7 +952,10 @@ mod tests {
         let mut cursor = std::io::Cursor::new(buf);
         let result = read_message(&mut cursor).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Message too large"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Message too large"));
     }
 
     #[test]
@@ -1081,7 +1139,8 @@ mod tests {
 
     #[test]
     fn roundtrip_pre_initialize_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
+        let msg =
+            MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
             agent_id: "claude-acp".to_string(),
             prompt_capabilities: Some(PromptCapabilitiesInfo {
                 embedded_context: true,
@@ -1102,7 +1161,8 @@ mod tests {
 
     #[test]
     fn roundtrip_agent_connection_lost() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
+        let msg =
+            MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
             agent_id: "claude-acp".to_string(),
             reason: "agent process exited unexpectedly".to_string(),
             affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
@@ -1114,7 +1174,9 @@ mod tests {
 
     #[test]
     fn roundtrip_detect_installed_agents_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(DetectInstalledAgentsRequest {}));
+        let msg = MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(
+            DetectInstalledAgentsRequest {},
+        ));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1122,7 +1184,8 @@ mod tests {
 
     #[test]
     fn roundtrip_detect_installed_agents_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(DetectInstalledAgentsResponse {
+        let msg = MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
+            DetectInstalledAgentsResponse {
             agents: vec![
                 DetectedAgentInfo {
                     agent_id: "claude-acp".to_string(),
@@ -1139,8 +1202,13 @@ mod tests {
                     config_dir_found: true,
                 },
             ],
-            all_checked_ids: vec!["claude-acp".to_string(), "github-copilot-cli".to_string(), "codex-acp".to_string()],
-        }));
+                all_checked_ids: vec![
+                    "claude-acp".to_string(),
+                    "github-copilot-cli".to_string(),
+                    "codex-acp".to_string(),
+                ],
+            },
+        ));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1148,9 +1216,11 @@ mod tests {
 
     #[test]
     fn roundtrip_detect_project_agents_request() {
-        let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(DetectProjectAgentsRequest {
+        let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(
+            DetectProjectAgentsRequest {
             cwd: "/home/user/project".to_string(),
-        }));
+            },
+        ));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1185,14 +1255,14 @@ mod tests {
 
     #[test]
     fn roundtrip_detect_project_agents_ok() {
-        let msg = MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(DetectProjectAgentsResponse {
-            agents: vec![
-                ProjectAgentMarker {
+        let msg = MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(
+            DetectProjectAgentsResponse {
+                agents: vec![ProjectAgentMarker {
                     agent_id: "claude-acp".to_string(),
                     markers_found: vec!["CLAUDE.md".to_string(), ".claude/".to_string()],
+                }],
                 },
-            ],
-        }));
+        ));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
