@@ -1,14 +1,16 @@
 //! Core ACP session and transport data types.
 
+use crate::acp::canvas::{CanvasFenceExtractor, PreambleFilterState};
+use crate::acp::transport::{
+    CheckToolsResponse, PreInitializeResponse, SessionListOkResponse, ToolCheckResult,
+};
+use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
-use crate::acp::transport::{PreInitializeResponse, SessionListOkResponse, CheckToolsResponse};
-use crate::acp::canvas::{PreambleFilterState, CanvasFenceExtractor};
-use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
 
 /// Reply slot for a request that can only be in flight one at a time.
 /// `None` means no request is outstanding.
@@ -82,6 +84,8 @@ pub struct PendingChannels {
     pub session_close: PendingReply<()>,
     pub session_delete: PendingReply<()>,
     pub check_tools: PendingReply<CheckToolsResponse>,
+    pub set_tool_path: PendingReply<ToolCheckResult>,
+    pub test_tool_path: PendingReply<ToolCheckResult>,
     pub detect_installed: PendingReply<DetectInstalledAgentsResponse>,
     pub detect_project: PendingReply<DetectProjectAgentsResponse>,
     pub authenticate: PendingReply<()>,
@@ -103,6 +107,8 @@ impl PendingChannels {
             session_close: Arc::new(std::sync::Mutex::new(None)),
             session_delete: Arc::new(std::sync::Mutex::new(None)),
             check_tools: Arc::new(std::sync::Mutex::new(None)),
+            set_tool_path: Arc::new(std::sync::Mutex::new(None)),
+            test_tool_path: Arc::new(std::sync::Mutex::new(None)),
             detect_installed: Arc::new(std::sync::Mutex::new(None)),
             detect_project: Arc::new(std::sync::Mutex::new(None)),
             authenticate: Arc::new(std::sync::Mutex::new(None)),
@@ -141,11 +147,17 @@ pub struct SessionCapabilitiesInfo {
 /// Describes where to open a new maestro-server connection: local subprocess, remote SSH channel, or WSL distro.
 pub enum TransportTarget<'a> {
     Local,
-    Remote { ssh: &'a crate::connectivity::ssh::RemoteSshSession, server_path: &'a str },
+    Remote {
+        ssh: &'a crate::connectivity::ssh::RemoteSshSession,
+        server_path: &'a str,
+    },
     /// WSL distro: spawns `wsl.exe -d <distro> -- <server_path>`.
     /// Uses the same read/write types as Local (wsl.exe is a local subprocess).
     #[cfg(windows)]
-    Wsl { distro: &'a str, server_path: &'a str },
+    Wsl {
+        distro: &'a str,
+        server_path: &'a str,
+    },
     /// Container: spawns `<cli> exec -i <container_name> bash -lc <server_path>`.
     /// Cross-platform (no #[cfg] needed). Same subprocess transport types as Local.
     Docker {
@@ -224,7 +236,6 @@ pub struct TaskMetadata {
     pub session_start_sha: Option<String>,
 }
 
-
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
 /// from the Arc-wrapped caches, which `AcpProcess::create` allocates uniformly.
 pub struct AcpProcessParams {
@@ -289,9 +300,11 @@ impl AcpProcess {
         let pending_file_search = Arc::new(std::sync::Mutex::new(None));
         let pending_file_read = Arc::new(std::sync::Mutex::new(None));
         let acp_session_id = Arc::new(std::sync::Mutex::new(params.initial_acp_session_id));
-        let replay_buffer = Arc::new(std::sync::Mutex::new(
-            if params.enable_replay_buffer { Some(Vec::new()) } else { None },
-        ));
+        let replay_buffer = Arc::new(std::sync::Mutex::new(if params.enable_replay_buffer {
+            Some(Vec::new())
+        } else {
+            None
+        }));
         let initialized = Arc::new(std::sync::Mutex::new(false));
         let preamble_injected = Arc::new(AtomicBool::new(false));
         let preamble_filter = Arc::new(std::sync::Mutex::new(PreambleFilterState::Watching));

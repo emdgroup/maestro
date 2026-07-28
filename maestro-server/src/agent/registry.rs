@@ -15,17 +15,29 @@ pub struct DiscoveredAgentWithSpawn {
 
 fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { return "darwin-aarch64"; }
+    {
+        return "darwin-aarch64";
+    }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { return "darwin-x86_64"; }
+    {
+        return "darwin-x86_64";
+    }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    { return "linux-aarch64"; }
+    {
+        return "linux-aarch64";
+    }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "linux-x86_64"}
+    {
+        "linux-x86_64"
+    }
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    { return "windows-aarch64"; }
+    {
+        return "windows-aarch64";
+    }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { return "windows-x86_64"; }
+    {
+        return "windows-x86_64";
+    }
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "x86_64"),
@@ -34,7 +46,9 @@ fn current_platform_key() -> &'static str {
         all(target_os = "windows", target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),
     )))]
-    { return ""; }
+    {
+        return "";
+    }
 }
 
 /// Normalize a registry binary cmd to a PATH-resolvable command.
@@ -43,17 +57,19 @@ fn current_platform_key() -> &'static str {
 /// designed for post-archive-extraction. Maestro expects binaries on PATH, so we extract
 /// the filename and resolve to an absolute path via `which`.
 fn normalize_binary_cmd(raw_cmd: &str) -> String {
-    let filename = raw_cmd
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(raw_cmd);
+    let filename = raw_cmd.rsplit(['/', '\\']).next().unwrap_or(raw_cmd);
     which::which(filename)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| filename.to_string())
 }
 
 /// `(spawn_cmd, spawn_args, spawn_env, spawn_deps)`
-type ResolvedSpawn = (String, Vec<String>, std::collections::HashMap<String, String>, Vec<String>);
+type ResolvedSpawn = (
+    String,
+    Vec<String>,
+    std::collections::HashMap<String, String>,
+    Vec<String>,
+);
 
 /// spawn_deps lists the tool(s) required to launch this agent (e.g. ["npx"] or ["uvx"]).
 /// Binary agents have no external dep so spawn_deps is empty.
@@ -64,14 +80,6 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<ResolvedSpawn> {
             args.extend(extra.iter().cloned());
         }
         let env = npx.env.clone().unwrap_or_default();
-        // On Windows, npx is a .cmd batch file — CreateProcess can't find it without cmd.exe
-        #[cfg(windows)]
-        {
-            let mut cmd_args = vec!["/c".to_string(), "npx".to_string()];
-            cmd_args.extend(args);
-            return Some(("cmd".to_string(), cmd_args, env, vec!["npx".to_string()]));
-        }
-        #[cfg(not(windows))]
         return Some(("npx".to_string(), args, env, vec!["npx".to_string()]));
     }
     let key = current_platform_key();
@@ -92,15 +100,12 @@ fn resolve_spawn(dist: &AgentDistribution) -> Option<ResolvedSpawn> {
         if let Some(extra) = &uvx.args {
             args.extend(extra.iter().cloned());
         }
-        // On Windows, uvx is a .cmd batch file — CreateProcess can't find it without cmd.exe
-        #[cfg(windows)]
-        {
-            let mut cmd_args = vec!["/c".to_string(), "uvx".to_string()];
-            cmd_args.extend(args);
-            return Some(("cmd".to_string(), cmd_args, Default::default(), vec!["uvx".to_string()]));
-        }
-        #[cfg(not(windows))]
-        return Some(("uvx".to_string(), args, Default::default(), vec!["uvx".to_string()]));
+        return Some((
+            "uvx".to_string(),
+            args,
+            Default::default(),
+            vec!["uvx".to_string()],
+        ));
     }
     None
 }
@@ -115,7 +120,9 @@ pub fn load_registry() -> AcpRegistry {
 pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> {
     let mut result = Vec::new();
     for entry in &registry.agents {
-        let Some((spawn_cmd, spawn_args, spawn_env, spawn_deps)) = resolve_spawn(&entry.distribution) else {
+        let Some((spawn_cmd, spawn_args, spawn_env, spawn_deps)) =
+            resolve_spawn(&entry.distribution)
+        else {
             continue;
         };
         result.push(DiscoveredAgentWithSpawn {
@@ -182,7 +189,11 @@ mod tests {
 
         for entry in &registry.agents {
             assert!(!entry.id.is_empty(), "agent entry has an empty id");
-            assert!(!entry.name.is_empty(), "agent {:?} has an empty name", entry.id);
+            assert!(
+                !entry.name.is_empty(),
+                "agent {:?} has an empty name",
+                entry.id
+            );
         }
     }
 

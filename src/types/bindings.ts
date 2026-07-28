@@ -495,10 +495,11 @@ export const commands = {
     }
   },
   /**
-   * Spawn an interactive (task-free) PTY session on a specific branch.
+   * Spawn a user-controlled interactive shell on a specific branch.
    *
    * This creates an execution log with NULL task_id, finds or creates a worktree for the
-   * given branch, and spawns an interactive PTY session keyed by log_id.
+   * given branch, and spawns an interactive PTY session keyed by log_id. It does not start
+   * or manage an AI agent; managed agents use ACP.
    *
    * # Arguments
    * * `app_state` - Tauri app state with database connection
@@ -544,9 +545,12 @@ export const commands = {
    * Drain the Queue column for auto-mode execution
    *
    * Checks if auto_mode is enabled in settings. If so, counts currently running
-   * executions for the project and returns task IDs that should be started next,
+   * ACP executions for the project and returns task IDs that should be started next,
    * up to max_concurrent_agents. Tasks are ordered by priority (Urgent, High,
    * Medium, Low) then creation date.
+   *
+   * Task-associated user shells also consume a concurrency slot, but queue draining does not
+   * start agents through PTY. ACP is the sole managed agent execution path.
    *
    * # Arguments
    * * `app_state` - Tauri app state with database connection
@@ -554,7 +558,7 @@ export const commands = {
    * * `project_path` - Repository path (reserved for future use)
    *
    * # Returns
-   * Vec of task_ids that should be executed. Frontend calls spawn_interactive_execution for each.
+   * Vec of task_ids that should be started through ACP by the frontend.
    * Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
    */
   async drainReadyQueue(projectId: number, projectPath: string): Promise<Result<number[], string>> {
@@ -1528,6 +1532,44 @@ export const commands = {
   async preflightConnection(connection: ConnectionKey): Promise<Result<PreflightResult, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connection }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async checkRequiredTools(connection: ConnectionKey): Promise<Result<ToolCheckEntry[], string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("check_required_tools", { connection }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async setToolPath(
+    connection: ConnectionKey,
+    tool: string,
+    path: string | null,
+  ): Promise<Result<ToolCheckEntry, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("set_tool_path", { connection, tool, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  async testToolPath(
+    connection: ConnectionKey,
+    tool: string,
+    path: string,
+  ): Promise<Result<ToolCheckEntry, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("test_tool_path", { connection, tool, path }),
+      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -2776,7 +2818,9 @@ export type DockerContainer = {
 export type DockerContainerState = "Running" | "Stopped";
 export type EnterKeyBehavior = "send_prompt" | "new_line";
 /**
- * How a session is executed: via the Agent Control Protocol or a raw PTY.
+ * Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
+ *
+ * The serialized `pty` name is retained for IPC compatibility.
  */
 export type ExecutionMode = "acp" | "pty";
 export type ExternalFileRequest = { path: string; is_image: boolean };
@@ -3034,6 +3078,10 @@ export type ToolCheckEntry = {
   version: string | null;
   required_by: string[];
   mandatory: boolean;
+  configured_path: string | null;
+  resolved_path: string | null;
+  source: string;
+  error: string | null;
 };
 /**
  * Fields that can be updated on a task. All fields are optional — only non-None fields

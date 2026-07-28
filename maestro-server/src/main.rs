@@ -1,4 +1,7 @@
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 //! Maestro Remote Server
 //!
 //! Headless binary that runs on remote SSH hosts. Receives MaestroRpcMessage
@@ -19,6 +22,7 @@ mod session;
 mod sessions;
 mod terminal;
 mod tool_check;
+mod tool_config;
 mod validate_canvas;
 mod workspace_roots;
 
@@ -30,7 +34,7 @@ use std::sync::Arc;
 
 use maestro_protocol::{
     AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, MaestroRpcMessage,
-    PROTOCOL_VERSION, ServerRequest, ServerResponse,
+    ServerRequest, ServerResponse, PROTOCOL_VERSION,
 };
 use tokio::sync::Mutex;
 
@@ -49,7 +53,11 @@ fn main() {
         return;
     }
     if std::env::args().any(|a| a == "--app-version") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "{}-protocol-{}",
+            env!("CARGO_PKG_VERSION"),
+            PROTOCOL_VERSION
+        );
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("validate-canvas") {
@@ -162,8 +170,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
         agent::discover_agents(&registry);
-    let auth_terminals: Arc<tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>> =
-        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let auth_terminals: Arc<
+        tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>,
+    > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     // Heartbeat: send Ping every 10s so the parent (Tauri) can detect stale connections.
     tokio::spawn({

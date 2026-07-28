@@ -11,6 +11,7 @@ import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
+import { RequiredBinariesSection } from "./RequiredBinariesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
 
@@ -122,6 +123,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 agentsLoading={agentsLoading}
                 connection={connection}
               />
+              <RequiredBinariesSection connection={connection} />
               <AppearanceSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}

@@ -13,6 +13,7 @@ export const executionQueryKeys = {
   sessionList: (agentId: string, cwd: string, connection: ConnectionKey) =>
     ["sessionList", agentId, cwd, connection] as const,
   agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
+  requiredTools: (connection: ConnectionKey) => ["requiredTools", connection] as const,
   projectAgents: (connection: ConnectionKey, cwd: string) =>
     ["projectAgents", connection, cwd] as const,
   sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
@@ -239,6 +240,48 @@ export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boole
     enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+  });
+}
+
+export function useRequiredToolsQuery(connection: ConnectionKey) {
+  return useQuery({
+    queryKey: executionQueryKeys.requiredTools(connection),
+    queryFn: () => api.checkRequiredTools(connection),
+  });
+}
+
+export function useSetToolPathMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      connection,
+      tool,
+      path,
+    }: {
+      connection: ConnectionKey;
+      tool: string;
+      path: string | null;
+    }) => api.setToolPath(connection, tool, path),
+    onSuccess: (_result, { connection }) => {
+      void queryClient.invalidateQueries({
+        queryKey: executionQueryKeys.requiredTools(connection),
+      });
+    },
+    onError: createErrorToastHandler("Failed to update binary path"),
+  });
+}
+
+export function useTestToolPathMutation() {
+  return useMutation({
+    mutationFn: ({
+      connection,
+      tool,
+      path,
+    }: {
+      connection: ConnectionKey;
+      tool: string;
+      path: string;
+    }) => api.testToolPath(connection, tool, path),
   });
 }
 
