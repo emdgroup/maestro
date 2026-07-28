@@ -11,7 +11,6 @@ import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
-import { RequiredBinariesSection } from "./RequiredBinariesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
 
@@ -33,11 +32,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
-    const {
-      data: discovery,
-      isLoading: agentsLoading,
-      isSuccess: discoveryReady,
-    } = useAgentDiscoveryQuery(connection);
+    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connection);
     const { data: integrations } = useListIntegrations();
     const [isIssueTrackingValid, setIsIssueTrackingValid] = useState(true);
     const issueTrackingSectionRef = useRef<IssueTrackingSectionHandle>(null);
@@ -127,7 +122,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 agentsLoading={agentsLoading}
                 connection={connection}
               />
-              <RequiredBinariesSection connection={connection} enabled={discoveryReady} />
               <AppearanceSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}

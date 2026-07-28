@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use maestro_protocol::{ToolCheckResult, ToolPathSource};
 
 pub(crate) async fn check_tool(tool: String) -> ToolCheckResult {
-    let configured_path = match crate::tool_config::get(&tool) {
+    let mut configured_path = match crate::tool_config::get(&tool) {
         Ok(path) => path,
         Err(error) => return failed(tool, None, ToolPathSource::NotFound, error),
     };
@@ -12,12 +12,11 @@ pub(crate) async fn check_tool(tool: String) -> ToolCheckResult {
         if is_executable(&candidate) {
             Some((candidate, ToolPathSource::Override))
         } else {
-            return failed(
-                tool,
-                configured_path,
-                ToolPathSource::Override,
-                "Configured path does not exist or is not executable".to_string(),
-            );
+            if let Err(error) = crate::tool_config::set(&tool, None) {
+                return failed(tool, configured_path, ToolPathSource::Override, error);
+            }
+            configured_path = None;
+            resolve_executable(&tool).await
         }
     } else {
         resolve_executable(&tool).await
@@ -34,15 +33,22 @@ pub(crate) async fn check_tool(tool: String) -> ToolCheckResult {
     let resolved_path = path.to_string_lossy().into_owned();
 
     match probe(&path).await {
-        Ok(version) => ToolCheckResult {
-            tool,
-            available: true,
-            version,
-            configured_path,
-            resolved_path: Some(resolved_path),
-            source,
-            error: None,
-        },
+        Ok(version) => {
+            if configured_path.is_none() && source != ToolPathSource::Path {
+                if let Err(error) = crate::tool_config::set(&tool, Some(resolved_path.clone())) {
+                    return failed(tool, None, source, error);
+                }
+            }
+            ToolCheckResult {
+                tool,
+                available: true,
+                version,
+                configured_path,
+                resolved_path: Some(resolved_path),
+                source,
+                error: None,
+            }
+        }
         Err(error) => ToolCheckResult {
             tool,
             available: false,
@@ -94,14 +100,18 @@ pub(crate) async fn test_tool_path(tool: String, path: String) -> ToolCheckResul
 pub(crate) async fn resolve_tool_path(tool: &str) -> Result<PathBuf, String> {
     if let Some(path) = crate::tool_config::get(tool)? {
         let path = PathBuf::from(path);
-        return is_executable(&path).then_some(path).ok_or_else(|| {
-            format!("Configured path for {tool} does not exist or is not executable")
-        });
+        if is_executable(&path) {
+            return Ok(path);
+        }
+        crate::tool_config::set(tool, None)?;
     }
-    resolve_executable(tool)
+    let (path, source) = resolve_executable(tool)
         .await
-        .map(|(path, _)| path)
-        .ok_or_else(|| format!("{tool} was not found on the target environment"))
+        .ok_or_else(|| format!("{tool} was not found on the target environment"))?;
+    if source != ToolPathSource::Path {
+        crate::tool_config::set(tool, Some(path.to_string_lossy().into_owned()))?;
+    }
+    Ok(path)
 }
 
 async fn resolve_executable(tool: &str) -> Option<(PathBuf, ToolPathSource)> {
