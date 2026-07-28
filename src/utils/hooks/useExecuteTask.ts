@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
+import { slugifyName } from "@/lib/generateSessionName";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
@@ -59,11 +60,7 @@ export function useExecuteTask(
           cwd = existingWorktree.path;
           branchName = existingWorktree.branch_name;
         } else {
-          const slug = task.title
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 50);
+          const slug = slugifyName(task.title);
           const worktree = await createWorktreeMutation.mutateAsync({
             projectId,
             taskId: task.id,

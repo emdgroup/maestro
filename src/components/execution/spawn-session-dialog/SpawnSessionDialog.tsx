@@ -1,20 +1,24 @@
 import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon, GitBranch } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { generateSessionName } from "@/lib/generateSessionName";
+import { generateSessionName, slugifyName } from "@/lib/generateSessionName";
 import { cn } from "@/lib/utils.ts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
   useAgentDiscoveryQuery,
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
+import { useProjectBranchesQuery } from "@/services/task.service";
+import { useCreateWorktreeMutation } from "@/services/worktree.service";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
@@ -39,12 +43,17 @@ export function SpawnSessionDialog({
   onSuccess,
 }: SpawnSessionDialogProps) {
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
+  const [newWorktree, setNewWorktree] = useState(true);
+  const [baseBranch, setBaseBranch] = useState("");
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("terminal");
+  const [spawnError, setSpawnError] = useState<string | null>(null);
   const { data: projectSettings } = useProjectSettings(projectId);
   const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(connection);
+  const { data: branchData } = useProjectBranchesQuery(projectId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
+  const createWorktreeMutation = useCreateWorktreeMutation();
 
   const isGitRepo = useIsGitRepo();
   const toolChecks = usePreflightToolChecks(connection);
@@ -54,7 +63,10 @@ export function SpawnSessionDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedWorktree(worktrees[0] ?? null);
+    setNewWorktree(true);
+    setBaseBranch(branchData?.[1] ?? "");
     setSessionName("");
+    setSpawnError(null);
 
     const defaultAgent = projectSettings?.default_agent;
     const agentExists = defaultAgent && visibleAgents.some((a) => a.id === defaultAgent);
@@ -62,56 +74,100 @@ export function SpawnSessionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Fill default if worktrees load after dialog was already opened
+  // Fill defaults if worktrees or branches load after the dialog was already opened
   useEffect(() => {
     if (open && selectedWorktree === null && worktrees.length > 0) {
       setSelectedWorktree(worktrees[0]);
     }
   }, [open, worktrees, selectedWorktree]);
 
-  function handleSpawn() {
+  useEffect(() => {
+    if (open && !baseBranch && branchData?.[1]) {
+      setBaseBranch(branchData[1]);
+    }
+  }, [open, branchData, baseBranch]);
+
+  const creatingWorktree = isGitRepo && newWorktree;
+
+  async function handleSpawn() {
+    setSpawnError(null);
+    const resolvedName = sessionName.trim() || generateSessionName();
+
+    // Resolve the target worktree: create a fresh one, or use the selected existing one.
+    let worktree: { id: number | null; branchName: string | null; path: string };
+    if (creatingWorktree) {
+      try {
+        const created = await createWorktreeMutation.mutateAsync({
+          projectId,
+          taskId: null,
+          baseBranch,
+          newBranchName: `maestro/${slugifyName(resolvedName) || generateSessionName()}`,
+          repoPath,
+        });
+        worktree = {
+          id: created.id,
+          branchName: created.branch_name,
+          path: `${repoPath}/${created.path}`,
+        };
+      } catch (error) {
+        setSpawnError(String(error));
+        return;
+      }
+    } else {
+      worktree = {
+        id: selectedWorktree?.id ?? null,
+        branchName: selectedWorktree?.branch_name ?? null,
+        path: selectedWorktree?.path ?? repoPath,
+      };
+    }
+
     if (sessionType === "terminal") {
-      if (!selectedWorktree) return;
+      if (worktree.id === null || worktree.branchName === null) return;
       spawnMutation.mutate(
         {
           projectId,
-          branchName: selectedWorktree.branch_name,
+          branchName: worktree.branchName,
           repoPath,
-          sessionName: sessionName.trim() || generateSessionName(),
-          worktreeId: selectedWorktree.id,
+          sessionName: resolvedName,
+          worktreeId: worktree.id,
         },
         {
           onSuccess: (sessionKey) => {
             onOpenChange(false);
             onSuccess(sessionKey);
           },
+          onError: (error) => setSpawnError(String(error)),
         },
       );
     } else {
-      const cwd = selectedWorktree?.path ?? repoPath;
       spawnAcpMutation.mutate(
         {
           agentId: sessionType,
-          cwd,
-          sessionName: sessionName.trim() || generateSessionName(),
+          cwd: worktree.path,
+          sessionName: resolvedName,
           projectId,
           connection,
-          worktreeBranch: selectedWorktree?.branch_name ?? null,
+          worktreeBranch: worktree.branchName,
         },
         {
           onSuccess: (result) => {
             onOpenChange(false);
             onSuccess(result.log_id);
           },
+          onError: (error) => setSpawnError(String(error)),
         },
       );
     }
   }
 
-  const canSpawn =
-    sessionType === "terminal" ? !!selectedWorktree : !isGitRepo || !!selectedWorktree;
+  const canSpawn = creatingWorktree
+    ? !!baseBranch
+    : sessionType === "terminal"
+      ? !!selectedWorktree
+      : !isGitRepo || !!selectedWorktree;
 
-  const isPending = spawnMutation.isPending || spawnAcpMutation.isPending;
+  const isPending =
+    spawnMutation.isPending || spawnAcpMutation.isPending || createWorktreeMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,7 +183,7 @@ export function SpawnSessionDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (canSpawn && !isPending) handleSpawn();
+            if (canSpawn && !isPending) void handleSpawn();
           }}
         >
           <div className="space-y-5 py-1">
@@ -252,65 +308,87 @@ export function SpawnSessionDialog({
               )}
             </div>
 
-            {/* Worktree */}
+            {/* Worktree — the checkbox decides whether the selector lists branches or worktrees */}
             {isGitRepo && (
               <div className="space-y-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                  Worktree
-                </p>
-                <Select
-                  value={selectedWorktree?.branch_name ?? ""}
-                  onValueChange={(v) =>
-                    setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
-                  }
-                >
-                  <SelectTrigger id="spawn-worktree" className="w-full max-w-sm">
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                      {selectedWorktree ? (
-                        <>
-                          <span className="font-mono text-sm truncate flex-1">
-                            {selectedWorktree.branch_name}
-                          </span>
-                          {selectedWorktree.path === repoPath && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
-                              default
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                    {newWorktree ? "From branch" : "Worktree"}
+                  </p>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Label className="flex items-center gap-2 text-[11px] font-normal cursor-pointer" />
+                      }
+                    >
+                      <Checkbox
+                        checked={newWorktree}
+                        onCheckedChange={(checked) => setNewWorktree(checked === true)}
+                      />
+                      New worktree
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      Create a worktree from the selected branch
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {newWorktree ? (
+                  <BranchPicker value={baseBranch} onChange={setBaseBranch} />
+                ) : (
+                  <Select
+                    value={selectedWorktree?.branch_name ?? ""}
+                    onValueChange={(v) =>
+                      setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
+                    }
+                  >
+                    <SelectTrigger id="spawn-worktree" className="w-full max-w-sm">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                        {selectedWorktree ? (
+                          <>
+                            <span className="font-mono text-sm truncate flex-1">
+                              {selectedWorktree.branch_name}
                             </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Select a worktree</span>
-                      )}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {worktrees.map((wt) => (
-                      <SelectItem
-                        key={wt.branch_name}
-                        value={wt.branch_name}
-                        className="[&>div]:overflow-hidden"
-                      >
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
-                            }
-                          >
-                            <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
-                            {wt.path === repoPath && (
+                            {selectedWorktree.path === repoPath && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
                                 default
                               </span>
                             )}
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={8} className="max-w-none">
-                            <span className="font-mono">{wt.branch_name}</span>
-                          </TooltipContent>
-                        </Tooltip>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Select a worktree</span>
+                        )}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {worktrees.map((wt) => (
+                        <SelectItem
+                          key={wt.branch_name}
+                          value={wt.branch_name}
+                          className="[&>div]:overflow-hidden"
+                        >
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
+                              }
+                            >
+                              <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
+                              {wt.path === repoPath && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
+                                  default
+                                </span>
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={8} className="max-w-none">
+                              <span className="font-mono">{wt.branch_name}</span>
+                            </TooltipContent>
+                          </Tooltip>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
 
@@ -334,9 +412,13 @@ export function SpawnSessionDialog({
                 autoFocus
               />
               <p className="text-[10px] text-muted-foreground/40">
-                Leave blank to auto-generate a name.
+                {creatingWorktree
+                  ? `Also names the branch: maestro/${slugifyName(sessionName) || "<generated>"}`
+                  : "Leave blank to auto-generate a name."}
               </p>
             </div>
+
+            {spawnError && <p className="text-xs text-destructive">{spawnError}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
