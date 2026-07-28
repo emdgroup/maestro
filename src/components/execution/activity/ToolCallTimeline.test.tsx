@@ -5,7 +5,8 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
-import { ToolCallTimeline } from "./ToolCallTimeline";
+import { OpenFileContext } from "./MarkdownBlock";
+import { splitTitleAroundPath, ToolCallTimeline } from "./ToolCallTimeline";
 import type { ToolCallItem } from "./types";
 
 const BODY = "SEVEN-HUNDRED-LINE-OUTPUT";
@@ -60,5 +61,75 @@ describe("tool call output is built only when open", () => {
   it("opens a lone row straight to its content, and only that row", () => {
     const { container } = render(<ToolCallTimeline items={[items[0]]} />);
     expect(container.querySelectorAll("pre").length).toBe(1);
+  });
+});
+
+describe("splitTitleAroundPath", () => {
+  it("finds the path inside an agent-written title", () => {
+    expect(splitTitleAroundPath("Read src/a/b.ts (60 - 89)", "C:/repo/src/a/b.ts")).toEqual({
+      before: "Read ",
+      file: "src/a/b.ts",
+      after: " (60 - 89)",
+    });
+  });
+
+  it("matches a Windows path against a Windows title", () => {
+    expect(splitTitleAroundPath("Edit src\\index.css", "C:\\repo\\src\\index.css")?.file).toBe(
+      "src\\index.css",
+    );
+  });
+
+  it("is null when the title never names the file", () => {
+    expect(splitTitleAroundPath("Update the theme", "C:/repo/src/index.css")).toBeNull();
+  });
+});
+
+/** A file row names its file, and the name is a link to it — not a toggle. */
+describe("file rows", () => {
+  const read: ToolCallItem = {
+    ...call("f", "Read src/components/execution/activity/ToolCallTimeline.tsx (60 - 89)"),
+    meta: {
+      toolName: "Read",
+      fileTotalLines: 700,
+      filePath: "C:/repo/src/components/execution/activity/ToolCallTimeline.tsx",
+    },
+  };
+
+  function renderWithOpener(onOpen: (uri: string) => void) {
+    return render(
+      <OpenFileContext.Provider value={onOpen}>
+        <ActivityToolCallGroup items={[read]} />
+      </OpenFileContext.Provider>,
+    );
+  }
+
+  it("shows the bare file name collapsed and the path once open", () => {
+    const { container } = renderWithOpener(() => {});
+    expect(screen.getByRole("button", { name: "ToolCallTimeline.tsx" })).toBeTruthy();
+    expect(container.textContent).not.toContain("src/components/execution");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show output" }));
+    expect(
+      screen.getByRole("button", {
+        name: "src/components/execution/activity/ToolCallTimeline.tsx",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("opens the file rather than the row when the name is clicked", () => {
+    const onOpen = vi.fn();
+    renderWithOpener(onOpen);
+
+    fireEvent.click(screen.getByRole("button", { name: "ToolCallTimeline.tsx" }));
+    expect(onOpen).toHaveBeenCalledWith(read.meta!.filePath);
+    // Still closed: the name is not the toggle.
+    expect(screen.getByRole("button", { name: "Show output" }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("stays plain text where nothing can open a file, such as the side panel", () => {
+    render(<ActivityToolCallGroup items={[read]} />);
+    expect(screen.queryByRole("button", { name: "ToolCallTimeline.tsx" })).toBeNull();
   });
 });

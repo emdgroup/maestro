@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import {
   ArrowRightLeft,
   Bot,
   Box,
   Brain,
+  ChevronDown,
+  ChevronRight,
   FileText,
   FilePlus,
   GitBranch,
@@ -18,7 +20,9 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils.ts";
+import { basename } from "@/lib/path-utils";
 import { CommandLabel } from "./CommandLabel";
+import { OpenFileContext } from "./MarkdownBlock";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import type { ToolCallItem } from "./types";
 
@@ -132,6 +136,68 @@ export function ToolCallTitle({ title, className }: { title: string; className?:
     <span className={className}>
       <span className="font-semibold">{title.slice(0, space)}</span>
       {title.slice(space)}
+    </span>
+  );
+}
+
+/**
+ * Splits a title around the path it names — "Read src/a/b.ts (60 - 89)" becomes
+ * `Read `, `src/a/b.ts`, ` (60 - 89)`. Titles are agent-supplied free text, so
+ * the file token is located by its basename rather than assumed to sit anywhere
+ * in particular; a title that never names the file yields null and is left alone.
+ */
+export function splitTitleAroundPath(
+  title: string,
+  path: string,
+): { before: string; file: string; after: string } | null {
+  const base = basename(path);
+  const at = title.lastIndexOf(base);
+  if (at < 0) return null;
+  let start = at;
+  while (start > 0 && !/\s/.test(title[start - 1])) start--;
+  let end = at + base.length;
+  while (end < title.length && !/\s/.test(title[end])) end++;
+  return { before: title.slice(0, start), file: title.slice(start, end), after: title.slice(end) };
+}
+
+/**
+ * A file row's label: the bare file name until the row is open, the path it came
+ * from once it is. The name is its own control — clicking it opens the file in
+ * the side panel rather than expanding the row.
+ */
+export function FileLabel({
+  tc,
+  expanded,
+  className,
+  onOpenFile,
+}: {
+  tc: ToolCallItem;
+  expanded: boolean;
+  className?: string;
+  onOpenFile: (uri: string) => void;
+}) {
+  const path = tc.meta!.filePath!;
+  const split = splitTitleAroundPath(tc.title, path);
+  const before = split ? split.before : `${tc.title.split(" ")[0]} `;
+  const after = split ? split.after : "";
+  // The title's own token is usually project-relative; `meta.filePath` is absolute.
+  const shown = expanded ? (split?.file ?? path) : basename(path);
+
+  return (
+    <span className={cn("flex min-w-0 items-center", className)}>
+      {before && <span className="shrink-0 font-semibold">{before.trimEnd()}&nbsp;</span>}
+      <button
+        type="button"
+        title={path}
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenFile(path);
+        }}
+        className="truncate rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground hover:decoration-solid"
+      >
+        {shown}
+      </button>
+      {after && <span className="shrink-0">{after}</span>}
     </span>
   );
 }
@@ -309,6 +375,26 @@ export function RowBody({ tc }: { tc: ToolCallItem }) {
   );
 }
 
+/** The one word a settled row owes the user when it did not simply succeed. */
+export function StatusWord({ tc }: { tc: ToolCallItem }) {
+  if (tc.status === "error") {
+    return (
+      <span
+        className={cn(
+          "shrink-0 text-[10px]",
+          isBlocked(tc) ? "text-warning/70" : "text-destructive",
+        )}
+      >
+        {isBlocked(tc) ? "Blocked" : "Failed"}
+      </span>
+    );
+  }
+  if (tc.status === "interrupted") {
+    return <span className="shrink-0 text-[10px] text-warning/70">Interrupted</span>;
+  }
+  return null;
+}
+
 /** The kind icon doubles as the rail's status marker, so it carries the colour. */
 function statusIcon(tc: ToolCallItem): string {
   if (isRunning(tc)) return "text-secondary animate-pulse";
@@ -331,6 +417,9 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(items.length === 1 && hasRowContent(items[0]) ? [items[0].toolCallId] : []),
   );
+  // Absent outside the stream — the side panel renders this too, with no tabs to
+  // open a file into, and those rows stay plain text.
+  const openFile = useContext(OpenFileContext);
 
   // Inline single-item path: parent header is the toggle, render content directly.
   // Must come after all hook calls.
@@ -371,49 +460,72 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
             </div>
             <div className={cn("min-w-0 flex-1", !isLast && "pb-1.5")}>
               <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
-                <button
-                  type="button"
-                  disabled={!hasContent}
-                  aria-expanded={hasContent ? isExpanded : undefined}
-                  onClick={() => hasContent && toggleExpand(tc.toolCallId)}
-                  className={cn(
-                    "flex min-w-0 gap-2 rounded-md px-1 py-0.5 text-left text-xs",
-                    showCommand ? "flex-1 items-start" : "items-center",
-                    hasContent ? "cursor-pointer hover:bg-muted/40" : "cursor-default",
-                  )}
-                >
-                  {showCommand ? (
-                    <CommandLabel command={tc.title} />
-                  ) : (
-                    <ToolCallTitle
-                      title={rowLabel(tc)}
+                {/* A file name is its own control, so it cannot sit inside the
+                    toggle — the row splits into a label and a chevron instead. */}
+                {openFile && tc.meta?.filePath ? (
+                  <>
+                    <FileLabel
+                      tc={tc}
+                      expanded={isExpanded}
+                      onOpenFile={openFile}
                       className={cn(
-                        "truncate",
-                        running
-                          ? "shimmer-text"
-                          : isBlocked(tc)
-                            ? "text-warning/80"
-                            : tc.status === "error"
-                              ? "text-destructive"
-                              : "text-foreground/80",
+                        "min-w-0 px-1 py-0.5 text-xs",
+                        running ? "shimmer-text" : "text-foreground/80",
                       )}
                     />
-                  )}
-                  {tc.status === "error" && (
-                    <span
+                    <StatusWord tc={tc} />
+                    <RowMeta tc={tc} />
+                    {hasContent && (
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? "Hide output" : "Show output"}
+                        onClick={() => toggleExpand(tc.toolCallId)}
+                        className="ml-1 shrink-0 rounded-md p-0.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground/75"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="size-3" />
+                        ) : (
+                          <ChevronRight className="size-3" />
+                        )}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={!hasContent}
+                      aria-expanded={hasContent ? isExpanded : undefined}
+                      onClick={() => hasContent && toggleExpand(tc.toolCallId)}
                       className={cn(
-                        "shrink-0 text-[10px]",
-                        isBlocked(tc) ? "text-warning/70" : "text-destructive",
+                        "flex min-w-0 gap-2 rounded-md px-1 py-0.5 text-left text-xs",
+                        showCommand ? "flex-1 items-start" : "items-center",
+                        hasContent ? "cursor-pointer hover:bg-muted/40" : "cursor-default",
                       )}
                     >
-                      {isBlocked(tc) ? "Blocked" : "Failed"}
-                    </span>
-                  )}
-                  {tc.status === "interrupted" && (
-                    <span className="shrink-0 text-[10px] text-warning/70">Interrupted</span>
-                  )}
-                </button>
-                <RowMeta tc={tc} />
+                      {showCommand ? (
+                        <CommandLabel command={tc.title} />
+                      ) : (
+                        <ToolCallTitle
+                          title={rowLabel(tc)}
+                          className={cn(
+                            "truncate",
+                            running
+                              ? "shimmer-text"
+                              : isBlocked(tc)
+                                ? "text-warning/80"
+                                : tc.status === "error"
+                                  ? "text-destructive"
+                                  : "text-foreground/80",
+                          )}
+                        />
+                      )}
+                      <StatusWord tc={tc} />
+                    </button>
+                    <RowMeta tc={tc} />
+                  </>
+                )}
               </div>
               {isExpanded && <RowBody tc={tc} />}
             </div>

@@ -41,11 +41,32 @@ export function hasCodeFence(text: string): boolean {
   return /^ {0,3}(?:`{3,}|~{3,})/m.test(text);
 }
 
+/**
+ * A fence wrapping the *entire* output is the agent framing its own text, not
+ * markdown a human wrote — and rendering it as markdown draws a second box
+ * inside the card that already frames it. Returns the text without its fence.
+ *
+ * The declared language is dropped with it. Tool output labels itself `console`
+ * or nothing at all, neither of which is a grammar we bundle, and a read excerpt
+ * arrives with line-number prefixes that no grammar parses anyway.
+ *
+ * Anything else (prose around a fence, several fences) is left to the markdown
+ * renderer, where the box is the point.
+ */
+export function unwrapWholeFence(text: string): string | null {
+  const match = /^\s*(`{3,}|~{3,})([^\n`]*)\n([\s\S]*?)\n?\1[ \t]*$/.exec(text);
+  if (!match) return null;
+  const inner = match[3];
+  // A fence *inside* means the outer one was not the agent's own framing.
+  return hasCodeFence(inner) ? null : inner;
+}
+
 export function ToolCallContentBlock({ content }: { content: ToolCallContent }) {
   switch (content.type) {
     case "content": {
       const text = content.content?.text;
       if (!text) return null;
+      const bare = unwrapWholeFence(text);
       // The `[&_pre]:` rules carry the same wrapping into the fenced branch,
       // where the `pre` is shiki's and out of reach. `!` because they land on an
       // ancestor of shiki's own `[&_pre]:overflow-x-auto`: specificity ties, so
@@ -54,7 +75,9 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
       // ASCII tables — which is the cheaper of the two.
       return (
         <div className="max-h-64 overflow-y-auto custom-scrollbar text-[11px] [&_pre]:overflow-x-visible! [&_pre]:break-words [&_pre]:whitespace-pre-wrap">
-          {hasCodeFence(text) ? (
+          {bare != null ? (
+            <pre className="font-mono text-[11px] break-words whitespace-pre-wrap">{bare}</pre>
+          ) : hasCodeFence(text) ? (
             <MarkdownBlock text={text} />
           ) : (
             // Wraps rather than scrolling sideways: a horizontal scrollbar nested

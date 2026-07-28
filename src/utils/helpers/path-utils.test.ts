@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { getFolderName } from "./path-utils";
+import { basename, getFolderName, toPosixPath } from "./path-utils";
+
+describe("toPosixPath", () => {
+  it("rewrites the separators a Windows tool call reports", () => {
+    expect(toPosixPath("C:\\Users\\me\\repo\\src\\index.css")).toBe(
+      "C:/Users/me/repo/src/index.css",
+    );
+  });
+
+  it("leaves a posix path untouched", () => {
+    expect(toPosixPath("/home/me/repo/src/index.css")).toBe("/home/me/repo/src/index.css");
+  });
+});
+
+describe("basename", () => {
+  it("takes the last segment whichever separator is used", () => {
+    expect(basename("src\\components\\App.tsx")).toBe("App.tsx");
+    expect(basename("src/components/App.tsx")).toBe("App.tsx");
+  });
+
+  it("returns a bare filename as-is", () => {
+    expect(basename("App.tsx")).toBe("App.tsx");
+  });
+});
 
 describe("getFolderName", () => {
   it("returns last segment of a Unix path", () => {
