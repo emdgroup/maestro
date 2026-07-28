@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { CommandLabel } from "./CommandLabel";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
 import type { ToolCallItem } from "./types";
 
@@ -95,12 +96,8 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
     const tc = items[0];
     return (
       <ContentErrorBoundary>
+        {/* No command echo here: the group header renders it as the expanded label. */}
         <div className="space-y-1.5 pt-1 pb-1.5 pl-1">
-          {isTerminalKind(tc.kind) && tc.title && (
-            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-[11px] break-words whitespace-pre-wrap">
-              {tc.title}
-            </pre>
-          )}
           {tc.content.map((c, i) => (
             <ToolCallContentBlock key={i} content={c} />
           ))}
@@ -129,6 +126,9 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
         const isExpanded = expandedIds.has(tc.toolCallId);
         const running = isRunning(tc);
         const isLast = i === items.length - 1;
+        // Expanded, the label stops being a truncated summary and becomes the
+        // command in full — so the row never shows the same string twice.
+        const showCommand = isExpanded && isTerminalKind(tc.kind) && !!tc.title;
 
         return (
           // The rail is a flex column beside the row rather than a border on the
@@ -147,21 +147,26 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
                 aria-expanded={hasContent ? isExpanded : undefined}
                 onClick={() => hasContent && toggleExpand(tc.toolCallId)}
                 className={cn(
-                  "flex w-fit max-w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs",
+                  "flex max-w-full gap-2 rounded-md px-1 py-0.5 text-left text-xs",
+                  showCommand ? "w-full items-start" : "w-fit items-center",
                   hasContent ? "cursor-pointer hover:bg-muted/40" : "cursor-default",
                 )}
               >
-                <ToolCallTitle
-                  title={tc.title}
-                  className={cn(
-                    "truncate",
-                    running
-                      ? "shimmer-text"
-                      : tc.status === "error"
-                        ? "text-destructive"
-                        : "text-foreground/80",
-                  )}
-                />
+                {showCommand ? (
+                  <CommandLabel command={tc.title} />
+                ) : (
+                  <ToolCallTitle
+                    title={tc.title}
+                    className={cn(
+                      "truncate",
+                      running
+                        ? "shimmer-text"
+                        : tc.status === "error"
+                          ? "text-destructive"
+                          : "text-foreground/80",
+                    )}
+                  />
+                )}
                 {tc.status === "error" && (
                   <span className="shrink-0 text-[10px] text-destructive">Failed</span>
                 )}
@@ -171,12 +176,8 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
               </button>
               {isExpanded && (
                 <ContentErrorBoundary>
+                  {/* The command itself is the label above — only output goes here. */}
                   <div className="space-y-1.5 pt-1 pb-1.5 pl-1">
-                    {isTerminalKind(tc.kind) && tc.title && (
-                      <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-[11px] break-words whitespace-pre-wrap">
-                        {tc.title}
-                      </pre>
-                    )}
                     {tc.content.map((c, i) => (
                       <ToolCallContentBlock key={i} content={c} />
                     ))}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { Copy, Check } from "lucide-react";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
+import { cn } from "@/lib/utils.ts";
 import { useTheme } from "@/providers/ThemeProvider";
 
 export function useCopyToClipboard(text: string) {
@@ -25,10 +26,13 @@ export const HighlightedCode = memo(function HighlightedCode({
   code,
   lang,
   stripContainerStyle = false,
+  className,
 }: {
   code: string;
   lang: string;
   stripContainerStyle?: boolean;
+  /** Merged over the defaults — pass `[&_pre]:…` to restyle shiki's own element. */
+  className?: string;
 }) {
   const [html, setHtml] = useState<string | null>(null);
   const { theme, systemTheme } = useTheme();
@@ -60,16 +64,23 @@ export const HighlightedCode = memo(function HighlightedCode({
   if (html) {
     return (
       <div
-        className="text-xs [&_pre]:overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none"
+        className={cn(
+          "text-xs [&_pre]:overflow-x-auto [&_pre]:p-3 [&_pre]:m-0 [&_pre]:rounded-none",
+          className,
+        )}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }
 
+  // Shiki loads async; until it resolves this must occupy the same box, or an
+  // expanding row visibly reflows once the grammar lands.
   return (
-    <pre className="bg-background p-3 overflow-x-auto text-xs">
-      <code>{code}</code>
-    </pre>
+    <div className={cn("text-xs [&_pre]:overflow-x-auto [&_pre]:m-0 [&_pre]:p-3", className)}>
+      <pre className="bg-background">
+        <code>{code}</code>
+      </pre>
+    </div>
   );
 });
 

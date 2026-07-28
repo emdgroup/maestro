@@ -46,8 +46,14 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
     case "content": {
       const text = content.content?.text;
       if (!text) return null;
+      // The `[&_pre]:` rules carry the same wrapping into the fenced branch,
+      // where the `pre` is shiki's and out of reach. `!` because they land on an
+      // ancestor of shiki's own `[&_pre]:overflow-x-auto`: specificity ties, so
+      // stylesheet order would otherwise pick the winner. The cost is column
+      // alignment on lines wider than the panel — carets under a compiler error,
+      // ASCII tables — which is the cheaper of the two.
       return (
-        <div className="max-h-64 overflow-y-auto custom-scrollbar text-[11px]">
+        <div className="max-h-64 overflow-y-auto custom-scrollbar text-[11px] [&_pre]:overflow-x-visible! [&_pre]:break-words [&_pre]:whitespace-pre-wrap">
           {hasCodeFence(text) ? (
             <MarkdownBlock text={text} />
           ) : (

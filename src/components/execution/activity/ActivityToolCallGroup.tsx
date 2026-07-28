@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Box, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { CommandLabel } from "./CommandLabel";
 import {
   hasRowContent,
   isRunning,
+  isTerminalKind,
   KIND_ICON,
   ToolCallTimeline,
   ToolCallTitle,
@@ -81,10 +83,16 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     showCurrent ? "shimmer-text" : isSingle && errorCount > 0 && "text-destructive",
   );
 
+  // Open on a lone command, the header line is the only place the command is
+  // shown — the timeline below carries output only — so it renders in full.
+  const showCommand = open && isSingle && isTerminalKind(items[0].kind) && Boolean(items[0].title);
+
   const line = (
     <>
-      <Icon className="size-3.5 shrink-0" />
-      {title != null ? (
+      <Icon className={cn("size-3.5 shrink-0", showCommand && "mt-0.5")} />
+      {showCommand ? (
+        <CommandLabel command={items[0].title} />
+      ) : title != null ? (
         <ToolCallTitle title={title} className={labelClass} />
       ) : (
         <span className={labelClass}>
@@ -111,11 +119,14 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="-ml-1 flex w-fit max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/75"
+        className={cn(
+          "-ml-1 flex max-w-full gap-1.5 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/75",
+          showCommand ? "w-full items-start" : "w-fit items-center",
+        )}
       >
         {line}
         {open ? (
-          <ChevronDown className="size-3 shrink-0" />
+          <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
         ) : (
           <ChevronRight className="size-3 shrink-0" />
         )}
