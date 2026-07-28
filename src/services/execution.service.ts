@@ -243,10 +243,11 @@ export function useAgentDiscoveryQuery(connection: ConnectionKey, enabled: boole
   });
 }
 
-export function useRequiredToolsQuery(connection: ConnectionKey) {
+export function useRequiredToolsQuery(connection: ConnectionKey, enabled: boolean = true) {
   return useQuery({
     queryKey: executionQueryKeys.requiredTools(connection),
     queryFn: () => api.checkRequiredTools(connection),
+    enabled,
   });
 }
 

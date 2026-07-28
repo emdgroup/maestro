@@ -33,7 +33,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     const projectSettingsQuery = useProjectSettings(projectId);
     const updateProjectSettingsMutation = useUpdateProjectSettings();
-    const { data: discovery, isLoading: agentsLoading } = useAgentDiscoveryQuery(connection);
+    const {
+      data: discovery,
+      isLoading: agentsLoading,
+      isSuccess: discoveryReady,
+    } = useAgentDiscoveryQuery(connection);
     const { data: integrations } = useListIntegrations();
     const [isIssueTrackingValid, setIsIssueTrackingValid] = useState(true);
     const issueTrackingSectionRef = useRef<IssueTrackingSectionHandle>(null);
@@ -123,7 +127,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 agentsLoading={agentsLoading}
                 connection={connection}
               />
-              <RequiredBinariesSection connection={connection} />
+              <RequiredBinariesSection connection={connection} enabled={discoveryReady} />
               <AppearanceSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}

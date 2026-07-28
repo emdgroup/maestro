@@ -12,6 +12,7 @@ import { Label } from "@/ui/label";
 
 interface RequiredBinariesSectionProps {
   connection: ConnectionKey;
+  enabled: boolean;
 }
 
 function targetLabel(connection: ConnectionKey) {
@@ -122,8 +123,8 @@ function ToolRow({ tool, connection }: { tool: ToolCheckEntry; connection: Conne
   );
 }
 
-export function RequiredBinariesSection({ connection }: RequiredBinariesSectionProps) {
-  const query = useRequiredToolsQuery(connection);
+export function RequiredBinariesSection({ connection, enabled }: RequiredBinariesSectionProps) {
+  const query = useRequiredToolsQuery(connection, enabled);
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-4">
@@ -142,7 +143,7 @@ export function RequiredBinariesSection({ connection }: RequiredBinariesSectionP
         Execution environment: <span className="font-medium">{targetLabel(connection)}</span>
       </div>
 
-      {query.isLoading ? (
+      {!enabled || query.isLoading ? (
         <p className="text-sm text-muted-foreground">Checking binaries on the target...</p>
       ) : query.isError ? (
         <p className="text-sm text-destructive">{String(query.error)}</p>

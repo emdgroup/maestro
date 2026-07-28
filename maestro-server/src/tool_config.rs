@@ -47,6 +47,7 @@ pub(crate) fn set(tool: &str, value: Option<String>) -> Result<(), String> {
     let lock = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
+        .truncate(false)
         .open(&lock_path)
         .map_err(|error| format!("Failed to open {}: {error}", lock_path.display()))?;
     lock.lock_exclusive()
