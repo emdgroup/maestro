@@ -31,7 +31,10 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
 
   const prompt = typeof item.rawInput?.prompt === "string" ? item.rawInput.prompt : null;
 
+  // Only the open card reads this. Collapsed, a streaming subagent would otherwise
+  // re-join and re-scan its whole transcript on every chunk for nothing.
   const rawText = useMemo(() => {
+    if (!expanded) return "";
     const textBlocks = item.content
       .filter(
         (c): c is { type: "content"; content: { type: "text"; text: string } } =>
@@ -42,20 +45,43 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
       return textBlocks.slice(1).join("");
     }
     return textBlocks.join("");
-  }, [item.content, prompt]);
+  }, [expanded, item.content, prompt]);
   const usage = useMemo(() => {
     if (isStreaming) return null;
-    const ms = item.rawInput?.totalDurationMs;
-    const tokens = item.rawInput?.totalTokens;
-    const tools = item.rawInput?.totalToolUseCount;
+    const meta = item.meta;
+    const ms = meta?.totalDurationMs;
+    const tokens = meta?.totalTokens;
+    const tools = meta?.totalToolUseCount;
     if (typeof ms !== "number" || typeof tokens !== "number" || typeof tools !== "number")
       return null;
-    return {
-      duration: formatElapsed(Math.floor(ms / 1000)),
-      tokens: humanizeTokenCount(tokens),
-      tools: String(tools),
+    // A headline token count is mostly cache reads. Splitting it says what the run
+    // actually cost, and the split is only shown when the agent reported one.
+    const parts = [formatElapsed(Math.floor(ms / 1000))];
+    if (meta?.outputTokens != null && meta?.cachedTokens != null) {
+      parts.push(
+        `${humanizeTokenCount(meta.outputTokens)} out`,
+        `${humanizeTokenCount(meta.cachedTokens)} cached`,
+      );
+    } else {
+      parts.push(`${humanizeTokenCount(tokens)} tokens`);
+    }
+    parts.push(`${tools} tool calls`);
+    return parts.join(" · ");
+  }, [isStreaming, item.meta]);
+
+  const toolBreakdown = useMemo(() => {
+    const stats = item.meta?.toolStats;
+    if (!stats) return null;
+    const parts: string[] = [];
+    const add = (n: number | undefined, label: string) => {
+      if (n) parts.push(`${n} ${label}`);
     };
-  }, [isStreaming, item.rawInput]);
+    add(stats.reads, "reads");
+    add(stats.searches, "searches");
+    add(stats.bash, "bash");
+    add(stats.edits, "edits");
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }, [item.meta]);
   const displayText = useMemo(() => {
     let text = stripUsage(rawText);
     if (prompt && text.startsWith(prompt)) {
@@ -95,16 +121,26 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
           <Bot className="w-3.5 h-3.5 text-accent" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-foreground/85">{name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-xs font-medium text-foreground/85">{name}</span>
+            {item.meta?.model && (
+              <span className="shrink-0 rounded-full border border-accent/30 px-1.5 text-[9px] text-muted-foreground">
+                {item.meta.model}
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 text-[10px] text-muted-foreground">
             {isStreaming ? (
               <TypingDots />
             ) : isInterrupted ? (
               <span className="text-warning/70">Session interrupted</span>
-            ) : usage ? (
-              `${usage.duration} · ${usage.tokens} tokens · ${usage.tools} tool calls`
-            ) : null}
+            ) : (
+              usage
+            )}
           </div>
+          {!isStreaming && toolBreakdown && (
+            <div className="text-[10px] text-muted-foreground/70">{toolBreakdown}</div>
+          )}
         </div>
         <span
           className={cn(

@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Box, ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { CommandLabel } from "./CommandLabel";
 import {
   hasRowContent,
   isRunning,
-  isTerminalKind,
-  KIND_ICON,
+  labelBecomesCommand,
+  rowIcon,
+  rowLabel,
+  RowMeta,
   ToolCallTimeline,
   ToolCallTitle,
 } from "./ToolCallTimeline";
@@ -30,9 +32,40 @@ const KIND_LABEL: Record<string, string> = {
   switch_mode: "mode switches",
 };
 
+/**
+ * Short past-tense nouns, used only when a run mixes tools that share one `kind`
+ * — "2 edited · 1 created" instead of the "3 files edited" that kind alone can say.
+ */
+const TOOL_NOUN: Record<string, string> = {
+  Read: "read",
+  Write: "created",
+  Edit: "edited",
+  NotebookEdit: "edited",
+  Bash: "commands",
+  Grep: "searches",
+  Glob: "searches",
+  Task: "agents",
+  Agent: "agents",
+  WebFetch: "fetched",
+  WebSearch: "searches",
+};
+
 function kindGroupLabel(kind: string, count: number): string {
   const label = KIND_LABEL[kind] ?? "tool calls";
   return `${count} ${label}`;
+}
+
+/**
+ * Falls back to the kind summary unless every call names a tool we have a noun
+ * for *and* those nouns differ — one tool repeated reads better as its kind label.
+ */
+function toolGroupLabel(items: ToolCallItem[]): string | null {
+  const nouns = items.map((i) => TOOL_NOUN[i.meta?.toolName ?? ""]);
+  if (nouns.some((n) => !n)) return null;
+  const counts = new Map<string, number>();
+  for (const noun of nouns) counts.set(noun, (counts.get(noun) ?? 0) + 1);
+  if (counts.size < 2) return null;
+  return [...counts].map(([noun, n]) => `${n} ${noun}`).join(" · ");
 }
 
 interface ActivityToolCallGroupProps {
@@ -66,13 +99,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   // Only a real tool call title gets its action word bolded — the count summary
   // has no action, and bolding its digit would just be noise.
-  const title = showCurrent ? current.title : isSingle ? items[0].title : null;
+  const title = showCurrent ? rowLabel(current) : isSingle ? rowLabel(items[0]) : null;
 
-  const Icon = showCurrent
-    ? (KIND_ICON[current.kind] ?? Box)
-    : allSameKind
-      ? (KIND_ICON[items[0]?.kind] ?? Box)
-      : Wrench;
+  const Icon = showCurrent ? rowIcon(current) : allSameKind ? rowIcon(items[0]) : Wrench;
 
   // A group with nothing to open (a bare switch_mode, say) stays plain text.
   // Multiple items are always expandable so users can see which files were read.
@@ -83,9 +112,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     showCurrent ? "shimmer-text" : isSingle && errorCount > 0 && "text-destructive",
   );
 
-  // Open on a lone command, the header line is the only place the command is
-  // shown — the timeline below carries output only — so it renders in full.
-  const showCommand = open && isSingle && isTerminalKind(items[0].kind) && Boolean(items[0].title);
+  // Open on a lone command with no description of its own, the header line is the
+  // only place the command is shown — so it renders in full.
+  const showCommand = open && isSingle && labelBecomesCommand(items[0]);
 
   const line = (
     <>
@@ -96,7 +125,10 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
         <ToolCallTitle title={title} className={labelClass} />
       ) : (
         <span className={labelClass}>
-          {allSameKind ? kindGroupLabel(items[0].kind, items.length) : `${items.length} tool calls`}
+          {toolGroupLabel(items) ??
+            (allSameKind
+              ? kindGroupLabel(items[0].kind, items.length)
+              : `${items.length} tool calls`)}
         </span>
       )}
       {!isSingle && errorCount > 0 && (
@@ -105,32 +137,39 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     </>
   );
 
+  // A lone call has no timeline row of its own, so its detail belongs on this line.
+  const detail = isSingle && !showCurrent ? <RowMeta tc={items[0]} /> : null;
+
   if (!expandable) {
     return (
-      <div className="flex w-fit max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
+      <div className="flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
         {line}
+        {detail}
       </div>
     );
   }
 
   return (
     <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "-ml-1 flex max-w-full gap-1.5 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/75",
-          showCommand ? "w-full items-start" : "w-fit items-center",
-        )}
-      >
-        {line}
-        {open ? (
-          <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
-        ) : (
-          <ChevronRight className="size-3 shrink-0" />
-        )}
-      </button>
+      <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "-ml-1 flex min-w-0 gap-1.5 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/75",
+            showCommand ? "flex-1 items-start" : "items-center",
+          )}
+        >
+          {line}
+          {open ? (
+            <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
+          ) : (
+            <ChevronRight className="size-3 shrink-0" />
+          )}
+        </button>
+        {detail}
+      </div>
       {open && (
         <div className="mt-1 ml-1.5">
           <ToolCallTimeline items={items} inline={isSingle} />

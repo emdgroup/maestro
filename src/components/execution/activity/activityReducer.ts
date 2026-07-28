@@ -9,7 +9,7 @@ import type {
   CanvasSurface,
   ErrorItem,
 } from "./types";
-import { extractAgentMeta } from "./agentMeta";
+import { extractAgentMeta, mergeAgentMeta } from "./agentMeta";
 
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
@@ -251,7 +251,8 @@ function processEvent(
 
     case "tool_call": {
       const items = finalizeStreaming(newState.items);
-      const parentToolCallId = extractAgentMeta(raw).parentToolCallId;
+      const meta = extractAgentMeta(raw);
+      const parentToolCallId = meta.parentToolCallId;
       const tc: ToolCallItem = {
         toolCallId: payload.toolCallId,
         title: payload.title,
@@ -261,15 +262,13 @@ function processEvent(
         locations: payload.locations ?? [],
         rawInput: payload.rawInput,
         parentToolCallId,
+        meta,
       };
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
 
       // AskUserQuestion is handled by the elicitation panel — suppress the generic tool card
-      const ccMeta = (raw._meta as Record<string, unknown>)?.claudeCode as
-        | Record<string, unknown>
-        | undefined;
-      if ((ccMeta?.toolName as string | undefined) === "AskUserQuestion") {
+      if (meta.toolName === "AskUserQuestion") {
         return { ...newState, items, toolCallMap: newMap };
       }
 
@@ -331,18 +330,8 @@ function processEvent(
         if (payload.content) updated.content = payload.content;
         if (payload.locations) updated.locations = payload.locations;
         if (payload.rawInput) updated.rawInput = payload.rawInput;
-        const agentMeta = extractAgentMeta(raw);
-        const durationMs =
-          agentMeta.totalDurationMs ?? (payload as Record<string, unknown>).totalDurationMs;
-        if (typeof durationMs === "number") {
-          updated.rawInput = {
-            ...updated.rawInput,
-            totalDurationMs: durationMs,
-            totalTokens: agentMeta.totalTokens ?? (payload as Record<string, unknown>).totalTokens,
-            totalToolUseCount:
-              agentMeta.totalToolUseCount ?? (payload as Record<string, unknown>).totalToolUseCount,
-          };
-        }
+        // This frame's view of the call wins; earlier frames fill what it omitted.
+        updated.meta = mergeAgentMeta(extractAgentMeta(raw), existing.meta ?? {});
         newMap.set(payload.toolCallId, updated);
         const extractedTitle = extractPlanTitle(payload);
 
