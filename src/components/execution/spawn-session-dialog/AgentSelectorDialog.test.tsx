@@ -27,6 +27,22 @@ vi.mock("@/services/execution.service", () => ({
 
 vi.mock("@/services/worktree.service", () => ({
   useWorktreesQuery: vi.fn(),
+  useCreateWorktreeMutation: vi.fn(),
+}));
+
+// Only the two hooks the spawn dialog reads — everything else stays real.
+vi.mock("@/services/task.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/task.service")>()),
+  useProjectBranchesQuery: vi.fn(() => ({
+    data: [{ local: ["main", "dev"], remote: [] }, "main"],
+    isFetching: false,
+  })),
+}));
+
+vi.mock("@/store/projectStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/store/projectStore")>()),
+  useIsGitRepo: vi.fn(() => true),
+  useSelectedProject: vi.fn(() => ({ id: 1, path: "/tmp/repo" })),
 }));
 
 vi.mock("@/store/navigationStore", () => ({
@@ -43,7 +59,7 @@ import {
   useActiveSessionsQuery,
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
-import { useWorktreesQuery } from "@/services/worktree.service";
+import { useWorktreesQuery, useCreateWorktreeMutation } from "@/services/worktree.service";
 import { AgentsView } from "@/views/agents/AgentsView";
 import type { DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
 
@@ -78,10 +94,18 @@ function renderView() {
   );
 }
 
+const mockCreateWorktree = vi.fn(() =>
+  Promise.resolve({ id: 7, branch_name: "maestro/swift-otter", path: ".maestro/worktrees/x" }),
+);
+
 beforeEach(() => {
   vi.clearAllMocks();
   (useActiveSessionsQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: [] });
   (useWorktreesQuery as ReturnType<typeof vi.fn>).mockReturnValue({ data: mockWorktrees });
+  (useCreateWorktreeMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+    mutateAsync: mockCreateWorktree,
+    isPending: false,
+  });
   (useAgentDiscoveryQuery as ReturnType<typeof vi.fn>).mockReturnValue({
     data: { maestro_server_available: true, agents: mockAgents, error: null },
     isLoading: false,
@@ -122,7 +146,7 @@ describe("New Session dialog — agent type selector", () => {
 });
 
 describe("spawn flow", () => {
-  it("calls spawnInteractive for Terminal type", async () => {
+  it("creates a maestro/ worktree from the base branch, then spawns in it", async () => {
     const mockMutate = vi.fn();
     (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: mockMutate,
@@ -133,8 +157,40 @@ describe("spawn flow", () => {
     renderView();
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
+    await user.type(screen.getByLabelText(/session name/i), "Fix Windows Path");
     await user.click(screen.getByRole("button", { name: /start session/i }));
 
-    expect(mockMutate).toHaveBeenCalled();
+    expect(mockCreateWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseBranch: "main",
+        newBranchName: "maestro/fix-windows-path",
+        taskId: null,
+      }),
+    );
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 7, branchName: "maestro/swift-otter" }),
+      expect.anything(),
+    );
+  });
+
+  it("spawns in the selected existing worktree when New worktree is unchecked", async () => {
+    const mockMutate = vi.fn();
+    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
+
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    await user.click(screen.getByRole("checkbox", { name: /new worktree/i }));
+    await user.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(mockCreateWorktree).not.toHaveBeenCalled();
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 1, branchName: "main" }),
+      expect.anything(),
+    );
   });
 });

@@ -197,3 +197,16 @@ export function generateSessionName(): string {
   const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
   return `${adjective}-${noun}`;
 }
+
+/**
+ * Turn free text into a git-safe branch segment: lowercase kebab, no leading or
+ * trailing dashes, capped at 50 characters. Returns "" when nothing survives —
+ * callers fall back to `generateSessionName()`.
+ */
+export function slugifyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 50)
+    .replace(/^-+|-+$/g, "");
+}
