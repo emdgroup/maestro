@@ -1,5 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// An expanded command label reaches for the theme to pick a shiki palette.
+vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
 import type { ToolCallItem } from "./types";
@@ -18,6 +21,14 @@ function makeCall(
     // Content-free so ToolCallContentBlock (and shiki) never renders.
     content: [],
     locations: [],
+  };
+}
+
+/** A command call with output, so the group is expandable. */
+function makeCommandCall(title: string): ToolCallItem {
+  return {
+    ...makeCall("cmd", title, "completed", "execute"),
+    content: [{ type: "content", content: { type: "text", text: "ok" } }],
   };
 }
 
@@ -127,6 +138,19 @@ describe("ActivityToolCallGroup", () => {
       />,
     );
     expect(screen.getByText("2 commands executed")).toBeTruthy();
+  });
+
+  it("shows an expanded command once — as the label, not a label plus an echo", () => {
+    const cmd = "bun run test --reporter=verbose src/foo.test.ts";
+    const { container } = render(<ActivityToolCallGroup items={[makeCommandCall(cmd)]} />);
+
+    // textContent is the flattened text, so each character is counted once.
+    const count = () => container.textContent!.split(cmd).length - 1;
+    expect(count()).toBe(1);
+
+    fireEvent.click(groupLine());
+    expect(groupLine().getAttribute("aria-expanded")).toBe("true");
+    expect(count()).toBe(1);
   });
 
   it("renders a group with nothing to open as plain text", () => {
