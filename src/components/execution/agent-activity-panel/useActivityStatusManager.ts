@@ -66,9 +66,14 @@ export function useActivityStatusManager(
         setActivity(sessionKey, "thinking");
       }
     } else {
-      // isTurnActive=true but all items finalized — race artifact from replay or
-      // agent between steps. "spawning" must not persist; idle is safe here.
-      setActivity(sessionKey, "idle");
+      // Turn is active but the tail carries no progress signal — a user message the
+      // agent has not answered yet, a permission response, a finalized message between
+      // steps. The agent is working; only the label is unknown. Reporting idle here
+      // re-enables the compose bar mid-turn, and agents that stream no thought chunks
+      // (recent models omit thinking text) leave that window open for their whole
+      // reasoning phase. Replay cannot reach this branch: replay-drained and spawn-ok
+      // both dispatch `turn_ended`, which clears isTurnActive.
+      setActivity(sessionKey, "thinking");
     }
   }, [
     liveState.items,
