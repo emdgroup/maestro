@@ -83,6 +83,7 @@ export function useActivityStatusManager(
     sessionKey,
     setActivity,
     removeActivity,
+    pendingSendRef,
   ]);
 
   // Spawning timeout: if isInitializing hasn't cleared after 15s (spawn-ok or session-error
