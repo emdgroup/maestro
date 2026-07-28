@@ -56,7 +56,7 @@ describe("ActivityToolCallGroup", () => {
       />,
     );
     fireEvent.click(groupLine());
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText("2 files read")).toBeTruthy();
   });
 
   it("summarises once settled, counting an interrupted call as done", () => {
@@ -68,7 +68,7 @@ describe("ActivityToolCallGroup", () => {
         ]}
       />,
     );
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText("2 files read")).toBeTruthy();
   });
 
   it("keeps the title for a lone call", () => {
@@ -114,7 +114,19 @@ describe("ActivityToolCallGroup", () => {
       <ActivityToolCallGroup items={[...items, makeCall("b", "Read two.ts", "in_progress")]} />,
     );
     expect(groupLine().getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText("2 files read")).toBeTruthy();
+  });
+
+  it("treats execute/bash/shell aliases as the same category", () => {
+    render(
+      <ActivityToolCallGroup
+        items={[
+          makeCall("a", "Run tests", "completed", "execute"),
+          makeCall("b", "Install deps", "completed", "bash"),
+        ]}
+      />,
+    );
+    expect(screen.getByText("2 commands executed")).toBeTruthy();
   });
 
   it("renders a group with nothing to open as plain text", () => {

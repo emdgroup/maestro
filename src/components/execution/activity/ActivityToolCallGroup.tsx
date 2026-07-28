@@ -11,20 +11,20 @@ import {
 import type { ToolCallItem } from "./types";
 
 const KIND_LABEL: Record<string, string> = {
-  read: "read files",
-  read_file: "read files",
-  edit: "edited files",
-  write_file: "edited files",
-  edit_file: "edited files",
-  create_file: "edited files",
-  delete: "deleted files",
-  move: "moved files",
+  read: "files read",
+  read_file: "files read",
+  edit: "files edited",
+  write_file: "files edited",
+  edit_file: "files edited",
+  create_file: "files edited",
+  delete: "files deleted",
+  move: "files moved",
   search: "file searches",
-  execute: "executed commands",
-  bash: "executed commands",
-  shell: "executed commands",
-  run_terminal: "executed commands",
-  fetch: "fetched URLs",
+  execute: "commands executed",
+  bash: "commands executed",
+  shell: "commands executed",
+  run_terminal: "commands executed",
+  fetch: "URLs fetched",
   switch_mode: "mode switches",
 };
 
@@ -55,7 +55,10 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   const errorCount = items.filter((i) => i.status === "error").length;
   const isSingle = items.length === 1;
-  const allSameKind = items.length > 0 && items.every((i) => i.kind === items[0].kind);
+  // Aliases like execute/bash/shell share a label — treat them as the same category.
+  const allSameKind =
+    items.length > 0 &&
+    items.every((i) => (KIND_LABEL[i.kind] ?? i.kind) === (KIND_LABEL[items[0].kind] ?? items[0].kind));
 
   // Only a real tool call title gets its action word bolded — the count summary
   // has no action, and bolding its digit would just be noise.
