@@ -4,6 +4,23 @@ use std::fs;
 use std::path::Path;
 use specta::Type;
 
+/// What `detect_project_issue_tracking` worked out from the project's git remote.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct DetectedIssueTracking {
+    /// Provider the remote host belongs to.
+    pub provider: String,
+    /// Whether credentials for that provider are already available.
+    pub connected: bool,
+    /// Whether this call wrote the config into .maestro/settings.json. False when the
+    /// project already had one, when the user opted out, when nothing is connected, or
+    /// when a required field could not be resolved.
+    pub applied: bool,
+    /// Fields recovered from the remote URL — used to prefill the settings form when
+    /// the config was not applied.
+    pub config: crate::models::project::ProjectIssueTrackingConfig,
+}
+
 /// Ticketing integration configuration stored in .maestro/issue_tracking.json
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
 #[serde(default)]

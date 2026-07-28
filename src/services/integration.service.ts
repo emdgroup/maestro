@@ -35,6 +35,8 @@ export const integrationQueryKeys = {
   list: () => [...integrationQueryKeys.base, "list"] as const,
   projectIssueTracking: (projectId: number) =>
     [...integrationQueryKeys.base, "issue_tracking", projectId] as const,
+  detectIssueTracking: (projectId: number) =>
+    [...integrationQueryKeys.base, "issue_tracking_detect", projectId] as const,
 };
 
 export function useListIntegrations() {
@@ -86,6 +88,22 @@ export function useProjectIssueTrackingConfig(projectId: number) {
   });
 }
 
+/**
+ * Reads the project's git remote to work out its issue tracking provider, applying the
+ * config when the provider is already connected. The command writes at most once per
+ * project — it refuses to touch a project that already has a config or opted out — so
+ * running this as a query is safe.
+ */
+export function useDetectIssueTracking(projectId: number) {
+  return useQuery({
+    queryKey: integrationQueryKeys.detectIssueTracking(projectId),
+    queryFn: () => api.detectProjectIssueTracking(projectId),
+    enabled: projectId > 0,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 export function useSaveProjectIssueTrackingConfig() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -102,6 +120,9 @@ export function useSaveProjectIssueTrackingConfig() {
       });
       void queryClient.invalidateQueries({
         queryKey: issueTrackingQueryKeys.remoteIssues(projectId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: integrationQueryKeys.detectIssueTracking(projectId),
       });
     },
     onError: createErrorToastHandler("Failed to save issue tracking config"),

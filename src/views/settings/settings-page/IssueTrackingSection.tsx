@@ -5,6 +5,7 @@ import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { IssueTrackingProviderForm } from "@/views/settings/issue-tracking-forms/IssueTrackingProviderForm";
 import { IntegrationConnectDialog } from "@/views/project-picker/integrations-tab/IntegrationConnectDialog";
 import {
+  useDetectIssueTracking,
   useProjectIssueTrackingConfig,
   useSaveProjectIssueTrackingConfig,
   PROVIDER_NAMES,
@@ -38,6 +39,23 @@ function getRequiredIntegrationFields(provider: string): string[] {
   }
 }
 
+function fieldsFromConfig(config: ProjectIssueTrackingConfig): Record<string, string> {
+  return {
+    owner: config.owner ?? "",
+    repo: config.repo ?? "",
+    project_path: config.project_path ?? "",
+    team_id: config.team_id ?? "",
+    project_key: config.project_key ?? "",
+    project_name: config.project_name ?? "",
+  };
+}
+
+/** What the git remote pointed at, for the "detected from your git remote" line. */
+function describeTarget(config: ProjectIssueTrackingConfig): string | null {
+  if (config.owner && config.repo) return `${config.owner}/${config.repo}`;
+  return config.project_path ?? config.project_name ?? null;
+}
+
 export interface IssueTrackingSectionHandle {
   save: () => Promise<void>;
   isValid: () => boolean;
@@ -62,6 +80,12 @@ export const IssueTrackingSection = forwardRef<
 
   const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
   const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
+  const { data: detected } = useDetectIssueTracking(projectId);
+
+  // Only offered while nothing is configured — once a provider is connected the detected
+  // config has either been applied already or the user picked something else on purpose.
+  const detectedUnconnected =
+    detected && !detected.connected && !projectIssueTrackingQuery.data ? detected : null;
 
   const selectedIntegration =
     issueTrackingIntegrations.find((i) => i.id === selectedIntegrationId) ?? null;
@@ -89,14 +113,7 @@ export const IssueTrackingSection = forwardRef<
       issueTrackingIntegrations.find((i) => i.provider === config.provider) ??
       null;
     if (match) setSelectedIntegrationId(match.id);
-    setIssueTrackingFields({
-      owner: config.owner ?? "",
-      repo: config.repo ?? "",
-      project_path: config.project_path ?? "",
-      team_id: config.team_id ?? "",
-      project_key: config.project_key ?? "",
-      project_name: config.project_name ?? "",
-    });
+    setIssueTrackingFields(fieldsFromConfig(config));
   }, [projectIssueTrackingQuery.data, issueTrackingIntegrations]);
 
   useImperativeHandle(ref, () => ({
@@ -147,6 +164,31 @@ export const IssueTrackingSection = forwardRef<
         </div>
       ) : (
         <>
+          {detectedUnconnected && (
+            <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/70 p-3">
+              <BrandIcon slug={detectedUnconnected.provider} className="w-5 h-5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">
+                  {PROVIDER_NAMES[detectedUnconnected.provider] ?? detectedUnconnected.provider}{" "}
+                  detected from this project&apos;s git remote
+                </p>
+                {describeTarget(detectedUnconnected.config) && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {describeTarget(detectedUnconnected.config)} — connect an account to load its
+                    issues
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setConnectProvider(detectedUnconnected.provider)}
+              >
+                Connect
+              </Button>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {issueTrackingIntegrations.map((integration) => (
               <button
@@ -248,6 +290,9 @@ export const IssueTrackingSection = forwardRef<
         }}
         onSuccess={(id) => {
           setSelectedIntegrationId(id);
+          if (detected && detected.provider === connectProvider) {
+            setIssueTrackingFields(fieldsFromConfig(detected.config));
+          }
           setConnectProvider(null);
           setPickerOpen(false);
         }}

@@ -179,6 +179,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             // Project issue tracking config (Phase 55)
             crate::ipc::get_project_issue_tracking_config,
             crate::ipc::save_project_issue_tracking_config,
+            crate::ipc::detect_project_issue_tracking,
             crate::ipc::list_remote_issues,
             // Import / change detection (Phase 56)
             crate::ipc::import_tasks,

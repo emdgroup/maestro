@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ShortcutHintProvider } from "@/components/common/shortcut-hint/ShortcutHintProvider";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
@@ -27,7 +28,12 @@ import { KanbanProvider } from "@/contexts/KanbanContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { TooltipProvider } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import { useListIntegrations, useProjectIssueTrackingConfig } from "@/services/integration.service";
+import {
+  integrationQueryKeys,
+  useDetectIssueTracking,
+  useListIntegrations,
+  useProjectIssueTrackingConfig,
+} from "@/services/integration.service";
 import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useProjectStartupTab } from "@/hooks/useProjectStartupTab";
@@ -113,6 +119,18 @@ function App() {
   const { data: integrations, isLoading: integrationsLoading } = useListIntegrations();
   const { data: issueTrackingConfig, isLoading: issueTrackingLoading } =
     useProjectIssueTrackingConfig(currentProject?.id ?? 0);
+
+  // Derive issue tracking from the git remote on project open. The command only writes
+  // when the project has no config yet, so this settles to a no-op after the first open.
+  const queryClient = useQueryClient();
+  const projectId = currentProject?.id;
+  const { data: detectedIssueTracking } = useDetectIssueTracking(projectId ?? 0);
+  useEffect(() => {
+    if (projectId === undefined || !detectedIssueTracking?.applied) return;
+    void queryClient.invalidateQueries({
+      queryKey: integrationQueryKeys.projectIssueTracking(projectId),
+    });
+  }, [projectId, detectedIssueTracking?.applied, queryClient]);
 
   // Derived: true only when the user dismissed the dialog for the current project specifically.
   const integrationDismissed = dismissedForProjectId === currentProject?.id;
