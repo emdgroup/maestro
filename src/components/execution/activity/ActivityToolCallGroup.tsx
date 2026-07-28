@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { CommandLabel } from "./CommandLabel";
+import { OpenFileContext } from "./MarkdownBlock";
 import {
+  FileLabel,
   hasRowContent,
   isRunning,
   labelBecomesCommand,
   rowIcon,
   rowLabel,
   RowMeta,
+  StatusWord,
   ToolCallTimeline,
   ToolCallTitle,
 } from "./ToolCallTimeline";
@@ -82,6 +85,7 @@ interface ActivityToolCallGroupProps {
  */
 export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   const [open, setOpen] = useState(false);
+  const openFile = useContext(OpenFileContext);
 
   // `pending` counts as running: a new call lands pending before it starts, and
   // ignoring that flickers the line back to the summary between calls.
@@ -90,6 +94,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   const errorCount = items.filter((i) => i.status === "error").length;
   const isSingle = items.length === 1;
+  const fileItem = isSingle && items[0].meta?.filePath ? items[0] : null;
   // Aliases like execute/bash/shell share a label — treat them as the same category.
   const allSameKind =
     items.length > 0 &&
@@ -139,6 +144,44 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   // A lone call has no timeline row of its own, so its detail belongs on this line.
   const detail = isSingle && !showCurrent ? <RowMeta tc={items[0]} /> : null;
+
+  const timeline = open && (
+    <div className="mt-1 ml-1.5">
+      <ToolCallTimeline items={items} inline={isSingle} />
+    </div>
+  );
+
+  // A lone file call puts its name on this line, and the name is a control of its
+  // own — so the toggle shrinks to the chevron rather than wrapping the label.
+  if (fileItem && openFile) {
+    return (
+      <div>
+        <div className="flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
+          <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-secondary")} />
+          <FileLabel
+            tc={fileItem}
+            expanded={open}
+            onOpenFile={openFile}
+            className={cn("min-w-0", showCurrent && "shimmer-text")}
+          />
+          <StatusWord tc={fileItem} />
+          <RowMeta tc={fileItem} />
+          {expandable && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? "Hide output" : "Show output"}
+              onClick={() => setOpen((v) => !v)}
+              className="shrink-0 rounded-md p-0.5 hover:bg-muted/40 hover:text-foreground/75"
+            >
+              {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            </button>
+          )}
+        </div>
+        {timeline}
+      </div>
+    );
+  }
 
   if (!expandable) {
     return (

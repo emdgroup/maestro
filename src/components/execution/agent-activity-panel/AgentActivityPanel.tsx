@@ -21,6 +21,7 @@ import {
 } from "../activity/utils";
 import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
+import { toPosixPath } from "@/lib/path-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
@@ -320,10 +321,13 @@ export function AgentActivityPanel({
 
   const handleOpenFile = useCallback(
     (uri: string) => {
-      const abs = uri.startsWith("file://") ? uri.slice(7) : uri;
-      const base = selectedProject?.path ?? "";
-      const rel = base && abs.startsWith(base) ? abs.slice(base.length + 1) : abs;
-      addDynamicTab("files", rel);
+      // Tool calls report Windows paths with backslashes and an arbitrarily cased
+      // drive letter, so compare on a normalised copy — a missed prefix would send
+      // an absolute path to a panel that resolves everything against the project.
+      const abs = toPosixPath(uri.startsWith("file://") ? uri.slice(7) : uri);
+      const base = toPosixPath(selectedProject?.path ?? "").replace(/\/+$/, "");
+      const inProject = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
+      addDynamicTab("files", inProject ? abs.slice(base.length + 1) : abs);
       setSidePanelCollapsed(false);
     },
     [addDynamicTab, selectedProject, setSidePanelCollapsed],

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 vi.mock("katex/dist/katex.min.css", () => ({}));
 
-import { hasCodeFence, ToolCallContentBlock } from "./ToolCallContentBlock";
+import { hasCodeFence, unwrapWholeFence, ToolCallContentBlock } from "./ToolCallContentBlock";
 import type { ToolCallContent } from "./types";
 
 function textContent(text: string): ToolCallContent {
@@ -35,6 +35,31 @@ describe("hasCodeFence", () => {
   it("is true for a tilde fence and for up to three spaces of indent", () => {
     expect(hasCodeFence("~~~\nx\n~~~")).toBe(true);
     expect(hasCodeFence("   ```\nx\n```")).toBe(true);
+  });
+});
+
+describe("unwrapWholeFence", () => {
+  // What a Read tool call actually sends: the whole excerpt inside one bare fence.
+  const READ_OUTPUT = "```\n350\t}\n351\t\n352\t.shimmer-text {\n```";
+
+  it("unwraps a bare fence that wraps the entire output", () => {
+    expect(unwrapWholeFence(READ_OUTPUT)).toBe("350\t}\n351\t\n352\t.shimmer-text {");
+  });
+
+  it("unwraps a fence that declares a language too", () => {
+    expect(unwrapWholeFence("```console\nerror TS6133\n```")).toBe("error TS6133");
+  });
+
+  it("leaves prose around a fence to the markdown renderer", () => {
+    expect(unwrapWholeFence("Result:\n```ts\nconst a = 1;\n```")).toBeNull();
+  });
+
+  it("leaves a document that itself contains fences alone", () => {
+    expect(unwrapWholeFence("````md\nintro\n```ts\nx\n```\n````")).toBeNull();
+  });
+
+  it("is null for plain output", () => {
+    expect(unwrapWholeFence(GREP_OUTPUT)).toBeNull();
   });
 });
 

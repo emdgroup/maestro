@@ -26,6 +26,8 @@ export type AgentMeta = {
   description?: string;
   /** Tool output when the payload carried no `content[]` to render. */
   output?: string;
+  /** The file a read or write acted on, for opening it from the row. */
+  filePath?: string;
   /** The short reason a call failed or was refused. */
   errorText?: string;
   /** Refused by policy rather than crashed — a different thing to tell the user. */
@@ -45,6 +47,18 @@ export type AgentMeta = {
 };
 
 type AgentMetaExtractor = (raw: Record<string, unknown>) => AgentMeta;
+
+/** ACP kinds that act on exactly one file. */
+const FILE_KINDS = new Set([
+  "read",
+  "read_file",
+  "edit",
+  "edit_file",
+  "write_file",
+  "create_file",
+  "delete",
+  "move",
+]);
 
 const obj = (v: unknown): Record<string, unknown> | undefined =>
   v != null && typeof v === "object" && !Array.isArray(v)
@@ -102,6 +116,7 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
     result.fileStartLine = num(file.startLine);
     result.fileNumLines = num(file.numLines);
   }
+  result.filePath = str(tr.filePath) ?? str(file?.filePath);
 
   const patch = tr.structuredPatch;
   if (Array.isArray(patch)) {
@@ -182,6 +197,14 @@ function extractGenericMeta(raw: Record<string, unknown>): AgentMeta {
   }
 
   result.description = str(obj(raw.rawInput)?.description);
+
+  // ACP puts the file on `locations`; agents that skip it still send an input path.
+  // Gated on kind: a search also reports locations, but those are matches, not the
+  // one file the call acted on.
+  if (FILE_KINDS.has(String(raw.kind))) {
+    const firstLocation = Array.isArray(raw.locations) ? obj(raw.locations[0]) : undefined;
+    result.filePath = str(obj(raw.rawInput)?.file_path) ?? str(firstLocation?.path);
+  }
 
   const content = Array.isArray(raw.content) ? raw.content : [];
 
