@@ -22,3 +22,4 @@ pub use ops::{
     list_worktrees_local, parse_worktree_list, get_worktree_status_local, parse_branch_list,
 };
 pub use merge::squash_merge_to_base;
+pub use worktree_lifecycle::canonicalize_repo_path;
