@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.1](https://github.com/emdgroup/maestro/compare/v0.12.0...v0.12.1) (2026-07-28)
+
+### Bug Fixes
+
+- improve tool call group labels and render content as markdown ([21a1089](https://github.com/emdgroup/maestro/commit/21a10893895f44108f002a7d5abddb77c8b07d34))
+- keep compose bar locked while waiting for first agent response ([8ca266c](https://github.com/emdgroup/maestro/commit/8ca266cce6cbb83f29a055a88a6856e8245a4478))
+- make tool call groups always expandable and skip redundant title in inline mode ([b5cb065](https://github.com/emdgroup/maestro/commit/b5cb06562ac2863a1a3756f54f8205ea199e1f77))
+- make tool calls easier to open while the stream moves ([#128](https://github.com/emdgroup/maestro/issues/128)) ([07673f2](https://github.com/emdgroup/maestro/commit/07673f2352f945ab3ee804f50cb22a9bf681101b))
+- record the released versions in Cargo.lock ([#126](https://github.com/emdgroup/maestro/issues/126)) ([64fcdbf](https://github.com/emdgroup/maestro/commit/64fcdbf8aa450b32fe141553c25cf430ccdf5e60))
+- session sidebar alignment and close button ([0ee3d73](https://github.com/emdgroup/maestro/commit/0ee3d7368675f730efe501b25aff8352f19b56d3))
+- terminal display corruption when switching tabs ([#129](https://github.com/emdgroup/maestro/issues/129)) ([55ebbbd](https://github.com/emdgroup/maestro/commit/55ebbbd2630e8a0786a775c0cd8d478b4d842cc9))
+- use natural-English labels and category-based alias grouping for tool call groups ([b3aa12a](https://github.com/emdgroup/maestro/commit/b3aa12af7c22b471c253acbd8ec8b35ae3d4f982))
+
 ## [0.12.0](https://github.com/emdgroup/maestro/compare/v0.11.0...v0.12.0) (2026-07-27)
 
 ### Features
