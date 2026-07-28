@@ -349,7 +349,7 @@
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-.shimmer-thinking-text {
+.shimmer-text {
   background: linear-gradient(
     90deg,
     oklch(from var(--muted-foreground) calc(l * 0.5) c h) 25%,

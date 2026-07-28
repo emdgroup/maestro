@@ -64,7 +64,7 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
       <div className="border-l-2 border-dashed border-border pl-3 py-1.5 opacity-65">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Brain className="w-3 h-3 shimmer-thinking-icon" />
-          <span className="shimmer-thinking-text">Thinking</span>
+          <span className="shimmer-text">Thinking</span>
         </div>
         <div className="text-xs text-muted-foreground/70 leading-relaxed">
           {textToRender ? <MarkdownBlock text={textToRender} /> : null}

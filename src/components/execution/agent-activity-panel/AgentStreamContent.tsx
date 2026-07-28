@@ -49,7 +49,7 @@ export function AgentStreamContent({
             className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
             style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
           >
-            {agentSections.map((section, sectionIndex) => {
+            {agentSections.map((section) => {
               if (section.type === "standalone") {
                 const gi = section.item;
                 if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
@@ -80,20 +80,7 @@ export function AgentStreamContent({
                       ? firstItem.item.item.surfaceId
                       : firstItem.item.item.id;
 
-              const nextSectionStartsWithMessage = (() => {
-                for (let si = sectionIndex + 1; si < agentSections.length; si++) {
-                  const next = agentSections[si];
-                  if (next.type === "agentSection") {
-                    const first = next.items[0];
-                    return first.type === "solo" && first.item.type === "message";
-                  }
-                }
-                return false;
-              })();
-
               const sharedItemProps = {
-                allItems: visibleItems,
-                nextSectionStartsWithMessage,
                 onOpenPlanOverlay,
                 toolCallMap,
                 canvasMap,
@@ -103,13 +90,8 @@ export function AgentStreamContent({
               return (
                 <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
                   <AgentResponseSection showConnector={showConnector}>
-                    {visibleItems.map((gi, index) => (
-                      <AgentStreamItem
-                        key={getItemKey(gi)}
-                        gi={gi}
-                        index={index}
-                        {...sharedItemProps}
-                      />
+                    {visibleItems.map((gi) => (
+                      <AgentStreamItem key={getItemKey(gi)} gi={gi} {...sharedItemProps} />
                     ))}
                   </AgentResponseSection>
                 </MessageScrollerItem>
