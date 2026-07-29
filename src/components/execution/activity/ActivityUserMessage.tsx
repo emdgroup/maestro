@@ -11,6 +11,7 @@ import {
   AttachmentDescription,
 } from "@/ui/attachment";
 import { docIcon, formatFileSize } from "./compose-bar/AttachmentShelf";
+import { MessageActionBar } from "./MessageActionBar";
 
 function fileTypeLabel(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -182,7 +183,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
   }
 
   return (
-    <Message align="end" className="gap-2.5 items-start">
+    <Message align="end" className="gap-2.5 items-start group/message-block">
       <div className="p-px rounded-full bg-gradient-to-br from-accent/60 to-accent/15 shrink-0 mt-1.75">
         <div className="w-7 h-7 rounded-full bg-background flex items-center justify-center">
           <User className="w-3.5 h-3.5 text-accent/70" />
@@ -260,6 +261,7 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
             </div>
           )}
         </div>
+        <MessageActionBar copyText={parsed.text} sentAt={message.sentAt} align="end" />
       </MessageContent>
     </Message>
   );
