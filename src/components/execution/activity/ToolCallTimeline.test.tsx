@@ -4,9 +4,17 @@ import { describe, it, expect, vi } from "vitest";
 // An expanded command label reaches for the theme to pick a shiki palette.
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 
+import { McpIcon } from "@/components/common/icons/McpIcon";
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
 import { OpenFileContext } from "./MarkdownBlock";
-import { isGitCommand, rowIcon, splitTitleAroundPath, ToolCallTimeline } from "./ToolCallTimeline";
+import {
+  formatMcpToolName,
+  isGitCommand,
+  rowIcon,
+  rowLabel,
+  splitTitleAroundPath,
+  ToolCallTimeline,
+} from "./ToolCallTimeline";
 import type { ToolCallItem } from "./types";
 
 const BODY = "SEVEN-HUNDRED-LINE-OUTPUT";
@@ -87,6 +95,57 @@ describe("isGitCommand", () => {
       rowIcon({ ...call("x", "x"), meta: { git: { commitSha: "abc" } } }),
     );
     expect(rowIcon(shell("bun run test"))).not.toBe(rowIcon(shell("git status")));
+  });
+});
+
+describe("formatMcpToolName", () => {
+  it("reads an MCP tool as what it does, and where from", () => {
+    expect(formatMcpToolName("mcp__chrome-devtools__take_screenshot")).toBe(
+      "Take screenshot (chrome-devtools)",
+    );
+    expect(formatMcpToolName("mcp__context7__query-docs")).toBe("Query docs (context7)");
+  });
+
+  it("drops the server's name where its tool repeats it", () => {
+    expect(formatMcpToolName("mcp__codegraph__codegraph_explore")).toBe("Explore (codegraph)");
+    // A server with one tool named after itself: say it once, not twice.
+    expect(formatMcpToolName("mcp__codegraph__codegraph")).toBe("Codegraph");
+  });
+
+  it("splits a tool's own words on either separator its author chose", () => {
+    expect(formatMcpToolName("mcp__acme__take_screenshot")).toBe("Take screenshot (acme)");
+    expect(formatMcpToolName("mcp__acme__take-screenshot")).toBe("Take screenshot (acme)");
+    // The server keeps its hyphen — that is its name, not a word break.
+    expect(formatMcpToolName("mcp__chrome-devtools__list_pages")).toBe(
+      "List pages (chrome-devtools)",
+    );
+  });
+
+  it("marks an MCP row with the protocol's own icon, from the title alone", () => {
+    const mcp = call("m", "mcp__codegraph__codegraph_explore", "other");
+    expect(rowIcon({ ...mcp, meta: {} })).toBe(McpIcon);
+    expect(rowIcon({ ...mcp, meta: { toolName: "mcp__codegraph__codegraph_explore" } })).toBe(
+      McpIcon,
+    );
+    expect(rowIcon(call("r", "Read one.ts"))).not.toBe(McpIcon);
+  });
+
+  it("unwraps a plugin-hosted server", () => {
+    expect(formatMcpToolName("mcp__plugin_context7_context7__resolve-library-id")).toBe(
+      "Resolve library id (context7)",
+    );
+  });
+
+  it("leaves anything that is not a wire name alone", () => {
+    expect(formatMcpToolName("Read src/a.ts")).toBeNull();
+    expect(formatMcpToolName("mcp__nosuffix")).toBeNull();
+    expect(rowLabel(call("m", "Read one.ts"))).toBe("Read one.ts");
+  });
+
+  it("labels the row rather than the raw name", () => {
+    expect(rowLabel(call("m", "mcp__codegraph__codegraph_explore", "other"))).toBe(
+      "Explore (codegraph)",
+    );
   });
 });
 
