@@ -556,6 +556,7 @@ export function AgentActivityPanel({
                 onOpenFile={handleOpenFile}
                 inlinePermission={inlinePermission}
                 bottomPadding={composeBarHeight}
+                commands={availableCommands}
                 onAuthLogin={
                   hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
                 }

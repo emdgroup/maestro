@@ -194,9 +194,9 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
           onClick={handleClick}
         >
           {hasAttachments ? (
-            <MarkdownBlock text={buildTextMarkdown(parsed.blocks)} breaks />
+            <MarkdownBlock text={buildTextMarkdown(parsed.blocks)} breaks slashCommands />
           ) : (
-            <MarkdownBlock text={parsed.text} breaks />
+            <MarkdownBlock text={parsed.text} breaks slashCommands />
           )}
           {hasCards && (
             <div className="flex flex-col gap-1.5 mt-2.5">

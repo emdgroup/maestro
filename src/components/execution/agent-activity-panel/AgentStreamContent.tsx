@@ -3,7 +3,7 @@ import { ActivityUserMessage } from "../activity/ActivityUserMessage";
 import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
-import type { ToolCallItem, CanvasSurface } from "../activity/types";
+import type { ToolCallItem, CanvasSurface, AvailableCommand } from "../activity/types";
 import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
 import React from "react";
@@ -13,7 +13,7 @@ import {
   MessageScrollerContent,
   MessageScrollerItem,
 } from "@/ui/message-scroller";
-import { OpenFileContext } from "../activity/MarkdownBlock";
+import { OpenFileContext, CommandsContext } from "../activity/MarkdownBlock";
 
 interface AgentStreamContentProps {
   agentSections: AgentSectionItem[];
@@ -24,6 +24,7 @@ interface AgentStreamContentProps {
   inlinePermission: React.ReactNode;
   bottomPadding?: number;
   onAuthLogin?: () => void;
+  commands: AvailableCommand[];
 }
 
 export function AgentStreamContent({
@@ -35,6 +36,7 @@ export function AgentStreamContent({
   inlinePermission,
   bottomPadding,
   onAuthLogin,
+  commands,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -43,64 +45,66 @@ export function AgentStreamContent({
 
   return (
     <OpenFileContext.Provider value={onOpenFile}>
-      <MessageScroller className="absolute inset-0">
-        <MessageScrollerViewport className="overflow-x-hidden">
-          <MessageScrollerContent
-            className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
-            style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
-          >
-            {agentSections.map((section) => {
-              if (section.type === "standalone") {
-                const gi = section.item;
-                if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-                const msgId = gi.item.item.id;
+      <CommandsContext.Provider value={commands}>
+        <MessageScroller className="absolute inset-0">
+          <MessageScrollerViewport className="overflow-x-hidden">
+            <MessageScrollerContent
+              className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
+              style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
+            >
+              {agentSections.map((section) => {
+                if (section.type === "standalone") {
+                  const gi = section.item;
+                  if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+                  const msgId = gi.item.item.id;
+                  return (
+                    <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
+                      <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                    </MessageScrollerItem>
+                  );
+                }
+
+                const { items } = section;
+
+                const visibleItems = items.filter((gi) => {
+                  if (gi.type === "toolGroup") return !toolCallsHidden;
+                  if (gi.item.type === "thinking") return !thinkingHidden;
+                  return true;
+                });
+                if (visibleItems.length === 0) return null;
+
+                const firstItem = items[0];
+                const sectionKey =
+                  firstItem.type === "toolGroup"
+                    ? `tg-${firstItem.items[0].toolCallId}`
+                    : firstItem.item.type === "toolCall"
+                      ? firstItem.item.item.toolCallId
+                      : firstItem.item.type === "canvas"
+                        ? firstItem.item.item.surfaceId
+                        : firstItem.item.item.id;
+
+                const sharedItemProps = {
+                  onOpenPlanOverlay,
+                  toolCallMap,
+                  canvasMap,
+                  onAuthLogin,
+                };
+
                 return (
-                  <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
-                    <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                  <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
+                    <AgentResponseSection>
+                      {visibleItems.map((gi) => (
+                        <AgentStreamItem key={getItemKey(gi)} gi={gi} {...sharedItemProps} />
+                      ))}
+                    </AgentResponseSection>
                   </MessageScrollerItem>
                 );
-              }
-
-              const { items } = section;
-
-              const visibleItems = items.filter((gi) => {
-                if (gi.type === "toolGroup") return !toolCallsHidden;
-                if (gi.item.type === "thinking") return !thinkingHidden;
-                return true;
-              });
-              if (visibleItems.length === 0) return null;
-
-              const firstItem = items[0];
-              const sectionKey =
-                firstItem.type === "toolGroup"
-                  ? `tg-${firstItem.items[0].toolCallId}`
-                  : firstItem.item.type === "toolCall"
-                    ? firstItem.item.item.toolCallId
-                    : firstItem.item.type === "canvas"
-                      ? firstItem.item.item.surfaceId
-                      : firstItem.item.item.id;
-
-              const sharedItemProps = {
-                onOpenPlanOverlay,
-                toolCallMap,
-                canvasMap,
-                onAuthLogin,
-              };
-
-              return (
-                <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
-                  <AgentResponseSection>
-                    {visibleItems.map((gi) => (
-                      <AgentStreamItem key={getItemKey(gi)} gi={gi} {...sharedItemProps} />
-                    ))}
-                  </AgentResponseSection>
-                </MessageScrollerItem>
-              );
-            })}
-            <AnimatePresence>{inlinePermission}</AnimatePresence>
-          </MessageScrollerContent>
-        </MessageScrollerViewport>
-      </MessageScroller>
+              })}
+              <AnimatePresence>{inlinePermission}</AnimatePresence>
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+        </MessageScroller>
+      </CommandsContext.Provider>
     </OpenFileContext.Provider>
   );
 }
