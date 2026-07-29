@@ -189,9 +189,11 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
           <User className="w-3.5 h-3.5 text-accent/70" />
         </div>
       </div>
-      {/* gap-0: the bar is part of the bubble, not a sibling block — MessageContent's default
-          gap would sit it further from the text than the agent side's bar. */}
-      <MessageContent className="w-fit max-w-[90%] gap-0">
+      {/* items-end: without it the bubble stretches to the action bar's width, so a
+          two-character message gets a bubble sized for "copy + just now".
+          gap-0: the bar is part of the bubble, not a sibling block — the default gap
+          would sit it further from the text than the agent side's bar. */}
+      <MessageContent className="w-fit max-w-[90%] items-end gap-0">
         <div
           className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word"
           onClick={handleClick}
