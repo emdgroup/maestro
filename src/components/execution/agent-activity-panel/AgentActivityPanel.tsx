@@ -30,6 +30,7 @@ import { commands } from "@/types/bindings";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
+import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
@@ -185,6 +186,10 @@ export function AgentActivityPanel({
 
   const isSessionActive = isSelected && activeTab === "agents";
 
+  // Shares its fetch with SidePanelContent's identical call; read here so the Review tab can
+  // open itself when the session's first change lands.
+  const { changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [hasPreSpawnAuthError, setHasPreSpawnAuthError] = useState(false);
 
@@ -271,6 +276,7 @@ export function AgentActivityPanel({
     hasPlan: !!sidePanelPlan,
     canvasMap: liveState.canvasMap,
     hasArtifacts: localWorkingFiles.length > 0,
+    changedFilesCount,
   });
 
   // A visible tab has been seen; a new one only pulls the panel open when there is room.

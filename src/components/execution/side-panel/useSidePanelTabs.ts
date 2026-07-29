@@ -69,10 +69,13 @@ export function useSidePanelTabs({
   hasPlan,
   canvasMap,
   hasArtifacts,
+  changedFilesCount,
 }: {
   hasPlan: boolean;
   canvasMap: Map<string, CanvasSurface>;
   hasArtifacts: boolean;
+  /** `null` until the diff query settles — see the Review effect below. */
+  changedFilesCount: number | null;
 }): UseSidePanelTabsResult {
   const [tabs, setTabs] = useState<SidePanelTab[]>([makeTab("overview")]);
   const [activeTabId, setActiveTabId] = useState("overview");
@@ -83,6 +86,7 @@ export function useSidePanelTabs({
   const prevPlanRef = useRef(false);
   const prevCanvasSizeRef = useRef(0);
   const prevArtifactsRef = useRef(false);
+  const prevChangedCountRef = useRef<number | null>(null);
 
   const markUnseen = useCallback((id: string) => {
     setUnseenTabIds((prev) => new Set(prev).add(id));
@@ -147,6 +151,31 @@ export function useSidePanelTabs({
       markUnseen("artifacts");
     }
   }, [hasArtifacts, markUnseen]);
+
+  // Review: open on the first change of the session, then only re-flag as unseen.
+  //
+  // The first settled count is a baseline, not a change — a resumed session usually has a
+  // diff already and must not yank the panel to Review on mount. Later increases do not
+  // steal focus either: unlike a canvas surface they arrive every few seconds while the
+  // agent edits, and a tab that keeps grabbing focus mid-run is unusable. A Review tab the
+  // user has closed stays closed.
+  useEffect(() => {
+    if (changedFilesCount === null) return;
+    const prev = prevChangedCountRef.current;
+    prevChangedCountRef.current = changedFilesCount;
+    if (prev === null || changedFilesCount <= prev) return;
+    if (prev === 0) {
+      setTabs((tabsPrev) => {
+        if (tabsPrev.some((t) => t.kind === "review")) return tabsPrev;
+        return [...tabsPrev, makeTab("review")];
+      });
+      setActiveTabId("review");
+      markUnseen("review");
+    } else if (tabs.some((t) => t.kind === "review")) {
+      markUnseen("review");
+    }
+    // `tabs` re-runs this harmlessly: the count is unchanged by then, so it returns early.
+  }, [changedFilesCount, markUnseen, tabs]);
 
   const closeTab = useCallback(
     (id: string) => {
