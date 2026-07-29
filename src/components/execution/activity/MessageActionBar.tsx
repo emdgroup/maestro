@@ -14,14 +14,23 @@ export function relativeTime(sentAt: number, now: number): string {
 
 // One timer for the whole stream, not one per message: a long session holds hundreds of
 // these and each would otherwise wake the main thread on its own schedule.
+//
+// The store holds the clock rather than a counter, because the label has to be derived from
+// what useSyncExternalStore returns. Calling Date.now() in render instead reads the clock
+// behind React's back: the notification still fires, but React may bail out of a forced
+// store re-render when no tracked value changed, and the label freezes on its first value.
 const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setInterval> | null = null;
-let tick = 0;
+let now = Date.now();
 
 function subscribeTick(fn: () => void) {
+  // The timer only runs while something is subscribed, so `now` can be arbitrarily old by
+  // the time a bar mounts. React re-reads the snapshot after subscribing and re-renders if
+  // it moved, so refreshing here is enough — no notification needed.
+  now = Date.now();
   listeners.add(fn);
   timer ??= setInterval(() => {
-    tick++;
+    now = Date.now();
     for (const l of listeners) l();
   }, 30_000);
   return () => {
@@ -49,7 +58,7 @@ export function MessageActionBar({
   children,
 }: MessageActionBarProps) {
   const { copied, copy } = useCopyToClipboard(copyText);
-  useSyncExternalStore(subscribeTick, () => tick);
+  const clock = useSyncExternalStore(subscribeTick, () => now);
 
   return (
     <div
@@ -64,7 +73,7 @@ export function MessageActionBar({
       {sentAt !== undefined && (
         <Tooltip>
           <TooltipTrigger render={<span />} className="cursor-default px-1 tabular-nums">
-            {relativeTime(sentAt, Date.now())}
+            {relativeTime(sentAt, clock)}
           </TooltipTrigger>
           <TooltipContent>{format(sentAt, "PPpp")}</TooltipContent>
         </Tooltip>
