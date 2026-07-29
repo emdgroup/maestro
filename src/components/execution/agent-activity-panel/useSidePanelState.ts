@@ -7,7 +7,8 @@ const SIDE_MIN_REM = 22;
 
 /**
  * What a given viewport width allows: too narrow for both panels, or wide enough
- * (twice the stream minimum) that the panel may come back on its own.
+ * (twice the stream minimum) that the panel may come back on its own. The band
+ * between the two fits both panels but not comfortably, so it keeps what it has.
  */
 export function widthVerdict(width: number, rem: number): "collapse" | "may-expand" | "keep" {
   if (width < (STREAM_MIN_REM + SIDE_MIN_REM) * rem) return "collapse";
@@ -31,7 +32,6 @@ export function useSidePanelState({
 }: UseSidePanelStateArgs) {
   // A brand new session has nothing to show in the panel — start out of the way.
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true);
-  const [canAutoExpand, setCanAutoExpand] = useState(false);
   const sidePanelElementRef = useRef<HTMLDivElement>(null);
   const sidePanelRef = usePanelRef();
   const groupElementRef = useRef<HTMLDivElement>(null);
@@ -75,22 +75,35 @@ export function useSidePanelState({
     };
   }, [sidePanelCollapsed, sidePanelRef, setScrollRestoreToken]);
 
+  // AgentMonitor keeps every session mounted and hides the unselected ones, so a
+  // background group has no box and measures 0. Nothing measured then says anything
+  // about the viewport, and acting on it collapsed the panel the user had opened
+  // every time they switched sessions.
+  const currentVerdict = useCallback(() => {
+    const width = groupElementRef.current?.clientWidth ?? 0;
+    if (width === 0) return null;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return widthVerdict(width, rem);
+  }, []);
+
   // Dragging the separator past the panel's minimum collapses it; mirror that back
   // into state so the strip renders instead of a 44px-wide tab bar.
   const syncCollapsedFromPanel = useCallback(() => {
+    if (currentVerdict() == null) return;
     setSidePanelCollapsed(sidePanelRef.current?.isCollapsed() ?? false);
-  }, [sidePanelRef]);
+  }, [sidePanelRef, currentVerdict]);
 
-  // Width rules: under the two panels' combined minimum the side panel must collapse;
-  // at twice the stream minimum there is room to bring it back on its own.
+  // Under the two panels' combined minimum the side panel has to collapse. The
+  // opposite rule is not mirrored here: a cached "there is room" flag went stale
+  // whenever the group was last measured hidden, so auto-expand asks for the width
+  // itself, at the moment it wants to expand.
   useEffect(() => {
     const el = groupElementRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === 0) return;
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const verdict = widthVerdict(entry.contentRect.width, rem);
-      if (verdict === "collapse") setSidePanelCollapsed(true);
-      setCanAutoExpand(verdict === "may-expand");
+      if (widthVerdict(entry.contentRect.width, rem) === "collapse") setSidePanelCollapsed(true);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -104,8 +117,9 @@ export function useSidePanelState({
 
   const expandAuto = useCallback(() => {
     if (manuallyCollapsedRef.current) return;
+    if (currentVerdict() !== "may-expand") return;
     setSidePanelCollapsed(false);
-  }, []);
+  }, [currentVerdict]);
 
   useEffect(() => {
     if (isSelected) setMaximized(false);
@@ -145,7 +159,6 @@ export function useSidePanelState({
   return {
     sidePanelCollapsed,
     setSidePanelCollapsed: setCollapsedByUser,
-    canAutoExpand,
     expandAuto,
     sidePanelElementRef,
     sidePanelRef,

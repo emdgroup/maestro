@@ -225,7 +225,6 @@ export function AgentActivityPanel({
   const {
     sidePanelCollapsed,
     setSidePanelCollapsed,
-    canAutoExpand,
     expandAuto,
     sidePanelElementRef,
     sidePanelRef,
@@ -280,8 +279,10 @@ export function AgentActivityPanel({
   }, [sidePanelCollapsed, activeTabId, markTabSeen]);
 
   useEffect(() => {
-    if (canAutoExpand && unseenTabIds.size > 0) expandAuto();
-  }, [canAutoExpand, unseenTabIds, expandAuto]);
+    if (unseenTabIds.size > 0) expandAuto();
+    // isSelected: a tab that arrived while this session was hidden could not measure
+    // the group, so retry once it is on screen.
+  }, [unseenTabIds, expandAuto, isSelected]);
 
   const isProcessing =
     activityInfo?.status === "thinking" ||
