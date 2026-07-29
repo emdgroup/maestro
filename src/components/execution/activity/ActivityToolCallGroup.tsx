@@ -138,7 +138,9 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
               : `${items.length} tool calls`)}
         </span>
       )}
-      {!isSingle && errorCount > 0 && (
+      {/* Only alongside the summary. While the line names the call in flight it
+          is about that call, and a count of earlier failures reads as its own. */}
+      {title == null && errorCount > 0 && (
         <span className="shrink-0 text-[10px] text-destructive">· {errorCount} failed</span>
       )}
     </>

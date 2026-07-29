@@ -98,6 +98,19 @@ describe("ActivityToolCallGroup", () => {
     expect(groupLine().getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("holds the failure count back while the line names the call in flight", () => {
+    render(
+      <ActivityToolCallGroup
+        items={[makeCall("a", "Read one.ts", "error"), makeCall("b", "Read two.ts", "in_progress")]}
+      />,
+    );
+    expect(screen.queryByText("· 1 failed")).toBeNull();
+
+    // Expanded the line falls back to the summary, which is where it belongs.
+    fireEvent.click(groupLine());
+    expect(screen.getByText("· 1 failed")).toBeTruthy();
+  });
+
   it("toggles the timeline on click", () => {
     const items = [
       makeCall("a", "Read one.ts", "error"),
