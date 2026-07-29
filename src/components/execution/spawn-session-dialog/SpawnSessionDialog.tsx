@@ -5,7 +5,6 @@ import { generateSessionName, slugifyName } from "@/lib/generateSessionName";
 import { cn } from "@/lib/utils.ts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
@@ -314,34 +313,36 @@ export function SpawnSessionDialog({
               )}
             </div>
 
-            {/* Worktree — the checkbox decides whether the selector lists branches or worktrees */}
+            {/* Worktree — the New/Existing toggle decides whether the selector lists branches
+                or worktrees; in New mode the picker is prefixed "From" to mark it as the base. */}
             {isGitRepo && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                    {creatingWorktree ? "From branch" : "Worktree"}
+                    Worktree
                   </p>
                   {!isTerminal && (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Label className="flex items-center gap-2 text-[11px] font-normal cursor-pointer" />
-                        }
-                      >
-                        <Checkbox
-                          checked={newWorktree}
-                          onCheckedChange={(checked) => setNewWorktree(checked === true)}
-                        />
-                        New worktree
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        Create a worktree from the selected branch
-                      </TooltipContent>
-                    </Tooltip>
+                    <div className="flex gap-0.5 rounded-full bg-muted p-0.5">
+                      {([true, false] as const).map((isNew) => (
+                        <button
+                          key={String(isNew)}
+                          type="button"
+                          onClick={() => setNewWorktree(isNew)}
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors",
+                            newWorktree === isNew
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground/80",
+                          )}
+                        >
+                          {isNew ? "New" : "Existing"}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
                 {creatingWorktree ? (
-                  <BranchPicker value={baseBranch} onChange={setBaseBranch} />
+                  <BranchPicker value={baseBranch} onChange={setBaseBranch} prefix="From" />
                 ) : (
                   <Select
                     value={selectedWorktree?.branch_name ?? ""}
