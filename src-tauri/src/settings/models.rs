@@ -172,6 +172,16 @@ pub struct AppSettings {
     /// built, so a change here needs a restart.
     #[serde(default)]
     pub log_directory: Option<String>,
+    /// OS toast when an agent ends its turn normally. Off by default — the window attention
+    /// request fires regardless, so a user who wants nothing extra gets nothing extra.
+    #[serde(default)]
+    pub notify_on_done: bool,
+    /// OS toast when an agent blocks on a permission prompt, a question, or authentication.
+    #[serde(default)]
+    pub notify_on_input_needed: bool,
+    /// OS toast when an agent's turn ends in an error, a refusal, or a limit.
+    #[serde(default)]
+    pub notify_on_failure: bool,
 }
 
 impl Default for AppSettings {
@@ -191,6 +201,9 @@ impl Default for AppSettings {
             ui_scale: None,
             log_level: None,
             log_directory: None,
+            notify_on_done: false,
+            notify_on_input_needed: false,
+            notify_on_failure: false,
         }
     }
 }

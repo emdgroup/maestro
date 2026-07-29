@@ -20,6 +20,7 @@ import {
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
+import { useSessionNotifications } from "@/hooks/useSessionNotifications";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
 import { api } from "@/lib/tauri-utils";
@@ -75,6 +76,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   const { data: settings } = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
+
+  useSessionNotifications(sessions, settings);
 
   const thinkingVisibility = settings?.thinking_visibility ?? "auto";
   const toolCallsVisible = settings?.tool_call_visibility !== "hide";

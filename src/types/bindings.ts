@@ -2762,6 +2762,19 @@ export type AppSettings = {
    * built, so a change here needs a restart.
    */
   log_directory?: string | null;
+  /**
+   * OS toast when an agent ends its turn normally. Off by default — the window attention
+   * request fires regardless, so a user who wants nothing extra gets nothing extra.
+   */
+  notify_on_done?: boolean;
+  /**
+   * OS toast when an agent blocks on a permission prompt, a question, or authentication.
+   */
+  notify_on_input_needed?: boolean;
+  /**
+   * OS toast when an agent's turn ends in an error, a refusal, or a limit.
+   */
+  notify_on_failure?: boolean;
 };
 /**
  * Single authentication method exposed to the frontend.

@@ -66,6 +66,7 @@ fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 tauri-plugin-log = "2.9.0"
 log = "0.4.33"
+tauri-plugin-notification = "2.3.3"
 
 [dev-dependencies]
 tempfile = "3"
