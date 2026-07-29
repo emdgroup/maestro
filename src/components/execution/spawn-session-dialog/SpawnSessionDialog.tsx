@@ -23,6 +23,13 @@ import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
 
+/** A worktree this dialog created for the session, so the caller can clean it up on close. */
+export interface CreatedWorktree {
+  id: number;
+  path: string;
+  branchName: string;
+}
+
 interface SpawnSessionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -30,7 +37,7 @@ interface SpawnSessionDialogProps {
   repoPath: string;
   connection: ConnectionKey;
   worktrees: WorktreeWithStatus[];
-  onSuccess: (sessionKey: number) => void;
+  onSuccess: (sessionKey: number, createdWorktree: CreatedWorktree | null) => void;
 }
 
 export function SpawnSessionDialog({
@@ -95,9 +102,10 @@ export function SpawnSessionDialog({
 
     // Resolve the target worktree: create a fresh one, or use the selected existing one.
     let worktree: { id: number | null; branchName: string | null; path: string };
+    let created: CreatedWorktree | null = null;
     if (creatingWorktree) {
       try {
-        const created = await createWorktreeMutation.mutateAsync({
+        const row = await createWorktreeMutation.mutateAsync({
           projectId,
           taskId: null,
           baseBranch,
@@ -105,10 +113,11 @@ export function SpawnSessionDialog({
           repoPath,
         });
         worktree = {
-          id: created.id,
-          branchName: created.branch_name,
-          path: `${repoPath}/${created.path}`,
+          id: row.id,
+          branchName: row.branch_name,
+          path: `${repoPath}/${row.path}`,
         };
+        created = { id: row.id, path: worktree.path, branchName: row.branch_name };
       } catch (error) {
         setSpawnError(String(error));
         return;
@@ -134,7 +143,7 @@ export function SpawnSessionDialog({
         {
           onSuccess: (sessionKey) => {
             onOpenChange(false);
-            onSuccess(sessionKey);
+            onSuccess(sessionKey, created);
           },
           onError: (error) => setSpawnError(String(error)),
         },
@@ -152,7 +161,7 @@ export function SpawnSessionDialog({
         {
           onSuccess: (result) => {
             onOpenChange(false);
-            onSuccess(result.log_id);
+            onSuccess(result.log_id, created);
           },
           onError: (error) => setSpawnError(String(error)),
         },

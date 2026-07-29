@@ -480,6 +480,35 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  /**
+   * Remove a worktree and its branch only when nothing would be lost: no uncommitted changes and
+   * no commits that live solely on that branch. Returns `None` when removed, or the reason it was
+   * kept.
+   *
+   * The commit check has to happen up front: `git branch -d` refuses an unmerged branch, but it
+   * runs after `git worktree remove --force` has already thrown the working tree away.
+   */
+  async cleanupWorktreeIfClean(
+    projectId: number,
+    worktreePath: string,
+    branchName: string,
+    worktreeId: number | null,
+  ): Promise<Result<string | null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("cleanup_worktree_if_clean", {
+          projectId,
+          worktreePath,
+          branchName,
+          worktreeId,
+        }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async cleanupZombieWorktrees(
     projectId: number,
     repoPath: string,

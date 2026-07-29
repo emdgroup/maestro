@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils.ts";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
 import { SidebarProvider } from "@/ui/sidebar";
 import { SessionHistoryModal } from "@/components/execution/session-history/SessionHistoryModal";
-import { SpawnSessionDialog } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
+import {
+  SpawnSessionDialog,
+  type CreatedWorktree,
+} from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
 import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
 import {
   useActiveSessionsQuery,
@@ -26,6 +29,7 @@ import { Switch } from "@/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { History, Menu, Plus, SearchIcon, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { ActivityVisibility } from "@/types/bindings";
@@ -64,6 +68,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
   const [lastSpawnedKey, setLastSpawnedKey] = useState<number | null>(null);
+  // Worktrees this view created for a session, removed again on close when nothing was done in
+  // them. Deliberately in-memory: after a reload the worktree is indistinguishable from one the
+  // user made themselves, and deleting it then would be a surprise.
+  const autoWorktrees = useRef(new Map<number, CreatedWorktree>());
 
   const { data: settings } = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
@@ -277,6 +285,26 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
             const remaining = visibleSessions.filter((s) => s.session_key !== session.session_key);
             setSelectedSessionKey(remaining.length > 0 ? remaining[0].session_key : null);
           }
+          const auto = autoWorktrees.current.get(session.session_key);
+          if (!auto) {
+            console.debug(
+              `[worktree-cleanup] session ${session.session_key} did not create a worktree`,
+            );
+          } else if (projectId != null) {
+            autoWorktrees.current.delete(session.session_key);
+            void api
+              .cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
+              .then((keptBecause) => {
+                if (keptBecause === null) {
+                  toast.success(`Removed empty worktree ${auto.branchName}`);
+                } else {
+                  toast.info(`Kept worktree ${auto.branchName} — ${keptBecause}`);
+                }
+              })
+              .catch((error) =>
+                toast.error(`Could not clean up worktree ${auto.branchName}: ${String(error)}`),
+              );
+          }
         },
       },
     );
@@ -448,9 +476,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         repoPath={repoPath ?? ""}
         connection={connection}
         worktrees={worktrees}
-        onSuccess={(key) => {
+        onSuccess={(key, createdWorktree) => {
           setSelectedSessionKey(key);
           setLastSpawnedKey(key);
+          if (createdWorktree) autoWorktrees.current.set(key, createdWorktree);
         }}
       />
     </SidebarProvider>
