@@ -103,17 +103,28 @@ describe("file rows", () => {
     );
   }
 
+  /** The row itself is the toggle, so it is the outermost of the two controls. */
+  const row = () => screen.getAllByRole("button")[0];
+
   it("shows the bare file name collapsed and the path once open", () => {
     const { container } = renderWithOpener(() => {});
     expect(screen.getByRole("button", { name: "ToolCallTimeline.tsx" })).toBeTruthy();
     expect(container.textContent).not.toContain("src/components/execution");
 
-    fireEvent.click(screen.getByRole("button", { name: "Show output" }));
+    fireEvent.click(row());
     expect(
       screen.getByRole("button", {
         name: "src/components/execution/activity/ToolCallTimeline.tsx",
       }),
     ).toBeTruthy();
+  });
+
+  it("puts the title's line range on the right rather than after the name", () => {
+    renderWithOpener(() => {});
+    const name = screen.getByRole("button", { name: "ToolCallTimeline.tsx" });
+    expect(name.textContent).not.toContain("(60 - 89)");
+    // Right-hand slot, beside the rest of the row's detail.
+    expect(screen.getByText("(60 - 89)").parentElement?.textContent).toContain("700 lines");
   });
 
   it("opens the file rather than the row when the name is clicked", () => {
@@ -123,9 +134,13 @@ describe("file rows", () => {
     fireEvent.click(screen.getByRole("button", { name: "ToolCallTimeline.tsx" }));
     expect(onOpen).toHaveBeenCalledWith(read.meta!.filePath);
     // Still closed: the name is not the toggle.
-    expect(screen.getByRole("button", { name: "Show output" }).getAttribute("aria-expanded")).toBe(
-      "false",
-    );
+    expect(row().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("expands from anywhere on the row, not just the chevron", () => {
+    renderWithOpener(() => {});
+    fireEvent.click(screen.getByText("700 lines"));
+    expect(row().getAttribute("aria-expanded")).toBe("true");
   });
 
   it("stays plain text where nothing can open a file, such as the side panel", () => {

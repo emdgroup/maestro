@@ -164,6 +164,9 @@ export function splitTitleAroundPath(
  * A file row's label: the bare file name until the row is open, the path it came
  * from once it is. The name is its own control — clicking it opens the file in
  * the side panel rather than expanding the row.
+ *
+ * Whatever the title said after the file name — a line range — is left out and
+ * shown by `RowMeta` instead, so every row's trailing detail is on one edge.
  */
 export function FileLabel({
   tc,
@@ -179,7 +182,6 @@ export function FileLabel({
   const path = tc.meta!.filePath!;
   const split = splitTitleAroundPath(tc.title, path);
   const before = split ? split.before : `${tc.title.split(" ")[0]} `;
-  const after = split ? split.after : "";
   // The title's own token is usually project-relative; `meta.filePath` is absolute.
   const shown = expanded ? (split?.file ?? path) : basename(path);
 
@@ -197,9 +199,28 @@ export function FileLabel({
       >
         {shown}
       </button>
-      {after && <span className="shrink-0">{after}</span>}
     </span>
   );
+}
+
+/** The tail of a file title — "(60 - 89)" — which `FileLabel` drops. */
+export function titleSuffix(tc: ToolCallItem): string | null {
+  const path = tc.meta?.filePath;
+  if (!path) return null;
+  const after = splitTitleAroundPath(tc.title, path)?.after.trim();
+  return after ? after : null;
+}
+
+/**
+ * A row is a `div` rather than a `button` so the file name — and the PR chip —
+ * can be real controls inside it while the rest of the label still toggles it.
+ */
+export function rowKeyDown(toggle: () => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    toggle();
+  };
 }
 
 /**
@@ -212,23 +233,24 @@ function readRange(meta: NonNullable<ToolCallItem["meta"]>): string | null {
 
 /**
  * The right-hand slot: what the call actually did, in the units of its own tool.
- * Rendered as a sibling of the row button rather than inside it, so the PR chip
- * can be its own control.
+ * `prefix` carries the tail of a file title, which the label dropped so that it
+ * would align here with everything else rather than trailing the file name.
  */
-export function RowMeta({ tc }: { tc: ToolCallItem }) {
+export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | null }) {
   const meta = tc.meta;
-  if (!meta) return null;
+  if (!meta && !prefix) return null;
 
   const parts: React.ReactNode[] = [];
+  if (prefix) parts.push(<span key="suffix">{prefix}</span>);
 
-  if (meta.linesAdded || meta.linesRemoved) {
+  if (meta?.linesAdded || meta?.linesRemoved) {
     parts.push(
       <span key="diff">
         <span className="text-success">+{meta.linesAdded ?? 0}</span>{" "}
         <span className="text-destructive">−{meta.linesRemoved ?? 0}</span>
       </span>,
     );
-  } else {
+  } else if (meta) {
     const range = readRange(meta);
     if (range) parts.push(<span key="range">{range}</span>);
     else if (meta.matchFileCount != null) {
@@ -240,7 +262,7 @@ export function RowMeta({ tc }: { tc: ToolCallItem }) {
     }
   }
 
-  const git = meta.git;
+  const git = meta?.git;
   if (git?.commitSha) {
     parts.push(
       <span key="sha" className="rounded-full border border-border px-1.5 font-mono">
@@ -263,7 +285,10 @@ export function RowMeta({ tc }: { tc: ToolCallItem }) {
         <button
           key="pr"
           type="button"
-          onClick={() => void openUrl(url)}
+          onClick={(e) => {
+            e.stopPropagation();
+            void openUrl(url);
+          }}
           className="rounded-full border border-border px-1.5 text-success hover:bg-muted/40"
         >
           {label}
@@ -278,7 +303,7 @@ export function RowMeta({ tc }: { tc: ToolCallItem }) {
 
   if (parts.length === 0) return null;
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[10px] text-muted-foreground">
+    <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
       {parts}
     </span>
   );
@@ -444,6 +469,7 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
         const isExpanded = expandedIds.has(tc.toolCallId);
         const running = isRunning(tc);
         const isLast = i === items.length - 1;
+        const isFileRow = Boolean(openFile && tc.meta?.filePath);
         // Expanded, the label stops being a truncated summary and becomes the
         // command in full — so the row never shows the same string twice.
         const showCommand = isExpanded && labelBecomesCommand(tc);
@@ -459,73 +485,55 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
               {!isLast && <span className="mt-1 w-px flex-1 bg-border" />}
             </div>
             <div className={cn("min-w-0 flex-1", !isLast && "pb-1.5")}>
-              <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
-                {/* A file name is its own control, so it cannot sit inside the
-                    toggle — the row splits into a label and a chevron instead. */}
-                {openFile && tc.meta?.filePath ? (
-                  <>
-                    <FileLabel
-                      tc={tc}
-                      expanded={isExpanded}
-                      onOpenFile={openFile}
-                      className={cn(
-                        "min-w-0 px-1 py-0.5 text-xs",
-                        running ? "shimmer-text" : "text-foreground/80",
-                      )}
-                    />
-                    <StatusWord tc={tc} />
-                    <RowMeta tc={tc} />
-                    {hasContent && (
-                      <button
-                        type="button"
-                        aria-expanded={isExpanded}
-                        aria-label={isExpanded ? "Hide output" : "Show output"}
-                        onClick={() => toggleExpand(tc.toolCallId)}
-                        className="ml-1 shrink-0 rounded-md p-0.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground/75"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="size-3" />
-                        ) : (
-                          <ChevronRight className="size-3" />
-                        )}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled={!hasContent}
-                      aria-expanded={hasContent ? isExpanded : undefined}
-                      onClick={() => hasContent && toggleExpand(tc.toolCallId)}
-                      className={cn(
-                        "flex min-w-0 gap-2 rounded-md px-1 py-0.5 text-left text-xs",
-                        showCommand ? "flex-1 items-start" : "items-center",
-                        hasContent ? "cursor-pointer hover:bg-muted/40" : "cursor-default",
-                      )}
-                    >
-                      {showCommand ? (
-                        <CommandLabel command={tc.title} />
-                      ) : (
-                        <ToolCallTitle
-                          title={rowLabel(tc)}
-                          className={cn(
-                            "truncate",
-                            running
-                              ? "shimmer-text"
-                              : isBlocked(tc)
-                                ? "text-warning/80"
-                                : tc.status === "error"
-                                  ? "text-destructive"
-                                  : "text-foreground/80",
-                          )}
-                        />
-                      )}
-                      <StatusWord tc={tc} />
-                    </button>
-                    <RowMeta tc={tc} />
-                  </>
+              {/* One shape for every row: label, then the right edge carrying the
+                  detail and the chevron. The row is the toggle — a file name
+                  inside it is a control of its own and stops the click. */}
+              <div
+                role={hasContent ? "button" : undefined}
+                tabIndex={hasContent ? 0 : undefined}
+                aria-expanded={hasContent ? isExpanded : undefined}
+                onClick={hasContent ? () => toggleExpand(tc.toolCallId) : undefined}
+                onKeyDown={hasContent ? rowKeyDown(() => toggleExpand(tc.toolCallId)) : undefined}
+                className={cn(
+                  "flex max-w-full gap-2 rounded-md px-1 py-0.5 text-xs",
+                  showCommand ? "items-start" : "items-center",
+                  hasContent && "cursor-pointer hover:bg-muted/40",
                 )}
+              >
+                {isFileRow ? (
+                  <FileLabel
+                    tc={tc}
+                    expanded={isExpanded}
+                    onOpenFile={openFile!}
+                    className={cn(running ? "shimmer-text" : "text-foreground/80")}
+                  />
+                ) : showCommand ? (
+                  <CommandLabel command={tc.title} />
+                ) : (
+                  <ToolCallTitle
+                    title={rowLabel(tc)}
+                    className={cn(
+                      "min-w-0 truncate",
+                      running
+                        ? "shimmer-text"
+                        : isBlocked(tc)
+                          ? "text-warning/80"
+                          : tc.status === "error"
+                            ? "text-destructive"
+                            : "text-foreground/80",
+                    )}
+                  />
+                )}
+                <StatusWord tc={tc} />
+                <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+                  <RowMeta tc={tc} prefix={isFileRow ? titleSuffix(tc) : null} />
+                  {hasContent &&
+                    (isExpanded ? (
+                      <ChevronDown className="size-3 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="size-3 text-muted-foreground" />
+                    ))}
+                </span>
               </div>
               {isExpanded && <RowBody tc={tc} />}
             </div>
