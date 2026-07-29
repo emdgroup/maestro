@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Terminal as TerminalIcon, GitBranch } from "lucide-react";
+import { Terminal as TerminalIcon, Folder } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { generateSessionName, slugifyName } from "@/lib/generateSessionName";
 import { cn } from "@/lib/utils.ts";
@@ -329,9 +329,9 @@ export function SpawnSessionDialog({
                           type="button"
                           onClick={() => setNewWorktree(isNew)}
                           className={cn(
-                            "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors",
+                            "rounded-full px-2.5 py-[3px] text-[10px] font-medium transition-colors",
                             newWorktree === isNew
-                              ? "bg-background text-foreground shadow-sm"
+                              ? "bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
                               : "text-muted-foreground hover:text-foreground/80",
                           )}
                         >
@@ -350,12 +350,15 @@ export function SpawnSessionDialog({
                       setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
                     }
                   >
-                    <SelectTrigger id="spawn-worktree" className="w-full max-w-sm">
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <GitBranch className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                    <SelectTrigger
+                      id="spawn-worktree"
+                      className="w-full gap-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+                    >
+                      <span className="flex items-center gap-2 min-w-0 flex-1">
+                        <Folder className="size-3.5 text-muted-foreground shrink-0" />
                         {selectedWorktree ? (
                           <>
-                            <span className="font-mono text-sm truncate flex-1">
+                            <span className="text-sm truncate flex-1 text-left">
                               {selectedWorktree.branch_name}
                             </span>
                             {selectedWorktree.path === repoPath && (
@@ -382,7 +385,8 @@ export function SpawnSessionDialog({
                                 <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
                               }
                             >
-                              <span className="font-mono flex-1 truncate">{wt.branch_name}</span>
+                              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="flex-1 truncate">{wt.branch_name}</span>
                               {wt.path === repoPath && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
                                   default
