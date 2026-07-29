@@ -1,11 +1,10 @@
 import { useState, useCallback, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
 import { slugifyName } from "@/lib/generateSessionName";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
-import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
+import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
 import { useUpdateTask } from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
@@ -23,9 +22,8 @@ export function useExecuteTask(
   projectPath: string,
   connection: ConnectionKey,
 ) {
-  const queryClient = useQueryClient();
   const defaultAgent = useDefaultAgent();
-  const createWorktreeMutation = useCreateWorktreeMutation();
+  const { resolveWorktree } = useResolveWorktree();
   const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
   const updateTask = useUpdateTask();
   const [isExecuting, setIsExecuting] = useState(false);
@@ -46,34 +44,15 @@ export function useExecuteTask(
 
     try {
       // Resolve cwd and branch
-      let cwd: string;
-      let branchName: string | undefined;
-
-      if (task.isolated_worktree) {
-        const worktrees = await queryClient.fetchQuery({
-          queryKey: worktreeQueryKeys.list(projectId),
-          queryFn: () => api.listWorktreesWithStatus(projectId, projectPath),
-        });
-        const existingWorktree = worktrees.find((w) => w.task_id === task.id);
-
-        if (existingWorktree && existingWorktree.id != null) {
-          cwd = existingWorktree.path;
-          branchName = existingWorktree.branch_name;
-        } else {
-          const slug = slugifyName(task.title);
-          const worktree = await createWorktreeMutation.mutateAsync({
+      const { cwd, branchName } = task.isolated_worktree
+        ? await resolveWorktree({
             projectId,
+            repoPath: projectPath,
             taskId: task.id,
             baseBranch: task.base_branch,
-            newBranchName: `${task.id}-${slug}`,
-            repoPath: projectPath,
-          });
-          cwd = `${projectPath}/${worktree.path}`;
-          branchName = worktree.branch_name;
-        }
-      } else {
-        cwd = projectPath;
-      }
+            newBranchName: `${task.id}-${slugifyName(task.title)}`,
+          })
+        : { cwd: projectPath, branchName: null };
 
       // Check for dirty worktree
       try {

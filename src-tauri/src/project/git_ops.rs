@@ -141,6 +141,18 @@ pub async fn check_is_git_repo(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<bool, String> {
+    is_git_repo(&app_state, path, connection_id, wsl_connection_id, docker_connection_id).await
+}
+
+/// Non-IPC form of [`check_is_git_repo`], so callers that already hold an `AppState` can gate
+/// on it without going back through the command layer.
+pub async fn is_git_repo(
+    app_state: &AppState,
+    path: String,
+    connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
+) -> Result<bool, String> {
     if let Some(docker_id) = docker_connection_id {
         let container_name: String = {
             let db = app_state.db.lock().map_err(|e| e.to_string())?;

@@ -2,6 +2,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 function parseDiffStat(
@@ -94,14 +95,32 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
       {(worktree.is_zombie || worktree.is_orphan) && (
         <div className="flex items-center gap-1.5 mt-2">
           {worktree.is_zombie && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium">
-              Zombie
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium" />
+                }
+              >
+                Unused
+              </TooltipTrigger>
+              <TooltipContent>
+                Maestro created this worktree, but no task or session uses it any more.
+              </TooltipContent>
+            </Tooltip>
           )}
           {worktree.is_orphan && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-              Orphan
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium" />
+                }
+              >
+                Untracked
+              </TooltipTrigger>
+              <TooltipContent>
+                This folder exists on disk, but Maestro has no record of it.
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       )}

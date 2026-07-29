@@ -180,7 +180,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           description: draft.description || null,
           priority: draft.priority,
           agent_id: draft.agentId,
-          isolated_worktree: draft.isolatedWorktree,
+          // A non-git project has no worktree toggle in the UI, so never persist it as on.
+          isolated_worktree: isGitRepo ? draft.isolatedWorktree : false,
           auto_approve: draft.autoApprove,
           base_branch: draft.baseBranch || undefined,
           labels: draft.labels,

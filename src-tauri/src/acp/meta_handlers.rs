@@ -155,9 +155,39 @@ pub async fn list_acp_sessions(
             session_id: e.session_id,
             title: e.title,
             updated_at: e.updated_at,
+            folder: None,
         }).collect(),
         resp.next_cursor,
     );
+
+    // Folded in here rather than exposed as its own command: this handler already knows the
+    // project, so the folder rides along on the reply the history modal is already waiting for.
+    let project_location = {
+        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
+            )),
+        ).ok()
+    };
+    if let Some((project_path, project_connection)) = project_location {
+        let folders = crate::project::session_state::read_project_state(
+            &app_state,
+            &project_path,
+            project_connection,
+        )
+        .await
+        .session_folders;
+        for entry in &mut entries {
+            entry.folder = folders
+                .iter()
+                .find(|f| f.agent_id == agent_id && f.acp_session_id == entry.session_id)
+                .map(|f| f.relative_path.clone());
+        }
+    }
 
     let aliases = {
         let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;

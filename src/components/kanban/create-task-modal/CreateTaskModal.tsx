@@ -179,7 +179,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         agent_id: data.agentId || null,
         priority: data.priority,
         auto_approve: data.autoApprove,
-        isolated_worktree: data.isolatedWorktree,
+        // A non-git project has no worktree toggle in the UI, so never persist it as on.
+        isolated_worktree: isGitRepo ? data.isolatedWorktree : false,
         model_override: null,
       },
       {

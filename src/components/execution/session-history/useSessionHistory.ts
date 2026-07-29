@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type { ConnectionKey, DiscoveredAgent, WorktreeWithStatus } from "@/types/bindings";
+import { toPosixPath } from "@/lib/path-utils";
 import {
   useSessionListQuery,
   useLoadAcpSessionMutation,
@@ -14,6 +15,31 @@ export type Preset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
 export interface PendingRestore {
   sessionId: string;
   title: string | null;
+}
+
+function samePath(a: string, b: string) {
+  const normalize = (p: string) => toPosixPath(p).replace(/\/+$/, "");
+  return normalize(a) === normalize(b);
+}
+
+/**
+ * Where a session should reopen, given the folder it was recorded as having run in.
+ *
+ * `folder` is relative to the project root — `""` is the root itself, `null`/`undefined` means
+ * nothing was recorded. Returns `null` when the answer is unknown, either because there is no
+ * record or because the worktree it names no longer exists; both leave the caller to ask.
+ */
+export function resolveRecordedWorktree(
+  folder: string | null | undefined,
+  repoPath: string,
+  worktrees: Pick<WorktreeWithStatus, "path" | "branch_name">[],
+): { cwd: string; branch: string | null } | null {
+  if (folder == null) return null;
+  const target = folder === "" ? repoPath : `${repoPath}/${folder}`;
+  const wt = worktrees.find((w) => samePath(w.path, target));
+  // The root is always reopenable, whether or not git reports it among the worktrees.
+  if (folder === "") return { cwd: repoPath, branch: wt?.branch_name ?? null };
+  return wt ? { cwd: wt.path, branch: wt.branch_name } : null;
 }
 
 interface Props {
@@ -166,19 +192,30 @@ export function useSessionHistory({
     setTicked(new Set());
   }
 
+  const recordedTarget = useCallback(
+    (sessionId: string) =>
+      resolveRecordedWorktree(
+        sessions.find((s) => s.session_id === sessionId)?.folder,
+        repoPath,
+        worktrees,
+      ),
+    [sessions, repoPath, worktrees],
+  );
+
   const openSession = useCallback(
     (sessionId: string, title: string | null) => {
       if (!agentId) return;
-      if (worktrees.length <= 1) {
+      const recorded = recordedTarget(sessionId);
+      if (recorded || worktrees.length <= 1) {
         loadMutation.mutate(
           {
             agentId,
             sessionId,
-            cwd: repoPath,
+            cwd: recorded?.cwd ?? repoPath,
             connection,
             sessionName: title,
             projectId,
-            worktreeBranch: worktrees[0]?.branch_name ?? null,
+            worktreeBranch: recorded ? recorded.branch : (worktrees[0]?.branch_name ?? null),
           },
           {
             onSuccess: (key) => {
@@ -193,7 +230,17 @@ export function useSessionHistory({
         setPendingRestore({ sessionId, title });
       }
     },
-    [agentId, worktrees, repoPath, connection, projectId, loadMutation, onSessionLoaded, onClose],
+    [
+      agentId,
+      worktrees,
+      repoPath,
+      connection,
+      projectId,
+      loadMutation,
+      onSessionLoaded,
+      onClose,
+      recordedTarget,
+    ],
   );
 
   function handleRowClick(sessionId: string, title: string | null) {
@@ -211,15 +258,16 @@ export function useSessionHistory({
     let lastKey: number | null = null;
     for (const sessionId of ids) {
       const entry = sessions.find((s) => s.session_id === sessionId);
+      const recorded = recordedTarget(sessionId);
       loadMutation.mutate(
         {
           agentId,
           sessionId,
-          cwd: repoPath,
+          cwd: recorded?.cwd ?? repoPath,
           connection,
           sessionName: entry?.title ?? null,
           projectId,
-          worktreeBranch: worktrees[0]?.branch_name ?? null,
+          worktreeBranch: recorded ? recorded.branch : (worktrees[0]?.branch_name ?? null),
         },
         {
           onSuccess: (key) => {
