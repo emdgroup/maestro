@@ -21,6 +21,7 @@ import {
 } from "../activity/utils";
 import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
+import { cn } from "@/lib/utils.ts";
 import { toPosixPath } from "@/lib/path-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
@@ -224,9 +225,10 @@ export function AgentActivityPanel({
   const {
     sidePanelCollapsed,
     setSidePanelCollapsed,
-    sidePanelRef,
+    canAutoExpand,
+    expandAuto,
     sidePanelElementRef,
-    leftPanelRef,
+    groupElementRef,
     maximized,
     sidePanelPlan,
     handleMaximizedChange,
@@ -262,11 +264,22 @@ export function AgentActivityPanel({
     openTabKind,
     openAcpTerminalTab,
     latestCanvasSurfaceId,
+    unseenTabIds,
+    markTabSeen,
   } = useSidePanelTabs({
     hasPlan: !!sidePanelPlan,
     canvasMap: liveState.canvasMap,
     hasArtifacts: localWorkingFiles.length > 0,
   });
+
+  // A visible tab has been seen; a new one only pulls the panel open when there is room.
+  useEffect(() => {
+    if (!sidePanelCollapsed) markTabSeen(activeTabId);
+  }, [sidePanelCollapsed, activeTabId, markTabSeen]);
+
+  useEffect(() => {
+    if (canAutoExpand && unseenTabIds.size > 0) expandAuto();
+  }, [canAutoExpand, unseenTabIds, expandAuto]);
 
   const isProcessing =
     activityInfo?.status === "thinking" ||
@@ -632,14 +645,13 @@ export function AgentActivityPanel({
           onClose={() => setIsAuthModalOpen(false)}
         />
       )}
-      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 overflow-hidden">
-        <ResizablePanel
-          panelRef={leftPanelRef}
-          minSize="42rem"
-          collapsible
-          collapsedSize={0}
-          className="flex flex-col min-h-0 overflow-hidden bg-card"
-        >
+      <ResizablePanelGroup
+        orientation="horizontal"
+        elementRef={groupElementRef}
+        disabled={sidePanelCollapsed || maximized}
+        className="relative flex-1 min-h-0 overflow-hidden"
+      >
+        <ResizablePanel minSize="42rem" className="flex flex-col min-h-0 overflow-hidden bg-card">
           <div className="flex flex-col flex-1 min-h-0">
             <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
               {headerSlot}
@@ -647,15 +659,19 @@ export function AgentActivityPanel({
             </div>
           </div>
         </ResizablePanel>
-        {!maximized && <ResizableHandle withHandle />}
+        {!maximized && !sidePanelCollapsed && <ResizableHandle withHandle />}
         <ResizablePanel
-          panelRef={sidePanelRef}
           elementRef={sidePanelElementRef}
           defaultSize={"60%"}
           minSize={"22rem"}
-          collapsible
-          collapsedSize="2.75rem"
-          className="flex flex-col min-h-0 overflow-hidden"
+          className={cn(
+            "flex flex-col min-h-0 overflow-hidden",
+            // Maximized floats over the stream; collapsed pins the panel to the icon
+            // strip. Both override the group's inline flex sizing on purpose, so the
+            // dragged layout is still there when the panel returns to expanded.
+            maximized && "absolute inset-0 z-20",
+            !maximized && sidePanelCollapsed && "basis-11! grow-0! shrink-0!",
+          )}
         >
           <ExecutionSidePanel
             fill
@@ -680,6 +696,7 @@ export function AgentActivityPanel({
             onPlanRespond={handlePlanRespond}
             collapsed={sidePanelCollapsed}
             onCollapsedChange={(v) => setSidePanelCollapsed(v)}
+            unseenTabIds={unseenTabIds}
             maximized={maximized}
             onMaximizedChange={handleMaximizedChange}
             onSpawnShell={onSpawnShell}

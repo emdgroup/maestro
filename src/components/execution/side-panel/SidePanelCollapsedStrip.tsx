@@ -34,6 +34,7 @@ interface SidePanelCollapsedStripProps {
   onCollapsedChange: (c: boolean) => void;
   onMaximizedChange?: (v: boolean) => void;
   addTabContent: (side: "bottom" | "left") => React.ReactNode;
+  unseenTabIds: ReadonlySet<string>;
 }
 
 export function SidePanelCollapsedStrip({
@@ -43,6 +44,7 @@ export function SidePanelCollapsedStrip({
   onCollapsedChange,
   onMaximizedChange,
   addTabContent,
+  unseenTabIds,
 }: SidePanelCollapsedStripProps) {
   return (
     <div className="flex flex-col items-center py-2 gap-1">
@@ -68,13 +70,16 @@ export function SidePanelCollapsedStrip({
                 onCollapsedChange(false);
               }}
               className={cn(
-                "p-2 rounded-md transition-colors",
+                "relative p-2 rounded-md transition-colors",
                 activeTabId === id
                   ? "text-foreground bg-muted/60"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
               )}
             >
               <Icon className="w-4 h-4" />
+              {unseenTabIds.has(id) && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+              )}
             </TooltipTrigger>
             <TooltipContent>{label}</TooltipContent>
           </Tooltip>
