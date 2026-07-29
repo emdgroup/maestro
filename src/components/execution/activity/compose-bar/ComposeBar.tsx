@@ -130,18 +130,24 @@ export function ComposeBar({
 
   const selectCommand = useCallback(
     (cmd: AvailableCommand) => {
-      const inserted = `/${cmd.name} `;
+      const before = value.slice(0, commandAC.commandTriggerOffset);
+      const after = value.slice(textareaRef.current?.selectionStart ?? value.length);
+      const insertion = `/${cmd.name} `;
+      const newValue = `${before}${insertion}${after.trimStart()}`;
       flushSync(() => {
-        setValue(inserted);
+        setValue(newValue);
         commandAC.reset();
       });
       if (textareaRef.current) {
         textareaRef.current.focus();
-        textareaRef.current.selectionStart = inserted.length;
-        textareaRef.current.selectionEnd = inserted.length;
+        const cursorPos = before.length + insertion.length;
+        textareaRef.current.selectionStart = cursorPos;
+        textareaRef.current.selectionEnd = cursorPos;
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
       }
     },
-    [commandAC],
+    [value, commandAC],
   );
 
   const handleSend = useCallback(async () => {
@@ -273,7 +279,7 @@ export function ComposeBar({
     const cursor = e.target.selectionStart ?? newValue.length;
     setValue(newValue);
     mentionAC.setMentions((prev) => prev.filter((m) => newValue.includes(`@${m.displayName}`)));
-    const commandDetected = commandAC.onInputChange(newValue);
+    const commandDetected = commandAC.onInputChange(newValue, cursor);
     if (commandDetected) mentionAC.closeMentions();
     else mentionAC.onInputChange(newValue, cursor);
     const el = e.target;

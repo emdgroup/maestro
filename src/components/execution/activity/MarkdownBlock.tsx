@@ -23,7 +23,10 @@ import "katex/contrib/mhchem";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import { commands } from "@/types/bindings";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { sanitizeSchema } from "./markdown-sanitize";
+import { COMMAND_TAG, rehypeSlashCommands } from "./markdown-commands";
+import type { AvailableCommand } from "./types";
 import { InteractiveTable, InteractiveTh, InteractiveTbody } from "./MarkdownTableSort";
 import { CodeBlockWrapper } from "./HighlightedCode";
 import { MermaidBlock } from "./MermaidBlock";
@@ -108,6 +111,43 @@ function scrollToTarget(target: HTMLElement): void {
 }
 
 export const OpenFileContext = createContext<((uri: string) => void) | undefined>(undefined);
+
+const NO_COMMANDS: AvailableCommand[] = [];
+/** The session's slash commands, used to look a highlighted `/name` up on hover. */
+export const CommandsContext = createContext<AvailableCommand[]>(NO_COMMANDS);
+
+/**
+ * A `/name` the rehype plugin marked as command-shaped. The lookup happens here
+ * rather than at parse time so a restored session — whose command list may never
+ * arrive — still highlights; it just has nothing to describe on hover. When the
+ * list *is* loaded it is authoritative, so a bare `/tmp` falls back to plain text.
+ */
+function MarkdownCommandComponent({
+  children,
+  ...props
+}: {
+  children?: ReactNode;
+  "data-command"?: string;
+  dataCommand?: string;
+}) {
+  const available = useContext(CommandsContext);
+  const name = props["data-command"] ?? props.dataCommand;
+  const match = available.find((c) => c.name === name);
+  if (!name || (available.length > 0 && !match)) return <>{children}</>;
+
+  const chip = (
+    <span className="text-accent font-mono text-xs border-b border-dotted border-accent/60">
+      {children}
+    </span>
+  );
+  if (!match?.description) return chip;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="cursor-help" />}>{chip}</TooltipTrigger>
+      <TooltipContent>{match.description}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function MarkdownAnchorComponent({
   href,
@@ -229,16 +269,25 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   breaks,
   projectId,
   baseDir,
+  slashCommands,
 }: {
   text: string;
   breaks?: boolean;
   projectId?: number;
   baseDir?: string;
+  /** Highlight `/command` tokens. Opt-in: only user messages send commands. */
+  slashCommands?: boolean;
 }) {
   const components = useMemo(() => {
     if (!projectId) return MARKDOWN_COMPONENTS;
     return { ...MARKDOWN_COMPONENTS, img: ProxiedImage };
   }, [projectId]);
+
+  const rehypePlugins = useMemo(
+    () =>
+      slashCommands ? [...MARKDOWN_PLUGINS.rehype!, rehypeSlashCommands] : MARKDOWN_PLUGINS.rehype,
+    [slashCommands],
+  );
 
   const ctxValue = useMemo(
     () => (projectId !== undefined ? { projectId, baseDir } : undefined),
@@ -255,7 +304,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         remarkPlugins={
           breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark
         }
-        rehypePlugins={MARKDOWN_PLUGINS.rehype}
+        rehypePlugins={rehypePlugins}
         urlTransform={markdownUrlTransform}
         // biome-ignore lint/suspicious/noExplicitAny: react-markdown's Components type is complex; cast is correct at runtime
         components={components as any}
@@ -428,6 +477,7 @@ export const MARKDOWN_PLUGINS = {
 
 export const MARKDOWN_COMPONENTS = {
   code: MarkdownCodeComponent,
+  [COMMAND_TAG]: MarkdownCommandComponent,
   h1: ({ children, id }: { children?: ReactNode; id?: string }) => (
     <h1 id={id} className="text-xl font-bold mt-4 mb-2">
       {children}
