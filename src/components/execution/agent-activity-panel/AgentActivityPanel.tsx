@@ -662,16 +662,17 @@ export function AgentActivityPanel({
           </div>
         </ResizablePanel>
         {/*
-          Draggable but not drawn: the panels already meet at a visible border, so the
-          separator only needs its hit area. Collapsed or maximized there is nothing to
-          drag between, so it goes away entirely.
+          Draggable but not drawn. It takes the panels' own background rather than
+          `bg-transparent`, which would leave a 1px slot showing the view behind the
+          group — a thin dark line, and a hook where the stream card's rounded corner
+          curves away from it. Collapsed or maximized there is nothing to drag
+          between, so it goes away entirely; `disabled` is what suppresses the drag
+          target, since the library falls back to the panel edge when a separator is
+          missing.
         */}
         <ResizableHandle
           disabled={sidePanelCollapsed || maximized}
-          className={cn(
-            "bg-transparent hover:bg-transparent",
-            (sidePanelCollapsed || maximized) && "hidden",
-          )}
+          className={cn("bg-card hover:bg-card", (sidePanelCollapsed || maximized) && "hidden")}
         />
         <ResizablePanel
           elementRef={sidePanelElementRef}
