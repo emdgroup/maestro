@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activityReducer, type ActivityAction } from "./activityReducer";
+import { rowLabel } from "./ToolCallTimeline";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import type {
   ActivityState,
@@ -561,6 +562,38 @@ describe("activityReducer — tool_call_update", () => {
 
     expect(state.toolCallMap.get("tc-1")?.status).toBe("error");
     expect(toolCallItems(state)[0].item.status).toBe("error");
+  });
+
+  it("adopts a kind the create frame could not supply", () => {
+    const state = activityReducer(
+      makeState({
+        items: [{ type: "toolCall", item: toolCall("tc-1", { kind: "other" }) }],
+        toolCallMap: new Map([["tc-1", toolCall("tc-1", { kind: "other" })]]),
+      }),
+      event(
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tc-1",
+          kind: "execute",
+          rawInput: { command: "git status", description: "Check the working tree" },
+        },
+        { rawInput: { command: "git status", description: "Check the working tree" } },
+      ),
+    );
+
+    const tc = state.toolCallMap.get("tc-1")!;
+    expect(tc.kind).toBe("execute");
+    // The whole point of adopting it: the row can now prefer the description.
+    expect(rowLabel(tc)).toBe("Check the working tree");
+  });
+
+  it("keeps the kind an update leaves out", () => {
+    const state = activityReducer(
+      makeState({ toolCallMap: new Map([["tc-1", toolCall("tc-1", { kind: "execute" })]]) }),
+      event({ sessionUpdate: "tool_call_update", toolCallId: "tc-1", status: "completed" }),
+    );
+
+    expect(state.toolCallMap.get("tc-1")?.kind).toBe("execute");
   });
 
   it("ignores an update for a tool call it has never seen", () => {
