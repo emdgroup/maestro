@@ -29,6 +29,8 @@ dist-ssr
 
 # claude plans
 .claude/plans/
+# claude agent worktrees
+.claude/worktrees/
 
 # Local brainstorming images
 brainstorm-img/
