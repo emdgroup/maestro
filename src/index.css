@@ -363,15 +363,7 @@
   -webkit-text-fill-color: transparent;
 }
 
-.selected-session-item {
-  background: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--accent) 28%, transparent),
-    color-mix(in oklch, var(--accent) 8%, transparent) 55%,
-    transparent
-  );
-}
-
+.selected-session-item,
 .selected-file-item {
   background: linear-gradient(
     to right,
@@ -429,11 +421,6 @@
   opacity: 1;
   pointer-events: auto;
   transition: opacity 0.15s 0.1s;
-}
-.session-sidebar[data-state="collapsed"] .pr-row.selected .pr-avatar-icon {
-  box-shadow:
-    0 0 0 2px var(--card),
-    0 0 0 3.5px var(--accent);
 }
 /* Row geometry is identical collapsed and expanded, so hover-expanding never
    shifts an avatar: the avatar column is exactly the collapsed rail width. */

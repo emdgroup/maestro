@@ -1,7 +1,12 @@
 {
   "default_agent": "claude-acp",
-  "updated_at": "2026-07-20T13:24:27.252142800+00:00",
-  "issue_tracking": null,
+  "updated_at": "2026-07-28T21:17:17.859915500+00:00",
+  "issue_tracking": {
+    "provider": "github",
+    "integration_id": "gh_cli",
+    "owner": "emdgroup",
+    "repo": "maestro"
+  },
   "reopen_sessions": true,
   "startup_tab": "agents"
 }
