@@ -11,6 +11,8 @@ interface BranchPickerProps {
   value: string;
   onChange: (branch: string) => void;
   error?: boolean;
+  /** Short word rendered as a divided prefix inside the trigger, e.g. "From". */
+  prefix?: string;
 }
 
 function BranchList({
@@ -43,7 +45,7 @@ function BranchList({
   );
 }
 
-export function BranchPicker({ value, onChange, error }: BranchPickerProps) {
+export function BranchPicker({ value, onChange, error, prefix }: BranchPickerProps) {
   const queryClient = useQueryClient();
   const project = useSelectedProject();
   const projectId = project?.id ?? null;
@@ -70,6 +72,11 @@ export function BranchPicker({ value, onChange, error }: BranchPickerProps) {
             error ? "border-destructive" : "border-border",
           )}
         >
+          {prefix && (
+            <span className="flex items-center self-stretch shrink-0 border-r border-border pr-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {prefix}
+            </span>
+          )}
           <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="flex-1 text-left truncate">{value || "Select branch..."}</span>
           <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
