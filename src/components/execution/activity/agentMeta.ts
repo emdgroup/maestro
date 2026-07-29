@@ -38,6 +38,9 @@ export type AgentMeta = {
   fileStartLine?: number;
   fileNumLines?: number;
   matchFileCount?: number;
+  /** What a content search looked for, and where — its title is a mangled command. */
+  searchPattern?: string;
+  searchScope?: string;
   agentType?: string;
   model?: string;
   outputTokens?: number;
@@ -231,7 +234,29 @@ function extractGenericMeta(raw: Record<string, unknown>): AgentMeta {
     result.matchFileCount = raw.locations.length;
   }
 
+  if (raw.kind === "search") {
+    const input = obj(raw.rawInput);
+    const pattern = str(input?.pattern) ?? str(input?.query);
+    // A scope is what separates a content search from a search for a *file name*,
+    // whose title ("Find `.maestro/state.json`") is already the pattern and reads
+    // better than anything rebuilt from it.
+    const scope = str(input?.glob) ?? str(input?.path);
+    if (pattern && (scope || input?.output_mode != null)) {
+      result.searchPattern = pattern;
+      if (scope) result.searchScope = shortenScope(scope);
+    }
+  }
+
   return result;
+}
+
+/**
+ * Search paths arrive absolute, which is most of a row's width spent on the part
+ * every row shares. Two trailing segments locate it well enough to read.
+ */
+function shortenScope(scope: string): string {
+  const segments = scope.split(/[\\/]/).filter(Boolean);
+  return segments.length > 2 ? `…/${segments.slice(-2).join("/")}` : segments.join("/");
 }
 
 // Add new agent extractors here — one function per agent format.

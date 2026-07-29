@@ -136,6 +136,42 @@ describe("extractAgentMeta — agents other than claude code", () => {
     expect(meta.matchFileCount).toBe(2);
   });
 
+  it("takes a search's pattern and scope from its inputs, not its invented title", () => {
+    const meta = extractAgentMeta({
+      _meta: { claudeCode: { toolName: "Grep" } },
+      kind: "search",
+      title: 'grep -n | head -80 "session_start_sha" C:\\Users\\me\\repo\\src-tauri\\src\\git',
+      rawInput: {
+        pattern: "session_start_sha",
+        path: "C:\\Users\\me\\repo\\src-tauri\\src\\git",
+        output_mode: "content",
+      },
+    });
+    expect(meta.searchPattern).toBe("session_start_sha");
+    expect(meta.searchScope).toBe("…/src/git");
+  });
+
+  it("prefers the glob over the path, and keeps a short scope whole", () => {
+    const meta = extractAgentMeta({
+      kind: "search",
+      rawInput: { pattern: "shimmer", glob: "*.css", path: "C:\\Users\\me\\repo" },
+    });
+    expect(meta.searchScope).toBe("*.css");
+    expect(
+      extractAgentMeta({ kind: "search", rawInput: { pattern: "x", path: "src/git" } }).searchScope,
+    ).toBe("src/git");
+  });
+
+  it("leaves a search for a file name alone — its title is already the pattern", () => {
+    const meta = extractAgentMeta({
+      _meta: { claudeCode: { toolName: "Glob" } },
+      kind: "search",
+      title: "Find `.maestro/canvas-skills.md`",
+      rawInput: { pattern: ".maestro/canvas-skills.md" },
+    });
+    expect(meta.searchPattern).toBeUndefined();
+  });
+
   it("lets a vendor extractor win over the generic one", () => {
     const meta = extractAgentMeta({
       _meta: { claudeCode: { toolName: "Grep", toolResponse: { numFiles: 9 } } },

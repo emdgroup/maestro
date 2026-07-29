@@ -217,6 +217,21 @@ describe("ActivityToolCallGroup", () => {
     expect(screen.getByText(/export function/)).toBeTruthy();
   });
 
+  it("labels a search by what it looked for, not by its invented command line", () => {
+    const tc: ToolCallItem = {
+      ...makeCall(
+        "a",
+        'grep -n -C 4 "session_start_sha" C:\\Users\\me\\repo\\src-tauri',
+        "completed",
+        "search",
+      ),
+      meta: { toolName: "Grep", searchPattern: "session_start_sha", searchScope: "…/me/repo" },
+    };
+    // The bolded verb is its own span, so read the flattened line.
+    const { container } = render(<ActivityToolCallGroup items={[tc]} />);
+    expect(container.textContent).toBe('Grep "session_start_sha" in …/me/repo');
+  });
+
   it("renders a group with nothing to open as plain text", () => {
     render(
       <ActivityToolCallGroup items={[makeCall("a", "Plan mode", "completed", "switch_mode")]} />,

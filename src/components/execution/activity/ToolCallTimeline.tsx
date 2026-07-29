@@ -105,10 +105,19 @@ export function rowIcon(tc: ToolCallItem): React.ElementType {
  * Shell calls carry both a command and the reason it was run. Collapsed, the
  * reason is the more useful of the two — the command is still shown in full once
  * the row is open, so nothing is lost.
+ *
+ * A content search has no such reason to offer, but its title is a command line
+ * the adapter *invented* — `grep -n | head -80 "pat" C:\long\absolute\path`,
+ * flags and all. Its inputs say the same thing without the theatre.
  */
 export function rowLabel(tc: ToolCallItem): string {
-  const description = tc.meta?.description;
-  return isTerminalKind(tc.kind) && description ? description : tc.title;
+  const meta = tc.meta;
+  if (isTerminalKind(tc.kind) && meta?.description) return meta.description;
+  if (meta?.searchPattern) {
+    const scope = meta.searchScope ? ` in ${meta.searchScope}` : "";
+    return `${meta.toolName ?? "Search"} "${meta.searchPattern}"${scope}`;
+  }
+  return tc.title;
 }
 
 /**
