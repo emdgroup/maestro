@@ -294,6 +294,7 @@ function processEvent(
         text: payload.content.text,
         isStreaming: true,
         messageId,
+        sentAt: Date.now(),
       };
       newState.items = [...finalizeStreaming(newState.items), { type: "message", item: msg }];
       return newState;

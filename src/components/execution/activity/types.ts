@@ -159,6 +159,8 @@ export type MessageItem = {
   text: string;
   isStreaming: boolean;
   messageId?: string;
+  /** When the first chunk arrived. Absent for messages built outside the reducer. */
+  sentAt?: number;
 };
 
 export type ThinkingItem = {

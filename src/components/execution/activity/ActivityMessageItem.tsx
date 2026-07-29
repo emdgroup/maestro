@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Check, Copy } from "lucide-react";
 import type { MessageItem } from "./types";
-import { Button } from "@/ui/button";
-import { MarkdownBlock, getCompleteBlocksText, useCopyToClipboard } from "./MarkdownBlock";
+import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
+import { MessageActionBar } from "./MessageActionBar";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
 
 export { getCompleteBlocksText } from "./MarkdownBlock";
@@ -31,7 +30,6 @@ export function TypingDots({ className }: { className?: string }) {
 export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
-  const { copied: messageCopied, copy: handleCopyMessage } = useCopyToClipboard(message.text);
 
   useEffect(() => {
     if (message.isStreaming) {
@@ -66,7 +64,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
   );
 
   return (
-    <div className="min-w-0 pb-1 group">
+    <div className="min-w-0 pb-1 group/message-block">
       <div className="text-sm leading-relaxed text-foreground">
         {message.isStreaming && isActivelyStreaming ? (
           <>
@@ -80,14 +78,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
         )}
       </div>
       {(!message.isStreaming || !isActivelyStreaming) && (
-        <Button
-          variant="ghost"
-          onClick={handleCopyMessage}
-          className="sticky bottom-14.5 float-right -mt-5 p-1 h-auto rounded-md text-transparent group-hover:text-muted-foreground hover:!text-foreground transition-colors"
-          aria-label={messageCopied ? "Copied" : "Copy response"}
-        >
-          {messageCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        </Button>
+        <MessageActionBar copyText={message.text} sentAt={message.sentAt} />
       )}
     </div>
   );
