@@ -263,12 +263,28 @@ describe("activityReducer — streaming text", () => {
     expect(contents).toEqual(["one two", "separate"]);
   });
 
-  it("marks the turn active on any event", () => {
+  it("marks the turn active on a turn-progress event", () => {
     const state = activityReducer(
       makeState({ isTurnActive: false }),
       event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "x" } }),
     );
     expect(state.isTurnActive).toBe(true);
+  });
+
+  // Agents emit these after session/load and after a turn ends. No turn_ended follows,
+  // so arming isTurnActive here strands the session as "thinking" forever.
+  it.each([
+    "usage_update",
+    "available_commands_update",
+    "config_option_update",
+    "current_model_update",
+    "current_mode_update",
+  ])("leaves the turn inactive on the out-of-turn %s event", (sessionUpdate) => {
+    const state = activityReducer(
+      makeState({ isTurnActive: false }),
+      event({ sessionUpdate } as unknown as SessionUpdatePayload),
+    );
+    expect(state.isTurnActive).toBe(false);
   });
 });
 

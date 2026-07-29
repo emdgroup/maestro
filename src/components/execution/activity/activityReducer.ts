@@ -157,12 +157,31 @@ function flushOrphans(state: ActivityState): ActivityState {
   return { ...state, items, toolCallMap: newMap, pendingOrphans: new Map() };
 }
 
+/**
+ * Updates that mean the agent is mid-turn. Everything else — usage, available commands,
+ * model/mode/config echoes — arrives *outside* a turn: agents emit them right after
+ * `session/load` and after a turn ends. No `turn_ended` follows them, so arming
+ * `isTurnActive` there leaves it stuck true for the rest of the session, which reads as
+ * "thinking" and keeps the compose bar disabled.
+ */
+const TURN_PROGRESS_UPDATES = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+  "user_message",
+  "user_message_chunk",
+]);
+
 function processEvent(
   state: ActivityState,
   payload: SessionUpdatePayload,
   raw: Record<string, unknown>,
 ): ActivityState {
-  const newState = { ...state, isTurnActive: true };
+  const newState = TURN_PROGRESS_UPDATES.has(payload.sessionUpdate)
+    ? { ...state, isTurnActive: true }
+    : state;
 
   switch (payload.sessionUpdate) {
     case "agent_thought_chunk": {
