@@ -58,9 +58,18 @@ export function MessageActionBar({
         // from the keyboard where there is no pointer to hover with.
         "flex h-7 items-center gap-0.5 text-xs text-muted-foreground/60 opacity-0 transition-opacity",
         "group-hover/message-block:opacity-100 focus-within:opacity-100",
-        align === "end" && "flex-row-reverse",
+        align === "end" && "justify-end",
       )}
     >
+      {sentAt !== undefined && (
+        <Tooltip>
+          <TooltipTrigger render={<span />} className="cursor-default px-1 tabular-nums">
+            {relativeTime(sentAt, Date.now())}
+          </TooltipTrigger>
+          <TooltipContent>{format(sentAt, "PPpp")}</TooltipContent>
+        </Tooltip>
+      )}
+      {children}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -77,18 +86,6 @@ export function MessageActionBar({
         </TooltipTrigger>
         <TooltipContent>{copied ? "Copied" : "Copy message"}</TooltipContent>
       </Tooltip>
-      {children}
-      {sentAt !== undefined && (
-        <Tooltip>
-          <TooltipTrigger
-            render={<span />}
-            className={cn("cursor-default px-1 tabular-nums", align === "end" && "order-first")}
-          >
-            {relativeTime(sentAt, Date.now())}
-          </TooltipTrigger>
-          <TooltipContent>{format(sentAt, "PPpp")}</TooltipContent>
-        </Tooltip>
-      )}
     </div>
   );
 }

@@ -93,8 +93,13 @@ export function AgentStreamContent({
                 return (
                   <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
                     <AgentResponseSection>
-                      {visibleItems.map((gi) => (
-                        <AgentStreamItem key={getItemKey(gi)} gi={gi} {...sharedItemProps} />
+                      {visibleItems.map((gi, i) => (
+                        <AgentStreamItem
+                          key={getItemKey(gi)}
+                          gi={gi}
+                          isLastInSection={i === visibleItems.length - 1}
+                          {...sharedItemProps}
+                        />
                       ))}
                     </AgentResponseSection>
                   </MessageScrollerItem>

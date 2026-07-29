@@ -17,6 +17,8 @@ interface AgentStreamItemProps {
   onOpenPlanOverlay: () => void;
   toolCallMap: Map<string, ToolCallItem>;
   onAuthLogin?: () => void;
+  /** Only the item closing an agent reply carries the action bar — see ActivityMessageItem. */
+  isLastInSection?: boolean;
 }
 
 export function AgentStreamItem({
@@ -24,6 +26,7 @@ export function AgentStreamItem({
   onOpenPlanOverlay,
   toolCallMap,
   onAuthLogin,
+  isLastInSection,
 }: AgentStreamItemProps) {
   if (gi.type === "toolGroup") {
     const tc = gi.items[0];
@@ -47,7 +50,9 @@ export function AgentStreamItem({
 
   const item = gi.item;
   if (item.type === "message") {
-    return <ActivityMessageItem key={item.item.id} message={item.item} />;
+    return (
+      <ActivityMessageItem key={item.item.id} message={item.item} showActions={isLastInSection} />
+    );
   }
   if (item.type === "thinking") {
     return <ActivityThinkingBlock key={item.item.id} thinking={item.item} />;
