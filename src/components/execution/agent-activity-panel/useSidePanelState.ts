@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { usePanelRef } from "react-resizable-panels";
 
 // Must match the `minSize` props on the two panels in AgentActivityPanel.
 const STREAM_MIN_REM = 42;
@@ -32,19 +33,38 @@ export function useSidePanelState({
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true);
   const [canAutoExpand, setCanAutoExpand] = useState(false);
   const sidePanelElementRef = useRef<HTMLDivElement>(null);
+  const sidePanelRef = usePanelRef();
   const groupElementRef = useRef<HTMLDivElement>(null);
   const manuallyCollapsedRef = useRef(false);
+  const didMountRef = useRef(false);
   const [maximized, setMaximized] = useState(false);
   const [sidePanelPlan, setSidePanelPlan] = useState<{
     requestId: string;
     payload: Record<string, unknown>;
   } | null>(null);
 
-  // Animate only the collapse/expand width change — a permanent transition would
-  // lag behind the resize handle while dragging.
+  // The Panel's own collapse API owns the width. A CSS override would land on the
+  // Panel's inner div and leave the outer flex child at its dragged size, so the
+  // stream would not reclaim the space. collapse() also remembers that size, which
+  // is what expand() restores.
+  //
+  // Animate only the changes we drive: when the panel is already where the state
+  // says, the user dragged it there and a transition would lag behind the pointer.
+  // The first-mount collapse is not animated either — it would play a slide on
+  // every session open.
   useLayoutEffect(() => {
+    const panel = sidePanelRef.current;
+    const needsSync = panel != null && panel.isCollapsed() !== sidePanelCollapsed;
+
     const el = sidePanelElementRef.current;
-    if (el) el.style.transition = "flex-basis 200ms ease, flex-grow 200ms ease";
+    if (el && needsSync && didMountRef.current) el.style.transition = "flex-grow 200ms ease";
+    didMountRef.current = true;
+
+    if (needsSync) {
+      if (sidePanelCollapsed) panel.collapse();
+      else panel.expand();
+    }
+
     const cleanup = setTimeout(() => {
       if (sidePanelElementRef.current) sidePanelElementRef.current.style.transition = "";
     }, 220);
@@ -53,7 +73,13 @@ export function useSidePanelState({
       clearTimeout(cleanup);
       if (el) el.style.transition = "";
     };
-  }, [sidePanelCollapsed, setScrollRestoreToken]);
+  }, [sidePanelCollapsed, sidePanelRef, setScrollRestoreToken]);
+
+  // Dragging the separator past the panel's minimum collapses it; mirror that back
+  // into state so the strip renders instead of a 44px-wide tab bar.
+  const syncCollapsedFromPanel = useCallback(() => {
+    setSidePanelCollapsed(sidePanelRef.current?.isCollapsed() ?? false);
+  }, [sidePanelRef]);
 
   // Width rules: under the two panels' combined minimum the side panel must collapse;
   // at twice the stream minimum there is room to bring it back on its own.
@@ -122,6 +148,8 @@ export function useSidePanelState({
     canAutoExpand,
     expandAuto,
     sidePanelElementRef,
+    sidePanelRef,
+    syncCollapsedFromPanel,
     groupElementRef,
     maximized,
     sidePanelPlan,

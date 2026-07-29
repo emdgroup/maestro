@@ -228,6 +228,8 @@ export function AgentActivityPanel({
     canAutoExpand,
     expandAuto,
     sidePanelElementRef,
+    sidePanelRef,
+    syncCollapsedFromPanel,
     groupElementRef,
     maximized,
     sidePanelPlan,
@@ -648,7 +650,7 @@ export function AgentActivityPanel({
       <ResizablePanelGroup
         orientation="horizontal"
         elementRef={groupElementRef}
-        disabled={sidePanelCollapsed || maximized}
+        disabled={maximized}
         className="relative flex-1 min-h-0 overflow-hidden"
       >
         <ResizablePanel minSize="42rem" className="flex flex-col min-h-0 overflow-hidden bg-card">
@@ -659,18 +661,20 @@ export function AgentActivityPanel({
             </div>
           </div>
         </ResizablePanel>
-        {!maximized && !sidePanelCollapsed && <ResizableHandle withHandle />}
+        <ResizableHandle withHandle />
         <ResizablePanel
           elementRef={sidePanelElementRef}
-          defaultSize={"60%"}
+          panelRef={sidePanelRef}
+          defaultSize={"40%"}
           minSize={"22rem"}
+          collapsible
+          collapsedSize={"2.75rem"}
+          onResize={syncCollapsedFromPanel}
           className={cn(
             "flex flex-col min-h-0 overflow-hidden",
-            // Maximized floats over the stream; collapsed pins the panel to the icon
-            // strip. Both override the group's inline flex sizing on purpose, so the
-            // dragged layout is still there when the panel returns to expanded.
+            // Maximized floats the panel over the group; the group keeps the dragged
+            // layout underneath for when the panel comes back.
             maximized && "absolute inset-0 z-20",
-            !maximized && sidePanelCollapsed && "basis-11! grow-0! shrink-0!",
           )}
         >
           <ExecutionSidePanel
