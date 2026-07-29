@@ -661,7 +661,18 @@ export function AgentActivityPanel({
             </div>
           </div>
         </ResizablePanel>
-        <ResizableHandle withHandle />
+        {/*
+          Draggable but not drawn: the panels already meet at a visible border, so the
+          separator only needs its hit area. Collapsed or maximized there is nothing to
+          drag between, so it goes away entirely.
+        */}
+        <ResizableHandle
+          disabled={sidePanelCollapsed || maximized}
+          className={cn(
+            "bg-transparent hover:bg-transparent",
+            (sidePanelCollapsed || maximized) && "hidden",
+          )}
+        />
         <ResizablePanel
           elementRef={sidePanelElementRef}
           panelRef={sidePanelRef}
