@@ -196,6 +196,20 @@ pub struct SessionSnapshot {
     pub task_id: Option<i32>,
 }
 
+/// Which directory a session ran in, so reopening it from Session History lands there again.
+///
+/// Keyed by agent as well as session, because session ids are only unique within one agent.
+/// The path is relative to the project root: this file travels with the project, so a user on
+/// another machine — or on a remote host — resolves it against a different absolute root.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct SessionFolder {
+    pub agent_id: String,
+    pub acp_session_id: String,
+    /// Relative to the project root; empty means the project root itself.
+    pub relative_path: String,
+}
+
 /// Project-level state stored in .maestro/state.json
 /// Contains snapshots of all tasks and worktrees for this project
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
@@ -208,6 +222,8 @@ pub struct ProjectState {
     /// Schema version for future migrations; defaults to 1 for backward compatibility
     pub schema_version: u32,
     pub restorable_sessions: Vec<SessionSnapshot>,
+    /// Never cleared on restore, unlike `restorable_sessions`: this is history, not a hand-off.
+    pub session_folders: Vec<SessionFolder>,
 }
 
 impl ProjectState {
@@ -255,6 +271,7 @@ impl ProjectState {
             updated_at: Utc::now().to_rfc3339(),
             schema_version: 1,
             restorable_sessions: vec![],
+            session_folders: vec![],
         }
     }
 }

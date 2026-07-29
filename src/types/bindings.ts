@@ -3040,6 +3040,11 @@ export type SessionListEntryDto = {
   session_id: string;
   title: string | null;
   updated_at: string | null;
+  /**
+   * Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+   * `Some("")` is the project root itself; `None` means no folder was ever recorded.
+   */
+  folder: string | null;
 };
 /**
  * Return type for `list_acp_sessions` — includes capability flags from the live agent connection.

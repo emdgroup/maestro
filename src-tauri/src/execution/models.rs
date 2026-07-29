@@ -4,10 +4,26 @@ use specta::Type;
 /// Path template for agent-created worktrees inside project root
 pub const WORKTREE_DIR: &str = ".maestro/worktrees";
 pub const WORKTREE_PATH_PREFIX: &str = ".maestro/worktrees/task-";
+pub const WORKTREE_SESSION_PATH_PREFIX: &str = ".maestro/worktrees/session-";
 
 /// Build the relative worktree path for a given task ID
 pub fn worktree_path_for_task(task_id: i32) -> String {
     format!("{}{}", WORKTREE_PATH_PREFIX, task_id)
+}
+
+/// Build the relative worktree path for a session-owned worktree, keyed by its DB row id.
+pub fn worktree_path_for_session(worktree_id: i32) -> String {
+    format!("{}{}", WORKTREE_SESSION_PATH_PREFIX, worktree_id)
+}
+
+/// True when Maestro created this worktree itself rather than the user creating it by hand.
+///
+/// Rows written before the id-based session path existed use a branch-name-derived path and
+/// therefore read as user-made. That is deliberate: automatic deletion is the destructive
+/// direction, so an unrecognised path must fall on the "keep" side.
+pub fn is_maestro_created_worktree(relative_path: &str) -> bool {
+    relative_path.starts_with(WORKTREE_PATH_PREFIX)
+        || relative_path.starts_with(WORKTREE_SESSION_PATH_PREFIX)
 }
 
 /// Ahead/behind commit counts relative to the upstream tracking branch
@@ -98,6 +114,9 @@ pub struct SessionListEntryDto {
     pub session_id: String,
     pub title: Option<String>,
     pub updated_at: Option<String>,
+    /// Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+    /// `Some("")` is the project root itself; `None` means no folder was ever recorded.
+    pub folder: Option<String>,
 }
 
 /// Metadata stored alongside a user-controlled PTY shell for get_active_sessions.

@@ -25,7 +25,8 @@ vi.mock("@/services/execution.service", () => ({
   useDeleteAcpSessionMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
-vi.mock("@/services/worktree.service", () => ({
+vi.mock("@/services/worktree.service", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/worktree.service")>()),
   useWorktreesQuery: vi.fn(),
   useCreateWorktreeMutation: vi.fn(),
 }));
@@ -146,7 +147,7 @@ describe("New Session dialog — agent type selector", () => {
 });
 
 describe("spawn flow", () => {
-  it("creates a maestro/ worktree from the base branch, then spawns in it", async () => {
+  it("never creates a worktree for a terminal — it spawns in the selected existing one", async () => {
     const mockMutate = vi.fn();
     (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: mockMutate,
@@ -157,6 +158,29 @@ describe("spawn flow", () => {
     renderView();
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
+    // Terminal is the default type, and the option to create a worktree is not even offered.
+    expect(screen.queryByRole("checkbox", { name: /new worktree/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(mockCreateWorktree).not.toHaveBeenCalled();
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 1, branchName: "main" }),
+      expect.anything(),
+    );
+  });
+
+  it("creates a maestro/ worktree from the base branch for an agent session", async () => {
+    const mockAcpMutate = vi.fn();
+    (useSpawnAcpSessionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: mockAcpMutate,
+      isPending: false,
+    });
+
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(screen.getByRole("button", { name: /new session/i }));
+    await user.click(screen.getByRole("button", { name: /claude code/i }));
     await user.type(screen.getByLabelText(/session name/i), "Fix Windows Path");
     await user.click(screen.getByRole("button", { name: /start session/i }));
 
@@ -167,29 +191,12 @@ describe("spawn flow", () => {
         taskId: null,
       }),
     );
-    expect(mockMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ worktreeId: 7, branchName: "maestro/swift-otter" }),
-      expect.anything(),
-    );
-  });
-
-  it("spawns in the selected existing worktree when New worktree is unchecked", async () => {
-    const mockMutate = vi.fn();
-    (useSpawnInteractiveExecutionMutation as ReturnType<typeof vi.fn>).mockReturnValue({
-      mutate: mockMutate,
-      isPending: false,
-    });
-
-    const user = userEvent.setup();
-    renderView();
-
-    await user.click(screen.getByRole("button", { name: /new session/i }));
-    await user.click(screen.getByRole("checkbox", { name: /new worktree/i }));
-    await user.click(screen.getByRole("button", { name: /start session/i }));
-
-    expect(mockCreateWorktree).not.toHaveBeenCalled();
-    expect(mockMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ worktreeId: 1, branchName: "main" }),
+    expect(mockAcpMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "claude-code",
+        cwd: "/tmp/repo/.maestro/worktrees/x",
+        worktreeBranch: "maestro/swift-otter",
+      }),
       expect.anything(),
     );
   });

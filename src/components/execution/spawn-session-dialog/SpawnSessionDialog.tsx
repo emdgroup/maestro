@@ -18,17 +18,12 @@ import {
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
-import { useCreateWorktreeMutation } from "@/services/worktree.service";
+import { useResolveWorktree, type CreatedWorktree } from "@/utils/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
 
-/** A worktree this dialog created for the session, so the caller can clean it up on close. */
-export interface CreatedWorktree {
-  id: number;
-  path: string;
-  branchName: string;
-}
+export type { CreatedWorktree };
 
 interface SpawnSessionDialogProps {
   open: boolean;
@@ -60,7 +55,7 @@ export function SpawnSessionDialog({
   const { data: branchData } = useProjectBranchesQuery(projectId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
-  const createWorktreeMutation = useCreateWorktreeMutation();
+  const { resolveWorktree, isCreatingWorktree } = useResolveWorktree();
 
   const isGitRepo = useIsGitRepo();
   const toolChecks = usePreflightToolChecks(connection);
@@ -94,7 +89,10 @@ export function SpawnSessionDialog({
     }
   }, [open, branchData, baseBranch]);
 
-  const creatingWorktree = isGitRepo && newWorktree;
+  // A terminal attaches to an existing checkout only — the backend refuses to create one for it,
+  // so the option is neither offered nor honoured here.
+  const isTerminal = sessionType === "terminal";
+  const creatingWorktree = isGitRepo && newWorktree && !isTerminal;
 
   async function handleSpawn() {
     setSpawnError(null);
@@ -105,19 +103,19 @@ export function SpawnSessionDialog({
     let created: CreatedWorktree | null = null;
     if (creatingWorktree) {
       try {
-        const row = await createWorktreeMutation.mutateAsync({
+        const resolved = await resolveWorktree({
           projectId,
+          repoPath,
           taskId: null,
           baseBranch,
           newBranchName: `maestro/${slugifyName(resolvedName) || generateSessionName()}`,
-          repoPath,
         });
+        created = resolved.created;
         worktree = {
-          id: row.id,
-          branchName: row.branch_name,
-          path: `${repoPath}/${row.path}`,
+          id: created?.id ?? null,
+          branchName: resolved.branchName,
+          path: resolved.cwd,
         };
-        created = { id: row.id, path: worktree.path, branchName: row.branch_name };
       } catch (error) {
         setSpawnError(String(error));
         return;
@@ -171,12 +169,11 @@ export function SpawnSessionDialog({
 
   const canSpawn = creatingWorktree
     ? !!baseBranch
-    : sessionType === "terminal"
+    : isTerminal
       ? !!selectedWorktree
       : !isGitRepo || !!selectedWorktree;
 
-  const isPending =
-    spawnMutation.isPending || spawnAcpMutation.isPending || createWorktreeMutation.isPending;
+  const isPending = spawnMutation.isPending || spawnAcpMutation.isPending || isCreatingWorktree;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -322,26 +319,28 @@ export function SpawnSessionDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                    {newWorktree ? "From branch" : "Worktree"}
+                    {creatingWorktree ? "From branch" : "Worktree"}
                   </p>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Label className="flex items-center gap-2 text-[11px] font-normal cursor-pointer" />
-                      }
-                    >
-                      <Checkbox
-                        checked={newWorktree}
-                        onCheckedChange={(checked) => setNewWorktree(checked === true)}
-                      />
-                      New worktree
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      Create a worktree from the selected branch
-                    </TooltipContent>
-                  </Tooltip>
+                  {!isTerminal && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Label className="flex items-center gap-2 text-[11px] font-normal cursor-pointer" />
+                        }
+                      >
+                        <Checkbox
+                          checked={newWorktree}
+                          onCheckedChange={(checked) => setNewWorktree(checked === true)}
+                        />
+                        New worktree
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        Create a worktree from the selected branch
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
-                {newWorktree ? (
+                {creatingWorktree ? (
                   <BranchPicker value={baseBranch} onChange={setBaseBranch} />
                 ) : (
                   <Select

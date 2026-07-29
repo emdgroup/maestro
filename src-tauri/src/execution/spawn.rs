@@ -43,7 +43,7 @@ fn resolve_windows_shell() -> String {
 
 /// Spawn a user-controlled interactive shell on a specific branch.
 ///
-/// This creates an execution log with NULL task_id, finds or creates a worktree for the
+/// This creates an execution log with NULL task_id, resolves an existing worktree for the
 /// given branch, and spawns an interactive PTY session keyed by log_id. It does not start
 /// or manage an AI agent; managed agents use ACP.
 ///
@@ -105,36 +105,13 @@ pub async fn spawn_interactive_execution(
             wt.branch.as_deref() == Some(branch.as_str())
         });
 
-        if let Some(wt) = existing_checkout {
-            wt.path
-        } else {
-            use crate::models::WORKTREE_DIR;
-            let relative_path = format!("{}/{}", WORKTREE_DIR, branch);
-
-            // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
-            if !is_remote {
-                tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
-                    .await
-                    .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
-            }
-
-            // Checkout existing branch via SSH-aware git connection (None = checkout, not create)
-            crate::git::create_worktree(&git_conn, branch, &relative_path, None).await?;
-
-            // Insert DB row with task_id = NULL
-            let now = chrono::Utc::now().to_rfc3339();
-            {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "INSERT INTO worktrees (project_id, task_id, branch_name, path, created_at) VALUES (?, NULL, ?, ?, ?)",
-                    rusqlite::params![project_id, branch, &relative_path, &now],
-                )
-                .map_err(|e| format!("Failed to insert worktree: {}", e))?;
-            }
-
-            app_state.app_handle.emit("worktrees-changed", ()).ok();
-            format!("{}/{}", repo_path, relative_path)
-        }
+        // A terminal only ever attaches to a checkout that already exists — it must not create
+        // one, so a branch without a worktree is an error the user resolves by making one.
+        existing_checkout
+            .ok_or_else(|| {
+                format!("No worktree exists for branch '{}'. Create a worktree for it first, then start the terminal there.", branch)
+            })?
+            .path
     } else {
         // No branch specified → spawn in repo root
         repo_path.clone()

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::State;
 
-use crate::models::{WorktreeWithStatus, AheadBehind, WORKTREE_PATH_PREFIX, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
+use crate::models::{WorktreeWithStatus, AheadBehind, is_maestro_created_worktree, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 use crate::core::AppState;
 
 // ============================================================================
@@ -138,7 +138,7 @@ pub async fn list_worktrees_with_status(
         let (changed_files_count, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
-            let is_zombie = db_row.task_id.is_none() && db_row.path.contains(WORKTREE_PATH_PREFIX);
+            let is_zombie = db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path);
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(db_row.project_id),
@@ -175,10 +175,12 @@ pub async fn list_worktrees_with_status(
         }
     }
 
-    // Step 7: Auto-delete DB rows not matched by any on-disk worktree
+    // Step 7: Auto-delete DB rows not matched by any on-disk worktree.
+    // An empty path is a `create_worktree` reservation whose git worktree is still being created:
+    // it cannot match anything on disk yet, and its id is already held by the caller.
     let unmatched_db_ids: Vec<i32> = db_rows
         .iter()
-        .filter(|row| !matched_db_ids.contains(&row.id))
+        .filter(|row| !matched_db_ids.contains(&row.id) && !row.path.is_empty())
         .map(|row| row.id)
         .collect();
 
