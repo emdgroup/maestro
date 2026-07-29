@@ -108,6 +108,83 @@ describe("parseDiffString", () => {
     expect(result[1].fileName).toBe("src/b.ts");
   });
 
+  it("emits an entry for a rename with no content change", () => {
+    const diff = [
+      "diff --git a/src/old.ts b/src/new.ts",
+      "similarity index 100%",
+      "rename from src/old.ts",
+      "rename to src/new.ts",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].fileName).toBe("src/new.ts");
+    expect(result[0].hunks).toEqual([]);
+    expect(result[0].note).toBe("Renamed from src/old.ts");
+  });
+
+  it("emits an entry for a binary file", () => {
+    const diff = [
+      "diff --git a/logo.png b/logo.png",
+      "index abc..def 100644",
+      "Binary files a/logo.png and b/logo.png differ",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].fileName).toBe("logo.png");
+    expect(result[0].note).toBe("Binary file");
+  });
+
+  it("emits an entry for a mode-only change", () => {
+    const diff = ["diff --git a/run.sh b/run.sh", "old mode 100644", "new mode 100755"].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].note).toBe("File mode changed");
+  });
+
+  it("parses a path containing spaces", () => {
+    const diff = [
+      "diff --git a/docs/my notes.md b/docs/my notes.md",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].fileName).toBe("docs/my notes.md");
+  });
+
+  it("parses a quoted, escaped path", () => {
+    const diff = [
+      'diff --git "a/src/caf\\303\\251.ts" "b/src/caf\\303\\251.ts"',
+      "@@ -1 +1 @@",
+      "+added",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(1);
+    expect(result[0].fileName).toBe("src/café.ts");
+  });
+
+  it("does not leak hunks into the previous file when a header is unrecognized", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "@@ -1 +1 @@",
+      "+first",
+      "diff --git weird-header-without-prefixes",
+      "@@ -1 +1 @@",
+      "+second",
+    ].join("\n");
+
+    const result = parseDiffString(diff);
+    expect(result).toHaveLength(2);
+    expect(result[0].fileName).toBe("src/a.ts");
+    expect(result[0].hunks[0]).not.toContain("+second");
+  });
+
   it("preserves blank context lines within a hunk", () => {
     const diff = [
       "diff --git a/src/a.ts b/src/a.ts",

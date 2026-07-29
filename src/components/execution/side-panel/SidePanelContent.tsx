@@ -23,12 +23,12 @@ import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey, DiffTarget } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
 import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
+import { useAcpSessionMeta } from "@/services/execution.service";
 import { useWslConnections } from "@/services/connection.service";
 import {
   useSaveCanvasSurfaceMutation,
   useDeleteCanvasSurfaceMutation,
 } from "@/services/canvas.service";
-import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
 import { useSelectedProject } from "@/store/projectStore";
 
@@ -43,7 +43,6 @@ interface SidePanelContentProps {
   onPlanRespond: (requestId: string, optionId: string | null) => void;
   canvasMap: Map<string, CanvasSurface>;
   latestCanvasSurfaceId: string | null;
-  changedFiles: string[];
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   projectPath: string;
@@ -67,7 +66,6 @@ export function SidePanelContent({
   onPlanRespond,
   canvasMap,
   latestCanvasSurfaceId,
-  changedFiles,
   workingFiles,
   taskId,
   projectPath,
@@ -83,27 +81,10 @@ export function SidePanelContent({
   const selectedProject = useSelectedProject();
   const saveCanvasMutation = useSaveCanvasSurfaceMutation();
   const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
-  const [sessionMeta, setSessionMeta] = useState<{
-    projectId: number | null;
-    cwd: string | null;
-    startSha: string | null;
-  }>({ projectId: null, cwd: null, startSha: null });
+  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
 
-  useEffect(() => {
-    api
-      .getAcpSessionMeta(sessionKey)
-      .then((meta) => {
-        setSessionMeta({
-          projectId: meta.project_id,
-          cwd: meta.cwd,
-          startSha: meta.session_start_sha,
-        });
-      })
-      .catch(() => {});
-  }, [sessionKey]);
-
-  const diffTarget: DiffTarget = sessionMeta.startSha
-    ? { type: "Commit", sha: sessionMeta.startSha }
+  const diffTarget: DiffTarget = sessionMeta?.session_start_sha
+    ? { type: "Commit", sha: sessionMeta.session_start_sha }
     : { type: "Head" };
 
   const activeDiffTab = tabs.find((t) => t.id === activeTabId);
@@ -111,8 +92,8 @@ export function SidePanelContent({
     isSessionActive && (activeDiffTab?.kind === "overview" || activeDiffTab?.kind === "review");
 
   const { data: diffStatsData } = useWorktreeDiffStatsQuery(
-    sessionMeta.projectId,
-    sessionMeta.cwd,
+    sessionMeta?.project_id ?? null,
+    sessionMeta?.cwd ?? null,
     diffTarget,
     { refetchInterval: isDiffVisible ? 10000 : false },
   );
@@ -120,6 +101,11 @@ export function SidePanelContent({
   const diffStats = diffStatsData
     ? { insertions: diffStatsData.insertions, deletions: diffStatsData.deletions }
     : null;
+  // Counted from git, not from the agent's tool-call stream: an agent that edits through
+  // a shell reports no file locations, and the card would claim "No changes".
+  const changedFilesCount = diffStatsData
+    ? diffStatsData.file_count + diffStatsData.untracked_count
+    : 0;
 
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =
@@ -192,7 +178,7 @@ export function SidePanelContent({
               <OverviewPanel
                 subagentItems={subagentItems}
                 canvasCount={canvasMap.size}
-                changedFilesCount={changedFiles.length}
+                changedFilesCount={changedFilesCount}
                 planEntries={planEntries}
                 planTitle={planTitle ?? derivedPlanTitle}
                 planReviewState={planReviewState}
@@ -379,7 +365,6 @@ export function SidePanelContent({
             {kind === "review" && (
               <ReviewChangesPanel
                 sessionKey={sessionKey}
-                sessionChangedFiles={changedFiles}
                 onClose={() => onCollapsedChange(true)}
                 compact
                 isActive={isActive}

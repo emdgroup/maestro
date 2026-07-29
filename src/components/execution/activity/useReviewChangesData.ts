@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
 import { useAcpSessionMeta } from "@/services/execution.service";
@@ -10,12 +10,10 @@ export type DisplayItem =
 
 export function useReviewChangesData({
   sessionKey,
-  sessionChangedFiles,
   isActive,
   onDiffStats,
 }: {
   sessionKey: number;
-  sessionChangedFiles: string[];
   isActive: boolean;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
 }) {
@@ -33,34 +31,28 @@ export function useReviewChangesData({
     data: diffResult,
     isLoading: diffLoading,
     error: diffError,
+    refetch,
   } = useWorktreeDiffQuery(projectId, cwd, diffTarget, {
-    refetchInterval: isActive ? 10000 : false,
+    refetchInterval: isActive ? 5000 : false,
   });
 
-  const changedRelativePaths = useMemo(() => {
-    const set = new Set<string>();
-    for (const path of sessionChangedFiles) {
-      if (cwd && path.startsWith(cwd + "/")) {
-        set.add(path.slice(cwd.length + 1));
-      } else {
-        set.add(path);
-      }
-    }
-    return set;
-  }, [sessionChangedFiles, cwd]);
+  // Polling stops while the tab is off screen, so re-entering it would otherwise show
+  // the diff as of the last time it was visible until the next interval fires.
+  const wasActive = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !wasActive.current) void refetch();
+    wasActive.current = isActive;
+  }, [isActive, refetch]);
 
-  const diffFiles = useMemo(() => {
-    if (!diffResult?.diff) return [];
-    const all = parseDiffString(diffResult.diff);
-    if (changedRelativePaths.size === 0) return all;
-    return all.filter((f) => changedRelativePaths.has(f.fileName));
-  }, [diffResult?.diff, changedRelativePaths]);
+  const diffFiles = useMemo(
+    () => (diffResult?.diff ? parseDiffString(diffResult.diff) : []),
+    [diffResult?.diff],
+  );
 
-  const untrackedFiles = useMemo(() => {
-    const all = diffResult?.untracked_files ?? [];
-    if (changedRelativePaths.size === 0) return all;
-    return all.filter((p) => changedRelativePaths.has(p));
-  }, [diffResult?.untracked_files, changedRelativePaths]);
+  const untrackedFiles = useMemo(
+    () => diffResult?.untracked_files ?? [],
+    [diffResult?.untracked_files],
+  );
 
   const allDisplayItems = useMemo<DisplayItem[]>(
     () => [
@@ -100,5 +92,16 @@ export function useReviewChangesData({
     };
   }, [diffResult]);
 
-  return { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError, truncationInfo };
+  return {
+    projectId,
+    cwd,
+    allDisplayItems,
+    loading,
+    totalFileCount,
+    diffError,
+    truncationInfo,
+    // The diff is anchored at the session's start commit; without one it degrades to
+    // uncommitted-only, which silently hides the agent's commits unless the UI says so.
+    scope: startSha ? ("session" as const) : ("uncommitted" as const),
+  };
 }

@@ -61,6 +61,54 @@ function detectLanguage(fileName: string): DiffHighlighterLang {
  *   -removed line
  *   +added line
  */
+/**
+ * Undo git's C-style path quoting. Non-ASCII bytes come through as octal escapes of the
+ * UTF-8 encoding (`"caf\303\251.ts"`), so they have to be decoded as bytes, not characters.
+ * A path that is not quoted is returned untouched.
+ */
+function unquoteGitPath(path: string): string {
+  const quoted = path.match(/^"(.*)"$/);
+  if (!quoted) return path;
+  const body = quoted[1];
+  const encoder = new TextEncoder();
+  const bytes: number[] = [];
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== "\\") {
+      bytes.push(...encoder.encode(body[i]));
+      continue;
+    }
+    const octal = body.slice(i + 1, i + 4);
+    if (/^[0-7]{3}$/.test(octal)) {
+      bytes.push(parseInt(octal, 8));
+      i += 3;
+      continue;
+    }
+    const escapes: Record<string, string> = { n: "\n", t: "\t", r: "\r" };
+    const next = body[i + 1] ?? "";
+    bytes.push(...encoder.encode(escapes[next] ?? next));
+    i += 1;
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/**
+ * Extract the post-image path from the remainder of a `diff --git` header.
+ *
+ * Paths containing spaces are emitted unquoted (`a/my file b/my file`), so the
+ * split has to be on the LAST ` b/`; paths with non-ASCII bytes are emitted
+ * quoted and backslash-escaped. Always returns a name — a null return would
+ * leave the parser pointed at the previous file and silently append this
+ * file's hunks to it.
+ */
+function parseGitHeaderPath(rest: string): string {
+  const stripPrefix = (path: string) => (path.startsWith("b/") ? path.slice(2) : path);
+  const bothQuoted = rest.match(/^("(?:[^"\\]|\\.)*")\s+("(?:[^"\\]|\\.)*")$/);
+  if (bothQuoted) return stripPrefix(unquoteGitPath(bothQuoted[2]));
+  const split = rest.lastIndexOf(" b/");
+  if (split > 0) return stripPrefix(unquoteGitPath(rest.slice(split + 1)));
+  return rest.trim();
+}
+
 export function parseDiffString(diffString: string): DiffFileWithName[] {
   const files: DiffFileWithName[] = [];
   const lines = diffString.split("\n");
@@ -71,9 +119,13 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   let currentHunkLines: string[] = [];
   let inHunk = false;
   let currentStatus: "A" | "M" | "D" = "M";
+  // Set when the header describes a change that carries no hunks (rename, binary,
+  // mode bits). Without it those files never reach the UI at all.
+  let currentNote: string | null = null;
 
   const flushFile = () => {
-    if (!currentFile || currentHunkLines.length === 0) return;
+    if (!currentFile) return;
+    if (currentHunkLines.length === 0 && !currentNote) return;
     const lang = detectLanguage(currentFile);
     files.push({
       fileName: currentFile,
@@ -84,8 +136,9 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       },
       // The library parses each element of hunks[] as a full diff string.
       // A single joined string per file (containing --- / +++ / @@ blocks) is correct.
-      hunks: [currentHunkLines.join("\n")],
+      hunks: currentHunkLines.length > 0 ? [currentHunkLines.join("\n")] : [],
       status: currentStatus,
+      ...(currentNote ? { note: currentNote } : {}),
     });
   };
 
@@ -96,20 +149,27 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     if (line.startsWith("diff --git")) {
       flushFile();
 
-      // Parse new file name from "diff --git a/path b/path"
-      const match = line.match(/diff --git a\/(.*) b\/(.*)/);
-      if (match) {
-        currentFile = match[2];
-        currentHunkLines = [];
-        inHunk = false;
-        currentStatus = "M";
-      }
+      currentFile = parseGitHeaderPath(line.slice("diff --git".length).trim());
+      currentHunkLines = [];
+      inHunk = false;
+      currentStatus = "M";
+      currentNote = null;
     }
     // Detect new/deleted file mode before the first hunk
     else if (!inHunk && line.includes("new file mode")) {
       currentStatus = "A";
     } else if (!inHunk && line.includes("deleted file mode")) {
       currentStatus = "D";
+    }
+    // Hunk-less changes: git describes them in the header and emits no @@ blocks
+    else if (!inHunk && line.startsWith("rename to ")) {
+      currentFile = unquoteGitPath(line.slice("rename to ".length));
+    } else if (!inHunk && line.startsWith("rename from ")) {
+      currentNote = `Renamed from ${unquoteGitPath(line.slice("rename from ".length))}`;
+    } else if (!inHunk && (line.startsWith("Binary files ") || line === "GIT binary patch")) {
+      currentNote = "Binary file";
+    } else if (!inHunk && line.startsWith("old mode ")) {
+      currentNote = "File mode changed";
     }
     // Capture the --- / +++ header lines that the library parser requires
     else if (!inHunk && (line.startsWith("--- ") || line.startsWith("+++ "))) {

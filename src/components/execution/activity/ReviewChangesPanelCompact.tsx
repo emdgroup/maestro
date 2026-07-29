@@ -42,6 +42,7 @@ interface ReviewChangesPanelCompactProps {
   projectId: number | null;
   cwd: string | null;
   truncationInfo?: TruncationInfo | null;
+  scope: "session" | "uncommitted";
   diffViewMode: DiffModeEnum;
   setDiffViewMode: (mode: DiffModeEnum) => void;
   selectedFileIndex: number;
@@ -63,6 +64,7 @@ export function ReviewChangesPanelCompact({
   projectId,
   cwd,
   truncationInfo,
+  scope,
   diffViewMode,
   setDiffViewMode,
   selectedFileIndex,
@@ -75,6 +77,7 @@ export function ReviewChangesPanelCompact({
   focusedKey,
   focusedBasename,
 }: ReviewChangesPanelCompactProps) {
+  const scopeLabel = scope === "session" ? "since session start" : "uncommitted changes only";
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const expandedInitRef = useRef(false);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -187,7 +190,7 @@ export function ReviewChangesPanelCompact({
           >
             <Files className="w-4 h-4" />
           </TooltipTrigger>
-          <TooltipContent>File list</TooltipContent>
+          <TooltipContent>File list — {scopeLabel}</TooltipContent>
         </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
@@ -276,7 +279,9 @@ export function ReviewChangesPanelCompact({
           </div>
         )}
         {!loading && totalFileCount === 0 && !diffError && (
-          <div className="text-xs text-muted-foreground py-8 text-center">No changes yet</div>
+          <div className="text-xs text-muted-foreground py-8 text-center">
+            No changes {scopeLabel}
+          </div>
         )}
         {!loading &&
           allDisplayItems.map((item, index) => {
@@ -338,11 +343,17 @@ export function ReviewChangesPanelCompact({
                 {isExpanded && (
                   <div className="border border-border border-t-0 rounded-b-lg overflow-auto custom-scrollbar">
                     {item.kind === "diff" ? (
-                      <DiffViewer
-                        diffFile={item.file}
-                        loading={false}
-                        diffViewMode={diffViewMode}
-                      />
+                      item.file.hunks.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">
+                          {item.file.note ?? "No textual diff"}
+                        </div>
+                      ) : (
+                        <DiffViewer
+                          diffFile={item.file}
+                          loading={false}
+                          diffViewMode={diffViewMode}
+                        />
+                      )
                     ) : (
                       <UntrackedFileDiffViewer
                         projectId={projectId}

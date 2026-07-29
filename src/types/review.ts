@@ -47,4 +47,6 @@ export interface DiffFile {
 export interface DiffFileWithName extends DiffFile {
   fileName: string;
   status?: "A" | "M" | "D";
+  /** Set for changes git describes without hunks (rename, binary, mode bits). */
+  note?: string;
 }

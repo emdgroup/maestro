@@ -26,15 +26,33 @@ pub async fn get_acp_session_meta(
     app_state: State<'_, Arc<AppState>>,
     session_key: i32,
 ) -> Result<AcpSessionMeta, String> {
-    let sessions = app_state.acp.sessions.lock().await;
-    let session = sessions
-        .get(&session_key)
-        .ok_or_else(|| format!("No ACP session for key {}", session_key))?;
-    Ok(AcpSessionMeta {
-        cwd: session.cwd.clone(),
-        project_id: session.project_id,
-        session_start_sha: session.session_start_sha.clone(),
-    })
+    let (cwd, project_id, start_sha) = {
+        let sessions = app_state.acp.sessions.lock().await;
+        let session = sessions
+            .get(&session_key)
+            .ok_or_else(|| format!("No ACP session for key {}", session_key))?;
+        (session.cwd.clone(), session.project_id, session.session_start_sha.clone())
+    };
+
+    // A rebase, amend or reset can leave the start commit unreachable, and `git diff <sha>`
+    // then fails for the whole review panel. Report it as absent so the caller falls back to
+    // an uncommitted-only diff, which it labels as such.
+    let session_start_sha = match (start_sha, project_id) {
+        (Some(sha), Some(project_id)) => {
+            let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+            let rev = format!("{}^{{commit}}", sha);
+            match crate::git::run_git_in_dir(&git_conn, &cwd, &["cat-file", "-e", &rev]).await {
+                Ok(_) => Some(sha),
+                Err(e) => {
+                    log::warn!("Session {} start commit {} unreachable in {}: {}", session_key, sha, cwd, e);
+                    None
+                }
+            }
+        }
+        (start_sha, _) => start_sha,
+    };
+
+    Ok(AcpSessionMeta { cwd, project_id, session_start_sha })
 }
 
 #[tauri::command]
