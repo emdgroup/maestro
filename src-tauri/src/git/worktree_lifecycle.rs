@@ -261,7 +261,7 @@ fn branch_has_no_own_commits(containing: &str, branch_name: &str) -> bool {
 
 /// True when `cwd` is the worktree root or a directory inside it. A session's working directory
 /// is usually the worktree itself, but an agent may have been pointed at a subdirectory.
-fn path_is_within(cwd: &str, worktree_path: &str) -> bool {
+pub fn path_is_within(cwd: &str, worktree_path: &str) -> bool {
     let cwd = cwd.trim_end_matches(['/', '\\']);
     let root = worktree_path.trim_end_matches(['/', '\\']);
     match cwd.strip_prefix(root) {
@@ -331,6 +331,35 @@ pub async fn cleanup_worktree_if_clean(
     Ok(None)
 }
 
+/// Directories that are in use: running ACP sessions, running PTY shells, and sessions that
+/// `prime_project_server` may still be restoring from `.maestro/state.json`.
+pub async fn live_session_cwds(
+    app_state: &Arc<AppState>,
+    project: &crate::models::Project,
+) -> Vec<String> {
+    let mut live_cwds: Vec<String> = Vec::new();
+    {
+        let acp_sessions = app_state.acp.sessions.lock().await;
+        live_cwds.extend(acp_sessions.values().map(|process| process.cwd.clone()));
+    }
+    {
+        let pty_meta = app_state.pty.session_meta.lock().await;
+        live_cwds.extend(pty_meta.values().map(|meta| meta.cwd.clone()));
+    }
+    let connection_key = crate::acp::ConnectionKey::from_all_ids(
+        project.connection_id,
+        project.wsl_connection_id,
+        project.docker_connection_id,
+    );
+    live_cwds.extend(
+        crate::project::session_state::read_session_snapshots(app_state, &project.path, connection_key)
+            .await
+            .into_iter()
+            .map(|snapshot| snapshot.cwd),
+    );
+    live_cwds
+}
+
 // ============================================================================
 // cleanup_zombie_worktrees — REQ-34, REQ-35, REQ-36
 // ============================================================================
@@ -372,29 +401,7 @@ pub async fn cleanup_zombie_worktrees(
     // Resolve project and git connection (local vs remote SSH)
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    // Directories that are in use: running ACP sessions, running PTY shells, and sessions that
-    // `prime_project_server` is concurrently restoring from `.maestro/state.json` — this command
-    // is triggered on project open, so that restore is still in flight.
-    let mut live_cwds: Vec<String> = Vec::new();
-    {
-        let acp_sessions = app_state.acp.sessions.lock().await;
-        live_cwds.extend(acp_sessions.values().map(|process| process.cwd.clone()));
-    }
-    {
-        let pty_meta = app_state.pty.session_meta.lock().await;
-        live_cwds.extend(pty_meta.values().map(|meta| meta.cwd.clone()));
-    }
-    let connection_key = crate::acp::ConnectionKey::from_all_ids(
-        project.connection_id,
-        project.wsl_connection_id,
-        project.docker_connection_id,
-    );
-    live_cwds.extend(
-        crate::project::session_state::read_session_snapshots(&app_state, &project.path, connection_key)
-            .await
-            .into_iter()
-            .map(|snapshot| snapshot.cwd),
-    );
+    let live_cwds = live_session_cwds(&app_state, &project).await;
 
     // Get on-disk worktree paths to confirm existence before deleting
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;

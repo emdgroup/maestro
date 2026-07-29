@@ -134,16 +134,26 @@ pub async fn list_worktrees_with_status(
     let mut matched_db_ids: HashSet<i32> = HashSet::new();
     let mut result: Vec<WorktreeWithStatus> = Vec::new();
 
+    // A session worktree carries no task, so the row alone cannot tell a leftover from one a
+    // running session is sitting in.
+    let live_cwds = crate::git::worktree_lifecycle::live_session_cwds(&app_state, &project).await;
+
     for wt in &disk_worktrees {
         let (changed_files_count, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
-            let is_zombie = db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path);
+            let in_use = live_cwds
+                .iter()
+                .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path));
+            let is_zombie =
+                db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path) && !in_use;
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
                 project_id: Some(db_row.project_id),
                 task_id: db_row.task_id,
-                branch_name: db_row.branch_name.clone(),
+                // Read from git, not the DB: a checkout inside the worktree moves it off the
+                // branch recorded at creation. Detached HEAD keeps the recorded name.
+                branch_name: wt.branch.clone().unwrap_or_else(|| db_row.branch_name.clone()),
                 path: format!("{}/{}", repo_path, db_row.path),
                 changed_files_count,
                 created_at: Some(db_row.created_at.clone()),

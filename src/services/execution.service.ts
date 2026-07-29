@@ -19,8 +19,8 @@ export const executionQueryKeys = {
 };
 
 /**
- * Event-driven active session list. Refreshes on "sessions-changed" Tauri event.
- * No polling — sidebar stays in sync without DB queries.
+ * Active session list. Refreshes on the "sessions-changed" Tauri event, plus a slow poll: a
+ * checkout inside a session's directory changes the branch it reports and emits no event.
  */
 export function useActiveSessionsQuery(projectId: number | undefined) {
   const queryClient = useQueryClient();
@@ -47,6 +47,7 @@ export function useActiveSessionsQuery(projectId: number | undefined) {
         : ["activeSessions-disabled"],
     queryFn: () => api.getActiveSessions(projectId!),
     enabled: projectId !== undefined,
+    refetchInterval: 10000,
   });
 }
 

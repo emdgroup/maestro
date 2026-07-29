@@ -55,6 +55,16 @@ pub async fn get_acp_session_meta(
     Ok(AcpSessionMeta { cwd, project_id, session_start_sha })
 }
 
+/// Branch currently checked out in the worktree containing `cwd`. The longest matching path wins:
+/// Maestro's worktrees sit under the repo root, so a session inside one matches both.
+fn branch_for_cwd(worktrees: &[crate::git::ParsedWorktree], cwd: &str) -> Option<String> {
+    worktrees
+        .iter()
+        .filter(|wt| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+        .max_by_key(|wt| wt.path.len())
+        .and_then(|wt| wt.branch.clone())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_active_sessions(
@@ -62,11 +72,13 @@ pub async fn get_active_sessions(
     project_id: i32,
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
+    let mut session_cwds: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
 
     {
         let acp = app_state.acp.sessions.lock().await;
         for (key, proc) in acp.iter().filter(|(_, p)| p.project_id == Some(project_id)) {
             let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
+            session_cwds.insert(*key, proc.cwd.clone());
             sessions.push(ActiveSessionInfo {
                 session_key: *key,
                 session_name: proc.session_name.clone(),
@@ -94,6 +106,7 @@ pub async fn get_active_sessions(
             if meta.project_id != Some(project_id) {
                 continue;
             }
+            session_cwds.insert(*key, meta.cwd.clone());
             sessions.push(ActiveSessionInfo {
                 session_key: *key,
                 session_name: meta.session_name.clone(),
@@ -115,6 +128,23 @@ pub async fn get_active_sessions(
     }
 
     sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+
+    // The branch recorded at spawn goes stale the moment anyone checks out inside the session's
+    // directory, so read the current one from git. One `git worktree list` covers every session;
+    // the longest matching path wins because Maestro's worktrees live inside the repo itself.
+    if let Ok((_project, git_conn)) = crate::core::get_project_with_git_conn(&app_state, project_id).await {
+        match crate::git::list_worktrees(&git_conn).await {
+            Ok(worktrees) => {
+                for session in &mut sessions {
+                    let Some(cwd) = session_cwds.get(&session.session_key) else { continue };
+                    if let Some(branch) = branch_for_cwd(&worktrees, cwd) {
+                        session.branch_name = Some(branch);
+                    }
+                }
+            }
+            Err(e) => log::debug!("branch refresh skipped for project {}: {}", project_id, e),
+        }
+    }
 
     {
         let conn = app_state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
@@ -380,4 +410,33 @@ pub async fn drain_acp_replay(
         let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::branch_for_cwd;
+    use crate::git::ParsedWorktree;
+
+    fn worktree(path: &str, branch: &str) -> ParsedWorktree {
+        ParsedWorktree {
+            path: path.to_string(),
+            branch: Some(branch.to_string()),
+            head: String::new(),
+            is_prunable: false,
+        }
+    }
+
+    #[test]
+    fn session_takes_the_branch_of_its_own_worktree_not_the_repo_root() {
+        let worktrees = vec![
+            worktree("/repo", "main"),
+            worktree("/repo/.maestro/worktrees/session-3", "maestro/lucky-fern"),
+        ];
+        assert_eq!(
+            branch_for_cwd(&worktrees, "/repo/.maestro/worktrees/session-3/src").as_deref(),
+            Some("maestro/lucky-fern"),
+        );
+        assert_eq!(branch_for_cwd(&worktrees, "/repo").as_deref(), Some("main"));
+        assert_eq!(branch_for_cwd(&worktrees, "/elsewhere"), None);
+    }
 }
