@@ -115,7 +115,9 @@ export function rowLabel(tc: ToolCallItem): string {
   if (isTerminalKind(tc.kind) && meta?.description) return meta.description;
   if (meta?.searchPattern) {
     const scope = meta.searchScope ? ` in ${meta.searchScope}` : "";
-    return `${meta.toolName ?? "Search"} "${meta.searchPattern}"${scope}`;
+    // Always "Search": the tool name varies by agent and says nothing the row
+    // does not — the icon already carries which tool ran.
+    return `Search "${meta.searchPattern}"${scope}`;
   }
   return tc.title;
 }

@@ -229,7 +229,7 @@ describe("ActivityToolCallGroup", () => {
     };
     // The bolded verb is its own span, so read the flattened line.
     const { container } = render(<ActivityToolCallGroup items={[tc]} />);
-    expect(container.textContent).toBe('Grep "session_start_sha" in …/me/repo');
+    expect(container.textContent).toBe('Search "session_start_sha" in …/me/repo');
   });
 
   it("renders a group with nothing to open as plain text", () => {
