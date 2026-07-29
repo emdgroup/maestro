@@ -2,16 +2,14 @@ import { useController } from "react-hook-form";
 import type { Control } from "react-hook-form";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
-import { Switch } from "@/ui/switch";
 import { Button } from "@/ui/button";
-import { Bot, RotateCcw, LogOut, Loader2, Check } from "lucide-react";
+import { Bot, LogOut, Loader2, Check } from "lucide-react";
 import type { ConnectionKey, DiscoveredAgent } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
 import { cn } from "@/lib/utils";
 
 export interface ProjectSettingsFormData {
   default_agent: string;
-  reopen_sessions: boolean;
   startup_tab: string;
 }
 
@@ -106,7 +104,6 @@ export function ProjectDefaultsSection({
   connection,
 }: ProjectDefaultsSectionProps) {
   const { field: defaultAgentField } = useController({ control, name: "default_agent" });
-  const { field: reopenSessionsField } = useController({ control, name: "reopen_sessions" });
 
   return (
     <>
@@ -143,28 +140,6 @@ export function ProjectDefaultsSection({
               ? `${agents.find((a) => a.id === defaultAgentField.value)?.name ?? defaultAgentField.value} is used for new sessions and auto-assigned tasks`
               : "No default set — tasks use the session's own agent"}
           </p>
-        </div>
-      </div>
-
-      {/* Startup Behavior Card */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <RotateCcw className="w-4 h-4 text-muted-foreground" />
-          Startup
-        </h3>
-
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label className="text-sm font-medium">Reopen Previous Sessions</Label>
-            <p className="text-xs text-muted-foreground">
-              Automatically restore agent sessions from your last session
-            </p>
-          </div>
-          <Switch
-            checked={reopenSessionsField.value}
-            onCheckedChange={reopenSessionsField.onChange}
-            className="data-unchecked:bg-muted data-unchecked:border-border/50"
-          />
         </div>
       </div>
     </>

@@ -77,8 +77,6 @@ pub async fn prime_project_server(
                 }
             );
             let config = config.unwrap_or_default();
-            app_state.acp.reopen_sessions.lock().await
-                .insert(project_id, config.reopen_sessions.unwrap_or(false));
             if let Some(agent_id) = config.default_agent {
                 crate::acp::pre_initialize_via_connection_server(
                     ConnectionKey::Ssh { id: conn_id },
@@ -89,13 +87,7 @@ pub async fn prime_project_server(
                 .await?;
             }
             let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            let reopen = config.reopen_sessions.unwrap_or(false);
-            let to_restore: Vec<_> = if reopen {
-                snapshots
-            } else {
-                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
-            };
-            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
+            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
         }
 
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -142,8 +134,6 @@ pub async fn prime_project_server(
                     }
                 );
                 let config = config.unwrap_or_default();
-                app_state.acp.reopen_sessions.lock().await
-                    .insert(project_id, config.reopen_sessions.unwrap_or(false));
                 if let Some(agent_id) = config.default_agent {
                     crate::acp::pre_initialize_via_connection_server(
                         ConnectionKey::Wsl { id: wsl_id },
@@ -154,13 +144,7 @@ pub async fn prime_project_server(
                     .await?;
                 }
                 let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-                let reopen = config.reopen_sessions.unwrap_or(false);
-                let to_restore: Vec<_> = if reopen {
-                    snapshots
-                } else {
-                    snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
-                };
-                spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
+                spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
             }
             #[cfg(not(windows))]
             {
@@ -201,8 +185,6 @@ pub async fn prime_project_server(
                 }
             );
             let config = config.unwrap_or_default();
-            app_state.acp.reopen_sessions.lock().await
-                .insert(project_id, config.reopen_sessions.unwrap_or(false));
             if let Some(agent_id) = config.default_agent {
                 crate::acp::pre_initialize_via_connection_server(
                     ConnectionKey::Docker { id: docker_id },
@@ -213,13 +195,7 @@ pub async fn prime_project_server(
                 .await?;
             }
             let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            let reopen = config.reopen_sessions.unwrap_or(false);
-            let to_restore: Vec<_> = if reopen {
-                snapshots
-            } else {
-                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
-            };
-            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
+            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
         }
 
         ConnectionKey::Local => {
@@ -227,8 +203,6 @@ pub async fn prime_project_server(
 
             let config = crate::models::ProjectConfig::load_from_project(&project_path)
                 .unwrap_or_default();
-            app_state.acp.reopen_sessions.lock().await
-                .insert(project_id, config.reopen_sessions.unwrap_or(false));
             if let Some(agent_id) = config.default_agent {
                 crate::acp::pre_initialize_via_connection_server(
                     ConnectionKey::Local,
@@ -239,13 +213,7 @@ pub async fn prime_project_server(
                 .await?;
             }
             let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            let reopen = config.reopen_sessions.unwrap_or(false);
-            let to_restore: Vec<_> = if reopen {
-                snapshots
-            } else {
-                snapshots.into_iter().filter(|s| s.task_id.is_some()).collect()
-            };
-            spawn_session_restores(Arc::clone(&*app_state), project_id, to_restore);
+            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
         }
     }
 

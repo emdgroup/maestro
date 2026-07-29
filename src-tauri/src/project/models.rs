@@ -73,8 +73,6 @@ pub struct ProjectConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub issue_tracking_auto_detect: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reopen_sessions: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_tab: Option<String>,
     /// Extra workspace roots handed to every agent alongside the session's own directory.
     ///

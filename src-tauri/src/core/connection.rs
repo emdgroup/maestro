@@ -106,10 +106,6 @@ pub struct AcpState {
     /// Keyed by connection_id. Consumed by restore_acp_sessions on successful reconnect,
     /// or finalized as ended on permanent failure.
     pub restorable_sessions: tokio::sync::Mutex<HashMap<i32, Vec<RestorableSession>>>,
-    /// Cached `reopen_sessions` flag per project_id. Populated in prime_project_server
-    /// and kept in sync by update_project_settings. Avoids re-reading settings.json
-    /// on every session spawn/cancel.
-    pub reopen_sessions: tokio::sync::Mutex<HashMap<i32, bool>>,
     /// Auth state per (connection, agent_id). Populated on PreInitializeOk.
     pub agent_auth_info: tokio::sync::Mutex<HashMap<(ConnectionKey, String), AgentAuthInfo>>,
 }
@@ -161,7 +157,6 @@ impl AppState {
                 connection_servers: tokio::sync::Mutex::new(HashMap::new()),
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
-                reopen_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {

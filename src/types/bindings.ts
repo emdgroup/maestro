@@ -2993,12 +2993,10 @@ export type Project = {
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] };
 export type ProjectConfigRequest = {
   default_agent: string | null;
-  reopen_sessions: boolean | null;
   startup_tab: string | null;
 };
 export type ProjectConfigResponse = {
   default_agent: string | null;
-  reopen_sessions: boolean | null;
   startup_tab: string | null;
 };
 export type ProjectIssueTrackingConfig = {

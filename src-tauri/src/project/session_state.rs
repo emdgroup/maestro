@@ -175,16 +175,11 @@ fn relative_to_project(project_path: &str, cwd: &str) -> Option<String> {
 
 /// Write the current live sessions for a project to `.maestro/state.json`.
 /// Called fire-and-forget via tokio::spawn after session spawn/cancel.
-/// Restorable sessions are only recorded when `reopen_sessions` is enabled for this project;
-/// the folder each session runs in is recorded either way, because Session History needs it.
+/// The folder each session runs in is recorded alongside it, because Session History needs it.
 pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project_id: i32) {
     if app_state.is_closing.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
-    // Task-linked sessions are always persisted for crash recovery.
-    // Manually-spawned sessions (no task_id) are only persisted when reopen_sessions is enabled.
-    let reopen_enabled = app_state.acp.reopen_sessions.lock().await
-        .get(&project_id).copied().unwrap_or(false);
 
     let (project_path, connection_key) = {
         match app_state.db.lock() {
@@ -216,17 +211,15 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
                     relative_path,
                 });
             }
-            if proc.task_id.is_some() || reopen_enabled {
-                snapshots.push(crate::project::models::SessionSnapshot {
-                    agent_id: proc.agent_id_meta.clone(),
-                    acp_session_id,
-                    cwd: proc.cwd.clone(),
-                    session_name: proc.session_name.clone(),
-                    connection_key: proc.connection_key,
-                    branch_name: proc.branch_name.clone(),
-                    task_id: proc.task_id,
-                });
-            }
+            snapshots.push(crate::project::models::SessionSnapshot {
+                agent_id: proc.agent_id_meta.clone(),
+                acp_session_id,
+                cwd: proc.cwd.clone(),
+                session_name: proc.session_name.clone(),
+                connection_key: proc.connection_key,
+                branch_name: proc.branch_name.clone(),
+                task_id: proc.task_id,
+            });
         }
         (snapshots, folders)
     };
@@ -246,10 +239,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
             None => project_state.session_folders.push(folder),
         }
     }
-    // No snapshots means reopen-on-startup is off, not that the stored ones went stale.
-    if !snapshots.is_empty() {
-        project_state.restorable_sessions = snapshots;
-    }
+    project_state.restorable_sessions = snapshots;
 
     write_project_state(&app_state, &project_path, connection_key, &project_state).await;
 }
