@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.14.0](https://github.com/emdgroup/maestro/compare/v0.13.0...v0.14.0) (2026-07-29)
+
+
+### Features
+
+* always reopen sessions on startup ([#150](https://github.com/emdgroup/maestro/issues/150)) ([9bf8e17](https://github.com/emdgroup/maestro/commit/9bf8e17f7e17da1b03344f3c6706b55d9edfde3a))
+* label a search by what it looked for ([8f42865](https://github.com/emdgroup/maestro/commit/8f428650e4695c23aba5f2ab80fa1f52819bdc89))
+* name an MCP tool call by what it does ([#147](https://github.com/emdgroup/maestro/issues/147)) ([11bd6d7](https://github.com/emdgroup/maestro/commit/11bd6d7a97033de18abf4a70d38ae69eb2ccd162))
+* notify when an agent finishes, blocks, or fails ([#164](https://github.com/emdgroup/maestro/issues/164)) ([124e0aa](https://github.com/emdgroup/maestro/commit/124e0aa2df82ad743cf7cc1703061157286170f6))
+
+
+### Bug Fixes
+
+* always lead a search row with "Search" ([9cd6532](https://github.com/emdgroup/maestro/commit/9cd6532fcd2299e3a267b13d0d52e1b574d0137f))
+* give the resize separator the panels' background ([00c1a58](https://github.com/emdgroup/maestro/commit/00c1a5842530389d47e5d60ab87a1f56e4f69025))
+* give the session side panel three real states ([#153](https://github.com/emdgroup/maestro/issues/153)) ([170cc22](https://github.com/emdgroup/maestro/commit/170cc227a2889d3c0aba0cb575323be6861f60b8))
+* hide the side panel separator and steady the stream ([#159](https://github.com/emdgroup/maestro/issues/159)) ([a5d6e94](https://github.com/emdgroup/maestro/commit/a5d6e94958d8de88b9abe20ccfb241cc4d2babcb))
+* keep one agent reply in one bubble ([#148](https://github.com/emdgroup/maestro/issues/148)) ([d0958ff](https://github.com/emdgroup/maestro/commit/d0958ff68479151fd15ffb891d3633bca48a075d))
+* keep the failure count to the summary line ([ff701ff](https://github.com/emdgroup/maestro/commit/ff701ff3b0cd88212d52edd7d72e75173b89f772))
+* keep the message timestamp ticking ([#158](https://github.com/emdgroup/maestro/issues/158)) ([44a85cd](https://github.com/emdgroup/maestro/commit/44a85cd5b78ab1b3ec30b1f06822b160780f1447))
+* keep the session branch live and stop badging busy worktrees unused ([#160](https://github.com/emdgroup/maestro/issues/160)) ([44aa770](https://github.com/emdgroup/maestro/commit/44aa770f5ca380271a59f7c0789d43c14a959af8))
+* let a tool call update refine its kind ([#151](https://github.com/emdgroup/maestro/issues/151)) ([8b13255](https://github.com/emdgroup/maestro/commit/8b1325572bd845c6d9e17a7dc181ba65dd71b60a))
+* make the session Review tab show what git says changed ([#146](https://github.com/emdgroup/maestro/issues/146)) ([c998dbd](https://github.com/emdgroup/maestro/commit/c998dbd4a180dabc91b28913b9bb99843762ce75))
+* make the session side panel resizable again ([#157](https://github.com/emdgroup/maestro/issues/157)) ([a90bdd1](https://github.com/emdgroup/maestro/commit/a90bdd1d485e4899b2ab6524e9eee8dbbfeb8f80))
+* make the worktree selector match the branch picker ([#163](https://github.com/emdgroup/maestro/issues/163)) ([90d7969](https://github.com/emdgroup/maestro/commit/90d7969ab223b74188c18e16611cc29c00c4046e))
+* mark a shell row that runs git as repository work ([46faefd](https://github.com/emdgroup/maestro/commit/46faefd20964490fc6fa8acd36f2a65ee78e7355))
+* measure the side panel's width when it wants to expand ([#162](https://github.com/emdgroup/maestro/issues/162)) ([8d43d4b](https://github.com/emdgroup/maestro/commit/8d43d4bed42e04b2e50fff4f50f10bfac650d412))
+* open a file that lives outside the project ([#155](https://github.com/emdgroup/maestro/issues/155)) ([c268627](https://github.com/emdgroup/maestro/commit/c268627a1deaeb3f475c9026405f657e7fdb63b9))
+* replace the new-worktree checkbox with a New/Existing toggle ([#161](https://github.com/emdgroup/maestro/issues/161)) ([3d50437](https://github.com/emdgroup/maestro/commit/3d504375ac188412fff435b36c1ae716c4937c48))
+* stop deleting worktrees sessions are still using ([#149](https://github.com/emdgroup/maestro/issues/149)) ([75d6da2](https://github.com/emdgroup/maestro/commit/75d6da2130fc555706585f68e907e1d1e447c2c9))
+* stop the action bar from setting the message bubble's width ([c75f183](https://github.com/emdgroup/maestro/commit/c75f1838fd4623177d51bc8e8524fee0543a3354))
+
 ## [0.13.0](https://github.com/emdgroup/maestro/compare/v0.12.1...v0.13.0) (2026-07-29)
 
 ### Features
