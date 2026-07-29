@@ -61,6 +61,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::get_worktree_diff_stats,
             crate::ipc::create_worktree,
             crate::ipc::delete_worktree,
+            crate::ipc::cleanup_worktree_if_clean,
             crate::ipc::cleanup_zombie_worktrees,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,

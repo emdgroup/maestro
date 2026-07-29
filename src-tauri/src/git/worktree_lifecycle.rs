@@ -186,6 +186,64 @@ pub async fn delete_worktree(
     Ok(())
 }
 
+/// True when another ref already contains the worktree's tip, i.e. the branch holds no commits
+/// of its own. `containing` is `git branch --all --contains HEAD --format=%(refname:short)`;
+/// `--all` matters because the base branch may have been a remote-tracking ref with no local
+/// branch at that commit.
+fn branch_has_no_own_commits(containing: &str, branch_name: &str) -> bool {
+    containing
+        .lines()
+        .map(str::trim)
+        .any(|other| !other.is_empty() && other != branch_name)
+}
+
+/// Remove a worktree and its branch only when nothing would be lost: no uncommitted changes and
+/// no commits that live solely on that branch. Returns `None` when removed, or the reason it was
+/// kept.
+///
+/// The commit check has to happen up front: `git branch -d` refuses an unmerged branch, but it
+/// runs after `git worktree remove --force` has already thrown the working tree away.
+#[tauri::command]
+#[specta::specta]
+pub async fn cleanup_worktree_if_clean(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    branch_name: String,
+    worktree_id: Option<i32>,
+) -> Result<Option<String>, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let status = crate::git::run_git_in_dir(&git_conn, &worktree_path, &["status", "--porcelain"]).await?;
+    if !status.trim().is_empty() {
+        log::debug!("keeping worktree {}: working tree not clean\n{}", worktree_path, status);
+        return Ok(Some("it has uncommitted changes".to_string()));
+    }
+
+    let containing = crate::git::run_git_in_dir(
+        &git_conn,
+        &worktree_path,
+        &["branch", "--all", "--contains", "HEAD", "--format=%(refname:short)"],
+    )
+    .await?;
+    if !branch_has_no_own_commits(&containing, &branch_name) {
+        log::debug!("keeping worktree {}: only {} contains its tip", worktree_path, branch_name);
+        return Ok(Some("its branch has commits of its own".to_string()));
+    }
+
+    crate::git::delete_worktree(&git_conn, &worktree_path).await?;
+    crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await?;
+
+    if let Some(id) = worktree_id {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id])
+            .map_err(|e| format!("Failed to delete worktree row: {}", e))?;
+    }
+
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    Ok(None)
+}
+
 // ============================================================================
 // cleanup_zombie_worktrees — REQ-34, REQ-35, REQ-36
 // ============================================================================
@@ -331,7 +389,16 @@ pub async fn delete_worktree_for_task(
 
 #[cfg(test)]
 mod tests {
-    use super::canonicalize_repo_path;
+    use super::{branch_has_no_own_commits, canonicalize_repo_path};
+
+    #[test]
+    fn own_commits_detected_from_containing_branches() {
+        // Branch tip still shared with main — nothing was committed on it.
+        assert!(branch_has_no_own_commits("maestro/foo\nmain\n", "maestro/foo"));
+        // Only the branch itself contains the tip — it holds work.
+        assert!(!branch_has_no_own_commits("maestro/foo\n", "maestro/foo"));
+        assert!(!branch_has_no_own_commits("", "maestro/foo"));
+    }
 
     /// Worktree paths are built as `{repo}/{relative}` strings; an extended-length `\?\` repo
     /// path makes that combination illegal on Windows (os error 123).
