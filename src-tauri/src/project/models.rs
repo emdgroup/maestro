@@ -74,6 +74,8 @@ pub struct ProjectConfig {
     pub issue_tracking_auto_detect: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_tab: Option<String>,
+    /// Preselect "Existing" instead of "New" in the New Session dialog's worktree toggle.
+    pub default_existing_worktree: bool,
     /// Extra workspace roots handed to every agent alongside the session's own directory.
     ///
     /// Absolute paths on the machine the agent runs on, or `~`-relative; `~` is expanded there,

@@ -87,6 +87,7 @@ pub async fn get_project_settings(
     Ok(crate::models::ProjectConfigResponse {
         default_agent: config.default_agent,
         startup_tab: config.startup_tab,
+        default_existing_worktree: config.default_existing_worktree,
     })
 }
 
@@ -121,6 +122,7 @@ pub async fn update_project_settings(
             };
             config.default_agent = settings.default_agent;
             config.startup_tab = settings.startup_tab;
+            config.default_existing_worktree = settings.default_existing_worktree;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
@@ -151,6 +153,7 @@ pub async fn update_project_settings(
             };
             config.default_agent = settings.default_agent;
             config.startup_tab = settings.startup_tab;
+            config.default_existing_worktree = settings.default_existing_worktree;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
@@ -180,6 +183,7 @@ pub async fn update_project_settings(
             };
             config.default_agent = settings.default_agent;
             config.startup_tab = settings.startup_tab;
+            config.default_existing_worktree = settings.default_existing_worktree;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Serialization failed: {}", e))?;
@@ -201,6 +205,7 @@ pub async fn update_project_settings(
             let mut config = crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default();
             config.default_agent = settings.default_agent;
             config.startup_tab = settings.startup_tab;
+            config.default_existing_worktree = settings.default_existing_worktree;
             config.updated_at = Utc::now().to_rfc3339();
             config.save_to_project(&path)?;
         }

@@ -3007,10 +3007,12 @@ export type ProjectAgentMatch = { agent_id: string; markers_found: string[] };
 export type ProjectConfigRequest = {
   default_agent: string | null;
   startup_tab: string | null;
+  default_existing_worktree: boolean;
 };
 export type ProjectConfigResponse = {
   default_agent: string | null;
   startup_tab: string | null;
+  default_existing_worktree: boolean;
 };
 export type ProjectIssueTrackingConfig = {
   provider: string;
