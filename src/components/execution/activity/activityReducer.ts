@@ -344,6 +344,10 @@ function processEvent(
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
         const updated = { ...existing };
+        // A create frame that could not classify the call omits `kind` altogether;
+        // without this the row is stuck on that first guess and every kind-keyed
+        // decision — the terminal label, the icon — reads the wrong branch forever.
+        if (payload.kind) updated.kind = payload.kind;
         if (payload.title) updated.title = payload.title;
         if (payload.status) updated.status = payload.status === "failed" ? "error" : payload.status;
         if (payload.content) updated.content = payload.content;

@@ -57,6 +57,8 @@ export type ToolCallContent =
 export type ToolCallUpdate = {
   sessionUpdate: "tool_call_update";
   toolCallId: string;
+  /** ACP lets an update refine the kind — a create frame omits it entirely when it is `other`. */
+  kind?: string;
   title?: string;
   status?: "pending" | "in_progress" | "completed" | "failed" | "error";
   content?: ToolCallContent[];
