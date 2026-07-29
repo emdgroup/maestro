@@ -10,6 +10,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
+import { NotificationsSection } from "./NotificationsSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
@@ -121,6 +122,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 connection={connection}
               />
               <AppearanceSection />
+              <NotificationsSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}
                 projectId={projectId}

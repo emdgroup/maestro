@@ -82,6 +82,21 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<AgentStreamWidth>().ok())
         .unwrap_or_default();
 
+    let notify_on_done = settings_map
+        .get("notify_on_done")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let notify_on_input_needed = settings_map
+        .get("notify_on_input_needed")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let notify_on_failure = settings_map
+        .get("notify_on_failure")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
     let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
     let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
@@ -101,6 +116,9 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         ui_scale,
         log_level,
         log_directory,
+        notify_on_done,
+        notify_on_input_needed,
+        notify_on_failure,
     })
 }
 
@@ -123,6 +141,9 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let ui_scale_str = settings.ui_scale.as_deref().unwrap_or("").to_string();
     let log_level_str = settings.log_level.as_deref().unwrap_or("").to_string();
     let log_directory_str = settings.log_directory.as_deref().unwrap_or("").to_string();
+    let notify_on_done_str = if settings.notify_on_done { "true" } else { "false" };
+    let notify_on_input_needed_str = if settings.notify_on_input_needed { "true" } else { "false" };
+    let notify_on_failure_str = if settings.notify_on_failure { "true" } else { "false" };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -137,6 +158,9 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("ui_scale", ui_scale_str.as_str()),
         ("log_level", log_level_str.as_str()),
         ("log_directory", log_directory_str.as_str()),
+        ("notify_on_done", notify_on_done_str),
+        ("notify_on_input_needed", notify_on_input_needed_str),
+        ("notify_on_failure", notify_on_failure_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -191,6 +215,9 @@ mod tests {
             ui_scale: None,
             log_level: Some("debug".to_string()),
             log_directory: Some("/tmp/maestro-logs".to_string()),
+            notify_on_done: false,
+            notify_on_input_needed: true,
+            notify_on_failure: false,
         };
 
         save_settings(&mut conn, &settings).unwrap();
@@ -198,6 +225,9 @@ mod tests {
         assert_eq!(loaded.theme_preference, settings.theme_preference);
         assert_eq!(loaded.log_level, settings.log_level);
         assert_eq!(loaded.log_directory, settings.log_directory);
+        assert!(!loaded.notify_on_done);
+        assert!(loaded.notify_on_input_needed);
+        assert!(!loaded.notify_on_failure);
     }
 
     /// An unset directory must come back as `None`, not `Some("")` — the empty string would be

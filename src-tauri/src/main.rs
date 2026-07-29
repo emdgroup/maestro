@@ -105,6 +105,7 @@ fn main() {
         // is installed from `setup` once the database is open. See `setup_logging`.
         .setup(setup)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

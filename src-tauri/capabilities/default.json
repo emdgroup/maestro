@@ -8,6 +8,9 @@
     "opener:default",
     "dialog:default",
     "core:window:allow-show",
+    "core:window:allow-is-focused",
+    "core:window:allow-request-user-attention",
+    "notification:default",
     "updater:default",
     "process:default",
     "core:webview:allow-set-webview-zoom"
