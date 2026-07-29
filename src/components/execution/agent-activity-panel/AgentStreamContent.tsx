@@ -61,7 +61,7 @@ export function AgentStreamContent({
                 );
               }
 
-              const { items, showConnector } = section;
+              const { items } = section;
 
               const visibleItems = items.filter((gi) => {
                 if (gi.type === "toolGroup") return !toolCallsHidden;
@@ -89,7 +89,7 @@ export function AgentStreamContent({
 
               return (
                 <MessageScrollerItem key={sectionKey} messageId={sectionKey} className="px-3">
-                  <AgentResponseSection showConnector={showConnector}>
+                  <AgentResponseSection>
                     {visibleItems.map((gi) => (
                       <AgentStreamItem key={getItemKey(gi)} gi={gi} {...sharedItemProps} />
                     ))}

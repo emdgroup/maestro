@@ -232,6 +232,122 @@ describe("activityReducer — streaming text", () => {
     expect(thoughts[0].item).toMatchObject({ text: "start more end", messageId: "msg-1" });
   });
 
+  it("resumes a message that a tool call interrupted, matching on messageId", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "before" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "tc-1", title: "T", kind: "read" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: " after" },
+        messageId: "msg-1",
+      }),
+    );
+
+    const messages = state.items.filter((i) => i.type === "message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].item).toMatchObject({ text: "before after", messageId: "msg-1" });
+    expect(toolCallItems(state)).toHaveLength(1);
+  });
+
+  it("starts a new message when the id changes across a tool call", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "before" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "tc-1", title: "T", kind: "read" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "after" },
+        messageId: "msg-2",
+      }),
+    );
+
+    expect(state.items.filter((i) => i.type === "message").map((i) => i.item.text)).toEqual([
+      "before",
+      "after",
+    ]);
+  });
+
+  it("does not split a message when a background tool call reports progress", () => {
+    // A subagent running in the background emits tool_call_update while the main agent is
+    // mid-sentence. The frame revises a card already in the list and appends nothing, so it
+    // must not end the message — it used to, splitting one reply mid-word.
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call", toolCallId: "tc-1", title: "Task", kind: "other" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Three" },
+        messageId: "msg-1",
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "tool_call_update", toolCallId: "tc-1", status: "in_progress" }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: " agents out" },
+        messageId: "msg-1",
+      }),
+    );
+
+    const messages = state.items.filter((i) => i.type === "message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].item).toMatchObject({ text: "Three agents out", isStreaming: true });
+  });
+
+  it("does not split a message when a plan update arrives mid-sentence", () => {
+    let state = makeState();
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "half " } }),
+    );
+    state = activityReducer(
+      state,
+      event({
+        sessionUpdate: "plan",
+        entries: [{ content: "step", priority: "high", status: "pending" }],
+      }),
+    );
+    state = activityReducer(
+      state,
+      event({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "written" } }),
+    );
+
+    expect(state.items).toHaveLength(1);
+    expect(lastItem(state).item).toMatchObject({ text: "half written" });
+    expect(state.plan).toHaveLength(1);
+  });
+
   it("does not split a user message that arrives as several chunks of one message", () => {
     let state = makeState({ suppressUserChunks: false });
     state = activityReducer(
@@ -454,8 +570,8 @@ describe("activityReducer — tool_call_update", () => {
     );
 
     expect(state.toolCallMap.size).toBe(0);
-    // The transcript is still finalized even though the update went nowhere.
-    expect(lastItem(state).item).toMatchObject({ isStreaming: false });
+    // An update that went nowhere has even less business ending the message being streamed.
+    expect(lastItem(state).item).toMatchObject({ isStreaming: true });
   });
 
   it("lifts the plan title out of the 'Ready to code?' payload", () => {

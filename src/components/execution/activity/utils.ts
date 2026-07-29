@@ -11,49 +11,35 @@ export type GroupedDisplayItem =
   | { type: "toolGroup"; items: ToolCallItem[] };
 
 export type AgentSectionItem =
-  | { type: "agentSection"; items: GroupedDisplayItem[]; showConnector: boolean }
+  | { type: "agentSection"; items: GroupedDisplayItem[] }
   | { type: "standalone"; item: GroupedDisplayItem };
 
+/**
+ * One avatar per reply, not per message item. Only a user message opens a new section: an agent
+ * that ends one ACP message and starts another mid-reply — around a tool call, or because it
+ * chose to — is still answering the same question, and a second avatar reads as a second speaker.
+ */
 export function groupIntoAgentSections(items: GroupedDisplayItem[]): AgentSectionItem[] {
   const sections: AgentSectionItem[] = [];
   let currentSection: GroupedDisplayItem[] | null = null;
 
   for (const gi of items) {
-    const isMessage = gi.type === "solo" && gi.item.type === "message";
-    const isUserMessage = gi.type === "solo" && gi.item.type === "userMessage";
-
-    if (isUserMessage) {
+    if (gi.type === "solo" && gi.item.type === "userMessage") {
       if (currentSection) {
-        sections.push({ type: "agentSection", items: currentSection, showConnector: false });
+        sections.push({ type: "agentSection", items: currentSection });
         currentSection = null;
       }
       sections.push({ type: "standalone", item: gi });
-    } else if (isMessage) {
-      if (currentSection) {
-        sections.push({ type: "agentSection", items: currentSection, showConnector: false });
-      }
-      currentSection = [gi];
     } else {
-      if (currentSection) {
-        currentSection.push(gi);
-      } else {
-        // Start a new section rather than a standalone — thinking blocks and tool
-        // calls that precede the first agent message in a turn would otherwise be
-        // filtered out by the renderer's standalone guard.
-        currentSection = [gi];
-      }
+      // Thinking blocks and tool calls that precede the first agent message in a turn open a
+      // section rather than a standalone — the renderer's standalone guard drops anything that
+      // is not a user message.
+      (currentSection ??= []).push(gi);
     }
   }
 
   if (currentSection) {
-    sections.push({ type: "agentSection", items: currentSection, showConnector: false });
-  }
-
-  for (let i = 0; i < sections.length - 1; i++) {
-    const s = sections[i];
-    if (s.type === "agentSection" && sections[i + 1].type === "agentSection") {
-      s.showConnector = true;
-    }
+    sections.push({ type: "agentSection", items: currentSection });
   }
 
   return sections;

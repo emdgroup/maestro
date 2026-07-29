@@ -240,31 +240,62 @@ function processEvent(
     }
 
     case "agent_message_chunk": {
+      const messageId = payload.messageId;
+
+      // Fast path: the message is still the last item (no interleaving, common case).
       const lastItem = newState.items[newState.items.length - 1];
       if (
         lastItem &&
         lastItem.type === "message" &&
         lastItem.item.isStreaming &&
-        continuesMessage(lastItem.item.messageId, payload.messageId)
+        continuesMessage(lastItem.item.messageId, messageId)
       ) {
         const updated = {
           ...lastItem.item,
           text: lastItem.item.text + payload.content.text,
-          messageId: lastItem.item.messageId ?? payload.messageId,
+          // Adopt the first id we learn, so a later chunk can still resume this block
+          // after an interleaved tool call.
+          messageId: lastItem.item.messageId ?? messageId,
         };
         newState.items = [...newState.items.slice(0, -1), { type: "message", item: updated }];
-      } else {
-        // Finalize the streaming block — a thinking block, or the message this chunk just
-        // declared finished by carrying a different messageId.
-        const items = finalizeStreaming(newState.items);
-        const msg: MessageItem = {
-          id: `msg-${crypto.randomUUID()}`,
-          text: payload.content.text,
-          isStreaming: true,
-          messageId: payload.messageId,
-        };
-        newState.items = [...items, { type: "message", item: msg }];
+        return newState;
       }
+
+      // The id is what ACP says a message *is* — a matching one reattaches wherever the block
+      // sits and whether or not it still counts as streaming. Neither being last nor the
+      // streaming flag is a protocol fact: both are lost to anything that interleaves, and an
+      // agent's chunk boundaries are its own business. Only a message the agent never
+      // identified falls back to tail adjacency.
+      if (messageId) {
+        let idx = newState.items.length - 1;
+        while (idx >= 0 && newState.items[idx].type !== "message") idx--;
+        if (idx >= 0) {
+          const existing = newState.items[idx].item as MessageItem;
+          if (existing.messageId === messageId) {
+            const updated = {
+              ...existing,
+              text: existing.text + payload.content.text,
+              isStreaming: true,
+            };
+            newState.items = [
+              ...newState.items.slice(0, idx),
+              { type: "message", item: updated },
+              ...newState.items.slice(idx + 1),
+            ];
+            return newState;
+          }
+        }
+      }
+
+      // Finalize the streaming block — a thinking block, or the message this chunk just
+      // declared finished by carrying a different messageId.
+      const msg: MessageItem = {
+        id: `msg-${crypto.randomUUID()}`,
+        text: payload.content.text,
+        isStreaming: true,
+        messageId,
+      };
+      newState.items = [...finalizeStreaming(newState.items), { type: "message", item: msg }];
       return newState;
     }
 
@@ -339,7 +370,10 @@ function processEvent(
     }
 
     case "tool_call_update": {
-      const items = finalizeStreaming(newState.items);
+      // Deliberately does not finalize: this frame appends nothing, it revises a card that is
+      // already in the list. Ending the message here would split it — a background subagent
+      // reports progress while the main agent is mid-sentence.
+      const items = newState.items;
       const newMap = new Map(newState.toolCallMap);
       const existing = newMap.get(payload.toolCallId);
       if (existing) {
@@ -391,10 +425,10 @@ function processEvent(
     }
 
     case "plan": {
-      const items = finalizeStreaming(newState.items);
+      // Same as tool_call_update: the plan renders in its own panel and adds nothing to
+      // `items`, so it has no business ending the message being streamed.
       return {
         ...newState,
-        items,
         plan: payload.entries,
         planTitle: state.planTitle ?? payload.title ?? null,
       };
