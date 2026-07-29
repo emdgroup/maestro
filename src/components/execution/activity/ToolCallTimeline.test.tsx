@@ -6,7 +6,7 @@ vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }
 
 import { ActivityToolCallGroup } from "./ActivityToolCallGroup";
 import { OpenFileContext } from "./MarkdownBlock";
-import { splitTitleAroundPath, ToolCallTimeline } from "./ToolCallTimeline";
+import { isGitCommand, rowIcon, splitTitleAroundPath, ToolCallTimeline } from "./ToolCallTimeline";
 import type { ToolCallItem } from "./types";
 
 const BODY = "SEVEN-HUNDRED-LINE-OUTPUT";
@@ -61,6 +61,32 @@ describe("tool call output is built only when open", () => {
   it("opens a lone row straight to its content, and only that row", () => {
     const { container } = render(<ToolCallTimeline items={[items[0]]} />);
     expect(container.querySelectorAll("pre").length).toBe(1);
+  });
+});
+
+describe("isGitCommand", () => {
+  it("sees git wherever a command can start", () => {
+    expect(isGitCommand("git status")).toBe(true);
+    expect(isGitCommand("cd C:/repo && git add -A && git commit -q")).toBe(true);
+    expect(isGitCommand("git push -q 2>&1 | tail -2; git log --oneline -2")).toBe(true);
+    expect(isGitCommand("cd ../wt && gh pr create --base main")).toBe(true);
+  });
+
+  it("ignores git as a word inside a command", () => {
+    expect(isGitCommand("cat .gitignore")).toBe(false);
+    expect(isGitCommand("grep -r git README.md")).toBe(false);
+    expect(isGitCommand("bun run test")).toBe(false);
+  });
+
+  it("marks a git command as a repository row, not a shell one", () => {
+    const shell = (title: string): ToolCallItem => ({
+      ...call("g", title, "execute"),
+      meta: { toolName: "Bash", description: "Commit and push" },
+    });
+    expect(rowIcon(shell("cd C:/repo && git commit -q && git push"))).toBe(
+      rowIcon({ ...call("x", "x"), meta: { git: { commitSha: "abc" } } }),
+    );
+    expect(rowIcon(shell("bun run test"))).not.toBe(rowIcon(shell("git status")));
   });
 });
 

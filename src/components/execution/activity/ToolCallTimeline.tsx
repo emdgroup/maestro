@@ -70,10 +70,29 @@ export function isTerminalKind(kind: string) {
   return /run_terminal|bash|shell|execute/.test(kind);
 }
 
+/**
+ * A shell call's title is the command line, and that is the only thing that says
+ * a row is about the repository from the moment it appears: `meta.git` is a
+ * vendor field, filled in from the *response*, for a handful of verbs — so a
+ * `git status` under any agent, and a `git add` still running under Claude Code,
+ * both arrive with nothing on them.
+ *
+ * Anchored to a command position — line start, or after a pipe, semicolon,
+ * `&&` or `(` — so `cd repo && git add .` counts while `cat .gitignore` and
+ * `grep git README` do not. `gh` rides along: opening a PR is repository work
+ * however it is spelled.
+ */
+export function isGitCommand(command: string): boolean {
+  return /(^|[\n|;&(])\s*(git|gh)\s/.test(command);
+}
+
 export function rowIcon(tc: ToolCallItem): React.ElementType {
   const meta = tc.meta;
   if (meta?.blocked) return ShieldAlert;
   if (meta?.git) return GitBranch;
+  // Before the tool lookup: `Bash` and every terminal kind map to a terminal,
+  // which is true of the process and useless as a description of the row.
+  if (isTerminalKind(tc.kind) && isGitCommand(tc.title)) return GitBranch;
   if (meta?.toolName) {
     const byTool = TOOL_ICON[meta.toolName];
     if (byTool) return byTool;
