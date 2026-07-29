@@ -27,7 +27,7 @@ export interface SettingsPageHandle {
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
   ({ projectId, connection }, ref) => {
     const { control, handleSubmit, reset } = useForm<ProjectSettingsFormData>({
-      defaultValues: { default_agent: "", reopen_sessions: false, startup_tab: "" },
+      defaultValues: { default_agent: "", startup_tab: "" },
     });
 
     const projectSettingsQuery = useProjectSettings(projectId);
@@ -40,10 +40,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
-      const { default_agent, reopen_sessions, startup_tab } = projectSettingsQuery.data;
+      const { default_agent, startup_tab } = projectSettingsQuery.data;
       reset({
         default_agent: default_agent ?? "",
-        reopen_sessions: reopen_sessions ?? false,
         startup_tab: startup_tab ?? "",
       });
     }, [projectSettingsQuery.data, reset]);
@@ -54,7 +53,6 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           projectId,
           config: {
             default_agent: data.default_agent || null,
-            reopen_sessions: data.reopen_sessions || null,
             startup_tab: data.startup_tab || null,
           },
         });
@@ -85,7 +83,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         await handleSubmit(onSubmit)();
       },
       resetToDefaults: () => {
-        reset({ default_agent: "", reopen_sessions: false, startup_tab: "" });
+        reset({ default_agent: "", startup_tab: "" });
       },
     }));
 

@@ -86,7 +86,6 @@ pub async fn get_project_settings(
     let config = load_project_config_for(&app_state, project_id).await?;
     Ok(crate::models::ProjectConfigResponse {
         default_agent: config.default_agent,
-        reopen_sessions: config.reopen_sessions,
         startup_tab: config.startup_tab,
     })
 }
@@ -121,7 +120,6 @@ pub async fn update_project_settings(
                 Err(_) => crate::models::ProjectConfig::default(),
             };
             config.default_agent = settings.default_agent;
-            config.reopen_sessions = settings.reopen_sessions;
             config.startup_tab = settings.startup_tab;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
@@ -152,7 +150,6 @@ pub async fn update_project_settings(
                 }
             };
             config.default_agent = settings.default_agent;
-            config.reopen_sessions = settings.reopen_sessions;
             config.startup_tab = settings.startup_tab;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
@@ -182,7 +179,6 @@ pub async fn update_project_settings(
                 Err(_) => crate::models::ProjectConfig::default(),
             };
             config.default_agent = settings.default_agent;
-            config.reopen_sessions = settings.reopen_sessions;
             config.startup_tab = settings.startup_tab;
             config.updated_at = Utc::now().to_rfc3339();
             let json = serde_json::to_string_pretty(&config)
@@ -204,15 +200,11 @@ pub async fn update_project_settings(
             // Load-modify-save to preserve fields managed by other handlers (e.g. issue_tracking).
             let mut config = crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default();
             config.default_agent = settings.default_agent;
-            config.reopen_sessions = settings.reopen_sessions;
             config.startup_tab = settings.startup_tab;
             config.updated_at = Utc::now().to_rfc3339();
             config.save_to_project(&path)?;
         }
     }
-
-    app_state.acp.reopen_sessions.lock().await
-        .insert(project_id, settings.reopen_sessions.unwrap_or(false));
 
     Ok(())
 }

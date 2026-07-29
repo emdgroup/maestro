@@ -43,7 +43,6 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
         projectId,
         config: {
           default_agent: selected,
-          reopen_sessions: projectSettings?.reopen_sessions ?? null,
           startup_tab: projectSettings?.startup_tab ?? null,
         },
       });
