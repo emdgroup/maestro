@@ -9,9 +9,11 @@ import {
   isRunning,
   labelBecomesCommand,
   rowIcon,
+  rowKeyDown,
   rowLabel,
   RowMeta,
   StatusWord,
+  titleSuffix,
   ToolCallTimeline,
   ToolCallTitle,
 } from "./ToolCallTimeline";
@@ -113,7 +115,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   const expandable = items.length > 1 || items.some(hasRowContent);
 
   const labelClass = cn(
-    "truncate",
+    "min-w-0 truncate",
     showCurrent ? "shimmer-text" : isSingle && errorCount > 0 && "text-destructive",
   );
 
@@ -142,76 +144,54 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
     </>
   );
 
-  // A lone call has no timeline row of its own, so its detail belongs on this line.
-  const detail = isSingle && !showCurrent ? <RowMeta tc={items[0]} /> : null;
-
-  const timeline = open && (
-    <div className="mt-1 ml-1.5">
-      <ToolCallTimeline items={items} inline={isSingle} />
-    </div>
+  // A lone file call puts its name on this line, and the name is a control of its
+  // own — clicking it opens the file rather than the group.
+  const fileLine = fileItem && openFile && (
+    <>
+      <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-secondary")} />
+      <FileLabel
+        tc={fileItem}
+        expanded={open}
+        onOpenFile={openFile}
+        className={cn(showCurrent && "shimmer-text")}
+      />
+      <StatusWord tc={fileItem} />
+    </>
   );
 
-  // A lone file call puts its name on this line, and the name is a control of its
-  // own — so the toggle shrinks to the chevron rather than wrapping the label.
-  if (fileItem && openFile) {
-    return (
-      <div>
-        <div className="flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
-          <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-secondary")} />
-          <FileLabel
-            tc={fileItem}
-            expanded={open}
-            onOpenFile={openFile}
-            className={cn("min-w-0", showCurrent && "shimmer-text")}
-          />
-          <StatusWord tc={fileItem} />
-          <RowMeta tc={fileItem} />
-          {expandable && (
-            <button
-              type="button"
-              aria-expanded={open}
-              aria-label={open ? "Hide output" : "Show output"}
-              onClick={() => setOpen((v) => !v)}
-              className="shrink-0 rounded-md p-0.5 hover:bg-muted/40 hover:text-foreground/75"
-            >
-              {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            </button>
-          )}
-        </div>
-        {timeline}
-      </div>
-    );
-  }
-
-  if (!expandable) {
-    return (
-      <div className="flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
-        {line}
-        {detail}
-      </div>
-    );
-  }
+  // A lone call has no timeline row of its own, so its detail belongs on this line.
+  const detail =
+    isSingle && !showCurrent ? (
+      <RowMeta tc={items[0]} prefix={fileLine ? titleSuffix(items[0]) : null} />
+    ) : null;
 
   return (
     <div>
-      <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className={cn(
-            "-ml-1 flex min-w-0 gap-1.5 rounded-md px-1 py-0.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/75",
-            showCommand ? "flex-1 items-start" : "items-center",
-          )}
-        >
-          {line}
-          {open ? (
-            <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
-          ) : (
-            <ChevronRight className="size-3 shrink-0" />
-          )}
-        </button>
-        {detail}
+      {/* Same shape as a timeline row: label, then a right edge holding the
+          detail and the chevron, with the whole line as the toggle. */}
+      <div
+        role={expandable ? "button" : undefined}
+        tabIndex={expandable ? 0 : undefined}
+        aria-expanded={expandable ? open : undefined}
+        onClick={expandable ? () => setOpen((v) => !v) : undefined}
+        onKeyDown={expandable ? rowKeyDown(() => setOpen((v) => !v)) : undefined}
+        className={cn(
+          "-ml-1 flex max-w-full gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground",
+          showCommand ? "items-start" : "items-center",
+          expandable &&
+            "cursor-pointer transition-colors hover:bg-muted/40 hover:text-foreground/75",
+        )}
+      >
+        {fileLine || line}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+          {detail}
+          {expandable &&
+            (open ? (
+              <ChevronDown className={cn("size-3", showCommand && "mt-1")} />
+            ) : (
+              <ChevronRight className="size-3" />
+            ))}
+        </span>
       </div>
       {open && (
         <div className="mt-1 ml-1.5">
