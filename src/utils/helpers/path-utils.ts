@@ -24,6 +24,17 @@ export function toPosixPath(path: string): string {
 }
 
 /**
+ * Whether a path is already absolute, and so must not be joined onto a root.
+ *
+ * Covers both shapes the UI sees at once: posix (`/home/…`, and UNC `\\wsl$\…`
+ * once normalised) and Windows drive letters (`C:\…`). A local connection is
+ * whichever the host is, a remote one is posix, and the same panels render both.
+ */
+export function isAbsolutePath(path: string): boolean {
+  return /^(\/|[A-Za-z]:\/)/.test(toPosixPath(path));
+}
+
+/**
  * Last segment of a path, whichever separator it uses.
  *
  * @example

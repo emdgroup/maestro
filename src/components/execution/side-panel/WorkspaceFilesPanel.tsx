@@ -11,6 +11,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { openFileWithConnection, downloadFileToFolder } from "@/lib/file-opener";
+import { isAbsolutePath } from "@/lib/path-utils";
 
 interface WorkspaceFilesPanelProps {
   projectPath: string;
@@ -41,7 +42,16 @@ export function WorkspaceFilesPanel({
   const treeRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
-  const fullPath = selected ? `${projectPath}/${selected}` : null;
+  // A file link in the stream can point outside the project — an agent reads
+  // config from a home directory, a log from /tmp — and `handleOpenFile` hands
+  // those over absolute because there is no root to make them relative to.
+  // Joining one onto `projectPath` anyway produced `C:/project/C:/Users/…`,
+  // which the read rejects (os error 123) and the OS opener cannot find.
+  const fullPath = selected
+    ? isAbsolutePath(selected)
+      ? selected
+      : `${projectPath}/${selected}`
+    : null;
   const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
   const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
   const {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, getFolderName, toPosixPath } from "./path-utils";
+import { basename, getFolderName, isAbsolutePath, toPosixPath } from "./path-utils";
 
 describe("toPosixPath", () => {
   it("rewrites the separators a Windows tool call reports", () => {
@@ -10,6 +10,21 @@ describe("toPosixPath", () => {
 
   it("leaves a posix path untouched", () => {
     expect(toPosixPath("/home/me/repo/src/index.css")).toBe("/home/me/repo/src/index.css");
+  });
+});
+
+describe("isAbsolutePath", () => {
+  it("recognises the shapes a file link outside the project arrives in", () => {
+    expect(isAbsolutePath("C:\\Users\\me\\.claude\\memory\\MEMORY.md")).toBe(true);
+    expect(isAbsolutePath("C:/Users/me/.claude/memory/MEMORY.md")).toBe(true);
+    expect(isAbsolutePath("/home/me/.claude/memory/MEMORY.md")).toBe(true);
+    expect(isAbsolutePath("\\\\wsl$\\Ubuntu\\home\\me\\notes.md")).toBe(true);
+  });
+
+  it("leaves a project-relative path joinable", () => {
+    expect(isAbsolutePath("src/components/App.tsx")).toBe(false);
+    expect(isAbsolutePath("src\\components\\App.tsx")).toBe(false);
+    expect(isAbsolutePath("App.tsx")).toBe(false);
   });
 });
 
