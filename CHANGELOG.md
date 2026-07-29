@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0](https://github.com/emdgroup/maestro/compare/v0.12.1...v0.13.0) (2026-07-29)
+
+
+### Features
+
+* auto-advance elicitation to next question on single-select ([#138](https://github.com/emdgroup/maestro/issues/138)) ([074badb](https://github.com/emdgroup/maestro/commit/074badbafacb28602644c50943a49bf08d43e35c))
+* create a worktree from the new session dialog ([#137](https://github.com/emdgroup/maestro/issues/137)) ([581f55c](https://github.com/emdgroup/maestro/commit/581f55c49e91e3ac3c049d7f4082e382d174e768))
+* detect issue tracking provider from the git remote ([#132](https://github.com/emdgroup/maestro/issues/132)) ([70947ff](https://github.com/emdgroup/maestro/commit/70947ffe9a984a4982e19defc86dce1cc6c5708f))
+* restyle the elicitation summary card and inset the prompt ([#139](https://github.com/emdgroup/maestro/issues/139)) ([378ad34](https://github.com/emdgroup/maestro/commit/378ad34df88e94ef7fcecc0887dbd11d5a516629))
+* show an expanded command as a coloured code block ([#135](https://github.com/emdgroup/maestro/issues/135)) ([f40eade](https://github.com/emdgroup/maestro/commit/f40eadef17e410cd3e9443a8e1f4001e1464fe36))
+* surface the tool call detail the ACP payload already carries ([#140](https://github.com/emdgroup/maestro/issues/140)) ([2e599f9](https://github.com/emdgroup/maestro/commit/2e599f939105344c5573b02ec7f6019bb19229a0))
+* unbox tool output and make a file row's name a link to the file ([#142](https://github.com/emdgroup/maestro/issues/142)) ([7fd5d17](https://github.com/emdgroup/maestro/commit/7fd5d1759e7f0caadc03d43b36debda842e6ec3b))
+
+
+### Bug Fixes
+
+* give every tool call row one layout ([#144](https://github.com/emdgroup/maestro/issues/144)) ([3374631](https://github.com/emdgroup/maestro/commit/3374631ffe42f1911df10ccdabe696c4c38c933e))
+* hide console window flashes on Windows ([4ca1a2a](https://github.com/emdgroup/maestro/commit/4ca1a2acc16e222b325939e7f858cd1cfec53fdf))
+* keep the chevron beside the label and the toggle off the row ([6651844](https://github.com/emdgroup/maestro/commit/66518447e47b1a16ed6438290eda991ed08c1f3c))
+* preserve line breaks in expanded tool call output ([#136](https://github.com/emdgroup/maestro/issues/136)) ([a628581](https://github.com/emdgroup/maestro/commit/a6285817af0aee4a24ba9a26c2873c2ce3b74bf5))
+* stop out-of-turn session updates from arming the turn flag ([2879561](https://github.com/emdgroup/maestro/commit/2879561fb38e1ed2cca72ee200f7cf516b4c13a2))
+* strip Windows extended-length prefix from canonicalized repo paths ([#134](https://github.com/emdgroup/maestro/issues/134)) ([7fcd7be](https://github.com/emdgroup/maestro/commit/7fcd7bea13d587cfe0c5a4db06b1bdfaebeba5f9))
+
 ## [0.12.1](https://github.com/emdgroup/maestro/compare/v0.12.0...v0.12.1) (2026-07-28)
 
 ### Bug Fixes
