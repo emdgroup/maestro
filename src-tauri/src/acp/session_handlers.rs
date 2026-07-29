@@ -81,16 +81,32 @@ pub async fn spawn_acp_session(
         (sha, None)
     };
 
-    // Persist execution_start_sha to the task for rollback capability
-    if let Some(tid) = task_id {
-        if let Some(ref sha) = session_start_sha {
+    // Persist execution_start_sha to the task for rollback capability. A task that already
+    // has one keeps it: resuming a session would otherwise re-anchor at the current HEAD and
+    // hide every change the previous run made. `review.rs` clears it once the task is merged.
+    let session_start_sha = match task_id {
+        Some(tid) => {
             let conn = app_state.db.lock().map_err(|e| format!("Lock: {}", e))?;
-            conn.execute(
-                "UPDATE tasks SET execution_start_sha = ? WHERE id = ?",
-                rusqlite::params![sha, tid],
-            ).map_err(|e| format!("Failed to save execution_start_sha: {}", e))?;
+            let stored: Option<String> = conn.query_row(
+                "SELECT execution_start_sha FROM tasks WHERE id = ?",
+                rusqlite::params![tid],
+                |row| row.get(0),
+            ).map_err(|e| format!("Failed to read execution_start_sha: {}", e))?;
+            match stored.filter(|sha| !sha.is_empty()) {
+                Some(sha) => Some(sha),
+                None => {
+                    if let Some(ref sha) = session_start_sha {
+                        conn.execute(
+                            "UPDATE tasks SET execution_start_sha = ? WHERE id = ?",
+                            rusqlite::params![sha, tid],
+                        ).map_err(|e| format!("Failed to save execution_start_sha: {}", e))?;
+                    }
+                    session_start_sha
+                }
+            }
         }
-    }
+        None => session_start_sha,
+    };
 
     let connection_key = connection;
     let req = SessionRequest {

@@ -22,7 +22,6 @@ interface ExecutionSidePanelProps {
   onOpenTabKind: (kind: TabKind) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
-  changedFiles: string[];
   projectPath: string;
   connection: ConnectionKey;
   canvasMap: Map<string, CanvasSurface>;
@@ -53,7 +52,6 @@ export function ExecutionSidePanel({
   onOpenTabKind,
   workingFiles,
   taskId,
-  changedFiles,
   projectPath,
   connection,
   canvasMap,
@@ -143,7 +141,6 @@ export function ExecutionSidePanel({
                 onPlanRespond={onPlanRespond}
                 canvasMap={canvasMap}
                 latestCanvasSurfaceId={latestCanvasSurfaceId}
-                changedFiles={changedFiles}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 projectPath={projectPath}

@@ -174,8 +174,7 @@ export function AgentActivityPanel({
 
   const pendingSendRef = useRef(false);
   useActivityStatusManager(sessionKey, liveState, pendingSendRef);
-  const { workingFiles: localWorkingFiles, sessionChangedFiles: localChangedFiles } =
-    useWorkingFileTracker(sessionKey, liveState.items);
+  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
 
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
   const taskId = useMemo(() => {
@@ -668,7 +667,6 @@ export function AgentActivityPanel({
             onOpenTabKind={openTabKind}
             workingFiles={localWorkingFiles}
             taskId={taskId}
-            changedFiles={localChangedFiles}
             projectPath={selectedProject?.path ?? ""}
             connection={connection}
             canvasMap={liveState.canvasMap}

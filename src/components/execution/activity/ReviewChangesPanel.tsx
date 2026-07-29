@@ -5,7 +5,6 @@ import { ReviewChangesPanelCompact } from "./ReviewChangesPanelCompact";
 
 interface ReviewChangesPanelProps {
   sessionKey: number;
-  sessionChangedFiles: string[];
   onClose: () => void;
   initialFile?: string;
   compact?: boolean;
@@ -15,7 +14,6 @@ interface ReviewChangesPanelProps {
 
 export function ReviewChangesPanel({
   sessionKey,
-  sessionChangedFiles,
   initialFile,
   compact = false,
   isActive = true,
@@ -36,8 +34,16 @@ export function ReviewChangesPanel({
     });
   }, []);
 
-  const { projectId, cwd, allDisplayItems, loading, totalFileCount, diffError, truncationInfo } =
-    useReviewChangesData({ sessionKey, sessionChangedFiles, isActive, onDiffStats });
+  const {
+    projectId,
+    cwd,
+    allDisplayItems,
+    loading,
+    totalFileCount,
+    diffError,
+    truncationInfo,
+    scope,
+  } = useReviewChangesData({ sessionKey, isActive, onDiffStats });
 
   useEffect(() => {
     if (!initialFile || initialFileAppliedRef.current || allDisplayItems.length === 0) return;
@@ -79,6 +85,7 @@ export function ReviewChangesPanel({
         projectId={projectId}
         cwd={cwd}
         truncationInfo={truncationInfo}
+        scope={scope}
         diffViewMode={diffViewMode}
         setDiffViewMode={setDiffViewMode}
         selectedFileIndex={selectedFileIndex}

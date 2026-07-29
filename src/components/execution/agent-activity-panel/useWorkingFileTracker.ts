@@ -53,7 +53,7 @@ export function isWorkingFile(path: string): boolean {
 export function useWorkingFileTracker(
   sessionKey: number,
   items: ActivityItem[],
-): { workingFiles: WorkingFileEntry[]; sessionChangedFiles: string[] } {
+): { workingFiles: WorkingFileEntry[] } {
   const seenAt = useRef<Map<string, number>>(new Map());
   const lastSessionKey = useRef<number | null>(null);
 
@@ -64,22 +64,17 @@ export function useWorkingFileTracker(
     }
     const now = Date.now();
     const working = new Set<string>();
-    const changed = new Set<string>();
     for (const item of items) {
       if (item.type !== "toolCall") continue;
       const tc = item.item;
       for (const c of tc.content) {
-        if (c.type === "diff") {
-          changed.add(c.path);
-          if (isWorkingFile(c.path)) {
-            working.add(c.path);
-            if (!seenAt.current.has(c.path)) seenAt.current.set(c.path, now);
-          }
+        if (c.type === "diff" && isWorkingFile(c.path)) {
+          working.add(c.path);
+          if (!seenAt.current.has(c.path)) seenAt.current.set(c.path, now);
         }
       }
       if (WRITE_KINDS.has(tc.kind)) {
         for (const loc of tc.locations) {
-          changed.add(loc.path);
           if (isWorkingFile(loc.path)) {
             working.add(loc.path);
             if (!seenAt.current.has(loc.path)) seenAt.current.set(loc.path, now);
@@ -92,7 +87,6 @@ export function useWorkingFileTracker(
         path,
         addedAt: seenAt.current.get(path) ?? now,
       })),
-      sessionChangedFiles: [...changed],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey, items]);

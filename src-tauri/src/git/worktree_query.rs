@@ -257,6 +257,12 @@ pub async fn get_worktree_diff(
     let diff_truncated = total_diff_bytes > MAX_DIFF_BYTES;
     let diff = if diff_truncated {
         let cut = floor_char_boundary(&diff_output, MAX_DIFF_BYTES);
+        // Cut on a file boundary: a diff sliced mid-hunk parses into a corrupt trailing file
+        // rather than one fewer file.
+        let cut = diff_output[..cut]
+            .rfind("\ndiff --git")
+            .map(|index| index + 1)
+            .unwrap_or(cut);
         diff_output[..cut].to_string()
     } else {
         diff_output
