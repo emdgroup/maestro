@@ -56,7 +56,13 @@ function resizeGroupTo(width: number) {
 }
 
 /** The side panel wiring from AgentActivityPanel, without the rest of the session UI. */
-function Harness({ canvasMap }: { canvasMap: Map<string, CanvasSurface> }) {
+function Harness({
+  canvasMap,
+  changedFilesCount = null,
+}: {
+  canvasMap: Map<string, CanvasSurface>;
+  changedFilesCount?: number | null;
+}) {
   const panel = useSidePanelState({
     isSelected: true,
     isPlanPermWithBody: false,
@@ -64,7 +70,12 @@ function Harness({ canvasMap }: { canvasMap: Map<string, CanvasSurface> }) {
     handlePermissionRespond: async () => {},
     setScrollRestoreToken: () => {},
   });
-  const tabsState = useSidePanelTabs({ hasPlan: false, canvasMap, hasArtifacts: false });
+  const tabsState = useSidePanelTabs({
+    hasPlan: false,
+    canvasMap,
+    hasArtifacts: false,
+    changedFilesCount,
+  });
   const { sidePanelCollapsed, expandAuto } = panel;
   const { activeTabId, markTabSeen, unseenTabIds } = tabsState;
 
@@ -82,6 +93,9 @@ function Harness({ canvasMap }: { canvasMap: Map<string, CanvasSurface> }) {
       data-group="1"
       data-testid="group"
       data-collapsed={String(sidePanelCollapsed)}
+      data-tabs={tabsState.tabs.map((t) => t.id).join(",")}
+      data-active={activeTabId}
+      data-unseen={[...unseenTabIds].join(",")}
     >
       <button type="button" onClick={() => panel.setSidePanelCollapsed(false)}>
         open
@@ -89,11 +103,18 @@ function Harness({ canvasMap }: { canvasMap: Map<string, CanvasSurface> }) {
       <button type="button" onClick={panel.syncCollapsedFromPanel}>
         sync
       </button>
+      <button type="button" onClick={() => tabsState.setActiveTabId("overview")}>
+        go overview
+      </button>
+      <button type="button" onClick={() => tabsState.closeTab("review")}>
+        close review
+      </button>
     </div>
   );
 }
 
-const collapsed = () => screen.getByTestId("group").dataset.collapsed;
+const group = () => screen.getByTestId("group").dataset;
+const collapsed = () => group().collapsed;
 const withCanvas = () => new Map<string, CanvasSurface>([["surface-1", {} as CanvasSurface]]);
 
 describe("side panel auto-expand", () => {
@@ -133,5 +154,54 @@ describe("side panel auto-expand", () => {
 
     resizeGroupTo(3000);
     expect(collapsed()).toBe("false");
+  });
+});
+
+describe("review tab on changed files", () => {
+  // Narrow: the panel stays collapsed, which is where the unseen dot is read from.
+  beforeEach(() => {
+    groupWidth = 0;
+    observerCallback = null;
+  });
+
+  const render0 = () => render(<Harness canvasMap={new Map()} changedFilesCount={0} />);
+  const rerenderWith = (rerender: (ui: React.ReactElement) => void, count: number) =>
+    act(() => rerender(<Harness canvasMap={new Map()} changedFilesCount={count} />));
+
+  it("treats the first settled count as a baseline, not a change", () => {
+    // A resumed session already has a diff — that must not pull the panel to Review.
+    render(<Harness canvasMap={new Map()} changedFilesCount={3} />);
+    expect(group().tabs).toBe("overview");
+  });
+
+  it("opens and flags Review on the session's first change", () => {
+    const { rerender } = render0();
+    rerenderWith(rerender, 2);
+
+    expect(group().tabs).toBe("overview,review");
+    expect(group().active).toBe("review");
+    expect(group().unseen).toBe("review");
+  });
+
+  it("re-flags Review on later changes without stealing focus", () => {
+    const { rerender } = render0();
+    rerenderWith(rerender, 2);
+    act(() => screen.getByText("open").click()); // marks the active tab seen
+    act(() => screen.getByText("go overview").click());
+    expect(group().unseen).toBe("");
+
+    rerenderWith(rerender, 5);
+    expect(group().unseen).toBe("review");
+    expect(group().active).toBe("overview");
+  });
+
+  it("leaves a closed Review tab closed", () => {
+    const { rerender } = render0();
+    rerenderWith(rerender, 2);
+    act(() => screen.getByText("close review").click());
+
+    rerenderWith(rerender, 5);
+    expect(group().tabs).toBe("overview");
+    expect(group().unseen).toBe("");
   });
 });

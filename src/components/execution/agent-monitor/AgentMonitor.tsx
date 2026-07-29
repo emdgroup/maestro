@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
-import { BotOff, Terminal, X } from "lucide-react";
+import { BotOff, GitBranch, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -397,8 +397,9 @@ export function AgentMonitor({
                   </>
                 )}
                 {session.branch_name && (
-                  <span className="text-xs text-muted-foreground font-mono truncate">
-                    {session.branch_name}
+                  <span className="flex items-center gap-1 min-w-0 text-xs text-muted-foreground">
+                    <GitBranch className="w-3 h-3 shrink-0" />
+                    <span className="font-mono truncate">{session.branch_name}</span>
                   </span>
                 )}
               </>

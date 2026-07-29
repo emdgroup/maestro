@@ -20,10 +20,9 @@ import { WorkspaceFilesPanel } from "./WorkspaceFilesPanel";
 import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
-import type { ConnectionKey, DiffTarget } from "@/types/bindings";
+import type { ConnectionKey } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
-import { useWorktreeDiffStatsQuery } from "@/services/worktree.service";
-import { useAcpSessionMeta } from "@/services/execution.service";
+import { useSessionDiffStats } from "./useSessionDiffStats";
 import { useWslConnections } from "@/services/connection.service";
 import {
   useSaveCanvasSurfaceMutation,
@@ -81,31 +80,10 @@ export function SidePanelContent({
   const selectedProject = useSelectedProject();
   const saveCanvasMutation = useSaveCanvasSurfaceMutation();
   const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
-
-  const diffTarget: DiffTarget = sessionMeta?.session_start_sha
-    ? { type: "Commit", sha: sessionMeta.session_start_sha }
-    : { type: "Head" };
-
-  const activeDiffTab = tabs.find((t) => t.id === activeTabId);
-  const isDiffVisible =
-    isSessionActive && (activeDiffTab?.kind === "overview" || activeDiffTab?.kind === "review");
-
-  const { data: diffStatsData } = useWorktreeDiffStatsQuery(
-    sessionMeta?.project_id ?? null,
-    sessionMeta?.cwd ?? null,
-    diffTarget,
-    { refetchInterval: isDiffVisible ? 10000 : false },
-  );
-
-  const diffStats = diffStatsData
-    ? { insertions: diffStatsData.insertions, deletions: diffStatsData.deletions }
-    : null;
-  // Counted from git, not from the agent's tool-call stream: an agent that edits through
-  // a shell reports no file locations, and the card would claim "No changes".
-  const changedFilesCount = diffStatsData
-    ? diffStatsData.file_count + diffStatsData.untracked_count
-    : 0;
+  // Polling is gated on the session being on screen rather than on the Review or Overview
+  // tab being the active one: the Review tab has to be able to raise its unseen dot while
+  // the user is looking at another tab, or at a collapsed panel.
+  const { diffStats, changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
 
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =
@@ -178,7 +156,7 @@ export function SidePanelContent({
               <OverviewPanel
                 subagentItems={subagentItems}
                 canvasCount={canvasMap.size}
-                changedFilesCount={changedFilesCount}
+                changedFilesCount={changedFilesCount ?? 0}
                 planEntries={planEntries}
                 planTitle={planTitle ?? derivedPlanTitle}
                 planReviewState={planReviewState}
