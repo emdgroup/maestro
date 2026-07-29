@@ -60,6 +60,9 @@ export interface UseSidePanelTabsResult {
   openTabKind: (kind: TabKind) => void;
   openAcpTerminalTab: (terminalId: string, opts?: { isAuthTerminal?: boolean }) => void;
   latestCanvasSurfaceId: string | null;
+  /** Tabs opened by the agent that the user has not looked at yet. */
+  unseenTabIds: ReadonlySet<string>;
+  markTabSeen: (id: string) => void;
 }
 
 export function useSidePanelTabs({
@@ -74,11 +77,25 @@ export function useSidePanelTabs({
   const [tabs, setTabs] = useState<SidePanelTab[]>([makeTab("overview")]);
   const [activeTabId, setActiveTabId] = useState("overview");
   const [latestCanvasSurfaceId, setLatestCanvasSurfaceId] = useState<string | null>(null);
+  const [unseenTabIds, setUnseenTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const counterRef = useRef(0);
   const acpTerminalTabsRef = useRef<Map<string, string>>(new Map());
   const prevPlanRef = useRef(false);
   const prevCanvasSizeRef = useRef(0);
   const prevArtifactsRef = useRef(false);
+
+  const markUnseen = useCallback((id: string) => {
+    setUnseenTabIds((prev) => new Set(prev).add(id));
+  }, []);
+
+  const markTabSeen = useCallback((id: string) => {
+    setUnseenTabIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   // Plan: insert at index 1 on arrival, remove on respond
   useEffect(() => {
@@ -92,11 +109,12 @@ export function useSidePanelTabs({
         return next;
       });
       setActiveTabId("plan");
+      markUnseen("plan");
     } else if (!hasPlan && had) {
       setTabs((prev) => prev.filter((t) => t.id !== "plan"));
       setActiveTabId((prev) => (prev === "plan" ? "overview" : prev));
     }
-  }, [hasPlan]);
+  }, [hasPlan, markUnseen]);
 
   // Canvas: auto-insert on first create, update latest surface on new canvas
   useEffect(() => {
@@ -113,7 +131,8 @@ export function useSidePanelTabs({
       return [...prev, makeTab("canvas")];
     });
     setActiveTabId("canvas");
-  }, [canvasMap]);
+    markUnseen("canvas");
+  }, [canvasMap, markUnseen]);
 
   // Artifacts: auto-insert once on first artifact (plan takes focus precedence)
   useEffect(() => {
@@ -125,19 +144,24 @@ export function useSidePanelTabs({
         return [...prev, makeTab("artifacts")];
       });
       setActiveTabId((prev) => (prev === "plan" ? prev : "artifacts"));
+      markUnseen("artifacts");
     }
-  }, [hasArtifacts]);
+  }, [hasArtifacts, markUnseen]);
 
-  const closeTab = useCallback((id: string) => {
-    setTabs((prev) => {
-      const tab = prev.find((t) => t.id === id);
-      if (tab?.acpTerminalId) {
-        acpTerminalTabsRef.current.delete(tab.acpTerminalId);
-      }
-      return prev.filter((t) => t.id !== id);
-    });
-    setActiveTabId((prev) => (prev === id ? "overview" : prev));
-  }, []);
+  const closeTab = useCallback(
+    (id: string) => {
+      markTabSeen(id);
+      setTabs((prev) => {
+        const tab = prev.find((t) => t.id === id);
+        if (tab?.acpTerminalId) {
+          acpTerminalTabsRef.current.delete(tab.acpTerminalId);
+        }
+        return prev.filter((t) => t.id !== id);
+      });
+      setActiveTabId((prev) => (prev === id ? "overview" : prev));
+    },
+    [markTabSeen],
+  );
 
   const addDynamicTab = useCallback((kind: "terminal" | "files", initialPath?: string): string => {
     counterRef.current += 1;
@@ -166,8 +190,9 @@ export function useSidePanelTabs({
         },
       ]);
       setActiveTabId(id);
+      markUnseen(id);
     },
-    [],
+    [markUnseen],
   );
 
   const openTabKind = useCallback(
@@ -194,5 +219,7 @@ export function useSidePanelTabs({
     openTabKind,
     openAcpTerminalTab,
     latestCanvasSurfaceId,
+    unseenTabIds,
+    markTabSeen,
   };
 }

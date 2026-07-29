@@ -34,6 +34,7 @@ interface ExecutionSidePanelProps {
   onPlanRespond: (requestId: string, optionId: string | null) => void;
   collapsed: boolean;
   onCollapsedChange: (c: boolean) => void;
+  unseenTabIds: ReadonlySet<string>;
   maximized?: boolean;
   onMaximizedChange?: (v: boolean) => void;
   fill?: boolean;
@@ -64,6 +65,7 @@ export function ExecutionSidePanel({
   onPlanRespond,
   collapsed,
   onCollapsedChange,
+  unseenTabIds,
   maximized = false,
   onMaximizedChange,
   fill = false,
@@ -115,6 +117,7 @@ export function ExecutionSidePanel({
           onCollapsedChange={onCollapsedChange}
           onMaximizedChange={onMaximizedChange}
           addTabContent={addTabPopoverContent}
+          unseenTabIds={unseenTabIds}
         />
       ) : (
         <div className="flex flex-col h-full min-h-0">
