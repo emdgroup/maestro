@@ -8,6 +8,11 @@ export { getCompleteBlocksText } from "./MarkdownBlock";
 
 interface ActivityMessageItemProps {
   message: MessageItem;
+  /**
+   * The bar reserves a row, so a message with tool calls after it would wedge that row into
+   * the middle of one agent reply. Only the message that closes a reply carries it.
+   */
+  showActions?: boolean;
 }
 
 export function TypingDots({ className }: { className?: string }) {
@@ -27,7 +32,7 @@ export function TypingDots({ className }: { className?: string }) {
   );
 }
 
-export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
+export function ActivityMessageItem({ message, showActions }: ActivityMessageItemProps) {
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
 
@@ -77,7 +82,7 @@ export function ActivityMessageItem({ message }: ActivityMessageItemProps) {
           <MarkdownBlock text={message.text} />
         )}
       </div>
-      {(!message.isStreaming || !isActivelyStreaming) && (
+      {showActions && (!message.isStreaming || !isActivelyStreaming) && (
         <MessageActionBar copyText={message.text} sentAt={message.sentAt} />
       )}
     </div>
