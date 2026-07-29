@@ -137,9 +137,12 @@ describe("file rows", () => {
     expect(row().getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("expands from anywhere on the row, not just the chevron", () => {
+  it("expands from the label, not only the chevron — and not from the detail", () => {
     renderWithOpener(() => {});
     fireEvent.click(screen.getByText("700 lines"));
+    expect(row().getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(screen.getByText("Read"));
     expect(row().getAttribute("aria-expanded")).toBe("true");
   });
 

@@ -167,31 +167,31 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   return (
     <div>
-      {/* Same shape as a timeline row: label, then a right edge holding the
-          detail and the chevron, with the whole line as the toggle. */}
-      <div
-        role={expandable ? "button" : undefined}
-        tabIndex={expandable ? 0 : undefined}
-        aria-expanded={expandable ? open : undefined}
-        onClick={expandable ? () => setOpen((v) => !v) : undefined}
-        onKeyDown={expandable ? rowKeyDown(() => setOpen((v) => !v)) : undefined}
-        className={cn(
-          "-ml-1 flex max-w-full gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground",
-          showCommand ? "items-start" : "items-center",
-          expandable &&
-            "cursor-pointer transition-colors hover:bg-muted/40 hover:text-foreground/75",
-        )}
-      >
-        {fileLine || line}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
-          {detail}
+      <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
+        {/* Same shape as a timeline row: the label and its chevron are the
+            toggle, the detail sits on the right edge. */}
+        <div
+          role={expandable ? "button" : undefined}
+          tabIndex={expandable ? 0 : undefined}
+          aria-expanded={expandable ? open : undefined}
+          onClick={expandable ? () => setOpen((v) => !v) : undefined}
+          onKeyDown={expandable ? rowKeyDown(() => setOpen((v) => !v)) : undefined}
+          className={cn(
+            "-ml-1 flex min-w-0 gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground",
+            showCommand ? "flex-1 items-start" : "items-center",
+            expandable &&
+              "cursor-pointer transition-colors hover:bg-muted/40 hover:text-foreground/75",
+          )}
+        >
+          {fileLine || line}
           {expandable &&
             (open ? (
-              <ChevronDown className={cn("size-3", showCommand && "mt-1")} />
+              <ChevronDown className={cn("size-3 shrink-0", showCommand && "mt-1")} />
             ) : (
-              <ChevronRight className="size-3" />
+              <ChevronRight className="size-3 shrink-0" />
             ))}
-        </span>
+        </div>
+        {detail}
       </div>
       {open && (
         <div className="mt-1 ml-1.5">

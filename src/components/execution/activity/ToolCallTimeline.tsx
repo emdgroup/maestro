@@ -233,8 +233,9 @@ function readRange(meta: NonNullable<ToolCallItem["meta"]>): string | null {
 
 /**
  * The right-hand slot: what the call actually did, in the units of its own tool.
- * `prefix` carries the tail of a file title, which the label dropped so that it
- * would align here with everything else rather than trailing the file name.
+ * Sits outside the toggle, so the PR chip can be its own control. `prefix`
+ * carries the tail of a file title, which the label dropped so that it would
+ * align here with everything else rather than trailing the file name.
  */
 export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | null }) {
   const meta = tc.meta;
@@ -303,7 +304,7 @@ export function RowMeta({ tc, prefix }: { tc: ToolCallItem; prefix?: string | nu
 
   if (parts.length === 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+    <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[10px] text-muted-foreground">
       {parts}
     </span>
   );
@@ -485,55 +486,61 @@ export function ToolCallTimeline({ items, inline }: { items: ToolCallItem[]; inl
               {!isLast && <span className="mt-1 w-px flex-1 bg-border" />}
             </div>
             <div className={cn("min-w-0 flex-1", !isLast && "pb-1.5")}>
-              {/* One shape for every row: label, then the right edge carrying the
-                  detail and the chevron. The row is the toggle — a file name
-                  inside it is a control of its own and stops the click. */}
-              <div
-                role={hasContent ? "button" : undefined}
-                tabIndex={hasContent ? 0 : undefined}
-                aria-expanded={hasContent ? isExpanded : undefined}
-                onClick={hasContent ? () => toggleExpand(tc.toolCallId) : undefined}
-                onKeyDown={hasContent ? rowKeyDown(() => toggleExpand(tc.toolCallId)) : undefined}
-                className={cn(
-                  "flex max-w-full gap-2 rounded-md px-1 py-0.5 text-xs",
-                  showCommand ? "items-start" : "items-center",
-                  hasContent && "cursor-pointer hover:bg-muted/40",
-                )}
-              >
-                {isFileRow ? (
-                  <FileLabel
-                    tc={tc}
-                    expanded={isExpanded}
-                    onOpenFile={openFile!}
-                    className={cn(running ? "shimmer-text" : "text-foreground/80")}
-                  />
-                ) : showCommand ? (
-                  <CommandLabel command={tc.title} />
-                ) : (
-                  <ToolCallTitle
-                    title={rowLabel(tc)}
-                    className={cn(
-                      "min-w-0 truncate",
-                      running
-                        ? "shimmer-text"
-                        : isBlocked(tc)
-                          ? "text-warning/80"
-                          : tc.status === "error"
-                            ? "text-destructive"
-                            : "text-foreground/80",
-                    )}
-                  />
-                )}
-                <StatusWord tc={tc} />
-                <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
-                  <RowMeta tc={tc} prefix={isFileRow ? titleSuffix(tc) : null} />
+              <div className={cn("flex max-w-full", showCommand ? "items-start" : "items-center")}>
+                {/* One shape for every row: the label and its chevron are the
+                    toggle, the detail sits on the right edge. A `div` rather
+                    than a `button` because a file name inside is a control of
+                    its own, and stops the click. */}
+                <div
+                  role={hasContent ? "button" : undefined}
+                  tabIndex={hasContent ? 0 : undefined}
+                  aria-expanded={hasContent ? isExpanded : undefined}
+                  onClick={hasContent ? () => toggleExpand(tc.toolCallId) : undefined}
+                  onKeyDown={hasContent ? rowKeyDown(() => toggleExpand(tc.toolCallId)) : undefined}
+                  className={cn(
+                    "flex min-w-0 gap-2 rounded-md px-1 py-0.5 text-xs",
+                    showCommand ? "flex-1 items-start" : "items-center",
+                    hasContent && "cursor-pointer hover:bg-muted/40",
+                  )}
+                >
+                  {isFileRow ? (
+                    <FileLabel
+                      tc={tc}
+                      expanded={isExpanded}
+                      onOpenFile={openFile!}
+                      className={cn(running ? "shimmer-text" : "text-foreground/80")}
+                    />
+                  ) : showCommand ? (
+                    <CommandLabel command={tc.title} />
+                  ) : (
+                    <ToolCallTitle
+                      title={rowLabel(tc)}
+                      className={cn(
+                        "min-w-0 truncate",
+                        running
+                          ? "shimmer-text"
+                          : isBlocked(tc)
+                            ? "text-warning/80"
+                            : tc.status === "error"
+                              ? "text-destructive"
+                              : "text-foreground/80",
+                      )}
+                    />
+                  )}
+                  <StatusWord tc={tc} />
                   {hasContent &&
                     (isExpanded ? (
-                      <ChevronDown className="size-3 text-muted-foreground" />
+                      <ChevronDown
+                        className={cn(
+                          "size-3 shrink-0 text-muted-foreground",
+                          showCommand && "mt-1",
+                        )}
+                      />
                     ) : (
-                      <ChevronRight className="size-3 text-muted-foreground" />
+                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
                     ))}
-                </span>
+                </div>
+                <RowMeta tc={tc} prefix={isFileRow ? titleSuffix(tc) : null} />
               </div>
               {isExpanded && <RowBody tc={tc} />}
             </div>
