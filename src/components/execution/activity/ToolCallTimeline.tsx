@@ -11,7 +11,6 @@ import {
   GitBranch,
   Globe,
   Pencil,
-  Plug,
   Search,
   Settings2,
   ShieldAlert,
@@ -19,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { McpIcon } from "@/components/common/icons/McpIcon";
 import { cn } from "@/lib/utils.ts";
 import { basename } from "@/lib/path-utils";
 import { CommandLabel } from "./CommandLabel";
@@ -93,12 +93,51 @@ export function rowIcon(tc: ToolCallItem): React.ElementType {
   // Before the tool lookup: `Bash` and every terminal kind map to a terminal,
   // which is true of the process and useless as a description of the row.
   if (isTerminalKind(tc.kind) && isGitCommand(tc.title)) return GitBranch;
-  if (meta?.toolName) {
-    const byTool = TOOL_ICON[meta.toolName];
-    if (byTool) return byTool;
-    if (meta.toolName.startsWith("mcp__")) return Plug;
-  }
+  const byTool = meta?.toolName ? TOOL_ICON[meta.toolName] : undefined;
+  if (byTool) return byTool;
+  // The title as well as the tool name: an agent that sends no `_meta` still
+  // names the tool, and that is the only place the `mcp__` prefix shows up.
+  if (isMcpToolName(meta?.toolName) || isMcpToolName(tc.title)) return McpIcon;
   return KIND_ICON[tc.kind] ?? Box;
+}
+
+const MCP_NAME = /^mcp__(.+?)__(.+)$/;
+
+export function isMcpToolName(name: string | undefined): boolean {
+  return name != null && MCP_NAME.test(name);
+}
+
+/**
+ * An MCP tool reaches the stream under its wire name — `mcp__codegraph__codegraph_explore`
+ * — which is a routing key, not a label: the prefix is noise, the two halves are
+ * split by a doubled underscore, and a server conventionally repeats its own name
+ * in every tool it exposes.
+ *
+ * A server names its own tools, so the word separator inside one is whatever that
+ * author chose — `take_screenshot` and `query-docs` both occur, and either is
+ * split on. The `__` between server and tool is the one part the host defines.
+ *
+ * Returns null for anything that is not that shape, so a title an agent wrote
+ * itself is never rewritten.
+ */
+export function formatMcpToolName(name: string): string | null {
+  const match = MCP_NAME.exec(name);
+  if (!match) return null;
+
+  // `plugin_context7_context7` — a plugin-hosted server carries the wrapper's
+  // prefix and its own name twice.
+  const serverWords = match[1].split("_").filter((w) => w && w !== "plugin");
+  const server = serverWords.filter((w, i) => w !== serverWords[i - 1]).join("_");
+
+  const words = match[2].split(/[_-]+/).filter(Boolean);
+  // `codegraph__codegraph_explore` — the server's name again, on its own tool.
+  if (words.length > 1 && words[0].toLowerCase() === server.toLowerCase()) words.shift();
+  const tool = words.join(" ");
+
+  const label = tool.charAt(0).toUpperCase() + tool.slice(1);
+  // A one-tool server names it after itself — "Codegraph (codegraph)" says it twice.
+  if (!server || tool.toLowerCase() === server.toLowerCase()) return label;
+  return `${label} (${server})`;
 }
 
 /**
@@ -119,7 +158,7 @@ export function rowLabel(tc: ToolCallItem): string {
     // does not — the icon already carries which tool ran.
     return `Search "${meta.searchPattern}"${scope}`;
   }
-  return tc.title;
+  return formatMcpToolName(tc.title) ?? tc.title;
 }
 
 /**

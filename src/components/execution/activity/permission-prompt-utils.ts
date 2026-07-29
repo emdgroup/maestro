@@ -1,4 +1,5 @@
 import type { ToolCallItem } from "@/components/execution/activity/types.ts";
+import { formatMcpToolName } from "@/components/execution/activity/ToolCallTimeline.tsx";
 
 export interface PermissionOption {
   optionId: string;
@@ -34,7 +35,7 @@ export function extractOptions(payload: Record<string, unknown>): PermissionOpti
 export function extractTitle(payload: Record<string, unknown>): string {
   const toolCall = payload.toolCall as Record<string, unknown> | undefined;
   const title = toolCall?.title as string | undefined;
-  if (title) return title;
+  if (title) return formatMcpToolName(title) ?? title;
   const tool = payload.tool as string | undefined;
   if (!tool) return "Action";
   const map: Record<string, string> = {
