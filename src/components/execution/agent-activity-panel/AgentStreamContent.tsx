@@ -47,7 +47,12 @@ export function AgentStreamContent({
     <OpenFileContext.Provider value={onOpenFile}>
       <CommandsContext.Provider value={commands}>
         <MessageScroller className="absolute inset-0">
-          <MessageScrollerViewport className="overflow-x-hidden">
+          {/*
+            Reserve the scrollbar's width whether or not it is showing — the content is
+            centred, so a scrollbar appearing mid-stream would otherwise nudge every
+            message sideways.
+          */}
+          <MessageScrollerViewport className="overflow-x-hidden [scrollbar-gutter:stable]">
             <MessageScrollerContent
               className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
               style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
