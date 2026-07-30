@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { Shield, Pencil, Terminal, Eye, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/utils.ts";
 import { PlanPermissionOverlay } from "./PlanPermissionOverlay";
 import {
   isAllowKind,
@@ -42,8 +40,6 @@ function LegacyButtons({
   );
 }
 
-const BODY_COLLAPSE_LIMIT = 300;
-
 const TOOL_ICON_MAP: Record<string, React.ElementType> = {
   write_file: Pencil,
   edit_file: Pencil,
@@ -67,12 +63,9 @@ export function PermissionPrompt({
   onRespond,
   fullHeight,
 }: PermissionPromptProps) {
-  const [expanded, setExpanded] = useState(false);
-
   const title = extractTitle(payload);
   const bodyText = extractBodyText(payload);
   const options = extractOptions(payload);
-  const isLong = bodyText && bodyText.length > BODY_COLLAPSE_LIMIT;
 
   if (fullHeight) {
     return (
@@ -97,24 +90,8 @@ export function PermissionPrompt({
       </div>
 
       {bodyText && (
-        <div>
-          <div
-            className={cn(
-              "px-2.5 py-2 bg-background/60 rounded-md border border-border/50 text-xs text-muted-foreground font-mono",
-              !expanded && isLong ? "truncate" : "whitespace-pre-wrap break-words",
-            )}
-          >
-            {bodyText}
-          </div>
-          {isLong && (
-            <Button
-              variant="ghost"
-              onClick={() => setExpanded((v) => !v)}
-              className="text-[11px] text-accent hover:text-accent/80 mt-1 h-auto p-0"
-            >
-              {expanded ? "show less" : "show more"}
-            </Button>
-          )}
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[80px] overflow-y-auto">
+          {bodyText}
         </div>
       )}
 
