@@ -3,7 +3,8 @@ import type { Control } from "react-hook-form";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
-import { Bot, LogOut, Loader2, Check } from "lucide-react";
+import { Bot, LogOut, Loader2, Check, GitBranch } from "lucide-react";
+import { Switch } from "@/ui/switch";
 import type { ConnectionKey, DiscoveredAgent } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ import { cn } from "@/lib/utils";
 export interface ProjectSettingsFormData {
   default_agent: string;
   startup_tab: string;
+  default_existing_worktree: boolean;
 }
 
 interface ProjectDefaultsSectionProps {
@@ -104,6 +106,10 @@ export function ProjectDefaultsSection({
   connection,
 }: ProjectDefaultsSectionProps) {
   const { field: defaultAgentField } = useController({ control, name: "default_agent" });
+  const { field: existingWorktreeField } = useController({
+    control,
+    name: "default_existing_worktree",
+  });
 
   return (
     <>
@@ -140,6 +146,27 @@ export function ProjectDefaultsSection({
               ? `${agents.find((a) => a.id === defaultAgentField.value)?.name ?? defaultAgentField.value} is used for new sessions and auto-assigned tasks`
               : "No default set — tasks use the session's own agent"}
           </p>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-muted-foreground" />
+          Sessions
+        </h3>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">Reuse an existing worktree</div>
+            <div className="text-xs text-muted-foreground">
+              New sessions start on "Existing" instead of creating their own worktree
+            </div>
+          </div>
+          <Switch
+            checked={existingWorktreeField.value}
+            onCheckedChange={existingWorktreeField.onChange}
+            className="data-unchecked:bg-muted data-unchecked:border-border/50"
+          />
         </div>
       </div>
     </>

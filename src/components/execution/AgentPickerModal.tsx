@@ -44,6 +44,7 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
         config: {
           default_agent: selected,
           startup_tab: projectSettings?.startup_tab ?? null,
+          default_existing_worktree: projectSettings?.default_existing_worktree ?? false,
         },
       });
     }

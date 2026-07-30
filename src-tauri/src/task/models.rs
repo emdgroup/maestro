@@ -193,6 +193,7 @@ pub enum TaskStatus {
 pub struct ProjectConfigResponse {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
+    pub default_existing_worktree: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -200,6 +201,7 @@ pub struct ProjectConfigResponse {
 pub struct ProjectConfigRequest {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
+    pub default_existing_worktree: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
