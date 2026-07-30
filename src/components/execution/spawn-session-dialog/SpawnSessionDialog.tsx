@@ -128,7 +128,7 @@ export function SpawnSessionDialog({
     }
 
     if (sessionType === "terminal") {
-      if (worktree.id === null || worktree.branchName === null) return;
+      if (worktree.branchName === null) return;
       spawnMutation.mutate(
         {
           projectId,
