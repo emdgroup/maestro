@@ -12,6 +12,9 @@
 
 ---
 
+> [!WARNING]
+> Maestro is under active development. Features may be heavily modified or removed without notice, and the UI changes frequently between releases.
+
 <p align="center"><img src="docs/assets/maestro-workflow.webp" alt="Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro" width="960" /></p>
 
 ---
