@@ -36,4 +36,4 @@ which = "8.0.2"
 fs2 = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56"
