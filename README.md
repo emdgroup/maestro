@@ -19,7 +19,7 @@
 
 ---
 
-Drop tasks onto a Kanban board. Each one gets its own agent, its own git worktree, and its own terminal. They run in parallel. Nothing conflicts. When an agent finishes, review the diff hunk by hunk and commit what you want — all without leaving the app.
+Drop tasks onto a Kanban board and give each one its own coding agent and terminal. With Git enabled, tasks can also run in isolated worktrees so agents work in parallel without clobbering each other's changes. When an agent finishes, review the diff hunk by hunk and commit what you want — all without leaving the app.
 
 ## Product tour
 
@@ -48,13 +48,43 @@ The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates.
 
 ---
 
+## Before you start
+
+**No Maestro account is required.** Install the app and use it directly — there is no Maestro service to register for or sign in to.
+
+### Set up a coding agent
+
+Maestro orchestrates coding agents but does not provide an agent account or model access. Install and authenticate the agent of your choice before using it with Maestro. Supported agents include Claude Code, Codex, OpenCode, Gemini CLI, Goose, Cline, and other [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) agents.
+
+Some agents are launched through `npx` or `uvx` rather than a standalone executable. Depending on your chosen agent, you may also need:
+
+- [`npx`](https://docs.npmjs.com/cli/v11/commands/npx), included with Node.js and npm
+- [`uvx`](https://docs.astral.sh/uv/guides/tools/), included with uv
+
+Agent authentication, subscriptions, model availability, and usage charges are managed by the agent's provider, not by Maestro.
+
+### Git is optional, but recommended
+
+Maestro can run agents in a regular folder without Git. For the complete workflow, use a Git repository: Git enables isolated worktrees, parallel agents without overlapping changes, inline diff review, hunk-level staging, and commits from Maestro.
+
+Without Git, agents work directly in the selected folder and completed tasks move directly to **Done** instead of **Review**.
+
+### Credentials stay local
+
+Maestro does not store remote connection or tool integration credentials in its SQLite database. When you choose to save them, SSH passwords, SSH key passphrases, and integration credentials are stored in your operating system's keychain. Coding-agent credentials remain managed by the agent itself.
+
+If the OS keychain is unavailable, Maestro can store integration credentials in an encrypted local file and displays a warning. SSH secrets are not persisted through this fallback.
+
+---
+
 ## Quick start
 
-1. Open Maestro and point it at a local git repository
-2. Create a task on the Kanban board — add a title and instructions
-3. Pick a model and click **Run** — the agent starts in an isolated worktree
-4. Watch the live terminal and activity feed as it works
-5. Review the diff hunk by hunk, stage what you want, commit in one click
+1. Install and authenticate your preferred coding agent
+2. Open Maestro and select a local folder or Git repository
+3. Create a task on the Kanban board — add a title and instructions
+4. Pick an agent and model, then click **Run**
+5. Watch the live terminal and activity feed as it works
+6. In a Git repository, review the diff, stage what you want, and commit in one click
 
 ---
 
@@ -64,7 +94,7 @@ The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates.
 
 <img src="docs/assets/kanban-board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
 
-Each task runs in its own git worktree. Agents work independently — no branch conflicts, no clobbering each other's changes. Run as many as you want simultaneously.
+In a Git repository, each task can run in its own worktree. Agents work independently — no branch conflicts and no clobbering each other's changes. Run multiple agents concurrently, limited by your machine, remote host, and provider limits.
 
 ### Live visibility
 
@@ -76,7 +106,7 @@ Live terminal output, a structured activity feed, and a file tree — all updati
 
 <img src="docs/assets/diff-review.webp" alt="Maestro diff viewer showing two hunks of an agent's change with per-hunk staging controls" width="960" />
 
-When an agent finishes, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
+When an agent finishes in a Git repository, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
 
 ### Remote execution
 
@@ -88,9 +118,9 @@ Connect Maestro to a remote Linux server over SSH, or to a WSL distro on Windows
 
 Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
 
-### Your stack, your models
+### Your agents, your models
 
-Pick the model per task. Configure MCP allowlists. Maestro stays out of the way.
+Use your preferred ACP-compatible coding agent and pick the model per task. Configure MCP allowlists while agent authentication and billing stay with the provider. Maestro stays out of the way.
 
 ---
 
@@ -127,8 +157,6 @@ bun format:fix       # Fix formatting
 # Testing
 bun test             # Vitest unit tests
 bun test <pattern>   # Single test file
-bun test:e2e         # Playwright E2E tests
-bun test:e2e:ui      # Playwright with interactive UI
 
 # Rust backend
 cd src-tauri && cargo build
