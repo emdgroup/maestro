@@ -76,14 +76,9 @@ pub async fn try_spawn_via_connection_server(
         additional_directories: additional_directories_for(req).await,
     }));
     let bytes = serialize_message(&spawn_req)?;
-    writer_tx
-        .send(bytes)
-        .await
-        .map_err(|_| "Connection server writer channel closed".to_string())?;
-
     let (acp_process, _ctx) = AcpProcess::create(
         AcpProcessParams {
-            writer: AcpTransportWriter::SharedServer(writer_tx),
+            writer: AcpTransportWriter::SharedServer(writer_tx.clone()),
             child: None,
             cancel_tx: None,
             cwd: req.cwd.clone(),
@@ -100,6 +95,12 @@ pub async fn try_spawn_via_connection_server(
         Arc::clone(&req.app_state),
     );
     req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
+
+    // Register before sending so a fast SpawnOk can always be routed to this session.
+    if writer_tx.send(bytes).await.is_err() {
+        req.app_state.acp.sessions.lock().await.remove(&req.log_id);
+        return Err("Connection server writer channel closed".to_string());
+    }
     Ok(true)
 }
 

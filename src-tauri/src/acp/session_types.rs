@@ -2,7 +2,7 @@
 
 use crate::acp::canvas::{CanvasFenceExtractor, PreambleFilterState};
 use crate::acp::transport::{
-    CheckToolsResponse, PreInitializeResponse, SessionListOkResponse, ToolCheckResult,
+    CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse, ToolCheckResult,
 };
 use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
 use std::collections::HashMap;
@@ -223,6 +223,8 @@ pub struct AcpProcess {
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
     /// Used by emit_init_events_from_session to re-emit model/mode events during replay drain.
     pub config_options: Vec<serde_json::Value>,
+    /// Prompt content supported by the agent. Re-emitted when the frontend mounts after SpawnOk.
+    pub prompt_capabilities: Option<PromptCapabilitiesInfo>,
     /// Set while a `RequestPermission` is outstanding on this session's shared Claude Code
     /// connection. Prevents new sessions from joining the same connection until resolved.
     pub has_pending_permission: Arc<AtomicBool>,
@@ -354,6 +356,7 @@ impl AcpProcess {
             canvas_extractor,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
+            prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
         };
         (process, ctx)

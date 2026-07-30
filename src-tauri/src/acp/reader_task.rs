@@ -603,12 +603,14 @@ pub(crate) async fn update_session_from_response(
                     supports_session_delete: r.supports_session_delete,
                 };
                 session.config_options = r.config_options.clone().unwrap_or_default();
+                session.prompt_capabilities = r.prompt_capabilities.clone();
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
             let mut sessions = app_state.acp.sessions.lock().await;
             if let Some(session) = sessions.get_mut(&log_id) {
                 session.config_options = r.config_options.clone().unwrap_or_default();
+                session.prompt_capabilities = r.prompt_capabilities.clone();
             }
         }
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
