@@ -39,15 +39,15 @@ impl RemoteSshSession {
 
         let (mut read_half, write_half) = channel.split();
 
-        // Allocate a PTY — this sets TERM=xterm-256color on the remote side
+        // Do not wait for server acknowledgements: channel ordering ensures these requests are
+        // processed before the first input, while waiting adds two full SSH round trips.
         write_half
-            .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+            .request_pty(false, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
             .await
             .map_err(|e| format!("Failed to request PTY: {}", e))?;
 
-        // Request the user's configured login shell via SSH request_shell
         write_half
-            .request_shell(true)
+            .request_shell(false)
             .await
             .map_err(|e| format!("Failed to request remote shell: {}", e))?;
 

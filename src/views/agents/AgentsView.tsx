@@ -269,11 +269,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       if (resolvedBranch == null && taskId != null) {
         resolvedBranch = worktrees.find((wt) => wt.task_id === taskId)?.branch_name ?? null;
       }
+      const worktreeId = worktrees.find(
+        (wt) =>
+          (taskId != null && wt.task_id === taskId) ||
+          (resolvedBranch != null && wt.branch_name === resolvedBranch),
+      )?.id;
       return spawnMutation.mutateAsync({
         projectId,
         branchName: resolvedBranch,
         repoPath,
         sessionName: embedded ? "__embedded__" : null,
+        worktreeId,
       });
     },
     [projectId, repoPath, worktrees, spawnMutation],
