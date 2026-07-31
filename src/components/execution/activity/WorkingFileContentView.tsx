@@ -8,6 +8,7 @@ import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
 import { useAcpSessionMeta } from "@/services/execution.service";
 import { useSelectedProject } from "@/store/projectStore";
+import type { ConnectionKey } from "@/types/bindings";
 
 function FileContentInner({
   content,
@@ -79,6 +80,9 @@ function FileContentInner({
 
 interface WorkingFileContentViewProps {
   sessionKey: number;
+  /// Which machine the file is on. A path outside the session cwd is read directly rather than
+  /// through the session, and without this that read would land on whichever host runs Maestro.
+  connection: ConnectionKey;
   filePath: string | null;
   isActive?: boolean;
   zoom?: number;
@@ -87,6 +91,7 @@ interface WorkingFileContentViewProps {
 
 export function WorkingFileContentView({
   sessionKey,
+  connection,
   filePath,
   isActive = true,
   zoom: zoomProp,
@@ -187,8 +192,8 @@ export function WorkingFileContentView({
     if (filePath?.startsWith("/") && cwd === null) return;
     const loader = isAbsoluteOutsideCwd
       ? isBinary
-        ? api.readLocalFileBinary(absolutePath!)
-        : api.readLocalFile(absolutePath!)
+        ? api.readFileBinary(connection, absolutePath!)
+        : api.readFile(connection, absolutePath!)
       : isBinary
         ? api.readSessionFileBinary(sessionKey, relativePath!)
         : api.readSessionFile(sessionKey, relativePath!);
@@ -211,6 +216,7 @@ export function WorkingFileContentView({
     refreshTick,
     filePath,
     cwd,
+    connection,
   ]);
 
   function copyPath() {

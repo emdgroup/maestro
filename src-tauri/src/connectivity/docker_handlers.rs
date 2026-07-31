@@ -47,6 +47,38 @@ pub async fn list_docker_directories(container_name: String, path: String) -> Re
     crate::connectivity::docker::list_directories(&cli, &container_name, &path).await
 }
 
+/// Copy a file out of a container onto the host, so a host application can open it.
+///
+/// The container counterpart to [`crate::connectivity::sftp_handlers::sftp_download`], without the
+/// progress plumbing: `cp` is one opaque call with no byte-level reporting to forward.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_download_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    container_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    let conn = crate::core::git_connection_for(
+        &app_state,
+        container_path.clone(),
+        crate::acp::ConnectionKey::Docker { id: connection_id },
+    )
+    .await?;
+    let crate::models::GitConnection::Docker { container_name, .. } = conn else {
+        return Err(format!("Connection {connection_id} is not a container"));
+    };
+
+    let cli = detect_cli()?;
+    crate::connectivity::docker::copy_from(
+        &cli,
+        &container_name,
+        &container_path,
+        std::path::Path::new(&local_path),
+    )
+    .await
+}
+
 /// Upsert a container connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]

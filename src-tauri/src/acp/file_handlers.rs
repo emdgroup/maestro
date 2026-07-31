@@ -6,6 +6,7 @@ use tokio::sync::oneshot;
 use crate::core::AppState;
 use crate::acp::ConnectionKey;
 use crate::acp::transport::{MaestroRpcMessage, ServerRequest, FileSearchRequest, FileReadRequest};
+use crate::connectivity::files::BINARY_LIMIT;
 
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 async fn session_file_rpc<T>(
@@ -85,43 +86,18 @@ pub async fn read_session_file_binary(
         (s.cwd.clone(), s.connection_key)
     };
 
-    const MAX_BINARY_SIZE: u64 = 5 * 1024 * 1024;
-
-    let bytes = match connection_key {
-        ConnectionKey::Local => {
-            let full_path = std::path::Path::new(&cwd).join(&relative_path);
-            let metadata = tokio::fs::metadata(&full_path)
-                .await
-                .map_err(|e| format!("Cannot stat file: {e}"))?;
-            if metadata.len() > MAX_BINARY_SIZE {
-                return Err(format!("File too large ({} bytes, max 5 MB)", metadata.len()));
-            }
-            tokio::fs::read(&full_path)
-                .await
-                .map_err(|e| format!("Cannot read file: {e}"))?
+    match connection_key {
+        // Local, WSL and containers differ only in which host runs the read, which is the one
+        // thing `files::read_binary` already dispatches on. Reaching for the host filesystem here
+        // was what made a WSL path resolve against the Windows current drive.
+        ConnectionKey::Local | ConnectionKey::Wsl { .. } | ConnectionKey::Docker { .. } => {
+            let path = format!("{}/{}", cwd.trim_end_matches('/'), relative_path);
+            let conn =
+                crate::core::git_connection_for(&app_state, path.clone(), connection_key).await?;
+            crate::connectivity::files::read_binary(&conn, &path).await
         }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                ).map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
-            };
-            let linux_path = format!("{}/{}", cwd, relative_path);
-            let unc_path = format!(r"\\wsl$\{}\{}", distro, linux_path.trim_start_matches('/'));
-            let full_path = std::path::Path::new(&unc_path);
-            let metadata = tokio::fs::metadata(full_path)
-                .await
-                .map_err(|e| format!("Cannot stat file: {e}"))?;
-            if metadata.len() > MAX_BINARY_SIZE {
-                return Err(format!("File too large ({} bytes, max 5 MB)", metadata.len()));
-            }
-            tokio::fs::read(full_path)
-                .await
-                .map_err(|e| format!("Cannot read file: {e}"))?
-        }
+        // SSH keeps its own path for the sftp cache: an image in the stream is re-read on every
+        // render, and re-downloading it each time is what the cache exists to avoid.
         ConnectionKey::Ssh { id: conn_id } => {
             let cache_dir = app_state.app_data_dir
                 .join("working_file_cache")
@@ -139,7 +115,7 @@ pub async fn read_session_file_binary(
                 .unwrap_or("bin");
             let cache_path = cache_dir.join(format!("{path_hash}.{ext}"));
 
-            if cache_path.exists() {
+            let bytes = if cache_path.exists() {
                 tokio::fs::read(&cache_path)
                     .await
                     .map_err(|e| format!("Cannot read cached file: {e}"))?
@@ -168,36 +144,19 @@ pub async fn read_session_file_binary(
                     .await
                     .map(|m| m.len())
                     .unwrap_or(0);
-                if downloaded_size > MAX_BINARY_SIZE {
-                    let _ = tokio::fs::remove_file(&cache_path).await;
-                    return Err(format!("File too large ({downloaded_size} bytes, max 5 MB)"));
+                if downloaded_size as usize > BINARY_LIMIT {
+                    if let Err(e) = tokio::fs::remove_file(&cache_path).await {
+                        log::warn!("Could not discard oversized cache entry {cache_path:?}: {e}");
+                    }
+                    return Err("File too large".to_string());
                 }
                 tokio::fs::read(&cache_path)
                     .await
                     .map_err(|e| format!("Cannot read downloaded file: {e}"))?
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let (container_name, path_in_container) = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
-                let container_name: String = conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get(0),
-                ).map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?;
-                (container_name, format!("{}/{}", cwd, relative_path))
             };
-            let cli = crate::connectivity::docker::ContainerCli::detect()
-                .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-            let b64 = crate::connectivity::docker::read_file_binary(&cli, &container_name, &path_in_container)
-                .await
-                .map_err(|e| format!("Cannot read file from container: {e}"))?;
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.decode(b64.trim())
-                .map_err(|e| format!("Base64 decode failed: {e}"))?
-        }
-    };
 
-    use base64::Engine;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+            use base64::Engine;
+            Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+        }
+    }
 }

@@ -481,12 +481,8 @@ export const commands = {
     }
   },
   /**
-   * Remove a worktree and its branch only when nothing would be lost: no uncommitted changes and
-   * no commits that live solely on that branch. Returns `None` when removed, or the reason it was
-   * kept.
-   *
-   * The commit check has to happen up front: `git branch -d` refuses an unmerged branch, but it
-   * runs after `git worktree remove --force` has already thrown the working tree away.
+   * Remove a worktree and its branch only when nothing would be lost. Returns `None` when removed,
+   * or the reason it was kept.
    */
   async cleanupWorktreeIfClean(
     projectId: number,
@@ -526,7 +522,7 @@ export const commands = {
   /**
    * Spawn a user-controlled interactive shell on a specific branch.
    *
-   * This creates an execution log with NULL task_id, finds or creates a worktree for the
+   * This creates an execution log with NULL task_id, resolves an existing worktree for the
    * given branch, and spawns an interactive PTY session keyed by log_id. It does not start
    * or manage an AI agent; managed agents use ACP.
    *
@@ -1072,44 +1068,28 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
-  /**
-   * Subdirectories of `path`, hidden ones included — this feeds the directory picker, where a
-   * project may well live under a dotted folder.
-   */
   async listDirectories(
     connection: ConnectionKey,
     path: string,
   ): Promise<Result<string[], string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_directories", { connection, path }),
-      };
+      return { status: "ok", data: await TAURI_INVOKE("list_directories", { connection, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
     }
   },
-  /**
-   * Directories then files under `path`, each sorted, hidden entries excluded.
-   */
   async listContents(
     connection: ConnectionKey,
     path: string,
   ): Promise<Result<FileEntry[], string>> {
     try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_contents", { connection, path }),
-      };
+      return { status: "ok", data: await TAURI_INVOKE("list_contents", { connection, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
     }
   },
-  /**
-   * Every non-hidden file under `path`, as paths relative to it.
-   */
   async listWorkspaceFiles(
     connection: ConnectionKey,
     path: string,
@@ -1124,9 +1104,6 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
-  /**
-   * A file's text content. Binary files and anything over 512 KB are refused.
-   */
   async readFile(connection: ConnectionKey, path: string): Promise<Result<string, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("read_file", { connection, path }) };
@@ -1135,9 +1112,6 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
-  /**
-   * A file's raw content, base64-encoded. Anything over 10 MB is refused.
-   */
   async readFileBinary(connection: ConnectionKey, path: string): Promise<Result<string, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("read_file_binary", { connection, path }) };
@@ -1147,7 +1121,7 @@ export const commands = {
     }
   },
   /**
-   * Read a local file's text content. Rejects binary files and files over 512 KB.
+   * Read a local file's text content. Rejects binary files and files over [`TEXT_LIMIT`].
    */
   async readLocalFile(path: string): Promise<Result<string, string>> {
     try {
@@ -1158,7 +1132,7 @@ export const commands = {
     }
   },
   /**
-   * Read a local file's raw content as a base64-encoded string. Rejects files over 10 MB.
+   * Read a local file's raw content as a base64-encoded string. Rejects files over [`BINARY_LIMIT`].
    */
   async readLocalFileBinary(path: string): Promise<Result<string, string>> {
     try {
@@ -1970,6 +1944,18 @@ export const commands = {
     }
   },
   /**
+   * Translate a path inside a WSL distro to the Windows path naming the same file, for handing to
+   * a Windows application.
+   */
+  async wslToWindowsPath(distro: string, path: string): Promise<Result<string, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("wsl_to_windows_path", { distro, path }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Upsert a WSL connection record and return the saved row.
    */
   async saveWslConnection(
@@ -2041,6 +2027,31 @@ export const commands = {
       return {
         status: "ok",
         data: await TAURI_INVOKE("list_docker_directories", { containerName, path }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Copy a file out of a container onto the host, so a host application can open it.
+   *
+   * The container counterpart to [`crate::connectivity::sftp_handlers::sftp_download`], without the
+   * progress plumbing: `cp` is one opaque call with no byte-level reporting to forward.
+   */
+  async dockerDownloadFile(
+    connectionId: number,
+    containerPath: string,
+    localPath: string,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("docker_download_file", {
+          connectionId,
+          containerPath,
+          localPath,
+        }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
