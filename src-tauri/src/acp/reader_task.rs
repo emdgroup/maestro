@@ -20,6 +20,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 use tokio::sync::oneshot;
 
+/// Payload for `acp://connection-live` and `acp://connection-lost`.
+///
+/// Every connection-health event names the connection it is about: a session can be open against
+/// more than one at a time, and without this the UI cannot tell whether the event concerns the
+/// project on screen.
+#[derive(Clone, serde::Serialize)]
+pub struct ConnectionEvent {
+    pub connection: crate::acp::ConnectionKey,
+}
+
+/// Payload for `acp://connection-stale` — the server stopped answering but the transport is
+/// still open, so this is a suspicion rather than a failure.
+#[derive(Clone, serde::Serialize)]
+pub struct ConnectionQuiet {
+    pub connection: crate::acp::ConnectionKey,
+    pub quiet_for_secs: u64,
+}
+
 pub(crate) fn spawn_reader_task(
     source: AcpReadSource,
     cancel_rx: oneshot::Receiver<()>,
@@ -1277,6 +1295,9 @@ pub(crate) fn spawn_shared_reader_task(
             let last_ping_at = Arc::clone(&last_ping_at);
             let app_handle = app_handle.clone();
             async move {
+                // Going quiet and coming back are both reported once, rather than every tick, so
+                // the UI is driven by transitions instead of a repeating warning.
+                let mut reported_quiet = false;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(15)).await;
                     if !watchdog_alive.load(Ordering::Relaxed) {
@@ -1292,10 +1313,23 @@ pub(crate) fn spawn_shared_reader_task(
                         .unwrap_or_default()
                         .as_secs();
                     let secs_since = now.saturating_sub(last);
-                    if secs_since > 25 {
+                    if secs_since > 25 && !reported_quiet {
+                        reported_quiet = true;
                         log::warn!("[acp] connection stale for {connection_key:?}: {secs_since}s since last ping");
-                        if let Err(e) = app_handle.emit("acp://connection-stale", secs_since) {
+                        if let Err(e) = app_handle.emit(
+                            "acp://connection-stale",
+                            ConnectionQuiet { connection: connection_key, quiet_for_secs: secs_since },
+                        ) {
                             log::warn!("[acp] emit connection-stale failed: {e}");
+                        }
+                    } else if secs_since <= 25 && reported_quiet {
+                        reported_quiet = false;
+                        log::info!("[acp] connection responding again for {connection_key:?}");
+                        if let Err(e) = app_handle.emit(
+                            "acp://connection-live",
+                            ConnectionEvent { connection: connection_key },
+                        ) {
+                            log::warn!("[acp] emit connection-live failed: {e}");
                         }
                     }
                 }
@@ -1346,6 +1380,19 @@ pub(crate) fn spawn_shared_reader_task(
             .lock()
             .await
             .remove(&connection_key);
+
+        // Announce it before the sessions go. SSH has its own reconnect story and reports through
+        // the `ssh-*` events; every other transport ends here, and until this existed their
+        // sessions simply vanished from the UI with nothing said.
+        if !matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. }) {
+            log::warn!("[acp] connection server ended for {connection_key:?}");
+            if let Err(e) = app_handle.emit(
+                "acp://connection-lost",
+                ConnectionEvent { connection: connection_key },
+            ) {
+                log::warn!("[acp] emit connection-lost failed: {e}");
+            }
+        }
 
         // Snapshot restorable metadata before removing sessions from the map.
         // Sessions without an acp_session_id haven't received SpawnOk yet and cannot

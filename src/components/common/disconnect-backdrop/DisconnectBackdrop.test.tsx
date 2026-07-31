@@ -6,6 +6,7 @@ describe("DisconnectBackdrop", () => {
   const defaultProps = {
     attempt: 0,
     maxAttempts: 5,
+    connection: { type: "ssh" as const, id: 1 },
     onLeaveConnection: vi.fn(),
   };
 
@@ -42,5 +43,29 @@ describe("DisconnectBackdrop", () => {
 
     rerender(<DisconnectBackdrop {...defaultProps} state="reconnecting" />);
     expect(screen.getByRole("button", { name: /leave connection/i })).toBeInTheDocument();
+  });
+
+  it("names what actually stopped, per connection type", () => {
+    const { rerender } = render(
+      <DisconnectBackdrop {...defaultProps} connection={{ type: "docker", id: 3 }} state="lost" />,
+    );
+    expect(screen.getByText("Container stopped")).toBeInTheDocument();
+
+    rerender(
+      <DisconnectBackdrop {...defaultProps} connection={{ type: "wsl", id: 3 }} state="lost" />,
+    );
+    expect(screen.getByText("WSL distro stopped")).toBeInTheDocument();
+
+    rerender(<DisconnectBackdrop {...defaultProps} connection={{ type: "local" }} state="lost" />);
+    expect(screen.getByText("Agent server stopped")).toBeInTheDocument();
+  });
+
+  it("does not promise a recovery it cannot perform", () => {
+    render(
+      <DisconnectBackdrop {...defaultProps} connection={{ type: "docker", id: 3 }} state="lost" />,
+    );
+    // SSH is the only transport that reconnects itself; the rest must not imply otherwise.
+    expect(screen.queryByText(/Detecting connection status/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Attempting to restore/)).not.toBeInTheDocument();
   });
 });
