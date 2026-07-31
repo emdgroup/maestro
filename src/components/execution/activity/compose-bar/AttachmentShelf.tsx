@@ -1,4 +1,3 @@
-import { useRef, useState, useEffect } from "react";
 import {
   FileTextIcon,
   FileCodeIcon,
@@ -10,6 +9,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
+import { useHorizontalScrollFade } from "@/hooks/useHorizontalScrollFade";
 import {
   Attachment,
   AttachmentMedia,
@@ -154,65 +154,15 @@ interface AttachmentShelfProps {
 }
 
 export function AttachmentShelf({ attachments, onRemove }: AttachmentShelfProps) {
-  const shelfRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const hasAttachments = attachments.length > 0;
-
-  useEffect(() => {
-    if (!hasAttachments) return;
-    const el = shelfRef.current;
-    if (!el) return;
-
-    const update = () => {
-      setCanScrollLeft(el.scrollLeft > 2);
-      setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    };
-
-    el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("scroll", update);
-    const raf = requestAnimationFrame(update);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("scroll", update);
-    };
-  }, [hasAttachments]);
-
-  useEffect(() => {
-    const el = shelfRef.current;
-    if (!el) return;
-    const raf = requestAnimationFrame(() => {
-      setCanScrollLeft(el.scrollLeft > 2);
-      setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [attachments.length]);
+  const { ref: shelfRef, maskStyle } = useHorizontalScrollFade<HTMLDivElement>(attachments.length);
 
   if (attachments.length === 0) return null;
-
-  const f = "3rem";
-  const maskImage =
-    canScrollLeft && canScrollRight
-      ? `linear-gradient(to right, transparent, black ${f}, black calc(100% - ${f}), transparent)`
-      : canScrollLeft
-        ? `linear-gradient(to right, transparent, black ${f})`
-        : canScrollRight
-          ? `linear-gradient(to left, transparent, black ${f})`
-          : undefined;
 
   return (
     <div
       ref={shelfRef}
       className="flex gap-3 px-3.5 py-1 pb-2 overflow-x-auto scrollbar-none"
-      style={maskImage ? { maskImage, WebkitMaskImage: maskImage } : undefined}
+      style={maskStyle}
     >
       {attachments.map((a) =>
         a.isImage ? (

@@ -14,6 +14,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { useHorizontalScrollFade } from "@/hooks/useHorizontalScrollFade";
 import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -51,6 +52,8 @@ export function SidePanelTabBar({
   maximized,
   addTabContent,
 }: SidePanelTabBarProps) {
+  const { ref: scrollRef, maskStyle } = useHorizontalScrollFade<HTMLDivElement>(tabs.length);
+
   return (
     <div className="flex items-center shrink-0 bg-card px-2 py-1.5 gap-2">
       {!maximized && (
@@ -65,53 +68,59 @@ export function SidePanelTabBar({
           <TooltipContent>Collapse panel</TooltipContent>
         </Tooltip>
       )}
-      <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0">
-        {tabs.map(({ id, kind, label, closeable }) => {
-          const Icon = KIND_ICON[kind];
-          const isActive = activeTabId === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onTabChange(id)}
-              className={cn(
-                "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
-                isActive
-                  ? "text-accent hover:bg-transparent"
-                  : "text-muted-foreground hover:bg-background/50",
-              )}
-            >
-              {isActive && (
-                <motion.span
-                  layoutId="side-panel-tab-pill"
-                  className="absolute inset-0 rounded-md bg-background shadow-sm"
-                  transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                />
-              )}
-              <span className="relative z-10 flex items-center gap-1.5">
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </span>
-              {closeable && (
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onKeyDown={(e) => e.key === "Enter" && onTabClose(id)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTabClose(id);
-                  }}
-                  className={cn(
-                    "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-muted transition-colors",
-                    isActive ? "opacity-50 hover:opacity-100" : "opacity-20 hover:opacity-60",
-                  )}
-                >
-                  <X className="w-2.5 h-2.5" />
+      <div className="flex items-center bg-muted rounded-lg p-0.75 gap-1 flex-1 min-w-0">
+        <div
+          ref={scrollRef}
+          style={maskStyle}
+          className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0"
+        >
+          {tabs.map(({ id, kind, label, closeable }) => {
+            const Icon = KIND_ICON[kind];
+            const isActive = activeTabId === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onTabChange(id)}
+                className={cn(
+                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
+                  isActive
+                    ? "text-accent hover:bg-transparent"
+                    : "text-muted-foreground hover:bg-background/50",
+                )}
+              >
+                {isActive && (
+                  <motion.span
+                    layoutId="side-panel-tab-pill"
+                    className="absolute inset-0 rounded-md bg-background shadow-sm"
+                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-1.5">
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
                 </span>
-              )}
-            </button>
-          );
-        })}
+                {closeable && (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onKeyDown={(e) => e.key === "Enter" && onTabClose(id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTabClose(id);
+                    }}
+                    className={cn(
+                      "relative z-10 ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-muted transition-colors",
+                      isActive ? "opacity-50 hover:opacity-100" : "opacity-20 hover:opacity-60",
+                    )}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
         <Popover>
           <Tooltip>
             <TooltipTrigger
