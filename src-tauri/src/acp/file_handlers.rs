@@ -190,6 +190,7 @@ pub async fn read_session_file_binary(
             let cli = crate::connectivity::docker::ContainerCli::detect()
                 .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
             let b64 = crate::connectivity::docker::read_file_binary(&cli, &container_name, &path_in_container)
+                .await
                 .map_err(|e| format!("Cannot read file from container: {e}"))?;
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.decode(b64.trim())

@@ -5,13 +5,11 @@ use chrono::Utc;
 use rusqlite::params;
 use crate::models::Project;
 use crate::core::{AppState, project_storage};
-use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
-use crate::command_ext::NoConsoleWindow;
 
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
-pub(crate) fn register_project_in_db(
+pub(crate) async fn register_project_in_db(
     app_state: &Arc<AppState>,
     path: &str,
     name: &str,
@@ -41,51 +39,7 @@ pub(crate) fn register_project_in_db(
         }
     };
 
-    // Init .maestro folder for local, WSL, and Docker projects.
-    match connection_key {
-        ConnectionKey::Local => {
-            crate::core::project_storage::create_project_maestro_folder(path)
-                .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
-            crate::core::project_storage::ensure_commit_template_exists(path)
-                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-            };
-            let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
-            crate::core::project_storage::create_project_maestro_folder(&unc_path)
-                .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
-            crate::core::project_storage::ensure_commit_template_exists(&unc_path)
-                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: Option<String> = app_state.db.lock().ok().and_then(|conn| {
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get::<_, String>(0),
-                ).ok()
-            });
-            if let Some(container_name) = container_name {
-                let cli = crate::connectivity::docker::ContainerCli::detect()
-                    .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                let maestro_dir = format!("{}/.maestro", path);
-                let _ = std::process::Command::new(cli.binary())
-                    .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .no_console_window()
-                    .status();
-            }
-        }
-        ConnectionKey::Ssh { .. } => {}
-    }
+    init_project_storage(app_state, path, connection_key).await;
 
     // Read back full project row
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -201,105 +155,31 @@ async fn collect_stale_project_ids(
     connection_key: ConnectionKey,
     app_state: &Arc<AppState>,
 ) -> Vec<i32> {
-    match connection_key {
-        ConnectionKey::Local => projects
-            .iter()
-            .filter(|p| !std::path::Path::new(&p.path).exists())
-            .map(|p| p.id)
-            .collect(),
+    // Without a usable connection nothing can be judged stale, and hiding every project of an
+    // unreachable host would be worse than showing one that has moved.
+    let Ok(conn) = crate::core::git_connection_for(app_state, String::new(), connection_key).await
+    else {
+        return vec![];
+    };
 
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = match app_state.ssh.get_session(conn_id).await {
-                Some(s) => s,
-                None => return vec![],
-            };
-            let mut stale = Vec::new();
-            for project in projects {
-                let cmd = format!("test -d {} && echo ok || echo missing", shell_quote(&project.path));
-                if let Ok(output) = session.execute_command(&cmd).await {
-                    if output.trim() != "ok" {
-                        stale.push(project.id);
-                    }
-                }
+    let mut stale = Vec::new();
+    for project in projects {
+        // A transport failure is not evidence the directory is gone — only a `test -d` that
+        // actually ran and said no. Keeping the project is the recoverable mistake.
+        if let Ok(present) = crate::connectivity::files::try_dir_exists(&conn, &project.path).await {
+            if !present {
+                stale.push(project.id);
             }
-            stale
-        }
-
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = {
-                let db = match app_state.db.lock() {
-                    Ok(d) => d,
-                    Err(_) => return vec![],
-                };
-                match db.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    params![wsl_id],
-                    |row| row.get(0),
-                ) {
-                    Ok(d) => d,
-                    Err(_) => return vec![],
-                }
-            };
-            let mut stale = Vec::new();
-            for project in projects {
-                let output = tokio::process::Command::new("wsl.exe")
-                    .args(["-d", &distro, "--", "test", "-d", &project.path])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .no_console_window()
-                    .output()
-                    .await;
-                match output {
-                    Ok(out) if !out.status.success() => stale.push(project.id),
-                    Err(_) => {} // On error, keep the project
-                    _ => {}
-                }
-            }
-            stale
-        }
-
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = {
-                let db = match app_state.db.lock() {
-                    Ok(d) => d,
-                    Err(_) => return vec![],
-                };
-                match db.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    params![docker_id],
-                    |row| row.get(0),
-                ) {
-                    Ok(name) => name,
-                    Err(_) => return vec![],
-                }
-            };
-            let cli = match crate::connectivity::docker::ContainerCli::detect() {
-                Ok(c) => c,
-                Err(_) => return vec![],
-            };
-            let mut stale = Vec::new();
-            for project in projects {
-                let output = tokio::process::Command::new(cli.binary())
-                    .args(["exec", &container_name, "test", "-d", &project.path])
-                    .no_console_window()
-                    .output()
-                    .await;
-                match output {
-                    Ok(out) if !out.status.success() => stale.push(project.id),
-                    Err(_) => {} // On error, keep the project
-                    _ => {}
-                }
-            }
-            stale
         }
     }
+    stale
 }
 
 /// Get project by id
 #[tauri::command]
 #[specta::specta]
 pub fn get_project(
-    app_state: State<Arc<AppState>>,
+    app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -333,54 +213,56 @@ pub fn get_project(
 /// form "PROJECT_LOCKED:<id>" which the frontend interprets to show a toast.
 #[tauri::command]
 #[specta::specta]
-pub fn open_project(
-    app_state: State<Arc<AppState>>,
+pub async fn open_project(
+    app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-    let project: Project = conn
-        .query_row(
+    // Scoped so the database guard is released before any await: a `MutexGuard` held across one
+    // would make this future non-Send and Tauri will not accept it.
+    let project: Project = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
             "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [&project_id],
             Project::from_row,
         )
-        .map_err(|_| "Project not found".to_string())?;
+        .map_err(|_| "Project not found".to_string())?
+    };
 
     // Acquire project lock — errors if another live instance owns it.
-    // Must drop conn first so the lock doesn't block during acquire.
-    drop(conn);
-
     app_state.acquire_project_lock(project_id)?;
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE projects SET last_opened = ? WHERE id = ?",
+            rusqlite::params![now, project_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE projects SET last_opened = ? WHERE id = ?",
-        rusqlite::params![now, project_id],
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Ensure commit template exists for local/WSL projects (no-op if file already present).
-    // SSH projects don't have a local .maestro/ folder.
-    if !project.is_remote() && !project.is_docker() {
-        let effective_path = if let Some(wsl_id) = project.wsl_connection_id {
-            let distro: String = conn.query_row(
-                "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                [wsl_id],
-                |row| row.get(0),
-            ).map_err(|e| format!("WSL connection not found: {}", e))?;
-            format!(r"\\wsl$\{}\{}", distro, project.path.trim_start_matches('/'))
-        } else {
-            project.path.clone()
-        };
-        crate::core::project_storage::ensure_commit_template_exists(&effective_path)
-            .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
-        crate::core::project_storage::write_canvas_catalog(&effective_path)
-            .map_err(|e| format!("Failed to write canvas catalog: {}", e))?;
-        crate::core::project_storage::write_canvas_base_skill(&effective_path)
-            .map_err(|e| format!("Failed to write canvas base skill: {}", e))?;
+    // Give the project the `.maestro/` files it expects on whichever machine it lives. The
+    // commit template is only written when absent so user edits survive; the canvas assets are
+    // ours and are refreshed every open. Best-effort — a project still opens on a host that
+    // rejects the write, it just loses the canvas skill until the next attempt.
+    match crate::core::get_git_connection(&project, &app_state).await {
+        Ok(git_conn) => {
+            if let Err(e) = project_storage::ensure_project_storage(&git_conn).await {
+                log::warn!("[project] initializing .maestro for {} failed: {e}", project.path);
+            }
+            for (name, contents) in [
+                ("canvas-catalog.json", project_storage::CANVAS_CATALOG),
+                ("canvas-base-skill.md", project_storage::CANVAS_BASE_SKILL),
+            ] {
+                if let Err(e) = project_storage::write_maestro_file(&git_conn, name, contents).await {
+                    log::warn!("[project] writing .maestro/{name} failed: {e}");
+                }
+            }
+        }
+        // Opening a project must not depend on its host being reachable — the picker shows it
+        // either way, and the files are written on the next open.
+        Err(e) => log::warn!("[project] no connection to initialize .maestro for {}: {e}", project.path),
     }
 
     Ok(project)
@@ -400,7 +282,7 @@ pub fn release_active_project_lock(app_state: State<Arc<AppState>>) -> Result<()
 #[tauri::command]
 #[specta::specta]
 pub fn check_project_locks(
-    app_state: State<Arc<AppState>>,
+    app_state: State<'_, Arc<AppState>>,
     project_ids: Vec<i32>,
 ) -> Vec<i32> {
     project_ids
@@ -413,7 +295,7 @@ pub fn check_project_locks(
 #[tauri::command]
 #[specta::specta]
 pub fn delete_project(
-    app_state: State<Arc<AppState>>,
+    app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<(), String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -428,7 +310,7 @@ pub fn delete_project(
 /// remove projects by connection id
 #[tauri::command]
 pub fn remove_projects_by_connection_id(
-    app_state: State<Arc<AppState>>,
+    app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -443,8 +325,8 @@ pub fn remove_projects_by_connection_id(
 /// Create a new project
 #[tauri::command]
 #[specta::specta]
-pub fn create_project(
-    app_state: State<Arc<AppState>>,
+pub async fn create_project(
+    app_state: State<'_, Arc<AppState>>,
     path: String,
     connection: crate::acp::ConnectionKey,
 ) -> Result<Project, String> {
@@ -480,53 +362,28 @@ pub fn create_project(
         }
     };
 
-    match connection {
-        ConnectionKey::Local => {
-            project_storage::create_project_maestro_folder(&path)
-                .map_err(|e| format!("Failed to initialize project storage: {}", e))?;
-            project_storage::ensure_commit_template_exists(&path)
-                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    [wsl_id],
-                    |row| row.get::<_, String>(0),
-                ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-            };
-            let unc_path = format!(r"\\wsl$\{}\{}", distro, path.trim_start_matches('/'));
-            project_storage::create_project_maestro_folder(&unc_path)
-                .map_err(|e| format!("Failed to initialize WSL project storage: {}", e))?;
-            project_storage::ensure_commit_template_exists(&unc_path)
-                .map_err(|e| format!("Failed to initialize commit template: {}", e))?;
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: Option<String> = app_state.db.lock().ok().and_then(|conn| {
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    [docker_id],
-                    |row| row.get::<_, String>(0),
-                ).ok()
-            });
-            if let Some(container_name) = container_name {
-                let cli = crate::connectivity::docker::ContainerCli::detect()
-                    .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                let maestro_dir = format!("{}/.maestro", path);
-                let _ = std::process::Command::new(cli.binary())
-                    .args(["exec", &container_name, "mkdir", "-p", &maestro_dir])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .no_console_window()
-                    .status();
-            }
-        }
-        ConnectionKey::Ssh { .. } => {}
-    }
+    init_project_storage(&app_state, &path, connection).await;
 
     let project = get_project(app_state, project_id).map_err(|e| e.to_string())?;
     Ok(project)
+}
+
+/// Create the project's `.maestro/` folder and default commit template on whichever machine it
+/// lives, best-effort: a project whose host is momentarily unreachable is still registered, and
+/// the folder is created again on the next open.
+async fn init_project_storage(
+    app_state: &Arc<AppState>,
+    path: &str,
+    connection_key: ConnectionKey,
+) {
+    let result = match crate::core::git_connection_for(app_state, path.to_string(), connection_key).await
+    {
+        Ok(conn) => project_storage::ensure_project_storage(&conn).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = result {
+        log::warn!("[project] initializing .maestro for {path} failed: {e}");
+    }
 }
 
 #[cfg(test)]

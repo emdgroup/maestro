@@ -129,16 +129,14 @@ pub async fn get_active_sessions(
 
     sessions.sort_by(|a, b| a.started_at.cmp(&b.started_at));
 
-    // Keep local branches live when a session checks out another branch. Do not put an SSH
-    // command on this frequently-polled, otherwise in-memory UI query.
-    let is_ssh_project = app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row(
-            "SELECT connection_id IS NOT NULL FROM projects WHERE id = ?",
-            [project_id],
-            |row| row.get::<_, bool>(0),
-        ).ok()
-    }).unwrap_or(false);
-    if !is_ssh_project {
+    // The branch recorded at spawn goes stale the moment anyone checks out inside the session's
+    // directory, so read the current one from git. One `git worktree list` covers every session;
+    // the longest matching path wins because Maestro's worktrees live inside the repo itself.
+    //
+    // Cheap enough for a 10s poll on every connection type: it runs over the connection's exec
+    // channel, so it costs a message on an open pipe rather than a `wsl.exe` or `docker exec`
+    // start. With no sessions there is nothing to refresh and the query stays purely in-memory.
+    if !sessions.is_empty() {
         if let Ok((_project, git_conn)) = crate::core::get_project_with_git_conn(&app_state, project_id).await {
             match crate::git::list_worktrees(&git_conn).await {
                 Ok(worktrees) => {

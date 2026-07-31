@@ -2,7 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use crate::git::remote::shell_quote;
-use crate::models::{ProjectConfig, ProjectState};
+use crate::models::GitConnection;
 
 pub const CANVAS_CATALOG: &str = include_str!("../../assets/canvas-catalog.json");
 pub const CANVAS_BASE_SKILL: &str = include_str!("../../assets/canvas-base-skill.md");
@@ -69,113 +69,82 @@ pub(crate) fn atomic_write_script(dir: &str, path: &str, contents: &str) -> Stri
     )
 }
 
-/// Write the default commit template to .maestro/commit-template.txt if it doesn't exist.
-/// Never overwrites an existing file so user edits are preserved.
-pub fn ensure_commit_template_exists(project_path: &str) -> Result<(), String> {
-    let template_path = Path::new(project_path).join(".maestro").join("commit-template.txt");
-    if !template_path.exists() {
-        std::fs::write(&template_path, DEFAULT_COMMIT_TEMPLATE)
-            .map_err(|e| format!("Failed to write commit template: {}", e))?;
-    }
-    Ok(())
-}
-
-/// Initialize the .maestro directory structure for a project
+/// Read a JSON document out of the project's `.maestro/` folder, wherever the project lives.
 ///
-/// Creates the .maestro folder if it doesn't exist.
-/// Returns Ok(()) on success, or a descriptive error message on failure.
-pub fn create_project_maestro_folder(project_path: &str) -> Result<(), String> {
-    let maestro_path = Path::new(project_path).join(".maestro");
+/// A missing, unreadable or unparseable file yields the default value: every caller treats a
+/// project that has never written the file as one holding defaults, which is not an error.
+pub async fn read_maestro_json<T: serde::de::DeserializeOwned + Default>(
+    conn: &GitConnection,
+    file_name: &str,
+) -> T {
+    let path = format!("{}/.maestro/{}", conn.path(), file_name);
 
-    std::fs::create_dir_all(&maestro_path).map_err(|e| {
-        format!(
-            "Failed to create .maestro folder for project '{}': {}",
-            project_path, e
-        )
-    })
-}
-
-/// Save project configuration to .maestro/settings.json
-///
-/// Wrapper around ProjectConfig::save_to_project for clarity in the file I/O layer.
-pub fn export_config_to_settings(config: &ProjectConfig, project_path: &str) -> Result<(), String> {
-    config.save_to_project(project_path)
-}
-
-/// Save project state to .maestro/state.json
-///
-/// Wrapper around ProjectState::save_to_project for clarity in the file I/O layer.
-pub fn export_state_to_file(state: &ProjectState, project_path: &str) -> Result<(), String> {
-    state.save_to_project(project_path)
-}
-
-/// Load project configuration from .maestro/settings.json
-///
-/// If the file doesn't exist (new project), returns default configuration.
-/// If the file exists but contains invalid JSON, returns error.
-pub fn load_project_config(project_path: &str) -> Result<ProjectConfig, String> {
-    match ProjectConfig::load_from_project(project_path) {
-        Ok(config) => Ok(config),
-        Err(e) => {
-            // Check if the error is due to file not found
-            if e.contains("No such file") || e.contains("not found") {
-                // New project - return default configuration
-                Ok(ProjectConfig::default())
-            } else {
-                // Actual JSON parse error or other issue
-                Err(e)
-            }
+    let text = if matches!(conn, GitConnection::Local { .. }) {
+        match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(_) => return T::default(),
         }
-    }
-}
-
-/// Load project state from .maestro/state.json
-///
-/// If the file doesn't exist (new project), returns empty state.
-/// If the file exists but contains invalid JSON, returns error.
-pub fn load_project_state(project_path: &str) -> Result<ProjectState, String> {
-    match ProjectState::load_from_project(project_path) {
-        Ok(state) => Ok(state),
-        Err(e) => {
-            // Check if the error is due to file not found
-            if e.contains("No such file") || e.contains("not found") {
-                // New project - return empty state
-                Ok(ProjectState::empty())
-            } else {
-                // Actual JSON parse error or other issue
-                Err(e)
-            }
+    } else {
+        match crate::connectivity::exec_channel::run_on(conn, None, "cat", &[&path]).await {
+            Ok(output) if output.success() => output.stdout_string(),
+            _ => return T::default(),
         }
+    };
+
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+/// Replace a JSON document in the project's `.maestro/` folder, wherever the project lives,
+/// without exposing a half-written file to a concurrent reader.
+pub async fn write_maestro_json<T: serde::Serialize>(
+    conn: &GitConnection,
+    file_name: &str,
+    value: &T,
+) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|e| format!("Serialization failed: {}", e))?;
+    write_maestro_file(conn, file_name, &json).await
+}
+
+/// Replace a file in the project's `.maestro/` folder, wherever the project lives, without
+/// exposing a half-written file to a concurrent reader.
+pub async fn write_maestro_file(
+    conn: &GitConnection,
+    file_name: &str,
+    contents: &str,
+) -> Result<(), String> {
+    let dir = format!("{}/.maestro", conn.path());
+    let path = format!("{dir}/{file_name}");
+
+    if matches!(conn, GitConnection::Local { .. }) {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {dir}: {e}"))?;
+        return atomic_write(Path::new(&path), contents.as_bytes())
+            .map_err(|e| format!("Failed to write {path}: {e}"));
     }
-}
 
-/// Write the bundled canvas catalog to .maestro/canvas-catalog.json, overwriting any existing file.
-pub fn write_canvas_catalog(project_path: &str) -> Result<(), String> {
-    let catalog_path = Path::new(project_path).join(".maestro").join("canvas-catalog.json");
-    std::fs::write(&catalog_path, CANVAS_CATALOG)
-        .map_err(|e| format!("Failed to write canvas catalog: {}", e))
-}
-
-/// Write the bundled canvas base skill to .maestro/canvas-base-skill.md, overwriting any existing file.
-pub fn write_canvas_base_skill(project_path: &str) -> Result<(), String> {
-    let skill_path = Path::new(project_path).join(".maestro").join("canvas-base-skill.md");
-    std::fs::write(&skill_path, CANVAS_BASE_SKILL)
-        .map_err(|e| format!("Failed to write canvas base skill: {}", e))
-}
-
-/// Ensure the .maestro folder exists, creating it if necessary
-///
-/// Safety check before any file operations.
-/// Returns Ok(()) if the folder exists or was successfully created.
-pub fn ensure_maestro_folder_exists(project_path: &str) -> Result<(), String> {
-    let maestro_path = Path::new(project_path).join(".maestro");
-
-    if maestro_path.exists() {
+    let script = atomic_write_script(&dir, &path, contents);
+    let output = crate::connectivity::exec_channel::run_on(conn, None, "sh", &["-c", &script]).await?;
+    if output.success() {
         Ok(())
     } else {
-        create_project_maestro_folder(project_path)
+        Err(format!("Failed to write {path}: {}", output.stderr_string()))
     }
 }
+
+/// Give a project the `.maestro/` folder and default commit template it expects, on whichever
+/// machine it lives.
+///
+/// The template is only written when absent, so a user's edits survive reopening the project.
+pub async fn ensure_project_storage(conn: &GitConnection) -> Result<(), String> {
+    let dir = format!("{}/.maestro", conn.path());
+    crate::connectivity::files::create_dir_all(conn, &dir).await?;
+
+    if crate::connectivity::files::exists(conn, &format!("{dir}/commit-template.txt")).await {
+        return Ok(());
+    }
+    write_maestro_file(conn, "commit-template.txt", DEFAULT_COMMIT_TEMPLATE).await
+}
+
 
 #[cfg(test)]
 mod tests {

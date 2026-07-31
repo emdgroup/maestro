@@ -1,11 +1,9 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 use crate::models::{GitConnection, MergeResult};
 use crate::core::{AppState, get_project_with_git_conn};
 use crate::acp::ConnectionKey;
-use crate::git::remote::shell_quote;
 use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
 
 /// Squash merge a task branch into main using native Rust subprocess calls.
@@ -27,12 +25,7 @@ pub async fn squash_merge_to_base(
     target_branch: &str,
     commit_message: &str,
 ) -> Result<MergeResult, String> {
-    let repo_path = match conn {
-        GitConnection::Local { path } => path.as_str(),
-        GitConnection::Remote { remote_path, .. } => remote_path.as_str(),
-        GitConnection::Wsl { path, .. } => path.as_str(),
-        GitConnection::Docker { path, .. } => path.as_str(),
-    };
+    let repo_path = conn.path();
 
     // Step 1: checkout target branch
     run_git_in_dir(conn, repo_path, &["checkout", target_branch])
@@ -168,70 +161,13 @@ pub async fn resolve_commit_message(
         .map_err(|e| format!("Task/worktree/project not found: {}", e))?
     };
 
+    // A project that never customised its template has no file, which is not an error.
     let template_path = format!("{}/.maestro/commit-template.txt", project_path);
-    let template = match connection_key {
-        ConnectionKey::Local => {
-            std::fs::read_to_string(&template_path)
-                .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
-        }
-        ConnectionKey::Ssh { id: conn_id } => {
-            match app_state.ssh.get_session(conn_id).await {
-                Some(session) => {
-                    session.execute_command(&format!("cat {}", shell_quote(&template_path)))
-                        .await
-                        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
-                }
-                None => DEFAULT_COMMIT_TEMPLATE.to_string(),
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro_result: Result<String, String> = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    rusqlite::params![wsl_id],
-                    |row| row.get(0),
-                ).map_err(|e| format!("WSL connection not found: {}", e))
-            };
-            match distro_result {
-                Ok(distro) => {
-                    let output = tokio::process::Command::new("wsl.exe")
-                        .args(["-d", &distro, "--", "cat", &template_path])
-                        .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .no_console_window()
-                        .output()
-                        .await
-                        .ok();
-                    match output {
-                        Some(out) if out.status.success() => {
-                            String::from_utf8_lossy(&out.stdout).into_owned()
-                        }
-                        _ => DEFAULT_COMMIT_TEMPLATE.to_string(),
-                    }
-                }
-                Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name_result: Result<String, String> = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    rusqlite::params![docker_id],
-                    |row| row.get(0),
-                ).map_err(|e| format!("Docker connection not found: {}", e))
-            };
-            match container_name_result {
-                Ok(container_name) => {
-                    let cli = crate::connectivity::docker::ContainerCli::detect()
-                        .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                    crate::connectivity::docker::read_file(&cli, &container_name, &template_path)
-                        .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string())
-                }
-                Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
-            }
-        }
+    let template = match crate::core::git_connection_for(&app_state, project_path.clone(), connection_key).await {
+        Ok(conn) => crate::connectivity::files::read_text(&conn, &template_path)
+            .await
+            .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string()),
+        Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
     };
 
     let external_id_str = external_id.unwrap_or_default();

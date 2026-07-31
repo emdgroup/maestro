@@ -224,7 +224,6 @@ export function WorkspaceFilesPanel({
     <LazyFileTree
       root={projectPath}
       connection={connection}
-      wslDistroName={wslDistroName}
       selectedFile={selected}
       onSelectFile={setSelected}
       expandedFolders={expandedFolders}

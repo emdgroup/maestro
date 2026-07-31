@@ -98,7 +98,10 @@ pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), 
 
 /// Parse one complete framed message from `buf`, always consuming its bytes.
 /// Returns None on parse failure (corrupt frame skipped) or incomplete frame.
-pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage> {
+///
+/// Generic over the message type so the exec channel, which shares this framing but carries its
+/// own messages, can reuse it.
+pub(crate) fn try_parse_acp_frame<T: serde::de::DeserializeOwned>(buf: &mut Vec<u8>) -> Option<T> {
     if buf.len() < 4 {
         return None;
     }
@@ -109,7 +112,7 @@ pub(crate) fn try_parse_acp_frame(buf: &mut Vec<u8>) -> Option<MaestroRpcMessage
     // Drain first so a corrupt frame never loops — caller retries with the next frame.
     let frame_bytes = buf[4..4 + len].to_vec();
     buf.drain(..4 + len);
-    serde_json::from_slice::<MaestroRpcMessage>(&frame_bytes).ok()
+    serde_json::from_slice::<T>(&frame_bytes).ok()
 }
 
 /// Low-level write + flush to a `BufWriter<ChildStdin>`.

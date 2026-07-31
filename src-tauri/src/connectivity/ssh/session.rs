@@ -276,8 +276,47 @@ impl RemoteSshSession {
         *self.state.lock().await
     }
 
-    /// Execute a command on the remote host
+    /// Execute a command on the remote host.
+    ///
+    /// Goes through the connection's exec channel, which runs it on an already-open pipe rather
+    /// than opening a channel and waiting for two round trips. Falls back to
+    /// [`Self::execute_command_direct`] when no channel is available.
     pub async fn execute_command(&self, cmd: &str) -> Result<String, SshError> {
+        let target = crate::connectivity::exec_channel::ExecTarget::Ssh {
+            connection_id: self.ssh_connection.id,
+            session: self,
+        };
+        let output = crate::connectivity::exec_channel::run(&target, None, "sh", &["-c", cmd])
+            .await
+            .map_err(|e| SshError::CommandExecutionError { exit_code: -1, stderr: e })?;
+        finish_command(output)
+    }
+
+    /// Execute a command on the remote host, piping `stdin_data` to its stdin.
+    pub async fn execute_command_with_stdin(
+        &self,
+        cmd: &str,
+        stdin_data: &[u8],
+    ) -> Result<String, SshError> {
+        let target = crate::connectivity::exec_channel::ExecTarget::Ssh {
+            connection_id: self.ssh_connection.id,
+            session: self,
+        };
+        let output = crate::connectivity::exec_channel::run_with_stdin(
+            &target,
+            None,
+            "sh",
+            &["-c", cmd],
+            Some(stdin_data.to_vec()),
+        )
+        .await
+        .map_err(|e| SshError::CommandExecutionError { exit_code: -1, stderr: e })?;
+        finish_command(output)
+    }
+
+    /// Execute a command by opening its own SSH channel. The exec channel's fallback, and what
+    /// starts the exec channel itself.
+    pub(crate) async fn execute_command_direct(&self, cmd: &str) -> Result<String, SshError> {
         if !self.is_connected().await {
             self.reconnect_if_needed().await?;
         }
@@ -351,8 +390,8 @@ impl RemoteSshSession {
         Ok(stdout)
     }
 
-    /// Execute a command on the remote host, piping `stdin_data` to its stdin.
-    pub async fn execute_command_with_stdin(&self, cmd: &str, stdin_data: &[u8]) -> Result<String, SshError> {
+    /// As [`Self::execute_command_direct`], piping `stdin_data` to the command's stdin.
+    pub(crate) async fn execute_command_direct_with_stdin(&self, cmd: &str, stdin_data: &[u8]) -> Result<String, SshError> {
         if !self.is_connected().await {
             self.reconnect_if_needed().await?;
         }
@@ -574,4 +613,20 @@ impl std::fmt::Debug for RemoteSshSession {
             .field("reconnect_attempts", &self.reconnect_attempts.load(Ordering::SeqCst))
             .finish()
     }
+}
+
+/// Map an exec-channel result onto the contract `execute_command` has always had: stdout on
+/// success, and a `CommandExecutionError` carrying the exit code otherwise — falling back to
+/// stdout when the command reported its failure there.
+fn finish_command(
+    output: crate::connectivity::exec_channel::CommandOutput,
+) -> Result<String, SshError> {
+    if output.success() {
+        return Ok(output.stdout_string());
+    }
+    let stderr = output.stderr_string();
+    Err(SshError::CommandExecutionError {
+        exit_code: output.exit_code,
+        stderr: if stderr.is_empty() { output.stdout_string() } else { stderr },
+    })
 }

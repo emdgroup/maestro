@@ -1,10 +1,22 @@
 use std::sync::Arc;
-use rusqlite::params;
 use crate::core::AppState;
-use crate::core::project_storage::atomic_write_script;
-use crate::git::remote::shell_quote;
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
 use crate::acp::ConnectionKey;
-use crate::command_ext::NoConsoleWindow;
+use crate::models::GitConnection;
+
+const STATE_FILE: &str = "state.json";
+
+/// Resolve the connection a project's `.maestro/state.json` lives behind. `None` when the
+/// connection is not available — every caller here is best-effort and treats that as no state.
+async fn state_connection(
+    app_state: &Arc<AppState>,
+    project_path: &str,
+    connection_key: ConnectionKey,
+) -> Option<GitConnection> {
+    crate::core::git_connection_for(app_state, project_path.to_string(), connection_key)
+        .await
+        .ok()
+}
 
 /// Read `.maestro/state.json` from wherever the project lives. A missing or unreadable file is
 /// indistinguishable from an empty one here — callers only ever add to what they get back.
@@ -13,69 +25,10 @@ pub(crate) async fn read_project_state(
     project_path: &str,
     connection_key: ConnectionKey,
 ) -> crate::project::models::ProjectState {
-    let state_path = format!("{}/.maestro/state.json", project_path);
-
-    let text = match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = match app_state.ssh.get_session(conn_id).await {
-                Some(s) => s,
-                None => return Default::default(),
-            };
-            match session.execute_command(&format!("cat {}", shell_quote(&state_path))).await {
-                Ok(output) => output,
-                Err(_) => return Default::default(),
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = match app_state.db.lock() {
-                Ok(db) => match db.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    params![wsl_id],
-                    |row| row.get(0),
-                ) {
-                    Ok(d) => d,
-                    Err(_) => return Default::default(),
-                },
-                Err(_) => return Default::default(),
-            };
-            let output = tokio::process::Command::new("wsl.exe")
-                .args(["-d", &distro, "--", "cat", &state_path])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await;
-            match output {
-                Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).into_owned(),
-                _ => return Default::default(),
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = match app_state.db.lock() {
-                Ok(db) => match db.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    params![docker_id],
-                    |row| row.get(0),
-                ) {
-                    Ok(n) => n,
-                    Err(_) => return Default::default(),
-                },
-                Err(_) => return Default::default(),
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect()
-                .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-            match crate::connectivity::docker::read_file(&cli, &container_name, &state_path) {
-                Ok(text) => text,
-                Err(_) => return Default::default(),
-            }
-        }
-        ConnectionKey::Local => {
-            return crate::project::models::ProjectState::load_from_project(project_path)
-                .unwrap_or_default()
-        }
-    };
-
-    serde_json::from_str(&text).unwrap_or_default()
+    match state_connection(app_state, project_path, connection_key).await {
+        Some(conn) => read_maestro_json(&conn, STATE_FILE).await,
+        None => Default::default(),
+    }
 }
 
 /// Write `.maestro/state.json` back to wherever the project lives. Best-effort: every caller is
@@ -86,77 +39,11 @@ async fn write_project_state(
     connection_key: ConnectionKey,
     project_state: &crate::project::models::ProjectState,
 ) {
-    let json = match serde_json::to_string_pretty(project_state) {
-        Ok(j) => j,
-        Err(e) => {
-            log::warn!("[state] serializing state.json for {project_path} failed: {e}");
-            return;
-        }
+    let Some(conn) = state_connection(app_state, project_path, connection_key).await else {
+        return;
     };
-    let state_path = format!("{}/.maestro/state.json", project_path);
-    let maestro_dir = format!("{}/.maestro", project_path);
-
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            if let Some(session) = app_state.ssh.get_session(conn_id).await {
-                if let Err(e) = session
-                    .execute_command(&atomic_write_script(&maestro_dir, &state_path, &json))
-                    .await
-                {
-                    log::warn!("[state] writing state.json over ssh failed: {e}");
-                }
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: Option<String> = app_state.db.lock().ok().and_then(|db| {
-                db.query_row(
-                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                    params![wsl_id],
-                    |row| row.get(0),
-                ).ok()
-            });
-            if let Some(distro) = distro {
-                let script = atomic_write_script(&maestro_dir, &state_path, &json);
-                if let Err(e) = tokio::process::Command::new("wsl.exe")
-                    .args(["-d", &distro, "--", "sh", "-c", &script])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .no_console_window()
-                    .output()
-                    .await
-                {
-                    log::warn!("[state] writing state.json in wsl failed: {e}");
-                }
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: Option<String> = app_state.db.lock().ok().and_then(|db| {
-                db.query_row(
-                    "SELECT container_name FROM docker_connections WHERE id = ?",
-                    params![docker_id],
-                    |row| row.get(0),
-                ).ok()
-            });
-            if let Some(container_name) = container_name {
-                let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                let script = atomic_write_script(&maestro_dir, &state_path, &json);
-                if let Err(e) = tokio::process::Command::new(cli.binary())
-                    .args(["exec", &container_name, "sh", "-c", &script])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .no_console_window()
-                    .output()
-                    .await
-                {
-                    log::warn!("[state] writing state.json in container failed: {e}");
-                }
-            }
-        }
-        ConnectionKey::Local => {
-            if let Err(e) = project_state.save_to_project(project_path) {
-                log::warn!("[state] writing state.json failed: {e}");
-            }
-        }
+    if let Err(e) = write_maestro_json(&conn, STATE_FILE, project_state).await {
+        log::warn!("[state] writing state.json for {project_path} failed: {e}");
     }
 }
 

@@ -236,6 +236,7 @@ pub async fn delete_worktree(
     // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
         let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await;
+        crate::git::prune_remote_refs(&git_conn).await;
     }
 
     // Delete DB row if id provided (orphans have no DB row)
@@ -441,6 +442,11 @@ pub async fn cleanup_zombie_worktrees(
         let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
 
         let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", branch_name]).await;
+    }
+
+    // Once for the batch, not once per worktree — it goes to the network.
+    if !to_delete.is_empty() {
+        crate::git::prune_remote_refs(&git_conn).await;
     }
 
     // Batch-delete DB rows under a single lock

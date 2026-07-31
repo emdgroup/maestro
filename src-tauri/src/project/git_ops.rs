@@ -1,11 +1,37 @@
 use std::sync::Arc;
 use tauri::State;
-use rusqlite::params;
 use crate::core::AppState;
-use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
-use crate::command_ext::NoConsoleWindow;
+use crate::connectivity::exec_channel::run_on;
+use crate::connectivity::files;
+use crate::git::exec::git_prefix_args;
+use crate::models::GitConnection;
 use super::crud::register_project_in_db;
+
+/// Resolve the three optional connection columns the project-creation IPC commands carry into
+/// the connection every operation below runs through.
+async fn connection_at(
+    app_state: &AppState,
+    path: &str,
+    connection_id: Option<i32>,
+    wsl_connection_id: Option<i32>,
+    docker_connection_id: Option<i32>,
+) -> Result<GitConnection, String> {
+    let key = ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
+    crate::core::git_connection_for(app_state, path.to_string(), key).await
+}
+
+/// Run `git <prefix> <args>` on a connection, returning stderr on failure.
+async fn git(conn: &GitConnection, args: &[&str], what: &str) -> Result<(), String> {
+    let mut argv = git_prefix_args(conn).to_vec();
+    argv.extend_from_slice(args);
+    let output = run_on(conn, None, "git", &argv).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(format!("{} failed: {}", what, output.stderr_string()))
+    }
+}
 
 /// Initialize git in an existing directory (no-op if already a git repo)
 #[tauri::command]
@@ -17,119 +43,21 @@ pub async fn git_init_project(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<(), String> {
-    if let Some(docker_id) = docker_connection_id {
-        let container_name: String = {
-            let db = app_state.db.lock().map_err(|e| e.to_string())?;
-            db.query_row(
-                "SELECT container_name FROM docker_connections WHERE id = ?",
-                params![docker_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("Docker connection not found: {}", e))?
-        };
-        let cli = crate::connectivity::docker::ContainerCli::detect()
-            .map_err(|e| format!("No container CLI found: {}", e))?;
-        let check = tokio::process::Command::new(cli.binary())
-            .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to exec into container: {}", e))?;
-        if check.status.success() {
-            return Ok(());
-        }
-        let output = tokio::process::Command::new(cli.binary())
-            .args(["exec", &container_name, "git", "init", "-b", "main", &path])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to exec into container: {}", e))?;
-        if output.status.success() {
-            return Ok(());
-        }
-        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
-    }
-
-    if let Some(conn_id) = connection_id {
-        let session = app_state
-            .ssh.get_session(conn_id)
-            .await
-            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-        // No-op if already a git repo
-        let check = session
-            .execute_command(&format!("test -d {}/.git && echo yes || echo no", shell_quote(&path)))
-            .await
-            .map_err(|e| format!("SSH check failed: {}", e))?;
-        if check.trim() == "yes" {
-            return Ok(());
-        }
-        let output = session
-            .execute_command(&format!("git init -b main {}", shell_quote(&path)))
-            .await
-            .map_err(|e| format!("SSH git init failed: {}", e))?;
-        if output.contains("Initialized") || output.contains("Reinitialized") {
-            return Ok(());
-        }
-        return Err(format!("git init failed: {}", output));
-    }
-
-    if let Some(wsl_id) = wsl_connection_id {
-        let distro: String = {
-            let db = app_state.db.lock().map_err(|e| e.to_string())?;
-            db.query_row(
-                "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                params![wsl_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("WSL connection not found: {}", e))?
-        };
-        // No-op if already a git repo
-        let check = tokio::process::Command::new("wsl.exe")
-            .args(["-d", &distro, "--", "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-        if check.status.success() {
-            return Ok(());
-        }
-        let output = tokio::process::Command::new("wsl.exe")
-            .args(["-d", &distro, "--", "git", "init", "-b", "main", &path])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-        if output.status.success() {
-            return Ok(());
-        }
-        return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
-    }
-
-    let git_dir = std::path::Path::new(&path).join(".git");
-    if git_dir.exists() {
+    let conn =
+        connection_at(&app_state, &path, connection_id, wsl_connection_id, docker_connection_id).await?;
+    if inside_work_tree(&conn, &path).await {
         return Ok(());
     }
-    let output = tokio::process::Command::new("git")
-        .args(["init", "-b", "main", &path])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn git: {}", e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)))
-    }
+    git(&conn, &["init", "-b", "main", &path], "git init").await
+}
+
+/// `git rev-parse --is-inside-work-tree` detects both repository roots and subdirectories of one,
+/// which a `.git` existence check does not.
+async fn inside_work_tree(conn: &GitConnection, path: &str) -> bool {
+    let mut argv = git_prefix_args(conn).to_vec();
+    argv.extend_from_slice(&["-C", path, "rev-parse", "--is-inside-work-tree"]);
+    // A transport error or a host with no git installed both mean "not a repository" here.
+    run_on(conn, None, "git", &argv).await.map(|out| out.success()).unwrap_or(false)
 }
 
 #[tauri::command]
@@ -153,77 +81,9 @@ pub async fn is_git_repo(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<bool, String> {
-    if let Some(docker_id) = docker_connection_id {
-        let container_name: String = {
-            let db = app_state.db.lock().map_err(|e| e.to_string())?;
-            db.query_row(
-                "SELECT container_name FROM docker_connections WHERE id = ?",
-                params![docker_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("Docker connection not found: {}", e))?
-        };
-        let cli = crate::connectivity::docker::ContainerCli::detect()
-            .map_err(|e| format!("No container CLI found: {}", e))?;
-        let output = tokio::process::Command::new(cli.binary())
-            .args(["exec", &container_name, "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to exec into container: {}", e))?;
-        return Ok(output.status.success());
-    }
-
-    if let Some(conn_id) = connection_id {
-        let session = app_state
-            .ssh.get_session(conn_id)
-            .await
-            .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-        let check = session
-            .execute_command(&format!(
-                "git -C {} rev-parse --is-inside-work-tree 2>/dev/null && echo yes || echo no",
-                shell_quote(&path)
-            ))
-            .await
-            .map_err(|e| format!("SSH check failed: {}", e))?;
-        return Ok(check.trim().ends_with("yes"));
-    }
-
-    if let Some(wsl_id) = wsl_connection_id {
-        let distro: String = {
-            let db = app_state.db.lock().map_err(|e| e.to_string())?;
-            db.query_row(
-                "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                params![wsl_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("WSL connection not found: {}", e))?
-        };
-        let output = tokio::process::Command::new("wsl.exe")
-            .args(["-d", &distro, "--", "git", "-C", &path, "rev-parse", "--is-inside-work-tree"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .await
-            .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-        return Ok(output.status.success());
-    }
-
-    // Use `git rev-parse` to detect both root repos and subdirectories within a git tree
-    let output = tokio::process::Command::new("git")
-        .args(["-C", &path, "rev-parse", "--is-inside-work-tree"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .await;
-    match output {
-        Ok(out) => Ok(out.status.success()),
-        Err(_) => Ok(false), // git not installed → not a git repo
-    }
+    let conn =
+        connection_at(app_state, &path, connection_id, wsl_connection_id, docker_connection_id).await?;
+    Ok(inside_work_tree(&conn, &path).await)
 }
 
 async fn build_provider_auth_header(
@@ -296,106 +156,19 @@ pub async fn clone_project(
         _ => None,
     };
 
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = app_state
-                .ssh.get_session(conn_id)
-                .await
-                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            let git_cmd = match &auth_header {
-                Some(header) => format!(
-                    "git -c {} clone {} {}",
-                    shell_quote(&format!("http.extraHeader={}", header)),
-                    shell_quote(&url),
-                    shell_quote(&target_path),
-                ),
-                None => format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)),
-            };
-            let output = session
-                .execute_command(&git_cmd)
-                .await
-                .map_err(|e| format!("SSH git clone failed: {}", e))?;
-            if output.contains("error:") || output.contains("fatal:") {
-                return Err(format!("git clone failed: {}", output));
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
-                    .map_err(|e| format!("WSL connection not found: {}", e))?
-            };
-            let mut wsl_args = vec!["-d".to_string(), distro, "--".to_string(), "git".to_string()];
-            // WSL has its own certificate store separate from Windows; disable SSL verification
-            // so clones from internal servers with self-signed certs work out of the box.
-            wsl_args.push("-c".to_string());
-            wsl_args.push("http.sslVerify=false".to_string());
-            if let Some(ref header) = auth_header {
-                wsl_args.push("-c".to_string());
-                wsl_args.push(format!("http.extraHeader={}", header));
-            }
-            wsl_args.extend(["clone".to_string(), url.clone(), target_path.clone()]);
-            let output = tokio::process::Command::new("wsl.exe")
-                .args(&wsl_args)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
-                    .map_err(|e| format!("Docker connection not found: {}", e))?
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect()
-                .map_err(|e| format!("No container CLI found: {}", e))?;
-            let git_cmd = match &auth_header {
-                Some(header) => format!(
-                    "git -c {} clone {} {}",
-                    shell_quote(&format!("http.extraHeader={}", header)),
-                    shell_quote(&url),
-                    shell_quote(&target_path),
-                ),
-                None => format!("git clone {} {}", shell_quote(&url), shell_quote(&target_path)),
-            };
-            let output = tokio::process::Command::new(cli.binary())
-                .args(["exec", &container_name, "sh", "-c", &git_cmd])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to exec into container: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-        ConnectionKey::Local => {
-            let mut args: Vec<String> = Vec::new();
-            if let Some(header) = auth_header {
-                args.push("-c".to_string());
-                args.push(format!("http.extraHeader={}", header));
-            }
-            args.extend(["clone".to_string(), url.clone(), target_path.clone()]);
-            let output = tokio::process::Command::new("git")
-                .args(&args)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn git: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
+    let conn =
+        connection_at(&app_state, &target_path, connection_id, wsl_connection_id, docker_connection_id)
+            .await?;
+
+    // The header carries a credential, so it goes as its own argv entry rather than into a
+    // shell string where quoting is the only thing keeping it intact.
+    let header_arg = auth_header.map(|header| format!("http.extraHeader={}", header));
+    let mut args: Vec<&str> = Vec::new();
+    if let Some(ref header) = header_arg {
+        args.extend_from_slice(&["-c", header]);
     }
+    args.extend_from_slice(&["clone", &url, &target_path]);
+    git(&conn, &args, "git clone").await?;
 
     let name = std::path::Path::new(&target_path)
         .file_name()
@@ -403,7 +176,7 @@ pub async fn clone_project(
         .unwrap_or("Untitled")
         .to_string();
 
-    register_project_in_db(app_state.inner(), &target_path, &name, connection_key)
+    register_project_in_db(app_state.inner(), &target_path, &name, connection_key).await
 }
 
 /// Create a new project directory, git init it, and register as a project
@@ -421,97 +194,20 @@ pub async fn create_new_project(
     // Build full path string (works for both local and remote — remote paths are POSIX)
     let full_path_str = format!("{}/{}", parent_dir.trim_end_matches('/'), folder_name);
 
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = app_state
-                .ssh.get_session(conn_id)
-                .await
-                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            let exists = session
-                .execute_command(&format!("test -d {} && echo yes || echo no", shell_quote(&full_path_str)))
-                .await
-                .map_err(|e| format!("SSH check failed: {}", e))?;
-            if exists.trim() == "yes" {
-                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
-            }
-            let output = session
-                .execute_command(&format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str)))
-                .await
-                .map_err(|e| format!("SSH create failed: {}", e))?;
-            if output.contains("error:") || output.contains("fatal:") {
-                return Err(format!("Remote create failed: {}", output));
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
-                    .map_err(|e| format!("WSL connection not found: {}", e))?
-            };
-            let exists_out = tokio::process::Command::new("wsl.exe")
-                .args(["-d", &distro, "--", "test", "-d", &full_path_str])
-                .no_console_window()
-                .status()
-                .await
-                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-            if exists_out.success() {
-                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
-            }
-            let script = format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str));
-            let output = tokio::process::Command::new("wsl.exe")
-                .args(["-d", &distro, "--", "sh", "-c", &script])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("error:") || stderr.contains("fatal:") || !output.status.success() {
-                return Err(format!("WSL create failed: {}", stderr));
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
-                    .map_err(|e| format!("Docker connection not found: {}", e))?
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect()
-                .map_err(|e| format!("No container CLI found: {}", e))?;
-            let script = format!("mkdir -p {} && git init -b main {}", shell_quote(&full_path_str), shell_quote(&full_path_str));
-            let output = tokio::process::Command::new(cli.binary())
-                .args(["exec", &container_name, "sh", "-c", &script])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to exec into container: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("Docker create failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-        ConnectionKey::Local => {
-            let full_path = std::path::Path::new(&parent_dir).join(&folder_name);
-            if full_path.exists() {
-                return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
-            }
-            std::fs::create_dir_all(&full_path)
-                .map_err(|e| format!("Failed to create directory: {}", e))?;
-            let output = tokio::process::Command::new("git")
-                .args(["init", "-b", "main", &full_path_str])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn git: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("git init failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-    }
+    let conn = connection_at(
+        &app_state,
+        &full_path_str,
+        connection_id,
+        wsl_connection_id,
+        docker_connection_id,
+    )
+    .await?;
 
-    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_key)
+    if files::dir_exists(&conn, &full_path_str).await {
+        return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+    }
+    files::create_dir_all(&conn, &full_path_str).await?;
+    git(&conn, &["init", "-b", "main", &full_path_str], "git init").await?;
+
+    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_key).await
 }

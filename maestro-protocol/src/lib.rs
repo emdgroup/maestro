@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+pub mod exec;
+
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
 pub const PROTOCOL_VERSION: u32 = 2;
@@ -597,9 +599,11 @@ pub struct TerminalOutput {
     pub bytes: Vec<u8>,
 }
 
-pub async fn write_message<W: AsyncWrite + Unpin>(
+/// Length-prefixed JSON frame, for any message type. The exec channel shares this framing with
+/// the main protocol but carries its own message set.
+pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
     stream: &mut W,
-    msg: &MaestroRpcMessage,
+    msg: &T,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = serde_json::to_vec(msg)?;
     if bytes.len() > MAX_MESSAGE_SIZE {
@@ -616,9 +620,9 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub async fn read_message<R: AsyncRead + Unpin>(
+pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
     stream: &mut R,
-) -> Result<MaestroRpcMessage, Box<dyn std::error::Error>> {
+) -> Result<T, Box<dyn std::error::Error>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -632,6 +636,19 @@ pub async fn read_message<R: AsyncRead + Unpin>(
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
     Ok(serde_json::from_slice(&body)?)
+}
+
+pub async fn write_message<W: AsyncWrite + Unpin>(
+    stream: &mut W,
+    msg: &MaestroRpcMessage,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_frame(stream, msg).await
+}
+
+pub async fn read_message<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<MaestroRpcMessage, Box<dyn std::error::Error>> {
+    read_frame(stream).await
 }
 
 /// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.

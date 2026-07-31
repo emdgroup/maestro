@@ -280,6 +280,27 @@ pub async fn spawn_connection_server(
 
     log::debug!("[acp] spawning connection server for {connection_key:?}");
 
+    // Commands run through a second process started from the same binary. Record where it lives
+    // while we have the resolved path — the command call sites are free functions with no
+    // `AppHandle` to deploy or locate it themselves.
+    {
+        use crate::connectivity::exec_channel::{remember_server_path, ExecHost};
+        match &target {
+            // Local commands spawn directly, so there is no channel to locate a server for.
+            TransportTarget::Local => {}
+            TransportTarget::Remote { ssh, server_path } => {
+                remember_server_path(ExecHost::Ssh(ssh.connection_id()), server_path);
+            }
+            #[cfg(windows)]
+            TransportTarget::Wsl { distro, server_path } => {
+                remember_server_path(ExecHost::Wsl((*distro).to_string()), server_path);
+            }
+            TransportTarget::Docker { container_name, server_path, .. } => {
+                remember_server_path(ExecHost::Docker((*container_name).to_string()), server_path);
+            }
+        }
+    }
+
     let (write_tx, source, child) = match target {
         TransportTarget::Local => {
             let (stdin_writer, source, child) = open_local_transport(app_state).await?;

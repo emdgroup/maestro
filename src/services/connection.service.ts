@@ -198,77 +198,37 @@ export function useForgetSavedPassword() {
  * Mutation hook for listing remote directories via SSH
  * Used by file browser to navigate remote filesystem
  */
+const LOCAL: ConnectionKey = { type: "local" };
+
 export function useListDirectories(connectionId: number | null | undefined, path: string) {
+  const connection: ConnectionKey = connectionId ? { type: "ssh", id: connectionId } : LOCAL;
   return useQuery({
     queryKey: connectionQueryKeys.dirs(connectionId, path),
-    queryFn: connectionId
-      ? () => api.listRemoteDirectories(connectionId, path)
-      : () => api.listLocalDirectories(path),
+    queryFn: () => api.listDirectories(connection, path),
   });
 }
 
-export function useListDirContents(
-  connection: ConnectionKey | null | undefined,
-  path: string,
-  wslDistroName?: string,
-  dockerContainerName?: string,
-) {
+export function useListDirContents(connection: ConnectionKey | null | undefined, path: string) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path],
-    queryFn: async () => {
-      if (!connection || connection.type === "local") {
-        return api.listLocalContents(path);
-      }
-      if (connection.type === "wsl") {
-        return api.listWslContents(wslDistroName!, path);
-      }
-      if (connection.type === "docker") {
-        const names = await api.listDockerDirectories(dockerContainerName!, path);
-        return names.map((name) => ({
-          name: name.endsWith("/") ? name.slice(0, -1) : name,
-          is_dir: name.endsWith("/"),
-        }));
-      }
-      return api.listRemoteContents(connection.id, path);
-    },
-    enabled:
-      !!path &&
-      (connection?.type !== "wsl" || !!wslDistroName) &&
-      (connection?.type !== "docker" || !!dockerContainerName),
+    queryFn: () => api.listContents(connection ?? LOCAL, path),
+    enabled: !!path,
     staleTime: 10_000,
   });
 }
 
 export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
-  const isWsl = connection?.type === "wsl";
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), connection, path],
-    queryFn: () => {
-      if (!connection || connection.type === "local") {
-        return api.listLocalContents(path);
-      }
-      return api.listRemoteContents(connection.id, path);
-    },
-    // ponytail: WSL needs distro name, not connection ID — disabled in V1
-    enabled: !!path && !isWsl,
+    queryFn: () => api.listContents(connection ?? LOCAL, path),
+    enabled: !!path,
   });
 }
 
 export function useListWorkspaceFiles(connection: ConnectionKey | null | undefined, path: string) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "workspace", connection, path],
-    queryFn: () => {
-      if (!connection || connection.type === "local") {
-        return api.listWorkspaceFiles(path);
-      }
-      if (connection.type === "wsl") {
-        return api.listWslWorkspaceFiles(connection.id, path);
-      }
-      if (connection.type === "docker") {
-        return api.listDockerWorkspaceFiles(connection.id, path);
-      }
-      return api.listRemoteWorkspaceFiles(connection.id, path);
-    },
+    queryFn: () => api.listWorkspaceFiles(connection ?? LOCAL, path),
     enabled: !!path,
     staleTime: 30_000,
   });
@@ -286,18 +246,7 @@ export function useReadFile(
 ) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "read", connection, path],
-    queryFn: () => {
-      if (!connection || connection.type === "local") {
-        return api.readLocalFile(path!);
-      }
-      if (connection.type === "wsl") {
-        return api.readWslFile(connection.id, path!);
-      }
-      if (connection.type === "docker") {
-        return api.readDockerFile(connection.id, path!);
-      }
-      return api.readRemoteFile(connection.id, path!);
-    },
+    queryFn: () => api.readFile(connection ?? LOCAL, path!),
     enabled: !!path,
     staleTime: 10_000,
     refetchInterval: options?.refetchInterval,
@@ -311,18 +260,7 @@ export function useReadFileBinary(
 ) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), "read-binary", connection, path],
-    queryFn: () => {
-      if (!connection || connection.type === "local") {
-        return api.readLocalFileBinary(path!);
-      }
-      if (connection.type === "wsl") {
-        return api.readWslFileBinary(connection.id, path!);
-      }
-      if (connection.type === "docker") {
-        return api.readDockerFileBinary(connection.id, path!);
-      }
-      return api.readRemoteFileBinary(connection.id, path!);
-    },
+    queryFn: () => api.readFileBinary(connection ?? LOCAL, path!),
     enabled: !!path,
     staleTime: 10_000,
     refetchInterval: options?.refetchInterval,

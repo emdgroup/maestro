@@ -8,7 +8,6 @@ import type { ConnectionKey } from "@/types/bindings";
 interface LazyFileTreeProps {
   root: string;
   connection: ConnectionKey;
-  wslDistroName?: string;
   selectedFile: string | null;
   onSelectFile: (relativePath: string) => void;
   expandedFolders: Set<string>;
@@ -20,7 +19,6 @@ interface LazyFileTreeProps {
 export function LazyFileTree({
   root,
   connection,
-  wslDistroName,
   selectedFile,
   onSelectFile,
   expandedFolders,
@@ -88,7 +86,6 @@ export function LazyFileTree({
             relativePrefix=""
             depth={0}
             connection={connection}
-            wslDistroName={wslDistroName}
             expandedFolders={expandedFolders}
             onExpandedFoldersChange={onExpandedFoldersChange}
             selectedFile={selectedFile}
@@ -105,7 +102,6 @@ interface DirContentsProps {
   relativePrefix: string;
   depth: number;
   connection: ConnectionKey;
-  wslDistroName?: string;
   expandedFolders: Set<string>;
   onExpandedFoldersChange: (folders: Set<string>) => void;
   selectedFile: string | null;
@@ -117,13 +113,12 @@ function DirContents({
   relativePrefix,
   depth,
   connection,
-  wslDistroName,
   expandedFolders,
   onExpandedFoldersChange,
   selectedFile,
   onSelectFile,
 }: DirContentsProps) {
-  const { data: entries, isLoading } = useListDirContents(connection, absolutePath, wslDistroName);
+  const { data: entries, isLoading } = useListDirContents(connection, absolutePath);
   const indent = depth * 12;
 
   if (isLoading) {
@@ -173,7 +168,6 @@ function DirContents({
                   relativePrefix={childRelative}
                   depth={depth + 1}
                   connection={connection}
-                  wslDistroName={wslDistroName}
                   expandedFolders={expandedFolders}
                   onExpandedFoldersChange={onExpandedFoldersChange}
                   selectedFile={selectedFile}

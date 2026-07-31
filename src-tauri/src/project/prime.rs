@@ -1,13 +1,10 @@
 use std::sync::Arc;
 use tauri::State;
 use crate::core::AppState;
-use crate::git::remote::shell_quote;
 use crate::acp::ConnectionKey;
 use super::session_state::{read_and_clear_restorable_sessions, spawn_session_restores};
 #[cfg(windows)]
 use rusqlite::params;
-#[cfg(windows)]
-use crate::command_ext::NoConsoleWindow;
 
 /// Pre-warm the shared maestro-server process for a project and optionally
 /// pre-initialize the default agent so the first session spawn is near-instant.
@@ -32,6 +29,9 @@ pub async fn prime_project_server(
         .map_err(|_| format!("Project {} not found", project_id))?
     };
 
+    // Each arm deploys and starts the connection's server, which is genuinely per-transport.
+    // Everything after it — reading the project config, pre-initializing the default agent and
+    // restoring sessions — is the same work on every connection and lives below the match.
     match connection_key {
         ConnectionKey::Ssh { id: conn_id } => {
             let ssh = app_state.ssh.get_session(conn_id).await
@@ -56,38 +56,13 @@ pub async fn prime_project_server(
                 }
             };
 
-            crate::acp::deploy::ensure_remote_catalog(&ssh, &project_path).await
-                .unwrap_or_else(|e| log::warn!("Warning: failed to deploy canvas catalog: {}", e));
-            crate::acp::deploy::ensure_remote_base_skill(&ssh, &project_path).await
-                .unwrap_or_else(|e| log::warn!("Warning: failed to deploy canvas base skill: {}", e));
-
             crate::acp::spawn_connection_server(ConnectionKey::Ssh { id: conn_id }, crate::acp::TransportTarget::Remote { ssh: &ssh, server_path: &maestro_path }, &app_state).await?;
 
-            let (_, config) = tokio::join!(
-                crate::acp::discovery_handlers::prefetch_agent_discovery(
-                    Arc::clone(&*app_state),
-                    ConnectionKey::Ssh { id: conn_id },
-                    Some(maestro_path.clone()),
-                ),
-                async {
-                    let settings_path = format!("{}/.maestro/settings.json", project_path);
-                    ssh.execute_command(&format!("cat {}", shell_quote(&settings_path))).await
-                        .ok()
-                        .and_then(|output| serde_json::from_str::<crate::models::ProjectConfig>(&output).ok())
-                }
-            );
-            let config = config.unwrap_or_default();
-            if let Some(agent_id) = config.default_agent {
-                crate::acp::pre_initialize_via_connection_server(
-                    ConnectionKey::Ssh { id: conn_id },
-                    &agent_id,
-                    &project_path,
-                    &app_state,
-                )
-                .await?;
-            }
-            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+            crate::acp::discovery_handlers::prefetch_agent_discovery(
+                Arc::clone(&*app_state),
+                ConnectionKey::Ssh { id: conn_id },
+                Some(maestro_path),
+            ).await;
         }
 
         ConnectionKey::Wsl { id: wsl_id } => {
@@ -104,47 +79,17 @@ pub async fn prime_project_server(
                 };
                 let maestro_path = crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle).await?.path;
 
-                crate::acp::deploy::ensure_wsl_catalog(&distro, &project_path).await
-                    .unwrap_or_else(|e| log::warn!("Warning: failed to deploy WSL canvas catalog: {}", e));
-                crate::acp::deploy::ensure_wsl_base_skill(&distro, &project_path).await
-                    .unwrap_or_else(|e| log::warn!("Warning: failed to deploy WSL canvas base skill: {}", e));
-
                 crate::acp::spawn_connection_server(
                     ConnectionKey::Wsl { id: wsl_id },
                     crate::acp::TransportTarget::Wsl { distro: &distro, server_path: &maestro_path },
                     &app_state,
                 ).await?;
-                let (_, config) = tokio::join!(
-                    crate::acp::discovery_handlers::prefetch_agent_discovery(
-                        Arc::clone(&*app_state),
-                        ConnectionKey::Wsl { id: wsl_id },
-                        Some(maestro_path.clone()),
-                    ),
-                    async {
-                        let settings_path = format!("{}/.maestro/settings.json", project_path);
-                        tokio::process::Command::new("wsl.exe")
-                            .args(["-d", &distro, "--", "cat", &settings_path])
-                            .stdout(std::process::Stdio::piped())
-                            .no_console_window()
-                            .output()
-                            .await
-                            .ok()
-                            .filter(|out| out.status.success())
-                            .and_then(|out| serde_json::from_slice::<crate::models::ProjectConfig>(&out.stdout).ok())
-                    }
-                );
-                let config = config.unwrap_or_default();
-                if let Some(agent_id) = config.default_agent {
-                    crate::acp::pre_initialize_via_connection_server(
-                        ConnectionKey::Wsl { id: wsl_id },
-                        &agent_id,
-                        &project_path,
-                        &app_state,
-                    )
-                    .await?;
-                }
-                let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-                spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+
+                crate::acp::discovery_handlers::prefetch_agent_discovery(
+                    Arc::clone(&*app_state),
+                    ConnectionKey::Wsl { id: wsl_id },
+                    Some(maestro_path),
+                ).await;
             }
             #[cfg(not(windows))]
             {
@@ -172,50 +117,35 @@ pub async fn prime_project_server(
                 &app_state,
             ).await?;
 
-            let (_, config) = tokio::join!(
-                crate::acp::discovery_handlers::prefetch_agent_discovery(
-                    Arc::clone(&*app_state),
-                    ConnectionKey::Docker { id: docker_id },
-                    Some(maestro_path.clone()),
-                ),
-                async {
-                    let settings_path = format!("{}/.maestro/settings.json", project_path);
-                    crate::connectivity::docker::read_file(&cli, &container_name, &settings_path).ok()
-                        .and_then(|text| serde_json::from_str::<crate::models::ProjectConfig>(&text).ok())
-                }
-            );
-            let config = config.unwrap_or_default();
-            if let Some(agent_id) = config.default_agent {
-                crate::acp::pre_initialize_via_connection_server(
-                    ConnectionKey::Docker { id: docker_id },
-                    &agent_id,
-                    &project_path,
-                    &app_state,
-                )
-                .await?;
-            }
-            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
+            crate::acp::discovery_handlers::prefetch_agent_discovery(
+                Arc::clone(&*app_state),
+                ConnectionKey::Docker { id: docker_id },
+                Some(maestro_path),
+            ).await;
         }
 
         ConnectionKey::Local => {
             crate::acp::spawn_connection_server(ConnectionKey::Local, crate::acp::TransportTarget::Local, &app_state).await?;
-
-            let config = crate::models::ProjectConfig::load_from_project(&project_path)
-                .unwrap_or_default();
-            if let Some(agent_id) = config.default_agent {
-                crate::acp::pre_initialize_via_connection_server(
-                    ConnectionKey::Local,
-                    &agent_id,
-                    &project_path,
-                    &app_state,
-                )
-                .await?;
-            }
-            let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
-            spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
         }
     }
+
+    // A config that cannot be read is a project with no default agent, not a failed prime: the
+    // session restore below is the more valuable half and must still happen.
+    let config = super::settings::load_project_config_for(&app_state, project_id)
+        .await
+        .unwrap_or_default();
+    if let Some(agent_id) = config.default_agent {
+        crate::acp::pre_initialize_via_connection_server(
+            connection_key,
+            &agent_id,
+            &project_path,
+            &app_state,
+        )
+        .await?;
+    }
+
+    let snapshots = read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;
+    spawn_session_restores(Arc::clone(&*app_state), project_id, snapshots);
 
     Ok(())
 }
