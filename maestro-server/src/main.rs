@@ -21,6 +21,7 @@ mod helpers;
 mod mcp_config;
 mod session;
 mod sessions;
+mod skills;
 mod terminal;
 mod tool_check;
 mod tool_config;

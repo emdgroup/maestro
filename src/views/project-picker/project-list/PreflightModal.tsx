@@ -118,7 +118,9 @@ export function PreflightModal() {
     navigateToConnections();
   };
 
-  const serverFailed = preflightError !== null || !preflightResult?.maestro_server.ok;
+  // The only way preflight fails outright: reaching or booting maestro-server returns `Err`, and
+  // a result that exists at all means the server answered.
+  const serverFailed = preflightError !== null;
   const failedTools = preflightResult?.tool_checks.filter((t) => !t.available) ?? [];
   const hasMandatoryFail = serverFailed || failedTools.some((t) => t.mandatory);
   const boundedStep = Math.min(currentStep, Math.max(failedTools.length - 1, 0));
@@ -147,9 +149,7 @@ export function PreflightModal() {
           {(preflightError || serverFailed) && (
             <IssueRow
               label="maestro-server"
-              detail={
-                preflightError ?? preflightResult?.maestro_server.message ?? "Failed to start"
-              }
+              detail={preflightError ?? "Failed to start"}
               mandatory
             />
           )}

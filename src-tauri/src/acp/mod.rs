@@ -15,6 +15,7 @@ pub mod resolve;
 pub mod session_handlers;
 pub mod session_ops;
 pub mod session_types;
+pub mod skills;
 pub mod transport;
 pub mod transport_setup;
 pub mod transport_types;
@@ -105,7 +106,8 @@ impl ConnectionKey {
 
 pub use connection_server::{
     pre_initialize_via_connection_server, query_check_tools_via_server,
-    query_list_agents_via_connection_server, query_session_close_via_server,
+    query_install_skills_via_server, query_list_agents_via_connection_server,
+    query_session_close_via_server,
     query_session_delete_via_server, query_session_list_via_server, set_tool_path_via_server,
     spawn_connection_server, test_tool_path_via_server,
 };

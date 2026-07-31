@@ -15,7 +15,7 @@ use crate::acp::transport_setup::{
 use crate::acp::transport_types::serialize_message;
 use maestro_protocol::{
     DetectInstalledAgentsRequest, DetectInstalledAgentsResponse, DetectProjectAgentsRequest,
-    DetectProjectAgentsResponse,
+    DetectProjectAgentsResponse, InstallSkillsRequest, InstallSkillsResponse, SkillFile,
 };
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -218,6 +218,28 @@ pub async fn test_tool_path_via_server(
         )),
         15,
         "TestToolPath via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Send `InstallSkills` through the running connection server and return whether it installed.
+///
+/// The generous timeout covers the first run on a machine, where `npx` downloads the skills CLI
+/// before it can do anything; later runs are a couple of file reads and return immediately.
+pub async fn query_install_skills_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    skills: Vec<SkillFile>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<InstallSkillsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.install_skills.clone(),
+        "InstallSkills already in progress",
+        MaestroRpcMessage::Request(ServerRequest::InstallSkills(InstallSkillsRequest { skills })),
+        150,
+        "InstallSkills via connection server timed out after 150s",
     )
     .await
 }

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -27,24 +26,6 @@ async fn send_prompt_impl(
     log_id: i32,
     content: serde_json::Value,
 ) -> Result<(), String> {
-    let (should_inject, preamble_injected) = {
-        let sessions = app_state.acp.sessions.lock().await;
-        match sessions.get(&log_id) {
-            Some(s) => {
-                let inject = !s.preamble_injected.load(Ordering::Relaxed);
-                (inject, Some(Arc::clone(&s.preamble_injected)))
-            }
-            None => (false, None),
-        }
-    };
-    let content = if should_inject {
-        if let Some(flag) = preamble_injected {
-            flag.store(true, Ordering::Relaxed);
-        }
-        crate::acp::manager::prepend_preamble(content)
-    } else {
-        content
-    };
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id_for(log_id),
         content,

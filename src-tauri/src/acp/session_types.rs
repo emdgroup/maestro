@@ -4,7 +4,9 @@ use crate::acp::canvas::{CanvasFenceExtractor, PreambleFilterState};
 use crate::acp::transport::{
     CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse, ToolCheckResult,
 };
-use maestro_protocol::{DetectInstalledAgentsResponse, DetectProjectAgentsResponse};
+use maestro_protocol::{
+    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, InstallSkillsResponse,
+};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -86,6 +88,7 @@ pub struct PendingChannels {
     pub check_tools: PendingReply<CheckToolsResponse>,
     pub set_tool_path: PendingReply<ToolCheckResult>,
     pub test_tool_path: PendingReply<ToolCheckResult>,
+    pub install_skills: PendingReply<InstallSkillsResponse>,
     pub detect_installed: PendingReply<DetectInstalledAgentsResponse>,
     pub detect_project: PendingReply<DetectProjectAgentsResponse>,
     pub authenticate: PendingReply<()>,
@@ -109,6 +112,7 @@ impl PendingChannels {
             check_tools: Arc::new(std::sync::Mutex::new(None)),
             set_tool_path: Arc::new(std::sync::Mutex::new(None)),
             test_tool_path: Arc::new(std::sync::Mutex::new(None)),
+            install_skills: Arc::new(std::sync::Mutex::new(None)),
             detect_installed: Arc::new(std::sync::Mutex::new(None)),
             detect_project: Arc::new(std::sync::Mutex::new(None)),
             authenticate: Arc::new(std::sync::Mutex::new(None)),
@@ -208,12 +212,9 @@ pub struct AcpProcess {
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    /// Set to `true` once the rendering preamble has been confirmed present in this
-    /// session's history — either detected in an incoming `user_message` / `user_message_chunk`
-    /// or still `false` meaning the preamble should be injected on the next outgoing prompt.
-    pub preamble_injected: Arc<AtomicBool>,
-    /// State machine used to strip the preamble from streamed `user_message_chunk` events
-    /// during session replay. Only active while `preamble_injected` is `false`.
+    /// State machine used to strip the old rendering preamble from streamed
+    /// `user_message_chunk` events during session replay. Nothing injects a preamble any more;
+    /// this only matters for sessions that predate the `maestro-output` skill.
     pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
     /// Extracts `maestro-canvas` code fences from `agent_message_chunk` text and emits
     /// them as synthetic canvas session updates.
@@ -281,7 +282,6 @@ pub struct ReaderTaskContext {
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    pub preamble_injected: Arc<AtomicBool>,
     pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     pub session_name: Option<String>,
@@ -308,7 +308,6 @@ impl AcpProcess {
             None
         }));
         let initialized = Arc::new(std::sync::Mutex::new(false));
-        let preamble_injected = Arc::new(AtomicBool::new(false));
         let preamble_filter = Arc::new(std::sync::Mutex::new(PreambleFilterState::Watching));
         let canvas_extractor = Arc::new(std::sync::Mutex::new(CanvasFenceExtractor::new()));
         let ctx = ReaderTaskContext {
@@ -322,7 +321,6 @@ impl AcpProcess {
             acp_session_id_cache: Arc::clone(&acp_session_id),
             replay_buffer: Arc::clone(&replay_buffer),
             initialized: Arc::clone(&initialized),
-            preamble_injected: Arc::clone(&preamble_injected),
             preamble_filter: Arc::clone(&preamble_filter),
             canvas_extractor: Arc::clone(&canvas_extractor),
             session_name: params.session_name.clone(),
@@ -351,7 +349,6 @@ impl AcpProcess {
             acp_session_id,
             replay_buffer,
             initialized,
-            preamble_injected,
             preamble_filter,
             canvas_extractor,
             session_capabilities: SessionCapabilitiesInfo::default(),

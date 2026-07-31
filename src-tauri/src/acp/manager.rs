@@ -18,4 +18,3 @@ pub use crate::acp::connection_server::{
     query_detect_project_agents_via_server,
     query_detect_installed_via_server,
 };
-pub use crate::acp::canvas::prepend_preamble;

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use maestro_protocol::{
     AuthTerminalExitResponse, CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse,
-    FileSearchResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
+    FileSearchResponse, InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage,
+    PreInitializeResponse,
     ServerRequest, ServerResponse, SessionListOkResponse, SessionLoadOkResponse, SessionUpdate,
     SpawnResponse, AUTH_REQUIRED_ERROR,
 };
@@ -1063,6 +1064,19 @@ pub(crate) async fn dispatch_message(
                 )
                 .await
             );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::InstallSkills(req)) => {
+            let response = match crate::skills::install(req.skills).await {
+                Ok(installed) => MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(
+                    InstallSkillsResponse { installed },
+                )),
+                Err(message) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message,
+                    session_id: None,
+                })),
+            };
+            send_or_return!(send_response(stdout, &response).await);
         }
 
         MaestroRpcMessage::Request(ServerRequest::SetToolPath(req)) => {

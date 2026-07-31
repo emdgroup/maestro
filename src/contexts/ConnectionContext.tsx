@@ -80,7 +80,7 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
       useConfigStore.getState().setPreflightToolChecks(connectionKey, result.tool_checks);
       setPreflightResult(result);
 
-      const hasIssues = !result.maestro_server.ok || result.tool_checks.some((t) => !t.available);
+      const hasIssues = result.tool_checks.some((t) => !t.available);
       setPreflightStatus(hasIssues ? "failed" : "passed");
     },
     [preflightStatus],

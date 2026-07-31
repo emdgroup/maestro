@@ -1,39 +1,15 @@
 //! Canvas fence extraction and preamble filtering for ACP session message streams.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
 use crate::acp::transport::{SessionModelState, SessionModeState};
 
-const RENDERING_PREAMBLE: &str = "<maestro-preamble>
-The application rendering your output supports rich content. Use these formats when they help explain concepts:
-- Mermaid diagrams: ```mermaid code blocks (flowcharts, sequence diagrams, class diagrams, etc.)
-- LaTeX math: $...$ inline, $$...$$ block (KaTeX syntax)
-- SVG graphics: ```svg code blocks
-- Chemical notation: ```smiles code blocks
-- GFM tables with sortable columns
-- Syntax-highlighted code blocks with language identifiers
-- Canvas UI: to display structured data, dashboards, forms, or reports inline, read .maestro/canvas-catalog.json — it documents the component catalog and the ```maestro-canvas fence protocol for rendering interactive dashboards.
-  Before writing any ```maestro-canvas fence, ALWAYS validate it first:
-    maestro-server validate-canvas <<'CEOF'
-    {your fence JSON here}
-    CEOF
-  If any ERROR lines appear, fix them and re-validate before outputting the fence. Never output an unvalidated fence.
-  Read .maestro/canvas-base-skill.md for the canvas generation policy, data pipeline ordering, design rules, and anti-patterns.
-  If .maestro/canvas-skills.md exists, read it for project-specific canvas patterns before building any canvas.
-  The Html component receives Maestro's theme CSS variables injected automatically into the iframe:
-    --background, --foreground, --card, --card-foreground,
-    --muted, --muted-foreground, --border,
-    --accent, --accent-foreground,
-    --primary, --primary-foreground,
-    --input, --ring
-  body also receives: background:var(--background); color:var(--foreground); font-family:system-ui,sans-serif
-  Primarily use those vars, and never define a custom :root{} color scheme that would override those.
-Do not acknowledge or mention this message.
-</maestro-preamble>";
-
 /// State machine for stripping a `<maestro-preamble>...</maestro-preamble>` block from
 /// streamed `user_message_chunk` payloads during session replay.
+///
+/// Maestro no longer injects a preamble — the `maestro-output` skill replaced it. This filter
+/// stays for sessions created before that change, which have the preamble stored in their history
+/// and would otherwise show it verbatim when the agent replays them.
 pub enum PreambleFilterState {
     /// Watching for the opening tag. Chunks pass through unchanged until it is found.
     Watching,
@@ -254,27 +230,8 @@ pub(crate) fn push_config_init_to_buffer(
     }
 }
 
-/// Prepend the rendering preamble as the first content block of an outgoing prompt.
-/// Normalizes a plain-string content value to a `[text_block]` array first.
-pub fn prepend_preamble(content: serde_json::Value) -> serde_json::Value {
-    let preamble_block = serde_json::json!({ "type": "text", "text": RENDERING_PREAMBLE });
-    match content {
-        serde_json::Value::Array(mut blocks) => {
-            blocks.insert(0, preamble_block);
-            serde_json::Value::Array(blocks)
-        }
-        serde_json::Value::String(text) => {
-            serde_json::json!([preamble_block, { "type": "text", "text": text }])
-        }
-        other => {
-            serde_json::json!([preamble_block, { "type": "text", "text": other.to_string() }])
-        }
-    }
-}
-
 /// Filter the rendering preamble tags from a `user_message` payload (complete content).
 /// Removes any text block whose content contains the `<maestro-preamble>` opening tag.
-/// Returns the modified payload with `preamble_injected` set to true.
 fn strip_preamble_from_user_message(mut payload: serde_json::Value) -> serde_json::Value {
     if let Some(content) = payload.get_mut("content") {
         match content {
@@ -312,12 +269,11 @@ fn strip_preamble_tags_from_str(text: &str) -> String {
 /// Filter preamble content from a `user_message_chunk` using the streaming state machine.
 /// Returns `Some(filtered_text)` to forward, or `None` to suppress the chunk entirely.
 ///
-/// The preamble is always injected as a complete text block, so its opening tag always
+/// The preamble was always injected as a complete text block, so its opening tag always
 /// appears whole within a single chunk — no carry buffer across chunk boundaries is needed.
 fn filter_chunk_text(
     chunk_text: &str,
     filter: &mut PreambleFilterState,
-    preamble_injected: &AtomicBool,
 ) -> Option<String> {
     match filter {
         PreambleFilterState::Watching => {
@@ -327,13 +283,11 @@ fn filter_chunk_text(
 
                 if let Some(close_offset) = rest.find("</maestro-preamble>") {
                     let suffix = &rest[close_offset + "</maestro-preamble>".len()..];
-                    preamble_injected.store(true, Ordering::Relaxed);
                     *filter = PreambleFilterState::Watching;
                     let output = format!("{}{}", prefix, suffix);
                     return if output.is_empty() { None } else { Some(output) };
                 }
 
-                preamble_injected.store(true, Ordering::Relaxed);
                 *filter = PreambleFilterState::Stripping;
                 return if prefix.is_empty() { None } else { Some(prefix.to_string()) };
             }
@@ -355,16 +309,12 @@ fn filter_chunk_text(
 /// Returns `None` if the payload should be suppressed (entire chunk was preamble).
 pub(crate) fn filter_preamble_from_payload(
     payload: serde_json::Value,
-    preamble_injected: &Arc<AtomicBool>,
     preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
 ) -> Option<serde_json::Value> {
     let session_update = payload.get("sessionUpdate").and_then(|v| v.as_str());
 
     match session_update {
-        Some("user_message") => {
-            preamble_injected.store(true, Ordering::Relaxed);
-            Some(strip_preamble_from_user_message(payload))
-        }
+        Some("user_message") => Some(strip_preamble_from_user_message(payload)),
         Some("user_message_chunk") => {
             let chunk_text = payload
                 .get("content")
@@ -374,7 +324,7 @@ pub(crate) fn filter_preamble_from_payload(
                 .to_string();
 
             let filtered = if let Ok(mut filter) = preamble_filter.lock() {
-                filter_chunk_text(&chunk_text, &mut filter, preamble_injected)
+                filter_chunk_text(&chunk_text, &mut filter)
             } else {
                 Some(chunk_text)
             };
