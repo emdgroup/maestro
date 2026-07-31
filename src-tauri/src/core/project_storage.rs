@@ -54,11 +54,19 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::
 ///
 /// Deliberately plain: no variable assignment, no `$$`, no `trap`. SSH runs this through the
 /// user's *login* shell rather than `sh -c`, so anything beyond `&&`, `printf` and redirection
-/// would break on a host whose login shell is not POSIX. A fixed temporary name is safe here —
-/// `.maestro/` is gitignored, and a leftover from an interrupted write is overwritten by the
-/// next one rather than being read by anything.
+/// would break on a host whose login shell is not POSIX.
+///
+/// The temporary name carries a counter because the name has to be unique without any shell
+/// help. `state.json` is written fire-and-forget from several tasks at once, and with a fixed
+/// name two of them raced: both wrote the same temporary, the first `mv` consumed it and the
+/// second failed with `mv: cannot stat '…/state.json.tmp'`, losing that write.
 pub(crate) fn atomic_write_script(dir: &str, path: &str, contents: &str) -> String {
-    let temp_path = format!("{path}.tmp");
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let temp_path = format!(
+        "{path}.{}.{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     format!(
         "mkdir -p {} && printf '%s' {} > {} && mv -f {} {}",
         shell_quote(dir),
@@ -158,21 +166,29 @@ mod tests {
     fn atomic_write_script_stays_portable_across_login_shells() {
         let script = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
 
-        assert_eq!(
-            script,
-            "mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > '/srv/p/.maestro/state.json.tmp' \
-             && mv -f '/srv/p/.maestro/state.json.tmp' '/srv/p/.maestro/state.json'"
-        );
+        assert!(script.starts_with("mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > "), "{script}");
+        assert!(script.ends_with(" '/srv/p/.maestro/state.json'"), "{script}");
+        assert!(script.contains("&& mv -f "), "{script}");
         for construct in ["trap", "$$", "tmp="] {
             assert!(!script.contains(construct), "{construct} is not portable: {script}");
         }
+    }
+
+    /// Two fire-and-forget writers of the same file must not pick the same temporary: the first
+    /// `mv` consumes it and the second fails with `cannot stat`, silently dropping that write.
+    #[test]
+    fn atomic_write_script_uses_a_fresh_temporary_each_time() {
+        let one = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
+        let two = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
+
+        assert_ne!(one, two);
     }
 
     #[test]
     fn atomic_write_script_quotes_paths_and_contents() {
         let script = atomic_write_script("/a b/.maestro", "/a b/.maestro/s.json", "{\"k\":\"it's\"}");
 
-        assert!(script.contains("'/a b/.maestro/s.json.tmp'"), "{script}");
+        assert!(script.contains("'/a b/.maestro/s.json."), "{script}");
         assert!(script.contains(r#"'{"k":"it'\''s"}'"#), "{script}");
     }
 

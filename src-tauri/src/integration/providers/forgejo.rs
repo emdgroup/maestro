@@ -1,5 +1,4 @@
-use crate::models::issue_tracking::{ForgejoConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
+use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
@@ -29,10 +28,10 @@ use super::{normalize_instance_url, extract_type_from_labels};
 pub async fn validate_and_store(
     project_id: i32,
     instance_url: &str,
-    owner: &str,
-    repo: &str,
+    _owner: &str,
+    _repo: &str,
     token: &str,
-    project_root: &str,
+    _project_root: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
@@ -69,16 +68,6 @@ pub async fn validate_and_store(
         .json()
         .await
         .map_err(|e| format!("Failed to parse Forgejo user response: {}", e))?;
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Forgejo(ForgejoConfig {
-            instance_url: base,
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-        })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_root)?;
 
     let stored_token = StoredToken {
         access_token: token.to_string(),

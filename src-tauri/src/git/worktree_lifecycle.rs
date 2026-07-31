@@ -53,8 +53,6 @@ pub async fn create_worktree(
 ) -> Result<Worktree, String> {
     // Resolve project and git connection (local vs remote SSH)
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let is_remote = project.is_remote();
-
     // A task created in a non-git project still submits `isolated_worktree = true`, so this is
     // reachable from normal use and has to fail with something a user can act on.
     if !crate::project::git_ops::is_git_repo(
@@ -69,8 +67,9 @@ pub async fn create_worktree(
         return Err("This project is not a git repository — worktrees are unavailable.".to_string());
     }
 
-    // Ensure parent directory exists (local only — SSH creates dirs automatically via git worktree add)
-    if !is_remote {
+    // Only for a path on this machine: everywhere else `git worktree add` creates the parents
+    // itself, and doing it here would build the tree on the host under a foreign path.
+    if git_conn.is_on_this_machine() {
         tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
             .await
             .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
@@ -170,22 +169,20 @@ pub async fn create_worktree_for_task(
     repo_path: &str,
 ) -> Result<(i32, String), String> {
     // Resolve project and git connection (local vs remote SSH)
-    let (project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
-    let is_remote = project.is_remote();
-
-    // For local projects only, canonicalize to resolve symlinks/relative paths
-    let repo_path = if is_remote {
-        repo_path.to_string()
-    } else {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    // Canonicalize only a path on this machine — see `GitConnection::is_on_this_machine`.
+    let repo_path = if git_conn.is_on_this_machine() {
         canonicalize_repo_path(repo_path)?
+    } else {
+        repo_path.to_string()
     };
     let repo_path = repo_path.as_str();
 
     let relative_path = crate::models::worktree_path_for_task(task_id);
     let abs_path = format!("{}/{}", repo_path, relative_path);
 
-    // Ensure parent dir exists (local only — SSH creates dirs automatically via git worktree add)
-    if !is_remote {
+    // Only for a path on this machine — see the same guard in `create_worktree`.
+    if git_conn.is_on_this_machine() {
         tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
             .await
             .map_err(|e| format!("Failed to create worktree directory: {}", e))?;

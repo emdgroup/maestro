@@ -1,5 +1,4 @@
-use crate::models::issue_tracking::{AzureDevOpsConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
+use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
@@ -116,9 +115,9 @@ const WIQL_FIELDS: &[&str] = &[
 pub async fn validate_and_store(
     project_id: i32,
     org_url: &str,
-    project: &str,
+    _project: &str,
     token: &str,
-    project_path: &str,
+    _project_path: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_azdo_org_url(org_url);
@@ -153,15 +152,6 @@ pub async fn validate_and_store(
         .provider_display_name
         .or(conn_data.authenticated_user.subject_descriptor)
         .unwrap_or_else(|| "unknown".to_string());
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Azuredevops(AzureDevOpsConfig {
-            org_url: base.clone(),
-            project: project.to_string(),
-        })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_path)?;
 
     let stored_token = StoredToken {
         access_token: token.to_string(),

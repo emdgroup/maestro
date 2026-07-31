@@ -77,11 +77,13 @@ pub async fn spawn_interactive_execution(
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
-    // For local projects only, canonicalize to resolve symlinks/relative paths
-    let repo_path = if is_remote {
-        repo_path
-    } else {
+    // Canonicalize only a path that is actually on this machine. A WSL or container path is not:
+    // resolving `/root/proj` on a Windows host yields `C:\root\proj`, which then reaches
+    // `wsl.exe --cd` and fails with Wsl/ERROR_FILE_NOT_FOUND.
+    let repo_path = if git_conn.is_on_this_machine() {
         crate::git::canonicalize_repo_path(&repo_path)?
+    } else {
+        repo_path
     };
 
     let worktree_abs_path: String = if let Some(wt_id) = worktree_id {
