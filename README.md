@@ -94,7 +94,7 @@ Maestro's picker lists agents from a registry bundled in the app. To add one it 
 
 That example is worth reading even if your agent is a different one: it adds nothing new to your machine. It is the same Claude Code ACP package Maestro already ships, launched with a different environment — Ollama's endpoint instead of Anthropic's, and gateway model discovery on so Maestro's model selector lists the models you have pulled locally. Your normal Claude Code entry keeps working alongside it.
 
-The other launch methods are `"uvx": { "package": "..." }` and `"binary": { "<platform>": { "cmd": "..." } }`, where `<platform>` is one of `darwin-aarch64`, `darwin-x86_64`, `linux-aarch64`, `linux-x86_64`, `windows-x86_64`, `windows-aarch64` and `cmd` is a name on your `PATH` or an absolute path. All three accept optional `args`; `npx` also accepts `env`.
+The other launch methods are `"uvx": { "package": "..." }` and `"binary": { "<platform>": { "cmd": "..." } }`, where `<platform>` is one of `darwin-aarch64`, `darwin-x86_64`, `linux-aarch64`, `linux-x86_64`, `windows-x86_64`, `windows-aarch64` and `cmd` is a name on your `PATH` or an absolute path. All three accept optional `args`. Only `npx` accepts `env` — under `uvx` and `binary` it is ignored, so an agent that needs environment variables either goes through `npx` or reads them from a wrapper script named as `cmd`.
 
 A few things to know:
 
