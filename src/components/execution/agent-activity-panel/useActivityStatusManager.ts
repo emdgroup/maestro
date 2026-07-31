@@ -18,6 +18,7 @@ export function useActivityStatusManager(
   sessionKey: number,
   liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
   pendingSendRef: MutableRefObject<boolean>,
+  awaitingUserInput = false,
 ): void {
   const { setActivity, removeActivity, resetIfStale } = useSessionActivityActions();
 
@@ -34,6 +35,15 @@ export function useActivityStatusManager(
       removeActivity(sessionKey);
       return;
     }
+    // A pending permission or elicitation outranks anything the item tail says. The
+    // request events are unbuffered while session updates flush on a 50ms timer, so a
+    // late tool_call (AskUserQuestion's is suppressed from `items` but still rebuilds
+    // the array) would otherwise overwrite awaiting_input with thinking.
+    if (awaitingUserInput) {
+      setActivity(sessionKey, "awaiting_input");
+      return;
+    }
+
     const { items } = liveState;
     const lastItem = items[items.length - 1];
 
@@ -80,6 +90,7 @@ export function useActivityStatusManager(
     liveState.isInitializing,
     liveState.isTurnActive,
     liveState.sessionEnded,
+    awaitingUserInput,
     sessionKey,
     setActivity,
     removeActivity,
@@ -118,12 +129,15 @@ export function useActivityStatusManager(
 
   useEffect(() => {
     if (!liveState.isTurnActive || liveState.sessionEnded || liveState.isInitializing) return;
+    // Waiting on the user is not a stalled connection — the agent is blocked on us.
+    if (awaitingUserInput) return;
     const id = setTimeout(() => setActivity(sessionKey, "stale"), 45_000);
     return () => clearTimeout(id);
   }, [
     liveState.isTurnActive,
     liveState.sessionEnded,
     liveState.isInitializing,
+    awaitingUserInput,
     itemsLength,
     heartbeatCount,
     sessionKey,

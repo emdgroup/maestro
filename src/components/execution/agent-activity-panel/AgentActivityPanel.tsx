@@ -175,7 +175,12 @@ export function AgentActivityPanel({
   const [, setScrollRestoreToken] = useState(0);
 
   const pendingSendRef = useRef(false);
-  useActivityStatusManager(sessionKey, liveState, pendingSendRef);
+  useActivityStatusManager(
+    sessionKey,
+    liveState,
+    pendingSendRef,
+    !!pendingPermission || !!pendingElicitation,
+  );
   const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
 
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
