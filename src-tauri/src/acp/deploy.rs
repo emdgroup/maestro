@@ -48,7 +48,7 @@ fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
 }
 
 /// Maps a uname-reported architecture string to its Rust Linux target triple.
-/// Used for container remotes, which are always Linux.
+/// Used for container and WSL remotes, which are always Linux.
 fn linux_triple_for_arch(arch: &str) -> Result<&'static str, String> {
     match arch {
         "x86_64"            => Ok("x86_64-unknown-linux-gnu"),
@@ -212,7 +212,7 @@ pub async fn ensure_remote_server(
 }
 
 /// Ensure maestro-server exists inside a WSL distro with the correct version.
-/// Downloads the Linux x86_64 binary locally if needed, then deploys via stdin pipe.
+/// Downloads the binary matching the distro's architecture if needed, then deploys via stdin pipe.
 /// Returns the absolute Linux path to the binary.
 #[cfg(windows)]
 pub async fn ensure_wsl_server(
@@ -228,7 +228,7 @@ pub async fn ensure_wsl_server(
                 "-d", distro, "--",
                 "sh", "-c",
                 &format!(
-                    "printf '%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\"",
+                    "printf '%s|||%s|||%s' \"$HOME\" \"$($HOME/{}/{} --app-version 2>/dev/null || echo MISSING)\" \"$(uname -m)\"",
                     REMOTE_INSTALL_DIR, REMOTE_BINARY_NAME
                 ),
             ])
@@ -240,11 +240,11 @@ pub async fn ensure_wsl_server(
     .map_err(|e| format!("Failed to probe WSL distro {}: {}", distro, e))?;
 
     let text = crate::connectivity::wsl::decode_wsl_output_pub(&probe_out.stdout)?;
-    let parts: Vec<&str> = text.trim().splitn(2, "|||").collect();
-    if parts.len() != 2 {
+    let parts: Vec<&str> = text.trim().splitn(3, "|||").collect();
+    if parts.len() != 3 {
         return Err(format!("Unexpected WSL probe output: {}", text.trim()));
     }
-    let (home, remote_version) = (parts[0].trim(), parts[1].trim());
+    let (home, remote_version, arch) = (parts[0].trim(), parts[1].trim(), parts[2].trim());
 
     let local_version = deployment_version();
     let abs_dir = format!("{}/{}", home, REMOTE_INSTALL_DIR);
@@ -257,8 +257,13 @@ pub async fn ensure_wsl_server(
         });
     }
 
-    // WSL on Windows runs x86_64 Linux in all common configurations.
-    let local_binary = ensure_remote_binary_local(app_handle, "x86_64-unknown-linux-gnu").await?;
+    // Probed rather than assumed: a WSL distro matches the host's architecture, so it is aarch64
+    // on Windows-on-ARM. No native ARM64 Windows build ships today, but the x86_64 one runs there
+    // under emulation, and deploying an x86_64 server into an aarch64 distro fails at exec time
+    // with the message discarded — the user only sees a handshake timeout. An unrecognised arch
+    // is an error rather than an x86_64 guess, for the same reason.
+    let triple = linux_triple_for_arch(arch)?;
+    let local_binary = ensure_remote_binary_local(app_handle, triple).await?;
     let binary_bytes = tokio::fs::read(&local_binary)
         .await
         .map_err(|e| format!("Cannot read cached binary: {}", e))?;
