@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.0](https://github.com/emdgroup/maestro/compare/v0.15.0...v0.16.0) (2026-07-31)
+
+### Features
+
+- download files to a folder over any connection ([#190](https://github.com/emdgroup/maestro/issues/190)) ([d454a59](https://github.com/emdgroup/maestro/commit/d454a597be431dc967a83c11555436ede94f914b))
+- open the interactive terminal inside container projects ([#189](https://github.com/emdgroup/maestro/issues/189)) ([746be39](https://github.com/emdgroup/maestro/commit/746be3937367319b7e94e9e20ab20eeae2d1458f))
+- report connection health for every connection type ([#191](https://github.com/emdgroup/maestro/issues/191)) ([99b8693](https://github.com/emdgroup/maestro/commit/99b8693182b952ad80fa71f8220461502e100303))
+
+### Bug Fixes
+
+- ask better questions in the maestro-custom-agents skill ([e860590](https://github.com/emdgroup/maestro/commit/e86059017f5f1e57daaee2db84525c3e1a8a371d))
+- capture session start SHA for container projects ([#184](https://github.com/emdgroup/maestro/issues/184)) ([68194e2](https://github.com/emdgroup/maestro/commit/68194e2a3c4a01c7e1d508dec583b813f4e9007d))
+- clip ScrollArea to its max-height ([#195](https://github.com/emdgroup/maestro/issues/195)) ([0e45b22](https://github.com/emdgroup/maestro/commit/0e45b2247bdb0263265bcd9372b32bdaefc714e5))
+- detect the container CLI with the which crate ([#188](https://github.com/emdgroup/maestro/issues/188)) ([3c51d78](https://github.com/emdgroup/maestro/commit/3c51d781a72533ec948e601f70b7cdb4de5d3537))
+- keep the canvas title visible when several canvases exist ([#192](https://github.com/emdgroup/maestro/issues/192)) ([1424854](https://github.com/emdgroup/maestro/commit/142485401f76910bf461f24dc1745889a7884efb))
+- open files from artifact cards on remote connections ([#187](https://github.com/emdgroup/maestro/issues/187)) ([598e774](https://github.com/emdgroup/maestro/commit/598e774746ddd83e6fc2bcef5a7f6e61f0bb1b66))
+- probe the WSL distro architecture before deploying maestro-server ([#186](https://github.com/emdgroup/maestro/issues/186)) ([2fc4560](https://github.com/emdgroup/maestro/commit/2fc4560eb10533207c3cad6da30dd890bb976794))
+- scroll the side panel tab bar horizontally when tabs overflow ([#196](https://github.com/emdgroup/maestro/issues/196)) ([b3325db](https://github.com/emdgroup/maestro/commit/b3325db6297e1cb0b4f840bad52ea000eaeb1676))
+- show "needs your input" during elicitation requests ([#193](https://github.com/emdgroup/maestro/issues/193)) ([9bdd095](https://github.com/emdgroup/maestro/commit/9bdd095b2037d24505199c674f08cc87b1e06b40))
+
 ## [0.15.0](https://github.com/emdgroup/maestro/compare/v0.14.0...v0.15.0) (2026-07-31)
 
 ### Features
