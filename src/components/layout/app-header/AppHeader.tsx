@@ -27,6 +27,9 @@ interface AppHeaderProps {
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
   agentCount?: number;
+  /// The connection stopped answering but is still open — reported here rather than as a
+  /// blocking overlay, because nothing has necessarily failed.
+  connectionQuiet?: boolean;
   autoMode?: boolean;
   onAutoModeChange?: (enabled: boolean) => void;
 }
@@ -51,6 +54,7 @@ export function AppHeader({
   agentCount = 0,
   autoMode: autoModeProp,
   onAutoModeChange,
+  connectionQuiet = false,
 }: AppHeaderProps) {
   // Load recent projects on-demand (only when header is rendered)
   const headerConnection =
@@ -254,6 +258,23 @@ export function AppHeader({
               : "Manual mode: tasks must be started manually. Click to enable Auto mode."}
           </TooltipContent>
         </Tooltip>
+
+        {connectionQuiet && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <div className="flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-600 dark:text-amber-400" />
+              }
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              Not responding
+            </TooltipTrigger>
+            <TooltipContent>
+              No reply from this connection for a while. Sessions are still open — an agent that is
+              busy can look like this.
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Running agent count */}
         <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">

@@ -148,7 +148,12 @@ function App() {
   const connection = useMemo(
     () => (currentProject ? connectionKeyFromProject(currentProject) : { type: "local" as const }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentProject?.id, currentProject?.connection_id, currentProject?.wsl_connection_id],
+    [
+      currentProject?.id,
+      currentProject?.connection_id,
+      currentProject?.wsl_connection_id,
+      currentProject?.docker_connection_id,
+    ],
   );
 
   // Running agent count for header badge
@@ -159,13 +164,13 @@ function App() {
     return activity && activity.status !== "idle" && activity.status !== "awaiting_input";
   }).length;
 
-  // SSH connection health monitoring — only active for SSH projects
+  // Health of whichever connection this project lives on — every type, not just SSH.
   const {
     state: connectionHealth,
     attempt: reconnectAttempt,
     maxAttempts: reconnectMaxAttempts,
     dismiss: dismissBackdrop,
-  } = useConnectionHealth(currentProject?.connection_id ?? null);
+  } = useConnectionHealth(currentProject ? connection : null);
 
   // Leave Connection: reset health state then navigate back to project picker
   const handleLeaveConnection = useCallback(() => {
@@ -256,6 +261,7 @@ function App() {
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
             agentCount={runningAgentCount}
+            connectionQuiet={connectionHealth === "quiet"}
           />
           <main className="flex-1 overflow-hidden relative">
             {/* Agents View — always mounted, imperative animation */}
@@ -340,10 +346,13 @@ function App() {
             onDropConfig={() => setDismissedForProjectId(currentProject?.id ?? null)}
           />
 
-          {/* SSH connection loss overlay — blocks interaction during reconnect */}
-          {connectionHealth !== "connected" && (
+          {/* Blocks interaction once the connection is actually gone. "quiet" is deliberately
+              absent: the server has only stopped answering, the work is still reachable, and the
+              header reports it without taking the app away. */}
+          {connectionHealth !== "connected" && connectionHealth !== "quiet" && (
             <DisconnectBackdrop
               state={connectionHealth}
+              connection={connection}
               attempt={reconnectAttempt}
               maxAttempts={reconnectMaxAttempts}
               onLeaveConnection={handleLeaveConnection}
