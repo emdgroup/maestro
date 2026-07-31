@@ -18,7 +18,7 @@ const userMessage: ActivityItem = {
 
 type LiveState = Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">;
 
-function setup(overrides: Partial<LiveState> = {}) {
+function setup(overrides: Partial<LiveState> = {}, awaitingUserInput = false) {
   const liveState: LiveState = {
     items: [],
     isInitializing: false,
@@ -27,7 +27,9 @@ function setup(overrides: Partial<LiveState> = {}) {
     ...overrides,
   };
   const pendingSendRef = { current: false };
-  return renderHook(() => useActivityStatusManager(SESSION_KEY, liveState, pendingSendRef));
+  return renderHook(() =>
+    useActivityStatusManager(SESSION_KEY, liveState, pendingSendRef, awaitingUserInput),
+  );
 }
 
 function status() {
@@ -44,6 +46,13 @@ describe("useActivityStatusManager", () => {
     // reasoning phase — reporting idle there would re-enable the compose bar mid-turn.
     setup({ items: [userMessage], isTurnActive: true });
     expect(status()).toBe("thinking");
+  });
+
+  it("reports awaiting_input while a permission or elicitation request is pending", () => {
+    // The suppressed AskUserQuestion tool_call still rebuilds `items` after the
+    // elicitation event lands — the tail must not win over the pending request.
+    setup({ items: [userMessage], isTurnActive: true }, true);
+    expect(status()).toBe("awaiting_input");
   });
 
   it("reports idle once the turn ends", () => {
