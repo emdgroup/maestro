@@ -5,6 +5,11 @@ interface Params {
   commands: AvailableCommand[];
 }
 
+// Commands are namespaced (`ponytail:ponytail-review`), so a user typing the part
+// they remember — `review`, `ponytail-review` — must still match. Dropping the
+// separators makes the match indifferent to `:` vs `-` vs nothing.
+const normalize = (s: string) => s.toLowerCase().replace(/[:\-_]/g, "");
+
 export function useCommandAutocomplete({ commands }: Params) {
   const [showCommands, setShowCommands] = useState(false);
   const [commandFilter, setCommandFilter] = useState("");
@@ -15,10 +20,15 @@ export function useCommandAutocomplete({ commands }: Params) {
   // reopen on the very next keystroke, since the trigger is still there.
   const dismissedOffset = useRef<number | null>(null);
 
-  const filteredCommands = useMemo(
-    () => commands.filter((cmd) => cmd.name.toLowerCase().startsWith(commandFilter.toLowerCase())),
-    [commands, commandFilter],
-  );
+  const filteredCommands = useMemo(() => {
+    const query = normalize(commandFilter);
+    if (!query) return commands;
+    return commands
+      .map((cmd) => ({ cmd, at: normalize(cmd.name).indexOf(query) }))
+      .filter((m) => m.at !== -1)
+      .sort((a, b) => a.at - b.at) // prefix matches first; sort is stable, so ties keep agent order
+      .map((m) => m.cmd);
+  }, [commands, commandFilter]);
 
   useEffect(() => {
     const button = commandButtonRefs.current.get(commandHighlight);
