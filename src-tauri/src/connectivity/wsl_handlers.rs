@@ -32,6 +32,45 @@ pub async fn wsl_to_windows_path(distro: String, path: String) -> Result<String,
     crate::connectivity::wsl::to_windows_path(&distro, &path).await
 }
 
+/// Copy a file out of a WSL distro to somewhere on the host.
+///
+/// The distro counterpart to [`crate::connectivity::sftp_handlers::sftp_download`] and
+/// [`crate::connectivity::docker_handlers::docker_download_file`], without the progress plumbing.
+/// Unlike either of those nothing streams through a shell: the distro's files are already
+/// reachable under a Windows path, so this is an ordinary host-side copy.
+#[tauri::command]
+#[specta::specta]
+pub async fn wsl_download_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection_id: i32,
+    distro_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    let conn = crate::core::git_connection_for(
+        &app_state,
+        distro_path.clone(),
+        crate::acp::ConnectionKey::Wsl { id: connection_id },
+    )
+    .await?;
+    let crate::models::GitConnection::Wsl { distro, .. } = conn else {
+        return Err(format!("Connection {connection_id} is not a WSL distro"));
+    };
+
+    let windows_path = crate::connectivity::wsl::to_windows_path(&distro, &distro_path).await?;
+
+    // `copy` will not create the destination's parent, and the callers that stage a file under the
+    // temp dir rely on it being made for them — same as the container path does.
+    if let Some(parent) = std::path::Path::new(&local_path).parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+    }
+    tokio::fs::copy(&windows_path, &local_path)
+        .await
+        .map_err(|e| format!("Failed to copy {windows_path} to {local_path}: {e}"))?;
+    Ok(())
+}
+
 /// Upsert a WSL connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]

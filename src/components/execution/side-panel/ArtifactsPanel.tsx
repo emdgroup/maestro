@@ -1,19 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Files, ExternalLink, X, FolderDown } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
+import { Files, ExternalLink, FolderDown } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Slider } from "@/ui/slider";
 import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { WorkingFileContentView } from "@/components/execution/activity/WorkingFileContentView";
 import { useAcpSessionMeta } from "@/services/execution.service";
-import { openFileWithConnection, downloadFileToFolder } from "@/lib/file-opener";
+import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
 import type { ConnectionKey } from "@/types/bindings";
-
-type DlState =
-  | { status: "idle" }
-  | { status: "downloading"; progress: number }
-  | { status: "error" };
+import { TransferIcon } from "./TransferIcon";
+import { transferTooltip, useFileTransfer } from "./useFileTransfer";
 
 interface ArtifactsPanelProps {
   files: string[];
@@ -35,7 +31,8 @@ export function ArtifactsPanel({
   const [selected, setSelected] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
-  const [dlState, setDlState] = useState<DlState>({ status: "idle" });
+  const openTransfer = useFileTransfer();
+  const downloadTransfer = useFileTransfer();
   const initialFileAppliedRef = useRef(false);
 
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey ?? null);
@@ -68,66 +65,30 @@ export function ArtifactsPanel({
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
 
   async function handleOpen() {
-    if (!selectedAbsPath || dlState.status === "downloading") return;
-    if (connection.type !== "ssh") {
-      try {
-        await openFileWithConnection(connection, selectedAbsPath, { wslDistroName });
-      } catch {
-        setDlState({ status: "error" });
-        setTimeout(() => setDlState({ status: "idle" }), 2000);
-      }
-      return;
-    }
+    if (!selectedAbsPath) return;
     const transferId = `open-${Date.now()}`;
-    setDlState({ status: "downloading", progress: 0 });
-    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
-      `sftp://transfer-progress/${transferId}`,
-      (e) => {
-        const pct =
-          e.payload.total_bytes > 0
-            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
-            : 0;
-        setDlState({ status: "downloading", progress: pct });
-      },
-    );
-    try {
-      await openFileWithConnection(connection, selectedAbsPath, {
-        sshConnectionId: connection.id,
-        transferId,
-        wslDistroName,
-      });
-      setDlState({ status: "idle" });
-    } catch {
-      setDlState({ status: "error" });
-      setTimeout(() => setDlState({ status: "idle" }), 2000);
-    } finally {
-      unlisten();
-    }
+    await openTransfer.run({
+      transferId,
+      reportsProgress: connection.type === "ssh",
+      action: () =>
+        openFileWithConnection(connection, selectedAbsPath, {
+          sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+          transferId,
+          wslDistroName,
+        }),
+      // The file opening is its own confirmation, so success stays quiet here.
+    });
   }
 
   async function handleDownload() {
-    if (!selectedAbsPath || dlState.status === "downloading" || connection.type !== "ssh") return;
+    if (!selectedAbsPath || connection.type === "local") return;
     const transferId = `dl-${Date.now()}`;
-    setDlState({ status: "downloading", progress: 0 });
-    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
-      `sftp://transfer-progress/${transferId}`,
-      (e) => {
-        const pct =
-          e.payload.total_bytes > 0
-            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
-            : 0;
-        setDlState({ status: "downloading", progress: pct });
-      },
-    );
-    try {
-      await downloadFileToFolder(connection.id, selectedAbsPath, transferId);
-      setDlState({ status: "idle" });
-    } catch {
-      setDlState({ status: "error" });
-      setTimeout(() => setDlState({ status: "idle" }), 2000);
-    } finally {
-      unlisten();
-    }
+    await downloadTransfer.run({
+      transferId,
+      reportsProgress: connection.type === "ssh",
+      action: () => downloadFileToFolder(connection, selectedAbsPath, transferId),
+      describeDone: (dest) => (dest === null ? null : `Saved to ${dest}`),
+    });
   }
 
   return (
@@ -177,43 +138,51 @@ export function ArtifactsPanel({
               <TooltipTrigger
                 type="button"
                 onClick={() => void handleOpen()}
-                disabled={dlState.status === "downloading"}
+                disabled={openTransfer.pending}
                 className={cn(
                   "p-1.5 rounded-md transition-colors shrink-0",
-                  dlState.status === "error"
+                  openTransfer.state.status === "error"
                     ? "text-destructive"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                 )}
               >
-                {dlState.status === "downloading" ? (
-                  <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
-                    {dlState.progress}%
-                  </span>
-                ) : dlState.status === "error" ? (
-                  <X className="w-3.5 h-3.5" />
-                ) : (
-                  <ExternalLink className="w-3.5 h-3.5" />
-                )}
+                <TransferIcon
+                  state={openTransfer.state}
+                  idle={<ExternalLink className="w-3.5 h-3.5" />}
+                />
               </TooltipTrigger>
               <TooltipContent>
-                {dlState.status === "error"
-                  ? "Failed to open"
-                  : connection.type === "ssh"
+                {transferTooltip(
+                  openTransfer.state,
+                  opensViaHostCopy(connection)
                     ? "Download and open"
-                    : "Open in default application"}
+                    : "Open in default application",
+                )}
               </TooltipContent>
             </Tooltip>
-            {connection.type === "ssh" && (
+            {connection.type !== "local" && (
               <Tooltip>
                 <TooltipTrigger
                   type="button"
                   onClick={() => void handleDownload()}
-                  disabled={dlState.status === "downloading"}
-                  className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                  disabled={downloadTransfer.pending}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors shrink-0",
+                    downloadTransfer.state.status === "error"
+                      ? "text-destructive"
+                      : downloadTransfer.state.status === "done"
+                        ? "text-emerald-600"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
                 >
-                  <FolderDown className="w-3.5 h-3.5" />
+                  <TransferIcon
+                    state={downloadTransfer.state}
+                    idle={<FolderDown className="w-3.5 h-3.5" />}
+                  />
                 </TooltipTrigger>
-                <TooltipContent>Download to…</TooltipContent>
+                <TooltipContent>
+                  {transferTooltip(downloadTransfer.state, "Download to…")}
+                </TooltipContent>
               </Tooltip>
             )}
           </>
