@@ -248,6 +248,7 @@ export function ArtifactsPanel({
       {/* Content */}
       <WorkingFileContentView
         sessionKey={sessionKey}
+        connection={connection}
         filePath={selected}
         isActive={isActive}
         zoom={zoom}

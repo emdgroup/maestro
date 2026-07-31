@@ -1,6 +1,7 @@
 use crate::command_ext::NoConsoleWindow;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -184,6 +185,60 @@ pub async fn read_file_binary(cli: &ContainerCli, container_name: &str, path: &s
         return Err(output.stderr_string());
     }
     Ok(output.stdout_string())
+}
+
+/// `<cli> cp` in whichever direction the caller names.
+///
+/// Runs on the host rather than through [`run`]: `cp` is implemented by the CLI itself, and the
+/// container has no view of the host path on the other end of it.
+async fn copy(cli: &ContainerCli, from: &str, to: &str) -> Result<(), String> {
+    let output = tokio::process::Command::new(cli.binary())
+        .args(["cp", from, to])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .no_console_window()
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run {} cp: {e}", cli.binary()))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "{} cp failed: {}",
+            cli.binary(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+/// Copy a host file into a container. The destination's directory must already exist.
+pub async fn copy_into(
+    cli: &ContainerCli,
+    container_name: &str,
+    host_path: &Path,
+    dest: &str,
+) -> Result<(), String> {
+    let source = host_path.to_str().ok_or("Source path is not valid UTF-8")?;
+    copy(cli, source, &format!("{container_name}:{dest}")).await
+}
+
+/// Copy a file out of a container onto the host.
+///
+/// The destination's parent is created first — `cp` will not create it, and this mirrors what
+/// [`crate::connectivity::ssh::sftp::download_file`] does for the equivalent SSH path.
+pub async fn copy_from(
+    cli: &ContainerCli,
+    container_name: &str,
+    src: &str,
+    host_path: &Path,
+) -> Result<(), String> {
+    if let Some(parent) = host_path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            format!("Cannot create local directory '{}': {e}", parent.display())
+        })?;
+    }
+    let dest = host_path.to_str().ok_or("Destination path is not valid UTF-8")?;
+    copy(cli, &format!("{container_name}:{src}"), dest).await
 }
 
 pub async fn list_directories(cli: &ContainerCli, container_name: &str, path: &str) -> Result<Vec<String>, String> {

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::connectivity::docker_handlers::run_blocking;
+use crate::connectivity::files::{BINARY_LIMIT, TEXT_LIMIT};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct FileEntry {
@@ -103,7 +104,7 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
     Ok(())
 }
 
-/// Read a local file's text content. Rejects binary files and files over 512 KB.
+/// Read a local file's text content. Rejects binary files and files over [`TEXT_LIMIT`].
 #[tauri::command]
 #[specta::specta]
 pub async fn read_local_file(path: String) -> Result<String, String> {
@@ -116,7 +117,7 @@ pub async fn read_local_file(path: String) -> Result<String, String> {
             return Err("Binary file".to_string());
         }
         let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-        if bytes.len() > 524_288 {
+        if bytes.len() > TEXT_LIMIT {
             return Err("File too large".to_string());
         }
         String::from_utf8(bytes).map_err(|e| e.to_string())
@@ -124,7 +125,7 @@ pub async fn read_local_file(path: String) -> Result<String, String> {
     .await
 }
 
-/// Read a local file's raw content as a base64-encoded string. Rejects files over 10 MB.
+/// Read a local file's raw content as a base64-encoded string. Rejects files over [`BINARY_LIMIT`].
 #[tauri::command]
 #[specta::specta]
 pub async fn read_local_file_binary(path: String) -> Result<String, String> {
@@ -132,7 +133,7 @@ pub async fn read_local_file_binary(path: String) -> Result<String, String> {
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
         let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-        if bytes.len() > 10_485_760 {
+        if bytes.len() > BINARY_LIMIT {
             return Err("File too large".to_string());
         }
         Ok(STANDARD.encode(&bytes))

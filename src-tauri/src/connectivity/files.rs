@@ -17,9 +17,9 @@ use crate::git::remote::shell_quote;
 use crate::models::GitConnection;
 
 /// Text files above this are refused rather than streamed into the UI.
-const TEXT_LIMIT: usize = 512 * 1024;
+pub(crate) const TEXT_LIMIT: usize = 512 * 1024;
 /// Binary files above this are refused: the base64 of one already costs a third more again.
-const BINARY_LIMIT: usize = 10 * 1024 * 1024;
+pub(crate) const BINARY_LIMIT: usize = 10 * 1024 * 1024;
 /// A workspace listing is for a file picker, not an inventory.
 const MAX_WORKSPACE_FILES: usize = 2000;
 

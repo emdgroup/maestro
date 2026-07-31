@@ -112,6 +112,24 @@ pub struct PreparedAttachment {
     pub content_block: serde_json::Value,
 }
 
+/// Where an attachment lands on the far side. Shared by every connection type so an agent finds
+/// attachments in one place however the project is reached.
+fn attachments_dir(cwd: &str, log_id: i32) -> String {
+    format!("{}/.maestro/attachments/{}", cwd.trim_end_matches('/'), log_id)
+}
+
+/// Create the destination directory and copy into it in one command, so a copy costs one round
+/// trip rather than two.
+fn copy_script(dir: &str, source: &str, dest: &str) -> String {
+    use crate::git::remote::shell_quote;
+    format!(
+        "mkdir -p {} && cp {} {}",
+        shell_quote(dir),
+        shell_quote(source),
+        shell_quote(dest)
+    )
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn prepare_external_attachments(
@@ -168,11 +186,7 @@ pub async fn prepare_external_attachments(
                         .await
                         .ok_or_else(|| format!("No active SSH session for connection {conn_id}"))?;
 
-                    let attachments_dir = format!(
-                        "{}/.maestro/attachments/{}",
-                        cwd.trim_end_matches('/'),
-                        log_id
-                    );
+                    let attachments_dir = attachments_dir(&cwd, log_id);
                     session
                         .execute_command(&format!("mkdir -p '{attachments_dir}'"))
                         .await
@@ -192,7 +206,82 @@ pub async fn prepare_external_attachments(
 
                     format!("file://{remote_path}")
                 }
-                _ => format!("file://{}", file.path),
+                // The picker returns a host path, which an agent running anywhere but the host
+                // cannot open. Every non-local connection needs the file moved to a path that
+                // means something on its side.
+                ConnectionKey::Wsl { id: wsl_id } => {
+                    let distro = {
+                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                        conn.query_row(
+                            "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                            [*wsl_id],
+                            |row| row.get::<_, String>(0),
+                        ).map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
+                    };
+
+                    // The host's drives are already mounted inside the distro, so this copies
+                    // without the bytes ever leaving the machine.
+                    let source = crate::connectivity::wsl::to_wsl_path(&distro, &file.path).await?;
+                    let attachments_dir = attachments_dir(&cwd, log_id);
+                    let dest = format!("{attachments_dir}/{display_name}");
+                    let conn = crate::models::GitConnection::Wsl {
+                        distro: distro.clone(),
+                        path: cwd.clone(),
+                    };
+                    let output = crate::connectivity::exec_channel::run_on(
+                        &conn,
+                        None,
+                        "sh",
+                        &["-c", &copy_script(&attachments_dir, &source, &dest)],
+                    )
+                    .await?;
+                    if !output.success() {
+                        return Err(format!(
+                            "Failed to copy '{display_name}' into {distro}: {}",
+                            output.stderr_string()
+                        ));
+                    }
+
+                    format!("file://{dest}")
+                }
+                ConnectionKey::Docker { id: docker_id } => {
+                    let container_name = {
+                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                        conn.query_row(
+                            "SELECT container_name FROM docker_connections WHERE id = ?",
+                            [*docker_id],
+                            |row| row.get::<_, String>(0),
+                        ).map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?
+                    };
+                    let cli = crate::connectivity::docker::ContainerCli::detect()?;
+
+                    let attachments_dir = attachments_dir(&cwd, log_id);
+                    let mkdir = crate::connectivity::docker::run(
+                        &cli,
+                        &container_name,
+                        "mkdir",
+                        &["-p", &attachments_dir],
+                    )
+                    .await?;
+                    if !mkdir.success() {
+                        return Err(format!(
+                            "Failed to create attachments dir: {}",
+                            mkdir.stderr_string()
+                        ));
+                    }
+
+                    let dest = format!("{attachments_dir}/{display_name}");
+                    crate::connectivity::docker::copy_into(
+                        &cli,
+                        &container_name,
+                        local_path,
+                        &dest,
+                    )
+                    .await?;
+
+                    format!("file://{dest}")
+                }
+                ConnectionKey::Local => format!("file://{}", file.path),
             };
 
             if embedded_context && !is_pdf_extension(&file.path) {

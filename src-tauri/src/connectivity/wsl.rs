@@ -132,6 +132,77 @@ pub async fn get_home_dir(distro: &str) -> Result<String, String> {
     }
 }
 
+/// `\\wsl.localhost\<distro>\...`, the share Windows exposes for a distro's filesystem root.
+///
+/// Only the fallback for when [`to_windows_path`] cannot reach the distro to ask properly. It is
+/// wrong for anything under `/mnt`, which already names a file on the host's own disk, and it
+/// resolves at all only while the distro is running. `\\wsl$\` is the older name for the same
+/// share — still accepted, but not worth spreading further.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn unc_fallback(distro: &str, path: &str) -> String {
+    format!(r"\\wsl.localhost\{}\{}", distro, path.trim_start_matches('/').replace('/', "\\"))
+}
+
+/// The Windows path naming the same file as `path` inside `distro`.
+///
+/// `wslpath` is asked rather than prefixing [`unc_fallback`] because the two disagree exactly where
+/// it matters: `/mnt/c/Users/x` is `C:\Users\x`, a file on the host's own disk, and the prefix form
+/// would route it out through the distro's 9P server and back.
+pub async fn to_windows_path(distro: &str, path: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        match run(distro, "wslpath", &["-w", path]).await {
+            Ok(output) if output.success() => {
+                let text = decode_wsl_output(&output.stdout)?;
+                if !text.trim().is_empty() {
+                    return Ok(text.trim().to_string());
+                }
+                log::warn!("wslpath -w gave no output for '{path}' in {distro}");
+            }
+            Ok(output) => {
+                log::warn!(
+                    "wslpath -w failed for '{path}' in {distro}: {}",
+                    output.stderr_string()
+                );
+            }
+            Err(e) => log::warn!("Could not run wslpath in {distro}: {e}"),
+        }
+        Ok(unc_fallback(distro, path))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
+
+/// The path inside `distro` naming the same file as the Windows path `path`, so a host file can be
+/// handed to something running in the distro.
+///
+/// Unlike [`to_windows_path`] this has no string fallback: a drive letter has no meaning inside the
+/// distro beyond whatever `wslpath` says it is mounted at.
+pub async fn to_wsl_path(distro: &str, path: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let output = run(distro, "wslpath", &["-u", path]).await?;
+        if !output.success() {
+            return Err(format!(
+                "Cannot map '{path}' into {distro}: {}",
+                output.stderr_string()
+            ));
+        }
+        let text = decode_wsl_output(&output.stdout)?;
+        if text.trim().is_empty() {
+            return Err(format!("wslpath produced no path for '{path}'"));
+        }
+        Ok(text.trim().to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (distro, path);
+        Err("WSL is only available on Windows".to_string())
+    }
+}
 
 /// Decode wsl.exe output, handling both UTF-16LE (with/without BOM) and UTF-8.
 #[cfg(windows)]
@@ -189,4 +260,27 @@ fn parse_distro_list(text: &str) -> Vec<WslDistro> {
             Some(WslDistro { name, state, version })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unc_fallback;
+
+    /// The fallback is what a caller gets when the distro cannot be asked, so it has to be a path
+    /// Windows still accepts — and specifically not `\\wsl$\`, which this replaced.
+    #[test]
+    fn unc_fallback_uses_the_current_share_name_and_windows_separators() {
+        assert_eq!(
+            unc_fallback("Ubuntu", "/root/.claude/memory/MEMORY.md"),
+            r"\\wsl.localhost\Ubuntu\root\.claude\memory\MEMORY.md"
+        );
+    }
+
+    /// The leading `/` is the separator after the distro name, not a component of its own —
+    /// keeping it would produce a doubled backslash and an unresolvable path.
+    #[test]
+    fn unc_fallback_does_not_leave_an_empty_first_component() {
+        assert_eq!(unc_fallback("Debian", "/tmp"), r"\\wsl.localhost\Debian\tmp");
+        assert!(!unc_fallback("Debian", "//tmp").contains(r"\\tmp"));
+    }
 }

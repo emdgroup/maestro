@@ -24,6 +24,14 @@ pub async fn get_wsl_home(distro: String) -> Result<String, String> {
     crate::connectivity::wsl::get_home_dir(&distro).await
 }
 
+/// Translate a path inside a WSL distro to the Windows path naming the same file, for handing to
+/// a Windows application.
+#[tauri::command]
+#[specta::specta]
+pub async fn wsl_to_windows_path(distro: String, path: String) -> Result<String, String> {
+    crate::connectivity::wsl::to_windows_path(&distro, &path).await
+}
+
 /// Upsert a WSL connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]
