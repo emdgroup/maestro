@@ -186,6 +186,53 @@ pub async fn spawn_interactive_execution(
             Arc::new(tokio::sync::Mutex::new(pty_session)),
         );
         drop(sessions);
+    } else if let crate::models::GitConnection::Docker { ref container_name, .. } = git_conn {
+        let cli = crate::connectivity::docker::ContainerCli::detect()?;
+        let args = vec![
+            "exec".to_string(),
+            "-it".to_string(),
+            "-w".to_string(),
+            worktree_abs_path.clone(),
+            container_name.clone(),
+            "sh".to_string(),
+            "-c".to_string(),
+            // `sh -c` only expands the shell name and hands over; the login shell it execs is
+            // what the user gets. Login so the terminal sees the same profile-built PATH the
+            // agent does — the ACP transport starts maestro-server through a login shell too.
+            //
+            // $SHELL first, but it is usually unset here: `exec` does not run login(1), so the
+            // environment is only what the image's ENV provides, and most images do not set it.
+            // Hence the bash probe before falling back to the sh every image has.
+            "exec ${SHELL:-$(command -v bash || echo /bin/sh)} -l".to_string(),
+        ];
+        // The container CLI is a host process, so its own working directory has to be a host
+        // path — `-w` above is what puts the shell in the worktree. Passing the container path
+        // here would either fail the spawn or, when the worktree is bind-mounted at the same
+        // path, silently open a shell on the host instead of inside the container.
+        let host_cwd = {
+            #[cfg(windows)]
+            let (var, fallback) = ("USERPROFILE", "C:\\");
+            #[cfg(not(windows))]
+            let (var, fallback) = ("HOME", "/");
+            std::env::var(var)
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from(fallback))
+        };
+        let pty_session = crate::execution::spawn_agent_cli_pty(
+            log_id,
+            cli.binary().to_string(),
+            args,
+            host_cwd,
+        )
+        .await?;
+
+        let app_state_arc: Arc<AppState> = (*app_state).clone();
+        let mut sessions = app_state_arc.pty.sessions.lock().await;
+        sessions.insert(
+            log_id,
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
+        drop(sessions);
     } else {
         #[cfg(windows)]
         let shell = resolve_windows_shell();
