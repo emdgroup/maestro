@@ -63,6 +63,47 @@ Some agents are launched through `npx` or `uvx` rather than a standalone executa
 
 Agent authentication, subscriptions, model availability, and usage charges are managed by the agent's provider, not by Maestro.
 
+### Add a custom agent
+
+Maestro's picker lists agents from a registry bundled in the app. To add one it does not ship — a local model served through Ollama or another Anthropic-compatible gateway, an in-house ACP adapter, or a second profile of a listed agent pointed at a different endpoint — put your own entries in `~/.maestro/custom-agents.json` (`%USERPROFILE%\.maestro\custom-agents.json` on Windows).
+
+**With an agent.** Run `/maestro-custom-agents` in any agent session — inside Maestro or in a terminal. Maestro installs that skill on every machine it connects to, so the agent knows the format: it asks what you want to add and writes the file for you. It is a slash command, so it never fires on its own.
+
+**By hand.** One entry per agent, each with an `id`, a `name` and exactly one launch method:
+
+```json
+{
+  "agents": [
+    {
+      "id": "ollama-claude-acp",
+      "name": "Claude Code (Ollama)",
+      "distribution": {
+        "npx": {
+          "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
+          "env": {
+            "ANTHROPIC_BASE_URL": "http://localhost:11434",
+            "ANTHROPIC_AUTH_TOKEN": "ollama",
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+That example is worth reading even if your agent is a different one: it adds nothing new to your machine. It is the same Claude Code ACP package Maestro already ships, launched with a different environment — Ollama's endpoint instead of Anthropic's, and gateway model discovery on so Maestro's model selector lists the models you have pulled locally. Your normal Claude Code entry keeps working alongside it.
+
+The other launch methods are `"uvx": { "package": "..." }` and `"binary": { "<platform>": { "cmd": "..." } }`, where `<platform>` is one of `darwin-aarch64`, `darwin-x86_64`, `linux-aarch64`, `linux-x86_64`, `windows-x86_64`, `windows-aarch64` and `cmd` is a name on your `PATH` or an absolute path. All three accept optional `args`; `npx` also accepts `env`.
+
+A few things to know:
+
+- The file belongs to the machine that **runs** the agent. For a project on an SSH host, in WSL, or in a container, write it in that machine's home directory, not on your laptop.
+- Custom agents are additive. An `id` that collides with a bundled agent is ignored rather than replacing it.
+- Maestro trusts that a custom agent is installed, so a wrong package or command shows up as a failure when you start a session with it, not as a missing entry in the picker.
+- A new entry reaches the picker within about five minutes, or immediately if you restart Maestro.
+- The file is plain text in your home directory. Treat any API key you put in `env` accordingly.
+
 ### Git is optional, but recommended
 
 Maestro can run agents in a regular folder without Git. For the complete workflow, use a Git repository: Git enables isolated worktrees, parallel agents without overlapping changes, inline diff review, hunk-level staging, and commits from Maestro.
@@ -120,7 +161,7 @@ Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instruction
 
 ### Your agents, your models
 
-Use your preferred ACP-compatible coding agent and pick the model per task. Configure MCP allowlists while agent authentication and billing stay with the provider. Maestro stays out of the way.
+Use your preferred ACP-compatible coding agent and pick the model per task. Configure MCP allowlists while agent authentication and billing stay with the provider. Maestro stays out of the way. Agents it does not ship — a local model behind Ollama, an in-house adapter — go in [`custom-agents.json`](#add-a-custom-agent).
 
 ---
 

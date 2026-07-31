@@ -1,4 +1,6 @@
-use maestro_protocol::{AcpRegistry, AgentDistribution};
+use maestro_protocol::{AcpRegistry, AgentDistribution, AgentRegistryEntry};
+
+use crate::helpers::send_diag;
 
 const REGISTRY_JSON: &str = include_str!("../assets/registry.json");
 
@@ -11,20 +13,26 @@ pub struct DiscoveredAgentWithSpawn {
     pub spawn_args: Vec<String>,
     pub spawn_env: std::collections::HashMap<String, String>,
     pub spawn_deps: Vec<String>,
+    /// Came from the user's `custom-agents.json` rather than the bundled registry. Detection has
+    /// no entry for these, so they are reported as installed on the user's say-so.
+    pub custom: bool,
 }
 
+/// Exactly one of these blocks survives `cfg`, and it is then the function's tail expression — so
+/// none of them may use `return`, or `clippy::needless_return` fails the build on that platform.
+/// CI only runs Linux, which is why the Linux arm was the one already written this way.
 fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
-        return "darwin-aarch64";
+        "darwin-aarch64"
     }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     {
-        return "darwin-x86_64";
+        "darwin-x86_64"
     }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     {
-        return "linux-aarch64";
+        "linux-aarch64"
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -32,11 +40,11 @@ fn current_platform_key() -> &'static str {
     }
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
     {
-        return "windows-aarch64";
+        "windows-aarch64"
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
-        return "windows-x86_64";
+        "windows-x86_64"
     }
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
@@ -47,7 +55,7 @@ fn current_platform_key() -> &'static str {
         all(target_os = "windows", target_arch = "x86_64"),
     )))]
     {
-        return "";
+        ""
     }
 }
 
@@ -56,7 +64,14 @@ fn current_platform_key() -> &'static str {
 /// Registry JSON uses relative paths like "./opencode" or "./dist-package/cursor-agent"
 /// designed for post-archive-extraction. Maestro expects binaries on PATH, so we extract
 /// the filename and resolve to an absolute path via `which`.
+///
+/// An absolute path is taken as written: a `custom-agents.json` entry pointing at a binary
+/// outside PATH means that exact file, and stripping it to a filename would either miss it or
+/// silently launch a same-named binary from somewhere else.
 fn normalize_binary_cmd(raw_cmd: &str) -> String {
+    if std::path::Path::new(raw_cmd).is_absolute() {
+        return raw_cmd.to_string();
+    }
     let filename = raw_cmd.rsplit(['/', '\\']).next().unwrap_or(raw_cmd);
     which::which(filename)
         .map(|p| p.to_string_lossy().into_owned())
@@ -117,30 +132,169 @@ pub fn load_registry() -> AcpRegistry {
     })
 }
 
+fn discover_agent(entry: &AgentRegistryEntry, custom: bool) -> Option<DiscoveredAgentWithSpawn> {
+    let (spawn_cmd, spawn_args, spawn_env, spawn_deps) = resolve_spawn(&entry.distribution)?;
+    Some(DiscoveredAgentWithSpawn {
+        id: entry.id.clone(),
+        name: entry.name.clone(),
+        icon: entry.icon.clone().unwrap_or_default(),
+        spawn_cmd,
+        spawn_args,
+        spawn_env,
+        spawn_deps,
+        custom,
+    })
+}
+
 pub fn discover_agents(registry: &AcpRegistry) -> Vec<DiscoveredAgentWithSpawn> {
-    let mut result = Vec::new();
-    for entry in &registry.agents {
-        let Some((spawn_cmd, spawn_args, spawn_env, spawn_deps)) =
-            resolve_spawn(&entry.distribution)
-        else {
-            continue;
-        };
-        result.push(DiscoveredAgentWithSpawn {
-            id: entry.id.clone(),
-            name: entry.name.clone(),
-            icon: entry.icon.clone().unwrap_or_default(),
-            spawn_cmd,
-            spawn_args,
-            spawn_env,
-            spawn_deps,
-        });
+    registry
+        .agents
+        .iter()
+        .filter_map(|entry| discover_agent(entry, false))
+        .collect()
+}
+
+fn custom_agents_path() -> Result<std::path::PathBuf, String> {
+    Ok(crate::tool_config::home_dir()?
+        .join(".maestro")
+        .join("custom-agents.json"))
+}
+
+fn read_custom_agents() -> Result<Vec<AgentRegistryEntry>, String> {
+    #[derive(serde::Deserialize)]
+    struct CustomAgents {
+        #[serde(default)]
+        agents: Vec<AgentRegistryEntry>,
     }
-    result
+
+    let path = custom_agents_path()?;
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => serde_json::from_str::<CustomAgents>(&contents)
+            .map(|file| file.agents)
+            .map_err(|error| format!("Invalid {}: {error}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("Failed to read {}: {error}", path.display())),
+    }
+}
+
+/// Re-apply `~/.maestro/custom-agents.json` on top of the bundled agents.
+///
+/// Read on every agent listing rather than once at startup so an agent the user just added shows
+/// up without restarting the app — the file is small and usually absent.
+///
+/// Custom entries are additive: an id that collides with a bundled agent is rejected rather than
+/// shadowing it, so a typo cannot make a working agent disappear.
+pub fn apply_custom_agents(agents: &mut Vec<DiscoveredAgentWithSpawn>) {
+    match read_custom_agents() {
+        Ok(custom) => merge_custom_agents(agents, &custom),
+        Err(error) => send_diag("warn", format!("[registry] {error}")),
+    }
+}
+
+fn merge_custom_agents(agents: &mut Vec<DiscoveredAgentWithSpawn>, custom: &[AgentRegistryEntry]) {
+    agents.retain(|agent| !agent.custom);
+    for entry in custom {
+        if agents.iter().any(|agent| agent.id == entry.id) {
+            send_diag(
+                "warn",
+                format!(
+                    "[registry] custom agent {:?} ignored: that id is already a bundled agent",
+                    entry.id
+                ),
+            );
+            continue;
+        }
+        match discover_agent(entry, true) {
+            Some(agent) => agents.push(agent),
+            None => send_diag(
+                "warn",
+                format!(
+                    "[registry] custom agent {:?} ignored: its distribution has no npx, uvx or {} binary entry",
+                    entry.id,
+                    current_platform_key()
+                ),
+            ),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    
+    use maestro_protocol::{AgentDistribution, AgentRegistryEntry, NpxDistribution};
+
+    fn custom_entry(id: &str, name: &str) -> AgentRegistryEntry {
+        AgentRegistryEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            version: String::new(),
+            description: None,
+            distribution: AgentDistribution {
+                npx: Some(NpxDistribution {
+                    package: "@zed-industries/claude-code-acp".to_string(),
+                    args: None,
+                    env: Some(
+                        [("ANTHROPIC_BASE_URL".to_string(), "http://x".to_string())]
+                            .into_iter()
+                            .collect(),
+                    ),
+                }),
+                binary: None,
+                uvx: None,
+            },
+            repository: None,
+            authors: None,
+            license: None,
+            icon: None,
+            website: None,
+        }
+    }
+
+    /// The overlay is re-read on every listing, so merging twice must not duplicate an agent, and
+    /// an id colliding with a bundled agent must lose rather than shadow it — a typo there would
+    /// otherwise replace a working agent with a broken one.
+    #[test]
+    fn merging_custom_agents_is_repeatable_and_never_shadows_a_bundled_agent() {
+        let mut agents = super::discover_agents(&super::load_registry());
+        let bundled_ids: Vec<String> = agents.iter().map(|agent| agent.id.clone()).collect();
+        let collision = bundled_ids.first().cloned().expect("a bundled agent");
+        let custom = vec![
+            custom_entry("ollama-claude-acp", "Claude Code (Ollama)"),
+            custom_entry(&collision, "Impostor"),
+        ];
+
+        super::merge_custom_agents(&mut agents, &custom);
+        super::merge_custom_agents(&mut agents, &custom);
+
+        let added: Vec<&super::DiscoveredAgentWithSpawn> =
+            agents.iter().filter(|agent| agent.custom).collect();
+        assert_eq!(added.len(), 1, "custom agents duplicated across merges");
+        assert_eq!(added[0].id, "ollama-claude-acp");
+        assert_eq!(
+            added[0].spawn_env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("http://x")
+        );
+        assert_eq!(
+            agents.iter().filter(|agent| agent.id == collision).count(),
+            1,
+            "custom entry shadowed the bundled agent it collided with"
+        );
+
+        super::merge_custom_agents(&mut agents, &[]);
+        assert_eq!(
+            agents.iter().map(|agent| agent.id.clone()).collect::<Vec<_>>(),
+            bundled_ids,
+            "removing the file must leave exactly the bundled agents"
+        );
+    }
+
+    #[test]
+    fn absolute_binary_cmd_is_kept_verbatim() {
+        #[cfg(windows)]
+        let path = r"C:\tools\my-agent.exe";
+        #[cfg(not(windows))]
+        let path = "/opt/tools/my-agent";
+        assert_eq!(super::normalize_binary_cmd(path), path);
+    }
 
     // Test filename extraction only; which resolution depends on PATH in the test environment.
     fn extract_filename(raw_cmd: &str) -> &str {

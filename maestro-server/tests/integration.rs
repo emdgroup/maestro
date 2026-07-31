@@ -31,7 +31,7 @@ fn server_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("workspace root")
-        .join("target/debug/maestro-server")
+        .join(format!("target/debug/maestro-server{}", std::env::consts::EXE_SUFFIX))
 }
 
 fn write_msg(writer: &mut impl Write, msg: &MaestroRpcMessage) {
@@ -65,13 +65,23 @@ fn read_msg(reader: &mut impl Read) -> MaestroRpcMessage {
 }
 
 fn spawn_server() -> std::process::Child {
+    spawn_server_with_home(None)
+}
+
+/// `home` redirects the home directory the server reads its user configuration from, so a test
+/// can supply a `custom-agents.json` without touching the home of whoever is running the suite.
+fn spawn_server_with_home(home: Option<&std::path::Path>) -> std::process::Child {
     let bin = server_binary();
     assert!(
         bin.exists(),
         "maestro-server binary not found at {:?} — run `cargo build -p maestro-server` first",
         bin
     );
-    Command::new(&bin)
+    let mut command = Command::new(&bin);
+    if let Some(home) = home {
+        command.env("HOME", home).env("USERPROFILE", home);
+    }
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -310,6 +320,70 @@ fn test_list_agents_returns_ok_response() {
         }
         other => panic!(
             "expected ListAgentsOk (backup guarantees success), got: {}",
+            serde_json::to_string(&other).unwrap()
+        ),
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// An agent the user declared in `~/.maestro/custom-agents.json` must reach the picker, and it is
+/// only worth asserting against the real binary: the file is read from the home directory of
+/// whichever machine the server runs on, which is the part a unit test cannot stand in for.
+#[test]
+fn test_list_agents_includes_user_defined_custom_agents() {
+    let home = tempfile::tempdir().expect("temp home");
+    let config_dir = home.path().join(".maestro");
+    std::fs::create_dir_all(&config_dir).expect("create .maestro");
+    std::fs::write(
+        config_dir.join("custom-agents.json"),
+        r#"{
+          "agents": [
+            {
+              "id": "ollama-claude-acp",
+              "name": "Claude Code (Ollama)",
+              "distribution": {
+                "npx": {
+                  "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
+                  "env": { "ANTHROPIC_BASE_URL": "http://localhost:11434" }
+                }
+              }
+            }
+          ]
+        }"#,
+    )
+    .expect("write custom-agents.json");
+
+    let mut child = spawn_server_with_home(Some(home.path()));
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
+
+    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})));
+
+    let resp = read_msg(stdout);
+    match resp {
+        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(list)) => {
+            let custom = list
+                .agents
+                .iter()
+                .find(|agent| agent.id == "ollama-claude-acp")
+                .unwrap_or_else(|| {
+                    panic!(
+                        "custom agent missing from {:?}",
+                        list.agents.iter().map(|a| &a.id).collect::<Vec<_>>()
+                    )
+                });
+            assert_eq!(custom.name, "Claude Code (Ollama)");
+            assert_eq!(custom.spawn_deps, vec!["npx".to_string()]);
+            assert!(
+                list.agents.iter().any(|agent| agent.id == "claude-acp"),
+                "the bundled agents must still be listed alongside it"
+            );
+        }
+        other => panic!(
+            "expected ListAgentsOk, got: {}",
             serde_json::to_string(&other).unwrap()
         ),
     }

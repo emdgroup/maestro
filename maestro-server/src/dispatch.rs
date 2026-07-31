@@ -50,7 +50,7 @@ pub(crate) async fn dispatch_message(
     msg: MaestroRpcMessage,
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
-    agents_with_spawn: &mut [agent::registry::DiscoveredAgentWithSpawn],
+    agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>>,
@@ -66,6 +66,7 @@ pub(crate) async fn dispatch_message(
 
     match msg {
         MaestroRpcMessage::Request(ServerRequest::ListAgents(_req)) => {
+            agent::registry::apply_custom_agents(agents_with_spawn);
             let agents: Vec<DiscoveredAgent> = agents_with_spawn
                 .iter()
                 .map(|a| DiscoveredAgent {
@@ -1118,7 +1119,22 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
-            let response = agent::detection::detect_installed_agents().await;
+            let mut response = agent::detection::detect_installed_agents().await;
+
+            // The detection table only knows the bundled agents, and the host drops anything it
+            // does not report. A custom agent is one the user declared themselves, so take their
+            // word for it and let a wrong command fail loudly at spawn rather than vanish here.
+            agent::registry::apply_custom_agents(agents_with_spawn);
+            for agent in agents_with_spawn.iter().filter(|agent| agent.custom) {
+                response.agents.push(maestro_protocol::DetectedAgentInfo {
+                    agent_id: agent.id.clone(),
+                    tool_name: agent.name.clone(),
+                    binary_found: false,
+                    binary_path: None,
+                    config_dir_found: false,
+                });
+                response.all_checked_ids.push(agent.id.clone());
+            }
 
             // Override spawn_cmd with the path found by detection (handles platform quirks
             // where the registry cmd uses a relative archive path like ./opencode.exe).
