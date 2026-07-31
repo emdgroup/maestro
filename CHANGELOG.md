@@ -2,18 +2,16 @@
 
 ## [0.15.0](https://github.com/emdgroup/maestro/compare/v0.14.0...v0.15.0) (2026-07-31)
 
-
 ### Features
 
-* let a project default new sessions to an existing worktree ([#176](https://github.com/emdgroup/maestro/issues/176)) ([4970b85](https://github.com/emdgroup/maestro/commit/4970b85ba5a75141ad58249acfebe0baf51ec959))
-
+- let a project default new sessions to an existing worktree ([#176](https://github.com/emdgroup/maestro/issues/176)) ([4970b85](https://github.com/emdgroup/maestro/commit/4970b85ba5a75141ad58249acfebe0baf51ec959))
 
 ### Bug Fixes
 
-* acp session spawn race, SSH PTY no-wait, prompt capabilities on reconnect ([#181](https://github.com/emdgroup/maestro/issues/181)) ([d96d2be](https://github.com/emdgroup/maestro/commit/d96d2be92cbc99842e360ffa19eb6aef8152be91))
-* allow terminal sessions on the main worktree ([#178](https://github.com/emdgroup/maestro/issues/178)) ([a773422](https://github.com/emdgroup/maestro/commit/a7734222aaaff0dc93307250eb068839468d6a94))
-* permission card overflow on long commands ([#179](https://github.com/emdgroup/maestro/issues/179)) ([eb1c494](https://github.com/emdgroup/maestro/commit/eb1c49445993d9f040b6bd7177d964e1cd0bad79))
-* user message bubble overflow at minimum stream width ([#180](https://github.com/emdgroup/maestro/issues/180)) ([0282525](https://github.com/emdgroup/maestro/commit/0282525b6c9127eb6d1a49609d96bc59f08efba1))
+- acp session spawn race, SSH PTY no-wait, prompt capabilities on reconnect ([#181](https://github.com/emdgroup/maestro/issues/181)) ([d96d2be](https://github.com/emdgroup/maestro/commit/d96d2be92cbc99842e360ffa19eb6aef8152be91))
+- allow terminal sessions on the main worktree ([#178](https://github.com/emdgroup/maestro/issues/178)) ([a773422](https://github.com/emdgroup/maestro/commit/a7734222aaaff0dc93307250eb068839468d6a94))
+- permission card overflow on long commands ([#179](https://github.com/emdgroup/maestro/issues/179)) ([eb1c494](https://github.com/emdgroup/maestro/commit/eb1c49445993d9f040b6bd7177d964e1cd0bad79))
+- user message bubble overflow at minimum stream width ([#180](https://github.com/emdgroup/maestro/issues/180)) ([0282525](https://github.com/emdgroup/maestro/commit/0282525b6c9127eb6d1a49609d96bc59f08efba1))
 
 ## [0.14.0](https://github.com/emdgroup/maestro/compare/v0.13.0...v0.14.0) (2026-07-29)
 
