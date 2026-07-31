@@ -19,25 +19,18 @@ impl ContainerCli {
         }
     }
 
+    /// Resolved with the `which` crate rather than the `which` command: Windows has no such
+    /// command, so spawning it failed for every candidate and `detect` reported that no
+    /// container CLI existed. The crate also applies PATHEXT, which is what actually matches
+    /// `docker` against the `docker.exe` Docker Desktop puts on PATH.
     pub fn detect() -> Result<Self, String> {
         for cli in [Self::Docker, Self::Podman, Self::Nerdctl] {
-            if which_exists(cli.binary()) {
+            if which::which(cli.binary()).is_ok() {
                 return Ok(cli);
             }
         }
         Err("No container CLI found (tried docker, podman, nerdctl)".to_string())
     }
-}
-
-fn which_exists(binary: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(binary)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .no_console_window()
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
