@@ -78,6 +78,11 @@ pub async fn spawn_agent_subprocess(
     #[cfg(not(windows))]
     let mut cmd = tokio::process::Command::new(&executable);
     cmd.args(args).current_dir(cwd_path).envs(env);
+    // Marks this agent as running inside Maestro. The `maestro-` skills are installed globally, so
+    // they are also in context when the user runs the same agent from a plain terminal, where none
+    // of what they describe — canvas surfaces, Mermaid rendering, `validate-canvas` — exists. This
+    // is what those skills gate on. Set after `envs()` so a caller cannot clear it.
+    cmd.env("MAESTRO_SESSION", "1");
     if let Some(path) = child_path {
         cmd.env("PATH", path);
     }

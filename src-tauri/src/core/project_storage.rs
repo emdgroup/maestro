@@ -4,9 +4,6 @@ use std::path::Path;
 use crate::git::remote::shell_quote;
 use crate::models::GitConnection;
 
-pub const CANVAS_CATALOG: &str = include_str!("../../assets/canvas-catalog.json");
-pub const CANVAS_BASE_SKILL: &str = include_str!("../../assets/canvas-base-skill.md");
-
 const DEFAULT_COMMIT_TEMPLATE: &str = "\
 Merge task #{task_id}: {task_name}
 

@@ -242,22 +242,13 @@ pub async fn open_project(
         .map_err(|e| e.to_string())?;
     }
 
-    // Give the project the `.maestro/` files it expects on whichever machine it lives. The
-    // commit template is only written when absent so user edits survive; the canvas assets are
-    // ours and are refreshed every open. Best-effort — a project still opens on a host that
-    // rejects the write, it just loses the canvas skill until the next attempt.
+    // Give the project the `.maestro/` folder and commit template it expects on whichever machine
+    // it lives. The template is only written when absent so user edits survive. Best-effort — a
+    // project still opens on a host that rejects the write.
     match crate::core::get_git_connection(&project, &app_state).await {
         Ok(git_conn) => {
             if let Err(e) = project_storage::ensure_project_storage(&git_conn).await {
                 log::warn!("[project] initializing .maestro for {} failed: {e}", project.path);
-            }
-            for (name, contents) in [
-                ("canvas-catalog.json", project_storage::CANVAS_CATALOG),
-                ("canvas-base-skill.md", project_storage::CANVAS_BASE_SKILL),
-            ] {
-                if let Err(e) = project_storage::write_maestro_file(&git_conn, name, contents).await {
-                    log::warn!("[project] writing .maestro/{name} failed: {e}");
-                }
             }
         }
         // Opening a project must not depend on its host being reachable — the picker shows it

@@ -71,6 +71,7 @@ pub enum ServerRequest {
     CheckTools(CheckToolsRequest),
     SetToolPath(SetToolPathRequest),
     TestToolPath(TestToolPathRequest),
+    InstallSkills(InstallSkillsRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
     DetectProjectAgents(DetectProjectAgentsRequest),
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
@@ -160,6 +161,26 @@ pub struct ToolCheckResult {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CheckToolsResponse {
     pub results: Vec<ToolCheckResult>,
+}
+
+/// One file of a skill, carried by value so the skills version with the Maestro app rather than
+/// with the maestro-server release deployed on the target.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SkillFile {
+    /// Path relative to the skills root, e.g. `maestro-output/references/canvas.md`.
+    pub path: String,
+    pub contents: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct InstallSkillsRequest {
+    pub skills: Vec<SkillFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct InstallSkillsResponse {
+    /// `false` when the target already had these exact skills and nothing was run.
+    pub installed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -295,6 +316,7 @@ pub enum ServerResponse {
     CheckToolsOk(CheckToolsResponse),
     SetToolPathOk(ToolCheckResult),
     TestToolPathOk(ToolCheckResult),
+    InstallSkillsOk(InstallSkillsResponse),
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.

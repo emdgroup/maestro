@@ -2888,9 +2888,11 @@ export type LogLocation = {
  * Typed response for approve_task_and_merge IPC command
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] };
-export type PreflightCheck = { ok: boolean; message: string | null };
+/**
+ * Only produced once the server is up: every way of failing to reach it returns `Err` instead,
+ * so there is no "server is broken" variant to report here.
+ */
 export type PreflightResult = {
-  maestro_server: PreflightCheck;
   agents: DiscoveredAgent[];
   tool_checks: ToolCheckEntry[];
 };

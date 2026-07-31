@@ -17,11 +17,28 @@ pub fn run() -> i32 {
         }
     };
 
-    let catalog_path = std::path::Path::new(".maestro/canvas-catalog.json");
-    let catalog_str = match std::fs::read_to_string(catalog_path) {
+    // The catalog is a reference file of the `maestro-output` skill, so the validator reads the
+    // very copy the agent generated against. A second copy anywhere would drift and start
+    // rejecting output that matched the catalog the agent was told to follow.
+    let catalog_path = match crate::tool_config::home_dir() {
+        Ok(home) => home
+            .join(".agents")
+            .join("skills")
+            .join("maestro-output")
+            .join("references")
+            .join("canvas-catalog.json"),
+        Err(error) => {
+            eprintln!("ERROR: {error}");
+            return 1;
+        }
+    };
+    let catalog_str = match std::fs::read_to_string(&catalog_path) {
         Ok(s) => s,
         Err(_) => {
-            eprintln!("ERROR: Cannot read .maestro/canvas-catalog.json");
+            eprintln!(
+                "ERROR: Cannot read {} — the maestro-output skill is not installed",
+                catalog_path.display()
+            );
             return 1;
         }
     };

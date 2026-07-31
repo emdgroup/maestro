@@ -259,10 +259,12 @@ async fn shell_path() -> Option<String> {
         .map(str::to_string)
 }
 
-async fn probe(path: &Path) -> Result<Option<String>, String> {
+/// Build a command that runs `executable`, going through `cmd.exe` for the Windows shims npm and
+/// friends install: a `.cmd` or `.bat` is a script, not an image, so `CreateProcess` refuses it.
+pub(crate) fn command_for(executable: &Path) -> tokio::process::Command {
     #[cfg(windows)]
-    let mut command = {
-        let extension = path
+    {
+        let extension = executable
             .extension()
             .and_then(|value| value.to_str())
             .unwrap_or_default();
@@ -270,20 +272,16 @@ async fn probe(path: &Path) -> Result<Option<String>, String> {
             let mut command = tokio::process::Command::new(
                 std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()),
             );
-            command.arg("/d").arg("/c").arg(path).arg("--version");
-            command
-        } else {
-            let mut command = tokio::process::Command::new(path);
-            command.arg("--version");
-            command
+            command.arg("/d").arg("/c").arg(executable);
+            return command;
         }
-    };
-    #[cfg(not(windows))]
-    let mut command = {
-        let mut command = tokio::process::Command::new(path);
-        command.arg("--version");
-        command
-    };
+    }
+    tokio::process::Command::new(executable)
+}
+
+async fn probe(path: &Path) -> Result<Option<String>, String> {
+    let mut command = command_for(path);
+    command.arg("--version");
     prepend_parent_to_path(&mut command, path, None);
     let output = command
         .stdin(std::process::Stdio::null())

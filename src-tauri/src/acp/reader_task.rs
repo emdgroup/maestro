@@ -54,7 +54,6 @@ pub(crate) fn spawn_reader_task(
         acp_session_id_cache,
         replay_buffer,
         initialized,
-        preamble_injected,
         preamble_filter,
         canvas_extractor,
         session_name,
@@ -129,7 +128,6 @@ pub(crate) fn spawn_reader_task(
                 &acp_session_id_cache,
                 &replay_buffer,
                 &initialized,
-                &preamble_injected,
                 &preamble_filter,
                 &canvas_extractor,
             ) {
@@ -339,7 +337,6 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    preamble_injected: &Arc<AtomicBool>,
     preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
     canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
 ) -> Option<String> {
@@ -362,7 +359,7 @@ fn handle_server_message(
             }
             // Strip the rendering preamble from user messages before forwarding to the frontend.
             let payload =
-                filter_preamble_from_payload(upd.payload, preamble_injected, preamble_filter);
+                filter_preamble_from_payload(upd.payload, preamble_filter);
 
             if let Some(payload) = payload {
                 // Extract canvas fences from agent_message_chunk text. Each complete
@@ -727,7 +724,6 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.acp_session_id),
                 Arc::clone(&s.replay_buffer),
                 Arc::clone(&s.initialized),
-                Arc::clone(&s.preamble_injected),
                 Arc::clone(&s.preamble_filter),
                 Arc::clone(&s.canvas_extractor),
                 s.session_name.clone(),
@@ -745,7 +741,6 @@ async fn handle_shared_server_message(
             acp_sid,
             replay,
             initialized,
-            preamble_injected,
             preamble_filter,
             canvas_extractor,
             session_name,
@@ -824,7 +819,6 @@ async fn handle_shared_server_message(
                 &acp_sid,
                 &replay,
                 &initialized,
-                &preamble_injected,
                 &preamble_filter,
                 &canvas_extractor,
             );
@@ -929,6 +923,13 @@ async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(resp)) => {
             if let Ok(mut guard) = pending.test_tool_path.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(resp)) => {
+            if let Ok(mut guard) = pending.install_skills.lock() {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(Ok(resp));
                 }
@@ -1151,6 +1152,16 @@ async fn handle_shared_server_message(
             }
             if !resolved {
                 if let Ok(mut guard) = pending.set_tool_path.lock() {
+                    if guard.is_some() {
+                        if let Some(tx) = guard.take() {
+                            let _ = tx.send(Err(err.message.clone()));
+                        }
+                        resolved = true;
+                    }
+                }
+            }
+            if !resolved {
+                if let Ok(mut guard) = pending.install_skills.lock() {
                     if guard.is_some() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(Err(err.message.clone()));

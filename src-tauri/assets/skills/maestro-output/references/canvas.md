@@ -1,7 +1,25 @@
-# Canvas Base Skill
+# Canvas
 
-Read the component catalog at `.maestro/canvas-catalog.json` for component props and fence syntax.
-This file covers pipeline ordering, data formats, component selection, and failure patterns.
+Interactive UI is emitted as ` ```maestro-canvas ` fences containing a single JSON message.
+Maestro strips the fence from the text stream and renders it as a live surface.
+
+## Before writing any fence
+
+`references/canvas-catalog.json` documents every component's props and the fence syntax. Read the
+entries for the components you intend to use — guessing a prop name produces a surface that
+renders empty, and the catalog is the only place those names are defined.
+
+Then validate, every time:
+
+```
+maestro-server validate-canvas <<'CEOF'
+{your fence JSON here}
+CEOF
+```
+
+Fix any `ERROR` lines and re-validate before emitting. This matters more here than in most output
+paths: you never see the rendered result, so validation is your only signal that what you emitted
+is a working surface rather than a broken one the user is now staring at.
 
 ## Data Pipeline
 
@@ -73,6 +91,25 @@ Component: `{ "component": "Chart", "type": "line", "data": "/data", "xKey": "mo
 
 Component: `{ "component": "Chart", "type": "pie", "data": "/slices", "xKey": "name", "series": [{ "key": "count", "label": "Count" }] }`
 
+## DataTable rows are positional
+
+`columns` is a list of `{ key, label }`, but the rows are **arrays of cells indexed by column
+position**, not objects keyed by `key`:
+
+```json
+{
+  "path": "/rows",
+  "value": [
+    ["src-tauri", 124, 26115],
+    ["maestro-server", 25, 6546]
+  ]
+}
+```
+
+An object like `{"crate": "src-tauri", "files": 124}` is not rejected — it renders as a table of
+empty cells, because the renderer reads `row[j]` for column `j`. Nothing warns you, and
+`validate-canvas` does not catch it either, since the schema accepts any array.
+
 ## Component Selection
 
 | Use case                  | Component                                                           |
@@ -94,6 +131,23 @@ Component: `{ "component": "Chart", "type": "pie", "data": "/slices", "xKey": "n
 | Custom viz not in catalog | `Html` — last resort only                                           |
 
 Prefer catalog components over `Html` whenever they cover the use case. `Html` has restrictions: no double-quotes or backslashes in `srcdoc` — escape all data as single-quoted JS or use JSON.stringify carefully.
+
+## Html theming
+
+The `Html` component receives Maestro's theme CSS variables automatically in the iframe:
+
+```
+--background, --foreground, --card, --card-foreground,
+--muted, --muted-foreground, --border,
+--accent, --accent-foreground,
+--primary, --primary-foreground,
+--input, --ring
+```
+
+`body` also receives `background: var(--background)`, `color: var(--foreground)` and
+`font-family: system-ui, sans-serif`.
+
+Use those variables. Never define a custom `:root {}` color scheme — it overrides the theme.
 
 ## Tabs Layout Rule
 

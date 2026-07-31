@@ -14,13 +14,6 @@ use crate::core::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
-pub struct PreflightCheck {
-    pub ok: bool,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
 pub struct ToolCheckEntry {
     pub tool: String,
     pub available: bool,
@@ -35,11 +28,36 @@ pub struct ToolCheckEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
+/// Only produced once the server is up: every way of failing to reach it returns `Err` instead,
+/// so there is no "server is broken" variant to report here.
 pub struct PreflightResult {
-    pub maestro_server: PreflightCheck,
     pub agents: Vec<DiscoveredAgent>,
     pub tool_checks: Vec<ToolCheckEntry>,
 }
+
+/// Tools Maestro itself wants on a connection, whatever agents are installed there, paired with
+/// what the user gives up by going without.
+///
+/// Checked on top of the agents' own `spawn_deps`. The reason travels with the tool because it is
+/// the only thing the modal can show — nothing in the agent registry explains why a connection
+/// with no agent needing `git` is still asking for it.
+///
+/// Neither blocks preflight, because both have a real degraded mode. Without `npx` the skills
+/// simply are not installed. Without `git` every consumer already treats the project as a
+/// non-repository: `is_git_repo` runs git and maps any failure to `false`, so a missing binary
+/// and a plain directory are the same answer, and worktrees, diffs and review are gated on it
+/// already. Reporting either as mandatory would grey out Skip and hide the continue button,
+/// turning a working degraded project into one the user cannot open at all.
+///
+/// Phrased as what the user loses rather than what Maestro wants: "installing agent skills" is
+/// our vocabulary and means nothing to someone deciding whether to skip a warning.
+const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
+    ("git", "Maestro — for worktrees, diffs and review"),
+    (
+        "npx",
+        "Maestro — to automatically display rich data visualizations",
+    ),
+];
 
 /// Validate the environment for a connection and boot the persistent server.
 #[tauri::command]
@@ -249,8 +267,10 @@ pub async fn preflight_connection(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
-    if !tools_to_check.iter().any(|t| t == "git") {
-        tools_to_check.push("git".to_string());
+    for (tool, _) in MAESTRO_REQUIRED_TOOLS {
+        if !tools_to_check.iter().any(|t| t == tool) {
+            tools_to_check.push(tool.to_string());
+        }
     }
 
     let tool_results =
@@ -260,16 +280,25 @@ pub async fn preflight_connection(
                 results: Vec::new(),
             });
 
-    let mandatory_tools: HashSet<&str> = ["git"].into();
     let tool_checks: Vec<ToolCheckEntry> = tool_results
         .results
         .into_iter()
         .map(|r| {
-            let required_by: Vec<String> = agents
+            // Agents that declare the tool, then Maestro's own reason if it has one. The modal
+            // renders this verbatim after "Required by:", and a tool no agent asks for — `git`,
+            // `npx` — would otherwise show up as a bare "not found" with nothing telling the user
+            // which part of the app wants it or why they cannot skip it.
+            let mut required_by: Vec<String> = agents
                 .iter()
                 .filter(|a| a.spawn_deps.contains(&r.tool))
                 .map(|a| a.id.clone())
                 .collect();
+            if let Some((_, reason)) = MAESTRO_REQUIRED_TOOLS
+                .iter()
+                .find(|(tool, _)| *tool == r.tool)
+            {
+                required_by.push((*reason).to_string());
+            }
             log::debug!(
                 "[preflight] tool={} available={} version={:?}",
                 r.tool,
@@ -277,7 +306,9 @@ pub async fn preflight_connection(
                 r.version
             );
             ToolCheckEntry {
-                mandatory: mandatory_tools.contains(r.tool.as_str()),
+                // Nothing preflight checks is mandatory any more: every missing tool leaves a
+                // usable, degraded project rather than an unopenable one.
+                mandatory: false,
                 tool: r.tool,
                 available: r.available,
                 version: r.version,
@@ -289,6 +320,35 @@ pub async fn preflight_connection(
             }
         })
         .collect();
+
+    // Detached, because the first run on a machine downloads the skills CLI through `npx` and the
+    // user is staring at the preflight modal until this returns. Nothing before the first agent
+    // session needs the skills, and that is minutes away.
+    //
+    // Best-effort: a connection whose skills failed to install still works, it just renders
+    // plainer output. The missing-`npx` case is already reported through `mandatory` above, so
+    // there is nothing here the user has not been told.
+    if tool_checks
+        .iter()
+        .any(|entry| entry.tool == "npx" && entry.available)
+    {
+        let app_state = Arc::clone(&*app_state);
+        tokio::spawn(async move {
+            match crate::acp::query_install_skills_via_server(
+                connection_key,
+                crate::acp::skills::bundled(),
+                &app_state,
+            )
+            .await
+            {
+                Ok(response) if response.installed => {
+                    log::info!("[preflight] installed Maestro skills on {connection_key:?}")
+                }
+                Ok(_) => log::debug!("[preflight] Maestro skills already current"),
+                Err(e) => log::warn!("[preflight] installing Maestro skills failed: {e}"),
+            }
+        });
+    }
 
     {
         let mut cache = app_state.acp.discovery_cache.lock().await;
@@ -310,10 +370,6 @@ pub async fn preflight_connection(
     }
 
     Ok(PreflightResult {
-        maestro_server: PreflightCheck {
-            ok: true,
-            message: None,
-        },
         agents,
         tool_checks,
     })

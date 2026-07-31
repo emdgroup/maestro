@@ -162,7 +162,7 @@
       "DataTable": {
         "props": {
           "columns": "[{ key: string, label: string, width?: string }]",
-          "rows": "string (JSON Pointer path to row data e.g. /rows) or array"
+          "rows": "string (JSON Pointer path to row data e.g. /rows) or array. Row data is an array of positional cell arrays — [[cell0, cell1, ...], ...] indexed by column order, NOT objects keyed by column key; objects render as empty cells"
         }
       },
       "Chart": {
