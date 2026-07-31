@@ -492,7 +492,7 @@ export function StatusWord({ tc }: { tc: ToolCallItem }) {
 
 /** The kind icon doubles as the rail's status marker, so it carries the colour. */
 function statusIcon(tc: ToolCallItem): string {
-  if (isRunning(tc)) return "text-secondary animate-pulse";
+  if (isRunning(tc)) return "text-accent animate-pulse";
   if (isBlocked(tc)) return "text-warning/70";
   if (tc.status === "error") return "text-destructive";
   if (tc.status === "interrupted") return "text-warning/60";

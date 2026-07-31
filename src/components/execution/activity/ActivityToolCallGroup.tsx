@@ -150,7 +150,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   // own — clicking it opens the file rather than the group.
   const fileLine = fileItem && openFile && (
     <>
-      <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-secondary")} />
+      <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-accent")} />
       <FileLabel
         tc={fileItem}
         expanded={open}
