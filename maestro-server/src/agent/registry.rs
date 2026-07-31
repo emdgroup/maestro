@@ -18,18 +18,21 @@ pub struct DiscoveredAgentWithSpawn {
     pub custom: bool,
 }
 
+/// Exactly one of these blocks survives `cfg`, and it is then the function's tail expression — so
+/// none of them may use `return`, or `clippy::needless_return` fails the build on that platform.
+/// CI only runs Linux, which is why the Linux arm was the one already written this way.
 fn current_platform_key() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
-        return "darwin-aarch64";
+        "darwin-aarch64"
     }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     {
-        return "darwin-x86_64";
+        "darwin-x86_64"
     }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     {
-        return "linux-aarch64";
+        "linux-aarch64"
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -37,11 +40,11 @@ fn current_platform_key() -> &'static str {
     }
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
     {
-        return "windows-aarch64";
+        "windows-aarch64"
     }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
-        return "windows-x86_64";
+        "windows-x86_64"
     }
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
@@ -52,7 +55,7 @@ fn current_platform_key() -> &'static str {
         all(target_os = "windows", target_arch = "x86_64"),
     )))]
     {
-        return "";
+        ""
     }
 }
 
