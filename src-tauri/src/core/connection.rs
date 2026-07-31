@@ -203,56 +203,59 @@ impl AppState {
     }
 }
 
-/// Get a GitConnection for a project (local, SSH, or WSL).
+/// Resolve a [`ConnectionKey`] and a path into the connection handle everything else runs
+/// commands and file operations through.
+///
+/// This is the one place that turns a connection id into a distro name, a container name or a
+/// live SSH session, so call sites hold a `GitConnection` rather than repeating those lookups.
+pub async fn git_connection_for(
+    app_state: &AppState,
+    path: String,
+    connection_key: ConnectionKey,
+) -> Result<GitConnection, String> {
+    match connection_key {
+        ConnectionKey::Local => Ok(GitConnection::Local { path }),
+        ConnectionKey::Ssh { id } => {
+            let ssh_session = app_state.ssh.get_session(id).await
+                .ok_or("SSH session not initialized for remote project")?;
+            Ok(GitConnection::Remote { ssh: Arc::new(ssh_session), remote_path: path })
+        }
+        ConnectionKey::Wsl { id } => {
+            let distro = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    [id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("WSL connection {} not found: {}", id, e))?
+            };
+            Ok(GitConnection::Wsl { distro, path })
+        }
+        ConnectionKey::Docker { id } => {
+            let container_name = {
+                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [id],
+                    |row| row.get::<_, String>(0),
+                ).map_err(|e| format!("Docker connection {} not found: {}", id, e))?
+            };
+            Ok(GitConnection::Docker { container_name, path })
+        }
+    }
+}
+
+/// Get a GitConnection for a project (local, SSH, WSL or container).
 pub async fn get_git_connection(
     project: &Project,
     app_state: &AppState,
 ) -> Result<GitConnection, String> {
-    if project.is_remote() {
-        let conn_id = project.connection_id
-            .ok_or("Remote project has no connection_id")?;
-        let ssh_session = app_state.ssh.get_session(conn_id).await
-            .ok_or("SSH session not initialized for remote project")?;
-
-        Ok(GitConnection::Remote {
-            ssh: Arc::new(ssh_session),
-            remote_path: project.path.clone(),
-        })
-    } else if project.is_wsl() {
-        let wsl_id = project.wsl_connection_id
-            .ok_or("WSL project has no wsl_connection_id")?;
-        let distro = {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            conn.query_row(
-                "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                [wsl_id],
-                |row| row.get::<_, String>(0),
-            ).map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-        };
-        Ok(GitConnection::Wsl {
-            distro,
-            path: project.path.clone(),
-        })
-    } else if project.is_docker() {
-        let docker_id = project.docker_connection_id
-            .ok_or("Docker project has no docker_connection_id")?;
-        let container_name = {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            conn.query_row(
-                "SELECT container_name FROM docker_connections WHERE id = ?",
-                [docker_id],
-                |row| row.get::<_, String>(0),
-            ).map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
-        };
-        Ok(GitConnection::Docker {
-            container_name,
-            path: project.path.clone(),
-        })
-    } else {
-        Ok(GitConnection::Local {
-            path: project.path.clone(),
-        })
-    }
+    let key = ConnectionKey::from_all_ids(
+        project.connection_id,
+        project.wsl_connection_id,
+        project.docker_connection_id,
+    );
+    git_connection_for(app_state, project.path.clone(), key).await
 }
 
 /// Fetch a project by ID and resolve its GitConnection (local or remote SSH).

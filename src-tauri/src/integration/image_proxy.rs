@@ -5,7 +5,6 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::models::project::ProjectConfig;
-use crate::models::Project;
 
 const MAX_PROXY_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
 
@@ -43,9 +42,10 @@ async fn fetch_image_with_auth(
 ) -> Result<Vec<u8>, String> {
     let client = crate::integration::build_http_client()?;
 
-    let path = super::issue_tracking_handlers::extract_project_path(app_state, project_id)?;
-    let config = ProjectConfig::load_from_project(&path).ok();
-    let ticketing = config.as_ref().and_then(|c| c.issue_tracking.as_ref());
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    let config: ProjectConfig =
+        crate::core::read_maestro_json(&git_conn, crate::project::settings::SETTINGS_FILE).await;
+    let ticketing = config.issue_tracking.as_ref();
 
     let mut request = client.get(url);
 
@@ -94,9 +94,9 @@ async fn fetch_jira_attachment(
     project_id: i32,
     attachment_id: &str,
 ) -> Result<Vec<u8>, String> {
-    let path = super::issue_tracking_handlers::extract_project_path(app_state, project_id)?;
-    let config = ProjectConfig::load_from_project(&path)
-        .map_err(|_| "Failed to load project config".to_string())?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    let config: ProjectConfig =
+        crate::core::read_maestro_json(&git_conn, crate::project::settings::SETTINGS_FILE).await;
     let ticketing = config
         .issue_tracking
         .ok_or_else(|| "No ticketing provider configured".to_string())?;
@@ -152,18 +152,7 @@ async fn read_local_or_remote_image(
     project_id: i32,
     file_path: &str,
 ) -> Result<Vec<u8>, String> {
-    let project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            Project::from_row,
-        )
-        .map_err(|e| format!("Project {} not found: {}", project_id, e))?
-    };
+    let (project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
 
     // std::path::Path::is_absolute() returns false on Windows for Unix-style paths like /home/...
     // so also check starts_with('/') to handle remote/WSL project paths correctly.
@@ -173,58 +162,19 @@ async fn read_local_or_remote_image(
         format!("{}/{}", project.path.trim_end_matches('/'), file_path)
     };
 
-    if project.is_remote() {
-        let conn_id = project
-            .connection_id
-            .ok_or_else(|| "Remote project missing connection_id".to_string())?;
-        let session = app_state
-            .ssh
-            .get_session(conn_id)
+    if git_conn.is_on_this_machine() {
+        return tokio::fs::read(&full_path)
             .await
-            .ok_or_else(|| "SSH session not active for this project".to_string())?;
-
-        let cache_dir = app_state.app_data_dir.join("image_proxy_cache");
-        tokio::fs::create_dir_all(&cache_dir)
-            .await
-            .map_err(|e| format!("Cache dir creation failed: {}", e))?;
-
-        let path_hash = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            full_path.hash(&mut hasher);
-            hasher.finish()
-        };
-        let extension = std::path::Path::new(file_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("bin");
-        let cache_path = cache_dir.join(format!("{}.{}", path_hash, extension));
-
-        if cache_path.exists() {
-            return tokio::fs::read(&cache_path)
-                .await
-                .map_err(|e| format!("Cannot read cached image: {}", e));
-        }
-
-        let transfer_id = format!("proxy-image-{}-{}", project_id, path_hash);
-        crate::connectivity::ssh::sftp::download_file(
-            &session,
-            &full_path,
-            &cache_path,
-            &transfer_id,
-            &app_state.app_handle,
-        )
-        .await
-        .map_err(|e| format!("SFTP download failed: {}", e))?;
-
-        tokio::fs::read(&cache_path)
-            .await
-            .map_err(|e| format!("Cannot read downloaded image: {}", e))
-    } else {
-        tokio::fs::read(&full_path)
-            .await
-            .map_err(|e| format!("Cannot read image file: {}", e))
+            .map_err(|e| format!("Cannot read image file: {}", e));
     }
+
+    // One path for SSH, WSL and containers. This replaced an SSH-only SFTP download into a
+    // permanent on-disk cache keyed by path hash, which never revalidated — an image edited on
+    // the host kept serving the first version it ever saw.
+    let encoded = crate::connectivity::files::read_binary(&git_conn, &full_path).await?;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .map_err(|e| format!("Cannot decode image from {}: {}", full_path, e))
 }
 
 fn mime_from_bytes_or_url(bytes: &[u8], url: &str) -> &'static str {

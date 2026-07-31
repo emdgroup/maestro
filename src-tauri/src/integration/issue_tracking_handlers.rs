@@ -4,6 +4,8 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::core::connection::get_project_with_git_conn;
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+use crate::project::settings::SETTINGS_FILE;
 use crate::git::remote::{parse_remote_url, pick_remote_url, ParsedRemote};
 use crate::git::run_git_in_dir_lossy;
 use crate::models::project::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
@@ -14,19 +16,6 @@ use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 pub use super::issue_sync::*;
 pub use super::image_proxy::*;
 
-pub(super) fn extract_project_path(app_state: &AppState, project_id: i32) -> Result<String, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT path FROM projects WHERE id = ?",
-        [project_id],
-        |row| row.get::<_, String>(0),
-    )
-    .map_err(|_| format!("Project {} not found", project_id))
-}
-
 /// Read the ticketing field from .maestro/settings.json for the given project.
 #[tauri::command]
 #[specta::specta]
@@ -34,8 +23,8 @@ pub async fn get_project_issue_tracking_config(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Option<ProjectIssueTrackingConfig>, String> {
-    let path = extract_project_path(&app_state, project_id)?;
-    let config = ProjectConfig::load_from_project(&path).unwrap_or_default();
+    let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
     Ok(config.issue_tracking)
 }
 
@@ -47,14 +36,14 @@ pub async fn save_project_issue_tracking_config(
     project_id: i32,
     issue_tracking: Option<ProjectIssueTrackingConfig>,
 ) -> Result<(), String> {
-    let path = extract_project_path(&app_state, project_id)?;
-    let mut config = ProjectConfig::load_from_project(&path).unwrap_or_default();
+    let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
     // Clearing the config is an explicit "I don't want this here", so it also opts the
     // project out of git-remote detection — otherwise the next open would re-add it.
     config.issue_tracking_auto_detect = if issue_tracking.is_none() { Some(false) } else { None };
     config.issue_tracking = issue_tracking;
     config.updated_at = now_rfc3339();
-    config.save_to_project(&path)
+    write_maestro_json(&conn, SETTINGS_FILE, &config).await
 }
 
 /// Map a git remote host to a ticketing provider.
@@ -216,7 +205,7 @@ pub async fn detect_project_issue_tracking(
     project_id: i32,
 ) -> Result<Option<DetectedIssueTracking>, String> {
     let (project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    let mut existing = ProjectConfig::load_from_project(&project.path).unwrap_or_default();
+    let mut existing: ProjectConfig = read_maestro_json(&git_conn, SETTINGS_FILE).await;
 
     let remotes = run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"]).await?;
     let Some(url) = pick_remote_url(&remotes) else {
@@ -271,7 +260,7 @@ pub async fn detect_project_issue_tracking(
         );
         existing.issue_tracking = Some(config.clone());
         existing.updated_at = now_rfc3339();
-        existing.save_to_project(&project.path)?;
+        write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
     }
 
     Ok(Some(DetectedIssueTracking {
@@ -290,10 +279,8 @@ pub async fn list_remote_issues(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let path = extract_project_path(&app_state, project_id)?;
-
-    let config = ProjectConfig::load_from_project(&path)
-        .map_err(|_| "Failed to load project config".to_string())?;
+    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
+    let config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
 
     let ticketing = config
         .issue_tracking

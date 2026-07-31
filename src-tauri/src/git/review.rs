@@ -1,12 +1,10 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use crate::command_ext::NoConsoleWindow;
 use chrono::Utc;
 
 use crate::models::{Task, TASK_SELECT, ReviewResult, TaskReviewWithComments, ReviewCommentEntry};
 use crate::core::{AppState, get_project_with_git_conn};
 use crate::git;
-use crate::git::remote::shell_quote;
 
 /// Insert (or replace) a review record with optional per-file comments.
 /// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
@@ -233,40 +231,12 @@ pub async fn reject_review(
                 let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
 
                 // Delete branch (best effort)
-                match &git_conn {
-                    crate::models::GitConnection::Local { path } => {
-                        let _ = tokio::process::Command::new("git")
-                            .args(["branch", "-D", &branch_name])
-                            .current_dir(path)
-                            .no_console_window()
-                            .output()
-                            .await;
-                    }
-                    crate::models::GitConnection::Remote { ssh, remote_path } => {
-                        let cmd = format!(
-                            "git -C {} branch -D {}",
-                            shell_quote(remote_path),
-                            shell_quote(&branch_name)
-                        );
-                        let _ = ssh.execute_command(&cmd).await;
-                    }
-                    crate::models::GitConnection::Wsl { distro, path } => {
-                        let _ = tokio::process::Command::new("wsl.exe")
-                            .args(["-d", distro, "--", "git", "-C", path, "branch", "-D", &branch_name])
-                            .no_console_window()
-                            .output()
-                            .await;
-                    }
-                    crate::models::GitConnection::Docker { container_name, path } => {
-                        let cli = crate::connectivity::docker::ContainerCli::detect()
-                            .unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-                        let _ = tokio::process::Command::new(cli.binary())
-                            .args(["exec", container_name, "git", "-C", path, "branch", "-D", &branch_name])
-                            .no_console_window()
-                            .output()
-                            .await;
-                    }
-                }
+                let _ = git::run_git_in_dir_lossy(
+                    &git_conn,
+                    git_conn.path(),
+                    &["branch", "-D", &branch_name],
+                )
+                .await;
 
                 // Delete worktree DB row
                 {
@@ -282,12 +252,7 @@ pub async fn reject_review(
             } else if let Some(start_sha) = execution_start_sha {
                 // No worktree but have a start SHA — reset agent commits on the project path
                 let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-                let project_path = match &git_conn {
-                    crate::models::GitConnection::Local { path } => path.clone(),
-                    crate::models::GitConnection::Remote { remote_path, .. } => remote_path.clone(),
-                    crate::models::GitConnection::Wsl { path, .. } => path.clone(),
-                    crate::models::GitConnection::Docker { path, .. } => path.clone(),
-                };
+                let project_path = git_conn.path().to_string();
 
                 // Reset to the start SHA
                 let _ = git::run_git_in_dir(&git_conn, &project_path, &["reset", "--hard", &start_sha]).await;

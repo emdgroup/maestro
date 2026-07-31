@@ -1,4 +1,3 @@
-use crate::command_ext::NoConsoleWindow;
 use std::sync::Arc;
 use tauri::State;
 use crate::core::AppState;
@@ -8,14 +7,6 @@ fn detect_cli() -> Result<ContainerCli, String> {
     ContainerCli::detect()
 }
 
-fn get_docker_container_name(app_state: &State<'_, Arc<AppState>>, connection_id: i32) -> Result<String, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
-    conn.query_row(
-        "SELECT container_name FROM docker_connections WHERE id = ?",
-        [connection_id],
-        |row| row.get(0),
-    ).map_err(|_| format!("Docker connection {connection_id} not found"))
-}
 
 // The docker helpers in connectivity/docker.rs stay synchronous because git/acp
 // modules also call them from worker threads; here they must not run on the main
@@ -44,22 +35,16 @@ pub async fn list_docker_containers() -> Result<Vec<DockerContainer>, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_docker_home(container_name: String) -> Result<String, String> {
-    run_blocking(move || {
-        let cli = detect_cli()?;
-        crate::connectivity::docker::get_home_dir(&cli, &container_name)
-    })
-    .await
+    let cli = detect_cli()?;
+    crate::connectivity::docker::get_home_dir(&cli, &container_name).await
 }
 
 /// List entries in a container directory.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_docker_directories(container_name: String, path: String) -> Result<Vec<String>, String> {
-    run_blocking(move || {
-        let cli = detect_cli()?;
-        crate::connectivity::docker::list_directories(&cli, &container_name, &path)
-    })
-    .await
+    let cli = detect_cli()?;
+    crate::connectivity::docker::list_directories(&cli, &container_name, &path).await
 }
 
 /// Upsert a container connection record and return the saved row.
@@ -104,67 +89,3 @@ pub async fn list_docker_connections(app_state: State<'_, Arc<AppState>>) -> Res
     Ok(rows)
 }
 
-/// List all non-hidden workspace files in a container path.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_docker_workspace_files(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<Vec<String>, String> {
-    let container_name = get_docker_container_name(&app_state, connection_id)?;
-    run_blocking(move || {
-        let cli = detect_cli()?;
-        let script = format!(
-            "find {} -maxdepth 8 -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/__pycache__/*' -type f 2>/dev/null | head -2000",
-            crate::git::remote::shell_quote(&path)
-        );
-        let output = std::process::Command::new(cli.binary())
-            .args(["exec", &container_name, "sh", "-c", &script])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .no_console_window()
-            .output()
-            .map_err(|e| format!("Failed to exec in container: {e}"))?;
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).to_string());
-        }
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(|l| l.to_string())
-            .collect())
-    })
-    .await
-}
-
-/// Read a text file from a container. Rejects files over 512 KB.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_docker_file(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<String, String> {
-    let container_name = get_docker_container_name(&app_state, connection_id)?;
-    run_blocking(move || {
-        let cli = detect_cli()?;
-        crate::connectivity::docker::read_file(&cli, &container_name, &path)
-    })
-    .await
-}
-
-/// Read a file from a container as base64. Rejects files over 5 MB.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_docker_file_binary(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<String, String> {
-    let container_name = get_docker_container_name(&app_state, connection_id)?;
-    run_blocking(move || {
-        let cli = detect_cli()?;
-        crate::connectivity::docker::read_file_binary(&cli, &container_name, &path)
-    })
-    .await
-}

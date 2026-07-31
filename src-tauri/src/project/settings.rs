@@ -1,12 +1,10 @@
 use std::sync::Arc;
 use tauri::State;
-use rusqlite::params;
 use chrono::Utc;
 use crate::core::AppState;
-use crate::core::project_storage::atomic_write_script;
-use crate::git::remote::shell_quote;
-use crate::acp::ConnectionKey;
-use crate::command_ext::NoConsoleWindow;
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+
+pub const SETTINGS_FILE: &str = "settings.json";
 
 /// Read `.maestro/settings.json` for a project, from whichever machine the project lives on.
 ///
@@ -16,64 +14,8 @@ pub async fn load_project_config_for(
     app_state: &Arc<AppState>,
     project_id: i32,
 ) -> Result<crate::models::ProjectConfig, String> {
-    let (path, connection_key) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?))),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
-
-    let settings_path = format!("{}/.maestro/settings.json", path);
-    let config = match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = app_state.ssh.get_session(conn_id).await
-                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
-                Ok(output) => serde_json::from_str::<crate::models::ProjectConfig>(&output).unwrap_or_default(),
-                Err(_) => crate::models::ProjectConfig::default(),
-            }
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
-                    .map_err(|e| format!("WSL connection not found: {}", e))?
-            };
-            let output = tokio::process::Command::new("wsl.exe")
-                .args(["-d", &distro, "--", "cat", &settings_path])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                serde_json::from_str::<crate::models::ProjectConfig>(&text).unwrap_or_default()
-            } else {
-                crate::models::ProjectConfig::default()
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
-                    .map_err(|e| format!("Docker connection not found: {}", e))?
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-            match crate::connectivity::docker::read_file(&cli, &container_name, &settings_path) {
-                Ok(text) => serde_json::from_str::<crate::models::ProjectConfig>(&text).unwrap_or_default(),
-                Err(_) => crate::models::ProjectConfig::default(),
-            }
-        }
-        ConnectionKey::Local => {
-            crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default()
-        }
-    };
-
-    Ok(config)
+    let (_project, conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    Ok(read_maestro_json(&conn, SETTINGS_FILE).await)
 }
 
 /// Get project-level configuration from .maestro/settings.json
@@ -99,117 +41,14 @@ pub async fn update_project_settings(
     project_id: i32,
     settings: crate::models::ProjectConfigRequest,
 ) -> Result<(), String> {
-    let (path, connection_key) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [project_id],
-            |row| Ok((row.get::<_, String>(0)?, ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?))),
-        ).map_err(|_| format!("Project {} not found", project_id))?
-    };
+    let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let maestro_dir = format!("{}/.maestro", path);
-    let settings_path = format!("{}/settings.json", maestro_dir);
+    // Load-modify-save to preserve fields managed by other handlers (e.g. issue_tracking).
+    let mut config: crate::models::ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
+    config.default_agent = settings.default_agent;
+    config.startup_tab = settings.startup_tab;
+    config.default_existing_worktree = settings.default_existing_worktree;
+    config.updated_at = Utc::now().to_rfc3339();
 
-    match connection_key {
-        ConnectionKey::Ssh { id: conn_id } => {
-            let session = app_state.ssh.get_session(conn_id).await
-                .ok_or_else(|| format!("No active SSH session for connection {}", conn_id))?;
-            // Load existing config to preserve fields managed by other handlers (e.g. issue_tracking).
-            let mut config = match session.execute_command(&format!("cat {}", shell_quote(&settings_path))).await {
-                Ok(output) => serde_json::from_str::<crate::models::ProjectConfig>(&output).unwrap_or_default(),
-                Err(_) => crate::models::ProjectConfig::default(),
-            };
-            config.default_agent = settings.default_agent;
-            config.startup_tab = settings.startup_tab;
-            config.default_existing_worktree = settings.default_existing_worktree;
-            config.updated_at = Utc::now().to_rfc3339();
-            let json = serde_json::to_string_pretty(&config)
-                .map_err(|e| format!("Serialization failed: {}", e))?;
-            session.execute_command(&atomic_write_script(&maestro_dir, &settings_path, &json)).await.map_err(|e| format!("SSH write failed: {}", e))?;
-        }
-        ConnectionKey::Wsl { id: wsl_id } => {
-            let distro: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT distro_name FROM wsl_connections WHERE id = ?", params![wsl_id], |row| row.get(0))
-                    .map_err(|e| format!("WSL connection not found: {}", e))?
-            };
-            // Load existing config to preserve fields managed by other handlers.
-            let mut config = {
-                let read_output = tokio::process::Command::new("wsl.exe")
-                    .args(["-d", &distro, "--", "cat", &settings_path])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .no_console_window()
-                    .output()
-                    .await
-                    .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-                if read_output.status.success() {
-                    let text = String::from_utf8_lossy(&read_output.stdout);
-                    serde_json::from_str::<crate::models::ProjectConfig>(&text).unwrap_or_default()
-                } else {
-                    crate::models::ProjectConfig::default()
-                }
-            };
-            config.default_agent = settings.default_agent;
-            config.startup_tab = settings.startup_tab;
-            config.default_existing_worktree = settings.default_existing_worktree;
-            config.updated_at = Utc::now().to_rfc3339();
-            let json = serde_json::to_string_pretty(&config)
-                .map_err(|e| format!("Serialization failed: {}", e))?;
-            let script = atomic_write_script(&maestro_dir, &settings_path, &json);
-            let output = tokio::process::Command::new("wsl.exe")
-                .args(["-d", &distro, "--", "sh", "-c", &script])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to spawn wsl.exe: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("WSL settings write failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-        ConnectionKey::Docker { id: docker_id } => {
-            let container_name: String = {
-                let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                db.query_row("SELECT container_name FROM docker_connections WHERE id = ?", params![docker_id], |row| row.get(0))
-                    .map_err(|e| format!("Docker connection not found: {}", e))?
-            };
-            let cli = crate::connectivity::docker::ContainerCli::detect().unwrap_or(crate::connectivity::docker::ContainerCli::Docker);
-            let mut config = match crate::connectivity::docker::read_file(&cli, &container_name, &settings_path) {
-                Ok(text) => serde_json::from_str::<crate::models::ProjectConfig>(&text).unwrap_or_default(),
-                Err(_) => crate::models::ProjectConfig::default(),
-            };
-            config.default_agent = settings.default_agent;
-            config.startup_tab = settings.startup_tab;
-            config.default_existing_worktree = settings.default_existing_worktree;
-            config.updated_at = Utc::now().to_rfc3339();
-            let json = serde_json::to_string_pretty(&config)
-                .map_err(|e| format!("Serialization failed: {}", e))?;
-            let script = atomic_write_script(&maestro_dir, &settings_path, &json);
-            let output = tokio::process::Command::new(cli.binary())
-                .args(["exec", &container_name, "sh", "-c", &script])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .no_console_window()
-                .output()
-                .await
-                .map_err(|e| format!("Failed to exec into container: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("Docker settings write failed: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-        }
-        ConnectionKey::Local => {
-            // Load-modify-save to preserve fields managed by other handlers (e.g. issue_tracking).
-            let mut config = crate::models::ProjectConfig::load_from_project(&path).unwrap_or_default();
-            config.default_agent = settings.default_agent;
-            config.startup_tab = settings.startup_tab;
-            config.default_existing_worktree = settings.default_existing_worktree;
-            config.updated_at = Utc::now().to_rfc3339();
-            config.save_to_project(&path)?;
-        }
-    }
-
-    Ok(())
+    write_maestro_json(&conn, SETTINGS_FILE, &config).await
 }

@@ -1,12 +1,14 @@
 pub mod ssh;
 pub mod wsl;
 pub mod docker;
+pub mod exec_channel;
 pub mod docker_handlers;
 pub mod models;
 pub mod ssh_handlers;
 pub mod sftp_handlers;
 pub mod wsl_handlers;
 pub mod filesystem_handlers;
+pub mod files;
 
 pub use models::{GitConnection, ConnectionStatus};
 pub use ssh::{RemoteSshSession, SshPtyHandle, PasswordManager, spawn_heartbeat_task};

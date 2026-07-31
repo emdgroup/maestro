@@ -26,7 +26,9 @@ export function CommandSuggestionsPanel({
           {commands.length > 0 ? (
             commands.map((cmd, i) => (
               <button
-                key={cmd.name}
+                // Agents can send the same name twice (a skill and a slash command
+                // sharing it), and a duplicate key leaves stale rows in the panel.
+                key={`${cmd.name}-${i}`}
                 ref={(el) => {
                   if (el) buttonRefs.current.set(i, el);
                   else buttonRefs.current.delete(i);

@@ -18,8 +18,8 @@ pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy, run
 pub use ops::{
     BranchList, ParsedWorktree,
     create_worktree, delete_worktree, git_diff, git_status,
-    list_branches, get_current_branch, list_worktrees,
-    list_worktrees_local, parse_worktree_list, get_worktree_status_local, parse_branch_list,
+    list_branches, get_current_branch, list_worktrees, prune_remote_refs,
+    parse_worktree_list, parse_branch_list,
 };
 pub use merge::squash_merge_to_base;
 pub use worktree_lifecycle::canonicalize_repo_path;

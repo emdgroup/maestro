@@ -1,8 +1,5 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json;
-use std::fs;
-use std::path::Path;
 use specta::Type;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -105,38 +102,6 @@ pub struct ProjectIssueTrackingConfig {
     pub project_name: Option<String>,
 }
 
-impl ProjectConfig {
-    pub fn load_from_project(project_path: &str) -> Result<Self, String> {
-        let config_path = Path::new(project_path)
-            .join(".maestro")
-            .join("settings.json");
-
-        let content = fs::read_to_string(&config_path).map_err(|e| {
-            format!("Failed to read {}: {}", config_path.display(), e)
-        })?;
-
-        serde_json::from_str(&content).map_err(|e| {
-            format!("Invalid JSON in settings.json: {}", e)
-        })
-    }
-
-    pub fn save_to_project(&self, project_path: &str) -> Result<(), String> {
-        let maestro_dir = Path::new(project_path).join(".maestro");
-        fs::create_dir_all(&maestro_dir).map_err(|e| {
-            format!("Failed to create .maestro directory: {}", e)
-        })?;
-
-        let config_path = maestro_dir.join("settings.json");
-        let json = serde_json::to_string_pretty(&self).map_err(|e| {
-            format!("Serialization failed: {}", e)
-        })?;
-
-        crate::core::project_storage::atomic_write(&config_path, json.as_bytes()).map_err(|e| {
-            format!("Failed to write settings.json: {}", e)
-        })
-    }
-}
-
 /// Convenience: build an updated_at timestamp
 pub fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
@@ -227,42 +192,6 @@ pub struct ProjectState {
 }
 
 impl ProjectState {
-    /// Load project state from .maestro/state.json
-    pub fn load_from_project(project_path: &str) -> Result<Self, String> {
-        let state_path = Path::new(project_path)
-            .join(".maestro")
-            .join("state.json");
-
-        let content = fs::read_to_string(&state_path).map_err(|e| {
-            format!(
-                "Failed to read {}: {}",
-                state_path.display(),
-                e
-            )
-        })?;
-
-        serde_json::from_str(&content).map_err(|e| {
-            format!("Invalid JSON in state.json: {}", e)
-        })
-    }
-
-    /// Save project state to .maestro/state.json
-    pub fn save_to_project(&self, project_path: &str) -> Result<(), String> {
-        let maestro_dir = Path::new(project_path).join(".maestro");
-        fs::create_dir_all(&maestro_dir).map_err(|e| {
-            format!("Failed to create .maestro directory: {}", e)
-        })?;
-
-        let state_path = maestro_dir.join("state.json");
-        let json = serde_json::to_string_pretty(&self).map_err(|e| {
-            format!("Serialization failed: {}", e)
-        })?;
-
-        crate::core::project_storage::atomic_write(&state_path, json.as_bytes()).map_err(|e| {
-            format!("Failed to write state.json: {}", e)
-        })
-    }
-
     /// Create an empty ProjectState with current timestamp
     pub fn empty() -> Self {
         ProjectState {
@@ -324,20 +253,33 @@ mod tests {
         );
     }
 
-    #[test]
-    fn settings_and_state_saves_replace_existing_json() {
+    /// A save over existing content replaces it and leaves no temporary behind, and unparseable
+    /// content reads back as the default rather than failing — every caller treats a project that
+    /// has never written the file as one holding defaults.
+    #[tokio::test]
+    async fn settings_and_state_saves_replace_existing_json() {
+        use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+        use crate::models::GitConnection;
+
         let dir = tempfile::tempdir().expect("temp directory");
         let maestro_dir = dir.path().join(".maestro");
         std::fs::create_dir(&maestro_dir).expect("create .maestro");
         std::fs::write(maestro_dir.join("settings.json"), "stale settings").expect("seed settings");
         std::fs::write(maestro_dir.join("state.json"), "stale state").expect("seed state");
-        let project_path = dir.path().to_str().expect("UTF-8 path");
 
-        ProjectConfig::default().save_to_project(project_path).expect("save settings");
-        ProjectState::empty().save_to_project(project_path).expect("save state");
+        let conn = GitConnection::Local {
+            path: dir.path().to_str().expect("UTF-8 path").to_string(),
+        };
 
-        ProjectConfig::load_from_project(project_path).expect("load settings");
-        ProjectState::load_from_project(project_path).expect("load state");
+        write_maestro_json(&conn, "settings.json", &ProjectConfig::default())
+            .await
+            .expect("save settings");
+        write_maestro_json(&conn, "state.json", &ProjectState::empty())
+            .await
+            .expect("save state");
+
+        let _: ProjectConfig = read_maestro_json(&conn, "settings.json").await;
+        let _: ProjectState = read_maestro_json(&conn, "state.json").await;
         assert_eq!(std::fs::read_dir(maestro_dir).expect("list .maestro").count(), 2);
     }
 }

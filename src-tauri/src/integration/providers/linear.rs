@@ -1,5 +1,4 @@
-use crate::models::issue_tracking::{LinearConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
+use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
 
 // ── Response structs ────────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ async fn post_graphql_query(
 pub async fn validate_and_store(
     project_id: i32,
     api_key: &str,
-    project_path: &str,
+    _project_path: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let client = super::build_http_client()?;
@@ -146,12 +145,6 @@ pub async fn validate_and_store(
         .ok_or_else(|| "Linear: empty response".to_string())?
         .viewer
         .name;
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Linear(LinearConfig { team_id: None })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_path)?;
 
     let stored_token = StoredToken {
         access_token: api_key.to_string(),

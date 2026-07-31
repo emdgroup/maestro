@@ -14,9 +14,10 @@ pub struct FileEntry {
 
 /// List files and directories in a local path. Dirs come first, both groups sorted alphabetically.
 /// Hidden entries (starting with `.`) are excluded.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_local_contents(path: String) -> Result<Vec<FileEntry>, String> {
+///
+/// The local half of [`crate::connectivity::files::list_contents`]; a Windows host has no `ls` to
+/// answer it the way every other connection type does.
+pub(crate) async fn local_contents(path: String) -> Result<Vec<FileEntry>, String> {
     run_blocking(move || {
         let dir_path = Path::new(&path);
         if !dir_path.is_dir() {
@@ -51,9 +52,7 @@ pub async fn list_local_contents(path: String) -> Result<Vec<FileEntry>, String>
 
 /// Recursively list all non-hidden files under root, returning paths relative to root.
 /// Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_workspace_files(root: String) -> Result<Vec<String>, String> {
+pub(crate) async fn local_workspace_files(root: String) -> Result<Vec<String>, String> {
     run_blocking(move || {
         let root_path = Path::new(&root);
         if !root_path.is_dir() {
@@ -142,9 +141,7 @@ pub async fn read_local_file_binary(path: String) -> Result<String, String> {
 }
 
 /// List subdirectories in a local filesystem path
-#[tauri::command]
-#[specta::specta]
-pub async fn list_local_directories(path: String) -> Result<Vec<String>, String> {
+pub(crate) async fn local_directories(path: String) -> Result<Vec<String>, String> {
     run_blocking(move || {
         let dir_path = Path::new(&path);
 

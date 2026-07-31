@@ -153,63 +153,44 @@ pub fn list_containers(cli: &ContainerCli) -> Result<Vec<DockerContainer>, Strin
     Ok(parse_container_list(&String::from_utf8_lossy(&output.stdout)))
 }
 
-pub fn get_home_dir(cli: &ContainerCli, container_name: &str) -> Result<String, String> {
-    let output = std::process::Command::new(cli.binary())
-        .args(["exec", container_name, "sh", "-c", "echo $HOME"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .map_err(|e| format!("Failed to exec: {}", e))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+/// Run a command inside a container through its exec channel, so it costs a message rather than a
+/// `<cli> exec` start. Falls back to a cold spawn when no channel is available.
+pub(crate) async fn run(
+    cli: &ContainerCli,
+    container_name: &str,
+    program: &str,
+    args: &[&str],
+) -> Result<crate::connectivity::exec_channel::CommandOutput, String> {
+    crate::connectivity::exec_channel::run(
+        &crate::connectivity::exec_channel::ExecTarget::Docker { cli: *cli, container: container_name },
+        None,
+        program,
+        args,
+    )
+    .await
 }
 
-pub fn read_file(cli: &ContainerCli, container_name: &str, path: &str) -> Result<String, String> {
-    let output = std::process::Command::new(cli.binary())
-        .args(["exec", container_name, "sh", "-c", &format!("head -c 524288 {}", crate::git::remote::shell_quote(path))])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .map_err(|e| format!("Failed to exec: {}", e))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+pub async fn get_home_dir(cli: &ContainerCli, container_name: &str) -> Result<String, String> {
+    let output = run(cli, container_name, "sh", &["-c", "echo $HOME"]).await?;
+    if !output.success() {
+        return Err(output.stderr_string());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(output.stdout_string().trim().to_string())
 }
 
-pub fn read_file_binary(cli: &ContainerCli, container_name: &str, path: &str) -> Result<String, String> {
-    let output = std::process::Command::new(cli.binary())
-        .args(["exec", container_name, "base64", path])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .map_err(|e| format!("Failed to exec: {}", e))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+pub async fn read_file_binary(cli: &ContainerCli, container_name: &str, path: &str) -> Result<String, String> {
+    let output = run(cli, container_name, "base64", &[path]).await?;
+    if !output.success() {
+        return Err(output.stderr_string());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(output.stdout_string())
 }
 
-pub fn list_directories(cli: &ContainerCli, container_name: &str, path: &str) -> Result<Vec<String>, String> {
+pub async fn list_directories(cli: &ContainerCli, container_name: &str, path: &str) -> Result<Vec<String>, String> {
     let script = format!("ls -1aF {} 2>/dev/null", crate::git::remote::shell_quote(path));
-    let output = std::process::Command::new(cli.binary())
-        .args(["exec", container_name, "sh", "-c", &script])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .no_console_window()
-        .output()
-        .map_err(|e| format!("Failed to exec: {}", e))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    let output = run(cli, container_name, "sh", &["-c", &script]).await?;
+    if !output.success() {
+        return Err(output.stderr_string());
     }
-    let entries: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|l| l.to_string())
-        .collect();
-    Ok(entries)
+    Ok(output.stdout_string().lines().map(|l| l.to_string()).collect())
 }

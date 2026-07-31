@@ -15,6 +15,7 @@ mod agent;
 mod agent_restart;
 mod command_ext;
 mod dispatch;
+mod exec_channel;
 mod file_ops;
 mod helpers;
 mod mcp_config;
@@ -62,6 +63,19 @@ fn main() {
     }
     if std::env::args().nth(1).as_deref() == Some("validate-canvas") {
         std::process::exit(validate_canvas::run());
+    }
+    if std::env::args().nth(1).as_deref() == Some(maestro_protocol::exec::EXEC_CHANNEL_ARG) {
+        // Its own runtime: this mode shares no state with the ACP server and never starts one.
+        if let Err(e) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build tokio runtime")
+            .block_on(exec_channel::run())
+        {
+            eprintln!("exec channel failed: {}", e);
+            std::process::exit(1);
+        }
+        return;
     }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

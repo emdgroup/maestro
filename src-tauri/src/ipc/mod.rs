@@ -6,6 +6,7 @@ pub use crate::connectivity::sftp_handlers::*;
 pub use crate::connectivity::wsl_handlers::*;
 pub use crate::connectivity::docker_handlers::*;
 pub use crate::connectivity::filesystem_handlers::*;
+pub use crate::connectivity::files::*;
 pub use crate::git::worktree_handlers::*;
 pub use crate::git::review_handlers::*;
 pub use crate::execution::handlers::*;

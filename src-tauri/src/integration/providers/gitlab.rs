@@ -1,7 +1,6 @@
 use tokio::process::Command as TokioCommand;
 use crate::command_ext::NoConsoleWindow;
-use crate::models::issue_tracking::{GitLabConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
+use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
@@ -175,7 +174,7 @@ pub async fn validate_and_store(
     instance_url: &str,
     project_path: &str,
     token: &str,
-    project_root: &str,
+    _project_root: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
@@ -203,17 +202,7 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Failed to parse GitLab user response: {}", e))?;
 
-    let resolved_project_id = resolve_project_id(instance_url, project_path, token).await?;
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Gitlab(GitLabConfig {
-            instance_url: base,
-            project_path: project_path.to_string(),
-            project_id: resolved_project_id,
-        })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_root)?;
+    let _resolved_project_id = resolve_project_id(instance_url, project_path, token).await?;
 
     let stored_token = StoredToken {
         access_token: token.to_string(),

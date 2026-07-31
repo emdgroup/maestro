@@ -1,5 +1,3 @@
-use crate::models::issue_tracking::{BitbucketConfig, ProviderConfig, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
 use crate::integration::token_manager::StoredToken;
 use super::normalize_instance_url;
 use base64::Engine as _;
@@ -35,11 +33,11 @@ fn make_basic_auth(email: &str, token: &str) -> String {
 pub async fn validate_and_store(
     project_id: i32,
     instance_url: Option<&str>,
-    workspace: &str,
-    repo_slug: &str,
+    _workspace: &str,
+    _repo_slug: &str,
     email: &str,
     token: &str,
-    project_root: &str,
+    _project_root: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let client = super::build_http_client()?;
@@ -103,17 +101,7 @@ pub async fn validate_and_store(
         }
     };
 
-    let stored_instance_url = instance_url.map(normalize_instance_url);
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Bitbucket(BitbucketConfig {
-            instance_url: stored_instance_url,
-            workspace: workspace.to_string(),
-            repo_slug: repo_slug.to_string(),
-        })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_root)?;
+    let _stored_instance_url = instance_url.map(normalize_instance_url);
 
     let stored_token = StoredToken {
         access_token: token.to_string(),

@@ -32,6 +32,16 @@ impl GitConnection {
         matches!(self, GitConnection::Remote { .. })
     }
 
+    /// Whether `path()` names a directory on the machine Maestro itself is running on.
+    ///
+    /// This is the question host-side filesystem code must ask — not `Project::is_remote()`,
+    /// which is true for SSH alone. A WSL or container project's path is as foreign as an SSH
+    /// one: canonicalizing `/root/proj` on a Windows host resolves it against the current drive
+    /// and silently yields `C:\root\proj`, and `create_dir_all` then makes it real.
+    pub fn is_on_this_machine(&self) -> bool {
+        matches!(self, GitConnection::Local { .. })
+    }
+
     /// Get the project path (local, remote, WSL-native, or container-native)
     pub fn path(&self) -> &str {
         match self {

@@ -24,16 +24,6 @@ pub async fn get_wsl_home(distro: String) -> Result<String, String> {
     crate::connectivity::wsl::get_home_dir(&distro).await
 }
 
-/// List files and directories inside a WSL distro path.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_wsl_contents(
-    distro: String,
-    path: String,
-) -> Result<Vec<crate::connectivity::filesystem_handlers::FileEntry>, String> {
-    crate::connectivity::wsl::list_contents(&distro, &path).await
-}
-
 /// Upsert a WSL connection record and return the saved row.
 #[tauri::command]
 #[specta::specta]
@@ -63,51 +53,6 @@ pub async fn save_wsl_connection(
         }),
     ).map_err(|e| format!("Failed to read WSL connection: {e}"))?;
     Ok(row)
-}
-
-fn get_wsl_distro(app_state: &State<'_, Arc<AppState>>, connection_id: i32) -> Result<String, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
-    conn.query_row(
-        "SELECT distro_name FROM wsl_connections WHERE id = ?",
-        [connection_id],
-        |row| row.get(0),
-    ).map_err(|_| format!("WSL connection {connection_id} not found"))
-}
-
-/// List all non-hidden workspace files in a WSL distro path.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_wsl_workspace_files(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<Vec<String>, String> {
-    let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::list_workspace_files(&distro, &path).await
-}
-
-/// Read a text file from a WSL distro. Rejects binary files and files over 512 KB.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_wsl_file(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<String, String> {
-    let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::read_file(&distro, &path).await
-}
-
-/// Read a file from a WSL distro as base64. Rejects files over 10 MB.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_wsl_file_binary(
-    app_state: State<'_, Arc<AppState>>,
-    connection_id: i32,
-    path: String,
-) -> Result<String, String> {
-    let distro = get_wsl_distro(&app_state, connection_id)?;
-    crate::connectivity::wsl::read_file_binary(&distro, &path).await
 }
 
 /// Delete a WSL connection and its associated project history.

@@ -1,7 +1,6 @@
 use tokio::process::Command as TokioCommand;
 use crate::command_ext::NoConsoleWindow;
-use crate::models::issue_tracking::{GitHubConfig, ProviderConfig, RemoteIssue, IssueTrackingConfig};
-use crate::models::project::now_rfc3339;
+use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
 
 #[derive(serde::Deserialize)]
@@ -77,10 +76,10 @@ pub async fn try_gh_cli_token() -> Option<String> {
 /// Returns the authenticated GitHub username on success.
 pub async fn validate_and_store(
     project_id: i32,
-    owner: &str,
-    repo: &str,
+    _owner: &str,
+    _repo: &str,
     token: Option<String>,
-    project_path: &str,
+    _project_path: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
     let resolved_token = match token {
@@ -118,15 +117,6 @@ pub async fn validate_and_store(
         .json()
         .await
         .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
-
-    let config = IssueTrackingConfig {
-        provider: Some(ProviderConfig::Github(GitHubConfig {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-        })),
-        updated_at: now_rfc3339(),
-    };
-    config.save_to_project(project_path)?;
 
     let stored_token = StoredToken {
         access_token: resolved_token,

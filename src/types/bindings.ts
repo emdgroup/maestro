@@ -1073,16 +1073,17 @@ export const commands = {
     }
   },
   /**
-   * List directories on remote host
+   * Subdirectories of `path`, hidden ones included — this feeds the directory picker, where a
+   * project may well live under a dotted folder.
    */
-  async listRemoteDirectories(
-    connectionId: number,
+  async listDirectories(
+    connection: ConnectionKey,
     path: string,
   ): Promise<Result<string[], string>> {
     try {
       return {
         status: "ok",
-        data: await TAURI_INVOKE("list_remote_directories", { connectionId, path }),
+        data: await TAURI_INVOKE("list_directories", { connection, path }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
@@ -1090,17 +1091,16 @@ export const commands = {
     }
   },
   /**
-   * List files and directories on a remote host. Dirs first, then files, each sorted alphabetically.
-   * Hidden entries (starting with `.`) are excluded.
+   * Directories then files under `path`, each sorted, hidden entries excluded.
    */
-  async listRemoteContents(
-    connectionId: number,
+  async listContents(
+    connection: ConnectionKey,
     path: string,
   ): Promise<Result<FileEntry[], string>> {
     try {
       return {
         status: "ok",
-        data: await TAURI_INVOKE("list_remote_contents", { connectionId, path }),
+        data: await TAURI_INVOKE("list_contents", { connection, path }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;
@@ -1108,35 +1108,39 @@ export const commands = {
     }
   },
   /**
-   * List subdirectories in a local filesystem path
+   * Every non-hidden file under `path`, as paths relative to it.
    */
-  async listLocalDirectories(path: string): Promise<Result<string[], string>> {
+  async listWorkspaceFiles(
+    connection: ConnectionKey,
+    path: string,
+  ): Promise<Result<string[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_local_directories", { path }) };
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_workspace_files", { connection, path }),
+      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
     }
   },
   /**
-   * List files and directories in a local path. Dirs come first, both groups sorted alphabetically.
-   * Hidden entries (starting with `.`) are excluded.
+   * A file's text content. Binary files and anything over 512 KB are refused.
    */
-  async listLocalContents(path: string): Promise<Result<FileEntry[], string>> {
+  async readFile(connection: ConnectionKey, path: string): Promise<Result<string, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_local_contents", { path }) };
+      return { status: "ok", data: await TAURI_INVOKE("read_file", { connection, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
     }
   },
   /**
-   * Recursively list all non-hidden files under root, returning paths relative to root.
-   * Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
+   * A file's raw content, base64-encoded. Anything over 10 MB is refused.
    */
-  async listWorkspaceFiles(root: string): Promise<Result<string[], string>> {
+  async readFileBinary(connection: ConnectionKey, path: string): Promise<Result<string, string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_workspace_files", { root }) };
+      return { status: "ok", data: await TAURI_INVOKE("read_file_binary", { connection, path }) };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -1159,39 +1163,6 @@ export const commands = {
   async readLocalFileBinary(path: string): Promise<Result<string, string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("read_local_file_binary", { path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  async listRemoteWorkspaceFiles(
-    connectionId: number,
-    path: string,
-  ): Promise<Result<string[], string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_remote_workspace_files", { connectionId, path }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  async readRemoteFile(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return { status: "ok", data: await TAURI_INVOKE("read_remote_file", { connectionId, path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  async readRemoteFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("read_remote_file_binary", { connectionId, path }),
-      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -1988,17 +1959,6 @@ export const commands = {
     }
   },
   /**
-   * List files and directories inside a WSL distro path.
-   */
-  async listWslContents(distro: string, path: string): Promise<Result<FileEntry[], string>> {
-    try {
-      return { status: "ok", data: await TAURI_INVOKE("list_wsl_contents", { distro, path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
    * Get the home directory for the default user in a WSL distro.
    */
   async getWslHome(distro: string): Promise<Result<string, string>> {
@@ -2043,48 +2003,6 @@ export const commands = {
   async listWslConnections(): Promise<Result<WslConnection[], string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("list_wsl_connections") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * List all non-hidden workspace files in a WSL distro path.
-   */
-  async listWslWorkspaceFiles(
-    connectionId: number,
-    path: string,
-  ): Promise<Result<string[], string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_wsl_workspace_files", { connectionId, path }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Read a text file from a WSL distro. Rejects binary files and files over 512 KB.
-   */
-  async readWslFile(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return { status: "ok", data: await TAURI_INVOKE("read_wsl_file", { connectionId, path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Read a file from a WSL distro as base64. Rejects files over 10 MB.
-   */
-  async readWslFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("read_wsl_file_binary", { connectionId, path }),
-      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -2157,48 +2075,6 @@ export const commands = {
   async listDockerConnections(): Promise<Result<DockerConnection[], string>> {
     try {
       return { status: "ok", data: await TAURI_INVOKE("list_docker_connections") };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * List all non-hidden workspace files in a container path.
-   */
-  async listDockerWorkspaceFiles(
-    connectionId: number,
-    path: string,
-  ): Promise<Result<string[], string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("list_docker_workspace_files", { connectionId, path }),
-      };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Read a text file from a container. Rejects files over 512 KB.
-   */
-  async readDockerFile(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return { status: "ok", data: await TAURI_INVOKE("read_docker_file", { connectionId, path }) };
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      else return { status: "error", error: e as any };
-    }
-  },
-  /**
-   * Read a file from a container as base64. Rejects files over 5 MB.
-   */
-  async readDockerFileBinary(connectionId: number, path: string): Promise<Result<string, string>> {
-    try {
-      return {
-        status: "ok",
-        data: await TAURI_INVOKE("read_docker_file_binary", { connectionId, path }),
-      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
