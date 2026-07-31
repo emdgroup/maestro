@@ -711,6 +711,8 @@ pub struct AcpRegistry {
 pub struct AgentRegistryEntry {
     pub id: String,
     pub name: String,
+    /// Absent in hand-written `custom-agents.json` entries; the CDN registry always sets it.
+    #[serde(default)]
     pub version: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -748,7 +750,10 @@ pub struct NpxDistribution {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BinaryTarget {
-    pub archive: String,
+    /// Where the CDN registry says the binary can be downloaded. Maestro never fetches it — it
+    /// spawns what is already on the host — so a hand-written entry can leave it out.
+    #[serde(default)]
+    pub archive: Option<String>,
     pub cmd: String,
     #[serde(default)]
     pub args: Option<Vec<String>>,

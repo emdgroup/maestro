@@ -286,6 +286,32 @@ fetches, validates and opens a pull request. Do not reintroduce a build-time fet
 tracked file on every build made builds unreproducible and let agent version bumps ride along in
 unrelated commits.
 
+**Never add a hand-written entry to `registry.json`, and never synthesize an agent in
+`registry.rs`.** Anything the bundled list does not cover — a local gateway, an internal adapter,
+the same adapter with different environment variables — is user configuration and belongs in
+`~/.maestro/custom-agents.json` on the machine that runs the agent, merged by
+`registry::apply_custom_agents` (see below). Hardcoding one costs a release per variant and, since
+`detection.rs` has no entry for it, a matching special case in the host's discovery filter.
+
+### User-defined ACP agents (`~/.maestro/custom-agents.json`)
+
+Same schema as `registry.json`, on the machine `maestro-server` runs on — the remote home for SSH,
+WSL and container connections, next to the `tools.json` that `tool_config.rs` already reads there.
+
+It is re-read on every `ListAgents` and `DetectInstalledAgents` rather than at startup, so an agent
+added mid-session appears without restarting the server; the host's five-minute discovery cache is
+what still delays it in the UI. Entries are additive — an id colliding with a bundled agent is
+rejected and logged, so a typo cannot shadow a working agent. There is no detection table entry for
+a custom agent, so `maestro-server` reports it as installed unconditionally and a wrong command
+surfaces as a spawn failure instead of a silently missing picker entry.
+
+The `maestro-custom-agents` skill (`src-tauri/assets/skills/`) is what writes this file: it is
+installed onto every connection alongside `maestro-output`, and interviews the user before writing.
+It carries `disable-model-invocation: true`, so it only runs when the user types
+`/maestro-custom-agents` — writing to a file outside the project on a model's own initiative is not
+something to do behind the user's back. Its schema documentation and Ollama recipe are user-facing
+and mirrored in the README; keep both in step with `resolve_spawn`.
+
 ### Project-Local Storage (`.maestro/`)
 
 Each project has a `.maestro/` folder in its root with:
