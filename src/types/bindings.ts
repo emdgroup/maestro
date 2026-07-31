@@ -1956,6 +1956,29 @@ export const commands = {
     }
   },
   /**
+   * Copy a file out of a WSL distro to somewhere on the host.
+   *
+   * The distro counterpart to [`crate::connectivity::sftp_handlers::sftp_download`] and
+   * [`crate::connectivity::docker_handlers::docker_download_file`], without the progress plumbing.
+   * Unlike either of those nothing streams through a shell: the distro's files are already
+   * reachable under a Windows path, so this is an ordinary host-side copy.
+   */
+  async wslDownloadFile(
+    connectionId: number,
+    distroPath: string,
+    localPath: string,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("wsl_download_file", { connectionId, distroPath, localPath }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Upsert a WSL connection record and return the saved row.
    */
   async saveWslConnection(

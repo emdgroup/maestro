@@ -10,6 +10,13 @@ async function hostCopyPath(absolutePath: string): Promise<string> {
   return join(await tempDir(), "maestro", basename);
 }
 
+/// Whether [openFileWithConnection] stages a copy on the host before opening it, rather than
+/// opening the file where it already lives. Lives here rather than in the callers so the answer
+/// cannot drift from the branches below that decide it.
+export function opensViaHostCopy(connection: ConnectionKey): boolean {
+  return connection.type === "ssh" || connection.type === "docker";
+}
+
 export async function openFileWithConnection(
   connection: ConnectionKey,
   absolutePath: string,
@@ -39,14 +46,32 @@ export async function openFileWithConnection(
   }
 }
 
+/// Copy a file off whichever machine the connection names into a folder the user picks.
+///
+/// `transferId` names the channel `sftp://transfer-progress/` reports on, and only SSH reports:
+/// the distro copy and `docker cp` are each one opaque call with no byte counts to forward.
+///
+/// Returns where the file landed, or null when the folder picker was dismissed — the caller needs
+/// to tell those apart to avoid confirming a copy that never happened.
 export async function downloadFileToFolder(
-  sshConnectionId: number,
+  connection: ConnectionKey,
   absolutePath: string,
   transferId: string,
-): Promise<void> {
+): Promise<string | null> {
   const chosen = await openDirPicker({ directory: true });
-  if (!chosen) return;
+  if (!chosen) return null;
   const basename = absolutePath.split("/").pop() ?? "file";
   const destPath = await join(chosen as string, basename);
-  await api.sftpDownload(sshConnectionId, absolutePath, destPath, transferId);
+
+  if (connection.type === "ssh") {
+    await api.sftpDownload(connection.id, absolutePath, destPath, transferId);
+  } else if (connection.type === "wsl") {
+    await api.wslDownloadFile(connection.id, absolutePath, destPath);
+  } else if (connection.type === "docker") {
+    await api.dockerDownloadFile(connection.id, absolutePath, destPath);
+  } else {
+    // Local has nothing to copy from — callers hide the action rather than reaching this.
+    throw new Error(`Cannot download '${absolutePath}' over this ${connection.type} connection`);
+  }
+  return destPath;
 }

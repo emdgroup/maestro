@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Files, Pin, ExternalLink, X, RefreshCw, FolderDown } from "lucide-react";
+import { Files, Pin, ExternalLink, RefreshCw, FolderDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { connectionQueryKeys, useReadFile, useReadFileBinary } from "@/services/connection.service";
@@ -10,8 +9,10 @@ import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { openFileWithConnection, downloadFileToFolder } from "@/lib/file-opener";
+import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";
 import { isAbsolutePath } from "@/lib/path-utils";
+import { TransferIcon } from "./TransferIcon";
+import { transferTooltip, useFileTransfer } from "./useFileTransfer";
 
 interface WorkspaceFilesPanelProps {
   projectPath: string;
@@ -20,11 +21,6 @@ interface WorkspaceFilesPanelProps {
   isActive?: boolean;
   initialPath?: string;
 }
-
-type DlState =
-  | { status: "idle" }
-  | { status: "downloading"; progress: number }
-  | { status: "error" };
 
 export function WorkspaceFilesPanel({
   projectPath,
@@ -37,7 +33,8 @@ export function WorkspaceFilesPanel({
   const [listOpen, setListOpen] = useState(!initialPath);
   const [listPinned, setListPinned] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [dlState, setDlState] = useState<DlState>({ status: "idle" });
+  const openTransfer = useFileTransfer();
+  const downloadTransfer = useFileTransfer();
   const [pinnedInitialSize, setPinnedInitialSize] = useState(224);
   const treeRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -113,67 +110,30 @@ export function WorkspaceFilesPanel({
   }
 
   async function handleOpen() {
-    if (!fullPath || dlState.status === "downloading") return;
-
-    if (connection.type !== "ssh") {
-      try {
-        await openFileWithConnection(connection, fullPath, { wslDistroName });
-      } catch {
-        setDlState({ status: "error" });
-        setTimeout(() => setDlState({ status: "idle" }), 2000);
-      }
-      return;
-    }
-
+    if (!fullPath) return;
     const transferId = `open-${Date.now()}`;
-    setDlState({ status: "downloading", progress: 0 });
-    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
-      `sftp://transfer-progress/${transferId}`,
-      (e) => {
-        const pct =
-          e.payload.total_bytes > 0
-            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
-            : 0;
-        setDlState({ status: "downloading", progress: pct });
-      },
-    );
-    try {
-      await openFileWithConnection(connection, fullPath, {
-        sshConnectionId: connection.id,
-        transferId,
-      });
-      setDlState({ status: "idle" });
-    } catch {
-      setDlState({ status: "error" });
-      setTimeout(() => setDlState({ status: "idle" }), 2000);
-    } finally {
-      unlisten();
-    }
+    await openTransfer.run({
+      transferId,
+      reportsProgress: connection.type === "ssh",
+      action: () =>
+        openFileWithConnection(connection, fullPath, {
+          sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+          transferId,
+          wslDistroName,
+        }),
+      // The file opening is its own confirmation, so success stays quiet here.
+    });
   }
 
   async function handleDownload() {
-    if (!fullPath || dlState.status === "downloading" || connection.type !== "ssh") return;
+    if (!fullPath || connection.type === "local") return;
     const transferId = `dl-${Date.now()}`;
-    setDlState({ status: "downloading", progress: 0 });
-    const unlisten = await listen<{ bytes_transferred: number; total_bytes: number }>(
-      `sftp://transfer-progress/${transferId}`,
-      (e) => {
-        const pct =
-          e.payload.total_bytes > 0
-            ? Math.round((e.payload.bytes_transferred / e.payload.total_bytes) * 100)
-            : 0;
-        setDlState({ status: "downloading", progress: pct });
-      },
-    );
-    try {
-      await downloadFileToFolder(connection.id, fullPath, transferId);
-      setDlState({ status: "idle" });
-    } catch {
-      setDlState({ status: "error" });
-      setTimeout(() => setDlState({ status: "idle" }), 2000);
-    } finally {
-      unlisten();
-    }
+    await downloadTransfer.run({
+      transferId,
+      reportsProgress: connection.type === "ssh",
+      action: () => downloadFileToFolder(connection, fullPath, transferId),
+      describeDone: (dest) => (dest === null ? null : `Saved to ${dest}`),
+    });
   }
 
   const pinButton = (
@@ -265,43 +225,51 @@ export function WorkspaceFilesPanel({
               <TooltipTrigger
                 type="button"
                 onClick={() => void handleOpen()}
-                disabled={dlState.status === "downloading"}
+                disabled={openTransfer.pending}
                 className={cn(
                   "p-1.5 rounded-md transition-colors shrink-0",
-                  dlState.status === "error"
+                  openTransfer.state.status === "error"
                     ? "text-destructive"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
                 )}
               >
-                {dlState.status === "downloading" ? (
-                  <span className="text-[9px] font-mono leading-none tabular-nums w-5 inline-block text-center">
-                    {dlState.progress}%
-                  </span>
-                ) : dlState.status === "error" ? (
-                  <X className="w-3.5 h-3.5" />
-                ) : (
-                  <ExternalLink className="w-3.5 h-3.5" />
-                )}
+                <TransferIcon
+                  state={openTransfer.state}
+                  idle={<ExternalLink className="w-3.5 h-3.5" />}
+                />
               </TooltipTrigger>
               <TooltipContent>
-                {dlState.status === "error"
-                  ? "Download failed"
-                  : connection.type === "ssh"
+                {transferTooltip(
+                  openTransfer.state,
+                  opensViaHostCopy(connection)
                     ? "Download and open"
-                    : "Open in default application"}
+                    : "Open in default application",
+                )}
               </TooltipContent>
             </Tooltip>
-            {connection.type === "ssh" && (
+            {connection.type !== "local" && (
               <Tooltip>
                 <TooltipTrigger
                   type="button"
                   onClick={() => void handleDownload()}
-                  disabled={dlState.status === "downloading"}
-                  className="p-1.5 rounded-md transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                  disabled={downloadTransfer.pending}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors shrink-0",
+                    downloadTransfer.state.status === "error"
+                      ? "text-destructive"
+                      : downloadTransfer.state.status === "done"
+                        ? "text-emerald-600"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
                 >
-                  <FolderDown className="w-3.5 h-3.5" />
+                  <TransferIcon
+                    state={downloadTransfer.state}
+                    idle={<FolderDown className="w-3.5 h-3.5" />}
+                  />
                 </TooltipTrigger>
-                <TooltipContent>Download to…</TooltipContent>
+                <TooltipContent>
+                  {transferTooltip(downloadTransfer.state, "Download to…")}
+                </TooltipContent>
               </Tooltip>
             )}
           </>

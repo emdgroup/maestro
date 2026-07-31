@@ -155,6 +155,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_wsl_directories,
             crate::ipc::get_wsl_home,
             crate::ipc::wsl_to_windows_path,
+            crate::ipc::wsl_download_file,
             crate::ipc::save_wsl_connection,
             crate::ipc::delete_wsl_connection,
             crate::ipc::list_wsl_connections,
