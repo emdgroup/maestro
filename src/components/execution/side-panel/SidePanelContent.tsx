@@ -22,6 +22,7 @@ import type { WorkingFileEntry } from "@/components/execution/agent-activity-pan
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { ConnectionKey } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { useSessionDiffStats } from "./useSessionDiffStats";
 import { useWslConnections } from "@/services/connection.service";
 import {
@@ -255,12 +256,22 @@ export function SidePanelContent({
               <div className="absolute inset-0 flex flex-col overflow-hidden">
                 {canvasEntries.length > 0 && (
                   <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border">
-                    <span className="text-xs text-muted-foreground">
-                      {canvasEntries.length > 1
-                        ? `${canvasIdx + 1} / ${canvasEntries.length}`
-                        : (activeSurface?.title ?? "Canvas")}
-                    </span>
-                    <div className="flex gap-1">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={<span className="text-xs text-muted-foreground truncate min-w-0" />}
+                      >
+                        {activeSurface?.title ?? "Canvas"}
+                        {canvasEntries.length > 1 && (
+                          <span className="ml-1.5 opacity-60">
+                            {canvasIdx + 1} / {canvasEntries.length}
+                          </span>
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {activeSurface?.title ?? "Canvas"}
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="flex gap-1 shrink-0">
                       {canvasEntries.length > 1 && (
                         <>
                           <button
