@@ -51,34 +51,29 @@ pub async fn spawn_acp_session(
     let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = session_id_for(log_id);
 
-    let (session_start_sha, ssh_opt) = if let Some(conn_id) = connection_id {
-        let ssh = app_state.ssh.get_session(conn_id).await
-            .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
-        let git_conn = crate::models::GitConnection::Remote {
-            ssh: std::sync::Arc::new(ssh.clone()),
-            remote_path: cwd.clone(),
-        };
-        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-            .await.ok().map(|s| s.trim().to_string());
-        (sha, Some((conn_id, ssh)))
-    } else if let Some(wsl_id) = wsl_connection_id {
-        let distro: String = {
-            let db = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            db.query_row(
-                "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                [wsl_id],
-                |row| row.get(0),
-            ).map_err(|e| format!("WSL connection not found: {}", e))?
-        };
-        let git_conn = crate::models::GitConnection::Wsl { distro, path: cwd.clone() };
-        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-            .await.ok().map(|s| s.trim().to_string());
-        (sha, None)
-    } else {
-        let git_conn = crate::models::GitConnection::Local { path: cwd.clone() };
-        let sha = crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
-            .await.ok().map(|s| s.trim().to_string());
-        (sha, None)
+    let ssh_opt = match connection_id {
+        Some(conn_id) => {
+            let ssh = app_state.ssh.get_session(conn_id).await
+                .ok_or_else(|| format!("No active SSH session for connection_id {}. Connect first.", conn_id))?;
+            Some((conn_id, ssh))
+        }
+        None => None,
+    };
+
+    // Routed through the project's own connection rather than rebuilt per connection type: a
+    // container project used to fall through to a Local git run against a path that only exists
+    // inside the container, and `.ok()` turned the failure into a NULL sha. That silently
+    // degrades the review diff to uncommitted-only (both callers of get_acp_session_meta fall
+    // back to DiffTarget::Head) and skips the rollback in review.rs.
+    //
+    // Still best-effort: a session has to start even when HEAD cannot be read.
+    let session_start_sha = match crate::core::get_project_with_git_conn(&app_state, project_id).await {
+        Ok((_project, git_conn)) => crate::git::run_git_in_dir(&git_conn, &cwd, &["rev-parse", "HEAD"])
+            .await.ok().map(|s| s.trim().to_string()),
+        Err(e) => {
+            log::warn!("[acp] cannot resolve connection for project {project_id} to read session start sha: {e}");
+            None
+        }
     };
 
     // Persist execution_start_sha to the task for rollback capability. A task that already
