@@ -39,8 +39,10 @@ export function InteractiveTable({ children }: { children: ReactNode }) {
   }, []);
   return (
     <TableSortContext.Provider value={{ sort, onSort, getNextHeaderIndex }}>
-      <div className="overflow-x-auto my-2">
-        <table className="w-full border-collapse text-xs">{children}</table>
+      <div className="overflow-x-auto my-3 rounded-lg border border-border">
+        <table className="w-full border-collapse text-xs [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-muted/30">
+          {children}
+        </table>
       </div>
     </TableSortContext.Provider>
   );
@@ -56,12 +58,16 @@ export function InteractiveTh({ children }: { children: ReactNode }) {
   const isSorted = ctx?.sort.col === col;
   return (
     <th
-      className="border border-border px-2.5 py-1.5 text-left font-semibold text-muted-foreground cursor-pointer select-none hover:bg-muted/80 transition-colors"
+      className="group border-b border-border px-3 py-2 text-left align-bottom text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors"
       onClick={() => ctx?.onSort(col)}
     >
       <span className="inline-flex items-center gap-1">
         {children}
-        <span className="text-[8px] opacity-40">{isSorted ? (ctx.sort.asc ? "▲" : "▼") : "⇅"}</span>
+        <span
+          className={`text-[8px] transition-opacity ${isSorted ? "opacity-70" : "opacity-0 group-hover:opacity-40"}`}
+        >
+          {isSorted ? (ctx.sort.asc ? "▲" : "▼") : "⇅"}
+        </span>
       </span>
     </th>
   );
