@@ -18,6 +18,8 @@ interface UntrackedFileDiffViewerProps {
   onEditComment?: (commentId: string, newText: string) => void;
   onCancelComment?: () => void;
   onSubmitComment?: (text: string) => void;
+  onSendComment?: (commentId: string) => void;
+  sendDisabled?: boolean;
 }
 
 export function UntrackedFileDiffViewer({
@@ -33,6 +35,8 @@ export function UntrackedFileDiffViewer({
   onEditComment,
   onCancelComment,
   onSubmitComment,
+  onSendComment,
+  sendDisabled,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
 
@@ -65,6 +69,8 @@ export function UntrackedFileDiffViewer({
           onEditComment={onEditComment}
           onCancelComment={onCancelComment}
           onSubmitComment={onSubmitComment}
+          onSendComment={onSendComment}
+          sendDisabled={sendDisabled}
         />
       </div>
     </div>

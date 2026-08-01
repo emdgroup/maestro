@@ -30,6 +30,9 @@ import { commands } from "@/types/bindings";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
+import { buildAnnotationBlocks } from "@/components/execution/side-panel/annotations/build-annotation-prompt";
+import { useAnnotationStore } from "@/store/annotationStore";
+import type { Annotation } from "@/store/annotationStore";
 import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
@@ -315,6 +318,8 @@ export function AgentActivityPanel({
   );
   const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
 
+  const removeAnnotations = useAnnotationStore((s) => s.removeAnnotations);
+
   const { handleSend, handleCancel, handleSendWithTransition } = useMessageSender({
     sessionKey,
     isProcessing,
@@ -330,6 +335,19 @@ export function AgentActivityPanel({
     onCenteredTransition: () => setHasSentFirstMessage(true),
     pendingSendRef,
   });
+
+  // Side-panel annotations: send them as one prompt, then drop the ones that went out.
+  const handleSendAnnotations = useCallback(
+    (annotations: Annotation[]) => {
+      if (annotations.length === 0 || isProcessing) return;
+      void handleSend("", buildAnnotationBlocks(annotations));
+      removeAnnotations(
+        sessionKey,
+        annotations.map((a) => a.id),
+      );
+    },
+    [handleSend, isProcessing, removeAnnotations, sessionKey],
+  );
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
@@ -730,6 +748,8 @@ export function AgentActivityPanel({
             onSpawnShell={onSpawnShell}
             isSessionActive={isSessionActive}
             terminalBuffers={liveState.terminalBuffers}
+            onSendAnnotations={handleSendAnnotations}
+            isProcessing={isProcessing}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

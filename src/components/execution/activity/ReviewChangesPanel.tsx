@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { useReviewChangesData } from "./useReviewChangesData";
 import { ReviewChangesPanelCompact } from "./ReviewChangesPanelCompact";
+import type { Annotation } from "@/store/annotationStore";
 
 interface ReviewChangesPanelProps {
   sessionKey: number;
@@ -10,6 +11,8 @@ interface ReviewChangesPanelProps {
   compact?: boolean;
   isActive?: boolean;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
+  onSendAnnotations: (annotations: Annotation[]) => void;
+  annotationSendDisabled?: boolean;
 }
 
 export function ReviewChangesPanel({
@@ -18,6 +21,8 @@ export function ReviewChangesPanel({
   compact = false,
   isActive = true,
   onDiffStats,
+  onSendAnnotations,
+  annotationSendDisabled,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
@@ -78,6 +83,9 @@ export function ReviewChangesPanel({
   if (compact) {
     return (
       <ReviewChangesPanelCompact
+        sessionKey={sessionKey}
+        onSendAnnotations={onSendAnnotations}
+        annotationSendDisabled={annotationSendDisabled}
         allDisplayItems={allDisplayItems}
         loading={loading}
         totalFileCount={totalFileCount}

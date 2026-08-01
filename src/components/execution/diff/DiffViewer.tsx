@@ -14,6 +14,7 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
+import { buildExtendData } from "./extend-data";
 
 export interface PendingComment {
   id: string;
@@ -40,6 +41,9 @@ interface DiffViewerProps {
   onEditComment?: (commentId: string, newText: string) => void;
   onCancelComment?: () => void;
   onSubmitComment?: (text: string) => void;
+  /** Send one comment on its own. Omitted where comments only leave in a batch. */
+  onSendComment?: (commentId: string) => void;
+  sendDisabled?: boolean;
 }
 
 function splitSideToSide(side: SplitSide): "old" | "new" {
@@ -123,6 +127,8 @@ export function DiffViewer({
   onEditComment,
   onCancelComment,
   onSubmitComment,
+  onSendComment,
+  sendDisabled,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
@@ -147,19 +153,7 @@ export function DiffViewer({
     loadHighlighter();
   }, []);
 
-  // Build extendData from comments (single comment per line/side)
-  const extendData = useMemo(() => {
-    if (!reviewMode || !comments || comments.length === 0) return undefined;
-    const oldFile: Record<string, { data: PendingComment }> = {};
-    const newFile: Record<string, { data: PendingComment }> = {};
-    for (const comment of comments) {
-      if (comment.lineNumber === 0) continue;
-      const key = String(comment.lineNumber);
-      const target = comment.side === "old" ? oldFile : newFile;
-      target[key] = { data: comment };
-    }
-    return { oldFile, newFile };
-  }, [reviewMode, comments]);
+  const extendData = useMemo(() => buildExtendData(reviewMode, comments), [reviewMode, comments]);
 
   // Native widget callbacks
   const handleAddWidgetClick = useCallback(
@@ -204,10 +198,12 @@ export function DiffViewer({
           text={data.text}
           onRemove={() => onRemoveComment(data.id)}
           onEdit={onEditComment ? (newText) => onEditComment(data.id, newText) : undefined}
+          onSend={onSendComment ? () => onSendComment(data.id) : undefined}
+          sendDisabled={sendDisabled}
         />
       );
     },
-    [onRemoveComment, onEditComment],
+    [onRemoveComment, onEditComment, onSendComment, sendDisabled],
   );
 
   if (highlighterError)

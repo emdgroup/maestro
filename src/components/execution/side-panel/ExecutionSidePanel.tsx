@@ -8,6 +8,7 @@ import type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import type { ConnectionKey } from "@/types/bindings";
+import type { Annotation } from "@/store/annotationStore";
 
 // Re-export so AgentActivityPanel can still import SidePanelTab from this file
 export type { SidePanelTab, TabKind } from "./useSidePanelTabs";
@@ -41,6 +42,8 @@ interface ExecutionSidePanelProps {
   isSessionActive?: boolean;
   onSpawnShell?: () => Promise<number | null>;
   terminalBuffers?: Map<string, string>;
+  onSendAnnotations: (annotations: Annotation[]) => void;
+  isProcessing?: boolean;
 }
 
 export function ExecutionSidePanel({
@@ -72,6 +75,8 @@ export function ExecutionSidePanel({
   isSessionActive = true,
   onSpawnShell,
   terminalBuffers,
+  onSendAnnotations,
+  isProcessing,
 }: ExecutionSidePanelProps) {
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
@@ -154,6 +159,8 @@ export function ExecutionSidePanel({
                 onOpenTabKind={onOpenTabKind}
                 onSpawnShell={onSpawnShell}
                 terminalBuffers={terminalBuffers}
+                onSendAnnotations={onSendAnnotations}
+                isProcessing={isProcessing}
               />
             </div>
           </div>
