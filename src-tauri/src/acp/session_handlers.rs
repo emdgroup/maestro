@@ -237,27 +237,19 @@ pub async fn cancel_acp_session(
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
-    let (teardown_key, project_id_for_save): (Option<ConnectionKey>, Option<i32>) = {
+    // The connection server outlives its sessions deliberately: it is per connection, not per
+    // session, and closing the last session used to drop it, which killed the transport and
+    // surfaced as a lost connection. It is torn down when the project or the app closes.
+    let project_id_for_save: Option<i32> = {
         let mut sessions = app_state.acp.sessions.lock().await;
         let project_id_for_save = sessions.get(&log_id).and_then(|p| p.project_id);
-        let removed = sessions.remove(&log_id);
-        let conn_key = removed.as_ref()
-            .filter(|s| s.child.is_none())
-            .map(|s| s.connection_key);
-        if let Some(mut session) = removed {
+        if let Some(mut session) = sessions.remove(&log_id) {
             if let Some(cancel_tx) = session.reader_cancel_tx.take() {
                 let _ = cancel_tx.send(());
             }
         }
-        let teardown = conn_key
-            .filter(|k| *k != ConnectionKey::Local)
-            .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()));
-        (teardown, project_id_for_save)
+        project_id_for_save
     };
-
-    if let Some(key) = teardown_key {
-        app_state.acp.connection_servers.lock().await.remove(&key);
-    }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     if let Some(pid) = project_id_for_save {

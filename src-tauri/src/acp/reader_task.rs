@@ -1385,17 +1385,22 @@ pub(crate) fn spawn_shared_reader_task(
         watchdog_alive.store(false, Ordering::Relaxed);
 
         // Server process died — clean up all shared sessions for this connection.
-        app_state
+        // The entry still being here is what distinguishes a death from a teardown: closing the
+        // last session on a connection removes it first, which drops the child and ends this
+        // stream. Announcing that as a lost connection put a blocking backdrop over a deliberate
+        // close.
+        let was_registered = app_state
             .acp
             .connection_servers
             .lock()
             .await
-            .remove(&connection_key);
+            .remove(&connection_key)
+            .is_some();
 
         // Announce it before the sessions go. SSH has its own reconnect story and reports through
         // the `ssh-*` events; every other transport ends here, and until this existed their
         // sessions simply vanished from the UI with nothing said.
-        if !matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. }) {
+        if was_registered && !matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. }) {
             log::warn!("[acp] connection server ended for {connection_key:?}");
             if let Err(e) = app_handle.emit(
                 "acp://connection-lost",
