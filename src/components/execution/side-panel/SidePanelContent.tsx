@@ -31,6 +31,9 @@ import {
 } from "@/services/canvas.service";
 import { commands } from "@/types/bindings";
 import { useSelectedProject } from "@/store/projectStore";
+import type { Annotation } from "@/store/annotationStore";
+import { AnnotationBar } from "./annotations/AnnotationBar";
+import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -53,6 +56,9 @@ interface SidePanelContentProps {
   onOpenTabKind: (kind: TabKind) => void;
   onSpawnShell?: () => Promise<number | null>;
   terminalBuffers?: Map<string, string>;
+  onSendAnnotations: (annotations: Annotation[]) => void;
+  /** The agent is mid-turn, so a prompt would be dropped — see useMessageSender.handleSend. */
+  isProcessing?: boolean;
 }
 
 export function SidePanelContent({
@@ -76,6 +82,8 @@ export function SidePanelContent({
   onOpenTabKind,
   onSpawnShell,
   terminalBuffers,
+  onSendAnnotations,
+  isProcessing,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
@@ -174,6 +182,13 @@ export function SidePanelContent({
             )}
             {kind === "plan" && (
               <div className="absolute inset-0 flex flex-col overflow-hidden">
+                <AnnotationBar
+                  sessionKey={sessionKey}
+                  kind="plan"
+                  onSend={onSendAnnotations}
+                  sendDisabled={isProcessing}
+                  floating
+                />
                 {sidePanelPlan ? (
                   <PlanPermissionOverlay
                     requestId={sidePanelPlan.requestId}
@@ -186,10 +201,21 @@ export function SidePanelContent({
                     })()}
                     options={extractOptions(sidePanelPlan.payload)}
                     onRespond={onPlanRespond}
+                    annotations={{
+                      sessionKey,
+                      onSend: onSendAnnotations,
+                      sendDisabled: isProcessing,
+                    }}
                   />
                 ) : planContent ? (
                   <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 text-sm">
-                    <MarkdownBlock text={planContent} />
+                    <PlanAnnotationLayer
+                      sessionKey={sessionKey}
+                      onSend={onSendAnnotations}
+                      sendDisabled={isProcessing}
+                    >
+                      <MarkdownBlock text={planContent} />
+                    </PlanAnnotationLayer>
                   </div>
                 ) : planEntries && planEntries.length > 0 ? (
                   <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
@@ -357,6 +383,8 @@ export function SidePanelContent({
                 onClose={() => onCollapsedChange(true)}
                 compact
                 isActive={isActive}
+                onSendAnnotations={onSendAnnotations}
+                annotationSendDisabled={isProcessing}
               />
             )}
             {kind === "artifacts" && (

@@ -230,6 +230,16 @@
     font-family: "FiraCode Nerd Font Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
   }
 
+  /* Annotated plan text — painted through the CSS Custom Highlight API, so it needs no
+     wrapper element and survives react-markdown re-rendering. See plan-highlight.ts. */
+  ::highlight(maestro-annotation) {
+    background-color: oklch(from var(--accent) l c h / 0.22);
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
   /* Custom scrollbar styling */
   .custom-scrollbar::-webkit-scrollbar {
     width: 8px;

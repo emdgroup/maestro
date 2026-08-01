@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils.ts";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { isAllowKind } from "./permission-prompt-utils";
 import type { PermissionOption } from "./permission-prompt-utils";
+import { PlanAnnotationLayer } from "@/components/execution/side-panel/annotations/PlanAnnotationLayer";
+import type { Annotation } from "@/store/annotationStore";
 
 // ── Accept option metadata ────────────────────────────────────────────────────
 
@@ -128,6 +130,12 @@ interface PlanPermissionOverlayProps {
   bodyText: string | null;
   options: PermissionOption[] | null;
   onRespond: (requestId: string, optionId: string | null) => void;
+  /** Present in the side panel, where the plan body can be annotated before answering. */
+  annotations?: {
+    sessionKey: number;
+    onSend: (annotations: Annotation[]) => void;
+    sendDisabled?: boolean;
+  };
 }
 
 export function PlanPermissionOverlay({
@@ -135,6 +143,7 @@ export function PlanPermissionOverlay({
   bodyText,
   options,
   onRespond,
+  annotations,
 }: PlanPermissionOverlayProps) {
   const acceptOptions = useMemo(
     () =>
@@ -159,6 +168,18 @@ export function PlanPermissionOverlay({
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
+      // Never answer the plan because of a keystroke meant for a text field — the annotation
+      // composer lives inside this overlay, and a digit there would approve the plan.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
       if (e.key === "Escape") {
         onRespond(requestId, rejectOption?.optionId ?? null);
         return;
@@ -178,7 +199,17 @@ export function PlanPermissionOverlay({
       <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4 pb-30">
         {bodyText && (
           <div className="text-sm leading-relaxed text-foreground">
-            <MarkdownBlock text={bodyText} />
+            {annotations ? (
+              <PlanAnnotationLayer
+                sessionKey={annotations.sessionKey}
+                onSend={annotations.onSend}
+                sendDisabled={annotations.sendDisabled}
+              >
+                <MarkdownBlock text={bodyText} />
+              </PlanAnnotationLayer>
+            ) : (
+              <MarkdownBlock text={bodyText} />
+            )}
           </div>
         )}
       </div>
