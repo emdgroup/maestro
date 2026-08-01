@@ -220,6 +220,10 @@
     line-height: 1.5;
   }
 
+  ::selection {
+    background-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  }
+
   code,
   pre,
   .terminal-output {
