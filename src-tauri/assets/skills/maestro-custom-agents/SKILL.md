@@ -124,10 +124,10 @@ the blanks:
 
 Swap the `distribution` value for the one matching their launcher:
 
-| Launcher | `distribution`                                                        |
-| -------- | --------------------------------------------------------------------- |
-| npx      | `{ "npx": { "package": "pkg@1.2.3", "args": [], "env": {} } }`         |
-| uvx      | `{ "uvx": { "package": "pkg==1.2.3", "args": [] } }`                   |
+| Launcher | `distribution`                                                          |
+| -------- | ----------------------------------------------------------------------- |
+| npx      | `{ "npx": { "package": "pkg@1.2.3", "args": [], "env": {} } }`          |
+| uvx      | `{ "uvx": { "package": "pkg==1.2.3", "args": [] } }`                    |
 | binary   | `{ "binary": { "linux-x86_64": { "cmd": "my-adapter", "args": [] } } }` |
 
 **`env` is only honoured under `npx`.** Under `uvx` and `binary` it is parsed and then dropped, so
