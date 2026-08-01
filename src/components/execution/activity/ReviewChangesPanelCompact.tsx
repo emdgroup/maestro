@@ -16,6 +16,9 @@ import { computeFileStats } from "@/lib/diff-utils";
 import { UntrackedFileDiffViewer } from "@/components/execution/diff/UntrackedFileDiffViewer";
 import type { DisplayItem } from "./useReviewChangesData";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { AnnotationBar } from "@/components/execution/side-panel/annotations/AnnotationBar";
+import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
+import type { Annotation, DiffAnnotation } from "@/store/annotationStore";
 
 function DiffStats({ hunks }: { hunks: string[] }) {
   const s = computeFileStats(hunks);
@@ -35,6 +38,9 @@ interface TruncationInfo {
 }
 
 interface ReviewChangesPanelCompactProps {
+  sessionKey: number;
+  onSendAnnotations: (annotations: Annotation[]) => void;
+  annotationSendDisabled?: boolean;
   allDisplayItems: DisplayItem[];
   loading: boolean;
   totalFileCount: number;
@@ -57,6 +63,9 @@ interface ReviewChangesPanelCompactProps {
 }
 
 export function ReviewChangesPanelCompact({
+  sessionKey,
+  onSendAnnotations,
+  annotationSendDisabled,
   allDisplayItems,
   loading,
   totalFileCount,
@@ -78,6 +87,15 @@ export function ReviewChangesPanelCompact({
   focusedBasename,
 }: ReviewChangesPanelCompactProps) {
   const scopeLabel = scope === "session" ? "since session start" : "uncommitted changes only";
+  const annotations = useSessionAnnotations(sessionKey, "diff");
+  const { addAnnotation, updateAnnotation, removeAnnotations } = useAnnotationStore();
+  // Which line is currently taking a new comment. Unlike TaskReviewPanel this panel renders one
+  // DiffViewer per file, so the file has to be part of the key.
+  const [activeCommentLine, setActiveCommentLine] = useState<{
+    filePath: string;
+    lineNumber: number;
+    side: "old" | "new";
+  } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const expandedInitRef = useRef(false);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -151,6 +169,49 @@ export function ReviewChangesPanelCompact({
     setListOpen(false);
   }
 
+  // Review-mode wiring shared by DiffViewer and UntrackedFileDiffViewer, per file.
+  const reviewProps = useCallback(
+    (filePath: string) => ({
+      reviewMode: true,
+      comments: annotations.filter(
+        (a): a is DiffAnnotation => a.kind === "diff" && a.filePath === filePath,
+      ),
+      onAddComment: (lineNumber: number, side: "old" | "new") =>
+        setActiveCommentLine({ filePath, lineNumber, side }),
+      onCancelComment: () => setActiveCommentLine(null),
+      onSubmitComment: (text: string) => {
+        const line = activeCommentLine;
+        if (!line || line.filePath !== filePath) return;
+        addAnnotation(sessionKey, {
+          id: crypto.randomUUID(),
+          kind: "diff" as const,
+          filePath,
+          lineNumber: line.lineNumber,
+          side: line.side,
+          text,
+        });
+        setActiveCommentLine(null);
+      },
+      onRemoveComment: (id: string) => removeAnnotations(sessionKey, [id]),
+      onEditComment: (id: string, text: string) => updateAnnotation(sessionKey, id, text),
+      onSendComment: (id: string) => {
+        const target = annotations.find((a) => a.id === id);
+        if (target) onSendAnnotations([target]);
+      },
+      sendDisabled: annotationSendDisabled,
+    }),
+    [
+      annotations,
+      activeCommentLine,
+      sessionKey,
+      addAnnotation,
+      removeAnnotations,
+      updateAnnotation,
+      onSendAnnotations,
+      annotationSendDisabled,
+    ],
+  );
+
   const filePickerOverlay = listOpen ? (
     <>
       <div
@@ -215,6 +276,12 @@ export function ReviewChangesPanelCompact({
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
+        <AnnotationBar
+          sessionKey={sessionKey}
+          kind="diff"
+          onSend={onSendAnnotations}
+          sendDisabled={annotationSendDisabled}
+        />
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex items-center gap-0.5 shrink-0">
           <Tooltip>
@@ -352,6 +419,7 @@ export function ReviewChangesPanelCompact({
                           diffFile={item.file}
                           loading={false}
                           diffViewMode={diffViewMode}
+                          {...reviewProps(key)}
                         />
                       )
                     ) : (
@@ -360,6 +428,7 @@ export function ReviewChangesPanelCompact({
                         worktreePath={cwd}
                         filePath={item.path}
                         showHeader={false}
+                        {...reviewProps(key)}
                       />
                     )}
                   </div>

@@ -86,31 +86,49 @@ The result, for Ollama with a key left in the file:
 
 ```json
 {
-  "id": "ollama-claude-acp",
-  "name": "Claude Code (Ollama)",
-  "distribution": {
-    "npx": {
-      "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
-      "env": {
-        "ANTHROPIC_BASE_URL": "http://localhost:11434",
-        "ANTHROPIC_AUTH_TOKEN": "ollama",
-        "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
+  "agents": [
+    {
+      "id": "ollama-claude-acp",
+      "name": "Claude Code (Ollama)",
+      "distribution": {
+        "npx": {
+          "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
+          "env": {
+            "ANTHROPIC_BASE_URL": "http://localhost:11434",
+            "ANTHROPIC_AUTH_TOKEN": "ollama",
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
+          }
+        }
       }
     }
-  }
+  ]
 }
 ```
 
 ### Branch 2 — custom ACP adapter
 
-No question tool here; show the shape and let the user fill it in. Print the template matching
-their launcher and ask for the blanks:
+No question tool here; show the shape and let the user fill it in. Print the template and ask for
+the blanks:
 
 ```json
-{ "id": "", "name": "", "distribution": { "npx": { "package": "pkg@1.2.3", "args": [], "env": {} } } }
-{ "id": "", "name": "", "distribution": { "uvx": { "package": "pkg==1.2.3", "args": [] } } }
-{ "id": "", "name": "", "distribution": { "binary": { "linux-x86_64": { "cmd": "my-adapter", "args": [] } } } }
+{
+  "agents": [
+    {
+      "id": "my-adapter",
+      "name": "My Adapter",
+      "distribution": { "npx": { "package": "pkg@1.2.3", "args": [], "env": {} } }
+    }
+  ]
+}
 ```
+
+Swap the `distribution` value for the one matching their launcher:
+
+| Launcher | `distribution`                                                          |
+| -------- | ----------------------------------------------------------------------- |
+| npx      | `{ "npx": { "package": "pkg@1.2.3", "args": [], "env": {} } }`          |
+| uvx      | `{ "uvx": { "package": "pkg==1.2.3", "args": [] } }`                    |
+| binary   | `{ "binary": { "linux-x86_64": { "cmd": "my-adapter", "args": [] } } }` |
 
 **`env` is only honoured under `npx`.** Under `uvx` and `binary` it is parsed and then dropped, so
 an adapter needing environment variables either goes through `npx` or gets them from a wrapper

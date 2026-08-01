@@ -539,14 +539,14 @@ export const MARKDOWN_COMPONENTS = {
     <InteractiveTable>{children}</InteractiveTable>
   ),
   thead: ({ children }: { children?: ReactNode }) => (
-    <thead className="bg-muted/60">{children}</thead>
+    <thead className="bg-muted/40">{children}</thead>
   ),
   th: ({ children }: { children?: ReactNode }) => <InteractiveTh>{children}</InteractiveTh>,
   tbody: ({ children }: { children?: ReactNode }) => (
     <InteractiveTbody>{children}</InteractiveTbody>
   ),
   td: ({ children }: { children?: ReactNode }) => (
-    <td className="border border-border px-2.5 py-1 text-foreground/80">{children}</td>
+    <td className="border-t border-border/40 px-3 py-2 align-top text-foreground/80">{children}</td>
   ),
   blockquote: ({ children }: { children?: ReactNode }) => (
     <blockquote className="border-l-2 border-muted-foreground pl-3 italic text-muted-foreground my-1.5">

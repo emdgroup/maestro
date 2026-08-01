@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Pencil, X } from "lucide-react";
+import { Pencil, X, Send } from "lucide-react";
 import { Button } from "@/ui/button";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 
@@ -7,9 +7,18 @@ interface PendingCommentBlockProps {
   text: string;
   onRemove: () => void;
   onEdit?: (newText: string) => void;
+  /** Send this one comment to the session now. Omitted where comments only leave in a batch. */
+  onSend?: () => void;
+  sendDisabled?: boolean;
 }
 
-export function PendingCommentBlock({ text, onRemove, onEdit }: PendingCommentBlockProps) {
+export function PendingCommentBlock({
+  text,
+  onRemove,
+  onEdit,
+  onSend,
+  sendDisabled,
+}: PendingCommentBlockProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -37,7 +46,7 @@ export function PendingCommentBlock({ text, onRemove, onEdit }: PendingCommentBl
 
   if (editing) {
     return (
-      <div className="mx-4 my-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+      <div className="mx-4 my-2 rounded-md border border-accent/40 bg-accent/8 p-3">
         <textarea
           ref={textareaRef}
           value={draft}
@@ -66,10 +75,22 @@ export function PendingCommentBlock({ text, onRemove, onEdit }: PendingCommentBl
   }
 
   return (
-    <div className="mx-4 my-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-2">
+    <div className="mx-4 my-2 rounded-md border border-accent/40 bg-accent/8 p-3 flex items-start gap-2">
       <div className="text-sm flex-1 min-w-0">
         <MarkdownBlock text={text} />
       </div>
+      {onSend && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title={sendDisabled ? "Agent is busy" : "Send this annotation"}
+          disabled={sendDisabled}
+          className="shrink-0 text-muted-foreground hover:text-accent"
+          onClick={onSend}
+        >
+          <Send className="size-3" />
+        </Button>
+      )}
       {onEdit && (
         <Button
           variant="ghost"

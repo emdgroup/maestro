@@ -31,7 +31,7 @@ export function InlineCommentInput({ onSubmit, onCancel, initialText }: InlineCo
   }
 
   return (
-    <div className="mx-4 my-2 rounded-md border border-blue-500/30 bg-blue-500/5 p-3">
+    <div className="mx-4 my-2 rounded-md border border-accent/40 bg-accent/8 p-3">
       <textarea
         ref={textareaRef}
         value={text}

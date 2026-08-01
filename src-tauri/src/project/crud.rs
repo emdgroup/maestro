@@ -259,12 +259,17 @@ pub async fn open_project(
     Ok(project)
 }
 
-/// Release the active project lock held by this instance.
-/// Called when the user navigates back to the project picker.
+/// Release the active project lock held by this instance, and stop the connection servers it was
+/// using. Called when the user navigates back to the project picker.
+///
+/// This is where a connection server dies — leaving the project or quitting, not closing the last
+/// session on it. Dropping the entry drops the child with it (`kill_on_drop`), and each reader
+/// task ends its own sessions as its transport closes.
 #[tauri::command]
 #[specta::specta]
-pub fn release_active_project_lock(app_state: State<Arc<AppState>>) -> Result<(), String> {
+pub async fn release_active_project_lock(app_state: State<'_, Arc<AppState>>) -> Result<(), String> {
     app_state.release_active_project_lock();
+    app_state.acp.connection_servers.lock().await.clear();
     Ok(())
 }
 
