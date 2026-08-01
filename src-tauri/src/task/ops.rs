@@ -83,24 +83,12 @@ pub async fn interrupt_task(
         // Best-effort — maestro-server may already be gone; error is non-fatal.
         let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
 
-        let teardown_key: Option<crate::acp::ConnectionKey> = {
-            let mut sessions = app_state.acp.sessions.lock().await;
-            let removed = sessions.remove(&log_id);
-            let conn_key = removed.as_ref()
-                .filter(|s| s.child.is_none())
-                .map(|s| s.connection_key);
-            if let Some(mut session) = removed {
-                if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-                    let _ = cancel_tx.send(());
-                }
+        // The shared connection server stays up — see `cancel_acp_session`.
+        let mut sessions = app_state.acp.sessions.lock().await;
+        if let Some(mut session) = sessions.remove(&log_id) {
+            if let Some(cancel_tx) = session.reader_cancel_tx.take() {
+                let _ = cancel_tx.send(());
             }
-            conn_key
-                .filter(|k| *k != crate::acp::ConnectionKey::Local)
-                .filter(|k| !sessions.values().any(|s| &s.connection_key == k && s.child.is_none()))
-        };
-
-        if let Some(key) = teardown_key {
-            app_state.acp.connection_servers.lock().await.remove(&key);
         }
     }
 
