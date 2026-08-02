@@ -12,6 +12,7 @@ interface LazyFileTreeProps {
   onSelectFile: (relativePath: string) => void;
   expandedFolders: Set<string>;
   onExpandedFoldersChange: (folders: Set<string>) => void;
+  showHidden?: boolean;
   headerRight?: React.ReactNode;
   className?: string;
 }
@@ -23,12 +24,13 @@ export function LazyFileTree({
   onSelectFile,
   expandedFolders,
   onExpandedFoldersChange,
+  showHidden = false,
   headerRight,
   className,
 }: LazyFileTreeProps) {
   const [filter, setFilter] = useState("");
   const normalizedFilter = filter.trim().toLowerCase();
-  const { data: allFiles } = useListWorkspaceFiles(connection, root);
+  const { data: allFiles } = useListWorkspaceFiles(connection, root, showHidden);
 
   return (
     <div className={cn("flex flex-col min-h-0", className)}>
@@ -88,6 +90,7 @@ export function LazyFileTree({
             connection={connection}
             expandedFolders={expandedFolders}
             onExpandedFoldersChange={onExpandedFoldersChange}
+            showHidden={showHidden}
             selectedFile={selectedFile}
             onSelectFile={onSelectFile}
           />
@@ -104,6 +107,7 @@ interface DirContentsProps {
   connection: ConnectionKey;
   expandedFolders: Set<string>;
   onExpandedFoldersChange: (folders: Set<string>) => void;
+  showHidden: boolean;
   selectedFile: string | null;
   onSelectFile: (relativePath: string) => void;
 }
@@ -115,10 +119,11 @@ function DirContents({
   connection,
   expandedFolders,
   onExpandedFoldersChange,
+  showHidden,
   selectedFile,
   onSelectFile,
 }: DirContentsProps) {
-  const { data: entries, isLoading } = useListDirContents(connection, absolutePath);
+  const { data: entries, isLoading } = useListDirContents(connection, absolutePath, showHidden);
   const indent = depth * 12;
 
   if (isLoading) {
@@ -170,6 +175,7 @@ function DirContents({
                   connection={connection}
                   expandedFolders={expandedFolders}
                   onExpandedFoldersChange={onExpandedFoldersChange}
+                  showHidden={showHidden}
                   selectedFile={selectedFile}
                   onSelectFile={onSelectFile}
                 />
