@@ -7,6 +7,7 @@ import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
 import type { AvailableCommand, UsageState, ConfigOption } from "../types";
 import { useSettings } from "@/services/settings.service";
+import { useAcpSessionMeta } from "@/services/execution.service";
 import { LiquidContextIndicator } from "../LiquidContextIndicator";
 import { ConfigSelector } from "../config-selectors/ConfigSelector";
 import { mimeForExtension } from "../fileTypeUtils";
@@ -74,6 +75,12 @@ export function ComposeBar({
 
   const { data: appSettings } = useSettings();
   const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
+
+  // Mention paths come from a file search rooted at the session's cwd, which for a session
+  // spawned into a worktree is not the project root. Joining them onto the project path
+  // produced a URI for a file that is not there — the agent could not read it, and clicking
+  // the card in the sent message failed with "cannot find the file specified".
+  const { data: sessionMeta } = useAcpSessionMeta(logId ?? null);
 
   const mentionAC = useMentionAutocomplete({ logId });
   const commandAC = useCommandAutocomplete({ commands });
@@ -205,6 +212,8 @@ export function ComposeBar({
         return idxA - idxB;
       });
 
+      const mentionRoot = (sessionMeta?.cwd ?? projectPath ?? "").replace(/[\\/]+$/, "");
+
       let cursor = 0;
       for (const mention of sortedMentions) {
         const marker = `@${mention.displayName}`;
@@ -212,7 +221,7 @@ export function ComposeBar({
         if (idx === -1) continue;
         const before = trimmed.slice(cursor, idx);
         if (before) mentionBlocks.push({ type: "text", text: before });
-        const uri = `file://${projectPath ?? ""}/${mention.filePath}`;
+        const uri = `file://${mentionRoot}/${mention.filePath}`;
         const fetched = fileContents.get(mention.filePath);
         if (fetched) {
           mentionBlocks.push({
@@ -237,7 +246,18 @@ export function ComposeBar({
     } finally {
       setIsSending(false);
     }
-  }, [value, isSending, mentionAC, attach, logId, projectPath, embeddedContext, onSend, resetForm]);
+  }, [
+    value,
+    isSending,
+    mentionAC,
+    attach,
+    logId,
+    projectPath,
+    sessionMeta,
+    embeddedContext,
+    onSend,
+    resetForm,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const modeOption = configOptions.find((o) => o.category === "mode");
