@@ -32,7 +32,6 @@ import {
 import { commands } from "@/types/bindings";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Annotation } from "@/store/annotationStore";
-import { AnnotationBar } from "./annotations/AnnotationBar";
 import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
 
 interface SidePanelContentProps {
@@ -182,13 +181,6 @@ export function SidePanelContent({
             )}
             {kind === "plan" && (
               <div className="absolute inset-0 flex flex-col overflow-hidden">
-                <AnnotationBar
-                  sessionKey={sessionKey}
-                  kind="plan"
-                  onSend={onSendAnnotations}
-                  sendDisabled={isProcessing}
-                  floating
-                />
                 {sidePanelPlan ? (
                   <PlanPermissionOverlay
                     requestId={sidePanelPlan.requestId}
@@ -208,15 +200,14 @@ export function SidePanelContent({
                     }}
                   />
                 ) : planContent ? (
-                  <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 text-sm">
-                    <PlanAnnotationLayer
-                      sessionKey={sessionKey}
-                      onSend={onSendAnnotations}
-                      sendDisabled={isProcessing}
-                    >
-                      <MarkdownBlock text={planContent} />
-                    </PlanAnnotationLayer>
-                  </div>
+                  <PlanAnnotationLayer
+                    className="flex-1"
+                    sessionKey={sessionKey}
+                    onSend={onSendAnnotations}
+                    sendDisabled={isProcessing}
+                  >
+                    <MarkdownBlock text={planContent} />
+                  </PlanAnnotationLayer>
                 ) : planEntries && planEntries.length > 0 ? (
                   <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
                     {planTitle && (

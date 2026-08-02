@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Send, Pencil, Trash2, Check, X } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Checkbox } from "@/ui/checkbox";
@@ -22,17 +21,9 @@ interface AnnotationBarProps {
   kind: Annotation["kind"];
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
-  /** Overlay in the corner of a pane with no top bar (Plan) instead of sitting in a header. */
-  floating?: boolean;
 }
 
-export function AnnotationBar({
-  sessionKey,
-  kind,
-  onSend,
-  sendDisabled,
-  floating,
-}: AnnotationBarProps) {
+export function AnnotationBar({ sessionKey, kind, onSend, sendDisabled }: AnnotationBarProps) {
   const annotations = useSessionAnnotations(sessionKey, kind);
   const [open, setOpen] = useState(false);
 
@@ -41,14 +32,7 @@ export function AnnotationBar({
   const sendTitle = sendDisabled ? "Agent is busy" : "Send all annotations to this session";
 
   return (
-    <div
-      className={cn(
-        "flex items-center shrink-0",
-        floating &&
-          "absolute top-2 right-3 z-20 rounded-md bg-card/90 backdrop-blur-sm shadow-sm transition-opacity hover:opacity-100 focus-within:opacity-100",
-        floating && (open ? "opacity-100" : "opacity-50"),
-      )}
-    >
+    <div className="flex items-center shrink-0">
       <div className="flex items-center rounded-md border border-accent overflow-hidden text-xs">
         <Tooltip>
           <TooltipTrigger
