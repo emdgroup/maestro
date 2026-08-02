@@ -1082,9 +1082,13 @@ export const commands = {
   async listContents(
     connection: ConnectionKey,
     path: string,
+    includeHidden: boolean,
   ): Promise<Result<FileEntry[], string>> {
     try {
-      return { status: "ok", data: await TAURI_INVOKE("list_contents", { connection, path }) };
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("list_contents", { connection, path, includeHidden }),
+      };
     } catch (e) {
       if (e instanceof Error) throw e;
       else return { status: "error", error: e as any };
@@ -1093,11 +1097,12 @@ export const commands = {
   async listWorkspaceFiles(
     connection: ConnectionKey,
     path: string,
+    includeHidden: boolean,
   ): Promise<Result<string[], string>> {
     try {
       return {
         status: "ok",
-        data: await TAURI_INVOKE("list_workspace_files", { connection, path }),
+        data: await TAURI_INVOKE("list_workspace_files", { connection, path, includeHidden }),
       };
     } catch (e) {
       if (e instanceof Error) throw e;

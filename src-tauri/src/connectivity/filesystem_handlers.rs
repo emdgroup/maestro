@@ -14,11 +14,13 @@ pub struct FileEntry {
 }
 
 /// List files and directories in a local path. Dirs come first, both groups sorted alphabetically.
-/// Hidden entries (starting with `.`) are excluded.
 ///
 /// The local half of [`crate::connectivity::files::list_contents`]; a Windows host has no `ls` to
 /// answer it the way every other connection type does.
-pub(crate) async fn local_contents(path: String) -> Result<Vec<FileEntry>, String> {
+pub(crate) async fn local_contents(
+    path: String,
+    include_hidden: bool,
+) -> Result<Vec<FileEntry>, String> {
     run_blocking(move || {
         let dir_path = Path::new(&path);
         if !dir_path.is_dir() {
@@ -33,7 +35,7 @@ pub(crate) async fn local_contents(path: String) -> Result<Vec<FileEntry>, Strin
                 Ok(n) => n,
                 Err(_) => continue,
             };
-            if name.starts_with('.') {
+            if !include_hidden && name.starts_with('.') {
                 continue;
             }
             match entry.metadata() {
@@ -51,23 +53,33 @@ pub(crate) async fn local_contents(path: String) -> Result<Vec<FileEntry>, Strin
     .await
 }
 
-/// Recursively list all non-hidden files under root, returning paths relative to root.
-/// Skips hidden entries, node_modules, target, and dist. Caps at 2000 files / depth 8.
-pub(crate) async fn local_workspace_files(root: String) -> Result<Vec<String>, String> {
+/// Recursively list all files under root, returning paths relative to root.
+/// Skips node_modules, target, and dist. Caps at 2000 files / depth 8.
+pub(crate) async fn local_workspace_files(
+    root: String,
+    include_hidden: bool,
+) -> Result<Vec<String>, String> {
     run_blocking(move || {
         let root_path = Path::new(&root);
         if !root_path.is_dir() {
             return Err(format!("Not a directory: {}", root));
         }
         let mut output = Vec::new();
-        walk_files(root_path, root_path, 0, &mut output).map_err(|e| e.to_string())?;
+        walk_files(root_path, root_path, 0, include_hidden, &mut output)
+            .map_err(|e| e.to_string())?;
         output.sort();
         Ok(output)
     })
     .await
 }
 
-fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> io::Result<()> {
+fn walk_files(
+    root: &Path,
+    dir: &Path,
+    depth: u8,
+    include_hidden: bool,
+    output: &mut Vec<String>,
+) -> io::Result<()> {
     if depth > 8 || output.len() >= 2000 {
         return Ok(());
     }
@@ -78,7 +90,7 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
             Ok(n) => n,
             Err(_) => continue,
         };
-        if name.starts_with('.') {
+        if name.starts_with('.') && !include_hidden {
             continue;
         }
         let file_type = match entry.file_type() {
@@ -86,10 +98,12 @@ fn walk_files(root: &Path, dir: &Path, depth: u8, output: &mut Vec<String>) -> i
             Err(_) => continue,
         };
         if file_type.is_dir() {
-            if matches!(name.as_str(), "node_modules" | "target" | "dist") {
+            // `.git` stays out even with hidden entries asked for: its object store alone would
+            // exhaust the 2000-file cap and leave no room for the files the picker exists to find.
+            if matches!(name.as_str(), "node_modules" | "target" | "dist" | ".git") {
                 continue;
             }
-            walk_files(root, &entry.path(), depth + 1, output)?;
+            walk_files(root, &entry.path(), depth + 1, include_hidden, output)?;
         } else if file_type.is_file() {
             let relative = entry
                 .path()

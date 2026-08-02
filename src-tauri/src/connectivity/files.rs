@@ -150,27 +150,39 @@ pub async fn directories(conn: &GitConnection, path: &str) -> Result<Vec<String>
     Ok(dirs)
 }
 
-/// Directories then files under `path`, each sorted, hidden entries excluded.
-pub async fn contents(conn: &GitConnection, path: &str) -> Result<Vec<FileEntry>, String> {
+/// Directories then files under `path`, each sorted.
+pub async fn contents(
+    conn: &GitConnection,
+    path: &str,
+    include_hidden: bool,
+) -> Result<Vec<FileEntry>, String> {
     if is_local(conn) {
-        return filesystem_handlers::local_contents(path.to_string()).await;
+        return filesystem_handlers::local_contents(path.to_string(), include_hidden).await;
     }
-    let (dirs, files) = parse_listing(&listing(conn, path).await?, false);
+    let (dirs, files) = parse_listing(&listing(conn, path).await?, include_hidden);
     let mut result: Vec<FileEntry> =
         dirs.into_iter().map(|name| FileEntry { name, is_dir: true }).collect();
     result.extend(files.into_iter().map(|name| FileEntry { name, is_dir: false }));
     Ok(result)
 }
 
-/// Every non-hidden file under `path`, as paths relative to it.
-pub async fn workspace_files(conn: &GitConnection, path: &str) -> Result<Vec<String>, String> {
+/// Every file under `path`, as paths relative to it.
+pub async fn workspace_files(
+    conn: &GitConnection,
+    path: &str,
+    include_hidden: bool,
+) -> Result<Vec<String>, String> {
     if is_local(conn) {
-        return filesystem_handlers::local_workspace_files(path.to_string()).await;
+        return filesystem_handlers::local_workspace_files(path.to_string(), include_hidden).await;
     }
+    // `.git` stays out even with hidden entries asked for: its object store alone would exhaust
+    // MAX_WORKSPACE_FILES and leave no room for the files the picker exists to find.
+    let hidden_pruning =
+        if include_hidden { "-not -path '*/.git/*'" } else { "-not -path '*/.*'" };
     let listing = script(
         conn,
         &format!(
-            "cd {} && find . -maxdepth 8 -type f -not -path '*/.*' -not -path '*/node_modules/*' \
+            "cd {} && find . -maxdepth 8 -type f {hidden_pruning} -not -path '*/node_modules/*' \
              -not -path '*/target/*' -not -path '*/dist/*' 2>/dev/null \
              | sed 's|^\\./||' | sort | head -{MAX_WORKSPACE_FILES}",
             shell_quote(path)
@@ -251,8 +263,9 @@ pub async fn list_contents(
     app_state: State<'_, Arc<AppState>>,
     connection: ConnectionKey,
     path: String,
+    include_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
-    contents(&connect(&app_state, connection, path.clone()).await?, &path).await
+    contents(&connect(&app_state, connection, path.clone()).await?, &path, include_hidden).await
 }
 
 #[tauri::command]
@@ -261,8 +274,10 @@ pub async fn list_workspace_files(
     app_state: State<'_, Arc<AppState>>,
     connection: ConnectionKey,
     path: String,
+    include_hidden: bool,
 ) -> Result<Vec<String>, String> {
-    workspace_files(&connect(&app_state, connection, path.clone()).await?, &path).await
+    workspace_files(&connect(&app_state, connection, path.clone()).await?, &path, include_hidden)
+        .await
 }
 
 #[tauri::command]

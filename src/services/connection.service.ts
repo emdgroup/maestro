@@ -208,10 +208,14 @@ export function useListDirectories(connectionId: number | null | undefined, path
   });
 }
 
-export function useListDirContents(connection: ConnectionKey | null | undefined, path: string) {
+export function useListDirContents(
+  connection: ConnectionKey | null | undefined,
+  path: string,
+  includeHidden = false,
+) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path],
-    queryFn: () => api.listContents(connection ?? LOCAL, path),
+    queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection, path, includeHidden],
+    queryFn: () => api.listContents(connection ?? LOCAL, path, includeHidden),
     enabled: !!path,
     staleTime: 10_000,
   });
@@ -220,15 +224,19 @@ export function useListDirContents(connection: ConnectionKey | null | undefined,
 export function useListContents(connection: ConnectionKey | null | undefined, path: string) {
   return useQuery({
     queryKey: [...connectionQueryKeys.fileBrowser(), connection, path],
-    queryFn: () => api.listContents(connection ?? LOCAL, path),
+    queryFn: () => api.listContents(connection ?? LOCAL, path, false),
     enabled: !!path,
   });
 }
 
-export function useListWorkspaceFiles(connection: ConnectionKey | null | undefined, path: string) {
+export function useListWorkspaceFiles(
+  connection: ConnectionKey | null | undefined,
+  path: string,
+  includeHidden = false,
+) {
   return useQuery({
-    queryKey: [...connectionQueryKeys.fileBrowser(), "workspace", connection, path],
-    queryFn: () => api.listWorkspaceFiles(connection ?? LOCAL, path),
+    queryKey: [...connectionQueryKeys.fileBrowser(), "workspace", connection, path, includeHidden],
+    queryFn: () => api.listWorkspaceFiles(connection ?? LOCAL, path, includeHidden),
     enabled: !!path,
     staleTime: 30_000,
   });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Files, Pin, ExternalLink, RefreshCw, FolderDown } from "lucide-react";
+import { Files, Pin, ExternalLink, RefreshCw, FolderDown, Eye, EyeOff } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -32,6 +32,7 @@ export function WorkspaceFilesPanel({
   const [selected, setSelected] = useState<string | null>(initialPath ?? null);
   const [listOpen, setListOpen] = useState(!initialPath);
   const [listPinned, setListPinned] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const openTransfer = useFileTransfer();
   const downloadTransfer = useFileTransfer();
@@ -136,6 +137,24 @@ export function WorkspaceFilesPanel({
     });
   }
 
+  const hiddenButton = (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        onClick={() => setShowHidden((v) => !v)}
+        className={cn(
+          "p-1.5 rounded-md transition-colors shrink-0",
+          showHidden
+            ? "text-foreground bg-muted/60"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+        )}
+      >
+        {showHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+      </TooltipTrigger>
+      <TooltipContent>{showHidden ? "Hide hidden files" : "Show hidden files"}</TooltipContent>
+    </Tooltip>
+  );
+
   const pinButton = (
     <Tooltip>
       <TooltipTrigger
@@ -175,6 +194,7 @@ export function WorkspaceFilesPanel({
 
   const fileListActions = (
     <>
+      {hiddenButton}
       {pinButton}
       {refreshButton}
     </>
@@ -188,6 +208,7 @@ export function WorkspaceFilesPanel({
       onSelectFile={setSelected}
       expandedFolders={expandedFolders}
       onExpandedFoldersChange={setExpandedFolders}
+      showHidden={showHidden}
       headerRight={fileListActions}
       className="flex-1 min-h-0"
     />
