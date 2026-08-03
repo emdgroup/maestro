@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 import {
   LayoutDashboard,
   Bot,
@@ -31,6 +32,23 @@ const KIND_ICON: Record<TabKind, React.ElementType> = {
   terminal: Terminal,
 };
 
+/** Width of a sliver of the neighbouring tab left visible, matching the edge fade. */
+const EDGE_PEEK = 48;
+
+/**
+ * Scroll `tab` far enough into `strip` that a peek of its neighbour stays visible,
+ * so a tab reached at the edge still reads as "there are more tabs this way".
+ * A no-op when the tab already sits clear of both edges; `scrollTo` clamps at the ends.
+ */
+function scrollTabIntoView(strip: HTMLElement, tab: HTMLElement) {
+  const stripBox = strip.getBoundingClientRect();
+  const tabBox = tab.getBoundingClientRect();
+  const pastLeft = stripBox.left + EDGE_PEEK - tabBox.left;
+  const pastRight = tabBox.right - (stripBox.right - EDGE_PEEK);
+  const delta = pastLeft > 0 ? -pastLeft : pastRight > 0 ? pastRight : 0;
+  if (delta !== 0) strip.scrollTo({ left: strip.scrollLeft + delta, behavior: "smooth" });
+}
+
 interface SidePanelTabBarProps {
   tabs: SidePanelTab[];
   activeTabId: string;
@@ -54,6 +72,12 @@ export function SidePanelTabBar({
 }: SidePanelTabBarProps) {
   const { ref: scrollRef, maskStyle } = useHorizontalScrollFade<HTMLDivElement>(tabs.length);
 
+  useEffect(() => {
+    const strip = scrollRef.current;
+    const tab = strip?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`);
+    if (strip && tab) scrollTabIntoView(strip, tab);
+  }, [activeTabId, scrollRef]);
+
   return (
     <div className="flex items-center shrink-0 bg-card px-2 py-1.5 gap-2">
       {!maximized && (
@@ -72,6 +96,12 @@ export function SidePanelTabBar({
         <div
           ref={scrollRef}
           style={maskStyle}
+          onFocus={(e) => {
+            // Keyboard focus lands a tab flush against the edge — re-scroll it with a peek.
+            const strip = scrollRef.current;
+            const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-tab-id]");
+            if (strip && tab) scrollTabIntoView(strip, tab);
+          }}
           className="flex items-center gap-1 flex-1 overflow-x-auto scrollbar-none min-w-0"
         >
           {tabs.map(({ id, kind, label, closeable }) => {
@@ -81,6 +111,7 @@ export function SidePanelTabBar({
               <button
                 key={id}
                 type="button"
+                data-tab-id={id}
                 onClick={() => onTabChange(id)}
                 className={cn(
                   "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors shrink-0 z-10",
