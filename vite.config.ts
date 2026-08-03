@@ -8,6 +8,12 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
+  // The Tauri CLI exports TAURI_ENV_DEBUG only for debug builds, so this is true
+  // for `tauri dev` and `tauri build --debug` and false for a release bundle.
+  // Inlining it means the release bundle carries no native-context-menu bypass at all.
+  define: {
+    __TAURI_DEBUG_BUILD__: JSON.stringify(process.env.TAURI_ENV_DEBUG === "true"),
+  },
   resolve: {
     // Sonner and React DOM must resolve React to this application's single
     // module instance. Without this, the macOS WebKit bundle can load a second

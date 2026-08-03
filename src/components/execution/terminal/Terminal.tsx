@@ -7,6 +7,11 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { api } from "@/lib/tauri-utils";
 import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
+import {
+  registerTerminal,
+  unregisterTerminal,
+  TERMINAL_CONTAINER_ATTRIBUTE,
+} from "@/components/common/context-menu/editCommands";
 import { useTheme } from "@/providers/ThemeProvider";
 import "@xterm/xterm/css/xterm.css";
 
@@ -53,6 +58,11 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     terminal.loadAddon(webglAddon);
 
     xtermRef.current = terminal;
+
+    // Lets AppContextMenu reach this instance: xterm owns its own selection, so
+    // the menu must use getSelection()/paste() rather than DOM clipboard commands.
+    const container = terminalRef.current;
+    registerTerminal(container, terminal);
 
     // Register resize handler BEFORE fitAddon.fit() so the initial fit
     // sends the correct dimensions to the backend PTY immediately.
@@ -126,6 +136,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      unregisterTerminal(container);
       api.detachTerminal(taskId).catch(() => {});
       terminal.dispose();
     };
@@ -141,7 +152,11 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
   return (
     <div className="pt-2 pl-2 h-full w-full">
-      <div ref={terminalRef} className="w-full h-full overflow-hidden" />
+      <div
+        ref={terminalRef}
+        {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}
+        className="w-full h-full overflow-hidden"
+      />
     </div>
   );
 }
