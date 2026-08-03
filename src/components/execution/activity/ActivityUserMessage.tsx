@@ -194,8 +194,12 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
           gap-0: the bar is part of the bubble, not a sibling block — the default gap
           would sit it further from the text than the agent side's bar. */}
       <MessageContent className="w-fit max-w-[calc(100%-2.5rem)] items-end gap-0">
+        {/* max-w-full: the bubble is sized shrink-to-fit on a flex cross axis, where
+            min-width:auto does not apply — so a table or an unbreakable token (a long
+            path, a code span) grows it past the max-width above and, being right-
+            aligned, it overflows off the left edge of the stream. */}
         <div
-          className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word"
+          className="bg-muted rounded-4xl rounded-tr-none px-3.5 py-2.5 text-sm leading-relaxed text-foreground wrap-break-word max-w-full"
           onClick={handleClick}
         >
           {hasAttachments ? (
