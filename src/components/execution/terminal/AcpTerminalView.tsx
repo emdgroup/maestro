@@ -7,6 +7,11 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
+import {
+  registerTerminal,
+  unregisterTerminal,
+  TERMINAL_CONTAINER_ATTRIBUTE,
+} from "@/components/common/context-menu/editCommands";
 import "@xterm/xterm/css/xterm.css";
 
 interface AcpTerminalViewProps {
@@ -59,6 +64,11 @@ export function AcpTerminalView({
 
     xtermRef.current = terminal;
 
+    // Lets AppContextMenu reach this instance: xterm owns its own selection, so
+    // the menu must use getSelection()/paste() rather than DOM clipboard commands.
+    const container = containerRef.current;
+    registerTerminal(container, terminal);
+
     if (initialOutput) {
       terminal.write(toTerminalOutput(initialOutput));
     }
@@ -94,6 +104,7 @@ export function AcpTerminalView({
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      unregisterTerminal(container);
       disposeOnData?.();
       unlisten.then((fn) => fn?.());
       terminal.dispose();
@@ -109,7 +120,11 @@ export function AcpTerminalView({
 
   return (
     <div className="pt-2 pl-2 h-full w-full">
-      <div ref={containerRef} className="w-full h-full overflow-hidden" />
+      <div
+        ref={containerRef}
+        {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}
+        className="w-full h-full overflow-hidden"
+      />
     </div>
   );
 }
