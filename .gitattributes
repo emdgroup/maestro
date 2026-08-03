@@ -1,0 +1,20 @@
+# Normalize every text file to LF, in the repository and in the working tree.
+#
+# Without this, Git for Windows' default `core.autocrlf=true` checks the tree
+# out as CRLF while the blobs stay LF. Any tool that then rewrites a file with
+# LF — a formatter, a bundler — leaves the on-disk size disagreeing with the
+# size Git cached at checkout, and every such file shows as modified with an
+# empty diff. Pinning eol here keeps the setting with the repository instead of
+# relying on each contributor's local config.
+#
+# There are no .bat/.cmd/.ps1 files in this tree; add an `eol=crlf` rule below
+# if one is ever introduced, since those require CRLF.
+* text=auto eol=lf
+
+# Binary assets. `text=auto` already detects these, but naming them keeps a
+# mis-detected file from being line-ending mangled.
+*.png   binary
+*.webp  binary
+*.ico   binary
+*.icns  binary
+*.ttf   binary
