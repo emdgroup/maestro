@@ -1,25 +1,31 @@
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 
 interface AnnotationComposerProps {
-  quote: string;
   onSubmit: (text: string) => void;
   onCancel: () => void;
   initialText?: string;
+  /** Drop the card shell, for a host that already draws its own frame. */
+  bare?: boolean;
 }
 
 /**
- * The plan tab's comment composer.
+ * The comment editor, for both writing a new note and editing a saved one.
  *
  * Deliberately not `InlineCommentInput`: that one is sized for a diff row and puts its actions
- * inside the same frame as the field. Here the card is the frame, the inner box holds only the
- * textarea, and the actions sit on the card's footer.
+ * inside the same frame as the field. Here the inner box holds only the textarea and the actions
+ * sit below it, so the same editor works whether or not it supplies its own card.
+ *
+ * The selected text is not repeated here — it is highlighted in the plan directly underneath,
+ * and the quote block that used to sit at the top only made the card tall enough to fall off
+ * the bottom of the pane.
  */
 export function AnnotationComposer({
-  quote,
   onSubmit,
   onCancel,
   initialText,
+  bare,
 }: AnnotationComposerProps) {
   const [text, setText] = useState(initialText ?? "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -34,13 +40,12 @@ export function AnnotationComposer({
   }
 
   return (
-    <div className="rounded-lg border border-accent/50 bg-popover shadow-xl overflow-hidden">
-      <div className="px-3 pt-2.5 pb-2">
-        <p className="text-[11px] text-muted-foreground border-l-2 border-accent pl-2 line-clamp-2">
-          {quote}
-        </p>
-      </div>
-      <div className="px-3">
+    <div
+      className={cn(
+        !bare && "rounded-lg border border-accent/50 bg-popover shadow-xl overflow-hidden",
+      )}
+    >
+      <div className={cn(!bare && "px-3 pt-3")}>
         <textarea
           ref={textareaRef}
           value={text}
@@ -54,7 +59,7 @@ export function AnnotationComposer({
           className="w-full min-h-[72px] resize-y rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none transition-colors focus:border-accent placeholder:text-muted-foreground"
         />
       </div>
-      <div className="flex items-center justify-end gap-2 px-3 py-2">
+      <div className={cn("flex items-center justify-end gap-2 pt-2", !bare && "px-3 pb-2")}>
         <span className="mr-auto text-[10px] text-muted-foreground font-mono">⌘⏎</span>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onCancel}>
           Cancel

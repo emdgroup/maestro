@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Send, Pencil, Trash2, Check, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Send, Pencil, Trash2, Check, X, ChevronUp, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Checkbox } from "@/ui/checkbox";
@@ -21,9 +22,24 @@ interface AnnotationBarProps {
   kind: Annotation["kind"];
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
+  /**
+   * Reveal the annotation at `id` in its host view. Supplying it turns the list into a
+   * navigator — rows become clickable and the header grows chevrons. Left unset by hosts with
+   * no notion of a location to travel to, which is why the diff bar looks unchanged.
+   */
+  onGoTo?: (id: string) => void;
+  /** Which annotation the host is currently showing, marked as selected in the list. */
+  activeId?: string | null;
 }
 
-export function AnnotationBar({ sessionKey, kind, onSend, sendDisabled }: AnnotationBarProps) {
+export function AnnotationBar({
+  sessionKey,
+  kind,
+  onSend,
+  sendDisabled,
+  onGoTo,
+  activeId,
+}: AnnotationBarProps) {
   const annotations = useSessionAnnotations(sessionKey, kind);
   const [open, setOpen] = useState(false);
 
@@ -59,6 +75,8 @@ export function AnnotationBar({ sessionKey, kind, onSend, sendDisabled }: Annota
             annotations={annotations}
             onSend={onSend}
             sendDisabled={sendDisabled}
+            onGoTo={onGoTo}
+            activeId={activeId}
           />
         </Popover>
       </div>
@@ -71,16 +89,28 @@ function AnnotationListPanel({
   annotations,
   onSend,
   sendDisabled,
+  onGoTo,
+  activeId,
 }: {
   sessionKey: number;
   annotations: Annotation[];
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
+  onGoTo?: (id: string) => void;
+  activeId?: string | null;
 }) {
   const { updateAnnotation, removeAnnotations } = useAnnotationStore();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const activeRowRef = useRef<HTMLDivElement>(null);
+
+  // Stepping with a chevron has to look like clicking the row, so the selection is not a second
+  // piece of state: both call `onGoTo`, the host moves `activeId`, and the row follows. All this
+  // adds is keeping that row on screen when the list is longer than the popup.
+  useEffect(() => {
+    activeRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -89,6 +119,13 @@ function AnnotationListPanel({
       else next.add(id);
       return next;
     });
+
+  const step = (delta: 1 | -1) => {
+    if (!onGoTo || annotations.length === 0) return;
+    const current = annotations.findIndex((a) => a.id === activeId);
+    const from = current >= 0 ? current : delta === 1 ? -1 : 0;
+    onGoTo(annotations[(from + delta + annotations.length) % annotations.length].id);
+  };
 
   const selectedAnnotations = annotations.filter((a) => selected.has(a.id));
 
@@ -105,17 +142,51 @@ function AnnotationListPanel({
         <span className="text-xs text-muted-foreground">
           {selected.size > 0 ? `${selected.size} selected` : `${annotations.length} annotations`}
         </span>
+        {onGoTo && annotations.length > 1 && (
+          <div className="flex items-center gap-0.5 ml-auto">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              title="Previous annotation"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => step(-1)}
+            >
+              <ChevronUp className="size-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              title="Next annotation"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => step(1)}
+            >
+              <ChevronDown className="size-3" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-border">
         {annotations.map((a) => (
-          <div key={a.id} className="flex items-start gap-2 px-3 py-2">
+          <div
+            key={a.id}
+            ref={a.id === activeId ? activeRowRef : undefined}
+            className={cn(
+              "flex items-start gap-2 px-3 py-2 transition-colors",
+              a.id === activeId && "bg-accent/12 shadow-[inset_2px_0_0] shadow-accent",
+            )}
+          >
             <Checkbox
               className="mt-0.5"
               checked={selected.has(a.id)}
               onCheckedChange={() => toggle(a.id)}
             />
-            <div className="flex-1 min-w-0">
+            {/* Only the label and text travel — the checkbox and the actions beside them keep
+                their own jobs, so clicking either must not also move the view. */}
+            <div
+              className={cn("flex-1 min-w-0", onGoTo && "cursor-pointer")}
+              onClick={onGoTo ? () => onGoTo(a.id) : undefined}
+            >
               <div className="text-[10px] font-mono text-muted-foreground truncate">
                 {annotationLabel(a)}
               </div>

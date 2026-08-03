@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { MessageSquarePlus, ChevronUp, ChevronDown } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { PendingCommentBlock } from "@/components/execution/diff/PendingCommentBlock";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
@@ -17,8 +16,8 @@ const SCROLL_MARGIN = 80;
 // only flips a shell above its anchor slightly early; under-estimating puts its footer — and the
 // buttons on it — off the bottom of the pane, where they cannot be clicked.
 const HINT_HEIGHT = 36;
-const COMPOSER_HEIGHT = 210;
-const COMMENT_HEIGHT = 96;
+const COMPOSER_HEIGHT = 172;
+const COMMENT_HEIGHT = 116;
 
 interface PlanAnnotationLayerProps {
   sessionKey: number;
@@ -181,20 +180,18 @@ export function PlanAnnotationLayer({
     [annotations, openAnnotation],
   );
 
-  /** Step to the next/previous annotation: scroll it into view and open its bubble. */
-  const navigate = useCallback(
-    (delta: 1 | -1) => {
+  /** Reveal one annotation: scroll its quote into view and open its bubble on it. */
+  const goTo = useCallback(
+    (id: string) => {
       const container = containerRef.current;
       const scroller = scrollRef.current;
-      if (!container || !scroller || annotations.length === 0) return;
+      if (!container || !scroller) return;
 
-      const current = annotations.findIndex((a) => a.id === viewingId);
-      const from = current >= 0 ? current : navIndexRef.current;
-      const next = (from + delta + annotations.length * 2) % annotations.length;
-      navIndexRef.current = next;
+      const index = annotations.findIndex((a) => a.id === id);
+      const a = annotations[index];
+      if (!a || a.kind !== "plan") return;
+      navIndexRef.current = index;
 
-      const a = annotations[next];
-      if (a.kind !== "plan") return;
       const range = rangeForQuote(container, a.quote, a.occurrence);
       if (!range) return;
 
@@ -209,7 +206,18 @@ export function PlanAnnotationLayer({
         if (settled) openAnnotation(a, settled);
       });
     },
-    [annotations, viewingId, openAnnotation],
+    [annotations, openAnnotation],
+  );
+
+  /** Step to the next/previous annotation. Wraps at both ends. */
+  const navigate = useCallback(
+    (delta: 1 | -1) => {
+      if (annotations.length === 0) return;
+      const current = annotations.findIndex((a) => a.id === viewingId);
+      const from = current >= 0 ? current : navIndexRef.current;
+      goTo(annotations[(from + delta + annotations.length * 2) % annotations.length].id);
+    },
+    [annotations, viewingId, goTo],
   );
 
   // Enter opens the composer on a fresh selection, matching the bubble's hint; Escape dismisses
@@ -261,42 +269,23 @@ export function PlanAnnotationLayer({
 
   return (
     <div className={cn("flex flex-col min-h-0", className)}>
-      <div className="flex items-center h-10 px-2 gap-2 border-b border-border bg-card/50 shrink-0">
-        <span className="text-[11px] text-muted-foreground truncate">
-          Select any text to annotate the plan
-        </span>
-        <div className="flex items-center gap-1 ml-auto shrink-0">
-          {annotations.length > 1 && (
-            <>
-              <Tooltip>
-                <TooltipTrigger
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                >
-                  <ChevronUp className="w-3.5 h-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Previous annotation</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  type="button"
-                  onClick={() => navigate(1)}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Next annotation</TooltipContent>
-              </Tooltip>
-            </>
-          )}
+      {/* One right-hand slot. The hint is an affordance rather than a status, so it sits where
+          the control that supersedes it will appear instead of being stranded opposite it. */}
+      <div className="flex items-center justify-end h-10 px-2 border-b border-border bg-card/50 shrink-0">
+        {annotations.length === 0 ? (
+          <span className="text-[11px] text-muted-foreground truncate">
+            Select any text to annotate the plan
+          </span>
+        ) : (
           <AnnotationBar
             sessionKey={sessionKey}
             kind="plan"
             onSend={onSend}
             sendDisabled={sendDisabled}
+            onGoTo={goTo}
+            activeId={viewingId}
           />
-        </div>
+        )}
       </div>
 
       <div
@@ -321,7 +310,6 @@ export function PlanAnnotationLayer({
             >
               {pending.composing ? (
                 <AnnotationComposer
-                  quote={pending.quote}
                   onSubmit={(text) => {
                     addAnnotation(sessionKey, {
                       id: crypto.randomUUID(),
@@ -371,6 +359,14 @@ export function PlanAnnotationLayer({
                     setViewingId(null);
                   }}
                   sendDisabled={sendDisabled}
+                  {...(annotations.length > 1 && {
+                    onPrev: () => navigate(-1),
+                    onNext: () => navigate(1),
+                    position: [annotations.indexOf(viewing) + 1, annotations.length] as [
+                      number,
+                      number,
+                    ],
+                  })}
                 />
               </div>
             </div>
