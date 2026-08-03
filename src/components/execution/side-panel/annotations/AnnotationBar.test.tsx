@@ -60,4 +60,27 @@ describe("AnnotationBar", () => {
     act(() => screen.getByText("Send annotations").click());
     expect(onSend).not.toHaveBeenCalled();
   });
+
+  it("reports the annotation a list row points at, and keeps the list open", () => {
+    const onGoTo = vi.fn();
+    render(<AnnotationBar sessionKey={SESSION} kind="diff" onSend={vi.fn()} onGoTo={onGoTo} />);
+    add(diff("d1", 42, "leaks"), diff("d2", 7, "why unwrap"));
+
+    act(() => screen.getByText("2").click());
+    act(() => screen.getByText("why unwrap").click());
+
+    expect(onGoTo).toHaveBeenCalledWith("d2");
+    // Navigating is not a dismissal — the other rows are still there to step through.
+    expect(screen.getByText("leaks")).toBeTruthy();
+  });
+
+  it("leaves the list inert for hosts with nowhere to navigate to", () => {
+    render(<AnnotationBar sessionKey={SESSION} kind="diff" onSend={vi.fn()} />);
+    add(diff("d1", 42, "leaks"), diff("d2", 7, "why unwrap"));
+
+    act(() => screen.getByText("2").click());
+
+    expect(screen.queryByTitle("Next annotation")).toBeNull();
+    expect(screen.queryByTitle("Previous annotation")).toBeNull();
+  });
 });

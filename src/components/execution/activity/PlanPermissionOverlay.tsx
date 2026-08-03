@@ -195,24 +195,27 @@ export function PlanPermissionOverlay({
 
   return (
     <div className="relative flex-1 flex flex-col min-h-0">
-      {/* Scrollable plan content — bottom padding clears the floating bar */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4 pb-30">
-        {bodyText && (
-          <div className="text-sm leading-relaxed text-foreground">
-            {annotations ? (
-              <PlanAnnotationLayer
-                sessionKey={annotations.sessionKey}
-                onSend={annotations.onSend}
-                sendDisabled={annotations.sendDisabled}
-              >
-                <MarkdownBlock text={bodyText} />
-              </PlanAnnotationLayer>
-            ) : (
+      {/* Scrollable plan content — bottom padding clears the floating bar. The annotation layer
+          brings its own bar and scroller, so it replaces this wrapper rather than nesting in it. */}
+      {annotations && bodyText ? (
+        <PlanAnnotationLayer
+          className="flex-1"
+          scrollClassName="px-5 pt-4 pb-30 text-sm leading-relaxed text-foreground"
+          sessionKey={annotations.sessionKey}
+          onSend={annotations.onSend}
+          sendDisabled={annotations.sendDisabled}
+        >
+          <MarkdownBlock text={bodyText} />
+        </PlanAnnotationLayer>
+      ) : (
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4 pb-30">
+          {bodyText && (
+            <div className="text-sm leading-relaxed text-foreground">
               <MarkdownBlock text={bodyText} />
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Floating glass action area */}
       <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 pt-1 pointer-events-none">
