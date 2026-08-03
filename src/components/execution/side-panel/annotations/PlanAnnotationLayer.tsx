@@ -13,6 +13,12 @@ import { setHighlightRanges, clearHighlightRanges } from "./plan-highlight";
 const SHELL_WIDTH = 400;
 /** Leave the focused annotation this far below the bar when navigating to it. */
 const SCROLL_MARGIN = 80;
+// Placement needs a height before the shell exists, so each one is approximated. Over-estimating
+// only flips a shell above its anchor slightly early; under-estimating puts its footer — and the
+// buttons on it — off the bottom of the pane, where they cannot be clicked.
+const HINT_HEIGHT = 36;
+const COMPOSER_HEIGHT = 210;
+const COMMENT_HEIGHT = 96;
 
 interface PlanAnnotationLayerProps {
   sessionKey: number;
@@ -45,9 +51,14 @@ export function PlanAnnotationLayer({
   const { addAnnotation, updateAnnotation, removeAnnotations } = useAnnotationStore();
   const instanceId = useId();
 
+  // `x`/`y` are the viewport point the shell was anchored to, kept so the composer can be
+  // re-placed when it opens: it is far taller than the hint it replaces, and a position that
+  // suited the hint can leave the composer's footer off-screen.
   const [pending, setPending] = useState<{
     quote: string;
     occurrence: number;
+    x: number;
+    y: number;
     top: number;
     left: number;
     composing: boolean;
@@ -79,17 +90,42 @@ export function PlanAnnotationLayer({
 
   useEffect(() => () => clearHighlightRanges(instanceId), [instanceId]);
 
-  /** Place a shell at a viewport point, clamped inside the content column. */
-  const place = useCallback((x: number, y: number) => {
+  /**
+   * Place a shell of `height` at a viewport point, kept inside the visible pane.
+   *
+   * Vertical placement is measured against the scroller's box, not the container's: the container
+   * is the whole plan and is taller than the window, so clamping to it would still let a shell
+   * anchored near the bottom render past the edge with its actions out of reach.
+   */
+  const place = useCallback((x: number, y: number, height: number) => {
     const container = containerRef.current;
-    if (!container) return { top: 0, left: 0 };
+    const scroller = scrollRef.current;
+    if (!container || !scroller) return { top: 0, left: 0 };
     const box = container.getBoundingClientRect();
+    const view = scroller.getBoundingClientRect();
+    const anchor = y - box.top;
+    const visTop = view.top - box.top;
+    const visBottom = view.bottom - box.top;
+
+    let top = anchor + 8;
+    if (top + height > visBottom) {
+      top = anchor - 8 - height; // flip above the anchor
+      if (top < visTop) top = Math.max(visTop, visBottom - height); // too tall either way — pin
+    }
+
     const maxLeft = Math.max(0, container.clientWidth - SHELL_WIDTH);
     return {
-      top: y - box.top + 8,
+      top,
       left: Math.min(Math.max(0, x - box.left), maxLeft),
     };
   }, []);
+
+  /** Swap the hint for the composer, re-placing it for its greater height. */
+  const openComposer = useCallback(() => {
+    setPending((prev) =>
+      prev ? { ...prev, composing: true, ...place(prev.x, prev.y, COMPOSER_HEIGHT) } : prev,
+    );
+  }, [place]);
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
@@ -104,7 +140,13 @@ export function PlanAnnotationLayer({
       // Anchored to the pointer, not to the selection's bounding box: a selection spanning several
       // lines has a box starting at the paragraph's left edge, which puts the bubble nowhere near
       // where the user let go.
-      setPending({ ...anchor, ...place(e.clientX, e.clientY), composing: false });
+      setPending({
+        ...anchor,
+        x: e.clientX,
+        y: e.clientY,
+        ...place(e.clientX, e.clientY, HINT_HEIGHT),
+        composing: false,
+      });
       setViewingId(null);
     },
     [pending?.composing, place],
@@ -113,7 +155,7 @@ export function PlanAnnotationLayer({
   const openAnnotation = useCallback(
     (annotation: Annotation, range: Range) => {
       const rect = range.getBoundingClientRect();
-      setViewPos(place(rect.left, rect.bottom));
+      setViewPos(place(rect.left, rect.bottom, COMMENT_HEIGHT));
       setViewingId(annotation.id);
       setPending(null);
     },
@@ -170,24 +212,45 @@ export function PlanAnnotationLayer({
     [annotations, viewingId, openAnnotation],
   );
 
-  // Enter opens the composer on a fresh selection, matching the bubble's hint. Capture phase with
-  // stopImmediatePropagation, because PlanPermissionOverlay also listens on window for Escape and
-  // dismissing the bubble must not answer the plan.
+  // Enter opens the composer on a fresh selection, matching the bubble's hint; Escape dismisses
+  // whichever bubble is open. Capture phase with stopImmediatePropagation, because
+  // PlanPermissionOverlay also listens on window for Escape and dismissing a bubble must not
+  // answer the plan.
+  //
+  // This has to arm for `viewing` too, not just `pending`: that overlay's own guard spares only
+  // inputs and textareas, and a reopened bubble renders its comment as a div, so Escape there
+  // used to fall through and reject the plan.
+  //
+  // Keystrokes aimed at a field are left alone, for the mirror-image reason — the composer and
+  // PendingCommentBlock's edit mode each cancel on their own Escape, and swallowing it here
+  // would close the whole bubble instead of just the edit.
   useEffect(() => {
-    if (!pending || pending.composing) return;
+    const selecting = pending !== null && !pending.composing;
+    if (!selecting && viewingId === null) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+      if (e.key === "Enter" && selecting) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        setPending((prev) => (prev ? { ...prev, composing: true } : prev));
+        openComposer();
       } else if (e.key === "Escape") {
         e.stopImmediatePropagation();
         setPending(null);
+        setViewingId(null);
       }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [pending]);
+  }, [pending, viewingId, openComposer]);
 
   const viewing = annotations.find((a) => a.id === viewingId) ?? null;
   const shellStops = {
@@ -275,7 +338,7 @@ export function PlanAnnotationLayer({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setPending({ ...pending, composing: true })}
+                  onClick={openComposer}
                   // Opaque in both states — a translucent hover shows the plan text through it.
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-accent bg-popover shadow-lg text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
                 >
