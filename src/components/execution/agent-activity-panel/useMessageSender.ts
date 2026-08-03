@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, type MutableRefObject } from "react";
+import React, { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
@@ -44,6 +44,13 @@ export function useMessageSender({
   handleSendWithTransition: (content: string, contentBlocks?: JsonValue) => void;
 } {
   const { setActivity } = useSessionActivityActions();
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cancelTimerRef.current != null) clearTimeout(cancelTimerRef.current);
+    };
+  }, []);
 
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
@@ -83,10 +90,21 @@ export function useMessageSender({
   const handleCancel = useCallback(async () => {
     try {
       await api.interruptAcpTurn(sessionKey);
+      // A cancel is only answered if the agent honours it, or if maestro-server
+      // is new enough to synthesize a TurnEnded when no turn is in flight. The
+      // deployed server binary is per project and can lag the app, and a wedged
+      // agent answers nothing at all — so keep a client-side escape hatch.
+      // Dispatching turn_ended when isTurnActive is already false is harmless.
+      if (cancelTimerRef.current != null) clearTimeout(cancelTimerRef.current);
+      cancelTimerRef.current = setTimeout(() => {
+        cancelTimerRef.current = null;
+        liveDispatch({ type: "turn_ended" });
+      }, 3000);
     } catch {
+      liveDispatch({ type: "turn_ended" });
       setActivity(sessionKey, "idle");
     }
-  }, [sessionKey, setActivity]);
+  }, [sessionKey, setActivity, liveDispatch]);
 
   const handleSendWithTransition = useCallback(
     (content: string, contentBlocks?: JsonValue) => {
