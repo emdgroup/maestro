@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
@@ -159,6 +160,11 @@ pub(crate) async fn run_command_loop(
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
 ) {
+    // Whether a `session/prompt` is genuinely outstanding. Without this the
+    // cancel handler cannot tell "agent is working" from "the host's view is
+    // stale", and answers neither — leaving the UI stuck in "thinking".
+    let turn_active = Arc::new(AtomicBool::new(false));
+
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             SessionCommand::CloseSession => {
@@ -177,16 +183,20 @@ pub(crate) async fn run_command_loop(
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
+                turn_active.store(true, Ordering::SeqCst);
+                let turn_flag = Arc::clone(&turn_active);
                 let result = cx
                     .send_request_to(
                         acp::Agent,
                         PromptRequest::new(session_id.clone(), vec![content.into()]),
                     )
                     .on_receiving_result(async move |result| {
+                        turn_flag.store(false, Ordering::SeqCst);
                         handle_prompt_result(result, sid, &so).await;
                         Ok(())
                     });
                 if result.is_err() {
+                    turn_active.store(false, Ordering::SeqCst);
                     let _ = send_response(&so_err, &MaestroRpcMessage::Response(
                         ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
@@ -205,16 +215,20 @@ pub(crate) async fn run_command_loop(
                     .into_iter()
                     .filter_map(|b| serde_json::from_value(b).ok())
                     .collect();
+                turn_active.store(true, Ordering::SeqCst);
+                let turn_flag = Arc::clone(&turn_active);
                 let result = cx
                     .send_request_to(
                         acp::Agent,
                         PromptRequest::new(session_id.clone(), content_blocks),
                     )
                     .on_receiving_result(async move |result| {
+                        turn_flag.store(false, Ordering::SeqCst);
                         handle_prompt_result(result, sid, &so).await;
                         Ok(())
                     });
                 if result.is_err() {
+                    turn_active.store(false, Ordering::SeqCst);
                     let _ = send_response(&so_err, &MaestroRpcMessage::Response(
                         ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
@@ -225,7 +239,25 @@ pub(crate) async fn run_command_loop(
                 }
             }
             SessionCommand::CancelTurn => {
-                let _ = cx.send_notification(CancelNotification::new(session_id.clone()));
+                if turn_active.load(Ordering::SeqCst) {
+                    let _ = cx.send_notification(CancelNotification::new(session_id.clone()));
+                } else {
+                    // No prompt is outstanding, so the agent has nothing to cancel and
+                    // would never answer. The host only asks because its own TurnEnded
+                    // went missing — re-send one so the UI can leave "thinking".
+                    crate::send_diag(
+                        "warn",
+                        format!("[prompt] cancel with no turn in flight session={maestro_sid} — resending TurnEnded"),
+                    );
+                    if let Err(e) = send_response(&so, &MaestroRpcMessage::Response(
+                        ServerResponse::TurnEnded(TurnEnded {
+                            session_id: maestro_sid.clone(),
+                            stop_reason: "cancelled".to_string(),
+                        }),
+                    )).await {
+                        crate::send_diag("error", format!("[prompt] failed to resend TurnEnded: {e}"));
+                    }
+                }
             }
             SessionCommand::SetModel(model_id) => {
                 let result = cx

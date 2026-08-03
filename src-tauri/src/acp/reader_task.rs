@@ -107,12 +107,19 @@ pub(crate) fn spawn_reader_task(
                 }
             }
 
+            // Moving the task to Review touches the DB and, for remote projects, runs
+            // `git rev-parse` over SSH with no timeout. Run it off the reader loop so it
+            // can never delay — or with a wedged connection, indefinitely withhold — the
+            // `acp://turn-ended` emit below that takes the UI out of "thinking".
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
                 if turn_ended.stop_reason == "end_turn" {
                     if let Some(tid) = task_id {
-                        if try_complete_task(&app_state, tid).await {
-                            app_state.app_handle.emit("tasks-changed", ()).ok();
-                        }
+                        let state = Arc::clone(&app_state);
+                        tokio::spawn(async move {
+                            if try_complete_task(&state, tid).await {
+                                state.app_handle.emit("tasks-changed", ()).ok();
+                            }
+                        });
                     }
                 }
             }
@@ -759,12 +766,18 @@ async fn handle_shared_server_message(
                 }
             }
 
+            // Off the reader loop — see the matching comment in `spawn_reader_task`. This
+            // path is worse: the shared reader serves every session on the connection, so
+            // one task's hung `git rev-parse` would stall turn-ended for all of them.
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
                 if turn_ended.stop_reason == "end_turn" {
                     if let Some(tid) = task_id {
-                        if try_complete_task(app_state, tid).await {
-                            app_state.app_handle.emit("tasks-changed", ()).ok();
-                        }
+                        let state = Arc::clone(app_state);
+                        tokio::spawn(async move {
+                            if try_complete_task(&state, tid).await {
+                                state.app_handle.emit("tasks-changed", ()).ok();
+                            }
+                        });
                     }
                 }
             }
@@ -856,6 +869,20 @@ async fn handle_shared_server_message(
                 app_state.acp.sessions.lock().await.remove(&log_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
+                }
+            }
+        } else {
+            // The session left the map between the agent answering and us handling the
+            // reply — cleanup, a failed write rollback, a concurrent close. Everything
+            // above needs the caches, but turn-ended does not: dropping it here is what
+            // strands the UI in "thinking", so emit it anyway.
+            log::warn!("[acp] no session entry for log_id={log_id} while handling agent reply");
+            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
+                if let Err(e) = app_handle.emit(
+                    &format!("acp://turn-ended/{}", log_id),
+                    &turn_ended.stop_reason,
+                ) {
+                    log::warn!("[acp] emit turn-ended/{log_id} failed: {e}");
                 }
             }
         }
