@@ -346,8 +346,9 @@ export function PlanAnnotationLayer({
               style={{ top: viewPos.top, left: viewPos.left, width: SHELL_WIDTH }}
               {...shellStops}
             >
-              <div className="rounded-lg border border-accent/50 bg-popover shadow-xl">
+              <div className="rounded-lg border border-accent/50 bg-popover shadow-xl overflow-hidden">
                 <PendingCommentBlock
+                  bare
                   text={viewing.text}
                   onEdit={(text) => updateAnnotation(sessionKey, viewing.id, text)}
                   onRemove={() => {
