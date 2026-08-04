@@ -13,25 +13,24 @@ fn label_for(conn: &GitConnection) -> &'static str {
     }
 }
 
-/// Options every `git` invocation on this connection needs, before any subcommand.
+/// Options every `git` invocation on this target needs, before any subcommand.
 ///
-/// Only WSL gets any: it has a certificate store separate from Windows' and so cannot validate
-/// the certs of internal servers the host trusts. Containers verify normally — do not extend
-/// this to them.
-pub fn git_prefix_args(conn: &GitConnection) -> &'static [&'static str] {
-    match conn {
-        GitConnection::Wsl { .. } => &["-c", "http.sslVerify=false"],
+/// WSL has a certificate store separate from Windows' and so cannot validate the certs of
+/// internal servers the host trusts. Containers verify normally — do not extend that to them.
+///
+/// A Windows host needs `core.longpaths`: without it git uses the ANSI path APIs and gives up
+/// past 260 characters, which a worktree holding `node_modules` or `target` passes easily.
+pub fn git_prefix_args(target: &ExecTarget<'_>) -> &'static [&'static str] {
+    match target {
+        ExecTarget::Wsl { .. } => &["-c", "http.sslVerify=false"],
+        ExecTarget::Local if cfg!(windows) => &["-c", "core.longpaths=true"],
         _ => &[],
     }
 }
 
 /// `git` and its arguments for a repository, as argv.
-fn git_args<'a>(path: &'a str, args: &[&'a str], skip_ssl_verify: bool) -> Vec<&'a str> {
-    let mut argv = if skip_ssl_verify {
-        vec!["-c", "http.sslVerify=false"]
-    } else {
-        Vec::new()
-    };
+fn git_args<'a>(path: &'a str, args: &[&'a str], prefix: &'static [&'static str]) -> Vec<&'a str> {
+    let mut argv = prefix.to_vec();
     argv.extend_from_slice(&["-C", path]);
     argv.extend_from_slice(args);
     argv
@@ -45,7 +44,7 @@ async fn run_git_on(
     ignore_exit_code: bool,
     stdin: Option<&[u8]>,
 ) -> Result<String, String> {
-    let argv = git_args(path, args, matches!(target, ExecTarget::Wsl { .. }));
+    let argv = git_args(path, args, git_prefix_args(target));
     let output = exec_channel::run_with_stdin(
         target,
         None,

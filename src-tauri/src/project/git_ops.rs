@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 use crate::core::AppState;
 use crate::acp::ConnectionKey;
-use crate::connectivity::exec_channel::run_on;
+use crate::connectivity::exec_channel::{run_on, ExecTarget};
 use crate::connectivity::files;
 use crate::git::exec::git_prefix_args;
 use crate::models::GitConnection;
@@ -23,7 +23,7 @@ async fn connection_at(
 
 /// Run `git <prefix> <args>` on a connection, returning stderr on failure.
 async fn git(conn: &GitConnection, args: &[&str], what: &str) -> Result<(), String> {
-    let mut argv = git_prefix_args(conn).to_vec();
+    let mut argv = git_prefix_args(&ExecTarget::of(conn)).to_vec();
     argv.extend_from_slice(args);
     let output = run_on(conn, None, "git", &argv).await?;
     if output.success() {
@@ -54,7 +54,7 @@ pub async fn git_init_project(
 /// `git rev-parse --is-inside-work-tree` detects both repository roots and subdirectories of one,
 /// which a `.git` existence check does not.
 async fn inside_work_tree(conn: &GitConnection, path: &str) -> bool {
-    let mut argv = git_prefix_args(conn).to_vec();
+    let mut argv = git_prefix_args(&ExecTarget::of(conn)).to_vec();
     argv.extend_from_slice(&["-C", path, "rev-parse", "--is-inside-work-tree"]);
     // A transport error or a host with no git installed both mean "not a repository" here.
     run_on(conn, None, "git", &argv).await.map(|out| out.success()).unwrap_or(false)
