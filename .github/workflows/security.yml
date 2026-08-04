@@ -41,14 +41,22 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # These four advisories reach only dev and build tooling — wdio, the
-      # shadcn CLI, commitlint, and vite's postcss — and none of them ship in
-      # the bundle. `bun audit` has no --omit=dev, so they are listed here
-      # rather than filtered out. Drop entries as dependency bumps clear
-      # them; that belongs in a dependency PR, not a CI one.
+      # These five advisories reach only dev and build tooling — wdio, the
+      # shadcn CLI, and vite's postcss — and none of them ship in the bundle.
+      # `bun audit` has no --omit=dev, so they are listed here rather than
+      # filtered out. Drop entries as dependency bumps clear them; that
+      # belongs in a dependency PR, not a CI one.
+      #
+      # The fast-uri and ip-address advisories are gone instead of listed:
+      # only one major of each is in the tree, so package.json pins the
+      # patched version outright. brace-expansion and undici cannot be
+      # handled that way — the tree holds several majors of each (1.x, 2.x
+      # and 5.x; 6.x and 7.x) and bun applies an override to every instance
+      # of a name, so pinning would drag the other consumers across a major.
       - run: |
           bun audit --audit-level=high \
             --ignore GHSA-5c6j-r48x-rmvq \
-            --ignore GHSA-v2hh-gcrm-f6hx \
             --ignore GHSA-mh99-v99m-4gvg \
-            --ignore GHSA-r28c-9q8g-f849
+            --ignore GHSA-rgw5-rvv9-x895 \
+            --ignore GHSA-r28c-9q8g-f849 \
+            --ignore GHSA-4cwx-7wf7-3272
