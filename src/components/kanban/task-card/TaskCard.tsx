@@ -1,10 +1,14 @@
-import { useRef, useEffect, useMemo, useState, CSSProperties } from "react";
-import { Task, TaskStatus } from "@/types/bindings";
+import { useRef, useEffect, useState } from "react";
+import { Task, TaskStatus, TaskPhase, PhaseStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { Button } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
-import { useInterruptTaskMutation, useArchiveTaskMutation } from "@/services/task.service";
+import {
+  useInterruptTaskMutation,
+  useArchiveTaskMutation,
+  useSendTaskToReviewMutation,
+} from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
@@ -34,7 +38,6 @@ import { cn } from "@/lib/utils.ts";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";
-import { colors } from "@/components/kanban/kanban-column/KanbanColumn.tsx";
 
 interface TaskCardProps {
   task: Task;
@@ -49,6 +52,49 @@ function AgentAvatar({ agentId }: { agentId: string }) {
     </div>
   ) : (
     <span className="text-[8px] font-bold text-muted-foreground uppercase">{agentId}</span>
+  );
+}
+
+const PHASE_LABELS: Record<TaskPhase, string> = {
+  Refining: "Refining",
+  PlanReview: "Plan review",
+  Implementing: "Implementing",
+  Rework: "Rework",
+  SelfReview: "Self review",
+  Approval: "Approval",
+};
+
+/// Three intensities, keyed on `phase_status`. Only `Blocked` animates: it is the one case where
+/// an agent is stopped dead waiting on the user. Spreading the pulse across every card the user
+/// owns — including a review gate untouched for days — is what would turn it into wallpaper.
+///
+/// These read apart only because the card's own border is neutral; they each take over the border
+/// rather than sitting outside a coloured one.
+const PHASE_STATUS_RING: Partial<Record<PhaseStatus, string>> = {
+  Blocked: "animate-glow-warning border-warning",
+  Waiting: "border-accent ring-1 ring-accent/40",
+  Failed: "border-destructive ring-1 ring-destructive/40",
+};
+
+function PhaseLine({ task }: { task: Task }) {
+  if (!task.phase) return null;
+  const failed = task.phase_status === "Failed";
+  return (
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span
+        className={cn(
+          "font-bold shrink-0 uppercase tracking-wide",
+          failed
+            ? "text-destructive"
+            : task.ball === "User"
+              ? "text-accent"
+              : "text-muted-foreground",
+        )}
+      >
+        {PHASE_LABELS[task.phase]}
+        {failed && " · failed"}
+      </span>
+    </div>
   );
 }
 
@@ -116,6 +162,8 @@ interface FooterCTAsProps {
   isExecuting: boolean;
   isAuthRequired: boolean;
   isRecovering: boolean;
+  isStuck: boolean;
+  isSendingToReview: boolean;
   onExecute: () => void;
   onStop: () => void;
   onJoin: () => void;
@@ -123,6 +171,7 @@ interface FooterCTAsProps {
   onArchive: () => void;
   onLogin: () => void;
   onRecover: () => void;
+  onSendToReview: () => void;
 }
 
 function FooterCTAs({
@@ -132,6 +181,8 @@ function FooterCTAs({
   isExecuting,
   isAuthRequired,
   isRecovering,
+  isStuck,
+  isSendingToReview,
   onExecute,
   onStop,
   onJoin,
@@ -139,6 +190,7 @@ function FooterCTAs({
   onArchive,
   onLogin,
   onRecover,
+  onSendToReview,
 }: FooterCTAsProps) {
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
@@ -175,22 +227,48 @@ function FooterCTAs({
   }
 
   if (task.status === "InProgress") {
+    // Only offered when the pipeline is stuck — the agent is waiting, blocked or has failed.
+    // While it is genuinely working there is nothing to send on yet. Declared before the early
+    // returns below because a dead session is exactly when this is needed: the work may well be
+    // finished and only the session gone.
+    const sendToReview = isStuck && (
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          onSendToReview();
+        }}
+        disabled={isSendingToReview}
+        variant="ghost"
+        className={cn(base, "h-auto")}
+        title="Move this task to review without waiting for the agent to finish"
+      >
+        <GitPullRequest className="w-2.5 h-2.5" />
+        Review
+      </Button>
+    );
+
     if (sessionLostStable) {
       return (
         <div className="flex flex-col gap-1 mt-1.5">
-          <p className="text-[10px] font-bold text-destructive text-center">Session lost</p>
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRecover();
-            }}
-            disabled={isRecovering}
-            variant="ghost"
-            className={cn(base, "h-auto")}
-          >
-            <RefreshCw className="w-2.5 h-2.5" />
-            {isRecovering ? "Recovering…" : "Recover"}
-          </Button>
+          {/* When the phase already says it failed, this line would just say it again. */}
+          {task.phase_status !== "Failed" && (
+            <p className="text-[10px] font-bold text-destructive text-center">Session lost</p>
+          )}
+          <div className="flex gap-1">
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRecover();
+              }}
+              disabled={isRecovering}
+              variant="ghost"
+              className={cn(base, "h-auto")}
+            >
+              <RefreshCw className="w-2.5 h-2.5" />
+              {isRecovering ? "Recovering…" : "Recover"}
+            </Button>
+            {sendToReview}
+          </div>
         </div>
       );
     }
@@ -225,6 +303,7 @@ function FooterCTAs({
             <MessageSquare className="w-2.5 h-2.5 fill-current" />
             Respond
           </Button>
+          {sendToReview}
         </div>
       );
     }
@@ -254,6 +333,7 @@ function FooterCTAs({
             Join
           </Button>
         )}
+        {sendToReview}
       </div>
     );
   }
@@ -329,6 +409,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     onDirtyCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const interruptTask = useInterruptTaskMutation();
+  const sendToReview = useSendTaskToReviewMutation();
   const archiveTask = useArchiveTaskMutation();
   const recoverSession = useRecoverTaskSessionMutation();
   const activeSession = useTaskActiveSession(
@@ -336,8 +417,9 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     projectId,
   );
   const activityInfo = useSessionActivity(activeSession?.session_key);
-  const activityStatus = activityInfo?.status ?? null;
-  const isAwaiting = task.status === "InProgress" && activityStatus === "awaiting_input";
+  // Read from the task rather than from live session activity, so it survives a reload. The
+  // activity line below stays live: it is finer-grained than the phase and still worth having.
+  const isAwaiting = task.phase_status === "Blocked";
 
   useEffect(() => {
     if (pendingAuthRetry !== task.id) return;
@@ -372,25 +454,21 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     }
   }, [isDragging]);
 
-  const cardColor = useMemo((): string => {
-    return colors[task.status];
-  }, [task.status]);
-
   const hasOptions = task.priority !== "None" || task.isolated_worktree || task.auto_approve;
 
   return (
     <>
       <div
         ref={ref}
-        style={
-          {
-            "--card-color": cardColor,
-          } as CSSProperties
-        }
+        // The border is deliberately neutral. It used to repeat the column's own colour, which
+        // said nothing the card's position did not already say, and it spent the one piece of
+        // colour the card has: with an amber border in an amber column, an amber "waiting" ring
+        // and an amber "blocked" glow were indistinguishable from each other and from the card
+        // itself. Status is the column; the border belongs to the pipeline state.
         className={cn(
-          "rounded-lg border p-2.5 mb-2 flex flex-col transition-all border-(--card-color)",
+          "rounded-lg border border-border p-2.5 mb-2 flex flex-col transition-all",
           "hover:shadow-md",
-          isAwaiting && "animate-glow-warning",
+          task.phase_status && PHASE_STATUS_RING[task.phase_status],
           isDragging && "opacity-30 border-dashed",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         )}
@@ -419,6 +497,9 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         <p className="text-[12px] font-semibold text-card-foreground line-clamp-2 mb-1.5">
           {task.title}
         </p>
+
+        {/* Pipeline phase — persisted, so it renders with or without a live session */}
+        <PhaseLine task={task} />
 
         {/* Activity line — InProgress with active session only */}
         {task.status === "InProgress" && activeSession && (
@@ -469,6 +550,12 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           isExecuting={isExecuting}
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}
+          isStuck={
+            task.phase_status === "Waiting" ||
+            task.phase_status === "Blocked" ||
+            task.phase_status === "Failed"
+          }
+          isSendingToReview={sendToReview.isPending}
           onExecute={() => void handleExecute(task)}
           onStop={() => interruptTask.mutate(task.id)}
           onJoin={() => navigate({ agentId: String(task.id) })}
@@ -476,6 +563,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           onArchive={() => archiveTask.mutate(task.id)}
           onLogin={() => setIsAuthModalOpen(true)}
           onRecover={() => recoverSession.mutate({ taskId: task.id, projectId })}
+          onSendToReview={() => sendToReview.mutate(task.id)}
         />
       </div>
       {authRequired && (

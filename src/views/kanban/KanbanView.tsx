@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { Plus, Archive, Search } from "lucide-react";
+import { Plus, Archive, Search, BellDot } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -36,6 +36,7 @@ export const KanbanView: React.FC = () => {
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [needsMeOnly, setNeedsMeOnly] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -53,13 +54,18 @@ export const KanbanView: React.FC = () => {
     [taskList],
   );
 
+  // `ball` is "who is the pipeline blocked on", not "who owns this", so a Planning backlog and
+  // queued tasks are excluded by design — otherwise the count would be the size of the board.
+  const needsMeCount = useMemo(() => taskList.filter((t) => t.ball === "User").length, [taskList]);
+
   const filteredTasks = taskList.filter((t) => {
     const matchesQuery = query === "" || t.title.toLowerCase().includes(query.toLowerCase());
     const matchesPriority =
       selectedPriorities.length === 0 || selectedPriorities.includes(t.priority);
     const matchesLabel =
       selectedLabels.length === 0 || selectedLabels.some((l) => t.labels.includes(l));
-    return matchesQuery && matchesPriority && matchesLabel;
+    const matchesNeedsMe = !needsMeOnly || t.ball === "User";
+    return matchesQuery && matchesPriority && matchesLabel && matchesNeedsMe;
   });
 
   const reviewTask =
@@ -177,6 +183,18 @@ export const KanbanView: React.FC = () => {
             </div>
           </PopoverContent>
         </Popover>
+
+        <Button
+          size="sm"
+          variant={needsMeOnly ? "accent" : "outline"}
+          onClick={() => setNeedsMeOnly((v) => !v)}
+          disabled={needsMeCount === 0 && !needsMeOnly}
+          title="Show only tasks the pipeline is waiting on you for"
+        >
+          <BellDot className="size-4" />
+          Needs me
+          {needsMeCount > 0 && <Badge variant="secondary">{needsMeCount}</Badge>}
+        </Button>
 
         <Button size="sm" variant="outline" onClick={() => setIsArchiveModalOpen(true)}>
           <Archive className="size-4" />

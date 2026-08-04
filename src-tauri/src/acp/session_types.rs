@@ -1,6 +1,6 @@
 //! Core ACP session and transport data types.
 
-use crate::acp::canvas::{CanvasFenceExtractor, PreambleFilterState};
+use crate::acp::canvas::CanvasFenceExtractor;
 use crate::acp::transport::{
     CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse, ToolCheckResult,
 };
@@ -212,13 +212,15 @@ pub struct AcpProcess {
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    /// State machine used to strip the old rendering preamble from streamed
-    /// `user_message_chunk` events during session replay. Nothing injects a preamble any more;
-    /// this only matters for sessions that predate the `maestro-output` skill.
-    pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
     /// Extracts `maestro-canvas` code fences from `agent_message_chunk` text and emits
     /// them as synthetic canvas session updates.
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+    /// Strips the completion marker from `agent_message_chunk` text and reports when the agent
+    /// declares the task done.
+    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
+    /// Set when the agent emits the completion marker. Read and reset on each turn ending, so it
+    /// only applies to the turn it appeared in.
+    pub declared_complete: Arc<AtomicBool>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -282,8 +284,9 @@ pub struct ReaderTaskContext {
     pub acp_session_id_cache: Arc<std::sync::Mutex<Option<String>>>,
     pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    pub preamble_filter: Arc<std::sync::Mutex<PreambleFilterState>>,
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+    pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
+    pub declared_complete: Arc<AtomicBool>,
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
@@ -308,8 +311,11 @@ impl AcpProcess {
             None
         }));
         let initialized = Arc::new(std::sync::Mutex::new(false));
-        let preamble_filter = Arc::new(std::sync::Mutex::new(PreambleFilterState::Watching));
         let canvas_extractor = Arc::new(std::sync::Mutex::new(CanvasFenceExtractor::new()));
+        let completion_filter = Arc::new(std::sync::Mutex::new(
+            super::completion::CompletionMarkerFilter::new(),
+        ));
+        let declared_complete = Arc::new(AtomicBool::new(false));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,
@@ -321,8 +327,9 @@ impl AcpProcess {
             acp_session_id_cache: Arc::clone(&acp_session_id),
             replay_buffer: Arc::clone(&replay_buffer),
             initialized: Arc::clone(&initialized),
-            preamble_filter: Arc::clone(&preamble_filter),
             canvas_extractor: Arc::clone(&canvas_extractor),
+            completion_filter: Arc::clone(&completion_filter),
+            declared_complete: Arc::clone(&declared_complete),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
@@ -349,8 +356,9 @@ impl AcpProcess {
             acp_session_id,
             replay_buffer,
             initialized,
-            preamble_filter,
             canvas_extractor,
+            completion_filter,
+            declared_complete,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
             prompt_capabilities: None,

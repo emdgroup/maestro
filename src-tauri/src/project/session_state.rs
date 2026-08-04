@@ -175,7 +175,9 @@ pub(crate) fn spawn_session_restores(
     for snapshot in snapshots {
         let app_state = Arc::clone(&app_state);
         tokio::spawn(async move {
-            let _ = crate::acp::session_handlers::restore_acp_session(
+            let task_id = snapshot.task_id;
+            let session_name = snapshot.session_name.clone().unwrap_or_else(|| "unnamed".into());
+            let restored = crate::acp::session_handlers::restore_acp_session(
                 &app_state,
                 snapshot.agent_id,
                 snapshot.acp_session_id,
@@ -186,6 +188,31 @@ pub(crate) fn spawn_session_restores(
                 snapshot.branch_name,
                 snapshot.task_id,
             ).await;
+
+            // A restore that cannot succeed — agent uninstalled, worktree deleted, auth expired,
+            // remote host unreachable — used to be discarded, leaving the task claiming an agent
+            // was working on it behind a session that would never exist. `fail_if_agent_running`
+            // only touches a phase still marked Running or Blocked, so a task the user moved on
+            // in the meantime is left alone.
+            if let Err(e) = restored {
+                log::warn!("[acp] could not restore session '{}': {}", session_name, e);
+                let Some(task_id) = task_id else { return };
+                let failed = match app_state.db.lock() {
+                    Ok(conn) => crate::task::transition::fail_if_agent_running(&conn, task_id)
+                        .unwrap_or_else(|e| {
+                            log::warn!("[acp] could not fail task {}: {}", task_id, e);
+                            None
+                        }),
+                    Err(e) => {
+                        log::warn!("[acp] lock failed while failing task {}: {}", task_id, e);
+                        None
+                    }
+                };
+                if failed.is_some() {
+                    use tauri::Emitter;
+                    app_state.app_handle.emit("tasks-changed", ()).ok();
+                }
+            }
         });
     }
 }

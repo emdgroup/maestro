@@ -6,7 +6,7 @@ import { slugifyName } from "@/lib/generateSessionName";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
-import { useUpdateTask } from "@/services/task.service";
+import { useMarkTaskExecutionStartedMutation } from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
@@ -17,6 +17,16 @@ interface DirtyState {
   resolve: (choice: DirtyChoice | "cancel") => void;
 }
 
+/// Tells the agent how to signal that the task is finished.
+///
+/// Without it the board can only guess from whether the repository changed, which misreads an
+/// agent that edits some files and then stops to ask a question. Kept to a single line at the end
+/// of the prompt: it is short enough to read as an instruction rather than noise, and the agent's
+/// own marker is stripped from its reply by `acp/completion.rs` so the transcript stays clean.
+const COMPLETION_PROTOCOL =
+  "When the task is complete and needs no further work, end your final message with `<maestro-task-complete/>` — " +
+  "it moves the task to review, so omit it if you are asking a question or reporting a blocker.";
+
 export function useExecuteTask(
   projectId: number | null,
   projectPath: string,
@@ -25,7 +35,7 @@ export function useExecuteTask(
   const defaultAgent = useDefaultAgent();
   const { resolveWorktree } = useResolveWorktree();
   const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
-  const updateTask = useUpdateTask();
+  const markExecutionStarted = useMarkTaskExecutionStartedMutation();
   const [isExecuting, setIsExecuting] = useState(false);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
@@ -171,7 +181,7 @@ export function useExecuteTask(
       const promptText = task.description
         ? `# ${task.title}\n\n${task.description}`
         : `# ${task.title}`;
-      contentBlocks.push({ type: "text", text: promptText });
+      contentBlocks.push({ type: "text", text: `${promptText}\n\n---\n${COMPLETION_PROTOCOL}` });
 
       if (attachments.length > 0) {
         const files = attachments.map((a) => ({ path: a.file_path, is_image: false }));
@@ -219,8 +229,9 @@ export function useExecuteTask(
       // Clear review from DB after successful injection to prevent re-injection on next cold start
       api.clearTaskReview(task.id).catch(() => {});
 
-      // Transition task to InProgress
-      await updateTask.mutateAsync({ taskId: task.id, updates: { status: "InProgress" } });
+      // Not a status write: an agent starting is its own event, and only that event puts the card
+      // into Implementing/Running with the ball on the agent.
+      await markExecutionStarted.mutateAsync(task.id);
 
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {

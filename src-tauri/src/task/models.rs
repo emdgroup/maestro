@@ -9,14 +9,14 @@ use std::str::FromStr;
 /// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
 /// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
-/// execution_start_sha(24)
+/// execution_start_sha(24), phase(25), phase_status(26), ball(27)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
-     execution_start_sha FROM tasks";
+     execution_start_sha, phase, phase_status, ball FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -59,6 +59,15 @@ pub struct Task {
     pub permission_mode_override: Option<String>,
     #[specta(optional)]
     pub execution_start_sha: Option<String>,
+    /// Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
+    /// what is happening inside it. `None` means no pipeline activity, in which case
+    /// `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
+    /// `task::transition`, never by ad-hoc SQL.
+    #[specta(optional)]
+    pub phase: Option<TaskPhase>,
+    #[specta(optional)]
+    pub phase_status: Option<PhaseStatus>,
+    pub ball: TaskBall,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -162,6 +171,13 @@ impl Task {
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
             execution_start_sha: row.get(24)?,
+            phase: row.get::<_, Option<String>>(25)?.and_then(|s| s.parse().ok()),
+            phase_status: row.get::<_, Option<String>>(26)?.and_then(|s| s.parse().ok()),
+            ball: row
+                .get::<_, String>(27)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(TaskBall::None),
         })
     }
 }
@@ -176,7 +192,8 @@ pub struct CreateTaskRequest {
     pub skills: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+// Copy/PartialEq so the transition table can compare and pass statuses by value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskStatus {
@@ -186,6 +203,146 @@ pub enum TaskStatus {
     Review,
     Done,
     Cancelled,
+}
+
+/// What the pipeline is doing to a task right now, independent of which column it sits in.
+///
+/// `Refining`, `PlanReview` and `SelfReview` are defined but inert: no transition produces them
+/// until the refiner, planner and reviewer roles land. They exist now so adding those roles does
+/// not need a second migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskPhase {
+    Refining,
+    PlanReview,
+    Implementing,
+    Rework,
+    SelfReview,
+    Approval,
+}
+
+/// How the current phase is going.
+///
+/// `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
+/// is an agent stopped mid-phase that cannot continue without an answer, and drives the animated
+/// card treatment. `Waiting` is a gate with nothing running, and is static. Collapsing the two
+/// would make every waiting card pulse and turn the animation into wallpaper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum PhaseStatus {
+    Running,
+    Blocked,
+    Waiting,
+    Failed,
+}
+
+/// Who the pipeline is blocked on — not who owns the ticket.
+///
+/// A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
+/// what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskBall {
+    Agent,
+    User,
+    None,
+}
+
+// Unlike TaskStatus and TaskPriority above, these three reject unknown input rather than falling
+// back to a default. `from_row` reads phase and phase_status into an Option and discards the
+// error, so a stray value becomes "no phase" instead of silently claiming to be a real one; a
+// fallback variant would invent activity that never happened.
+impl FromStr for TaskPhase {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Refining" => Ok(TaskPhase::Refining),
+            "PlanReview" => Ok(TaskPhase::PlanReview),
+            "Implementing" => Ok(TaskPhase::Implementing),
+            "Rework" => Ok(TaskPhase::Rework),
+            "SelfReview" => Ok(TaskPhase::SelfReview),
+            "Approval" => Ok(TaskPhase::Approval),
+            other => Err(format!("Unknown task phase: {}", other)),
+        }
+    }
+}
+
+impl FromStr for PhaseStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Running" => Ok(PhaseStatus::Running),
+            "Blocked" => Ok(PhaseStatus::Blocked),
+            "Waiting" => Ok(PhaseStatus::Waiting),
+            "Failed" => Ok(PhaseStatus::Failed),
+            other => Err(format!("Unknown phase status: {}", other)),
+        }
+    }
+}
+
+impl FromStr for TaskBall {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Agent" => Ok(TaskBall::Agent),
+            "User" => Ok(TaskBall::User),
+            "None" => Ok(TaskBall::None),
+            other => Err(format!("Unknown task ball: {}", other)),
+        }
+    }
+}
+
+impl TaskPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskPhase::Refining => "Refining",
+            TaskPhase::PlanReview => "PlanReview",
+            TaskPhase::Implementing => "Implementing",
+            TaskPhase::Rework => "Rework",
+            TaskPhase::SelfReview => "SelfReview",
+            TaskPhase::Approval => "Approval",
+        }
+    }
+}
+
+impl PhaseStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PhaseStatus::Running => "Running",
+            PhaseStatus::Blocked => "Blocked",
+            PhaseStatus::Waiting => "Waiting",
+            PhaseStatus::Failed => "Failed",
+        }
+    }
+}
+
+impl TaskBall {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskBall::Agent => "Agent",
+            TaskBall::User => "User",
+            TaskBall::None => "None",
+        }
+    }
+}
+
+impl TaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskStatus::Planning => "Planning",
+            TaskStatus::Queue => "Queue",
+            TaskStatus::InProgress => "InProgress",
+            TaskStatus::Review => "Review",
+            TaskStatus::Done => "Done",
+            TaskStatus::Cancelled => "Cancelled",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

@@ -197,6 +197,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::delete_task_attachment,
             crate::ipc::proxy_image,
             crate::ipc::interrupt_task,
+            crate::ipc::send_task_to_review,
+            crate::ipc::mark_task_execution_started,
             // Task detail screen (Phase 62)
             crate::ipc::cancel_task,
             // ACP authentication

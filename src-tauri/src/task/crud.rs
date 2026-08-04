@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use chrono::Utc;
-use crate::models::{Task, TASK_SELECT};
+use crate::models::{Task, TaskStatus, TASK_SELECT};
 use crate::core::AppState;
+use crate::task::transition::{self, TaskTransition};
 
 /// Get list of all tasks for a project
 #[tauri::command]
@@ -155,10 +156,6 @@ pub fn update_task(
     let mut set_parts: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(ref v) = updates.status {
-        set_parts.push("status = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
     if let Some(ref v) = updates.description {
         set_parts.push("description = ?".to_string());
         params.push(Box::new(v.clone()));
@@ -212,6 +209,18 @@ pub fn update_task(
     tx.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
 
+    // Status is deliberately not part of the dynamic SET above: moving a task also resets its
+    // pipeline activity, and that correlation belongs in one place.
+    if let Some(ref status) = updates.status {
+        // `TaskStatus::from_str` falls back to Planning rather than failing, so a typo arriving
+        // over IPC would quietly move the task instead of being rejected. Round-trip to catch it.
+        let parsed = status.parse::<TaskStatus>().unwrap_or(TaskStatus::Planning);
+        if parsed.as_str() != status {
+            return Err(format!("Unknown task status '{}'", status));
+        }
+        transition::apply(&tx, task_id, TaskTransition::ManualMove(parsed))?;
+    }
+
     // Read back inside the same transaction before committing — avoids re-locking the mutex
     let query = format!("{} WHERE id = ?", TASK_SELECT);
     let task = tx.query_row(&query, [task_id], Task::from_row)
@@ -233,15 +242,14 @@ pub fn cancel_task(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
+    // Archive first so the transition's read-back returns the finished row.
     conn.execute(
-        "UPDATE tasks SET status = 'Cancelled', archived_at = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, &now, task_id],
+        "UPDATE tasks SET archived_at = ? WHERE id = ?",
+        rusqlite::params![&now, task_id],
     )
     .map_err(|e| e.to_string())?;
 
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())?;
+    let task = transition::apply(&conn, task_id, TaskTransition::Cancelled)?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }

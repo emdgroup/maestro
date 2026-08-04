@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use chrono::Utc;
 use crate::core::AppState;
 
 /// List git branches and the current branch for a project
@@ -108,15 +107,66 @@ pub async fn interrupt_task(
     // All async work is done — acquire sync DB mutex now to update task status.
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "UPDATE tasks SET status = 'Planning', updated_at = ? WHERE id = ?",
-            rusqlite::params![&now, task_id],
-        )
-        .map_err(|e| e.to_string())?;
+        crate::task::transition::apply(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::Stopped,
+        )?;
     }
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
+}
+
+/// Move a task on to review by hand, applying the same transition the agent's own completion
+/// would.
+///
+/// The escape hatch for when neither signal fires: an agent that ignores the completion marker
+/// and produced no diff — an investigation or a question answered in prose — would otherwise have
+/// no way out of In Progress except being dragged back to Planning, losing its pipeline state.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_task_to_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<crate::models::Task, String> {
+    let is_git_repo = crate::acp::reader_task::is_task_project_git_repo(&app_state, task_id).await;
+
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::transition::apply(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::TurnCompleted { is_git_repo },
+        )?
+    };
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+/// Records that an agent has begun working on a task.
+///
+/// The execute flow used to reach In Progress by writing `status` through `update_task`, which
+/// applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
+/// phase status, ball on nobody, so a card sat through its entire run looking idle and never
+/// reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+#[tauri::command]
+#[specta::specta]
+pub fn mark_task_execution_started(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<crate::models::Task, String> {
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::transition::apply(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::ExecutionStarted,
+        )?
+    };
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
 }

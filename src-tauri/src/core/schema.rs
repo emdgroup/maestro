@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
-pub const SCHEMA_V24_FULL: &str = r#"
+pub const SCHEMA_V25_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     execution_start_sha TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    -- Pipeline activity, orthogonal to status. `status` is which board column the task is in;
+    -- these three are what is happening inside it. phase NULL means no pipeline activity, in
+    -- which case phase_status is NULL and ball is 'None'. Written only via task::transition.
+    phase TEXT,
+    phase_status TEXT,
+    ball TEXT NOT NULL DEFAULT 'None',
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -264,7 +270,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V24_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -285,7 +291,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V24_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -314,6 +320,52 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 24 {
         migrate_to_v24(conn)?;
     }
+    if from < 25 {
+        migrate_to_v25(conn)?;
+    }
+    Ok(())
+}
+
+/// Add the pipeline activity triple (`phase`, `phase_status`, `ball`) and backfill it from
+/// `status`, so an existing board keeps working without a run through every task.
+fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
+    for (name, definition) in [
+        ("phase", "phase TEXT"),
+        ("phase_status", "phase_status TEXT"),
+        ("ball", "ball TEXT NOT NULL DEFAULT 'None'"),
+    ] {
+        let col_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = ?",
+                [name],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !col_exists {
+            conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {};", definition))?;
+        }
+    }
+
+    // `migrate_to_v24` already retired these two legacy values, but `reject_review` has kept
+    // writing 'Backlog' ever since. Repeat the cleanup so rows written in between are not left
+    // with a status no `TaskStatus` variant matches — `FromStr` maps them to Planning on read,
+    // which hides the problem from the UI while keeping them invisible to status-filtered SQL.
+    conn.execute_batch(
+        "UPDATE tasks SET status = 'Planning' WHERE status = 'Backlog';
+         UPDATE tasks SET status = 'Queue' WHERE status = 'Ready';",
+    )?;
+
+    conn.execute_batch(
+        "UPDATE tasks SET phase = 'Implementing', phase_status = 'Running', ball = 'Agent' \
+           WHERE status = 'InProgress';
+         UPDATE tasks SET phase = 'Approval', phase_status = 'Waiting', ball = 'User' \
+           WHERE status = 'Review';
+         UPDATE tasks SET phase = NULL, phase_status = NULL, ball = 'None' \
+           WHERE status IN ('Planning', 'Queue', 'Done', 'Cancelled');",
+    )?;
+
     Ok(())
 }
 
@@ -401,7 +453,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -437,6 +489,9 @@ mod tests {
         assert!(task_columns.contains(&"auto_approve".to_string()));
         assert!(task_columns.contains(&"isolated_worktree".to_string()));
         assert!(task_columns.contains(&"agent_id".to_string()));
+        assert!(task_columns.contains(&"phase".to_string()));
+        assert!(task_columns.contains(&"phase_status".to_string()));
+        assert!(task_columns.contains(&"ball".to_string()));
     }
 
     /// Foreign keys are per-connection, so the early return for an already-current database must
@@ -536,6 +591,53 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
         assert_eq!(statuses, vec!["Planning".to_string(), "Queue".to_string()]);
+    }
+
+    /// v25 adds the pipeline triple. Existing rows must be backfilled from `status`, and the
+    /// 'Backlog' cleanup must run again because `reject_review` kept writing it after v24.
+    #[test]
+    fn test_migration_to_v25_backfills_phase_from_status() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'running', 'InProgress', 'main', '2026-01-01', '2026-01-01'), \
+                    (2, 1, 'in review', 'Review', 'main', '2026-01-01', '2026-01-01'), \
+                    (3, 1, 'parked', 'Planning', 'main', '2026-01-01', '2026-01-01'), \
+                    (4, 1, 'post-v24 backlog', 'Backlog', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("PRAGMA user_version = 24", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let row = |id: i32| -> (String, Option<String>, Option<String>, String) {
+            conn.query_row(
+                "SELECT status, phase, phase_status, ball FROM tasks WHERE id = ?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(
+            row(1),
+            ("InProgress".into(), Some("Implementing".into()), Some("Running".into()), "Agent".into())
+        );
+        assert_eq!(
+            row(2),
+            ("Review".into(), Some("Approval".into()), Some("Waiting".into()), "User".into())
+        );
+        assert_eq!(row(3), ("Planning".into(), None, None, "None".into()));
+        // Rewritten to Planning by the repeated cleanup, then backfilled as a parked task.
+        assert_eq!(row(4), ("Planning".into(), None, None, "None".into()));
     }
 
     #[test]

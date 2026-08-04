@@ -68,8 +68,12 @@ export const commands = {
     }
   },
   /**
-   * Release the active project lock held by this instance.
-   * Called when the user navigates back to the project picker.
+   * Release the active project lock held by this instance, and stop the connection servers it was
+   * using. Called when the user navigates back to the project picker.
+   *
+   * This is where a connection server dies — leaving the project or quitting, not closing the last
+   * session on it. Dropping the entry drops the child with it (`kill_on_drop`), and each reader
+   * task ends its own sessions as its transport closes.
    */
   async releaseActiveProjectLock(): Promise<Result<null, string>> {
     try {
@@ -2496,6 +2500,38 @@ export const commands = {
     }
   },
   /**
+   * Move a task on to review by hand, applying the same transition the agent's own completion
+   * would.
+   *
+   * The escape hatch for when neither signal fires: an agent that ignores the completion marker
+   * and produced no diff — an investigation or a question answered in prose — would otherwise have
+   * no way out of In Progress except being dragged back to Planning, losing its pipeline state.
+   */
+  async sendTaskToReview(taskId: number): Promise<Result<Task, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("send_task_to_review", { taskId }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
+   * Records that an agent has begun working on a task.
+   *
+   * The execute flow used to reach In Progress by writing `status` through `update_task`, which
+   * applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
+   * phase status, ball on nobody, so a card sat through its entire run looking idle and never
+   * reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+   */
+  async markTaskExecutionStarted(taskId: number): Promise<Result<Task, string>> {
+    try {
+      return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { taskId }) };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Cancel a task: sets status=Cancelled and archived_at in one statement
    */
   async cancelTask(taskId: number): Promise<Result<Task, string>> {
@@ -2894,13 +2930,19 @@ export type LogLocation = {
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] };
 /**
+ * How the current phase is going.
+ *
+ * `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
+ * is an agent stopped mid-phase that cannot continue without an answer, and drives the animated
+ * card treatment. `Waiting` is a gate with nothing running, and is static. Collapsing the two
+ * would make every waiting card pulse and turn the animation into wallpaper.
+ */
+export type PhaseStatus = "Running" | "Blocked" | "Waiting" | "Failed";
+/**
  * Only produced once the server is up: every way of failing to reach it returns `Err` instead,
  * so there is no "server is broken" variant to report here.
  */
-export type PreflightResult = {
-  agents: DiscoveredAgent[];
-  tool_checks: ToolCheckEntry[];
-};
+export type PreflightResult = { agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] };
 export type PreparedAttachment = {
   display_name: string;
   local_path: string;
@@ -3041,6 +3083,15 @@ export type Task = {
   agent_id?: string | null;
   permission_mode_override?: string | null;
   execution_start_sha?: string | null;
+  /**
+   * Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
+   * what is happening inside it. `None` means no pipeline activity, in which case
+   * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
+   * `task::transition`, never by ad-hoc SQL.
+   */
+  phase?: TaskPhase | null;
+  phase_status?: PhaseStatus | null;
+  ball: TaskBall;
 };
 export type TaskAttachment = {
   id: number;
@@ -3050,6 +3101,13 @@ export type TaskAttachment = {
   file_size: number;
   created_at: string;
 };
+/**
+ * Who the pipeline is blocked on — not who owns the ticket.
+ *
+ * A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
+ * what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+ */
+export type TaskBall = "Agent" | "User" | "None";
 export type TaskConfigRequest = {
   model_override?: string | null;
   mcp_allowlist?: string[] | null;
@@ -3063,6 +3121,20 @@ export type TaskInstruction = {
   source: string;
   created_at: string;
 };
+/**
+ * What the pipeline is doing to a task right now, independent of which column it sits in.
+ *
+ * `Refining`, `PlanReview` and `SelfReview` are defined but inert: no transition produces them
+ * until the refiner, planner and reviewer roles land. They exist now so adding those roles does
+ * not need a second migration.
+ */
+export type TaskPhase =
+  | "Refining"
+  | "PlanReview"
+  | "Implementing"
+  | "Rework"
+  | "SelfReview"
+  | "Approval";
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None";
 export type TaskRelationship = {
   id: number;

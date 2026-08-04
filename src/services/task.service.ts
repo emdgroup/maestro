@@ -538,6 +538,40 @@ export function useInterruptTaskMutation() {
 }
 
 /**
+ * Mutation hook for moving a task to review by hand.
+ *
+ * The escape hatch for when neither completion signal fires — the agent ignored the marker and
+ * changed nothing, so the automatic rules left it in progress.
+ */
+export function useSendTaskToReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.sendTaskToReview(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to send task to review"),
+  });
+}
+
+/**
+ * Mutation hook for recording that an agent has started working on a task.
+ *
+ * Not `updateTask({ status: "InProgress" })` — that is a manual move, which parks the task with
+ * no phase and the ball on nobody, so the card looks idle for the whole run.
+ */
+export function useMarkTaskExecutionStartedMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.markTaskExecutionStarted(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to mark task as started"),
+  });
+}
+
+/**
  * Mutation hook for cancelling a task: sets status=Cancelled and archived_at atomically
  */
 export function useCancelTaskMutation() {

@@ -315,8 +315,19 @@ pub async fn get_worktree_diff_stats(
     diff_target: DiffTarget,
 ) -> Result<WorktreeDiffStats, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    diff_stats_in(&git_conn, &worktree_path, &diff_target).await
+}
 
-    let stat_args: Vec<String> = match &diff_target {
+/// The body of `get_worktree_diff_stats`, callable without going through the Tauri command.
+///
+/// Split out so the turn-ended handler can ask whether an agent actually changed anything before
+/// deciding a turn ending means the work is finished.
+pub async fn diff_stats_in(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+) -> Result<WorktreeDiffStats, String> {
+    let stat_args: Vec<String> = match diff_target {
         DiffTarget::Head => vec!["diff".into(), "--stat".into(), "HEAD".into()],
         DiffTarget::Branch { branch } => vec!["diff".into(), "--stat".into(), format!("origin/{}..HEAD", branch)],
         DiffTarget::Commit { sha } => vec!["diff".into(), "--stat".into(), sha.clone()],
@@ -325,7 +336,7 @@ pub async fn get_worktree_diff_stats(
     };
     let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
 
-    let stat_output = crate::git::run_git_in_dir(&git_conn, &worktree_path, &stat_args_ref)
+    let stat_output = crate::git::run_git_in_dir(git_conn, worktree_path, &stat_args_ref)
         .await
         .unwrap_or_default();
 
@@ -346,13 +357,20 @@ pub async fn get_worktree_diff_stats(
     }
 
     let untracked_output = crate::git::run_git_in_dir(
-        &git_conn,
-        &worktree_path,
+        git_conn,
+        worktree_path,
         &["ls-files", "--others", "--exclude-standard"],
     ).await.unwrap_or_default();
     let untracked_count = untracked_output.lines().filter(|l| !l.is_empty()).count() as u32;
 
     Ok(WorktreeDiffStats { file_count, insertions, deletions, untracked_count })
+}
+
+impl WorktreeDiffStats {
+    /// Whether the agent changed anything at all — tracked edits or new files.
+    pub fn has_changes(&self) -> bool {
+        self.file_count > 0 || self.untracked_count > 0
+    }
 }
 
 // ============================================================================

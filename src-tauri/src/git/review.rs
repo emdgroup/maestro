@@ -5,6 +5,7 @@ use chrono::Utc;
 use crate::models::{Task, TASK_SELECT, ReviewResult, TaskReviewWithComments, ReviewCommentEntry};
 use crate::core::{AppState, get_project_with_git_conn};
 use crate::git;
+use crate::task::transition::{self, TaskTransition};
 
 /// Insert (or replace) a review record with optional per-file comments.
 /// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
@@ -115,10 +116,7 @@ pub async fn request_changes(
     let review_id = insert_review_with_comments(
         &conn, task_id, "RequestChanges", general_feedback.as_deref(), comments_ref, &now,
     )?;
-    conn.execute(
-        "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, task_id],
-    ).map_err(|e| format!("Update task status failed: {}", e))?;
+    transition::apply(&conn, task_id, TaskTransition::ReworkRequested)?;
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
@@ -192,18 +190,20 @@ pub async fn reject_review(
 
     match action.as_str() {
         "SendToBacklog" | "CancelTask" => {
-            let new_status = if action == "SendToBacklog" { "Backlog" } else { "Cancelled" };
+            // "SendToBacklog" is a legacy name: there is no Backlog column, and this used to
+            // write the literal status 'Backlog', which v24 had already retired. Discarding
+            // returns the task to Planning.
+            let event = if action == "SendToBacklog" {
+                TaskTransition::Discarded
+            } else {
+                TaskTransition::Cancelled
+            };
 
             // Gather worktree and task info while holding the lock briefly
             let (worktree_info, execution_start_sha, project_id) = {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-                // Update task status
-                conn.execute(
-                    &format!("UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ?", new_status),
-                    rusqlite::params![&now, task_id],
-                )
-                .map_err(|e| format!("Failed to update task status: {}", e))?;
+                transition::apply(&conn, task_id, event)?;
 
                 // Query associated worktree
                 let wt: Option<(i32, String, String)> = conn.query_row(
@@ -277,12 +277,7 @@ pub async fn reject_review(
 
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-            // Move task back to InProgress
-            conn.execute(
-                "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
-                rusqlite::params![&now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task status: {}", e))?;
+            transition::apply(&conn, task_id, TaskTransition::ResumeWithInstructions)?;
 
             // Save the instruction so the agent can pick it up
             conn.execute(

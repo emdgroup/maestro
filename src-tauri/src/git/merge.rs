@@ -4,6 +4,7 @@ use chrono::Utc;
 use crate::models::{GitConnection, MergeResult};
 use crate::core::{AppState, get_project_with_git_conn};
 use crate::acp::ConnectionKey;
+use crate::task::transition::{self, TaskTransition};
 use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
 
 /// Squash merge a task branch into main using native Rust subprocess calls.
@@ -327,13 +328,7 @@ pub(crate) async fn finalize_successful_merge(
     // 1. Update task status to Done
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-
-        conn.execute(
-            "UPDATE tasks SET status = 'Done', updated_at = ? WHERE id = ?",
-            rusqlite::params![&now, task_id],
-        )
-        .map_err(|e| format!("Update task failed: {}", e))?;
+        transition::apply(&conn, task_id, TaskTransition::Merged)?;
     }
 
     // 2. Delete worktree from disk via git dispatcher (and DB on success)
@@ -388,11 +383,7 @@ pub(crate) async fn reject_merge_on_conflict(
     let conflict_feedback = format!("Merge conflict detected:\n{}", conflicts.join("\n"));
 
     // Auto-reject to InProgress per CONTEXT.md decision
-    conn.execute(
-        "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, task_id],
-    )
-    .map_err(|e| format!("Update task failed: {}", e))?;
+    transition::apply(&conn, task_id, TaskTransition::MergeConflict)?;
 
     // Save conflict feedback as review comment for visibility
     conn.execute(

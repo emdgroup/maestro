@@ -2,8 +2,8 @@
 //! and dispatch them to per-session handlers or connection-level pending channels.
 
 use crate::acp::canvas::{
-    emit_or_buffer_payload, extract_canvas_fences_from_payload, filter_preamble_from_payload,
-    push_config_init_to_buffer, CanvasFenceExtractor, PreambleFilterState,
+    emit_or_buffer_payload, extract_canvas_fences_from_payload, push_config_init_to_buffer,
+    CanvasFenceExtractor,
 };
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::session_types::{
@@ -54,8 +54,9 @@ pub(crate) fn spawn_reader_task(
         acp_session_id_cache,
         replay_buffer,
         initialized,
-        preamble_filter,
         canvas_extractor,
+        completion_filter,
+        declared_complete,
         session_name,
         agent_id,
         project_id,
@@ -104,23 +105,31 @@ pub(crate) fn spawn_reader_task(
                     if try_auto_approve_permission(&app_state, tid, log_id, perm_req).await {
                         continue;
                     }
+                    // Not auto-approved: the agent is stopped until the user answers.
+                    mark_task_blocked(&app_state, tid);
                 }
             }
 
-            // Moving the task to Review touches the DB and, for remote projects, runs
-            // `git rev-parse` over SSH with no timeout. Run it off the reader loop so it
-            // can never delay — or with a wedged connection, indefinitely withhold — the
+            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
+                if let Some(tid) = task_id {
+                    mark_task_blocked(&app_state, tid);
+                }
+            }
+
+            // Resolving the turn touches the DB and, for remote projects, runs `git rev-parse`
+            // and `git diff` over SSH with no timeout. Run it off the reader loop so it can
+            // never delay — or with a wedged connection, indefinitely withhold — the
             // `acp://turn-ended` emit below that takes the UI out of "thinking".
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if turn_ended.stop_reason == "end_turn" {
-                    if let Some(tid) = task_id {
-                        let state = Arc::clone(&app_state);
-                        tokio::spawn(async move {
-                            if try_complete_task(&state, tid).await {
-                                state.app_handle.emit("tasks-changed", ()).ok();
-                            }
-                        });
-                    }
+                if let Some(tid) = task_id {
+                    let state = Arc::clone(&app_state);
+                    let stop_reason = turn_ended.stop_reason.clone();
+                    // Read and reset: a declaration applies only to the turn it appeared in.
+                    let declared =
+                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    tokio::spawn(async move {
+                        resolve_turn_end(&state, tid, &stop_reason, declared).await;
+                    });
                 }
             }
 
@@ -135,8 +144,9 @@ pub(crate) fn spawn_reader_task(
                 &acp_session_id_cache,
                 &replay_buffer,
                 &initialized,
-                &preamble_filter,
                 &canvas_extractor,
+                &completion_filter,
+                &declared_complete,
             ) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
@@ -156,6 +166,7 @@ pub(crate) fn spawn_reader_task(
         }
 
         app_state.acp.sessions.lock().await.remove(&log_id);
+        fail_task_if_still_running(&app_state, task_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
             log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
@@ -163,28 +174,176 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-async fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
-    let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
-    let Ok(conn) = app_state.db.lock() else {
-        return false;
+/// Record that the agent is stopped waiting on the user, so the card says so after a reload.
+///
+/// `apply_if_changed` matters here rather than being a nicety: with auto-approve off a session
+/// raises permission requests constantly, and every write emits `tasks-changed`, which refetches
+/// the whole board.
+fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        match crate::task::transition::apply_if_changed(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::AwaitingUserInput,
+        ) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not mark task {task_id} blocked: {e}");
+                false
+            }
+        }
     };
-    let now = chrono::Utc::now().to_rfc3339();
-    let target_status = if is_git_repo { "Review" } else { "Done" };
-    conn.execute(
-        &format!(
-            "UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ? AND status = 'InProgress'",
-            target_status
-        ),
-        rusqlite::params![&now, task_id],
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+}
+
+/// A session's reader has ended. If the pipeline still believes an agent is working the task,
+/// record the failure.
+///
+/// Without this a session that dies mid-phase leaves the card looking healthy, and a session that
+/// dies while blocked leaves it pulsing for an answer nothing will ever consume. Tasks that moved
+/// on under their own power — merged, stopped, parked at a review gate — are left untouched.
+fn fail_task_if_still_running(app_state: &crate::core::AppState, task_id: Option<i32>) {
+    let Some(task_id) = task_id else {
+        return;
+    };
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        match crate::task::transition::fail_if_agent_running(&conn, task_id) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not record phase failure for task {task_id}: {e}");
+                false
+            }
+        }
+    };
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+}
+
+/// Decide what a turn ending means for the task, and record it.
+///
+/// A turn ending is not the same as the work being finished: an agent that stops to ask a
+/// question ends its turn exactly like one that finished the job. `classify_turn` weighs the stop
+/// reason, whether the agent declared completion, and whether the repository actually changed.
+async fn resolve_turn_end(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+    stop_reason: &str,
+    declared_complete: bool,
+) {
+    use crate::acp::completion::{classify_turn, TurnOutcome};
+    use crate::task::transition::{self, TaskTransition};
+
+    let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
+
+    // Only worth the git call when it could change the answer: a declared completion is believed
+    // regardless, and a non-git project has no diff to consult.
+    let has_changes = if is_git_repo && !declared_complete && stop_reason == "end_turn" {
+        task_has_changes(app_state, task_id).await
+    } else {
+        None
+    };
+
+    let outcome = classify_turn(stop_reason, declared_complete, has_changes);
+
+    let event = match outcome {
+        TurnOutcome::Complete => TaskTransition::TurnCompleted { is_git_repo },
+        TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
+        TurnOutcome::Failed => TaskTransition::PhaseFailed,
+        TurnOutcome::Ignore => return,
+    };
+
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        // Guarded on InProgress because this runs on a detached task: by the time it lands the
+        // user may have stopped the session or moved the card, and acting then would undo them.
+        match transition::apply_if_status(
+            &conn,
+            task_id,
+            Some(crate::models::TaskStatus::InProgress),
+            event,
+        ) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not resolve turn end for task {task_id}: {e}");
+                false
+            }
+        }
+    };
+
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+}
+
+/// Whether the agent has changed anything since it started, measured against
+/// `execution_start_sha` — the baseline captured at spawn and preserved across resumes, so this
+/// covers the whole task rather than the turn.
+///
+/// Returns `None` when the answer cannot be established, which `classify_turn` reads as "no
+/// evidence" and treats the same as a non-git project.
+async fn task_has_changes(app_state: &crate::core::AppState, task_id: i32) -> Option<bool> {
+    let (project_id, start_sha, isolated, worktree_path) = {
+        let conn = app_state.db.lock().ok()?;
+        let row: (i32, Option<String>, bool, Option<String>) = conn
+            .query_row(
+                "SELECT t.project_id, t.execution_start_sha, t.isolated_worktree, \
+                    (SELECT path FROM worktrees WHERE task_id = t.id LIMIT 1) \
+                 FROM tasks t WHERE t.id = ?",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .ok()?;
+        row
+    };
+
+    // An isolated task whose worktree row has gone missing must report no evidence rather than
+    // fall through to the project root: the root is a different tree, and any unrelated dirt in
+    // it — an untracked `.maestro/`, a half-finished edit — reads as work this agent did and
+    // sends the task to review with a diff it had nothing to do with.
+    if isolated && worktree_path.is_none() {
+        log::warn!("[acp] task {task_id} is isolated but has no worktree row; skipping diff gate");
+        return None;
+    }
+
+    let start_sha = start_sha.filter(|sha| !sha.is_empty())?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id)
+        .await
+        .ok()?;
+
+    // Worktree paths are stored relative to the repo; a task without one runs in the project root.
+    let cwd = match worktree_path {
+        Some(path) => format!("{}/{}", git_conn.path(), path),
+        None => git_conn.path().to_string(),
+    };
+
+    crate::git::worktree_query::diff_stats_in(
+        &git_conn,
+        &cwd,
+        &crate::models::DiffTarget::Commit { sha: start_sha },
     )
-    .unwrap_or(0)
-        > 0
+    .await
+    .ok()
+    .map(|stats| stats.has_changes())
 }
 
 /// `(project_id, path, connection_id, wsl_connection_id, docker_connection_id)`
 type ProjectLocationRow = (i32, String, Option<i32>, Option<i32>, Option<i32>);
 
-async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i32) -> bool {
+pub(crate) async fn is_task_project_git_repo(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+) -> bool {
     let result: Option<ProjectLocationRow> =
         app_state.db.lock().ok().and_then(|conn| {
         conn.query_row(
@@ -344,8 +503,9 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
     canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+    completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
+    declared_complete: &Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
@@ -364,24 +524,28 @@ fn handle_server_message(
                     }
                 }
             }
-            // Strip the rendering preamble from user messages before forwarding to the frontend.
-            let payload =
-                filter_preamble_from_payload(upd.payload, preamble_filter);
+            // Extract canvas fences from agent_message_chunk text. Each complete
+            // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
+            // update; the remaining text (fences stripped) is forwarded normally.
+            let (payload_opt, canvas_messages) =
+                extract_canvas_fences_from_payload(upd.payload, canvas_extractor);
 
-            if let Some(payload) = payload {
-                // Extract canvas fences from agent_message_chunk text. Each complete
-                // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
-                // update; the remaining text (fences stripped) is forwarded normally.
-                let (payload_opt, canvas_messages) =
-                    extract_canvas_fences_from_payload(payload, canvas_extractor);
+            for canvas_msg in canvas_messages {
+                emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
+            }
 
-                for canvas_msg in canvas_messages {
-                    emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
-                }
+            // Strip the completion marker last, so it is removed from what the user sees
+            // while recording that the agent declared the task done.
+            let payload_opt = payload_opt.and_then(|payload| {
+                crate::acp::completion::strip_completion_marker_from_payload(
+                    payload,
+                    completion_filter,
+                    declared_complete,
+                )
+            });
 
-                if let Some(payload) = payload_opt {
-                    emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
-                }
+            if let Some(payload) = payload_opt {
+                emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
@@ -731,8 +895,9 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.acp_session_id),
                 Arc::clone(&s.replay_buffer),
                 Arc::clone(&s.initialized),
-                Arc::clone(&s.preamble_filter),
                 Arc::clone(&s.canvas_extractor),
+                Arc::clone(&s.completion_filter),
+                Arc::clone(&s.declared_complete),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
@@ -748,8 +913,9 @@ async fn handle_shared_server_message(
             acp_sid,
             replay,
             initialized,
-            preamble_filter,
             canvas_extractor,
+            completion_filter,
+            declared_complete,
             session_name,
             agent_id,
             pid,
@@ -763,6 +929,14 @@ async fn handle_shared_server_message(
                     if try_auto_approve_permission(app_state, tid, log_id, perm_req).await {
                         return;
                     }
+                    // Not auto-approved: the agent is stopped until the user answers.
+                    mark_task_blocked(app_state, tid);
+                }
+            }
+
+            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
+                if let Some(tid) = task_id {
+                    mark_task_blocked(app_state, tid);
                 }
             }
 
@@ -770,15 +944,14 @@ async fn handle_shared_server_message(
             // path is worse: the shared reader serves every session on the connection, so
             // one task's hung `git rev-parse` would stall turn-ended for all of them.
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if turn_ended.stop_reason == "end_turn" {
-                    if let Some(tid) = task_id {
-                        let state = Arc::clone(app_state);
-                        tokio::spawn(async move {
-                            if try_complete_task(&state, tid).await {
-                                state.app_handle.emit("tasks-changed", ()).ok();
-                            }
-                        });
-                    }
+                if let Some(tid) = task_id {
+                    let state = Arc::clone(app_state);
+                    let stop_reason = turn_ended.stop_reason.clone();
+                    let declared =
+                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    tokio::spawn(async move {
+                        resolve_turn_end(&state, tid, &stop_reason, declared).await;
+                    });
                 }
             }
 
@@ -832,8 +1005,9 @@ async fn handle_shared_server_message(
                 &acp_sid,
                 &replay,
                 &initialized,
-                &preamble_filter,
                 &canvas_extractor,
+                &completion_filter,
+                &declared_complete,
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
@@ -867,6 +1041,7 @@ async fn handle_shared_server_message(
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
                 app_state.acp.sessions.lock().await.remove(&log_id);
+                fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
                 }
@@ -1071,7 +1246,9 @@ async fn handle_shared_server_message(
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {
-                    app_state.acp.sessions.lock().await.remove(&log_id);
+                    // The removed entry is the only place the task id is still available.
+                    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
+                    fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
                     if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ())
                     {
                         log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
