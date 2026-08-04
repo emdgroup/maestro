@@ -13,6 +13,8 @@ interface ReviewChangesPanelProps {
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
   onSendAnnotations: (annotations: Annotation[]) => void;
   annotationSendDisabled?: boolean;
+  /** Opens a path (absolute, or project-relative) in a Files tab. */
+  onOpenFile?: (path: string) => void;
 }
 
 export function ReviewChangesPanel({
@@ -23,6 +25,7 @@ export function ReviewChangesPanel({
   onDiffStats,
   onSendAnnotations,
   annotationSendDisabled,
+  onOpenFile,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
@@ -105,6 +108,7 @@ export function ReviewChangesPanel({
         fileSelectorFiles={fileSelectorFiles}
         focusedKey={focusedKey}
         focusedBasename={focusedBasename}
+        onOpenFile={onOpenFile}
       />
     );
   }

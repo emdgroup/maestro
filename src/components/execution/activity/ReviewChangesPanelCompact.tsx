@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Files,
   CheckCheck,
+  Check,
   ChevronRight,
   ChevronLeft,
   AlignJustify,
   Columns2,
+  Copy,
   TriangleAlert,
 } from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
@@ -15,10 +17,32 @@ import { FileSelector } from "@/components/execution/diff/FileSelector";
 import { computeFileStats } from "@/lib/diff-utils";
 import { UntrackedFileDiffViewer } from "@/components/execution/diff/UntrackedFileDiffViewer";
 import type { DisplayItem } from "./useReviewChangesData";
+import { useCopyToClipboard } from "./HighlightedCode";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AnnotationBar } from "@/components/execution/side-panel/annotations/AnnotationBar";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
 import type { Annotation, DiffAnnotation } from "@/store/annotationStore";
+
+// Its own component because the file cards are rendered in a loop and the copy
+// hook holds the "copied" flag per path.
+function CopyPathButton({ path }: { path: string }) {
+  const { copied, copy } = useCopyToClipboard(path);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          copy();
+        }}
+        className="p-1 rounded transition-colors shrink-0 text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/30"
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </TooltipTrigger>
+      <TooltipContent>{copied ? "Copied" : "Copy path"}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function DiffStats({ hunks }: { hunks: string[] }) {
   const s = computeFileStats(hunks);
@@ -60,6 +84,8 @@ interface ReviewChangesPanelCompactProps {
   fileSelectorFiles: Array<{ fileName: string; status: "M" | "A" | "D" }>;
   focusedKey: string | null;
   focusedBasename: string | null;
+  /** Opens a path (absolute, or project-relative) in a Files tab. */
+  onOpenFile?: (path: string) => void;
 }
 
 export function ReviewChangesPanelCompact({
@@ -85,6 +111,7 @@ export function ReviewChangesPanelCompact({
   fileSelectorFiles,
   focusedKey,
   focusedBasename,
+  onOpenFile,
 }: ReviewChangesPanelCompactProps) {
   const scopeLabel = scope === "session" ? "since session start" : "uncommitted changes only";
   const annotations = useSessionAnnotations(sessionKey, "diff");
@@ -381,10 +408,30 @@ export function ReviewChangesPanelCompact({
                         isExpanded && "rotate-90",
                       )}
                     />
-                    <span className="text-xs font-mono truncate text-foreground/80 flex-1">
-                      {key}
-                    </span>
+                    {onOpenFile ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Diff paths are relative to the session worktree, which is not
+                            // where the Files tab resolves relative paths — hand it an
+                            // absolute path and let it work out the prefix.
+                            onOpenFile(cwd ? `${cwd}/${key}` : key);
+                          }}
+                          className="text-xs font-mono truncate text-foreground/80 flex-1 min-w-0 text-left hover:underline underline-offset-2 hover:text-foreground transition-colors"
+                        >
+                          {key}
+                        </TooltipTrigger>
+                        <TooltipContent>Open in a Files tab</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-xs font-mono truncate text-foreground/80 flex-1">
+                        {key}
+                      </span>
+                    )}
                     {item.kind === "diff" && <DiffStats hunks={item.file.hunks} />}
+                    <CopyPathButton path={key} />
                     <Tooltip>
                       <TooltipTrigger
                         type="button"

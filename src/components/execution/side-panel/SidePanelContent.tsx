@@ -53,6 +53,8 @@ interface SidePanelContentProps {
   planTitle?: string | null;
   onCollapsedChange: (c: boolean) => void;
   onOpenTabKind: (kind: TabKind) => void;
+  /** Opens a path (absolute, or project-relative) in a Files tab. */
+  onOpenFile: (path: string) => void;
   onSpawnShell?: () => Promise<number | null>;
   terminalBuffers?: Map<string, string>;
   onSendAnnotations: (annotations: Annotation[]) => void;
@@ -79,6 +81,7 @@ export function SidePanelContent({
   planTitle,
   onCollapsedChange,
   onOpenTabKind,
+  onOpenFile,
   onSpawnShell,
   terminalBuffers,
   onSendAnnotations,
@@ -376,6 +379,7 @@ export function SidePanelContent({
                 isActive={isActive}
                 onSendAnnotations={onSendAnnotations}
                 annotationSendDisabled={isProcessing}
+                onOpenFile={onOpenFile}
               />
             )}
             {kind === "artifacts" && (

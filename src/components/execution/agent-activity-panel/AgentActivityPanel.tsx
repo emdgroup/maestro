@@ -728,6 +728,7 @@ export function AgentActivityPanel({
             onTabClose={closeTab}
             onAddTab={addDynamicTab}
             onOpenTabKind={openTabKind}
+            onOpenFile={handleOpenFile}
             workingFiles={localWorkingFiles}
             taskId={taskId}
             projectPath={selectedProject?.path ?? ""}
