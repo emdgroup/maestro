@@ -21,6 +21,8 @@ interface ExecutionSidePanelProps {
   onTabClose: (id: string) => void;
   onAddTab: (kind: "terminal" | "files", initialPath?: string) => string;
   onOpenTabKind: (kind: TabKind) => void;
+  /** Opens a path (absolute, or project-relative) in a Files tab. */
+  onOpenFile: (path: string) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   projectPath: string;
@@ -54,6 +56,7 @@ export function ExecutionSidePanel({
   onTabClose,
   onAddTab,
   onOpenTabKind,
+  onOpenFile,
   workingFiles,
   taskId,
   projectPath,
@@ -157,6 +160,7 @@ export function ExecutionSidePanel({
                 planTitle={planTitle}
                 onCollapsedChange={onCollapsedChange}
                 onOpenTabKind={onOpenTabKind}
+                onOpenFile={onOpenFile}
                 onSpawnShell={onSpawnShell}
                 terminalBuffers={terminalBuffers}
                 onSendAnnotations={onSendAnnotations}
