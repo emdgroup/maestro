@@ -217,22 +217,11 @@ pub async fn cancel_acp_session(
 ) -> Result<(), String> {
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
 
-    let maybe_task_id: Option<i32> = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).and_then(|p| p.task_id)
-    };
-    if let Some(task_id) = maybe_task_id {
-        let conn = app_state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
-        let status: String = conn.query_row(
-            "SELECT status FROM tasks WHERE id = ?",
-            [task_id],
-            |row| row.get(0),
-        ).unwrap_or_default();
-        if status == "InProgress" || status == "Review" {
-            return Err("Cannot cancel a task session while the task is in progress — use the Stop button on the task card".to_string());
-        }
-    }
-
+    // This used to refuse outright when the owning task was InProgress or Review, telling the user
+    // to press a Stop button that does not exist on a Review card — and, because the callers
+    // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
+    // stale-connection case it exists for. What the guard was protecting is handled below instead:
+    // the task is failed here rather than being refused.
     let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
@@ -240,16 +229,40 @@ pub async fn cancel_acp_session(
     // The connection server outlives its sessions deliberately: it is per connection, not per
     // session, and closing the last session used to drop it, which killed the transport and
     // surfaced as a lost connection. It is torn down when the project or the app closes.
-    let project_id_for_save: Option<i32> = {
+    let (project_id_for_save, task_id) = {
         let mut sessions = app_state.acp.sessions.lock().await;
         let project_id_for_save = sessions.get(&log_id).and_then(|p| p.project_id);
+        let task_id = sessions.get(&log_id).and_then(|p| p.task_id);
         if let Some(mut session) = sessions.remove(&log_id) {
             if let Some(cancel_tx) = session.reader_cancel_tx.take() {
                 let _ = cancel_tx.send(());
             }
         }
-        project_id_for_save
+        (project_id_for_save, task_id)
     };
+
+    // Recorded here, not left to `reader_task`. Only a *direct* session has a reader loop that a
+    // cancel breaks; a session on a shared connection server — the ordinary local path — has no
+    // per-session loop, so nothing there would ever observe this and the task would go on claiming
+    // an agent was working on it. Doing it here also covers the direct case, harmlessly:
+    // `fail_if_agent_running` is a no-op once the phase is no longer Running or Blocked, so the
+    // reader firing afterwards changes nothing. A task parked at a review gate is left alone.
+    if let Some(task_id) = task_id {
+        let failed = match app_state.db.lock() {
+            Ok(conn) => crate::task::transition::fail_if_agent_running(&conn, task_id)
+                .unwrap_or_else(|e| {
+                    log::warn!("[acp] could not fail task {} after cancel: {}", task_id, e);
+                    None
+                }),
+            Err(e) => {
+                log::warn!("[acp] lock failed while failing task {}: {}", task_id, e);
+                None
+            }
+        };
+        if failed.is_some() {
+            app_state.app_handle.emit("tasks-changed", ()).ok();
+        }
+    }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     if let Some(pid) = project_id_for_save {

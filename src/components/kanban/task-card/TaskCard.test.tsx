@@ -1,11 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
 
 vi.mock("@/contexts/KanbanContext", () => ({
   useKanban: () => ({ projectId: 1, projectPath: "/tmp/demo", connection: { type: "local" } }),
 }));
+
+/// Swapped per-test so a card can be rendered with or without a live session behind it.
+const activeSession = vi.hoisted(() => ({ current: null as { session_key: number } | null }));
 
 vi.mock("@/hooks/useExecuteTask", () => ({
   useExecuteTask: () => ({
@@ -17,13 +21,28 @@ vi.mock("@/hooks/useExecuteTask", () => ({
     onDirtyChoice: vi.fn(),
     onDirtyCancel: vi.fn(),
   }),
-  useTaskActiveSession: () => null,
+  // Honours the taskId argument rather than ignoring it, so that a card which declines to look a
+  // session up gets null — otherwise this mock would paper over exactly the bug it guards.
+  useTaskActiveSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
+}));
+
+/// Captures what the card sends, and lets a test decide what the backend answered.
+const sendToReview = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  /// `null` is the backend saying "this task changed nothing"; a Task means it moved.
+  result: null as unknown,
 }));
 
 vi.mock("@/services/task.service", () => ({
   useInterruptTaskMutation: () => ({ mutate: vi.fn() }),
   useArchiveTaskMutation: () => ({ mutate: vi.fn() }),
-  useSendTaskToReviewMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendTaskToReviewMutation: () => ({
+    mutate: (vars: unknown, opts?: { onSuccess?: (data: unknown) => void }) => {
+      sendToReview.mutate(vars);
+      opts?.onSuccess?.(sendToReview.result);
+    },
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/services/execution.service", () => ({
@@ -81,6 +100,12 @@ function renderCard(overrides: Partial<Task> = {}) {
   // The outermost div carries the treatment classes.
   return container.firstElementChild as HTMLElement;
 }
+
+beforeEach(() => {
+  activeSession.current = null;
+  sendToReview.mutate.mockClear();
+  sendToReview.result = null;
+});
 
 describe("TaskCard pipeline treatment", () => {
   it("renders no phase line when the task has no pipeline activity", () => {
@@ -168,5 +193,67 @@ describe("TaskCard send-to-review escape hatch", () => {
   it("is hidden outside In Progress", () => {
     renderCard({ status: "Review", phase: "Approval", phase_status: "Waiting", ball: "User" });
     expect(screen.queryByTitle(/without waiting for the agent/i)).not.toBeInTheDocument();
+  });
+});
+
+/// The manual path must not manufacture the state the automatic one refuses: a task that changed
+/// nothing goes to review only after the user says so, or the escape hatch becomes a way to open
+/// an empty review by accident.
+describe("TaskCard empty-review confirmation", () => {
+  const stuck: Partial<Task> = {
+    status: "InProgress",
+    phase: "Implementing",
+    phase_status: "Failed",
+    ball: "User",
+  };
+
+  it("asks first when the backend reports nothing to review", async () => {
+    const user = userEvent.setup();
+    renderCard(stuck);
+    await user.click(screen.getByTitle(/without waiting for the agent/i));
+
+    expect(sendToReview.mutate).toHaveBeenCalledWith({ taskId: 7 });
+    expect(await screen.findByText("Nothing to review")).toBeInTheDocument();
+  });
+
+  it("forces on confirmation", async () => {
+    const user = userEvent.setup();
+    renderCard(stuck);
+    await user.click(screen.getByTitle(/without waiting for the agent/i));
+    await user.click(await screen.findByText("Review anyway"));
+
+    expect(sendToReview.mutate).toHaveBeenLastCalledWith({ taskId: 7, force: true });
+  });
+
+  it("does not ask when the task actually moved", async () => {
+    sendToReview.result = makeTask({ status: "Review" });
+    const user = userEvent.setup();
+    renderCard(stuck);
+    await user.click(screen.getByTitle(/without waiting for the agent/i));
+
+    expect(screen.queryByText("Nothing to review")).not.toBeInTheDocument();
+  });
+});
+
+/// A task keeps its session into Review — that is what Join is for. The button existed but the
+/// card looked the session up only while the task was In Progress, so it could never render, and
+/// nothing asserted otherwise. These pin both halves.
+describe("TaskCard session reachability", () => {
+  const review: Partial<Task> = {
+    status: "Review",
+    phase: "Approval",
+    phase_status: "Waiting",
+    ball: "User",
+  };
+
+  it("offers Join on a Review card holding a live session", () => {
+    activeSession.current = { session_key: 42 };
+    renderCard(review);
+    expect(screen.getByText("Join")).toBeInTheDocument();
+  });
+
+  it("omits Join on a Review card with no session", () => {
+    renderCard(review);
+    expect(screen.queryByText("Join")).not.toBeInTheDocument();
   });
 });

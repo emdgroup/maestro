@@ -125,13 +125,30 @@ pub async fn interrupt_task(
 /// The escape hatch for when neither signal fires: an agent that ignores the completion marker
 /// and produced no diff — an investigation or a question answered in prose — would otherwise have
 /// no way out of In Progress except being dragged back to Planning, losing its pipeline state.
+///
+/// Returns `None` when the task demonstrably changed nothing and `force` is not set. The automatic
+/// path refuses exactly this case, holding the task in place rather than opening a review with an
+/// empty diff; without the same check here the button would manufacture the state the rest of the
+/// pipeline exists to prevent. It is a warning and not a veto — the caller may set `force` — because
+/// an override the user cannot override is not an escape hatch.
+///
+/// Only a definite `Some(false)` blocks. `None` means the question could not be answered — a
+/// non-git project, a missing worktree — and is treated as no evidence, matching `classify_turn`.
 #[tauri::command]
 #[specta::specta]
 pub async fn send_task_to_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
-) -> Result<crate::models::Task, String> {
+    force: bool,
+) -> Result<Option<crate::models::Task>, String> {
     let is_git_repo = crate::acp::reader_task::is_task_project_git_repo(&app_state, task_id).await;
+
+    if !force
+        && is_git_repo
+        && crate::acp::reader_task::task_has_changes(&app_state, task_id).await == Some(false)
+    {
+        return Ok(None);
+    }
 
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -143,7 +160,7 @@ pub async fn send_task_to_review(
     };
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    Ok(Some(task))
 }
 
 /// Records that an agent has begun working on a task.

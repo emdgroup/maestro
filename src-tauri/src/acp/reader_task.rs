@@ -292,7 +292,10 @@ async fn resolve_turn_end(
 ///
 /// Returns `None` when the answer cannot be established, which `classify_turn` reads as "no
 /// evidence" and treats the same as a non-git project.
-async fn task_has_changes(app_state: &crate::core::AppState, task_id: i32) -> Option<bool> {
+pub(crate) async fn task_has_changes(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+) -> Option<bool> {
     let (project_id, start_sha, isolated, worktree_path) = {
         let conn = app_state.db.lock().ok()?;
         let row: (i32, Option<String>, bool, Option<String>) = conn

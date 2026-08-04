@@ -542,11 +542,15 @@ export function useInterruptTaskMutation() {
  *
  * The escape hatch for when neither completion signal fires — the agent ignored the marker and
  * changed nothing, so the automatic rules left it in progress.
+ *
+ * Resolves to `null` when the task changed nothing and `force` was not set; the caller is expected
+ * to confirm and retry with `force`, rather than silently opening a review with an empty diff.
  */
 export function useSendTaskToReviewMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.sendTaskToReview(taskId),
+    mutationFn: ({ taskId, force = false }: { taskId: number; force?: boolean }) =>
+      api.sendTaskToReview(taskId, force),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },

@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
 import { useWorktreeDiffQuery, useWorktreeCommitsQuery } from "@/services/worktree.service";
+import { useCancelActiveSessionMutation } from "@/services/execution.service";
 import { DiffStateProvider } from "./DiffStateContext";
 import {
   useRequestChangesMutation,
@@ -103,6 +104,7 @@ export function TaskReviewPanel({
     onDirtyCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
+  const cancelSession = useCancelActiveSessionMutation();
 
   // Map scope to DiffTarget
   // "All changes" uses execution_start_sha to show only task-specific changes,
@@ -322,7 +324,10 @@ export function TaskReviewPanel({
               {
                 onSuccess: () => {
                   if (activeSession) {
-                    void api.cancelAcpSession(activeSession.session_key).catch(() => {});
+                    cancelSession.mutate({
+                      sessionKey: activeSession.session_key,
+                      executionMode: activeSession.execution_mode,
+                    });
                   }
                   setApproveModalOpen(false);
                   reviewStore.clearTask(task.id);
@@ -334,7 +339,7 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession],
+    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession, cancelSession],
   );
 
   const handleDiscardConfirm = useCallback(
@@ -419,6 +424,24 @@ export function TaskReviewPanel({
                   <DropdownMenuItem onClick={() => handleActionSelect("rework")}>
                     Rework
                   </DropdownMenuItem>
+                )}
+                {/* A task keeps its agent session into Review. Ending it leaves the task here —
+                    the work is done and under review, the session is just a process still held. */}
+                {activeSession && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={cancelSession.isPending}
+                      onClick={() =>
+                        cancelSession.mutate({
+                          sessionKey: activeSession.session_key,
+                          executionMode: activeSession.execution_mode,
+                        })
+                      }
+                    >
+                      End session
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

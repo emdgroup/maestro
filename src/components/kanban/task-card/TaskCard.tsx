@@ -31,7 +31,18 @@ import {
   BotMessageSquare,
   LockKeyhole,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { cn } from "@/lib/utils.ts";
@@ -399,6 +410,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const pendingAuthRetry = useBoardStore((s) => s.pendingAuthRetry);
   const authRequired = useAuthRequiredTask(task.id);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [emptyReviewConfirmOpen, setEmptyReviewConfirmOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -412,10 +424,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const sendToReview = useSendTaskToReviewMutation();
   const archiveTask = useArchiveTaskMutation();
   const recoverSession = useRecoverTaskSessionMutation();
-  const activeSession = useTaskActiveSession(
-    task.status === "InProgress" ? task.id : null,
-    projectId,
-  );
+  // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
+  // there is for — while this was gated that button could never render. Everything below that
+  // should stay InProgress-only carries its own check.
+  const activeSession = useTaskActiveSession(task.id, projectId);
   const activityInfo = useSessionActivity(activeSession?.session_key);
   // Read from the task rather than from live session activity, so it survives a reload. The
   // activity line below stays live: it is finer-grained than the phase and still worth having.
@@ -563,7 +575,14 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           onArchive={() => archiveTask.mutate(task.id)}
           onLogin={() => setIsAuthModalOpen(true)}
           onRecover={() => recoverSession.mutate({ taskId: task.id, projectId })}
-          onSendToReview={() => sendToReview.mutate(task.id)}
+          onSendToReview={() =>
+            sendToReview.mutate(
+              { taskId: task.id },
+              // Null means the backend found no changes and declined to move it. Confirm rather
+              // than force silently: an empty review is the state the pipeline exists to avoid.
+              { onSuccess: (task) => setEmptyReviewConfirmOpen(task === null) },
+            )
+          }
         />
       </div>
       {authRequired && (
@@ -604,6 +623,28 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
       />
+      <AlertDialog open={emptyReviewConfirmOpen} onOpenChange={setEmptyReviewConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-warning" />
+              Nothing to review
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This task has not changed any files since the agent started, so its review will be
+              empty. Send it to review anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => sendToReview.mutate({ taskId: task.id, force: true })}
+            >
+              Review anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
