@@ -44,9 +44,49 @@ pub async fn delete_worktree(
     conn: &GitConnection,
     worktree_name: &str,
 ) -> Result<(), String> {
-    run_git_in_dir(conn, conn.path(), &["worktree", "remove", worktree_name, "--force"])
-        .await
-        .map(|_| ())
+    let Err(git_error) =
+        run_git_in_dir(conn, conn.path(), &["worktree", "remove", worktree_name, "--force"]).await
+    else {
+        return Ok(());
+    };
+
+    // `git worktree remove` unregisters the worktree *before* deleting its directory and keeps
+    // going when that deletion fails, so a failure leaves a directory git no longer lists and no
+    // later run ever retries — the leftovers accumulate invisibly. Finish the job here instead.
+    if !conn.is_on_this_machine() {
+        return Err(git_error);
+    }
+    let Some(absolute) = removable_worktree_dir(conn.path(), worktree_name) else {
+        return Err(git_error);
+    };
+
+    match tokio::fs::remove_dir_all(&absolute).await {
+        Ok(()) => log::warn!("[git] worktree remove failed ({git_error}); removed {absolute} directly"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("{git_error}; removing {absolute} also failed: {e}")),
+    }
+    // The admin entry is normally already gone, but not on every failure path.
+    run_git_in_dir_lossy(conn, conn.path(), &["worktree", "prune"]).await?;
+    Ok(())
+}
+
+/// The absolute path of `worktree_name` when it is a worktree maestro created inside `repo_path`,
+/// which is the only case where deleting the directory outright is safe. `worktree_name` may be
+/// relative to the repository or absolute, with either separator.
+fn removable_worktree_dir(repo_path: &str, worktree_name: &str) -> Option<String> {
+    let repo = repo_path.replace('\\', "/");
+    let repo = repo.trim_end_matches('/');
+    let worktree = worktree_name.replace('\\', "/");
+
+    let absolute = if worktree.starts_with(&format!("{repo}/")) {
+        worktree
+    } else {
+        format!("{repo}/{worktree}")
+    };
+    let is_maestro_created = absolute
+        .strip_prefix(&format!("{repo}/"))
+        .is_some_and(crate::models::is_maestro_created_worktree);
+    is_maestro_created.then_some(absolute)
 }
 
 /// Drop remote-tracking refs for branches that no longer exist upstream, so the base-branch
@@ -168,4 +208,27 @@ pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>) -> BranchList
     // Drop remote entries that already exist as local branches (same branch, no need to show twice)
     remote.retain(|r| local.binary_search(r).is_err());
     BranchList { local, remote }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::removable_worktree_dir;
+
+    /// The fallback in `delete_worktree` removes a directory outright, so it must only ever fire
+    /// for a worktree maestro created inside the repository.
+    #[test]
+    fn only_maestro_worktrees_inside_the_repo_are_removable() {
+        let repo = r"C:\Users\me\proj";
+        let expected = Some("C:/Users/me/proj/.maestro/worktrees/session-22".to_string());
+
+        assert_eq!(removable_worktree_dir(repo, ".maestro/worktrees/session-22"), expected);
+        assert_eq!(removable_worktree_dir(repo, r"C:\Users\me\proj\.maestro\worktrees\session-22"), expected);
+        assert_eq!(removable_worktree_dir(repo, "C:/Users/me/proj/.maestro/worktrees/session-22"), expected);
+        assert_eq!(removable_worktree_dir("/home/me/proj", ".maestro/worktrees/task-3"), Some("/home/me/proj/.maestro/worktrees/task-3".to_string()));
+
+        // A worktree the user made by hand, and one outside the repository entirely.
+        assert_eq!(removable_worktree_dir(repo, "scratch"), None);
+        assert_eq!(removable_worktree_dir(repo, "C:/elsewhere/.maestro/worktrees/session-1"), None);
+        assert_eq!(removable_worktree_dir(repo, "../.maestro/worktrees/session-1"), None);
+    }
 }
