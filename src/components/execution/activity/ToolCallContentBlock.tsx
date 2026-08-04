@@ -173,22 +173,31 @@ function InlineDiffBlock({
         </div>
       )}
       <div className="overflow-x-auto max-h-52 overflow-y-auto custom-scrollbar">
-        {lines.map((line, i) => (
-          <div
-            key={i}
-            className={
-              line.type === "add"
-                ? "bg-diff-add-bg text-diff-add-fg px-2.5 leading-relaxed whitespace-pre"
-                : line.type === "del"
-                  ? "bg-diff-del-bg text-diff-del-fg px-2.5 leading-relaxed whitespace-pre"
-                  : line.type === "truncated"
-                    ? "text-muted-foreground/50 px-2.5 leading-relaxed italic text-[10px]"
-                    : "text-muted-foreground/50 px-2.5 leading-relaxed whitespace-pre"
-            }
-          >
-            {line.text}
-          </div>
-        ))}
+        {/*
+         * A row's width resolves against the scroll container's *visible* width,
+         * so an overflowing line paints its background only as far as the card
+         * edge and the rest of the row scrolls in bare. This track is as wide as
+         * the longest line (`w-max`) and never narrower than the card
+         * (`min-w-full`), so every row stripe spans the full scrollable width.
+         */}
+        <div className="w-max min-w-full">
+          {lines.map((line, i) => (
+            <div
+              key={i}
+              className={
+                line.type === "add"
+                  ? "bg-diff-add-bg text-diff-add-fg px-2.5 leading-relaxed whitespace-pre"
+                  : line.type === "del"
+                    ? "bg-diff-del-bg text-diff-del-fg px-2.5 leading-relaxed whitespace-pre"
+                    : line.type === "truncated"
+                      ? "text-muted-foreground/50 px-2.5 leading-relaxed italic text-[10px]"
+                      : "text-muted-foreground/50 px-2.5 leading-relaxed whitespace-pre"
+              }
+            >
+              {line.text}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
