@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Files,
   CheckCheck,
@@ -169,6 +169,69 @@ export function ReviewChangesPanelCompact({
     setListOpen(false);
   }
 
+  /**
+   * Every pending comment in the review, in the order they are read on screen: by file as the
+   * panel lists them, then by line. The chevrons on a comment walk this, not the current file, so
+   * the position it shows agrees with the count in the annotation bar.
+   */
+  const orderedComments = useMemo(() => {
+    const fileOrder = new Map(
+      allDisplayItems.map((item, i) => [item.kind === "diff" ? item.file.fileName : item.path, i]),
+    );
+    return annotations
+      .filter((a): a is DiffAnnotation => a.kind === "diff")
+      .sort(
+        (a, b) =>
+          (fileOrder.get(a.filePath) ?? Number.MAX_SAFE_INTEGER) -
+            (fileOrder.get(b.filePath) ?? Number.MAX_SAFE_INTEGER) || a.lineNumber - b.lineNumber,
+      );
+  }, [annotations, allDisplayItems]);
+
+  /**
+   * Reveal a comment, opening and scrolling to its file first when it lives in another one.
+   *
+   * The comment itself is inside a diff this component does not render, so it is found by the
+   * `data-comment-id` the viewer tags it with rather than through a ref. The delay is the file
+   * section's own smooth scroll — until that settles the comment is not laid out where it will be.
+   */
+  const goToComment = useCallback(
+    (id: string) => {
+      const target = orderedComments.find((c) => c.id === id);
+      if (!target) return;
+      const index = allDisplayItems.findIndex((item) =>
+        item.kind === "diff"
+          ? item.file.fileName === target.filePath
+          : item.path === target.filePath,
+      );
+      if (index >= 0 && index !== selectedFileIndex) navigateCompact(index);
+      const reveal = () =>
+        scrollContainerRef.current
+          ?.querySelector(`[data-comment-id="${CSS.escape(id)}"]`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (index >= 0 && index !== selectedFileIndex) setTimeout(reveal, 400);
+      else requestAnimationFrame(reveal);
+    },
+    [orderedComments, allDisplayItems, selectedFileIndex, navigateCompact],
+  );
+
+  const commentNav = useCallback(
+    (id: string) => {
+      if (orderedComments.length < 2) return null;
+      const at = orderedComments.findIndex((c) => c.id === id);
+      if (at < 0) return null;
+      const step = (delta: 1 | -1) =>
+        goToComment(
+          orderedComments[(at + delta + orderedComments.length) % orderedComments.length].id,
+        );
+      return {
+        onPrev: () => step(-1),
+        onNext: () => step(1),
+        position: [at + 1, orderedComments.length] as [number, number],
+      };
+    },
+    [orderedComments, goToComment],
+  );
+
   // Review-mode wiring shared by DiffViewer and UntrackedFileDiffViewer, per file.
   const reviewProps = useCallback(
     (filePath: string) => ({
@@ -198,6 +261,7 @@ export function ReviewChangesPanelCompact({
         const target = annotations.find((a) => a.id === id);
         if (target) onSendAnnotations([target]);
       },
+      commentNav,
       sendDisabled: annotationSendDisabled,
     }),
     [
@@ -209,6 +273,7 @@ export function ReviewChangesPanelCompact({
       updateAnnotation,
       onSendAnnotations,
       annotationSendDisabled,
+      commentNav,
     ],
   );
 

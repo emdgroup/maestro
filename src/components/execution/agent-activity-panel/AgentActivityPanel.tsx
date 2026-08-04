@@ -337,16 +337,24 @@ export function AgentActivityPanel({
   });
 
   // Side-panel annotations: send them as one prompt, then drop the ones that went out.
+  //
+  // The notes are dropped only after the send resolves, not before it: building the blocks now
+  // reads canvas captures off disk and, on a remote session, copies them across, and a failure
+  // there must not take the user's notes with it.
   const handleSendAnnotations = useCallback(
-    (annotations: Annotation[]) => {
+    async (annotations: Annotation[]) => {
       if (annotations.length === 0 || isProcessing) return;
-      void handleSend("", buildAnnotationBlocks(annotations));
+      const blocks = await buildAnnotationBlocks(annotations, {
+        logId: sessionKey,
+        canSendImages: promptCapabilities?.image ?? false,
+      });
+      await handleSend("", blocks);
       removeAnnotations(
         sessionKey,
         annotations.map((a) => a.id),
       );
     },
-    [handleSend, isProcessing, removeAnnotations, sessionKey],
+    [handleSend, isProcessing, removeAnnotations, sessionKey, promptCapabilities],
   );
 
   const handleConfigChange = useCallback(
@@ -750,6 +758,7 @@ export function AgentActivityPanel({
             terminalBuffers={liveState.terminalBuffers}
             onSendAnnotations={handleSendAnnotations}
             isProcessing={isProcessing}
+            canSendImages={promptCapabilities?.image ?? false}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

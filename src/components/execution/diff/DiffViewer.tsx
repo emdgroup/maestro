@@ -43,6 +43,16 @@ interface DiffViewerProps {
   onSubmitComment?: (text: string) => void;
   /** Send one comment on its own. Omitted where comments only leave in a batch. */
   onSendComment?: (commentId: string) => void;
+  /**
+   * Where this comment sits in the review's whole set, and how to step off it. Supplied by a host
+   * that knows about the other files — this viewer only ever sees one — so that a comment reads the
+   * same here as it does in the plan and canvas tabs.
+   */
+  commentNav?: (commentId: string) => {
+    onPrev: () => void;
+    onNext: () => void;
+    position: [number, number];
+  } | null;
   sendDisabled?: boolean;
 }
 
@@ -128,6 +138,7 @@ export function DiffViewer({
   onCancelComment,
   onSubmitComment,
   onSendComment,
+  commentNav,
   sendDisabled,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
@@ -193,17 +204,23 @@ export function DiffViewer({
       onUpdate: () => void;
     }) => {
       if (!onRemoveComment) return null;
+      const nav = commentNav?.(data.id);
       return (
-        <PendingCommentBlock
-          text={data.text}
-          onRemove={() => onRemoveComment(data.id)}
-          onEdit={onEditComment ? (newText) => onEditComment(data.id, newText) : undefined}
-          onSend={onSendComment ? () => onSendComment(data.id) : undefined}
-          sendDisabled={sendDisabled}
-        />
+        // Tagged so the host can find this comment in the DOM and scroll to it: stepping between
+        // comments crosses files, and the target is inside a diff the host does not render itself.
+        <div data-comment-id={data.id}>
+          <PendingCommentBlock
+            text={data.text}
+            onRemove={() => onRemoveComment(data.id)}
+            onEdit={onEditComment ? (newText) => onEditComment(data.id, newText) : undefined}
+            onSend={onSendComment ? () => onSendComment(data.id) : undefined}
+            sendDisabled={sendDisabled}
+            {...(nav ?? {})}
+          />
+        </div>
       );
     },
-    [onRemoveComment, onEditComment, onSendComment, sendDisabled],
+    [onRemoveComment, onEditComment, onSendComment, sendDisabled, commentNav],
   );
 
   if (highlighterError)

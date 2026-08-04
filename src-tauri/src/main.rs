@@ -52,10 +52,37 @@ fn install_default_logging(handle: &tauri::AppHandle, level: log::LevelFilter) -
         .is_ok()
 }
 
+/// Where the database, the project locks and the rest of the app's own state live.
+///
+/// `MAESTRO_DATA_DIR` overrides the OS location so a development build can be pointed away from
+/// the installed app's data. Without it, every checkout shares one `maestro.db`: a worktree
+/// carrying a schema migration upgrades that file, and every other build then refuses to open it,
+/// because a database is only readable by the version that wrote it or newer. The same collision
+/// happens over `locks/`, where a dev build and the installed app fight for the same project.
+///
+/// A blank value is treated as unset, matching `logging::resolve_log_dir` — an empty string used
+/// as a path would put the database in the process working directory.
+fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
+    if let Some(custom) = std::env::var("MAESTRO_DATA_DIR")
+        .ok()
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let dir = std::path::PathBuf::from(custom);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("MAESTRO_DATA_DIR {custom} is unusable: {e}"))?;
+        return Ok(dir);
+    }
+
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let app_data_dir = app.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    let app_data_dir = resolve_data_dir(app)?;
     let db_path = app_data_dir.join("maestro.db");
 
     // Initialize database — init_db returns Result<Connection, String>

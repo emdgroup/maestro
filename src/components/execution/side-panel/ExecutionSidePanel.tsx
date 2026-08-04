@@ -44,6 +44,7 @@ interface ExecutionSidePanelProps {
   terminalBuffers?: Map<string, string>;
   onSendAnnotations: (annotations: Annotation[]) => void;
   isProcessing?: boolean;
+  canSendImages?: boolean;
 }
 
 export function ExecutionSidePanel({
@@ -77,6 +78,7 @@ export function ExecutionSidePanel({
   terminalBuffers,
   onSendAnnotations,
   isProcessing,
+  canSendImages,
 }: ExecutionSidePanelProps) {
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
@@ -161,6 +163,7 @@ export function ExecutionSidePanel({
                 terminalBuffers={terminalBuffers}
                 onSendAnnotations={onSendAnnotations}
                 isProcessing={isProcessing}
+                canSendImages={canSendImages}
               />
             </div>
           </div>

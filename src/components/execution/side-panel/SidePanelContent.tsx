@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { ChevronLeft, ChevronRight, Save, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
@@ -33,6 +33,13 @@ import { commands } from "@/types/bindings";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Annotation } from "@/store/annotationStore";
 import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
+import { CanvasAnnotationLayer } from "./annotations/CanvasAnnotationLayer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -58,6 +65,8 @@ interface SidePanelContentProps {
   onSendAnnotations: (annotations: Annotation[]) => void;
   /** The agent is mid-turn, so a prompt would be dropped — see useMessageSender.handleSend. */
   isProcessing?: boolean;
+  /** The agent takes image blocks, so a canvas region is worth capturing. */
+  canSendImages?: boolean;
 }
 
 export function SidePanelContent({
@@ -83,6 +92,7 @@ export function SidePanelContent({
   terminalBuffers,
   onSendAnnotations,
   isProcessing,
+  canSendImages,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
@@ -269,93 +279,114 @@ export function SidePanelContent({
             {kind === "subagents" && (
               <SubagentsPanel items={subagentItems} toolCallMap={toolCallMap} />
             )}
-            {kind === "canvas" && (
-              <div className="absolute inset-0 flex flex-col overflow-hidden">
-                {canvasEntries.length > 0 && (
-                  <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<span className="text-xs text-muted-foreground truncate min-w-0" />}
-                      >
-                        {activeSurface?.title ?? "Canvas"}
+            {kind === "canvas" &&
+              (activeSurface ? (
+                <CanvasAnnotationLayer
+                  sessionKey={sessionKey}
+                  surface={activeSurface}
+                  onSend={onSendAnnotations}
+                  sendDisabled={isProcessing}
+                  canCapture={canSendImages}
+                  onRequestSurface={(surfaceId) => {
+                    const idx = canvasEntries.findIndex(([id]) => id === surfaceId);
+                    if (idx >= 0) setCanvasIdx(idx);
+                  }}
+                  header={{
+                    title: (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="text-xs text-muted-foreground truncate min-w-0" />
+                          }
+                        >
+                          {activeSurface.title}
+                          {canvasEntries.length > 1 && (
+                            <span className="ml-1.5 opacity-60">
+                              {canvasIdx + 1} / {canvasEntries.length}
+                            </span>
+                          )}
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{activeSurface.title}</TooltipContent>
+                      </Tooltip>
+                    ),
+                    actions: (
+                      <>
                         {canvasEntries.length > 1 && (
-                          <span className="ml-1.5 opacity-60">
-                            {canvasIdx + 1} / {canvasEntries.length}
-                          </span>
+                          <>
+                            <button
+                              type="button"
+                              disabled={canvasIdx === 0}
+                              onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={canvasIdx >= canvasEntries.length - 1}
+                              onClick={() =>
+                                setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
+                              }
+                              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {activeSurface?.title ?? "Canvas"}
-                      </TooltipContent>
-                    </Tooltip>
-                    <div className="flex gap-1 shrink-0">
-                      {canvasEntries.length > 1 && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={canvasIdx === 0}
-                            onClick={() => setCanvasIdx((i) => Math.max(0, i - 1))}
-                            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                          >
-                            <ChevronLeft className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={canvasIdx >= canvasEntries.length - 1}
-                            onClick={() =>
-                              setCanvasIdx((i) => Math.min(canvasEntries.length - 1, i + 1))
+                        {/* Save and delete gave up their places in the row to the mode toggle and
+                            the annotation bar: they are occasional, and the row is 400px wide. */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <button
+                                type="button"
+                                title="Canvas actions"
+                                className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                              />
                             }
-                            className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
                           >
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        title="Save canvas to disk"
-                        disabled={
-                          saveCanvasMutation.isPending || !activeSurface || selectedProject == null
-                        }
-                        onClick={() => {
-                          if (!activeSurface || selectedProject == null) return;
-                          saveCanvasMutation.mutate({
-                            projectId: selectedProject.id,
-                            logId: sessionKey,
-                            surface: activeSurface,
-                          });
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete saved canvas"
-                        disabled={
-                          deleteCanvasMutation.isPending ||
-                          !activeSurface ||
-                          selectedProject == null
-                        }
-                        onClick={() => {
-                          if (!activeSurface || selectedProject == null) return;
-                          deleteCanvasMutation.mutate({
-                            projectId: selectedProject.id,
-                            logId: sessionKey,
-                            surfaceId: activeSurface.surfaceId,
-                          });
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                  {!activeSurface ? (
-                    <p className="text-xs text-muted-foreground">No canvas active</p>
-                  ) : activeSurface.components.length === 0 ? (
+                            <MoreHorizontal className="w-3.5 h-3.5" />
+                          </DropdownMenuTrigger>
+                          {/* `DropdownMenuContent` is `w-(--anchor-width)` by default, which here
+                              is the width of an icon button — every label would wrap to three
+                              lines. These items are labels, not a menu sized to a field. */}
+                          <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
+                            <DropdownMenuItem
+                              disabled={saveCanvasMutation.isPending || selectedProject == null}
+                              onClick={() => {
+                                if (selectedProject == null) return;
+                                saveCanvasMutation.mutate({
+                                  projectId: selectedProject.id,
+                                  logId: sessionKey,
+                                  surface: activeSurface,
+                                });
+                              }}
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              Save canvas to disk
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              disabled={deleteCanvasMutation.isPending || selectedProject == null}
+                              onClick={() => {
+                                if (selectedProject == null) return;
+                                deleteCanvasMutation.mutate({
+                                  projectId: selectedProject.id,
+                                  logId: sessionKey,
+                                  surfaceId: activeSurface.surfaceId,
+                                });
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete saved canvas
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
+                    ),
+                  }}
+                >
+                  {activeSurface.components.length === 0 ? (
                     <div className="flex flex-col gap-3 p-1">
                       <Skeleton className="h-6 w-3/4" />
                       <Skeleton className="h-32 w-full" />
@@ -365,9 +396,12 @@ export function SidePanelContent({
                   ) : (
                     <CanvasRenderer surface={activeSurface} />
                   )}
+                </CanvasAnnotationLayer>
+              ) : (
+                <div className="absolute inset-0 p-3">
+                  <p className="text-xs text-muted-foreground">No canvas active</p>
                 </div>
-              </div>
-            )}
+              ))}
             {kind === "review" && (
               <ReviewChangesPanel
                 sessionKey={sessionKey}
