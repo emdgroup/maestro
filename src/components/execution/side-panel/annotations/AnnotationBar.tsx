@@ -13,6 +13,13 @@ export function annotationLabel(a: Annotation): string {
     const base = a.filePath.split("/").pop() ?? a.filePath;
     return a.lineNumber > 0 ? `${base}:${a.lineNumber}` : base;
   }
+  if (a.kind === "canvas") {
+    // The surface names the place, the ids name the thing — a note with neither is one taken on
+    // empty space, which is a comment about the layout and has only the surface to point at.
+    const [first, ...rest] = a.componentIds;
+    if (!first) return a.surfaceTitle;
+    return `${a.surfaceTitle} · ${first}${rest.length > 0 ? ` +${rest.length}` : ""}`;
+  }
   const quote = a.quote.replace(/\s+/g, " ");
   return quote.length > 40 ? `“${quote.slice(0, 40)}…”` : `“${quote}”`;
 }
@@ -30,6 +37,12 @@ interface AnnotationBarProps {
   onGoTo?: (id: string) => void;
   /** Which annotation the host is currently showing, marked as selected in the list. */
   activeId?: string | null;
+  /**
+   * The thing this annotation was left on is gone — the agent rewrote it. Such a note is dimmed
+   * rather than dropped: it can still be read, and it can still be sent, since its text says what
+   * it said. Only hosts with a notion of an anchor that can rot supply this.
+   */
+  isStale?: (a: Annotation) => boolean;
 }
 
 export function AnnotationBar({
@@ -39,6 +52,7 @@ export function AnnotationBar({
   sendDisabled,
   onGoTo,
   activeId,
+  isStale,
 }: AnnotationBarProps) {
   const annotations = useSessionAnnotations(sessionKey, kind);
   const [open, setOpen] = useState(false);
@@ -77,6 +91,7 @@ export function AnnotationBar({
             sendDisabled={sendDisabled}
             onGoTo={onGoTo}
             activeId={activeId}
+            isStale={isStale}
           />
         </Popover>
       </div>
@@ -91,6 +106,7 @@ function AnnotationListPanel({
   sendDisabled,
   onGoTo,
   activeId,
+  isStale,
 }: {
   sessionKey: number;
   annotations: Annotation[];
@@ -98,6 +114,7 @@ function AnnotationListPanel({
   sendDisabled?: boolean;
   onGoTo?: (id: string) => void;
   activeId?: string | null;
+  isStale?: (a: Annotation) => boolean;
 }) {
   const { updateAnnotation, removeAnnotations } = useAnnotationStore();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -174,6 +191,7 @@ function AnnotationListPanel({
             className={cn(
               "flex items-start gap-2 px-3 py-2 transition-colors",
               a.id === activeId && "bg-accent/12 shadow-[inset_2px_0_0] shadow-accent",
+              isStale?.(a) && "opacity-55",
             )}
           >
             <Checkbox
@@ -189,6 +207,7 @@ function AnnotationListPanel({
             >
               <div className="text-[10px] font-mono text-muted-foreground truncate">
                 {annotationLabel(a)}
+                {isStale?.(a) && <span className="ml-1 italic">— gone</span>}
               </div>
               {editingId === a.id ? (
                 <div className="flex flex-col gap-1 mt-1">

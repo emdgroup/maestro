@@ -19,6 +19,7 @@ interface UntrackedFileDiffViewerProps {
   onCancelComment?: () => void;
   onSubmitComment?: (text: string) => void;
   onSendComment?: (commentId: string) => void;
+  commentNav?: React.ComponentProps<typeof DiffViewer>["commentNav"];
   sendDisabled?: boolean;
 }
 
@@ -36,6 +37,7 @@ export function UntrackedFileDiffViewer({
   onCancelComment,
   onSubmitComment,
   onSendComment,
+  commentNav,
   sendDisabled,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
@@ -70,6 +72,7 @@ export function UntrackedFileDiffViewer({
           onCancelComment={onCancelComment}
           onSubmitComment={onSubmitComment}
           onSendComment={onSendComment}
+          commentNav={commentNav}
           sendDisabled={sendDisabled}
         />
       </div>

@@ -185,6 +185,26 @@ Tabs and Popover in `src/components/ui/` are from `@base-ui-components/react`, *
 </PopoverTrigger>
 ```
 
+### The dev data directory (`MAESTRO_DATA_DIR`)
+
+`bun run tauri:dev` sets `MAESTRO_DATA_DIR=$PWD/.maestro/dev-data`, so a development build keeps
+its `maestro.db` and its `locks/` inside the checkout instead of the OS app-data directory.
+
+This is not a convenience. A database is only readable by the build that wrote it or a newer one —
+`initialize_schema` refuses a `user_version` above `SCHEMA_VERSION`. Without the override every
+checkout shares one file, so the moment any worktree carrying a schema migration is launched, every
+other build stops starting with "created by a newer version of Maestro". The same collision
+happens over `locks/`, where a dev build and the installed app contend for the same project.
+
+`resolve_data_dir` in `src-tauri/src/main.rs` reads it, creates the directory, and treats a blank
+value as unset — the convention `logging::resolve_log_dir` already follows, because an empty string
+used as a path drops the database in the process working directory. The path is taken literally, so
+the script passes an absolute one (`$PWD` expands under Bun Shell on every platform); a relative
+value would resolve against the spawned binary's cwd, which is `src-tauri/`, not the repo root.
+
+`.maestro/` is gitignored, so the dev database is never committed. Delete `.maestro/dev-data/` to
+start from an empty one. Release builds set nothing and use the OS location as before.
+
 ### Rust logging
 
 Use the `log` crate — `log::error!`, `warn!`, `info!`, `debug!`, `trace!`. Do not use `tracing::`,
@@ -358,7 +378,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 ## Important Notes
 
-- SQLite DB location managed by Tauri app data directory
+- SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI

@@ -44,11 +44,13 @@ interface RendererProps {
 }
 
 export function CanvasComponentNode({ surface, componentId, depth = 0 }: RendererProps) {
-  const component = surface.components.find((c) => c.id === componentId);
-  if (!component) return null;
+  const found = surface.components.find((c) => c.id === componentId);
+  if (!found) return null;
   if (depth > 20) return null;
 
-  const { id: _id, component: type, children, ...rawProps } = component;
+  // Bound to a const so the switch below, which runs inside a closure, keeps the narrowing.
+  const component = found;
+  const { id, component: type, children, ...rawProps } = component;
   const props = resolveDataBindings(rawProps as Record<string, unknown>, surface.data);
 
   const renderChildren = () =>
@@ -61,57 +63,68 @@ export function CanvasComponentNode({ surface, componentId, depth = 0 }: Rendere
       />
     ));
 
-  switch (type) {
-    case "Column":
-      return <CanvasColumn {...props}>{renderChildren()}</CanvasColumn>;
-    case "Row":
-      return <CanvasRow {...props}>{renderChildren()}</CanvasRow>;
-    case "List":
-      return <CanvasList {...props} surface={surface} depth={depth} />;
-    case "Card":
-      return <CanvasCardComponent {...props}>{renderChildren()}</CanvasCardComponent>;
-    case "Tabs":
-      return <CanvasTabs {...props} surface={surface} component={component} depth={depth} />;
-    case "Divider":
-      return <CanvasDivider {...props} />;
-    case "Text":
-      return <CanvasText {...props} />;
-    case "Image":
-      return <CanvasImage {...props} />;
-    case "Icon":
-      return <CanvasIcon {...props} />;
-    case "Video":
-      return <CanvasVideo {...props} />;
-    case "Button":
-      return <CanvasButton {...props} />;
-    case "TextField":
-      return <CanvasTextField {...props} />;
-    case "CheckBox":
-      return <CanvasCheckBox {...props} />;
-    case "ChoicePicker":
-      return <CanvasChoicePicker {...props} />;
-    case "Slider":
-      return <CanvasSlider {...props} />;
-    case "DateTimeInput":
-      return <CanvasDateTimeInput {...props} />;
-    case "DataTable":
-      return <CanvasDataTable {...props} />;
-    case "Chart":
-      return <CanvasChart {...props} surface={surface} />;
-    case "Markdown":
-      return <CanvasMarkdown {...props} />;
-    case "AudioPlayer":
-      return <CanvasAudioPlayer {...props} />;
-    case "Modal":
-      return <CanvasModal {...props}>{renderChildren()}</CanvasModal>;
-    case "Html":
-      return <CanvasHtml {...props} />;
-    default:
-      return (
-        <div className="text-xs text-muted-foreground border border-dashed rounded p-2">
-          Unknown component: {type}
-        </div>
-      );
+  // `display: contents` so the marker is addressable from the DOM without becoming a box: the
+  // rendered child stays the flex/grid item its parent laid out, which a real wrapper element
+  // would take over. It has no rect of its own, so `canvas-anchor` measures its children instead.
+  return (
+    <span data-canvas-id={id} data-canvas-kind={type} style={{ display: "contents" }}>
+      {renderChild()}
+    </span>
+  );
+
+  function renderChild() {
+    switch (type) {
+      case "Column":
+        return <CanvasColumn {...props}>{renderChildren()}</CanvasColumn>;
+      case "Row":
+        return <CanvasRow {...props}>{renderChildren()}</CanvasRow>;
+      case "List":
+        return <CanvasList {...props} surface={surface} depth={depth} />;
+      case "Card":
+        return <CanvasCardComponent {...props}>{renderChildren()}</CanvasCardComponent>;
+      case "Tabs":
+        return <CanvasTabs {...props} surface={surface} component={component} depth={depth} />;
+      case "Divider":
+        return <CanvasDivider {...props} />;
+      case "Text":
+        return <CanvasText {...props} />;
+      case "Image":
+        return <CanvasImage {...props} />;
+      case "Icon":
+        return <CanvasIcon {...props} />;
+      case "Video":
+        return <CanvasVideo {...props} />;
+      case "Button":
+        return <CanvasButton {...props} />;
+      case "TextField":
+        return <CanvasTextField {...props} />;
+      case "CheckBox":
+        return <CanvasCheckBox {...props} />;
+      case "ChoicePicker":
+        return <CanvasChoicePicker {...props} />;
+      case "Slider":
+        return <CanvasSlider {...props} />;
+      case "DateTimeInput":
+        return <CanvasDateTimeInput {...props} />;
+      case "DataTable":
+        return <CanvasDataTable {...props} />;
+      case "Chart":
+        return <CanvasChart {...props} surface={surface} />;
+      case "Markdown":
+        return <CanvasMarkdown {...props} />;
+      case "AudioPlayer":
+        return <CanvasAudioPlayer {...props} />;
+      case "Modal":
+        return <CanvasModal {...props}>{renderChildren()}</CanvasModal>;
+      case "Html":
+        return <CanvasHtml {...props} />;
+      default:
+        return (
+          <div className="text-xs text-muted-foreground border border-dashed rounded p-2">
+            Unknown component: {type}
+          </div>
+        );
+    }
   }
 }
 
