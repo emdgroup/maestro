@@ -122,6 +122,8 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "@wdio/native-utils": "2.5.0"
+    "@wdio/native-utils": "2.5.0",
+    "fast-uri": "^3.1.5",
+    "ip-address": "^10.4.0"
   }
 }
