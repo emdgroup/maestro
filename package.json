@@ -33,7 +33,7 @@
     "@git-diff-view/react": "^0.1.7",
     "@shadcn/react": "^0.2.1",
     "@shikijs/core": "3.22.0",
-    "@shikijs/engine-javascript": "3.22.0",
+    "@shikijs/engine-javascript": "4.4.1",
     "@shikijs/langs": "3.22.0",
     "@shikijs/themes": "3.22.0",
     "@tanstack/react-query": "^5.101.4",
