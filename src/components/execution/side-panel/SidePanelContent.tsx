@@ -54,7 +54,7 @@ interface SidePanelContentProps {
   latestCanvasSurfaceId: string | null;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
-  projectPath: string;
+  workspacePath: string;
   connection: ConnectionKey;
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
@@ -84,7 +84,7 @@ export function SidePanelContent({
   latestCanvasSurfaceId,
   workingFiles,
   taskId,
-  projectPath,
+  workspacePath,
   connection,
   planEntries,
   planTitle,
@@ -428,7 +428,7 @@ export function SidePanelContent({
             )}
             {kind === "files" && (
               <WorkspaceFilesPanel
-                projectPath={projectPath}
+                workspacePath={workspacePath}
                 connection={connection}
                 wslDistroName={wslDistroName}
                 isActive={isActive}
