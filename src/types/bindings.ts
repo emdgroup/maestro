@@ -543,21 +543,6 @@ async closePtySession(sessionKey: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Get diff for review: generates unified diff between task branch and its base branch.
- * 
- * Dispatches through GitConnection so it works for local, SSH, and WSL projects.
- * 
- * Returns the unified diff as a string with 6 context lines.
- */
-async getDiffForReview(taskId: number) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_diff_for_review", { taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Save task review with feedback and per-file comments
  * 
  * Creates a new review record with decision (Approve, RequestChanges, etc.)
@@ -646,18 +631,17 @@ async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracke
 }
 },
 /**
- * Reject a task in review with one of three actions
+ * Reject a task in review, discarding its work either way
  * 
- * Handles the three rejection paths from the review panel:
- * - "SendToBacklog": moves task back to Backlog, deletes worktree, resets agent commits
- * - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
+ * Handles the two rejection paths from the review panel:
+ * - "SendToBacklog": moves task back to Planning, deletes worktree, resets agent commits
  * - "CancelTask": moves task to Cancelled, deletes worktree, resets agent commits
  * 
  * Returns the updated Task.
  */
-async rejectReview(taskId: number, action: string, instruction: string | null) : Promise<Result<Task, string>> {
+async rejectReview(taskId: number, action: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("reject_review", { taskId, action, instruction }) };
+    return { status: "ok", data: await TAURI_INVOKE("reject_review", { taskId, action }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

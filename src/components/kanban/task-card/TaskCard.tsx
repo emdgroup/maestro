@@ -218,7 +218,10 @@ function FooterCTAs({
     return () => clearTimeout(t);
   }, [isSessionLost]);
 
-  if (task.status === "Queue") {
+  // Planning is where Stop parks a task, so without Execute here a stopped task could only be
+  // restarted by first dragging it to Queue — a step that means nothing to the user and exists
+  // only because this branch used to be Queue-only.
+  if (task.status === "Planning" || task.status === "Queue") {
     return (
       <div className="flex gap-1 mt-1.5">
         <Button

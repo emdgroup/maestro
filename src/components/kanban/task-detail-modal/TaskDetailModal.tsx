@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Trash2, X } from "lucide-react";
+import { Ban, Trash2, X } from "lucide-react";
 import type { TaskStatus, TaskPriority } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
@@ -19,6 +19,7 @@ import {
   useTasksQuery,
   useUpdateTask,
   useArchiveTaskMutation,
+  useCancelTaskMutation,
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
 } from "@/services/task.service";
@@ -39,8 +40,24 @@ import { DescriptionWithAttachments } from "@/components/kanban/shared/Descripti
 import { BranchSection } from "@/components/kanban/shared/BranchSection";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 
-const ALL_STATUSES: TaskStatus[] = ["Planning", "Queue", "InProgress", "Review", "Done"];
-const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
+// Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
+// picker showing nothing at all for it reads as a bug.
+const ALL_STATUSES: TaskStatus[] = [
+  "Planning",
+  "Queue",
+  "InProgress",
+  "Review",
+  "Done",
+  "Cancelled",
+];
+
+/// Everywhere the user may send a task by hand.
+///
+/// This was Planning and Queue alone, which made Done a trap: nothing — not the picker, not drag
+/// and drop, not archiving — could take a task back out of it. InProgress and Cancelled stay out
+/// deliberately: InProgress claims an agent is working, which only Execute can make true, and
+/// cancelling has its own button below because it takes the task off the board entirely.
+const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue", "Review", "Done"]);
 
 interface TaskDraft {
   title: string;
@@ -68,6 +85,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const updateTask = useUpdateTask();
   const archiveTask = useArchiveTaskMutation();
+  const cancelTask = useCancelTaskMutation();
   const deleteTask = useDeleteTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
   const addAttachmentRef = useRef(addAttachment);
@@ -136,6 +154,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const [agentError, setAgentError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
@@ -376,6 +395,49 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           }}
                         >
                           Delete Task
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              )}
+
+              {/* The way off the board that keeps the record. Delete destroys the task and is
+                  hidden once it is Done; without this a task that should never have been started
+                  had no exit at all from Review or Done. */}
+              {task.status !== "Cancelled" && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancelTask.isPending}
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <Ban className="size-4" />
+                    Cancel task
+                  </Button>
+                  <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          It leaves the board and moves to the archive. Nothing on disk is touched —
+                          any worktree and branch stay where they are.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setCancelOpen(false)}>
+                          Keep task
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            setCancelOpen(false);
+                            cancelTask.mutate(task.id, {
+                              onSuccess: () => setActiveTaskId(null),
+                            });
+                          }}
+                        >
+                          Cancel task
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

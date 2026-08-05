@@ -125,7 +125,7 @@ pub fn create_task(
 /// Fields that can be updated on a task. All fields are optional — only non-None fields
 /// are included in the SQL UPDATE. Grouped into a struct to work around the specta
 /// 10-argument limit on #[tauri::command] functions.
-#[derive(serde::Deserialize, specta::Type)]
+#[derive(Default, serde::Deserialize, specta::Type)]
 pub struct UpdateTaskRequest {
     pub status: Option<String>,
     pub description: Option<String>,
@@ -147,7 +147,19 @@ pub fn update_task(
     task_id: i32,
     updates: UpdateTaskRequest,
 ) -> Result<Task, String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let task = {
+        let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        update_task_impl(&mut conn, task_id, updates)?
+    };
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+fn update_task_impl(
+    conn: &mut rusqlite::Connection,
+    task_id: i32,
+    updates: UpdateTaskRequest,
+) -> Result<Task, String> {
     let now = Utc::now().to_rfc3339();
 
     // Build SET clause dynamically from non-None fields, wrapped in a transaction
@@ -218,6 +230,17 @@ pub fn update_task(
         if parsed.as_str() != status {
             return Err(format!("Unknown task status '{}'", status));
         }
+        // Sending a task back to a board column un-archives it. Otherwise a task restored from the
+        // archive would sit in a column and in the archive list at once, and — for Done, the only
+        // column filtered on `archived_at` — would be invisible in the place it was just moved to.
+        if !matches!(parsed, TaskStatus::Cancelled) {
+            tx.execute(
+                "UPDATE tasks SET archived_at = NULL WHERE id = ?",
+                [task_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         transition::apply(&tx, task_id, TaskTransition::ManualMove(parsed))?;
     }
 
@@ -228,7 +251,6 @@ pub fn update_task(
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
-    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
 
@@ -409,5 +431,67 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?", [task.id], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn archived_task(conn: &Connection) -> i32 {
+        let project_id = insert_project(conn);
+        let task = create_task_impl(
+            conn, project_id, "Archived task".to_string(), None,
+            vec![], vec![], "main".to_string(),
+            None, None, false, true, None,
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tasks SET status = 'Done', archived_at = '2024-01-02T00:00:00Z' WHERE id = ?",
+            [task.id],
+        )
+        .unwrap();
+        task.id
+    }
+
+    fn archived_at(conn: &Connection, task_id: i32) -> Option<String> {
+        conn.query_row("SELECT archived_at FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn move_to(status: &str) -> UpdateTaskRequest {
+        UpdateTaskRequest { status: Some(status.to_string()), ..Default::default() }
+    }
+
+    /// Done is the only column filtered on `archived_at`, so an archived task moved back onto the
+    /// board would otherwise be listed in the archive and invisible in the column it was sent to.
+    #[test]
+    fn moving_a_task_back_onto_the_board_un_archives_it() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        update_task_impl(&mut conn, task_id, move_to("Planning")).unwrap();
+
+        assert_eq!(archived_at(&conn, task_id), None);
+    }
+
+    /// Only a status change may un-archive: editing an archived task's title must leave it filed.
+    #[test]
+    fn editing_an_archived_task_leaves_it_archived() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        let updates = UpdateTaskRequest {
+            title: Some("Renamed while archived".to_string()),
+            ..Default::default()
+        };
+        update_task_impl(&mut conn, task_id, updates).unwrap();
+
+        assert!(archived_at(&conn, task_id).is_some());
+    }
+
+    #[test]
+    fn update_task_rejects_an_unknown_status() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        let err = update_task_impl(&mut conn, task_id, move_to("Backlog")).unwrap_err();
+
+        assert!(err.contains("Unknown task status 'Backlog'"), "got: {err}");
     }
 }

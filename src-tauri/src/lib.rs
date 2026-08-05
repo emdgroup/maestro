@@ -70,7 +70,6 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::resize_terminal,
             crate::ipc::detach_terminal,
             crate::ipc::close_pty_session,
-            crate::ipc::get_diff_for_review,
             crate::ipc::save_task_review,
             crate::ipc::request_changes,
             crate::ipc::get_task_review,

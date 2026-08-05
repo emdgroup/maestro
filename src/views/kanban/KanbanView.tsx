@@ -79,6 +79,12 @@ export const KanbanView: React.FC = () => {
     return (
       <TaskReviewPanel
         task={reviewTask}
+        // A task with isolation off never gets a worktree row — its agent worked in the project
+        // itself — so the diff has to be taken there. Kept separate from `worktreePath`, which
+        // still means "there is a worktree", because Discard offers to delete whatever that names.
+        reviewPath={
+          reviewWorktree?.path ?? (reviewTask.isolated_worktree ? null : projectPath || null)
+        }
         worktreePath={reviewWorktree?.path ?? null}
         baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
         branchName={reviewWorktree?.branch_name ?? null}

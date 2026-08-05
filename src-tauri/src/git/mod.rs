@@ -17,7 +17,7 @@ pub use diff_models::{DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtySt
 pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy, run_git_in_dir_with_stdin};
 pub use ops::{
     BranchList, ParsedWorktree,
-    create_worktree, delete_worktree, git_diff, git_status,
+    create_worktree, delete_worktree, git_status,
     list_branches, get_current_branch, list_worktrees, prune_remote_refs,
     parse_worktree_list, parse_branch_list,
 };

@@ -40,6 +40,11 @@ import type { DiffTarget, Task } from "@/types/bindings";
 
 interface TaskReviewPanelProps {
   task: Task;
+  /// Where to run git for this review — the worktree, or the project itself when the task runs
+  /// without one. Everything that reads the code uses this.
+  reviewPath: string | null;
+  /// The worktree, if the task has one. Only things that act on the worktree as an object — the
+  /// approve strategy, the discard warning — may use this.
   worktreePath: string | null;
   baseBranch: string | null;
   branchName: string | null;
@@ -48,6 +53,7 @@ interface TaskReviewPanelProps {
 
 export function TaskReviewPanel({
   task,
+  reviewPath,
   worktreePath,
   baseBranch,
   branchName,
@@ -130,10 +136,10 @@ export function TaskReviewPanel({
   const isViewActive = useActiveTab() === "kanban";
   const diffPolling = { refetchInterval: isViewActive ? 10000 : (false as const) };
 
-  const diffQuery = useWorktreeDiffQuery(projectId, worktreePath, diffTarget, diffPolling);
+  const diffQuery = useWorktreeDiffQuery(projectId, reviewPath, diffTarget, diffPolling);
   const uncommittedDiffQuery = useWorktreeDiffQuery(
     projectId,
-    worktreePath,
+    reviewPath,
     { type: "Head" },
     diffPolling,
   );
@@ -148,7 +154,7 @@ export function TaskReviewPanel({
     }
     wasViewActiveRef.current = isViewActive;
   }, [isViewActive, refetchDiff, refetchUncommittedDiff]);
-  const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
+  const commitsQuery = useWorktreeCommitsQuery(projectId, reviewPath, baseBranch);
   const commits = commitsQuery.data || [];
 
   // Parse diff to get structured file list
@@ -545,7 +551,7 @@ export function TaskReviewPanel({
                 />
                 <UntrackedFileDiffViewer
                   projectId={projectId}
-                  worktreePath={worktreePath}
+                  worktreePath={reviewPath}
                   filePath={selectedUntrackedPath}
                   showHeader={false}
                   reviewMode={true}

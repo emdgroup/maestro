@@ -180,16 +180,25 @@ export function ApproveModal({
         </AlertDialogHeader>
 
         {showRadio && (
-          <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <RadioGroupItem value="merge-delete" />
-              Commit + Merge + Delete worktree
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <RadioGroupItem value="commit-only" />
-              Commit only (keep worktree)
-            </label>
-          </RadioGroup>
+          <>
+            <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="merge-delete" />
+                Commit + Merge + Delete worktree
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="commit-only" />
+                Commit only (keep worktree)
+              </label>
+            </RadioGroup>
+            {/* Both strategies approve the task, so both move it to Done. Worth saying, because
+                keeping the worktree reads like the task is still in flight. */}
+            <p className="text-xs text-muted-foreground">
+              {strategy === "commit-only"
+                ? "The task moves to Done. The branch stays unmerged and the worktree stays on disk for you to merge or push yourself."
+                : "The task moves to Done and the worktree is deleted."}
+            </p>
+          </>
         )}
 
         {untrackedCount > 0 && (

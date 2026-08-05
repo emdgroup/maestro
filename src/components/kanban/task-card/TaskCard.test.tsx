@@ -235,6 +235,20 @@ describe("TaskCard empty-review confirmation", () => {
   });
 });
 
+/// Stop parks a task at Planning, so Planning is where a restart has to be possible. It used to be
+/// offered on Queue alone, which made Stop a one-way door out of the pipeline.
+describe("TaskCard execute affordance", () => {
+  it.each(["Planning", "Queue"] as const)("offers Execute on a %s card", (status) => {
+    renderCard({ status });
+    expect(screen.getByText("Execute")).toBeInTheDocument();
+  });
+
+  it.each(["InProgress", "Review", "Done"] as const)("omits Execute on a %s card", (status) => {
+    renderCard({ status });
+    expect(screen.queryByText("Execute")).not.toBeInTheDocument();
+  });
+});
+
 /// A task keeps its session into Review — that is what Join is for. The button existed but the
 /// card looked the session up only while the task was In Progress, so it could never render, and
 /// nothing asserted otherwise. These pin both halves.

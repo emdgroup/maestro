@@ -57,10 +57,14 @@ pub enum TaskTransition {
     ReworkRequested,
     /// A merge was attempted and conflicted.
     MergeConflict,
-    /// The reviewer sent the task back with an explicit instruction.
-    ResumeWithInstructions,
     /// The branch merged cleanly.
     Merged,
+    /// The user approved the work but chose to commit it without merging, keeping the worktree.
+    ///
+    /// Lands in the same place as `Merged` — approval is terminal on the board either way — but
+    /// stays a separate event because the repository is left in a different state, and the two
+    /// would otherwise be indistinguishable at the one place that decides what approval means.
+    ApprovedWithoutMerge,
     /// The user discarded the work but kept the task.
     Discarded,
     /// The task was abandoned.
@@ -110,7 +114,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::Stopped => TaskState::parked(Planning),
 
-        TaskTransition::ReworkRequested | TaskTransition::ResumeWithInstructions => {
+        TaskTransition::ReworkRequested => {
             TaskState::active(InProgress, Rework, Waiting, Ball::User)
         }
 
@@ -119,7 +123,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             TaskState::active(InProgress, Rework, Failed, Ball::User)
         }
 
-        TaskTransition::Merged => TaskState::parked(Done),
+        TaskTransition::Merged | TaskTransition::ApprovedWithoutMerge => TaskState::parked(Done),
 
         // There is no Backlog column; discarding returns the task to Planning.
         TaskTransition::Discarded => TaskState::parked(Planning),
@@ -327,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn rework_paths_land_in_progress_waiting_on_the_user() {
+    fn rework_lands_in_progress_waiting_on_the_user() {
         let expected = TaskState::active(
             TaskStatus::InProgress,
             TaskPhase::Rework,
@@ -342,10 +346,6 @@ mod tests {
         );
 
         assert_eq!(resolve(TaskTransition::ReworkRequested, from_review), expected);
-        assert_eq!(
-            resolve(TaskTransition::ResumeWithInstructions, from_review),
-            expected
-        );
     }
 
     /// A conflict differs from ordinary rework only in that it is a failure, which is what puts
@@ -376,6 +376,7 @@ mod tests {
     fn terminal_events_park_the_task() {
         for (event, status) in [
             (TaskTransition::Merged, TaskStatus::Done),
+            (TaskTransition::ApprovedWithoutMerge, TaskStatus::Done),
             (TaskTransition::Stopped, TaskStatus::Planning),
             (TaskTransition::Discarded, TaskStatus::Planning),
             (TaskTransition::Cancelled, TaskStatus::Cancelled),

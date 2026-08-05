@@ -38,38 +38,6 @@ fn insert_review_with_comments(
     Ok(review_id)
 }
 
-/// Get diff for review: generates unified diff between task branch and its base branch.
-///
-/// Dispatches through GitConnection so it works for local, SSH, and WSL projects.
-///
-/// Returns the unified diff as a string with 6 context lines.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_diff_for_review(
-    app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
-) -> Result<String, String> {
-    let (project_id, branch_name, base_branch) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT t.project_id, w.branch_name, t.base_branch
-             FROM tasks t
-             JOIN worktrees w ON w.task_id = t.id
-             WHERE t.id = ?",
-            rusqlite::params![task_id],
-            |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
-        )
-        .map_err(|e| format!("Task/worktree not found: {}", e))?
-    };
-
-    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
-        .map_err(|e| format!("Failed to get git connection: {}", e))?;
-
-    git::git_diff(&git_conn, &branch_name, &base_branch)
-        .await
-        .map_err(|e| format!("Failed to get diff: {}", e))
-}
-
 /// Save task review with feedback and per-file comments
 ///
 /// Creates a new review record with decision (Approve, RequestChanges, etc.)
@@ -170,11 +138,10 @@ pub async fn clear_task_review(
     Ok(())
 }
 
-/// Reject a task in review with one of three actions
+/// Reject a task in review, discarding its work either way
 ///
-/// Handles the three rejection paths from the review panel:
-/// - "SendToBacklog": moves task back to Backlog, deletes worktree, resets agent commits
-/// - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
+/// Handles the two rejection paths from the review panel:
+/// - "SendToBacklog": moves task back to Planning, deletes worktree, resets agent commits
 /// - "CancelTask": moves task to Cancelled, deletes worktree, resets agent commits
 ///
 /// Returns the updated Task.
@@ -184,10 +151,7 @@ pub async fn reject_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     action: String,
-    instruction: Option<String>,
 ) -> Result<Task, String> {
-    let now = Utc::now().to_rfc3339();
-
     match action.as_str() {
         "SendToBacklog" | "CancelTask" => {
             // "SendToBacklog" is a legacy name: there is no Backlog column, and this used to
@@ -270,25 +234,9 @@ pub async fn reject_review(
                 ).ok();
             }
         }
-        "ResumeWithInstructions" => {
-            let instr = instruction.ok_or_else(|| {
-                "instruction is required for ResumeWithInstructions action".to_string()
-            })?;
-
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-            transition::apply(&conn, task_id, TaskTransition::ResumeWithInstructions)?;
-
-            // Save the instruction so the agent can pick it up
-            conn.execute(
-                "INSERT INTO task_instructions (task_id, content, source, created_at) VALUES (?, ?, 'review', ?)",
-                rusqlite::params![task_id, &instr, &now],
-            )
-            .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
-        }
         _ => {
             return Err(format!(
-                "Unknown reject action '{}'. Expected SendToBacklog, ResumeWithInstructions, or CancelTask",
+                "Unknown reject action '{}'. Expected SendToBacklog or CancelTask",
                 action
             ));
         }

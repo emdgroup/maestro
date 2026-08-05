@@ -113,6 +113,11 @@ Merge task #{task_id}: {task_name}
 
 Squash merge {branch} into {target_branch}.";
 
+/// A task running without an isolated worktree has no branch of its own — the agent committed
+/// straight onto whatever the project was already on — so the merge wording above would describe
+/// something that never happens.
+const DEFAULT_COMMIT_TEMPLATE_IN_PLACE: &str = "Task #{task_id}: {task_name}";
+
 fn resolve_template(
     template: &str,
     task_id: i32,
@@ -140,18 +145,21 @@ pub async fn resolve_commit_message(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
+    // LEFT JOIN, not JOIN: a task with `isolated_worktree` off has no worktree row, and this used
+    // to fail outright — which left the approve dialog with an empty commit message and its
+    // confirm button permanently disabled.
     let (task_name, branch_name, base_branch, external_id, description, project_path, connection_key) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id
              FROM tasks t
-             JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
+             LEFT JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
              WHERE t.id = ?",
             [task_id],
             |row| Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
@@ -159,16 +167,24 @@ pub async fn resolve_commit_message(
                 ConnectionKey::from_all_ids(row.get(6)?, row.get(7)?, row.get(8)?),
             )),
         )
-        .map_err(|e| format!("Task/worktree/project not found: {}", e))?
+        .map_err(|e| format!("Task/project not found: {}", e))?
     };
+
+    let default_template = match branch_name {
+        Some(_) => DEFAULT_COMMIT_TEMPLATE,
+        None => DEFAULT_COMMIT_TEMPLATE_IN_PLACE,
+    };
+    // With no worktree there is no branch of the task's own, so `{branch}` names the branch the
+    // work actually landed on.
+    let branch_name = branch_name.unwrap_or_else(|| base_branch.clone());
 
     // A project that never customised its template has no file, which is not an error.
     let template_path = format!("{}/.maestro/commit-template.txt", project_path);
     let template = match crate::core::git_connection_for(&app_state, project_path.clone(), connection_key).await {
         Ok(conn) => crate::connectivity::files::read_text(&conn, &template_path)
             .await
-            .unwrap_or_else(|_| DEFAULT_COMMIT_TEMPLATE.to_string()),
-        Err(_) => DEFAULT_COMMIT_TEMPLATE.to_string(),
+            .unwrap_or_else(|_| default_template.to_string()),
+        Err(_) => default_template.to_string(),
     };
 
     let external_id_str = external_id.unwrap_or_default();
@@ -209,27 +225,43 @@ pub async fn approve_task_and_merge(
     commit_message: String,
 ) -> Result<MergeResult, String> {
 
-    // 1. Single JOIN query to get task, worktree, and project data
-    let (branch_name, worktree_path, worktree_id, project_id, repo_path, base_branch) = {
+    // 1. Single query for task, worktree and project data. The worktree side is a LEFT JOIN: a
+    // task with `isolated_worktree` off has no row there, and an inner join made approving one
+    // fail with "Task, worktree, or project not found" — a dead end, since Review is where the
+    // pipeline puts it.
+    let (worktree, project_id, repo_path, base_branch) = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT w.branch_name, w.path, w.id, t.project_id, p.path, t.base_branch
              FROM tasks t
-             JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
+             LEFT JOIN worktrees w ON w.id = (SELECT id FROM worktrees WHERE task_id = t.id LIMIT 1)
              JOIN projects p ON p.id = t.project_id
              WHERE t.id = ?",
             [task_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i32>(2)?, row.get::<_, i32>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?)),
+            |row| {
+                let worktree = match (
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i32>>(2)?,
+                ) {
+                    (Some(branch_name), Some(path), Some(id)) => Some((branch_name, path, id)),
+                    _ => None,
+                };
+                Ok((worktree, row.get::<_, i32>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?))
+            },
         )
-        .map_err(|e| format!("Task, worktree, or project not found: {}", e))?
+        .map_err(|e| format!("Task or project not found: {}", e))?
     };
 
     // 2. Resolve git connection for this project
     let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
         .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-    // 3. Build full worktree path
-    let full_worktree_path = format!("{}/{}", repo_path, worktree_path);
+    // 3. Where the agent's work is: its worktree, or the project itself when it has none.
+    let full_worktree_path = match &worktree {
+        Some((_, path, _)) => format!("{}/{}", repo_path, path),
+        None => repo_path.clone(),
+    };
 
     // 3a. Stage and commit modified tracked files (agents may modify without committing)
     run_git_in_dir(&git_conn, &full_worktree_path, &["add", "-u"]).await
@@ -268,11 +300,34 @@ pub async fn approve_task_and_merge(
         ).await.map_err(|e| format!("Failed to commit changes: {}", e))?;
     }
 
-    if merge_strategy == "CommitOnly" {
+    // Approval is terminal whichever strategy was chosen; commit-only differs only in leaving the
+    // branch unmerged and the worktree on disk. This used to return without writing anything, so an
+    // approved task stayed in Review looking exactly like one still waiting to be reviewed.
+    //
+    // A task with no worktree takes the same exit for a different reason: it has no branch of its
+    // own, so the commit above already landed the work and there is nothing left to merge.
+    let Some((branch_name, _, worktree_id)) = worktree else {
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            transition::apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge)?;
+        }
         app_state.app_handle.emit("tasks-changed", ()).ok();
         return Ok(MergeResult {
             success: true,
-            task_status: "Review".to_string(),
+            task_status: "Done".to_string(),
+            conflicts: vec![],
+        });
+    };
+
+    if merge_strategy == "CommitOnly" {
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            transition::apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge)?;
+        }
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        return Ok(MergeResult {
+            success: true,
+            task_status: "Done".to_string(),
             conflicts: vec![],
         });
     }

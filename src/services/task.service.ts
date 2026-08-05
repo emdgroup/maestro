@@ -72,18 +72,6 @@ export function useTasksQuery(projectId: number | null) {
 }
 
 /**
- * Query hook for fetching diff for review (always fresh, no cache)
- */
-export function useDiffForReviewQuery(taskId: number | null) {
-  return useQuery({
-    queryKey: taskQueryKeys.detail(taskId!),
-    queryFn: () => api.getDiffForReview(taskId!),
-    enabled: taskId !== null,
-    staleTime: 0, // Always fetch fresh—diffs should reflect current state
-  });
-}
-
-/**
  * Mutation hook for creating a new task
  */
 export function useCreateTaskMutation() {
@@ -212,22 +200,15 @@ export function useApproveTaskAndMergeMutation() {
 }
 
 /**
- * Mutation hook for rejecting a review with one of three actions:
- * SendToBacklog, ResumeWithInstructions, CancelTask
+ * Mutation hook for rejecting a review, either sending the task back to Planning
+ * ("SendToBacklog") or cancelling it outright ("CancelTask")
  */
 export function useRejectReviewMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      taskId,
-      action,
-      instruction,
-    }: {
-      taskId: number;
-      action: string;
-      instruction?: string;
-    }) => api.rejectReview(taskId, action, instruction ?? null),
+    mutationFn: ({ taskId, action }: { taskId: number; action: string }) =>
+      api.rejectReview(taskId, action),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
