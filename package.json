@@ -91,7 +91,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
-    "@commitlint/config-conventional": "^19.8.1",
+    "@commitlint/config-conventional": "^21.2.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/vite": "^4.3.3",
