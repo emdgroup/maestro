@@ -11,6 +11,7 @@ import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { NotificationsSection } from "./NotificationsSection";
+import { ConcurrencySection } from "./ConcurrencySection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
@@ -124,6 +125,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 connection={connection}
               />
               <AppearanceSection />
+              <ConcurrencySection />
               <NotificationsSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}

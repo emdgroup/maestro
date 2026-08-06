@@ -455,6 +455,14 @@ async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<n
     else return { status: "error", error: e  as any };
 }
 },
+async getQueueCapacity(projectId: number) : Promise<Result<QueueCapacity, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_queue_capacity", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Attach to a PTY session and stream output to frontend
  * 
@@ -2304,6 +2312,10 @@ export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
 export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
+/**
+ * What the board shows: how many slots this host has, how many are taken, and why.
+ */
+export type QueueCapacity = { slots: number; used: number; mode: ConcurrencyMode; reason: string }
 /**
  * A remote issue fetched from a ticketing provider, ready for import as a Task.
  */

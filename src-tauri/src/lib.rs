@@ -67,6 +67,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::cleanup_zombie_worktrees,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,
+            crate::ipc::get_queue_capacity,
             crate::ipc::attach_terminal,
             crate::ipc::send_terminal_input,
             crate::ipc::resize_terminal,

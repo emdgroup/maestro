@@ -19,6 +19,9 @@ import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
+import { useKanban } from "@/contexts/KanbanContext";
+import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
+import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 
 const EMPTY_TASKS: Task[] = [];
 
@@ -32,6 +35,12 @@ export const KanbanView: React.FC = () => {
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
   const reviewPanelTaskId = useReviewPanelTaskId();
   const { closeReview } = useBoardActions();
+  const { connection } = useKanban();
+
+  // Mounted here rather than in `BoardView` because this view stays mounted while the user is on
+  // another tab — auto-mode has to keep filling slots when nobody is watching the board, which is
+  // most of the time it matters.
+  useQueueDrain(projectId, projectPath, taskList, connection);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
@@ -189,6 +198,8 @@ export const KanbanView: React.FC = () => {
             </div>
           </PopoverContent>
         </Popover>
+
+        <QueueCapacityBadge projectId={projectId} />
 
         <Button
           size="sm"

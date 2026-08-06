@@ -17,7 +17,6 @@ import {
 } from "@/ui/select";
 import type { Project } from "@/types/bindings";
 import { useRecentProjects } from "@/services/project.service";
-import { invoke } from "@tauri-apps/api/core";
 import type { ViewType } from "@/store/navigationStore";
 
 interface AppHeaderProps {
@@ -67,27 +66,14 @@ export function AppHeader({
         : { type: "local" as const };
   const { data: recentProjects = [] } = useRecentProjects(headerConnection);
 
+  // Persisting is the whole job. Saving the setting emits `settings-changed`, which `useQueueDrain`
+  // listens for — the header used to drain here itself and throw the answer away, which is what
+  // made the switch look like it did nothing.
   const handleAutoModeToggle = async () => {
-    const next = !autoMode;
-    // The drain below reads auto_mode back out of the database, so the setting has to be
-    // persisted first or it sees the old value and returns nothing.
     try {
-      await onAutoModeChange(next);
+      await onAutoModeChange(!autoMode);
     } catch (err) {
       console.error("[auto-mode] failed to persist auto_mode:", err);
-      return;
-    }
-    // Trigger queue drain when enabling auto mode. The returned task IDs are deliberately
-    // dropped: nothing starts them yet because the scheduler is not built (tracked separately).
-    if (next && currentProject) {
-      try {
-        await invoke<number[]>("drain_ready_queue", {
-          projectId: currentProject.id,
-          projectPath: currentProject.path,
-        });
-      } catch (err) {
-        console.error("[auto-mode] drain_ready_queue failed:", err);
-      }
     }
   };
 
