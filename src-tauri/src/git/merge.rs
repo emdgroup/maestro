@@ -571,7 +571,26 @@ pub async fn reconcile_pull_requests(
         };
 
         match state {
-            PullRequestState::Open => {}
+            PullRequestState::Open => {
+                if let Err(e) = maybe_fix_ci(app_state.inner(), task_id, &target, number).await {
+                    log::warn!("Could not check CI for pull request #{}: {}", number, e);
+                    continue;
+                }
+                // `maybe_fix_ci` moves the task itself when it acts; the sweep only reports.
+                let ball: Option<String> = app_state
+                    .db
+                    .lock()
+                    .ok()
+                    .and_then(|conn| {
+                        conn.query_row("SELECT ball FROM tasks WHERE id = ?", [task_id], |row| {
+                            row.get(0)
+                        })
+                        .ok()
+                    });
+                if ball.as_deref() == Some("Agent") {
+                    changed.push(task_id);
+                }
+            }
             PullRequestState::Merged => {
                 if let Err(e) = land_merged_pull_request(app_state.inner(), task_id).await {
                     log::warn!("Pull request #{} merged but task {} could not land: {}", number, task_id, e);
@@ -596,6 +615,124 @@ pub async fn reconcile_pull_requests(
     }
 
     Ok(changed)
+}
+
+/// How many times an agent may be sent to fix a task's CI before the user has to look.
+///
+/// Same reasoning as the review loop's cap, with more at stake: this one pushes commits to a pull
+/// request other people can see. A build that is red for a reason the agent cannot fix — a missing
+/// secret, a flaky runner, an infrastructure outage — stays red however many times it tries.
+pub const FIX_ROUND_CAP: i32 = 3;
+
+/// Send an agent to fix a red build, if the pull request has one and the loop has rounds left.
+///
+/// Does nothing at all unless CI has *finished* and *failed*. Pending, passing, absent and
+/// unreadable are all left alone, because the only thing this does is start an agent that pushes
+/// commits to an open pull request, and every unclear case resolves itself on the next sweep.
+async fn maybe_fix_ci(
+    app_state: &AppState,
+    task_id: i32,
+    target: &crate::integration::pull_request::PullRequestTarget<'_>,
+    number: i64,
+) -> Result<(), String> {
+    use crate::integration::pull_request::{fetch_ci_state, CiState};
+
+    // Already being fixed, or already back with the user. Either way not ours.
+    let (ball, rounds): (String, i32) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT ball, fix_rounds FROM tasks WHERE id = ?",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("Task {} not found: {}", task_id, e))?
+    };
+    if ball != "External" || rounds >= FIX_ROUND_CAP {
+        return Ok(());
+    }
+
+    let CiState::Failing(checks) = fetch_ci_state(target, number).await? else {
+        return Ok(());
+    };
+
+    // The failing checks go in the outcome thread rather than into a prompt from here, because the
+    // agent is started by the frontend and this is the same route the reviewer's findings take.
+    let report = format!(
+        "CI failed on pull request #{}. Failing checks:\n\n{}",
+        number,
+        checks.iter().map(|check| format!("- {}", check)).collect::<Vec<_>>().join("\n")
+    );
+
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::comments::append(
+            &conn,
+            task_id,
+            "ci",
+            "maestro",
+            Some(&report),
+            None,
+            Some("AwaitingMerge"),
+        )?;
+        conn.execute("UPDATE tasks SET fix_rounds = fix_rounds + 1 WHERE id = ?", [task_id])
+            .map_err(|e| format!("Could not count a fix round for task {}: {}", task_id, e))?;
+        transition::apply(&conn, task_id, TaskTransition::CiFixRequested)?;
+    }
+
+    log::info!(
+        "CI failed on pull request #{} for task {} ({}); sending an agent (round {} of {})",
+        number,
+        task_id,
+        checks.join(", "),
+        rounds + 1,
+        FIX_ROUND_CAP
+    );
+    Ok(())
+}
+
+/// Push the fixing agent's work to the pull request it belongs to and hand the task back to the
+/// forge.
+///
+/// Called when a turn ends at `AwaitingMerge`. A push that fails leaves the task where it is with
+/// the ball still on the agent, which the next sweep will not re-trigger — the user has to look,
+/// which is right, because a fix that cannot be pushed is not a fix.
+pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<(), String> {
+    let row = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT t.project_id, w.path, w.branch_name, p.path FROM tasks t \
+             JOIN worktrees w ON w.task_id = t.id JOIN projects p ON p.id = t.project_id \
+             WHERE t.id = ? LIMIT 1",
+            [task_id],
+            |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("No worktree for task {}: {}", task_id, e))?
+    };
+    let (project_id, worktree_rel_path, branch_name, repo_path) = row;
+
+    let (_project, git_conn) = get_project_with_git_conn(app_state, project_id).await?;
+    let status =
+        crate::integration::code_hosting_handlers::code_hosting_status(app_state, project_id)
+            .await?;
+    let remote = status.remote.ok_or_else(|| "The project has no remote to push to".to_string())?;
+
+    crate::git::push_branch(
+        &git_conn,
+        &format!("{}/{}", repo_path, worktree_rel_path),
+        &remote,
+        &branch_name,
+    )
+    .await?;
+
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    transition::apply(&conn, task_id, TaskTransition::CiFixPushed).map(|_| ())
 }
 
 /// Land a task whose pull request merged: Done with the `MergedViaPR` qualifier, worktree and

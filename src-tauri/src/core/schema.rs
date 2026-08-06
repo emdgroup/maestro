@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- How many times the review agent has sent this task back. Bounded, because the rework loop
     -- is the one place agents hand work to each other with no human in between.
     review_rounds INTEGER NOT NULL DEFAULT 0,
+    -- How many times an agent has been sent to fix this task's CI. Counted separately from
+    -- review_rounds: a task that spent its review rounds must still be able to fix a red build,
+    -- and a shared counter would make both cap messages wrong.
+    fix_rounds INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -388,6 +392,7 @@ fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
         ("pull_request_url", "pull_request_url TEXT"),
         ("pull_request_number", "pull_request_number INTEGER"),
         ("review_rounds", "review_rounds INTEGER NOT NULL DEFAULT 0"),
+        ("fix_rounds", "fix_rounds INTEGER NOT NULL DEFAULT 0"),
     ] {
         let col_exists: bool = conn
             .query_row(

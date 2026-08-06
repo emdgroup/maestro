@@ -122,3 +122,37 @@ describe("useAgentPipeline", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+describe("useAgentPipeline CI fixes", () => {
+  const redBuild = makeTask({
+    id: 9,
+    status: "Review",
+    phase: "AwaitingMerge",
+    phase_status: "Waiting",
+    ball: "Agent",
+  });
+
+  it("starts a coder to fix a red build on an open pull request", async () => {
+    render([redBuild]);
+    await settle();
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }), { role: "Coder" });
+  });
+
+  // The ordinary state of an open pull request. Starting an agent for every one of these would
+  // spend a round on every task waiting for a human to press merge.
+  it("leaves a pull request that is merely waiting alone", async () => {
+    render([makeTask({ ...redBuild, ball: "External" })]);
+    await settle();
+
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  // The error state a closed pull request leaves behind. It is the user's to resolve.
+  it("leaves a failed pull request alone", async () => {
+    render([makeTask({ ...redBuild, phase_status: "Failed", ball: "User" })]);
+    await settle();
+
+    expect(execute).not.toHaveBeenCalled();
+  });
+});

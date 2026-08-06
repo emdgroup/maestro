@@ -419,6 +419,17 @@ export function useExecuteTask(
             text: `## Review findings to address\n\n${verdict.trim()}`,
           });
         }
+
+        // A red build on an open pull request. The failing check names rather than their logs:
+        // an agent that runs the failing test itself gets a better answer than one reading a
+        // truncated CI transcript, and the names are enough to point it at the right one.
+        const ci = entries.find((c) => c.kind === "ci")?.body;
+        if (task.phase === "AwaitingMerge" && ci?.trim()) {
+          contentBlocks.push({
+            type: "text",
+            text: `## CI is failing on the open pull request\n\n${ci.trim()}\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request.`,
+          });
+        }
       }
 
       if (attachments.length > 0) {

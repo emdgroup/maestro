@@ -142,6 +142,14 @@ pub enum TaskTransition {
     /// rejected, reopened elsewhere — have no common answer, and guessing one is how a task ends
     /// up quietly restarted. The card turns red where it stands and the user decides.
     PullRequestClosed,
+    /// CI on the open pull request failed and an agent is being sent to fix it.
+    ///
+    /// Stays at `AwaitingMerge` rather than going back to In Progress: the pull request is still
+    /// open and the branch still its head, so the fix is pushed to what exists rather than being
+    /// re-approved into a second one.
+    CiFixRequested,
+    /// The fixing agent finished and its work is back on the pull request.
+    CiFixPushed,
     /// The user discarded the work but kept the task.
     Discarded,
     /// The task was abandoned.
@@ -180,6 +188,12 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         // a planner and a coder both work inside In Progress but at different gates; a reviewer
         // reads a diff, which only exists once the work is in Review.
         TaskTransition::SessionReady(role) => match role {
+            // A coder starting on a task that is already awaiting merge is fixing the build on an
+            // open pull request, not starting the work over. Sending it to In Progress would
+            // detach it from the pull request its commits are about to be pushed to.
+            AgentRole::Coder if current.phase == Some(AwaitingMerge) => {
+                TaskState::active(Review, AwaitingMerge, Running, Ball::Agent)
+            }
             AgentRole::Refiner => TaskState::active(Planning, Refining, Running, Ball::Agent),
             AgentRole::Planner => TaskState::active(InProgress, Drafting, Running, Ball::Agent),
             AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
@@ -255,6 +269,14 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::PullRequestClosed => {
             TaskState::active(Review, AwaitingMerge, Failed, Ball::User)
+        }
+
+        TaskTransition::CiFixRequested => {
+            TaskState::active(Review, AwaitingMerge, Waiting, Ball::Agent)
+        }
+
+        TaskTransition::CiFixPushed => {
+            TaskState::active(Review, AwaitingMerge, Waiting, Ball::External)
         }
 
         // There is no Backlog column; discarding returns the task to Planning.
@@ -850,6 +872,32 @@ mod tests {
         let manual = resolve(TaskTransition::ReworkRequested, reviewing);
         assert_eq!(manual.phase, Some(TaskPhase::Rework));
         assert_eq!(manual.ball, TaskBall::User);
+    }
+
+    /// The CI-fix loop. A coder started on a task awaiting merge must stay attached to the pull
+    /// request its commits will be pushed to — sending it to In Progress like an ordinary coder
+    /// would leave the push with nothing to push to and the pull request never updated.
+    #[test]
+    fn fixing_a_red_build_keeps_the_task_on_its_pull_request() {
+        let awaiting = resolve(TaskTransition::PullRequestOpened, implementing());
+
+        let requested = resolve(TaskTransition::CiFixRequested, awaiting);
+        assert_eq!(requested.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(requested.ball, TaskBall::Agent);
+
+        let running = resolve(TaskTransition::SessionReady(AgentRole::Coder), requested);
+        assert_eq!(running.status, TaskStatus::Review);
+        assert_eq!(running.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(running.phase_status, Some(PhaseStatus::Running));
+
+        let pushed = resolve(TaskTransition::CiFixPushed, running);
+        assert_eq!(pushed.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(pushed.ball, TaskBall::External);
+
+        // An ordinary coder is unaffected.
+        let fresh = resolve(TaskTransition::SessionReady(AgentRole::Coder), implementing());
+        assert_eq!(fresh.status, TaskStatus::InProgress);
+        assert_eq!(fresh.phase, Some(TaskPhase::Implementing));
     }
 
     /// Dragging a task out of Done must not leave it claiming to have merged.

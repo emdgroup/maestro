@@ -136,7 +136,7 @@ pub async fn get_project_code_hosting_status(
 /// Non-IPC form of [`get_project_code_hosting_status`], for callers that already hold an
 /// `AppState` — the approve path needs the remote name before it can push.
 pub async fn code_hosting_status(
-    app_state: &Arc<AppState>,
+    app_state: &AppState,
     project_id: i32,
 ) -> Result<CodeHostingStatus, String> {
     let (project, git_conn) = get_project_with_git_conn(app_state, project_id).await?;

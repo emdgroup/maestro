@@ -2642,7 +2642,11 @@ pull_request_url?: string | null; pull_request_number?: number | null;
 /**
  * How many times the review agent has sent this task back, bounded by `REVIEW_ROUND_CAP`.
  */
-review_rounds: number }
+review_rounds: number; 
+/**
+ * How many times an agent has been sent to fix this task's CI, bounded by `FIX_ROUND_CAP`.
+ */
+fix_rounds: number }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.

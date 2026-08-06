@@ -41,7 +41,11 @@ export function useAgentPipeline(
     const pending: Array<[Task, AgentRole]> = tasks.flatMap((task) => {
       if (task.phase_status !== "Waiting" || task.ball !== "Agent") return [];
       if (task.phase === "SelfReview") return [[task, "Reviewer" as AgentRole]];
-      if (task.phase === "Rework") return [[task, "Coder" as AgentRole]];
+      // Rework is a review round; AwaitingMerge is a red build on an open pull request. Both are
+      // a coder — the difference is only which findings the prompt carries.
+      if (task.phase === "Rework" || task.phase === "AwaitingMerge") {
+        return [[task, "Coder" as AgentRole]];
+      }
       return [];
     });
 

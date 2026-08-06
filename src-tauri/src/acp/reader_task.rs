@@ -267,7 +267,8 @@ async fn resolve_turn_end(
     // anything about whether they finished — and asking anyway is actively wrong: a clean tree
     // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
     // proposal.
-    let writes = matches!(phase.as_deref(), Some("Implementing") | Some("Rework"));
+    let writes =
+        matches!(phase.as_deref(), Some("Implementing") | Some("Rework") | Some("AwaitingMerge"));
 
     // A declared completion used to skip this call, on the grounds that the agent was believed
     // either way. It no longer is: an agent that declares itself done having changed nothing goes
@@ -283,6 +284,18 @@ async fn resolve_turn_end(
 
     // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
     // so it routes past `TurnCompleted` entirely.
+    // An agent fixing a red build is already on an open pull request, so its turn ending means
+    // "push what you changed", not "advance the task". Nothing else moves: the PR stays open and
+    // the branch stays its head, which is the point of fixing rather than re-approving.
+    if phase.as_deref() == Some("AwaitingMerge") && outcome == TurnOutcome::Complete {
+        if let Err(e) = crate::git::merge::push_ci_fix(app_state, task_id).await {
+            log::error!("Could not push the CI fix for task {}: {}", task_id, e);
+            let Ok(conn) = app_state.db.lock() else { return };
+            let _ = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed);
+        }
+        return;
+    }
+
     let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
         review_verdict_event(app_state, task_id, &closing_message)
     } else {

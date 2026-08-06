@@ -18,7 +18,7 @@ pub const TASK_SELECT: &str =
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
      execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
-     pull_request_url, pull_request_number, review_rounds FROM tasks";
+     pull_request_url, pull_request_number, review_rounds, fix_rounds FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -86,6 +86,8 @@ pub struct Task {
     pub pull_request_number: Option<i64>,
     /// How many times the review agent has sent this task back, bounded by `REVIEW_ROUND_CAP`.
     pub review_rounds: i32,
+    /// How many times an agent has been sent to fix this task's CI, bounded by `FIX_ROUND_CAP`.
+    pub fix_rounds: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -226,6 +228,7 @@ impl Task {
             pull_request_url: row.get(30)?,
             pull_request_number: row.get(31)?,
             review_rounds: row.get(32)?,
+            fix_rounds: row.get(33)?,
         })
     }
 }
