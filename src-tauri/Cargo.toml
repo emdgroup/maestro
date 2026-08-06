@@ -32,6 +32,7 @@ tauri-plugin-process = "2"
 octocrab = { version = "0.54", default-features = false, features = [
   "default-client",
   "rustls",
+  "rustls-ring",
   "jwt-rust-crypto",
 ] }
 graphql_client = { version = "0.16", default-features = false }

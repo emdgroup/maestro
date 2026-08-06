@@ -3371,9 +3371,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.49.2"
+version = "0.49.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8a77951c56b6a0af03c22af6953d6ffcfba9403c765578921f3f1089b999db6"
+checksum = "508004a5500f2e1f68af048f70feea2de86d35ab115d85716530860822aef397"
 dependencies = [
  "ahash",
  "bytecount",
@@ -3400,18 +3400,18 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.49.2"
+version = "0.49.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4c2e64f341a1d6a15d2daa3c967e48921cf15b9c7f23a9899e8b63c7f7c4199"
+checksum = "36539f34ef9e5da418433fbbf7294522d8f930ecf6a540ccd1ec6481c9ff9056"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.49.2"
+version = "0.49.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e097778f3e9c6a33862077dbf07aca0360d0b18d2a7abc323da132df49ee83"
+checksum = "8bc513dfee68c6fe29498451df95a32951ea227801b476f4a1f236433986c891"
 dependencies = [
  "ahash",
  "bytecount",
@@ -4330,9 +4330,9 @@ dependencies = [
 
 [[package]]
 name = "octocrab"
-version = "0.54.0"
+version = "0.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27be39870c558e1fbc5a5f8d4a29aa916268c1dbcb9d467f2a9bbab35598060e"
+checksum = "432fad6f447c52acda76a7a0660f022b21f4c42f373bbdc29f04332ba19a89bf"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -4353,6 +4353,7 @@ dependencies = [
  "jsonwebtoken",
  "percent-encoding",
  "pin-project",
+ "rustls",
  "secrecy",
  "serde",
  "serde_json",
@@ -5276,9 +5277,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.49.2"
+version = "0.49.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b772e96f8eb6badd4eb10fbc08b8a98244c09b4af37e72e8fa612c854604b870"
+checksum = "05915176d843da9ec5c925e5e2631be9aa61b27430acfdd562e79cae8f559725"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -5487,9 +5488,9 @@ dependencies = [
 
 [[package]]
 name = "russh"
-version = "0.62.4"
+version = "0.62.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8b67b5a0d8068c89dcbe9d95df986af7a851d1f3c604525274c37468e60464f"
+checksum = "da7c230e0ed9cbeb92fbad6c8848985d6df2a1464c0dc247a021abd666e9005e"
 dependencies = [
  "aes",
  "bitflags 2.13.1",
