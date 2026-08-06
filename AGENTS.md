@@ -104,7 +104,7 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V24. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V25. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -112,7 +112,7 @@ SQLite with foreign key constraints enabled. Schema V24. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V24_FULL`                              |
+| `0` (fresh install) | create the full schema from `SCHEMA_V25_FULL`                              |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -121,7 +121,14 @@ extend `run_migrations()` with a matching `if from < N` guard; use `CREATE TABLE
 and check `pragma_table_info` before `ALTER TABLE` so the step is safe to re-run. Only databases
 predating v22 still take the drop path.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
+**An unreleased version may be rewritten rather than superseded.** The pipeline rework was built
+as v25, v26 and v27 and collapsed back into a single v25, because none of them ever shipped —
+v24 is what released builds carry. Three migrations for a state no database outside this
+repository was ever in is three code paths maintained to serve nobody. This is only safe while
+the versions in question are absent from `main` and from every tag; check both before doing it,
+and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
+
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
 
 ### IPC Communication
 
@@ -379,7 +386,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
-- Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
+- Schema version: 25 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
