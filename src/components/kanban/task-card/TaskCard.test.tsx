@@ -730,3 +730,29 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 });
+
+describe("TaskCard after a pull request is closed", () => {
+  const closed: Partial<Task> = {
+    status: "Review",
+    phase: "AwaitingMerge",
+    phase_status: "Failed",
+    ball: "User",
+    pull_request_url: "https://github.com/acme/widgets/pull/42",
+    pull_request_number: 42,
+  };
+
+  // "Awaiting merge · failed" describes nothing that happened. The state is still D28's error
+  // state — red, ball with the user — but the words have to say what the forge did.
+  it("says the pull request was closed rather than that awaiting merge failed", () => {
+    renderCard(closed);
+
+    expect(screen.getByText(/pull request closed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/awaiting merge/i)).not.toBeInTheDocument();
+  });
+
+  it("still links to the pull request, which is where the reason is", () => {
+    renderCard(closed);
+
+    expect(screen.getByRole("button", { name: /pull request #42/i })).toBeInTheDocument();
+  });
+});

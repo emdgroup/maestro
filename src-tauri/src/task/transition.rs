@@ -120,6 +120,14 @@ pub enum TaskTransition {
     /// the ball on `External` — neither the user nor an agent has anything to do until the forge
     /// says otherwise.
     PullRequestOpened,
+    /// The forge says the pull request merged.
+    PullRequestMerged,
+    /// The forge says the pull request was closed without merging.
+    ///
+    /// An error state rather than a route back: the reasons a PR gets closed — superseded,
+    /// rejected, reopened elsewhere — have no common answer, and guessing one is how a task ends
+    /// up quietly restarted. The card turns red where it stands and the user decides.
+    PullRequestClosed,
     /// The user discarded the work but kept the task.
     Discarded,
     /// The task was abandoned.
@@ -218,6 +226,12 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::PullRequestOpened => {
             TaskState::active(Review, AwaitingMerge, Waiting, Ball::External)
+        }
+
+        TaskTransition::PullRequestMerged => TaskState::done(Some(TaskCompletion::MergedViaPR)),
+
+        TaskTransition::PullRequestClosed => {
+            TaskState::active(Review, AwaitingMerge, Failed, Ball::User)
         }
 
         // There is no Backlog column; discarding returns the task to Planning.
@@ -745,6 +759,26 @@ mod tests {
         assert_eq!(next.phase_status, Some(PhaseStatus::Waiting));
         assert_eq!(next.ball, TaskBall::External);
         assert_eq!(next.completion, None);
+    }
+
+    /// The forge's two answers. A merged PR lands the task with a qualifier that says how; a
+    /// closed one is an error state where the task stands, because the reasons a PR gets closed
+    /// have no common answer and guessing one quietly restarts work nobody asked to restart.
+    #[test]
+    fn the_forge_can_land_a_task_or_send_it_back_to_the_user() {
+        let awaiting = resolve(TaskTransition::PullRequestOpened, implementing());
+
+        let merged = resolve(TaskTransition::PullRequestMerged, awaiting);
+        assert_eq!(merged.status, TaskStatus::Done);
+        assert_eq!(merged.completion, Some(TaskCompletion::MergedViaPR));
+        assert_eq!(merged.ball, TaskBall::None);
+
+        let closed = resolve(TaskTransition::PullRequestClosed, awaiting);
+        assert_eq!(closed.status, TaskStatus::Review);
+        assert_eq!(closed.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(closed.phase_status, Some(PhaseStatus::Failed));
+        assert_eq!(closed.ball, TaskBall::User);
+        assert_eq!(closed.completion, None);
     }
 
     /// Dragging a task out of Done must not leave it claiming to have merged.

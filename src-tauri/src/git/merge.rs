@@ -387,6 +387,7 @@ pub async fn approve_task_and_merge(
             worktree_id,
             &full_worktree_path,
             &branch_name,
+            TaskTransition::Merged,
         )
         .await?;
         app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -492,18 +493,169 @@ async fn open_pull_request_for_task(
     Ok(created.url)
 }
 
+/// Ask the forge what became of every pull request this project is waiting on, and act on it.
+///
+/// Runs on project open as well as on a timer, and that is the whole of "offline reconciliation":
+/// the forge is asked for current state rather than for events, so an app that was closed when a
+/// pull request merged learns exactly what a running one would have. Nothing to replay, no
+/// webhook to miss.
+///
+/// Returns the ids of the tasks whose state changed.
+///
+/// Every failure here is a warning rather than an error. A rate limit, an expired token or a
+/// dropped connection means "ask again in a few minutes", and turning that into a red card would
+/// make the network's health look like the task's.
+#[tauri::command]
+#[specta::specta]
+pub async fn reconcile_pull_requests(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<Vec<i32>, String> {
+    use crate::integration::code_hosting_handlers::code_hosting_status;
+    use crate::integration::issue_tracking_handlers::find_integration;
+    use crate::integration::pull_request::{
+        fetch_pull_request_state, PullRequestState, PullRequestTarget,
+    };
+
+    let waiting: Vec<(i32, i64)> = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, pull_request_number FROM tasks \
+                 WHERE project_id = ? AND phase = 'AwaitingMerge' AND pull_request_number IS NOT NULL \
+                   AND archived_at IS NULL",
+            )
+            .map_err(|e| format!("Failed to query tasks awaiting merge: {}", e))?;
+        let rows = stmt
+            .query_map([project_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("Failed to read tasks awaiting merge: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read tasks awaiting merge: {}", e))?;
+        rows
+    };
+
+    if waiting.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Resolved once for the whole sweep rather than per task: every one of these pull requests is
+    // on the same project's remote, and a token probe can spawn the `gh` CLI.
+    let status = code_hosting_status(app_state.inner(), project_id).await?;
+    let Some(config) = status.config else {
+        return Ok(vec![]);
+    };
+    let Some(integration) = find_integration(&config.provider, &config.host, app_state.inner()).await
+    else {
+        log::debug!(
+            "Cannot reconcile pull requests for project {}: no {} credentials",
+            project_id,
+            config.provider
+        );
+        return Ok(vec![]);
+    };
+
+    let target = PullRequestTarget {
+        config: &config,
+        instance_url: integration.instance_url.as_deref(),
+        token: &integration.token,
+    };
+
+    let mut changed = Vec::new();
+    for (task_id, number) in waiting {
+        let state = match fetch_pull_request_state(&target, number).await {
+            Ok(state) => state,
+            Err(e) => {
+                log::warn!("Could not read pull request #{} for task {}: {}", number, task_id, e);
+                continue;
+            }
+        };
+
+        match state {
+            PullRequestState::Open => {}
+            PullRequestState::Merged => {
+                if let Err(e) = land_merged_pull_request(app_state.inner(), task_id).await {
+                    log::warn!("Pull request #{} merged but task {} could not land: {}", number, task_id, e);
+                    continue;
+                }
+                changed.push(task_id);
+            }
+            PullRequestState::Closed => {
+                {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    transition::apply(&conn, task_id, TaskTransition::PullRequestClosed)?;
+                }
+                log::info!("Pull request #{} was closed without merging; task {} needs a decision", number, task_id);
+                changed.push(task_id);
+            }
+        }
+    }
+
+    if !changed.is_empty() {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        app_state.app_handle.emit("worktrees-changed", ()).ok();
+    }
+
+    Ok(changed)
+}
+
+/// Land a task whose pull request merged: Done with the `MergedViaPR` qualifier, worktree and
+/// branch cleaned up.
+///
+/// The branch is deleted locally only. Whether the *remote* branch goes is the forge's setting,
+/// not ours — deleting it here would override a repository that keeps merged branches.
+async fn land_merged_pull_request(app_state: &Arc<AppState>, task_id: i32) -> Result<(), String> {
+    let worktree = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT w.id, w.path, w.branch_name, p.path FROM worktrees w \
+             JOIN projects p ON p.id = w.project_id WHERE w.task_id = ? LIMIT 1",
+            [task_id],
+            |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .ok()
+    };
+
+    // A task can reach here with no worktree row — the user may have removed it while the PR was
+    // open. The merge still happened, so the task still lands; there is simply nothing to clean up.
+    let Some((worktree_id, worktree_rel_path, branch_name, repo_path)) = worktree else {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        return transition::apply(&conn, task_id, TaskTransition::PullRequestMerged).map(|_| ());
+    };
+
+    finalize_successful_merge(
+        app_state,
+        task_id,
+        worktree_id,
+        &format!("{}/{}", repo_path, worktree_rel_path),
+        &branch_name,
+        TaskTransition::PullRequestMerged,
+    )
+    .await
+}
+
 /// Finalize successful merge: update task to Done, cleanup worktree from disk, delete from DB
 ///
 /// Helper function (private crate-level) called after successful merge to perform cleanup:
 /// 1. Updates task status to Done
 /// 2. Deletes worktree from disk via Rust git dispatcher
 /// 3. Removes worktree from database on successful cleanup
+///
+/// `landed` says *how* it merged — locally, or through a pull request somebody else merged — so
+/// the Done card can tell the two apart. Everything after that write is identical.
 pub(crate) async fn finalize_successful_merge(
     app_state: &Arc<AppState>,
     task_id: i32,
     worktree_id: i32,
     worktree_path: &str,
     branch_name: &str,
+    landed: TaskTransition,
 ) -> Result<(), String> {
     // Note: DB writes are intentionally split across lock acquisitions because async
     // git cleanup happens between task update and worktree deletion. If the process
@@ -512,7 +664,7 @@ pub(crate) async fn finalize_successful_merge(
     // 1. Update task status to Done
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        transition::apply(&conn, task_id, TaskTransition::Merged)?;
+        transition::apply(&conn, task_id, landed)?;
     }
 
     // 2. Delete worktree from disk via git dispatcher (and DB on success)

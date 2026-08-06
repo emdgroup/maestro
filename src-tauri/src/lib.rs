@@ -80,6 +80,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::clear_task_review,
             crate::ipc::resolve_commit_message,
             crate::ipc::approve_task_and_merge,
+            crate::ipc::reconcile_pull_requests,
             crate::ipc::reject_review,
             crate::ipc::list_agent_profiles,
             crate::ipc::save_agent_profiles,

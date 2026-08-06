@@ -677,6 +677,28 @@ async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracke
 }
 },
 /**
+ * Ask the forge what became of every pull request this project is waiting on, and act on it.
+ * 
+ * Runs on project open as well as on a timer, and that is the whole of "offline reconciliation":
+ * the forge is asked for current state rather than for events, so an app that was closed when a
+ * pull request merged learns exactly what a running one would have. Nothing to replay, no
+ * webhook to miss.
+ * 
+ * Returns the ids of the tasks whose state changed.
+ * 
+ * Every failure here is a warning rather than an error. A rate limit, an expired token or a
+ * dropped connection means "ask again in a few minutes", and turning that into a red card would
+ * make the network's health look like the task's.
+ */
+async reconcilePullRequests(projectId: number) : Promise<Result<number[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_pull_requests", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reject a task in review, discarding its work either way
  * 
  * Handles the two rejection paths from the review panel:

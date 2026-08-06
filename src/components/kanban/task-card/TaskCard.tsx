@@ -132,6 +132,12 @@ function PhaseLine({ task }: { task: Task }) {
   }
   if (!task.phase) return <CompletionLine task={task} />;
   const failed = task.phase_status === "Failed";
+  // A pull request somebody closed did not "fail to await merge". It is still the error state
+  // D28 asks for — red, ball with the user — but the words have to say what happened.
+  const label =
+    failed && task.phase === "AwaitingMerge"
+      ? "Pull request closed"
+      : PHASE_LABELS[task.phase] + (failed ? " · failed" : "");
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
       <span
@@ -144,8 +150,7 @@ function PhaseLine({ task }: { task: Task }) {
               : "text-muted-foreground",
         )}
       >
-        {PHASE_LABELS[task.phase]}
-        {failed && " · failed"}
+        {label}
       </span>
     </div>
   );

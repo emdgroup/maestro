@@ -21,6 +21,7 @@ import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTas
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
+import { usePullRequestPoll } from "@/utils/hooks/usePullRequestPoll";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 
 const EMPTY_TASKS: Task[] = [];
@@ -41,6 +42,7 @@ export const KanbanView: React.FC = () => {
   // another tab — auto-mode has to keep filling slots when nobody is watching the board, which is
   // most of the time it matters.
   useQueueDrain(projectId, projectPath, taskList, connection);
+  usePullRequestPoll(projectId);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
