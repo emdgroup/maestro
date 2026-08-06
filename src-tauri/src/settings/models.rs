@@ -148,6 +148,10 @@ pub struct AppSettings {
     pub auto_mode: bool,
     #[serde(default = "default_max_concurrent_agents")]
     pub max_concurrent_agents: i32,
+    /// Whether `max_concurrent_agents` is the limit, or a fallback for when the host's free
+    /// memory cannot be read. See `execution::capacity`.
+    #[serde(default)]
+    pub concurrency_mode: crate::execution::capacity::ConcurrencyMode,
     #[serde(default)]
     pub thinking_visibility: ActivityVisibility,
     #[serde(default)]
@@ -190,6 +194,7 @@ impl Default for AppSettings {
             theme_preference: Some("system".to_string()),
             auto_mode: false,
             max_concurrent_agents: 3,
+            concurrency_mode: crate::execution::capacity::ConcurrencyMode::Hard,
             thinking_visibility: ActivityVisibility::Auto,
             tool_call_visibility: ActivityVisibility::Auto,
             accent_color: None,

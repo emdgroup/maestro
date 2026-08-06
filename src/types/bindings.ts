@@ -2083,7 +2083,12 @@ export type AgentStreamWidth = "full" | "compact"
  * Ahead/behind commit counts relative to the upstream tracking branch
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; enter_key_behavior?: EnterKeyBehavior; agent_stream_width?: AgentStreamWidth; updated_at: string; auto_update?: boolean; ui_scale?: string | null; 
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; 
+/**
+ * Whether `max_concurrent_agents` is the limit, or a fallback for when the host's free
+ * memory cannot be read. See `execution::capacity`.
+ */
+concurrency_mode?: ConcurrencyMode; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; enter_key_behavior?: EnterKeyBehavior; agent_stream_width?: AgentStreamWidth; updated_at: string; auto_update?: boolean; ui_scale?: string | null; 
 /**
  * One of `core::logging::LOG_LEVELS`. `None` means the `info` default.
  */
@@ -2128,6 +2133,15 @@ export type BitbucketProjectOption = { key: string; name: string }
 export type BitbucketRepoOption = { slug: string; name: string; description: string | null; clone_url: string | null }
 export type BranchList = { local: string[]; remote: string[] }
 export type CommitInfo = { sha: string; message: string; file_count: number }
+export type ConcurrencyMode = 
+/**
+ * The number the user set, regardless of what the host is doing.
+ */
+"Hard" | 
+/**
+ * Derived from the host's free memory, recomputed whenever the queue is drained.
+ */
+"Auto"
 /**
  * Identifies which connection server (or local instance) owns a session or cache entry.
  */

@@ -48,10 +48,29 @@ pub async fn drain_ready_queue(
         let pty_count = pty_meta.values().filter(|m| m.task_id.is_some()).count();
         (acp_count + pty_count) as i32
     };
+
+    // Sampled here rather than on a timer: a drain is called at exactly the moments the answer
+    // could have changed — a session ending, a task arriving, the app starting.
+    let available_mb = match crate::core::get_project_with_git_conn(&app_state, project_id).await {
+        Ok((_, git_conn)) => crate::execution::capacity::available_memory_mb(&git_conn).await,
+        Err(_) => None,
+    };
+    let capacity = crate::execution::capacity::resolve_capacity(
+        settings.concurrency_mode,
+        settings.max_concurrent_agents,
+        available_mb,
+    );
+
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
 
-    let slots_available = settings.max_concurrent_agents - running_count;
+    let slots_available = capacity.slots - running_count;
     if slots_available <= 0 {
+        log::debug!(
+            "[queue] project {} has no free slots: {} running, {}",
+            project_id,
+            running_count,
+            capacity.reason
+        );
         return Ok(vec![]);
     }
 
