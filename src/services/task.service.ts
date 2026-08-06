@@ -16,6 +16,7 @@ import type {
   CreateTaskRequest,
   UpdateTaskRequest,
   AgentRole,
+  MergeResult,
 } from "@/types/bindings";
 
 /**
@@ -187,9 +188,17 @@ export function useApproveTaskAndMergeMutation() {
       commitMessage: string;
     }) => api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
     onSuccess: (result: unknown) => {
-      const data = result as { success: boolean; task_status: string; conflicts?: string[] };
+      const data = result as MergeResult;
       if (data.success) {
-        toast.success("Merge complete. Task moved to Done.");
+        // "Merge complete" was told to every approve path, including the three that do not
+        // merge — commit-only, push, and the pull request that leaves the task in Review.
+        if (data.pull_request_url) {
+          toast.success("Pull request opened. The task stays in Review until it merges.");
+        } else if (data.task_status === "Done") {
+          toast.success("Task moved to Done.");
+        } else {
+          toast.success("Task approved.");
+        }
       } else {
         toast.error(
           `Merge conflict detected. Task returned to In Progress. Conflicts: ${(data.conflicts ?? []).join(", ")}`,

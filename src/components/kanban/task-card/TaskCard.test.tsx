@@ -4,6 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
 
+const openUrl = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+
 vi.mock("@/contexts/KanbanContext", () => ({
   useKanban: () => ({ projectId: 1, projectPath: "/tmp/demo", connection: { type: "local" } }),
 }));
@@ -138,6 +141,7 @@ beforeEach(() => {
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
   interrupt.mutate.mockClear();
+  openUrl.mockClear();
 });
 
 describe("TaskCard abandon", () => {
@@ -689,5 +693,40 @@ describe("TaskCard plan gate", () => {
     await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
 
     expect(screen.getByRole("button", { name: /start implementing/i })).toBeDisabled();
+  });
+});
+
+describe("TaskCard awaiting a pull request", () => {
+  const awaitingMerge: Partial<Task> = {
+    status: "Review",
+    phase: "AwaitingMerge",
+    phase_status: "Waiting",
+    ball: "External",
+    pull_request_url: "https://github.com/acme/widgets/pull/42",
+    pull_request_number: 42,
+  };
+
+  it("links to the pull request it is waiting on", async () => {
+    renderCard(awaitingMerge);
+
+    await userEvent.click(screen.getByRole("button", { name: /pull request #42/i }));
+
+    expect(openUrl).toHaveBeenCalledWith("https://github.com/acme/widgets/pull/42");
+  });
+
+  // The diff is still worth reading while the PR is open, so this must not replace Review.
+  it("keeps Review reachable", () => {
+    renderCard(awaitingMerge);
+
+    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
+  });
+
+  // A task can reach AwaitingMerge without a URL only if the write failed, and a button that
+  // opens nothing is worse than the ordinary Review card.
+  it("falls back to the ordinary Review card when no URL was recorded", () => {
+    renderCard({ ...awaitingMerge, pull_request_url: null, pull_request_number: null });
+
+    expect(screen.queryByRole("button", { name: /pull request/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 });

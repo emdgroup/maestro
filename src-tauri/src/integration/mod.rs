@@ -8,6 +8,7 @@ pub mod issue_sync;
 pub mod image_proxy;
 pub mod issue_tracking_handlers;
 pub mod code_hosting_handlers;
+pub mod pull_request;
 pub mod integration_models;
 pub mod issue_tracking_models;
 

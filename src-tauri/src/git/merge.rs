@@ -51,6 +51,7 @@ pub async fn squash_merge_to_base(
             success: false,
             task_status: "InProgress".to_string(),
             conflicts,
+            pull_request_url: None,
         });
     }
 
@@ -78,6 +79,7 @@ pub async fn squash_merge_to_base(
         success: true,
         task_status: "Done".to_string(),
         conflicts: vec![],
+        pull_request_url: None,
     })
 }
 
@@ -328,6 +330,29 @@ pub async fn approve_task_and_merge(
         crate::git::push_branch(&git_conn, &full_worktree_path, &remote, &branch_name).await?;
     }
 
+    // The one approve path that does not land the task: the work reaches the base branch when
+    // somebody merges the PR, and that somebody is not Maestro. Everything else about the task is
+    // therefore left standing — worktree on disk, branch alive — until G3 hears back from the forge.
+    if merge_strategy == "CreatePullRequest" {
+        let url = open_pull_request_for_task(
+            app_state.inner(),
+            task_id,
+            project_id,
+            &git_conn,
+            &full_worktree_path,
+            &branch_name,
+            &base_branch,
+        )
+        .await?;
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        return Ok(MergeResult {
+            success: true,
+            task_status: "Review".to_string(),
+            conflicts: vec![],
+            pull_request_url: Some(url),
+        });
+    }
+
     // Commit-only leaves the branch unmerged and the worktree on disk, but still lands the task —
     // this used to return without writing any status, so an approved task stayed in Review looking
     // exactly like one nobody had looked at yet. A pushed branch lands the same way: it is on the
@@ -342,6 +367,7 @@ pub async fn approve_task_and_merge(
             success: true,
             task_status: "Done".to_string(),
             conflicts: vec![],
+            pull_request_url: None,
         });
     }
 
@@ -365,7 +391,12 @@ pub async fn approve_task_and_merge(
         .await?;
         app_state.app_handle.emit("tasks-changed", ()).ok();
         app_state.app_handle.emit("worktrees-changed", ()).ok();
-        Ok(MergeResult { success: true, task_status: "Done".to_string(), conflicts: vec![] })
+        Ok(MergeResult {
+            success: true,
+            task_status: "Done".to_string(),
+            conflicts: vec![],
+            pull_request_url: None,
+        })
     } else if !merge_result.conflicts.is_empty() {
         // 4b. Merge had conflicts - reject back to InProgress
         reject_merge_on_conflict(app_state.inner(), task_id, &merge_result.conflicts).await?;
@@ -374,6 +405,91 @@ pub async fn approve_task_and_merge(
         // 4c. Merge reported failure without conflicts - return error
         Err("Merge failed with unknown error".to_string())
     }
+}
+
+/// Push the task's branch, open a pull request for it, and record both facts.
+///
+/// Ordered so that nothing is written until the forge has actually accepted the PR. A task
+/// recorded as `AwaitingMerge` with no pull request behind it would sit on the board waiting for
+/// an event that can never arrive, which is worse than an error the user can read and retry.
+///
+/// Returns the PR's URL.
+async fn open_pull_request_for_task(
+    app_state: &Arc<AppState>,
+    task_id: i32,
+    project_id: i32,
+    git_conn: &GitConnection,
+    worktree_path: &str,
+    branch_name: &str,
+    base_branch: &str,
+) -> Result<String, String> {
+    use crate::integration::code_hosting_handlers::{code_hosting_status, CodeHostingRung};
+    use crate::integration::issue_tracking_handlers::find_integration;
+    use crate::integration::pull_request::{create_pull_request, PullRequestTarget};
+
+    let status = code_hosting_status(app_state, project_id).await?;
+    let (Some(remote), Some(config)) = (status.remote, status.config) else {
+        return Err(match status.rung {
+            CodeHostingRung::NoRemote => {
+                "This project has no git remote, so there is nowhere to open a pull request."
+                    .to_string()
+            }
+            _ => "This project's remote is not on a forge Maestro recognises. Push the branch \
+                  and open the pull request yourself, or merge locally."
+                .to_string(),
+        });
+    };
+
+    // Asked here rather than trusted from the config, because a credential can come from the
+    // `gh` CLI with no integration stored and can expire between one approve and the next.
+    let integration = find_integration(&config.provider, &config.host, app_state)
+        .await
+        .ok_or_else(|| {
+            format!(
+                "No {} credentials are available, so the pull request cannot be opened. Connect \
+                 {} in Settings, or push the branch and open it yourself.",
+                config.provider, config.provider
+            )
+        })?;
+
+    // The branch has to exist on the remote before the forge will accept a PR for it.
+    crate::git::push_branch(git_conn, worktree_path, &remote, branch_name).await?;
+
+    let (title, description) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.query_row(
+            "SELECT title, description FROM tasks WHERE id = ?",
+            [task_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .map_err(|e| format!("Task {} not found: {}", task_id, e))?
+    };
+
+    let created = create_pull_request(
+        &PullRequestTarget {
+            config: &config,
+            instance_url: integration.instance_url.as_deref(),
+            token: &integration.token,
+        },
+        branch_name,
+        base_branch,
+        &title,
+        description.as_deref().unwrap_or(""),
+    )
+    .await?;
+
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "UPDATE tasks SET pull_request_url = ?, pull_request_number = ? WHERE id = ?",
+            rusqlite::params![&created.url, created.number, task_id],
+        )
+        .map_err(|e| format!("Failed to record the pull request: {}", e))?;
+        transition::apply(&conn, task_id, TaskTransition::PullRequestOpened)?;
+    }
+
+    log::info!("Opened pull request {} for task {}", created.url, task_id);
+    Ok(created.url)
 }
 
 /// Finalize successful merge: update task to Done, cleanup worktree from disk, delete from DB

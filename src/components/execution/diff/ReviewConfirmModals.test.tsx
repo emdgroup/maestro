@@ -47,6 +47,39 @@ describe("ApproveModal", () => {
     expect(screen.getByText(/Commit \+ Push to origin/)).toBeInTheDocument();
   });
 
+  it("offers no pull request until a forge answers for the remote", () => {
+    renderModal({ pushRemote: "origin" });
+
+    expect(screen.getByText(/Commit \+ Push to origin/)).toBeInTheDocument();
+    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
+  });
+
+  // Rung 3: the forge is known but nothing has authenticated for it. An invitation, not an
+  // error — every other way of approving has to stay available.
+  it("invites the user to connect rather than hiding the reason", () => {
+    renderModal({
+      pushRemote: "origin",
+      pullRequestNeedsConnecting: true,
+      pullRequestProvider: "github",
+    });
+
+    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Connect github in Settings/)).toBeInTheDocument();
+    expect(screen.getByText(/Commit \+ Merge \+ Delete worktree/)).toBeInTheDocument();
+  });
+
+  it("reports the pull request strategy back to the caller", async () => {
+    const user = userEvent.setup();
+    renderModal({ pushRemote: "origin", pullRequestProvider: "github" });
+
+    await user.click(screen.getByText(/Open a pull request/));
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mergeStrategy: "pull-request" }),
+    );
+  });
+
   it("reports the push strategy back to the caller", async () => {
     const user = userEvent.setup();
     renderModal({ pushRemote: "origin" });

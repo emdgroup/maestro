@@ -17,7 +17,8 @@ pub const TASK_SELECT: &str =
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
-     execution_start_sha, phase, phase_status, ball, completion, execute_requested_at FROM tasks";
+     execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
+     pull_request_url, pull_request_number FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -77,6 +78,12 @@ pub struct Task {
     /// these before its own picks, which is what makes the deferral a promise rather than a hope.
     #[specta(optional)]
     pub execute_requested_at: Option<String>,
+    /// The pull request this task's branch was opened as. Set together with the `AwaitingMerge`
+    /// phase and never cleared — a landed task keeps the link to how it landed.
+    #[specta(optional)]
+    pub pull_request_url: Option<String>,
+    #[specta(optional)]
+    pub pull_request_number: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -214,6 +221,8 @@ impl Task {
                 .unwrap_or(TaskBall::None),
             completion: row.get::<_, Option<String>>(28)?.and_then(|s| s.parse().ok()),
             execute_requested_at: row.get(29)?,
+            pull_request_url: row.get(30)?,
+            pull_request_number: row.get(31)?,
         })
     }
 }

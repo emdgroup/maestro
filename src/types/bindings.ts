@@ -2475,7 +2475,11 @@ configured_directory: string }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
-export type MergeResult = { success: boolean; task_status: string; conflicts: string[] }
+export type MergeResult = { success: boolean; task_status: string; conflicts: string[]; 
+/**
+ * Set only on the pull-request path, so the UI can link straight to what it just opened.
+ */
+pull_request_url?: string | null }
 /**
  * How the current phase is going.
  * 
@@ -2607,7 +2611,12 @@ completion?: TaskCompletion | null;
  * When the user pressed Execute on a task the host had no free slot for. The scheduler takes
  * these before its own picks, which is what makes the deferral a promise rather than a hope.
  */
-execute_requested_at?: string | null }
+execute_requested_at?: string | null; 
+/**
+ * The pull request this task's branch was opened as. Set together with the `AwaitingMerge`
+ * phase and never cleared — a landed task keeps the link to how it landed.
+ */
+pull_request_url?: string | null; pull_request_number?: number | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.

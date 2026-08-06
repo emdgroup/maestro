@@ -55,6 +55,7 @@ import { cn } from "@/lib/utils.ts";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface TaskCardProps {
   task: Task;
@@ -534,6 +535,39 @@ function FooterCTAs({
           </Button>
         )}
         {sendToReview}
+      </div>
+    );
+  }
+
+  // A task waiting on a pull request has nothing for the user to do here, so the card points at
+  // the one place where something can happen. Review stays available beside it — the diff is
+  // still worth reading while the PR is open.
+  if (task.phase === "AwaitingMerge" && task.pull_request_url) {
+    const pullRequestUrl = task.pull_request_url;
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            void openUrl(pullRequestUrl);
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <GitPullRequest className="w-2.5 h-2.5" />
+          Pull request
+          {task.pull_request_number ? ` #${task.pull_request_number}` : ""}
+        </Button>
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReview();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          Review
+        </Button>
       </div>
     );
   }

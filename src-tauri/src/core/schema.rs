@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- these before its own picks, so the deferral message is a promise it can keep. Cleared by
     -- task::transition the moment the task stops being a queue candidate.
     execute_requested_at TEXT,
+    -- The pull request this task's branch was opened as, set when approve chooses the PR path.
+    -- Columns rather than an outcome-thread entry because the poller has to find the tasks with
+    -- an open PR by query, and the card links straight to it.
+    pull_request_url TEXT,
+    pull_request_number INTEGER,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -377,6 +382,8 @@ fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
         ("ball", "ball TEXT NOT NULL DEFAULT 'None'"),
         ("completion", "completion TEXT"),
         ("execute_requested_at", "execute_requested_at TEXT"),
+        ("pull_request_url", "pull_request_url TEXT"),
+        ("pull_request_number", "pull_request_number INTEGER"),
     ] {
         let col_exists: bool = conn
             .query_row(

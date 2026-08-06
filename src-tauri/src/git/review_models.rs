@@ -71,4 +71,8 @@ pub struct MergeResult {
     pub success: bool,
     pub task_status: String,
     pub conflicts: Vec<String>,
+    /// Set only on the pull-request path, so the UI can link straight to what it just opened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub pull_request_url: Option<String>,
 }

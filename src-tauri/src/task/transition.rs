@@ -113,6 +113,13 @@ pub enum TaskTransition {
     /// changes were never merged and the worktree is still holding them, which is the one Done
     /// variant that carries unfinished business.
     ApprovedWithoutMerge,
+    /// The user approved the work and a pull request was opened for it.
+    ///
+    /// The one approve path that does not land the task: the work is not in the base branch until
+    /// somebody merges the PR, and that somebody is not Maestro. So the task stays in Review with
+    /// the ball on `External` — neither the user nor an agent has anything to do until the forge
+    /// says otherwise.
+    PullRequestOpened,
     /// The user discarded the work but kept the task.
     Discarded,
     /// The task was abandoned.
@@ -208,6 +215,10 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         TaskTransition::Merged => TaskState::done(Some(TaskCompletion::Merged)),
 
         TaskTransition::ApprovedWithoutMerge => TaskState::done(Some(TaskCompletion::LocalOnly)),
+
+        TaskTransition::PullRequestOpened => {
+            TaskState::active(Review, AwaitingMerge, Waiting, Ball::External)
+        }
 
         // There is no Backlog column; discarding returns the task to Planning.
         TaskTransition::Discarded => TaskState::parked(Planning),
@@ -720,6 +731,20 @@ mod tests {
             assert_eq!(next.ball, TaskBall::None, "for {:?}", event);
             assert_eq!(next.completion, Some(completion), "for {:?}", event);
         }
+    }
+
+    /// The third approve path is the odd one out: it approves without landing, because the work
+    /// only reaches the base branch when someone merges the PR. The ball goes to `External` so the
+    /// task is neither counted as needing the user nor mistaken for one an agent is working on.
+    #[test]
+    fn opening_a_pull_request_approves_without_landing_the_task() {
+        let next = resolve(TaskTransition::PullRequestOpened, implementing());
+
+        assert_eq!(next.status, TaskStatus::Review);
+        assert_eq!(next.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(next.phase_status, Some(PhaseStatus::Waiting));
+        assert_eq!(next.ball, TaskBall::External);
+        assert_eq!(next.completion, None);
     }
 
     /// Dragging a task out of Done must not leave it claiming to have merged.

@@ -35,14 +35,17 @@ import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useCodeHostingStatus } from "@/services/integration.service";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
-import type { DiffTarget, Task } from "@/types/bindings";
+import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
 
 /** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
 const MERGE_STRATEGIES: Record<string, string> = {
   "commit-only": "CommitOnly",
   "commit-push": "CommitAndPush",
+  "pull-request": "CreatePullRequest",
   "merge-delete": "CommitAndMerge",
 };
 
@@ -337,11 +340,20 @@ export function TaskReviewPanel({
                 commitMessage: data.commitMessage,
               },
               {
-                onSuccess: () => {
+                onSuccess: (raw) => {
+                  const result = raw as MergeResult;
+                  // The session closes on every approve path, including the pull-request one:
+                  // a PR sitting over a weekend would pin a host slot the whole time.
                   if (activeSession) {
                     cancelSession.mutate({
                       sessionKey: activeSession.session_key,
                       executionMode: activeSession.execution_mode,
+                    });
+                  }
+                  if (result?.pull_request_url) {
+                    const url = result.pull_request_url;
+                    toast.success("Pull request opened", {
+                      action: { label: "Open", onClick: () => void openUrl(url) },
                     });
                   }
                   setApproveModalOpen(false);
@@ -650,6 +662,8 @@ export function TaskReviewPanel({
         untrackedCount={untrackedFiles.length}
         commitMessage={commitMessageQuery.data ?? ""}
         pushRemote={codeHostingQuery.data?.remote}
+        pullRequestProvider={codeHostingQuery.data?.config?.provider}
+        pullRequestNeedsConnecting={codeHostingQuery.data?.rung === "NotConnected"}
         onConfirm={handleApproveConfirm}
         isPending={isSaving || isApproving}
       />
