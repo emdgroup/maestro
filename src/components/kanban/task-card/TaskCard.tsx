@@ -111,6 +111,18 @@ function CompletionLine({ task }: { task: Task }) {
 }
 
 function PhaseLine({ task }: { task: Task }) {
+  // A deferred task has no phase — nothing is running — but it is not idle either. The user pressed
+  // Execute and was told it would start when an agent freed up, and without this the card is
+  // indistinguishable from one nobody has touched.
+  if (!task.phase && task.execute_requested_at) {
+    return (
+      <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+        <span className="font-bold shrink-0 uppercase tracking-wide text-muted-foreground">
+          Waiting for a slot
+        </span>
+      </div>
+    );
+  }
   if (!task.phase) return <CompletionLine task={task} />;
   const failed = task.phase_status === "Failed";
   return (
@@ -260,8 +272,16 @@ function FooterCTAs({
           disabled={isExecuting || starting}
           variant="ghost"
           className={cn(base, "h-auto")}
-          // A failed spawn keeps the claim so the card can show it, and this is the retry.
-          title={task.phase_status === "Failed" ? "Try starting this task again" : undefined}
+          // A failed spawn keeps the claim so the card can show it, and this is the retry. A
+          // deferred task keeps the button too, so a user who has just freed a slot can take it
+          // rather than waiting for the next drain.
+          title={
+            task.phase_status === "Failed"
+              ? "Try starting this task again"
+              : task.execute_requested_at
+                ? "Waiting for a free agent — press to try now"
+                : undefined
+          }
         >
           <Play className="w-2.5 h-2.5 fill-current" />
           {isExecuting || starting
@@ -608,7 +628,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
             task.phase_status === "Failed"
           }
           isSendingToReview={sendToReview.isPending}
-          onExecute={() => void handleExecute(task)}
+          // The one Execute the user presses themselves, and so the only one that asks whether
+          // the host has room. The auth retries below are continuations of a start that already
+          // passed that gate.
+          onExecute={() => void handleExecute(task, { respectCapacity: true })}
           onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}

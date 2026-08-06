@@ -11,9 +11,11 @@ vi.mock("@/contexts/KanbanContext", () => ({
 /// Swapped per-test so a card can be rendered with or without a live session behind it.
 const activeSession = vi.hoisted(() => ({ current: null as { session_key: number } | null }));
 
+const execute = vi.hoisted(() => vi.fn());
+
 vi.mock("@/hooks/useExecuteTask", () => ({
   useExecuteTask: () => ({
-    execute: vi.fn(),
+    execute,
     isExecuting: false,
     dirtyDialogOpen: false,
     dirtyModifiedCount: 0,
@@ -106,6 +108,7 @@ function renderCard(overrides: Partial<Task> = {}) {
 
 beforeEach(() => {
   activeSession.current = null;
+  execute.mockClear();
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
   interrupt.mutate.mockClear();
@@ -317,6 +320,44 @@ describe("TaskCard spawning state", () => {
     const retry = screen.getByRole("button", { name: /retry/i });
     expect(retry).toBeInTheDocument();
     expect(retry).not.toBeDisabled();
+  });
+});
+
+/// A deferred task has no phase, because nothing is running — but it is not idle either, and a
+/// card that looks untouched after the user was promised a slot is the deferral failing silently.
+describe("TaskCard deferred execution", () => {
+  const deferred: Partial<Task> = {
+    status: "Queue",
+    execute_requested_at: "2026-08-05T10:00:00Z",
+  };
+
+  it("says a deferred task is waiting for a slot", () => {
+    renderCard(deferred);
+    expect(screen.getByText(/waiting for a slot/i)).toBeInTheDocument();
+  });
+
+  /// The user who has just freed a slot should be able to take it rather than waiting for the
+  /// next drain, so the button stays live.
+  it("keeps Execute available on a deferred task", () => {
+    renderCard(deferred);
+    expect(screen.getByRole("button", { name: /execute/i })).not.toBeDisabled();
+  });
+
+  it("says nothing about a queued task nobody has asked for", () => {
+    renderCard({ status: "Queue" });
+    expect(screen.queryByText(/waiting for a slot/i)).not.toBeInTheDocument();
+  });
+
+  /// The button is where the capacity question is asked. The scheduler's own starts must not ask
+  /// it — they were already counted against the free slots — so it cannot be the default.
+  it("asks whether the host has room before starting", async () => {
+    renderCard({ status: "Queue" });
+
+    await userEvent.click(screen.getByRole("button", { name: /execute/i }));
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      respectCapacity: true,
+    });
   });
 });
 

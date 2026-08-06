@@ -428,24 +428,14 @@ async spawnInteractiveExecution(projectId: number, branchName: string | null, re
 }
 },
 /**
- * Drain the Queue column for auto-mode execution
+ * Pick the tasks that should be started next on this project's host.
  * 
- * Checks if auto_mode is enabled in settings. If so, counts currently running
- * ACP executions for the project and returns task IDs that should be started next,
- * up to max_concurrent_agents. Tasks are ordered by priority (Urgent, High,
- * Medium, Low) then creation date.
+ * Returns ids for the frontend to run rather than starting anything itself: only Rust can decide
+ * *which* tasks run, because the limit is per host and a host serves every project pointed at it,
+ * but only the frontend can start one — spawning means a worktree, an ACP session and a prompt.
  * 
- * Task-associated user shells also consume a concurrency slot, but queue draining does not
- * start agents through PTY. ACP is the sole managed agent execution path.
- * 
- * # Arguments
- * * `app_state` - Tauri app state with database connection
- * * `project_id` - Project to drain the queue for
- * * `project_path` - Repository path (reserved for future use)
- * 
- * # Returns
- * Vec of task_ids that should be started through ACP by the frontend.
- * Returns empty vec if auto_mode is disabled or concurrency limit is already reached.
+ * Task-associated user shells occupy a slot too, but queue draining never starts one; ACP is the
+ * sole managed agent path.
  */
 async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
     try {
@@ -458,6 +448,24 @@ async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<n
 async getQueueCapacity(projectId: number) : Promise<Result<QueueCapacity, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_queue_capacity", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ask whether a manually-executed task can start now.
+ * 
+ * Advisory, not a gate: `claim_for_execution` remains the authority on whether a task is startable
+ * at all. This answers the narrower question of whether the host has room, so that Execute can keep
+ * D24's promise — never refuse, but defer against a fixed limit rather than quietly exceeding it.
+ * 
+ * Deferring moves a Planning task into Queue, because that is where the promise is kept: the
+ * scheduler only draws from Queue, so a deferred task left in Planning would wait forever.
+ */
+async requestTaskExecution(projectId: number, taskId: number) : Promise<Result<ExecuteDecision, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_task_execution", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2214,6 +2222,23 @@ export type DockerConnection = { id: number; container_name: string; image_name:
 export type DockerContainer = { id: string; name: string; image: string; state: DockerContainerState }
 export type DockerContainerState = "Running" | "Stopped"
 export type EnterKeyBehavior = "send_prompt" | "new_line"
+export type ExecuteDecision = { verdict: ExecuteVerdict; reason: string }
+/**
+ * What a manual Execute should do about a host that is already full.
+ * 
+ * It never refuses. Which of the other two applies depends on what kind of limit is in force: a
+ * fixed number the user chose is a rule and can be deferred against, while a figure derived from
+ * live memory is a reading, and a user who knows their machine is fine should not be blocked by it.
+ */
+export type ExecuteVerdict = "Start" | 
+/**
+ * The task has been marked and queued; the scheduler takes it before its own picks.
+ */
+"Deferred" | 
+/**
+ * Over a memory-derived limit. Start anyway, having said so.
+ */
+"Warn"
 /**
  * Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
  * 
@@ -2384,7 +2409,12 @@ phase?: TaskPhase | null; phase_status?: PhaseStatus | null; ball: TaskBall;
  * How a Done task got there. `None` on every task that is not Done, and on Done tasks in a
  * non-git project, where none of the variants mean anything.
  */
-completion?: TaskCompletion | null }
+completion?: TaskCompletion | null; 
+/**
+ * When the user pressed Execute on a task the host had no free slot for. The scheduler takes
+ * these before its own picks, which is what makes the deferral a promise rather than a hope.
+ */
+execute_requested_at?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.

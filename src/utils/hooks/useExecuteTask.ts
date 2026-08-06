@@ -46,8 +46,37 @@ export function useExecuteTask(
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
 
-  const execute = async (task: Task) => {
+  /// `respectCapacity` belongs to the button, not to this function.
+  ///
+  /// The scheduler's own picks must not re-check: it counted them against the slots free when it
+  /// ran, so asking again once the first has started would defer the rest of its own batch. The
+  /// rework restart must not either — that task is not in Queue, and a deferral there would be a
+  /// promise the drain has no way to keep.
+  const execute = async (task: Task, { respectCapacity = false } = {}) => {
     if (!projectId) return;
+
+    if (respectCapacity) {
+      // Advisory. The claim below is what actually decides whether the task starts; this only
+      // decides whether it should start *now*, which is the difference between a fixed limit the
+      // user set and a reading taken off free memory.
+      const decision = await api.requestTaskExecution(projectId, task.id).catch((err) => {
+        console.warn("Capacity check failed, starting anyway:", err);
+        return null;
+      });
+
+      if (decision?.verdict === "Deferred") {
+        toast.info(`"${task.title}" will start when an agent is free`, {
+          description: decision.reason,
+        });
+        return;
+      }
+
+      if (decision?.verdict === "Warn") {
+        toast.warning(`Starting "${task.title}" with the host already full`, {
+          description: decision.reason,
+        });
+      }
+    }
 
     // Resolution order is profile → project override → task override, so the task wins where it
     // says something. Asked for before the capabilities are known because the agent it names is

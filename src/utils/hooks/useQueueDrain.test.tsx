@@ -68,6 +68,8 @@ describe("useQueueDrain", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(drainReadyQueue).toHaveBeenCalled();
+    // No capacity option: these ids were counted against the slots free when the drain ran, so
+    // re-checking once the first has started would defer the rest of the scheduler's own batch.
     expect(execute).toHaveBeenCalledWith(tasks[1]);
   });
 

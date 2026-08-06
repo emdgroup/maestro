@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 26;
+pub const SCHEMA_VERSION: u32 = 27;
 
-pub const SCHEMA_V26_FULL: &str = r#"
+pub const SCHEMA_V27_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- How a Done task got there: Merged / MergedViaPR / LocalOnly / NoChanges. NULL on anything
     -- that is not Done, and on Done tasks in a non-git project where none of those mean anything.
     completion TEXT,
+    -- When the user pressed Execute on a task the host had no free slot for. The scheduler takes
+    -- these before its own picks, so the deferral message is a promise it can keep. Cleared by
+    -- task::transition the moment the task stops being a queue candidate.
+    execute_requested_at TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -293,7 +297,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V26_FULL)?;
+        conn.execute_batch(SCHEMA_V27_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -314,7 +318,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V26_FULL)?;
+        conn.execute_batch(SCHEMA_V27_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -349,6 +353,30 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 26 {
         migrate_to_v26(conn)?;
     }
+    if from < 27 {
+        migrate_to_v27(conn)?;
+    }
+    Ok(())
+}
+
+/// Add the deferred-execution marker.
+///
+/// Nothing is backfilled: the column records a promise the user was given, and no existing task
+/// was ever given one.
+fn migrate_to_v27(conn: &Connection) -> SqlResult<()> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'execute_requested_at'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if !exists {
+        conn.execute_batch("ALTER TABLE tasks ADD COLUMN execute_requested_at TEXT;")?;
+    }
+
     Ok(())
 }
 
@@ -518,7 +546,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -751,6 +779,34 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM task_comments", [], |r| r.get(0))
             .unwrap();
         assert_eq!(orphans, 0, "comments must cascade with their task");
+    }
+
+    /// v27 adds the deferred-execution marker. A database that predates it keeps its tasks, and
+    /// none of them acquires a promise that was never made.
+    #[test]
+    fn test_migration_to_v27_adds_the_deferral_marker() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'waiting', 'Queue', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("PRAGMA user_version = 26", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let marker: Option<String> = conn
+            .query_row("SELECT execute_requested_at FROM tasks WHERE id = 1", [], |r| r.get(0))
+            .expect("the column must exist after migrating");
+        assert_eq!(marker, None, "no existing task was ever promised a slot");
     }
 
     #[test]

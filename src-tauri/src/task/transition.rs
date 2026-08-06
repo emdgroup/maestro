@@ -262,8 +262,15 @@ pub fn apply_if_status(
     let next = resolve(event, current);
     let now = Utc::now().to_rfc3339();
 
+    // A deferral is a promise to a task the scheduler has not picked up yet, so it is only
+    // meaningful while the task is still one of its candidates — parked in Queue. Tying the marker
+    // to that condition here means it cannot outlive its meaning: being claimed clears it, and so
+    // does the user dragging the card somewhere else, which is them withdrawing the request.
+    let keep_request = next.status == TaskStatus::Queue && next.phase.is_none();
+
     conn.execute(
         "UPDATE tasks SET status = ?, phase = ?, phase_status = ?, ball = ?, completion = ?, \
+         execute_requested_at = CASE WHEN ? THEN execute_requested_at ELSE NULL END, \
          updated_at = ? WHERE id = ?",
         rusqlite::params![
             next.status.as_str(),
@@ -271,6 +278,7 @@ pub fn apply_if_status(
             next.phase_status.map(PhaseStatus::as_str),
             next.ball.as_str(),
             next.completion.map(TaskCompletion::as_str),
+            keep_request,
             &now,
             task_id,
         ],
@@ -800,6 +808,61 @@ mod tests {
 
             // Now InProgress/Implementing — not in `expected`, and not spawning either.
             assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().is_none());
+        }
+
+        fn request_marker(conn: &Connection, task_id: i32) -> Option<String> {
+            conn.query_row(
+                "SELECT execute_requested_at FROM tasks WHERE id = ?",
+                [task_id],
+                |row| row.get(0),
+            )
+            .expect("read the deferral marker")
+        }
+
+        fn defer(conn: &Connection, task_id: i32) {
+            conn.execute(
+                "UPDATE tasks SET execute_requested_at = '2026-01-01T00:00:00Z' WHERE id = ?",
+                [task_id],
+            )
+            .expect("defer the task");
+        }
+
+        /// The deferral marker only means something while the scheduler can still act on it, and
+        /// being claimed is the moment it stops meaning anything. Left behind, it would jump the
+        /// queue a second time if the task ever came back.
+        #[test]
+        fn claiming_a_task_clears_its_deferral() {
+            let (conn, task_id) = db_with_task();
+            defer(&conn, task_id);
+
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+
+            assert_eq!(request_marker(&conn, task_id), None);
+        }
+
+        /// Dragging the card out of Queue is the user withdrawing the request.
+        #[test]
+        fn leaving_the_queue_clears_a_deferral() {
+            let (conn, task_id) = db_with_task();
+            defer(&conn, task_id);
+
+            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+
+            assert_eq!(request_marker(&conn, task_id), None);
+        }
+
+        /// A transition that leaves the task where it was must not silently cancel the promise —
+        /// an aborted spawn parks it back in Queue and it is still owed a slot.
+        #[test]
+        fn a_deferral_survives_a_transition_back_into_the_queue() {
+            let (conn, task_id) = db_with_task();
+            defer(&conn, task_id);
+
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            defer(&conn, task_id);
+            apply_if_spawning(&conn, task_id, TaskTransition::SpawnAborted).unwrap().unwrap();
+
+            assert!(request_marker(&conn, task_id).is_some());
         }
 
         #[test]

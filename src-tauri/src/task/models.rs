@@ -9,14 +9,15 @@ use std::str::FromStr;
 /// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
 /// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
-/// execution_start_sha(24), phase(25), phase_status(26), ball(27)
+/// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
+/// execute_requested_at(29)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
-     execution_start_sha, phase, phase_status, ball, completion FROM tasks";
+     execution_start_sha, phase, phase_status, ball, completion, execute_requested_at FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -72,6 +73,10 @@ pub struct Task {
     /// non-git project, where none of the variants mean anything.
     #[specta(optional)]
     pub completion: Option<TaskCompletion>,
+    /// When the user pressed Execute on a task the host had no free slot for. The scheduler takes
+    /// these before its own picks, which is what makes the deferral a promise rather than a hope.
+    #[specta(optional)]
+    pub execute_requested_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -208,6 +213,7 @@ impl Task {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(TaskBall::None),
             completion: row.get::<_, Option<String>>(28)?.and_then(|s| s.parse().ok()),
+            execute_requested_at: row.get(29)?,
         })
     }
 }
