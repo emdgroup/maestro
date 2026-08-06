@@ -11,6 +11,7 @@ import {
   useSendTaskToReviewMutation,
 } from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
+import { useWorktreesQuery, useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
@@ -472,6 +473,8 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const [emptyReviewConfirmOpen, setEmptyReviewConfirmOpen] = useState(false);
   // Abandoning deletes the worktree and its branch, so it cannot be a bare click on a card.
   const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
+  // Archiving a task whose changes were never merged puts unmerged work out of sight (D36).
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -484,6 +487,11 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
   const archiveTask = useArchiveTaskMutation();
+  const deleteWorktree = useDeleteWorktreeMutation();
+  // Only read for the unmerged-archive confirmation below. The same query key the board already
+  // holds, so this subscribes to a cached list rather than fetching one per card.
+  const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
+  const taskWorktree = (worktrees ?? []).find((w) => w.task_id === task.id) ?? null;
   const recoverSession = useRecoverTaskSessionMutation();
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
@@ -640,7 +648,13 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}
-          onArchive={() => archiveTask.mutate(task.id)}
+          // Every other completion is finished business. `LocalOnly` is the one that leaves
+          // something behind, so archiving it silently would put unmerged work out of sight.
+          onArchive={() =>
+            task.completion === "LocalOnly"
+              ? setArchiveConfirmOpen(true)
+              : archiveTask.mutate(task.id)
+          }
           onLogin={() => setIsAuthModalOpen(true)}
           onRecover={() => recoverSession.mutate({ taskId: task.id, projectId })}
           onSendToReview={() =>
@@ -691,6 +705,49 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
       />
+      <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-warning" />
+              These changes were never merged
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {taskWorktree
+                ? `The work is committed on ${taskWorktree.branch_name}, and its worktree is still at ${taskWorktree.path}. Archiving takes the task off the board either way — the question is only whether the worktree stays with it.`
+                : "The work was committed but never merged into the base branch. Archiving takes the task off the board; the branch stays where it is."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep on the board</AlertDialogCancel>
+            {taskWorktree &&
+              projectId !== null && (
+                // Deletes the checkout, not the branch. The commits are the unmerged work this
+                // dialog exists to protect; the working copy of them is just disk.
+                <AlertDialogAction
+                  className={buttonVariants({ variant: "outline" })}
+                  onClick={() =>
+                    deleteWorktree.mutate(
+                      {
+                        projectId,
+                        worktreePath: taskWorktree.path,
+                        branchName: taskWorktree.branch_name,
+                        worktreeId: taskWorktree.id,
+                        deleteBranch: false,
+                      },
+                      { onSuccess: () => archiveTask.mutate(task.id) },
+                    )
+                  }
+                >
+                  Archive and remove the worktree
+                </AlertDialogAction>
+              )}
+            <AlertDialogAction onClick={() => archiveTask.mutate(task.id)}>
+              Archive, keep everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={abandonConfirmOpen} onOpenChange={setAbandonConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -38,9 +38,11 @@ const sendToReview = vi.hoisted(() => ({
 /// Abandoning deletes the worktree and branch, so the test needs to see whether it fired.
 const interrupt = vi.hoisted(() => ({ mutate: vi.fn() }));
 
+const archive = vi.hoisted(() => vi.fn());
+
 vi.mock("@/services/task.service", () => ({
   useInterruptTaskMutation: () => ({ mutate: interrupt.mutate }),
-  useArchiveTaskMutation: () => ({ mutate: vi.fn() }),
+  useArchiveTaskMutation: () => ({ mutate: archive }),
   useSendTaskToReviewMutation: () => ({
     mutate: (vars: unknown, opts?: { onSuccess?: (data: unknown) => void }) => {
       sendToReview.mutate(vars);
@@ -52,6 +54,18 @@ vi.mock("@/services/task.service", () => ({
 
 vi.mock("@/services/execution.service", () => ({
   useRecoverTaskSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+/// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
+/// be rendered with and without one.
+const worktrees = vi.hoisted(() => ({
+  current: [] as Array<{ id: number; task_id: number; path: string; branch_name: string }>,
+}));
+const deleteWorktree = vi.hoisted(() => vi.fn());
+
+vi.mock("@/services/worktree.service", () => ({
+  useWorktreesQuery: () => ({ data: worktrees.current }),
+  useDeleteWorktreeMutation: () => ({ mutate: deleteWorktree }),
 }));
 
 vi.mock("@/store/navigationStore", () => ({
@@ -108,7 +122,10 @@ function renderCard(overrides: Partial<Task> = {}) {
 
 beforeEach(() => {
   activeSession.current = null;
+  worktrees.current = [];
   execute.mockClear();
+  archive.mockClear();
+  deleteWorktree.mockClear();
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
   interrupt.mutate.mockClear();
@@ -402,5 +419,75 @@ describe("TaskCard session reachability", () => {
   it("omits Join on a Review card with no session", () => {
     renderCard(review);
     expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+});
+
+/// Every other completion is finished business. `LocalOnly` means the changes were committed and
+/// never merged, so archiving it silently would put unmerged work out of sight — D36.
+describe("TaskCard archiving unmerged work", () => {
+  const localOnly: Partial<Task> = { status: "Done", completion: "LocalOnly" };
+
+  it("archives a merged task without asking", async () => {
+    renderCard({ status: "Done", completion: "Merged", id: 7 });
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(archive).toHaveBeenCalledWith(7);
+  });
+
+  it("warns before archiving unmerged changes", async () => {
+    renderCard(localOnly);
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(screen.getByText(/These changes were never merged/i)).toBeInTheDocument();
+    expect(archive).not.toHaveBeenCalled();
+  });
+
+  it("names the branch and the worktree still holding the work", async () => {
+    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    renderCard(localOnly);
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(screen.getByText(/7-fix-cleanup/)).toBeInTheDocument();
+    expect(screen.getByText(/\/tmp\/wt\/7/)).toBeInTheDocument();
+  });
+
+  it("archives without touching anything when asked to keep it", async () => {
+    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    renderCard(localOnly);
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+    await userEvent.click(screen.getByRole("button", { name: /keep everything/i }));
+
+    expect(archive).toHaveBeenCalledWith(7);
+    expect(deleteWorktree).not.toHaveBeenCalled();
+  });
+
+  /// The commits are the unmerged work this dialog exists to protect. Removing the checkout
+  /// reclaims disk; deleting the branch would destroy exactly what the warning is about.
+  it("keeps the branch when removing the worktree", async () => {
+    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    renderCard(localOnly);
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+    await userEvent.click(screen.getByRole("button", { name: /remove the worktree/i }));
+
+    expect(deleteWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreePath: "/tmp/wt/7", deleteBranch: false }),
+      expect.anything(),
+    );
+  });
+
+  /// A task whose worktree is already gone still has unmerged commits on its branch, so the
+  /// warning stands — but there is nothing left to offer to remove.
+  it("offers no removal when the worktree is already gone", async () => {
+    renderCard(localOnly);
+
+    await userEvent.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(screen.getByText(/These changes were never merged/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove the worktree/i })).not.toBeInTheDocument();
   });
 });
