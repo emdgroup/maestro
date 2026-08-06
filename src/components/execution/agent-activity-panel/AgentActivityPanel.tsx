@@ -617,6 +617,7 @@ export function AgentActivityPanel({
             <AgentScrollOverlays
               userMessages={userMessages}
               orderedSectionIds={orderedSectionIds}
+              isSelected={isSelected}
               isCenteredCompose={isCenteredCompose}
               planOverlay={null}
               composeBarRef={composeBarRef}
