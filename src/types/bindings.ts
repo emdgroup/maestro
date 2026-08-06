@@ -677,6 +677,48 @@ async rejectReview(taskId: number, action: string) : Promise<Result<Task, string
     else return { status: "error", error: e  as any };
 }
 },
+async listAgentProfiles(projectId: number) : Promise<Result<ProfilesDocument, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_agent_profiles", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replace the whole document.
+ * 
+ * Whole-document rather than per-profile because the file is committed and hand-edited: a
+ * partial update would have to reconcile with whatever a teammate's commit did to the rest of it,
+ * and the UI already holds the full list.
+ */
+async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_agent_profiles", { projectId, document }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Resolve the profile for a role and reduce it to what the agent can honour.
+ * 
+ * Takes the agent's advertised capabilities as arguments rather than looking them up, because
+ * they are only known once the session has spawned and reported them — and the caller holding
+ * that report is the frontend. Keeping the reduction here rather than there is what stops the
+ * read-only correction being reimplemented, and differently, per call site.
+ * 
+ * `None` means the project has no profile for the role, which is not an error: profiles are
+ * opt-in and a project without them keeps the per-task settings it already had.
+ */
+async resolveAgentProfile(projectId: number, role: AgentRole, profileId: string | null, modelIds: string[], modeIds: string[], supportsEffort: boolean) : Promise<Result<ResolvedProfile | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_agent_profile", { projectId, role, profileId, modelIds, modeIds, supportsEffort }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Get project-level configuration from .maestro/settings.json
  */
@@ -2014,6 +2056,28 @@ export type AgentAuthInfo = { authMethods: AuthMethodDto[]; supportsLogout: bool
  * Works for both local (`connection_id = None`) and remote (`connection_id = Some(id)`).
  */
 export type AgentDiscoveryResult = { maestro_server_available: boolean; agents: DiscoveredAgent[]; error?: string | null }
+export type AgentProfile = { id: string; name: string; role: AgentRole; agent_id: string; model?: string | null; 
+/**
+ * Not ACP-universal — agents that do not expose it drop it per `fallback_behaviour`.
+ */
+effort?: string | null; 
+/**
+ * The ACP session mode id. `None` means "whatever the agent defaults to", which is only
+ * appropriate for the coder.
+ */
+permission_mode?: string | null; skills?: string[]; mcp_servers?: string[]; 
+/**
+ * What the role means for this project. The field that makes a profile worth having: without
+ * it every project gets a generic reviewer.
+ */
+role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
+/**
+ * The role a profile is written for.
+ * 
+ * Selecting by role is what lets a task say "plan with the planner" without naming a profile, and
+ * what makes a project's default reviewer a project-level fact.
+ */
+export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer"
 export type AgentStreamWidth = "full" | "compact"
 /**
  * Ahead/behind commit counts relative to the upstream tracking branch
@@ -2135,6 +2199,23 @@ export type EnterKeyBehavior = "send_prompt" | "new_line"
  */
 export type ExecutionMode = "acp" | "pty"
 export type ExternalFileRequest = { path: string; is_image: boolean }
+/**
+ * What a profile does when the agent it names cannot honour part of it.
+ * 
+ * Agents differ in which models and permission modes they expose, and `effort` is not universal
+ * at all. Failing the spawn over an unsupported field would make a shared profile unusable for
+ * anyone whose agent differs slightly, so the default is to carry on and say so.
+ */
+export type FallbackBehaviour = 
+/**
+ * Drop the unsupported field, spawn anyway, warn the user.
+ */
+"Warn" | 
+/**
+ * Refuse to spawn. For a profile whose whole point is the field that is missing — a
+ * read-only reviewer on an agent with no read-only mode is not a reviewer.
+ */
+"Fail"
 export type FileEntry = { name: string; is_dir: boolean }
 export type FileTransferResult = { transfer_id: string; bytes_transferred: number }
 /**
@@ -2193,6 +2274,14 @@ export type PhaseStatus = "Running" | "Blocked" | "Waiting" | "Failed"
  */
 export type PreflightResult = { agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type PreparedAttachment = { display_name: string; local_path: string; content_block: JsonValue }
+/**
+ * The project's profiles, plus which one each role uses by default.
+ */
+export type ProfilesDocument = { profiles?: AgentProfile[]; 
+/**
+ * Role → profile id. A role with no entry falls back to the first profile declaring it.
+ */
+defaults?: Partial<{ [key in string]: string }> }
 export type Project = { id: number; name: string; path: string; created_at: string; updated_at: string; last_opened: string | null; connection_id: number | null; wsl_connection_id: number | null; docker_connection_id: number | null }
 /**
  * Project-level agent detection: which agent tools have config markers in the project dir.
@@ -2209,6 +2298,14 @@ export type RemoteIssue = { external_id: string; title: string; body: string | n
  * A repository option returned by provider lookup commands for combobox display.
  */
 export type RepoOption = { name: string; description: string | null; clone_url: string | null }
+/**
+ * What a profile resolved to for an actual spawn, with anything the agent cannot honour removed.
+ */
+export type ResolvedProfile = { profile_id: string; agent_id: string; model?: string | null; effort?: string | null; permission_mode?: string | null; skills: string[]; mcp_servers: string[]; role_prompt?: string | null; 
+/**
+ * Human-readable notes about what was dropped, for the UI to show. Empty is the happy path.
+ */
+warnings: string[] }
 export type ReviewCommentEntry = { file_path: string; comment: string }
 /**
  * Typed response for save_task_review and request_changes IPC commands

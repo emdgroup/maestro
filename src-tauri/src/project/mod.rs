@@ -4,6 +4,7 @@ pub mod handlers;
 pub mod lock;
 pub mod models;
 pub mod prime;
+pub mod profiles;
 pub mod session_state;
 pub mod settings;
 

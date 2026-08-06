@@ -49,7 +49,15 @@ export function useExecuteTask(
   const execute = async (task: Task) => {
     if (!projectId) return;
 
-    const agentId = task.agent_id ?? defaultAgent;
+    // Resolution order is profile → project override → task override, so the task wins where it
+    // says something. Asked for before the capabilities are known because the agent it names is
+    // what gets spawned; the model and mode are applied afterwards, once the agent has reported
+    // what it supports.
+    const coderProfile = await api
+      .resolveAgentProfile(projectId, "Coder", null, [], [], false)
+      .catch(() => null);
+
+    const agentId = task.agent_id ?? coderProfile?.agent_id ?? defaultAgent;
     if (!agentId) {
       toast.error("No agent configured. Set a default agent in Settings.");
       return;
@@ -163,21 +171,32 @@ export function useExecuteTask(
         });
       });
 
-      // Set model if overridden (non-critical — log warning on failure)
-      if (task.model_override) {
+      // Asked again now that the agent has said what it supports, so anything it cannot honour is
+      // dropped with a warning rather than being sent and silently failing.
+      const resolved = await api
+        .resolveAgentProfile(projectId, "Coder", null, [], capturedModeIds, false)
+        .catch(() => null);
+
+      for (const warning of resolved?.warnings ?? []) {
+        toast.warning(warning);
+      }
+
+      const model = task.model_override ?? resolved?.model ?? null;
+      if (model) {
         try {
-          await api.setAcpModel(logId, task.model_override);
+          await api.setAcpModel(logId, model);
         } catch (err) {
-          console.warn("Failed to set model override:", err);
+          console.warn("Failed to set model:", err);
         }
       }
 
-      // Set permission mode: use override if set, otherwise resolve from modes received at spawn
-      if (task.permission_mode_override) {
+      // Set permission mode: task override, then the profile, then the modes received at spawn
+      const permissionMode = task.permission_mode_override ?? resolved?.permission_mode ?? null;
+      if (permissionMode) {
         try {
-          await api.setAcpMode(logId, task.permission_mode_override);
+          await api.setAcpMode(logId, permissionMode);
         } catch (err) {
-          console.warn("Failed to set permission mode override:", err);
+          console.warn("Failed to set permission mode:", err);
         }
       } else if (capturedModeIds.length > 0) {
         try {
@@ -202,7 +221,13 @@ export function useExecuteTask(
       const promptText = task.description
         ? `# ${task.title}\n\n${task.description}`
         : `# ${task.title}`;
-      contentBlocks.push({ type: "text", text: `${promptText}\n\n---\n${COMPLETION_PROTOCOL}` });
+      // Ahead of the task, because it says what this role means for this project — the standing
+      // instruction the task is an instance of, not a footnote to it.
+      const rolePrompt = resolved?.role_prompt ? `${resolved.role_prompt}\n\n---\n` : "";
+      contentBlocks.push({
+        type: "text",
+        text: `${rolePrompt}${promptText}\n\n---\n${COMPLETION_PROTOCOL}`,
+      });
 
       if (attachments.length > 0) {
         const files = attachments.map((a) => ({ path: a.file_path, is_image: false }));
