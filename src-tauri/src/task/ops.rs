@@ -196,10 +196,12 @@ pub fn mark_task_execution_started(
 
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        // InProgress is here only for the plan gate: `claim_for_execution` refuses any phase but
+        // the gate's, so this cannot start a task an agent is already working on.
         crate::task::transition::claim_for_execution(
             &conn,
             task_id,
-            &[TaskStatus::Planning, TaskStatus::Queue],
+            &[TaskStatus::Planning, TaskStatus::Queue, TaskStatus::InProgress],
         )?
     };
 

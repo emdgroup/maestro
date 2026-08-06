@@ -608,3 +608,67 @@ describe("TaskCard refinement", () => {
     expect(screen.getByRole("button", { name: /use this description/i })).toBeDisabled();
   });
 });
+
+/// The plan gate sits inside In Progress, not in Review — it gates an intention, not a diff.
+describe("TaskCard plan gate", () => {
+  const atTheGate: Partial<Task> = {
+    status: "InProgress",
+    phase: "PlanReview",
+    phase_status: "Waiting",
+    ball: "User",
+  };
+
+  it("offers the plan rather than the running-agent controls", () => {
+    renderCard(atTheGate);
+
+    expect(screen.getByRole("button", { name: /read plan/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /abandon/i })).not.toBeInTheDocument();
+  });
+
+  /// The plan lives in the task's thread, not in the session that wrote it, so a gate reached days
+  /// later still works. The card must not report a lost session as the problem.
+  it("says nothing about a lost session at the gate", () => {
+    renderCard(atTheGate);
+    expect(screen.queryByText(/session lost/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the plan", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+    renderCard(atTheGate);
+
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    expect(screen.getByText("1. Do the thing")).toBeInTheDocument();
+  });
+
+  /// Approving must name the coder. `execute` routes a standing start through the planner when
+  /// the project has one, so inheriting the default here would plan the plan.
+  it("approving starts the coder explicitly", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+    renderCard(atTheGate);
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
+  });
+
+  it("planning again runs the planner", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+    renderCard(atTheGate);
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /plan again/i }));
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Planner" });
+  });
+
+  it("refuses to approve an empty plan", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: null }];
+    renderCard(atTheGate);
+
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    expect(screen.getByRole("button", { name: /start implementing/i })).toBeDisabled();
+  });
+});

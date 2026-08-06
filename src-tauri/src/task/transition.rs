@@ -329,6 +329,9 @@ pub fn claim_for_execution(
     let claimable = match (current.phase, current.phase_status) {
         (None, _) => true,
         (Some(TaskPhase::Spawning), Some(PhaseStatus::Failed)) => true,
+        // The plan gate is a handover, not a resting place: approving the plan is what starts the
+        // coder, so the gate has to be claimable even though the task already has a phase.
+        (Some(TaskPhase::PlanReview), Some(PhaseStatus::Waiting)) => true,
         _ => false,
     };
 
@@ -874,6 +877,29 @@ mod tests {
 
             apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap().unwrap();
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
+        }
+
+        /// Approving a plan is what starts the coder, so the gate has to be claimable even though
+        /// the task already carries a phase.
+        #[test]
+        fn a_task_at_the_plan_gate_can_be_claimed() {
+            let (conn, task_id) = db_with_task();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Planner))
+                .unwrap()
+                .unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            )
+            .unwrap();
+            assert_eq!(read_state(&conn, task_id).unwrap().phase, Some(TaskPhase::PlanReview));
+
+            let claimed = claim_for_execution(&conn, task_id, &[TaskStatus::InProgress]).unwrap();
+
+            assert!(claimed.is_some(), "the plan gate must hand off to the coder");
+            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::InProgress));
         }
 
         /// The retry exception must not widen into "any task with a phase can be re-claimed" —

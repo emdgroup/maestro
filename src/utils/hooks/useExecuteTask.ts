@@ -45,6 +45,16 @@ const REFINER_PROTOCOL =
   "nothing else — no preamble, no summary of your changes, no code fences around the whole reply. " +
   "Your reply is what will replace the description if the user accepts it. Do not modify any files.";
 
+/// What the planner is for, in the absence of a profile that says it better.
+///
+/// Like the refiner, its final message *is* the artifact: the plan is what the gate shows and what
+/// the coder is given. It cannot write the plan to a file itself — it is held read-only, which is
+/// the whole basis of the plan gate — so Maestro carries it.
+const PLANNER_PROTOCOL =
+  "Investigate the repository and reply with an implementation plan in markdown: what to change, " +
+  "in what order, and anything you found that constrains the approach. Do not modify any files — " +
+  "your reply is the plan, and the user decides whether it is implemented.";
+
 /// Modes that let an agent write, in preference order, and the read-only ones for the three roles
 /// that must not. Used only when no profile names a mode.
 const WRITABLE_MODES = ["acceptEdits", "auto", "build"];
@@ -77,13 +87,30 @@ export function useExecuteTask(
   /// lands in. Everything else about starting an agent is the same for all four.
   const execute = async (
     task: Task,
-    { respectCapacity = false, role = "Coder" as AgentRole } = {},
+    { respectCapacity = false, role: requestedRole = "Coder" as AgentRole } = {},
   ) => {
     if (!projectId) return;
 
+    // Planning runs first when the project has a planner, which is what "optional plan agent"
+    // means in practice — Execute is one button whether or not a plan stage exists.
+    //
+    // Only from a standing start. At the plan gate the task is at `PlanReview` with a phase, and
+    // approving the plan calls this with the coder explicitly; without the guard that approval
+    // would start planning again, which is a loop with a gate in it.
+    const plannerFirst =
+      requestedRole === "Coder" &&
+      task.phase == null &&
+      (await api
+        .resolveAgentProfile(projectId, "Planner", null, [], [], false)
+        .then((profile) => profile !== null)
+        .catch(() => false));
+
+    const role: AgentRole = plannerFirst ? "Planner" : requestedRole;
+
     // The refiner reads the repository to sharpen a ticket and writes nothing, so isolating it
     // would cost a worktree per refinement for no benefit. The planner and the reviewer do need
-    // one: the plan file is written there, and the diff being reviewed only exists there.
+    // one: the planner has to read the branch the work will land on, and the diff being reviewed
+    // only exists there.
     const needsWorktree = role !== "Refiner" && task.isolated_worktree;
     const readOnly = role !== "Coder";
 
@@ -312,11 +339,32 @@ export function useExecuteTask(
       // The refiner is not asked for the completion marker. Its turn ending *is* the proposal —
       // there is nothing for it to declare — and a marker in the reply would end up in the
       // description, since the reply is what the gate offers to put there.
-      const protocol = role === "Refiner" ? REFINER_PROTOCOL : COMPLETION_PROTOCOL;
+      const protocol =
+        role === "Refiner"
+          ? REFINER_PROTOCOL
+          : role === "Planner"
+            ? PLANNER_PROTOCOL
+            : COMPLETION_PROTOCOL;
       contentBlocks.push({
         type: "text",
         text: `${rolePrompt}${promptText}\n\n---\n${protocol}`,
       });
+
+      // The plan the user approved, carried into the implementation. Needed even when the coder
+      // reuses the planner's session, because the gate may have run days later against a session
+      // that was restored rather than the one that wrote it.
+      if (role === "Coder") {
+        const plan = await api
+          .listTaskComments(task.id)
+          .then((entries) => [...entries].reverse().find((c) => c.kind === "plan")?.body)
+          .catch(() => null);
+        if (plan?.trim()) {
+          contentBlocks.push({
+            type: "text",
+            text: `## The approved plan\n\n${plan.trim()}`,
+          });
+        }
+      }
 
       if (attachments.length > 0) {
         const files = attachments.map((a) => ({ path: a.file_path, is_image: false }));

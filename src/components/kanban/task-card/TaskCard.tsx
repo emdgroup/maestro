@@ -6,6 +6,7 @@ import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useTaskHold } from "@/hooks/useTaskHold";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { ProposalGate } from "./ProposalGate";
+import { PlanGate } from "./PlanGate";
 import {
   useInterruptTaskMutation,
   useArchiveTaskMutation,
@@ -36,6 +37,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Sparkles,
+  ListChecks,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -217,6 +219,7 @@ interface FooterCTAsProps {
   onExecute: () => void;
   onRefine: () => void;
   onOpenProposal: () => void;
+  onOpenPlan: () => void;
   onStop: () => void;
   onJoin: () => void;
   onReview: () => void;
@@ -238,6 +241,7 @@ function FooterCTAs({
   onExecute,
   onRefine,
   onOpenProposal,
+  onOpenPlan,
   onStop,
   onJoin,
   onReview,
@@ -380,6 +384,41 @@ function FooterCTAs({
           >
             <Sparkles className="w-2.5 h-2.5" />
             Refine
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // The plan gate. Ahead of the In Progress branch, whose first concern is a lost session — but
+  // the plan is finished and waiting here, and losing the session that wrote it costs nothing:
+  // the plan is in the task's thread, not in the session.
+  if (task.phase === "PlanReview") {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPlan();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <ListChecks className="w-2.5 h-2.5" />
+          Read plan
+        </Button>
+        {activeSession && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJoin();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+            title="Talk to the planner before deciding"
+          >
+            <BotMessageSquare className="w-2.5 h-2.5" />
+            Join
           </Button>
         )}
       </div>
@@ -566,6 +605,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   // Archiving a task whose changes were never merged puts unmerged work out of sight (D36).
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -745,6 +785,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           // slot the way an implementation does and is not deferred against the limit.
           onRefine={() => void handleExecute(task, { role: "Refiner" })}
           onOpenProposal={() => setProposalOpen(true)}
+          onOpenPlan={() => setPlanOpen(true)}
           onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}
@@ -806,6 +847,15 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onCancel={onDirtyCancel}
       />
       <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
+      <PlanGate
+        task={task}
+        open={planOpen}
+        onOpenChange={setPlanOpen}
+        // Explicitly the coder: `execute` routes a standing start through the planner when the
+        // project has one, and approving a plan is the one case that must not.
+        onApprove={() => void handleExecute(task, { role: "Coder" })}
+        onReplan={() => void handleExecute(task, { role: "Planner" })}
+      />
       <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
