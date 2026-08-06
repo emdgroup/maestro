@@ -163,12 +163,22 @@ pub async fn send_task_to_review(
     // the one place the user has just declined to go.
     let has_changes = if force { None } else { has_changes };
 
+    // Sending work to review by hand is still asking for it to be reviewed, so a project with a
+    // review agent gets one here too. Doing otherwise would make the button a way of skipping the
+    // reviewer, which nothing on it says it is.
+    let reviewer_pending =
+        crate::acp::reader_task::reviewer_should_run(&app_state, task_id).await;
+
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply(
             &conn,
             task_id,
-            crate::task::transition::TaskTransition::TurnCompleted { is_git_repo, has_changes },
+            crate::task::transition::TaskTransition::TurnCompleted {
+                is_git_repo,
+                has_changes,
+                reviewer_pending,
+            },
         )?
     };
 

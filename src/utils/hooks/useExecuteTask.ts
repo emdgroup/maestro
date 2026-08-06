@@ -55,6 +55,19 @@ const PLANNER_PROTOCOL =
   "in what order, and anything you found that constrains the approach. Do not modify any files — " +
   "your reply is the plan, and the user decides whether it is implemented.";
 
+/// What the reviewer is for, in the absence of a profile that says it better.
+///
+/// The verdict line is ordinary text rather than a hidden marker because it is the headline of
+/// what goes into the outcome thread — the user reads it, and a stripped marker would leave the
+/// thread saying nothing about the conclusion. `classify_verdict` reads only that first line, and
+/// treats anything it cannot parse as approval, which sends the task to the human gate rather than
+/// spending another coder round on a guess.
+const REVIEWER_PROTOCOL =
+  "Review the changes on this branch against the task. Start your reply with a single line " +
+  "reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific " +
+  "about what to fix and where, because your reply is what the coder is given. Do not modify any " +
+  "files.";
+
 /// Modes that let an agent write, in preference order, and the read-only ones for the three roles
 /// that must not. Used only when no profile names a mode.
 const WRITABLE_MODES = ["acceptEdits", "auto", "build"];
@@ -372,7 +385,9 @@ export function useExecuteTask(
           ? REFINER_PROTOCOL
           : role === "Planner"
             ? PLANNER_PROTOCOL
-            : COMPLETION_PROTOCOL;
+            : role === "Reviewer"
+              ? REVIEWER_PROTOCOL
+              : COMPLETION_PROTOCOL;
       contentBlocks.push({
         type: "text",
         text: `${rolePrompt}${promptText}\n\n---\n${protocol}`,
@@ -382,14 +397,26 @@ export function useExecuteTask(
       // reuses the planner's session, because the gate may have run days later against a session
       // that was restored rather than the one that wrote it.
       if (role === "Coder") {
-        const plan = await api
+        const entries = await api
           .listTaskComments(task.id)
-          .then((entries) => [...entries].reverse().find((c) => c.kind === "plan")?.body)
-          .catch(() => null);
+          .then((all) => [...all].reverse())
+          .catch(() => []);
+
+        const plan = entries.find((c) => c.kind === "plan")?.body;
         if (plan?.trim()) {
           contentBlocks.push({
             type: "text",
             text: `## The approved plan\n\n${plan.trim()}`,
+          });
+        }
+
+        // Without this the rework round is a coder restarted on the same task with no idea why,
+        // which is the loop spending a round to rediscover what the reviewer already wrote down.
+        const verdict = entries.find((c) => c.kind === "verdict")?.body;
+        if (task.phase === "Rework" && verdict?.trim()) {
+          contentBlocks.push({
+            type: "text",
+            text: `## Review findings to address\n\n${verdict.trim()}`,
           });
         }
       }

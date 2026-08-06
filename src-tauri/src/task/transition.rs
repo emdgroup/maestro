@@ -92,7 +92,21 @@ pub enum TaskTransition {
     /// task to Done without review; `None` means the question could not be answered (no repo, no
     /// worktree, a failed git call) and must fall through to review, because silently closing a
     /// task on missing evidence is the one outcome with no way back.
-    TurnCompleted { is_git_repo: bool, has_changes: Option<bool> },
+    ///
+    /// `reviewer_pending` says a review agent should look at the work before the user does. It is
+    /// an input rather than something `resolve` can decide, because it depends on the project's
+    /// profiles and on how many rounds the loop has already spent.
+    TurnCompleted { is_git_repo: bool, has_changes: Option<bool>, reviewer_pending: bool },
+    /// The review agent finished and the task goes to the human gate.
+    ///
+    /// One event for approval and for hitting the round cap, because they leave the task in the
+    /// same place: a person now decides. Which of the two happened is in the outcome thread.
+    ReviewFinished,
+    /// The review agent asked for changes and the loop has rounds left.
+    ///
+    /// The ball goes to `Agent`, not `User` — that is what separates this from the user's own
+    /// rework request, and it is what tells the board to start a coder without being asked.
+    ReviewRejected,
     /// The user stopped the running session.
     Stopped,
     /// The user answered the refiner's proposal gate.
@@ -186,7 +200,11 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             ..current
         },
 
-        TaskTransition::TurnCompleted { is_git_repo, has_changes } => match current.phase {
+        TaskTransition::ReviewFinished => TaskState::active(Review, Approval, Waiting, Ball::User),
+
+        TaskTransition::ReviewRejected => TaskState::active(InProgress, Rework, Waiting, Ball::Agent),
+
+        TaskTransition::TurnCompleted { is_git_repo, has_changes, reviewer_pending } => match current.phase {
             // A planner ending its turn has produced a plan, not an implementation. The gate is
             // inside In Progress — it is not the Review column, which reviews a diff.
             Some(Drafting) => TaskState::active(InProgress, PlanReview, Waiting, Ball::User),
@@ -203,6 +221,11 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             // Demonstrably nothing changed. Review would open an empty diff and In Progress would
             // strand the task, so Done says what happened and the outcome thread says why.
             _ if has_changes == Some(false) => TaskState::done(Some(TaskCompletion::NoChanges)),
+
+            // A review agent is going to look first. `Waiting` with the ball on the agent is the
+            // board asking for one to be started — the same shape the queue uses, since only the
+            // frontend can spawn a session.
+            _ if reviewer_pending => TaskState::active(Review, SelfReview, Waiting, Ball::Agent),
 
             _ => TaskState::active(Review, Approval, Waiting, Ball::User),
         },
@@ -580,7 +603,7 @@ mod tests {
     #[test]
     fn turn_completed_routes_on_whether_there_is_a_repo() {
         let with_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
             implementing(),
         );
         assert_eq!(
@@ -595,7 +618,7 @@ mod tests {
 
         // No repository means none of the completion qualifiers describe anything real.
         let without_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: false, has_changes: None },
+            TaskTransition::TurnCompleted { is_git_repo: false, has_changes: None, reviewer_pending: false },
             implementing(),
         );
         assert_eq!(without_repo, TaskState::parked(TaskStatus::Done));
@@ -607,7 +630,7 @@ mod tests {
     #[test]
     fn a_turn_that_changed_nothing_completes_as_no_changes() {
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(false) },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(false), reviewer_pending: false },
             implementing(),
         );
         assert_eq!(next.status, TaskStatus::Done);
@@ -619,7 +642,7 @@ mod tests {
     #[test]
     fn an_unanswerable_change_check_routes_to_review() {
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
             implementing(),
         );
         assert_eq!(next.status, TaskStatus::Review);
@@ -637,7 +660,7 @@ mod tests {
         );
 
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
             drafting,
         );
         assert_eq!(
@@ -663,7 +686,7 @@ mod tests {
         );
 
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
             refining,
         );
         assert_eq!(
@@ -779,6 +802,54 @@ mod tests {
         assert_eq!(closed.phase_status, Some(PhaseStatus::Failed));
         assert_eq!(closed.ball, TaskBall::User);
         assert_eq!(closed.completion, None);
+    }
+
+    /// The review handoff. `Waiting` with the ball on the agent is the board asking for one to be
+    /// started, and it is a combination nothing else produces — a gate waiting on a person has the
+    /// ball on `User`, a running agent is `Running`.
+    #[test]
+    fn a_pending_review_asks_for_an_agent_rather_than_the_user() {
+        let next = resolve(
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: Some(true),
+                reviewer_pending: true,
+            },
+            implementing(),
+        );
+
+        assert_eq!(next.status, TaskStatus::Review);
+        assert_eq!(next.phase, Some(TaskPhase::SelfReview));
+        assert_eq!(next.phase_status, Some(PhaseStatus::Waiting));
+        assert_eq!(next.ball, TaskBall::Agent);
+    }
+
+    /// The reviewer's two outcomes. Rejection is the only transition in the pipeline that hands
+    /// work to an agent without a person in between, which is why it is bounded elsewhere; the
+    /// ball on `Agent` is what distinguishes it from the user's own rework request.
+    #[test]
+    fn a_rejected_review_hands_back_to_a_coder_and_an_accepted_one_to_the_user() {
+        let reviewing = TaskState::active(
+            TaskStatus::Review,
+            TaskPhase::SelfReview,
+            PhaseStatus::Running,
+            TaskBall::Agent,
+        );
+
+        let rejected = resolve(TaskTransition::ReviewRejected, reviewing);
+        assert_eq!(rejected.status, TaskStatus::InProgress);
+        assert_eq!(rejected.phase, Some(TaskPhase::Rework));
+        assert_eq!(rejected.ball, TaskBall::Agent);
+
+        let finished = resolve(TaskTransition::ReviewFinished, reviewing);
+        assert_eq!(finished.status, TaskStatus::Review);
+        assert_eq!(finished.phase, Some(TaskPhase::Approval));
+        assert_eq!(finished.ball, TaskBall::User);
+
+        // The user's own rework request looks the same but waits for them to start it.
+        let manual = resolve(TaskTransition::ReworkRequested, reviewing);
+        assert_eq!(manual.phase, Some(TaskPhase::Rework));
+        assert_eq!(manual.ball, TaskBall::User);
     }
 
     /// Dragging a task out of Done must not leave it claiming to have merged.
@@ -950,7 +1021,7 @@ mod tests {
             apply(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
             )
             .unwrap();
             assert_eq!(read_state(&conn, task_id).unwrap().phase, Some(TaskPhase::PlanReview));
@@ -1042,7 +1113,7 @@ mod tests {
             let applied = apply_if_active(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
             )
             .unwrap();
 
@@ -1064,7 +1135,7 @@ mod tests {
             let applied = apply_if_active(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
             )
             .unwrap();
 
@@ -1103,7 +1174,7 @@ mod tests {
             apply(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
             )
             .unwrap();
             let before = read_state(&conn, task_id).unwrap();
@@ -1134,7 +1205,7 @@ mod tests {
             for terminal in [
                 TaskTransition::Merged,
                 TaskTransition::Stopped,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
             ] {
                 let (conn, task_id) = db_with_task();
                 start_execution(&conn, task_id);

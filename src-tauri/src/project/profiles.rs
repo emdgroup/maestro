@@ -241,6 +241,25 @@ async fn git_conn(app_state: &Arc<AppState>, project_id: i32) -> Result<GitConne
     Ok(conn)
 }
 
+/// Whether the project defines a profile for `role`.
+///
+/// This is how a team opts into a role: the pipeline runs a reviewer when there is a reviewer to
+/// run, and a project with no profiles keeps exactly the pipeline it had. Unreadable profiles are
+/// `false` rather than an error — the caller is deciding whether to start an agent, and a parse
+/// failure is not a reason to start one.
+pub async fn has_profile_for_role(
+    app_state: &AppState,
+    project_id: i32,
+    role: AgentRole,
+) -> bool {
+    let Ok((_project, conn)) = crate::core::get_project_with_git_conn(app_state, project_id).await
+    else {
+        return false;
+    };
+    let document: ProfilesDocument = read_maestro_json(&conn, PROFILES_FILE).await;
+    document.resolve(role, None).is_some()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn list_agent_profiles(

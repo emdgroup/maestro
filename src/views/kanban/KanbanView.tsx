@@ -22,6 +22,7 @@ import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
 import { usePullRequestPoll } from "@/utils/hooks/usePullRequestPoll";
+import { useAgentPipeline } from "@/utils/hooks/useAgentPipeline";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 
 const EMPTY_TASKS: Task[] = [];
@@ -43,6 +44,7 @@ export const KanbanView: React.FC = () => {
   // most of the time it matters.
   useQueueDrain(projectId, projectPath, taskList, connection);
   usePullRequestPoll(projectId);
+  useAgentPipeline(projectId, projectPath, taskList, connection);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);

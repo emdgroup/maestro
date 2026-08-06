@@ -281,11 +281,21 @@ async fn resolve_turn_end(
 
     let outcome = classify_turn(stop_reason, declared_complete, has_changes);
 
-    let event = match outcome {
-        TurnOutcome::Complete => TaskTransition::TurnCompleted { is_git_repo, has_changes },
-        TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
-        TurnOutcome::Failed => TaskTransition::PhaseFailed,
-        TurnOutcome::Ignore => return,
+    // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
+    // so it routes past `TurnCompleted` entirely.
+    let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
+        review_verdict_event(app_state, task_id, &closing_message)
+    } else {
+        match outcome {
+            TurnOutcome::Complete => TaskTransition::TurnCompleted {
+                is_git_repo,
+                has_changes,
+                reviewer_pending: writes && reviewer_should_run(app_state, task_id).await,
+            },
+            TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
+            TurnOutcome::Failed => TaskTransition::PhaseFailed,
+            TurnOutcome::Ignore => return,
+        }
     };
 
     let changed = {
@@ -323,6 +333,85 @@ async fn resolve_turn_end(
         app_state.app_handle.emit("tasks-changed", ()).ok();
         app_state.app_handle.emit("task-comments-changed", task_id).ok();
     }
+}
+
+/// Whether a review agent should look at this task before the user does.
+///
+/// Two conditions, both necessary. The project must define a `Reviewer` profile, which is how a
+/// team opts in — a project without one keeps the pipeline it had. And the loop must have rounds
+/// left, or a reviewer would be started only to have its verdict escalated anyway.
+pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_id: i32) -> bool {
+    use crate::acp::completion::REVIEW_ROUND_CAP;
+
+    let Ok(Some((project_id, rounds))) = ({
+        app_state.db.lock().map(|conn| {
+            conn.query_row(
+                "SELECT project_id, review_rounds FROM tasks WHERE id = ?",
+                [task_id],
+                |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i32>(1)?)),
+            )
+            .ok()
+        })
+    }) else {
+        return false;
+    };
+
+    if rounds >= REVIEW_ROUND_CAP {
+        return false;
+    }
+
+    crate::project::profiles::has_profile_for_role(
+        app_state,
+        project_id,
+        crate::project::profiles::AgentRole::Reviewer,
+    )
+    .await
+}
+
+/// Turn the review agent's reply into the transition it implies, counting the round if the loop
+/// is going round again.
+///
+/// The count is incremented here rather than when the coder starts, because this is the moment the
+/// decision to spend another round is taken. Counting at the start would let a rejected task that
+/// never got a coder — the app closed, the host was full — be rejected again for free.
+fn review_verdict_event(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+    reply: &str,
+) -> crate::task::transition::TaskTransition {
+    use crate::acp::completion::{classify_verdict, ReviewVerdict, REVIEW_ROUND_CAP};
+    use crate::task::transition::TaskTransition;
+
+    if classify_verdict(reply) == ReviewVerdict::Approved {
+        return TaskTransition::ReviewFinished;
+    }
+
+    let Ok(conn) = app_state.db.lock() else {
+        return TaskTransition::ReviewFinished;
+    };
+    let rounds: i32 = conn
+        .query_row("SELECT review_rounds FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+        .unwrap_or(REVIEW_ROUND_CAP);
+
+    if rounds + 1 >= REVIEW_ROUND_CAP {
+        log::info!(
+            "Task {} hit the review round cap ({}); escalating to the user",
+            task_id,
+            REVIEW_ROUND_CAP
+        );
+        return TaskTransition::ReviewFinished;
+    }
+
+    if let Err(e) = conn.execute(
+        "UPDATE tasks SET review_rounds = review_rounds + 1 WHERE id = ?",
+        [task_id],
+    ) {
+        // Failing to count would make the loop unbounded, which is the one thing it must not be.
+        log::error!("Could not count a review round for task {}: {}", task_id, e);
+        return TaskTransition::ReviewFinished;
+    }
+
+    TaskTransition::ReviewRejected
 }
 
 /// Whether the agent has changed anything since it started, measured against

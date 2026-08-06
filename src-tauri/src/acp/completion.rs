@@ -15,6 +15,92 @@
 /// initial prompt in `useExecuteTask`.
 pub const COMPLETION_MARKER: &str = "<maestro-task-complete/>";
 
+/// How many times the review agent may send a task back before the user has to look at it.
+///
+/// Non-negotiable rather than configurable: this is the one place in the pipeline where agents
+/// hand work to each other with nobody in between, so the loop needs an end that is not "until
+/// the reviewer is satisfied". A reviewer and a coder that disagree about the same code will
+/// disagree about it indefinitely, and every round costs money.
+pub const REVIEW_ROUND_CAP: i32 = 3;
+
+/// What the review agent concluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewVerdict {
+    Approved,
+    ChangesRequested,
+}
+
+/// Read the review agent's verdict off the first line of its reply.
+///
+/// A line of ordinary text rather than a hidden marker, because unlike the completion marker this
+/// is something the user should see: it is the headline of the verdict stored in the outcome
+/// thread, and stripping it would leave the thread saying nothing about the conclusion.
+///
+/// **Anything unrecognised is `Approved`**, which does not mean "the code is fine" — it means the
+/// task goes to the human gate. The asymmetry is deliberate: a reviewer whose reply we cannot
+/// parse must not be able to spend another coder round on the strength of a guess, and the gate
+/// is where an unreviewed task would have gone anyway.
+pub fn classify_verdict(reply: &str) -> ReviewVerdict {
+    let first_line = reply.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("");
+    // Tolerates the decorations agents reach for — `**CHANGES REQUESTED**`, `## Changes requested`,
+    // a trailing colon — without accepting the phrase buried in a paragraph.
+    let normalised: String = first_line
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_uppercase();
+
+    if normalised.starts_with("CHANGES REQUESTED") {
+        ReviewVerdict::ChangesRequested
+    } else {
+        ReviewVerdict::Approved
+    }
+}
+
+#[cfg(test)]
+mod verdict_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_verdict_off_the_first_line() {
+        assert_eq!(classify_verdict("APPROVED\n\nLooks good."), ReviewVerdict::Approved);
+        assert_eq!(
+            classify_verdict("CHANGES REQUESTED\n\nThe null check is missing."),
+            ReviewVerdict::ChangesRequested
+        );
+    }
+
+    /// Agents decorate headings. None of these is a different verdict.
+    #[test]
+    fn tolerates_the_decorations_agents_reach_for() {
+        for reply in [
+            "**CHANGES REQUESTED**\n\nwhy",
+            "## Changes Requested\n\nwhy",
+            "changes requested:\n\nwhy",
+            "\n\n  CHANGES REQUESTED  \nwhy",
+        ] {
+            assert_eq!(classify_verdict(reply), ReviewVerdict::ChangesRequested, "for {:?}", reply);
+        }
+    }
+
+    /// The asymmetry that keeps the loop from spending a round on a guess: anything unparseable
+    /// is approval, which means the human gate, not another coder.
+    #[test]
+    fn anything_unparseable_goes_to_the_human_rather_than_another_round() {
+        for reply in [
+            "",
+            "I have some concerns about this change.",
+            "The code looks fine but changes requested for the tests.",
+            "Summary\n\nCHANGES REQUESTED",
+        ] {
+            assert_eq!(classify_verdict(reply), ReviewVerdict::Approved, "for {:?}", reply);
+        }
+    }
+}
+
 /// What a turn ending means for the task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnOutcome {
