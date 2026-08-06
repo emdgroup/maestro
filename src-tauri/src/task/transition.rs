@@ -16,6 +16,7 @@ use rusqlite::Connection;
 use crate::models::{
     PhaseStatus, Task, TaskBall, TaskCompletion, TaskPhase, TaskStatus, TASK_SELECT,
 };
+use crate::project::profiles::AgentRole;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TaskState {
@@ -68,7 +69,11 @@ pub enum TaskTransition {
     /// was taken from, not in a column implying work happened.
     ExecutionStarted,
     /// The session is up and the agent is working.
-    SessionReady,
+    ///
+    /// The role is what says *where* that leaves the task, and holding the mapping here rather
+    /// than at the four spawn sites is what keeps "a refiner works in Planning, a coder in In
+    /// Progress" a single fact rather than four.
+    SessionReady(AgentRole),
     /// The spawn was abandoned before the session came up — the user cancelled at a prompt.
     ///
     /// Distinct from `PhaseFailed`, which leaves a red card for a failure the user has to look at.
@@ -90,6 +95,12 @@ pub enum TaskTransition {
     TurnCompleted { is_git_repo: bool, has_changes: Option<bool> },
     /// The user stopped the running session.
     Stopped,
+    /// The user answered the refiner's proposal gate.
+    ///
+    /// One event for both answers, because they leave the task in the same place: the difference
+    /// between accepting and rejecting is whether the description was replaced, and a description
+    /// is not a lifecycle field.
+    RefinementClosed,
     /// Review feedback was recorded and the task goes back for another pass.
     ReworkRequested,
     /// A merge was attempted and conflicted.
@@ -136,9 +147,15 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             ..current
         },
 
-        TaskTransition::SessionReady => {
-            TaskState::active(InProgress, Implementing, Running, Ball::Agent)
-        }
+        // The role → phase table. A refiner sharpens a ticket in the backlog and never leaves it;
+        // a planner and a coder both work inside In Progress but at different gates; a reviewer
+        // reads a diff, which only exists once the work is in Review.
+        TaskTransition::SessionReady(role) => match role {
+            AgentRole::Refiner => TaskState::active(Planning, Refining, Running, Ball::Agent),
+            AgentRole::Planner => TaskState::active(InProgress, Drafting, Running, Ball::Agent),
+            AgentRole::Coder => TaskState::active(InProgress, Implementing, Running, Ball::Agent),
+            AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),
+        },
 
         TaskTransition::SpawnAborted => TaskState::parked(current.status),
 
@@ -176,6 +193,8 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         },
 
         TaskTransition::Stopped => TaskState::parked(Planning),
+
+        TaskTransition::RefinementClosed => TaskState::parked(Planning),
 
         TaskTransition::ReworkRequested => {
             TaskState::active(InProgress, Rework, Waiting, Ball::User)
@@ -336,6 +355,24 @@ pub fn apply_if_spawning(
     apply(conn, task_id, event).map(Some)
 }
 
+/// Apply a transition only while the task still has a live phase.
+///
+/// The guard a turn ending needs. It runs on a detached task, so by the time it lands the user may
+/// have stopped the session, dragged the card away or approved the work — and every one of those
+/// leaves the task parked, with no phase. Guarding on the *column* instead cannot express this:
+/// each role works in a different one, and Planning is both where a refiner runs and where a
+/// stopped task is parked.
+pub fn apply_if_active(
+    conn: &Connection,
+    task_id: i32,
+    event: TaskTransition,
+) -> Result<Option<Task>, String> {
+    if read_state(conn, task_id)?.phase.is_none() {
+        return Ok(None);
+    }
+    apply(conn, task_id, event).map(Some)
+}
+
 /// Apply a transition only when it would actually change the stored state.
 ///
 /// Permission requests arrive constantly with auto-approve off, and each write emits
@@ -408,8 +445,51 @@ mod tests {
 
     #[test]
     fn session_ready_hands_the_ball_to_the_agent_in_progress() {
-        let next = resolve(TaskTransition::SessionReady, spawning(TaskStatus::Queue));
+        let next = resolve(TaskTransition::SessionReady(AgentRole::Coder), spawning(TaskStatus::Queue));
         assert_eq!(next, implementing());
+    }
+
+    /// Every role starts from the same claim and lands somewhere different. Getting this wrong is
+    /// invisible at the spawn site and catastrophic on the board — a refiner that moved its task to
+    /// In Progress would have the backlog running the pipeline.
+    #[test]
+    fn each_role_lands_in_its_own_column_and_phase() {
+        let expected = [
+            (AgentRole::Refiner, TaskStatus::Planning, TaskPhase::Refining),
+            (AgentRole::Planner, TaskStatus::InProgress, TaskPhase::Drafting),
+            (AgentRole::Coder, TaskStatus::InProgress, TaskPhase::Implementing),
+            (AgentRole::Reviewer, TaskStatus::Review, TaskPhase::SelfReview),
+        ];
+
+        for (role, status, phase) in expected {
+            let next = resolve(
+                TaskTransition::SessionReady(role),
+                spawning(TaskStatus::Planning),
+            );
+            assert_eq!(
+                next,
+                TaskState::active(status, phase, PhaseStatus::Running, TaskBall::Agent),
+                "for {:?}",
+                role
+            );
+        }
+    }
+
+    /// Both answers to the gate leave the task parked in the backlog. What differs is whether the
+    /// description was replaced, which happens outside the transition.
+    #[test]
+    fn closing_the_refinement_gate_parks_the_task_in_planning() {
+        let at_the_gate = TaskState::active(
+            TaskStatus::Planning,
+            TaskPhase::Refining,
+            PhaseStatus::Waiting,
+            TaskBall::User,
+        );
+
+        assert_eq!(
+            resolve(TaskTransition::RefinementClosed, at_the_gate),
+            TaskState::parked(TaskStatus::Planning)
+        );
     }
 
     /// A cancelled spawn is not a failure, so it parks the task back where it was rather than
@@ -684,7 +764,7 @@ mod tests {
             claim_for_execution(conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
                 .unwrap()
                 .expect("claim");
-            apply_if_spawning(conn, task_id, TaskTransition::SessionReady)
+            apply_if_spawning(conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
                 .unwrap()
                 .expect("session ready");
         }
@@ -694,7 +774,7 @@ mod tests {
             let (conn, task_id) = db_with_task();
             claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
             let task =
-                apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap().unwrap();
+                apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap().unwrap();
 
             assert_eq!(task.status, TaskStatus::InProgress);
             assert_eq!(task.phase, Some(TaskPhase::Implementing));
@@ -773,7 +853,7 @@ mod tests {
             apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
             let before = read_state(&conn, task_id).unwrap();
 
-            assert!(apply_if_spawning(&conn, task_id, TaskTransition::SessionReady)
+            assert!(apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
                 .unwrap()
                 .is_none());
             assert_eq!(read_state(&conn, task_id).unwrap(), before);
@@ -792,7 +872,7 @@ mod tests {
             assert!(retried.is_some(), "a failed spawn must be retryable");
             assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::Queue));
 
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap().unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap().unwrap();
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
         }
 
@@ -804,7 +884,7 @@ mod tests {
             start_execution(&conn, task_id);
             apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Queue)).unwrap();
             apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap();
 
             // Now InProgress/Implementing — not in `expected`, and not spawning either.
             assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().is_none());
@@ -865,6 +945,56 @@ mod tests {
             assert!(request_marker(&conn, task_id).is_some());
         }
 
+        /// The guard a turn ending relies on. Every way a task leaves an agent's hands — stopped,
+        /// dragged away, approved — parks it, and a turn landing afterwards must not undo that.
+        #[test]
+        fn a_turn_landing_after_the_task_was_parked_is_ignored() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            apply(&conn, task_id, TaskTransition::Stopped).unwrap();
+            let before = read_state(&conn, task_id).unwrap();
+
+            let applied = apply_if_active(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+            )
+            .unwrap();
+
+            assert!(applied.is_none());
+            assert_eq!(read_state(&conn, task_id).unwrap(), before);
+        }
+
+        /// It must not over-guard either: a refiner works in Planning, which is also where a
+        /// stopped task is parked, so a column check would silently drop every refinement.
+        #[test]
+        fn a_turn_ending_in_planning_still_applies() {
+            let (conn, task_id) = db_with_task();
+            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Planning]).unwrap().unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Refiner))
+                .unwrap()
+                .unwrap();
+
+            let applied = apply_if_active(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            )
+            .unwrap();
+
+            assert!(applied.is_some());
+            assert_eq!(
+                read_state(&conn, task_id).unwrap(),
+                TaskState::active(
+                    TaskStatus::Planning,
+                    TaskPhase::Refining,
+                    PhaseStatus::Waiting,
+                    TaskBall::User
+                )
+            );
+        }
+
         #[test]
         fn apply_if_changed_skips_a_no_op_write() {
             let (conn, task_id) = db_with_task();
@@ -898,7 +1028,7 @@ mod tests {
 
         #[test]
         fn a_dying_session_fails_a_running_or_blocked_phase() {
-            for setup in [TaskTransition::SessionReady, TaskTransition::AwaitingUserInput] {
+            for setup in [TaskTransition::SessionReady(AgentRole::Coder), TaskTransition::AwaitingUserInput] {
                 let (conn, task_id) = db_with_task();
                 start_execution(&conn, task_id);
                 apply(&conn, task_id, setup).unwrap();

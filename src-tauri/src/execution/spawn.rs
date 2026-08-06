@@ -140,7 +140,11 @@ pub async fn spawn_interactive_execution(
             crate::task::transition::apply_if_spawning(
                 &conn,
                 tid,
-                crate::task::transition::TaskTransition::SessionReady,
+                // A PTY session is a terminal the user drives, which is the coder's seat whoever
+                // is sitting in it — there is no role to pick from.
+                crate::task::transition::TaskTransition::SessionReady(
+                    crate::project::profiles::AgentRole::Coder,
+                ),
             )?;
             app_state.app_handle.emit("tasks-changed", ()).ok();
         }

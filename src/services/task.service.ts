@@ -15,6 +15,7 @@ import type {
   TaskAttachment,
   CreateTaskRequest,
   UpdateTaskRequest,
+  AgentRole,
 } from "@/types/bindings";
 
 /**
@@ -614,7 +615,8 @@ export function useMarkTaskExecutionStartedMutation() {
 export function useMarkTaskSessionReadyMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.markTaskSessionReady(taskId),
+    mutationFn: ({ taskId, role }: { taskId: number; role: AgentRole }) =>
+      api.markTaskSessionReady(taskId, role),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -637,6 +639,25 @@ export function useReleaseTaskExecutionClaimMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to release the execution claim"),
+  });
+}
+
+/**
+ * Answers the refiner's proposal gate.
+ *
+ * Accepting is the first and only moment the description changes — the refiner writes nothing
+ * itself — so rejecting needs no undo.
+ */
+export function useCloseRefinementMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, accept }: { taskId: number; accept: boolean }) =>
+      api.closeRefinement(taskId, accept),
+    onSuccess: (_task, { accept }) => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      toast.success(accept ? "Description updated" : "Proposal discarded");
+    },
+    onError: createErrorToastHandler("Failed to close the refinement"),
   });
 }
 

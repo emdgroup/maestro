@@ -1943,16 +1943,39 @@ async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, str
 }
 },
 /**
- * Records that the session is up and the agent is working, moving the task to In Progress.
+ * Records that the session is up and the agent is working.
+ * 
+ * The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
+ * In Progress — and the mapping lives in `transition::resolve` so the four spawn paths cannot
+ * disagree about it.
  * 
  * Guarded on the task still being the one that was claimed: a user who dragged the card away
  * mid-spawn, or stopped it, must not have that undone by a session that finished starting
  * afterwards. `None` tells the caller its session no longer belongs to anything and should be
  * torn down.
  */
-async markTaskSessionReady(taskId: number) : Promise<Result<Task | null, string>> {
+async markTaskSessionReady(taskId: number, role: AgentRole) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { taskId, role }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Answer the refiner's proposal gate.
+ * 
+ * The proposal is the refiner's closing message, kept in the outcome thread — the refiner writes
+ * nothing itself. That is what makes the gate a real comparison rather than an undo: accepting is
+ * the first time the description changes, so rejecting is safe by construction rather than
+ * dependent on a snapshot having been taken correctly.
+ * 
+ * The proposal stays in the thread either way. The thread is append-only and is the record of what
+ * was suggested; a rejected proposal is part of that history, not a mistake to erase.
+ */
+async closeRefinement(taskId: number, accept: boolean) : Promise<Result<Task, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("close_refinement", { taskId, accept }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

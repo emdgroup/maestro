@@ -209,7 +209,11 @@ pub fn mark_task_execution_started(
     Ok(task)
 }
 
-/// Records that the session is up and the agent is working, moving the task to In Progress.
+/// Records that the session is up and the agent is working.
+///
+/// The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
+/// In Progress — and the mapping lives in `transition::resolve` so the four spawn paths cannot
+/// disagree about it.
 ///
 /// Guarded on the task still being the one that was claimed: a user who dragged the card away
 /// mid-spawn, or stopped it, must not have that undone by a session that finished starting
@@ -220,13 +224,14 @@ pub fn mark_task_execution_started(
 pub fn mark_task_session_ready(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
+    role: crate::project::profiles::AgentRole,
 ) -> Result<Option<crate::models::Task>, String> {
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply_if_spawning(
             &conn,
             task_id,
-            crate::task::transition::TaskTransition::SessionReady,
+            crate::task::transition::TaskTransition::SessionReady(role),
         )?
     };
 
@@ -289,4 +294,46 @@ pub fn release_task_hold(app_state: State<'_, Arc<AppState>>, task_id: i32) -> R
     app_state.task_holds.release(task_id);
     app_state.app_handle.emit("task-hold-released", task_id).ok();
     Ok(())
+}
+
+/// Answer the refiner's proposal gate.
+///
+/// The proposal is the refiner's closing message, kept in the outcome thread — the refiner writes
+/// nothing itself. That is what makes the gate a real comparison rather than an undo: accepting is
+/// the first time the description changes, so rejecting is safe by construction rather than
+/// dependent on a snapshot having been taken correctly.
+///
+/// The proposal stays in the thread either way. The thread is append-only and is the record of what
+/// was suggested; a rejected proposal is part of that history, not a mistake to erase.
+#[tauri::command]
+#[specta::specta]
+pub fn close_refinement(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    accept: bool,
+) -> Result<crate::models::Task, String> {
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        if accept {
+            let proposal = crate::task::comments::latest_of_kind(&conn, task_id, "proposal")?
+                .and_then(|comment| comment.body)
+                .ok_or("This task has no proposal to accept")?;
+
+            conn.execute(
+                "UPDATE tasks SET description = ? WHERE id = ?",
+                rusqlite::params![proposal, task_id],
+            )
+            .map_err(|e| format!("Failed to apply the proposal to task {}: {}", task_id, e))?;
+        }
+
+        crate::task::transition::apply(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::RefinementClosed,
+        )?
+    };
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
 }

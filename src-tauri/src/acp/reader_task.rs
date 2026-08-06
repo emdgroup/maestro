@@ -253,11 +253,27 @@ async fn resolve_turn_end(
 
     let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
 
+    // The phase the agent was in, read before the transition rewrites it — the outcome belongs to
+    // the phase that produced it, not the one the task lands in.
+    let phase: Option<String> = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap_or(None)
+    };
+
+    // Three of the four roles write nothing, so asking whether the repository changed cannot say
+    // anything about whether they finished — and asking anyway is actively wrong: a clean tree
+    // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
+    // proposal.
+    let writes = matches!(phase.as_deref(), Some("Implementing") | Some("Rework"));
+
     // A declared completion used to skip this call, on the grounds that the agent was believed
     // either way. It no longer is: an agent that declares itself done having changed nothing goes
     // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
     // the answer is needed for.
-    let has_changes = if is_git_repo && stop_reason == "end_turn" {
+    let has_changes = if writes && is_git_repo && stop_reason == "end_turn" {
         task_has_changes(app_state, task_id).await
     } else {
         None
@@ -277,20 +293,11 @@ async fn resolve_turn_end(
             return;
         };
 
-        // The phase the agent was in, read before the transition rewrites it — the outcome belongs
-        // to the phase that produced it, not the one the task lands in.
-        let phase: Option<String> = conn
-            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
-            .unwrap_or(None);
-
-        // Guarded on InProgress because this runs on a detached task: by the time it lands the
-        // user may have stopped the session or moved the card, and acting then would undo them.
-        let changed = match transition::apply_if_status(
-            &conn,
-            task_id,
-            Some(&[crate::models::TaskStatus::InProgress]),
-            event,
-        ) {
+        // Guarded on the task still having a live phase, because this runs detached: by the time
+        // it lands the user may have stopped the session or moved the card, and every one of those
+        // parks the task. The column cannot express it — each role works in a different one, and
+        // Planning is both where a refiner runs and where a stopped task ends up.
+        let changed = match transition::apply_if_active(&conn, task_id, event) {
             Ok(result) => result.is_some(),
             Err(e) => {
                 log::warn!("[acp] could not resolve turn end for task {task_id}: {e}");

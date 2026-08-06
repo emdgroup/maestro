@@ -53,6 +53,39 @@ pub fn append(
     })
 }
 
+/// What a phase's closing message *is*, which is not the same for every phase.
+///
+/// A gate has to be able to find the thing it gates on — "the latest proposal", "the latest plan"
+/// — and searching the thread for the last entry that happened to be written during some phase
+/// would break the moment a user note landed in between.
+pub fn kind_for_phase(phase: Option<&str>) -> &'static str {
+    match phase {
+        Some("Refining") => "proposal",
+        Some("Drafting") => "plan",
+        Some("SelfReview") => "verdict",
+        _ => "outcome",
+    }
+}
+
+/// The latest entry of a kind, or `None` when the task has none.
+pub fn latest_of_kind(
+    conn: &Connection,
+    task_id: i32,
+    kind: &str,
+) -> Result<Option<TaskComment>, String> {
+    conn.query_row(
+        "SELECT id, task_id, kind, author, body, external_ref, phase, created_at \
+         FROM task_comments WHERE task_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+        rusqlite::params![task_id, kind],
+        from_row,
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        other => Err(format!("Failed to read task {} thread: {}", task_id, other)),
+    })
+}
+
 /// Record an agent's closing message, doing nothing when there is nothing worth keeping.
 ///
 /// Best-effort by design: this runs from the turn-ended handler, where failing to write a note
@@ -63,7 +96,8 @@ pub fn record_outcome(conn: &Connection, task_id: i32, phase: Option<&str>, mess
         return;
     }
 
-    if let Err(e) = append(conn, task_id, "outcome", "agent", Some(trimmed), None, phase) {
+    let kind = kind_for_phase(phase);
+    if let Err(e) = append(conn, task_id, kind, "agent", Some(trimmed), None, phase) {
         log::warn!("[task] could not record the outcome of task {task_id}: {e}");
     }
 }
@@ -208,5 +242,39 @@ mod tests {
         append(&conn, task_id, "verdict", "agent", Some("second pass"), None, None).unwrap();
 
         assert_eq!(kinds(&conn, task_id), vec!["verdict".to_string(), "verdict".to_string()]);
+    }
+
+    /// A gate has to find the thing it gates on. Typing the entry by the phase that produced it is
+    /// what lets "the latest proposal" be a query rather than a guess about ordering.
+    #[test]
+    fn a_phases_closing_message_is_typed_by_what_it_is() {
+        let (conn, task_id) = db_with_task();
+
+        record_outcome(&conn, task_id, Some("Refining"), "sharper wording");
+        record_outcome(&conn, task_id, Some("Drafting"), "step one, step two");
+        record_outcome(&conn, task_id, Some("SelfReview"), "looks right");
+        record_outcome(&conn, task_id, Some("Implementing"), "done");
+
+        assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan", "verdict", "outcome"]);
+    }
+
+    /// The gate must read the newest proposal. Refinement is freely repeatable, so an older one is
+    /// almost always present and picking it would apply text the user has already moved past.
+    #[test]
+    fn the_latest_entry_of_a_kind_wins() {
+        let (conn, task_id) = db_with_task();
+
+        record_outcome(&conn, task_id, Some("Refining"), "first attempt");
+        append(&conn, task_id, "note", "user", Some("not quite"), None, None).unwrap();
+        record_outcome(&conn, task_id, Some("Refining"), "second attempt");
+
+        let latest = latest_of_kind(&conn, task_id, "proposal").unwrap().unwrap();
+        assert_eq!(latest.body.as_deref(), Some("second attempt"));
+    }
+
+    #[test]
+    fn a_task_with_no_entry_of_that_kind_reports_none() {
+        let (conn, task_id) = db_with_task();
+        assert!(latest_of_kind(&conn, task_id, "proposal").unwrap().is_none());
     }
 }

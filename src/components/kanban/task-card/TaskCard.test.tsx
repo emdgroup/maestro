@@ -39,10 +39,17 @@ const sendToReview = vi.hoisted(() => ({
 const interrupt = vi.hoisted(() => ({ mutate: vi.fn() }));
 
 const archive = vi.hoisted(() => vi.fn());
+const closeRefinement = vi.hoisted(() => vi.fn());
+/// The task's outcome thread — where the refiner's proposal lives.
+const comments = vi.hoisted(() => ({
+  current: [] as Array<{ id: number; kind: string; body: string | null }>,
+}));
 
 vi.mock("@/services/task.service", () => ({
   useInterruptTaskMutation: () => ({ mutate: interrupt.mutate }),
   useArchiveTaskMutation: () => ({ mutate: archive }),
+  useCloseRefinementMutation: () => ({ mutate: closeRefinement, isPending: false }),
+  useTaskCommentsQuery: () => ({ data: comments.current }),
   useSendTaskToReviewMutation: () => ({
     mutate: (vars: unknown, opts?: { onSuccess?: (data: unknown) => void }) => {
       sendToReview.mutate(vars);
@@ -123,8 +130,10 @@ function renderCard(overrides: Partial<Task> = {}) {
 beforeEach(() => {
   activeSession.current = null;
   worktrees.current = [];
+  comments.current = [];
   execute.mockClear();
   archive.mockClear();
+  closeRefinement.mockClear();
   deleteWorktree.mockClear();
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
@@ -489,5 +498,113 @@ describe("TaskCard archiving unmerged work", () => {
 
     expect(screen.getByText(/These changes were never merged/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove the worktree/i })).not.toBeInTheDocument();
+  });
+});
+
+/// Planning is a working column, not a parked one. The card has to say which of the two it is in,
+/// and offer the controls that belong to each.
+describe("TaskCard refinement", () => {
+  const refining: Partial<Task> = {
+    status: "Planning",
+    phase: "Refining",
+    phase_status: "Running",
+    ball: "Agent",
+  };
+
+  const atTheGate: Partial<Task> = {
+    status: "Planning",
+    phase: "Refining",
+    phase_status: "Waiting",
+    ball: "User",
+  };
+
+  it("offers Refine on a task nobody is working on", async () => {
+    renderCard({ status: "Planning" });
+
+    await userEvent.click(screen.getByRole("button", { name: /refine/i }));
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      role: "Refiner",
+    });
+  });
+
+  /// Sharpening a ticket the scheduler may pick up mid-sentence is editing something already on
+  /// its way to an agent.
+  it("does not offer Refine on a queued task", () => {
+    renderCard({ status: "Queue" });
+    expect(screen.queryByRole("button", { name: /refine/i })).not.toBeInTheDocument();
+  });
+
+  /// The bug §3 names: the Planning branch returned Execute unconditionally, so a blocked refiner
+  /// pulsed amber with nothing on the card to answer it.
+  it("offers Respond rather than Execute to a blocked refiner", () => {
+    activeSession.current = { session_key: 3 };
+    renderCard({ ...refining, phase_status: "Blocked", ball: "User" });
+
+    expect(screen.getByRole("button", { name: /respond/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
+  });
+
+  it("offers Stop while the refiner is working", () => {
+    renderCard(refining);
+    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+  });
+
+  it("opens the proposal at the gate", async () => {
+    comments.current = [{ id: 1, kind: "proposal", body: "A sharper description" }];
+    renderCard(atTheGate);
+
+    await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
+
+    expect(screen.getByText("A sharper description")).toBeInTheDocument();
+  });
+
+  /// The comparison is the point of the gate. Showing only the proposal would make accepting a
+  /// leap of faith about what it replaces.
+  it("shows the current description beside the proposal", async () => {
+    comments.current = [{ id: 1, kind: "proposal", body: "A sharper description" }];
+    renderCard({ ...atTheGate, description: "The original wording" });
+
+    await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
+
+    expect(screen.getByText("The original wording")).toBeInTheDocument();
+  });
+
+  it("takes the newest proposal, not the first", async () => {
+    comments.current = [
+      { id: 1, kind: "proposal", body: "First attempt" },
+      { id: 2, kind: "note", body: "not quite" },
+      { id: 3, kind: "proposal", body: "Second attempt" },
+    ];
+    renderCard(atTheGate);
+
+    await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
+
+    expect(screen.getByText("Second attempt")).toBeInTheDocument();
+    expect(screen.queryByText("First attempt")).not.toBeInTheDocument();
+  });
+
+  it("accepts and discards through the same command", async () => {
+    comments.current = [{ id: 1, kind: "proposal", body: "A sharper description" }];
+    renderCard(atTheGate);
+    await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /use this description/i }));
+    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: true }, expect.anything());
+
+    closeRefinement.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: /discard/i }));
+    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: false }, expect.anything());
+  });
+
+  /// An empty proposal is the refiner having finished with nothing to say. Accepting it would
+  /// blank the description.
+  it("refuses to accept an empty proposal", async () => {
+    comments.current = [{ id: 1, kind: "proposal", body: "   " }];
+    renderCard(atTheGate);
+
+    await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
+
+    expect(screen.getByRole("button", { name: /use this description/i })).toBeDisabled();
   });
 });

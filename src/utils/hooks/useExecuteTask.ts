@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
 import { slugifyName } from "@/lib/generateSessionName";
-import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
+import type { Task, JsonValue, ConnectionKey, AgentRole } from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
 import {
@@ -31,6 +31,25 @@ const COMPLETION_PROTOCOL =
   "When the task is complete and needs no further work, end your final message with `<maestro-task-complete/>` — " +
   "it moves the task to review, so omit it if you are asking a question or reporting a blocker.";
 
+/// What the refiner is for, in the absence of a profile that says it better.
+///
+/// It is asked for a rewritten description and nothing else, because its final message *is* the
+/// proposal: whatever it ends its turn with is what the gate offers to put in the task. A preamble
+/// or a summary of what it changed would end up in the description verbatim.
+///
+/// The instruction not to modify anything is a second line of defence, not the mechanism. The real
+/// one is the read-only permission mode below — an instruction is advice, and the proposal gate is
+/// only meaningful if accepting it is the first time anything changes.
+const REFINER_PROTOCOL =
+  "Read whatever you need from the repository, then reply with the improved task description and " +
+  "nothing else — no preamble, no summary of your changes, no code fences around the whole reply. " +
+  "Your reply is what will replace the description if the user accepts it. Do not modify any files.";
+
+/// Modes that let an agent write, in preference order, and the read-only ones for the three roles
+/// that must not. Used only when no profile names a mode.
+const WRITABLE_MODES = ["acceptEdits", "auto", "build"];
+const READ_ONLY_MODES = ["readonly", "plan"];
+
 export function useExecuteTask(
   projectId: number | null,
   projectPath: string,
@@ -52,8 +71,21 @@ export function useExecuteTask(
   /// ran, so asking again once the first has started would defer the rest of its own batch. The
   /// rework restart must not either — that task is not in Queue, and a deferral there would be a
   /// promise the drain has no way to keep.
-  const execute = async (task: Task, { respectCapacity = false } = {}) => {
+  ///
+  /// `role` decides which profile is resolved, whether the agent gets a worktree, whether it is
+  /// held read-only, and — through `mark_task_session_ready` — which column and phase the task
+  /// lands in. Everything else about starting an agent is the same for all four.
+  const execute = async (
+    task: Task,
+    { respectCapacity = false, role = "Coder" as AgentRole } = {},
+  ) => {
     if (!projectId) return;
+
+    // The refiner reads the repository to sharpen a ticket and writes nothing, so isolating it
+    // would cost a worktree per refinement for no benefit. The planner and the reviewer do need
+    // one: the plan file is written there, and the diff being reviewed only exists there.
+    const needsWorktree = role !== "Refiner" && task.isolated_worktree;
+    const readOnly = role !== "Coder";
 
     if (respectCapacity) {
       // Advisory. The claim below is what actually decides whether the task starts; this only
@@ -82,11 +114,14 @@ export function useExecuteTask(
     // says something. Asked for before the capabilities are known because the agent it names is
     // what gets spawned; the model and mode are applied afterwards, once the agent has reported
     // what it supports.
-    const coderProfile = await api
-      .resolveAgentProfile(projectId, "Coder", null, [], [], false)
+    const roleProfile = await api
+      .resolveAgentProfile(projectId, role, null, [], [], false)
       .catch(() => null);
 
-    const agentId = task.agent_id ?? coderProfile?.agent_id ?? defaultAgent;
+    // The task's own agent is the coder's, so it must not be imposed on the other three: a task
+    // pinned to one agent would otherwise have its refiner and reviewer silently pinned too.
+    const agentId =
+      (role === "Coder" ? task.agent_id : null) ?? roleProfile?.agent_id ?? defaultAgent;
     if (!agentId) {
       toast.error("No agent configured. Set a default agent in Settings.");
       return;
@@ -112,7 +147,7 @@ export function useExecuteTask(
 
     try {
       // Resolve cwd and branch
-      const { cwd, branchName } = task.isolated_worktree
+      const { cwd, branchName } = needsWorktree
         ? await resolveWorktree({
             projectId,
             repoPath: projectPath,
@@ -122,9 +157,13 @@ export function useExecuteTask(
           })
         : { cwd: projectPath, branchName: null };
 
-      // Check for dirty worktree
+      // Only for an agent that will write. The prompt exists to stop a coder building on top of
+      // someone else's uncommitted work; offering to stash or discard the user's changes before a
+      // read-only agent that cannot touch them would be destroying work for no reason at all.
       try {
-        const dirtyStatus = await api.checkWorktreeDirty(projectId, cwd);
+        const dirtyStatus = readOnly
+          ? { modified_count: 0, untracked_count: 0 }
+          : await api.checkWorktreeDirty(projectId, cwd);
         if (dirtyStatus.modified_count > 0 || dirtyStatus.untracked_count > 0) {
           const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
             dirtyResolveRef.current = resolve;
@@ -203,14 +242,16 @@ export function useExecuteTask(
       // Asked again now that the agent has said what it supports, so anything it cannot honour is
       // dropped with a warning rather than being sent and silently failing.
       const resolved = await api
-        .resolveAgentProfile(projectId, "Coder", null, [], capturedModeIds, false)
+        .resolveAgentProfile(projectId, role, null, [], capturedModeIds, false)
         .catch(() => null);
 
       for (const warning of resolved?.warnings ?? []) {
         toast.warning(warning);
       }
 
-      const model = task.model_override ?? resolved?.model ?? null;
+      // A model pinned on the task is pinned for its implementation, not for whichever agent is
+      // reading it at the time — same reasoning as the agent id above.
+      const model = (role === "Coder" ? task.model_override : null) ?? resolved?.model ?? null;
       if (model) {
         try {
           await api.setAcpModel(logId, model);
@@ -219,8 +260,14 @@ export function useExecuteTask(
         }
       }
 
-      // Set permission mode: task override, then the profile, then the modes received at spawn
-      const permissionMode = task.permission_mode_override ?? resolved?.permission_mode ?? null;
+      // Set permission mode: task override, then the profile, then the modes received at spawn.
+      // The task override is the coder's, like the agent and the model — a task set to
+      // auto-approve edits must not hand write access to the three roles that exist because they
+      // have none.
+      const permissionMode =
+        (role === "Coder" ? task.permission_mode_override : null) ??
+        resolved?.permission_mode ??
+        null;
       if (permissionMode) {
         try {
           await api.setAcpMode(logId, permissionMode);
@@ -229,14 +276,23 @@ export function useExecuteTask(
         }
       } else if (capturedModeIds.length > 0) {
         try {
-          const priorities = task.auto_approve
-            ? ["bypassPermissions", "full-access", "auto"]
-            : ["acceptEdits", "auto", "build"];
-          const resolvedMode =
-            priorities.find((m) => capturedModeIds.includes(m)) ??
-            capturedModeIds.find((m) => m !== "readonly" && m !== "plan");
+          const priorities = readOnly
+            ? READ_ONLY_MODES
+            : task.auto_approve
+              ? ["bypassPermissions", "full-access", "auto"]
+              : WRITABLE_MODES;
+          // The read-only fallback deliberately has none: an agent that advertises modes and none
+          // of them is read-only has told us it cannot be held. Picking "the least bad writable
+          // mode" there would quietly hand write access to a role whose whole point is not having
+          // it, so it says so and lets the instruction stand alone.
+          const resolvedMode = readOnly
+            ? priorities.find((m) => capturedModeIds.includes(m))
+            : (priorities.find((m) => capturedModeIds.includes(m)) ??
+              capturedModeIds.find((m) => !READ_ONLY_MODES.includes(m)));
           if (resolvedMode) {
             await api.setAcpMode(logId, resolvedMode);
+          } else if (readOnly) {
+            toast.warning(`${agentId} offers no read-only mode — it is asked not to write instead`);
           }
         } catch (err) {
           console.warn("Failed to set permission mode:", err);
@@ -253,9 +309,13 @@ export function useExecuteTask(
       // Ahead of the task, because it says what this role means for this project — the standing
       // instruction the task is an instance of, not a footnote to it.
       const rolePrompt = resolved?.role_prompt ? `${resolved.role_prompt}\n\n---\n` : "";
+      // The refiner is not asked for the completion marker. Its turn ending *is* the proposal —
+      // there is nothing for it to declare — and a marker in the reply would end up in the
+      // description, since the reply is what the gate offers to put there.
+      const protocol = role === "Refiner" ? REFINER_PROTOCOL : COMPLETION_PROTOCOL;
       contentBlocks.push({
         type: "text",
-        text: `${rolePrompt}${promptText}\n\n---\n${COMPLETION_PROTOCOL}`,
+        text: `${rolePrompt}${promptText}\n\n---\n${protocol}`,
       });
 
       if (attachments.length > 0) {
@@ -266,9 +326,11 @@ export function useExecuteTask(
         }
       }
 
-      // Fetch review feedback for rework (if task was sent back with comments)
+      // Fetch review feedback for rework (if task was sent back with comments). Only the coder
+      // acts on it — handing a refiner the last review's per-file comments would have it rewrite
+      // the description around code it is not being asked about.
       try {
-        const review = await api.getTaskReview(task.id);
+        const review = role === "Coder" ? await api.getTaskReview(task.id) : null;
         if (review && review.decision === "RequestChanges") {
           let feedbackText = "";
 
@@ -302,12 +364,12 @@ export function useExecuteTask(
       await api.sendAcpPromptStructured(logId, contentBlocks);
 
       // Clear review from DB after successful injection to prevent re-injection on next cold start
-      api.clearTaskReview(task.id).catch(() => {});
+      if (role === "Coder") api.clearTaskReview(task.id).catch(() => {});
 
-      // The session is up and prompted, so the task moves to In Progress. Null means it stopped
-      // being the task we claimed — the user dragged or stopped it while the spawn was in flight.
-      // Their action wins, so the session we just built gets torn down instead.
-      const started = await markSessionReady.mutateAsync(task.id);
+      // The session is up and prompted, so the task moves to wherever this role works. Null means
+      // it stopped being the task we claimed — the user dragged or stopped it while the spawn was
+      // in flight. Their action wins, so the session we just built gets torn down instead.
+      const started = await markSessionReady.mutateAsync({ taskId: task.id, role });
       if (!started) {
         api.cancelAcpSession(logId).catch((err) => {
           console.error("Failed to cancel the session of a task that moved mid-spawn:", err);

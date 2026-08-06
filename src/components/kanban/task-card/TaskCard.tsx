@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useTaskHold } from "@/hooks/useTaskHold";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
+import { ProposalGate } from "./ProposalGate";
 import {
   useInterruptTaskMutation,
   useArchiveTaskMutation,
@@ -34,6 +35,7 @@ import {
   LockKeyhole,
   RefreshCw,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -213,6 +215,8 @@ interface FooterCTAsProps {
   isStuck: boolean;
   isSendingToReview: boolean;
   onExecute: () => void;
+  onRefine: () => void;
+  onOpenProposal: () => void;
   onStop: () => void;
   onJoin: () => void;
   onReview: () => void;
@@ -232,6 +236,8 @@ function FooterCTAs({
   isStuck,
   isSendingToReview,
   onExecute,
+  onRefine,
+  onOpenProposal,
   onStop,
   onJoin,
   onReview,
@@ -254,6 +260,73 @@ function FooterCTAs({
     const t = setTimeout(() => setSessionLostStable(true), 2000);
     return () => clearTimeout(t);
   }, [isSessionLost]);
+
+  // Ahead of the Planning branch, which returns Execute unconditionally and so made every other
+  // control on a Planning card unreachable — a refiner blocked on a question would have pulsed
+  // amber with no way to answer it.
+  if (task.phase === "Refining") {
+    // The proposal gate. Join is offered alongside because the proposal is a message in a session
+    // the user can still talk to — "nearly right, but…" is a conversation, not a rejection.
+    if (task.phase_status === "Waiting") {
+      return (
+        <div className="flex gap-1 mt-1.5">
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProposal();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          >
+            <MessageSquare className="w-2.5 h-2.5" />
+            Read proposal
+          </Button>
+          {activeSession && (
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onJoin();
+              }}
+              variant="ghost"
+              className={cn(base, "h-auto")}
+            >
+              <BotMessageSquare className="w-2.5 h-2.5" />
+              Join
+            </Button>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex gap-1 mt-1.5">
+        {activeSession && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJoin();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          >
+            <BotMessageSquare className="w-2.5 h-2.5" />
+            {isAwaiting ? "Respond" : "Join"}
+          </Button>
+        )}
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStop();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <Square className="w-2.5 h-2.5 fill-current" />
+          Stop
+        </Button>
+      </div>
+    );
+  }
 
   // Planning is where Stop parks a task, so without Execute here a stopped task could only be
   // restarted by first dragging it to Queue — a step that means nothing to the user and exists
@@ -292,6 +365,23 @@ function FooterCTAs({
               ? "Retry"
               : "Execute"}
         </Button>
+        {/* Refinement is a backlog activity: sharpening a ticket that is already queued to run is
+            editing something the scheduler may pick up mid-sentence. */}
+        {task.status === "Planning" && !starting && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRefine();
+            }}
+            disabled={isExecuting}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+            title="Ask an agent to sharpen this task's description"
+          >
+            <Sparkles className="w-2.5 h-2.5" />
+            Refine
+          </Button>
+        )}
       </div>
     );
   }
@@ -475,6 +565,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
   // Archiving a task whose changes were never merged puts unmerged work out of sight (D36).
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [proposalOpen, setProposalOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -511,7 +602,12 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     void handleExecute(task);
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDraggable = task.status === "Planning" || task.status === "Queue";
+  // A drag applies `ManualMove`, which parks the task — wiping the phase and orphaning the session
+  // an agent is still working in. Gated on the agent rather than on the phase so a card left at a
+  // gate, or one whose spawn failed, can still be moved: those are exactly the states a user needs
+  // to drag out of.
+  const agentIsWorking = task.phase_status === "Running" || task.phase_status === "Blocked";
+  const isDraggable = (task.status === "Planning" || task.status === "Queue") && !agentIsWorking;
 
   const { ref, isDragging } = useSortable({
     id: task.id,
@@ -645,6 +741,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           // the host has room. The auth retries below are continuations of a start that already
           // passed that gate.
           onExecute={() => void handleExecute(task, { respectCapacity: true })}
+          // Refinement runs in the project root and writes nothing, so it does not compete for a
+          // slot the way an implementation does and is not deferred against the limit.
+          onRefine={() => void handleExecute(task, { role: "Refiner" })}
+          onOpenProposal={() => setProposalOpen(true)}
           onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}
@@ -705,6 +805,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
       />
+      <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
       <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

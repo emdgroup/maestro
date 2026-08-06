@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
 import { Ban, Trash2, X } from "lucide-react";
-import type { TaskStatus, TaskPriority } from "@/types/bindings";
+import type { Task, TaskStatus, TaskPriority } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -65,8 +65,11 @@ const ALL_STATUSES: TaskStatus[] = [
 /// archive works.
 const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
 
-/// Done is terminal: view the outcome and archive it, nothing else.
-const STATUS_IS_LOCKED = (status: TaskStatus) => status === "Done";
+/// Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
+/// working in is locked for the same reason the card cannot be dragged — re-filing applies
+/// `ManualMove`, which parks the task and orphans the session still running against it.
+const STATUS_IS_LOCKED = (task: Task) =>
+  task.status === "Done" || task.phase_status === "Running" || task.phase_status === "Blocked";
 
 interface TaskDraft {
   title: string;
@@ -264,7 +267,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               <Select
                 value={task.status}
                 onValueChange={handleStatusChange}
-                disabled={STATUS_IS_LOCKED(task.status)}
+                disabled={STATUS_IS_LOCKED(task)}
               >
                 <SelectTrigger size="sm" className="w-32">
                   <SelectValue />
