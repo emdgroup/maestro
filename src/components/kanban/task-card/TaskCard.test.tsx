@@ -33,8 +33,11 @@ const sendToReview = vi.hoisted(() => ({
   result: null as unknown,
 }));
 
+/// Abandoning deletes the worktree and branch, so the test needs to see whether it fired.
+const interrupt = vi.hoisted(() => ({ mutate: vi.fn() }));
+
 vi.mock("@/services/task.service", () => ({
-  useInterruptTaskMutation: () => ({ mutate: vi.fn() }),
+  useInterruptTaskMutation: () => ({ mutate: interrupt.mutate }),
   useArchiveTaskMutation: () => ({ mutate: vi.fn() }),
   useSendTaskToReviewMutation: () => ({
     mutate: (vars: unknown, opts?: { onSuccess?: (data: unknown) => void }) => {
@@ -105,6 +108,43 @@ beforeEach(() => {
   activeSession.current = null;
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
+  interrupt.mutate.mockClear();
+});
+
+describe("TaskCard abandon", () => {
+  const running: Partial<Task> = {
+    status: "InProgress",
+    phase: "Implementing",
+    phase_status: "Running",
+    ball: "Agent",
+  };
+
+  it("does not abandon on the first click", async () => {
+    activeSession.current = { session_key: 1 };
+    renderCard(running);
+
+    await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
+
+    // The button deletes the worktree and its branch. A single click on a card must not do that.
+    expect(interrupt.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+  });
+
+  it("abandons once confirmed", async () => {
+    activeSession.current = { session_key: 1 };
+    renderCard({ ...running, id: 42 });
+
+    await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
+    const confirm = screen
+      .getAllByRole("button", { name: /abandon/i })
+      .find(
+        (button) =>
+          button.textContent?.trim() === "Abandon" && button.closest("[role=alertdialog]"),
+      );
+    await userEvent.click(confirm!);
+
+    expect(interrupt.mutate).toHaveBeenCalledWith(42);
+  });
 });
 
 describe("TaskCard pipeline treatment", () => {

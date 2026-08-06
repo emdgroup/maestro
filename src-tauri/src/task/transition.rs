@@ -168,22 +168,26 @@ pub fn apply(conn: &Connection, task_id: i32, event: TaskTransition) -> Result<T
         .ok_or_else(|| format!("Task {} not found", task_id))
 }
 
-/// Apply a transition only if the task is currently in `expected`, returning `None` when it is
-/// not.
+/// Apply a transition only if the task is currently in one of `expected`, returning `None` when
+/// it is not.
 ///
-/// Two callers need this. The turn-ended handler runs on a background task and must not complete
-/// a task the user has since stopped, and the PTY spawn path must only claim a task that is still
-/// queued. Both previously expressed it as `AND status = '...'` in their own UPDATE.
+/// Three callers need this. The turn-ended handler runs on a background task and must not
+/// complete a task the user has since stopped; the PTY spawn path must only claim a task that is
+/// still queued; and the ACP execute path must only claim one the user has not dragged away
+/// mid-spawn. The first two previously expressed it as `AND status = '...'` in their own UPDATE.
+///
+/// A slice rather than a single status because execution can be started from either column a
+/// task can sit in before it runs.
 pub fn apply_if_status(
     conn: &Connection,
     task_id: i32,
-    expected: Option<TaskStatus>,
+    expected: Option<&[TaskStatus]>,
     event: TaskTransition,
 ) -> Result<Option<Task>, String> {
     let current = read_state(conn, task_id)?;
 
     if let Some(expected) = expected {
-        if current.status != expected {
+        if !expected.contains(&current.status) {
             return Ok(None);
         }
     }
@@ -437,13 +441,39 @@ mod tests {
             let claimed = apply_if_status(
                 &conn,
                 task_id,
-                Some(TaskStatus::Queue),
+                Some(&[TaskStatus::Queue]),
                 TaskTransition::ExecutionStarted,
             )
             .unwrap();
 
             assert!(claimed.is_none(), "a task no longer queued must not be claimed");
             assert_eq!(read_state(&conn, task_id).unwrap().status, TaskStatus::Planning);
+        }
+
+        /// Execute is offered from both Planning and Queue, so the ACP claim accepts either —
+        /// but must still refuse a task the user dragged somewhere else mid-spawn.
+        #[test]
+        fn a_multi_status_guard_accepts_any_listed_column() {
+            let allowed = [TaskStatus::Planning, TaskStatus::Queue];
+
+            for start in allowed {
+                let (conn, task_id) = db_with_task();
+                apply(&conn, task_id, TaskTransition::ManualMove(start)).unwrap();
+
+                let claimed =
+                    apply_if_status(&conn, task_id, Some(&allowed), TaskTransition::ExecutionStarted)
+                        .unwrap();
+
+                assert!(claimed.is_some(), "execution must start from {:?}", start);
+                assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
+            }
+
+            let (conn, task_id) = db_with_task();
+            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Done)).unwrap();
+            let claimed =
+                apply_if_status(&conn, task_id, Some(&allowed), TaskTransition::ExecutionStarted)
+                    .unwrap();
+            assert!(claimed.is_none(), "a task that moved elsewhere must not be claimed");
         }
 
         #[test]

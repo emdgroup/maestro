@@ -3,7 +3,7 @@ use tauri::{Emitter, State};
 use chrono::Utc;
 
 use crate::models::{Task, TASK_SELECT, ReviewResult, TaskReviewWithComments, ReviewCommentEntry};
-use crate::core::{AppState, get_project_with_git_conn};
+use crate::core::AppState;
 use crate::git;
 use crate::task::transition::{self, TaskTransition};
 
@@ -163,76 +163,12 @@ pub async fn reject_review(
                 TaskTransition::Cancelled
             };
 
-            // Gather worktree and task info while holding the lock briefly
-            let (worktree_info, execution_start_sha, project_id) = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-                transition::apply(&conn, task_id, event)?;
-
-                // Query associated worktree
-                let wt: Option<(i32, String, String)> = conn.query_row(
-                    "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
-                    rusqlite::params![task_id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                ).ok();
-
-                // Get execution_start_sha and project_id from task
-                let (sha, pid): (Option<String>, i32) = conn.query_row(
-                    "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
-                    rusqlite::params![task_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                ).map_err(|e| format!("Failed to read task: {}", e))?;
-
-                (wt, sha, pid)
-            };
-
-            // Perform async git cleanup outside the DB lock
-            if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
-                // Delete the worktree (same logic as delete_worktree_for_task)
-                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-
-                // Remove worktree from disk (best effort)
-                let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
-
-                // Delete branch (best effort)
-                let _ = git::run_git_in_dir_lossy(
-                    &git_conn,
-                    git_conn.path(),
-                    &["branch", "-D", &branch_name],
-                )
-                .await;
-
-                // Delete worktree DB row
-                {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.execute(
-                        "DELETE FROM worktrees WHERE id = ?",
-                        rusqlite::params![worktree_id],
-                    )
-                    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
-                }
-
-                app_state.app_handle.emit("worktrees-changed", ()).ok();
-            } else if let Some(start_sha) = execution_start_sha {
-                // No worktree but have a start SHA — reset agent commits on the project path
-                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-                let project_path = git_conn.path().to_string();
-
-                // Reset to the start SHA
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["reset", "--hard", &start_sha]).await;
-                // Clean uncommitted changes
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["checkout", "--", "."]).await;
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["clean", "-fd"]).await;
-            }
-
-            // Clear execution_start_sha now that cleanup is done
             {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
-                    rusqlite::params![task_id],
-                ).ok();
+                transition::apply(&conn, task_id, event)?;
             }
+
+            git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
         }
         _ => {
             return Err(format!(

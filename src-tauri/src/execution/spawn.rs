@@ -129,7 +129,7 @@ pub async fn spawn_interactive_execution(
         let claimed = crate::task::transition::apply_if_status(
             &conn,
             tid,
-            Some(crate::models::TaskStatus::Queue),
+            Some(&[crate::models::TaskStatus::Queue]),
             crate::task::transition::TaskTransition::ExecutionStarted,
         )?;
         if claimed.is_some() {

@@ -231,7 +231,18 @@ export function useExecuteTask(
 
       // Not a status write: an agent starting is its own event, and only that event puts the card
       // into Implementing/Running with the ball on the agent.
-      await markExecutionStarted.mutateAsync(task.id);
+      //
+      // Null means the user dragged the task out of Planning/Queue while the spawn was in flight.
+      // Their action wins — claiming it anyway would silently undo the drag — so the session we
+      // just built gets torn down instead.
+      const claimed = await markExecutionStarted.mutateAsync(task.id);
+      if (!claimed) {
+        api.cancelAcpSession(logId).catch((err) => {
+          console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
+        });
+        toast.info(`"${task.title}" was moved while starting — session cancelled`);
+        return;
+      }
 
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {

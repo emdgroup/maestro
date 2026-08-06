@@ -39,12 +39,18 @@ pub async fn list_project_branches(
     Ok((branches, current_branch))
 }
 
-/// Stop the active ACP or PTY session for a task and move the task back to Planning.
+/// Stop the active ACP or PTY session for a task, then abandon everything the run produced.
 ///
-/// Searches ACP sessions and PTY session metadata for an entry associated with the
-/// given task_id. If found, replicates the teardown logic from cancel_acp_session or
-/// close_pty_session respectively. After all async work is done, updates the task
-/// status to Planning via the sync DB mutex (never held across an await point).
+/// Stop is abandonment, not a pause: the worktree and its branch are deleted and the task returns
+/// to Planning as if it had never run. There is no resume — a stopped task is executed again from
+/// the backlog, which cannot start from a half-finished tree, and leaving the worktree behind
+/// would strand it with nothing in the UI pointing at it.
+///
+/// Searches ACP sessions and PTY session metadata for an entry associated with the given task_id.
+/// If found, replicates the teardown logic from cancel_acp_session or close_pty_session
+/// respectively. A task with no live session is not an error: its session may have died on its
+/// own, and the worktree it left behind is exactly what still needs discarding. After all async
+/// work is done, updates the task status via the sync DB mutex (never held across an await point).
 #[tauri::command]
 #[specta::specta]
 pub async fn interrupt_task(
@@ -70,10 +76,6 @@ pub async fn interrupt_task(
             .find(|(_, m)| m.task_id == Some(task_id))
             .map(|(log_id, _)| *log_id)
     };
-
-    if acp_log_id.is_none() && pty_log_id.is_none() {
-        return Err(format!("No active session for task {}", task_id));
-    }
 
     // Tear down ACP session if found — replicates cancel_acp_session logic.
     if let Some(log_id) = acp_log_id {
@@ -104,7 +106,7 @@ pub async fn interrupt_task(
         app_state.pty.session_meta.lock().await.remove(&session_key);
     }
 
-    // All async work is done — acquire sync DB mutex now to update task status.
+    // Session teardown is done — acquire sync DB mutex now to update task status.
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply(
@@ -113,6 +115,8 @@ pub async fn interrupt_task(
             crate::task::transition::TaskTransition::Stopped,
         )?;
     }
+
+    crate::git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
     app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -169,21 +173,31 @@ pub async fn send_task_to_review(
 /// applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
 /// phase status, ball on nobody, so a card sat through its entire run looking idle and never
 /// reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+///
+/// Returns `None` when the task is no longer in a column execution can start from — the user
+/// dragged it back to Planning, or cancelled it, while the spawn was in flight. Claiming it
+/// anyway would silently overwrite that action, so the caller is expected to tear down the
+/// session it just created.
 #[tauri::command]
 #[specta::specta]
 pub fn mark_task_execution_started(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
-) -> Result<crate::models::Task, String> {
+) -> Result<Option<crate::models::Task>, String> {
+    use crate::models::TaskStatus;
+
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply(
+        crate::task::transition::apply_if_status(
             &conn,
             task_id,
+            Some(&[TaskStatus::Planning, TaskStatus::Queue]),
             crate::task::transition::TaskTransition::ExecutionStarted,
         )?
     };
 
-    app_state.app_handle.emit("tasks-changed", ()).ok();
+    if task.is_some() {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
     Ok(task)
 }

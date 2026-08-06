@@ -30,8 +30,10 @@ interface AppHeaderProps {
   /// The connection stopped answering but is still open — reported here rather than as a
   /// blocking overlay, because nothing has necessarily failed.
   connectionQuiet?: boolean;
-  autoMode?: boolean;
-  onAutoModeChange?: (enabled: boolean) => void;
+  /// Persisted `auto_mode` setting. Required — a local fallback here would silently decouple the
+  /// switch from the flag `drain_ready_queue` reads.
+  autoMode: boolean;
+  onAutoModeChange: (enabled: boolean) => void | Promise<void>;
 }
 
 const VIEWS: Array<{
@@ -52,7 +54,7 @@ export function AppHeader({
   onProjectChange,
   onBackToPicker,
   agentCount = 0,
-  autoMode: autoModeProp,
+  autoMode,
   onAutoModeChange,
   connectionQuiet = false,
 }: AppHeaderProps) {
@@ -65,18 +67,18 @@ export function AppHeader({
         : { type: "local" as const };
   const { data: recentProjects = [] } = useRecentProjects(headerConnection);
 
-  // Internal auto mode state (used when no external state is provided)
-  const [internalAutoMode, setInternalAutoMode] = useState(false);
-  const autoMode = autoModeProp !== undefined ? autoModeProp : internalAutoMode;
-
   const handleAutoModeToggle = async () => {
     const next = !autoMode;
-    if (onAutoModeChange) {
-      onAutoModeChange(next);
-    } else {
-      setInternalAutoMode(next);
+    // The drain below reads auto_mode back out of the database, so the setting has to be
+    // persisted first or it sees the old value and returns nothing.
+    try {
+      await onAutoModeChange(next);
+    } catch (err) {
+      console.error("[auto-mode] failed to persist auto_mode:", err);
+      return;
     }
-    // Trigger queue drain when enabling auto mode
+    // Trigger queue drain when enabling auto mode. The returned task IDs are deliberately
+    // dropped: nothing starts them yet because the scheduler is not built (tracked separately).
     if (next && currentProject) {
       try {
         await invoke<number[]>("drain_ready_queue", {

@@ -224,6 +224,38 @@ fn floor_char_boundary(s: &str, mut index: usize) -> usize {
     index
 }
 
+/// Resolve the commit a worktree diverged from, given the branch it was created from.
+///
+/// Tries the local branch before `origin/<branch>`: a worktree is created from a local ref, and
+/// a repository with no remote at all has no `origin/<branch>` to name — which is why the old
+/// hardcoded `origin/` prefix failed outright there rather than degrading.
+///
+/// Returns the merge base rather than the branch tip so that commits the base branch gained
+/// *after* this worktree diverged do not appear in the diff as reversed changes.
+async fn resolve_divergence_point(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    branch: &str,
+) -> Result<String, String> {
+    for candidate in [branch.to_string(), format!("origin/{}", branch)] {
+        if let Ok(output) =
+            crate::git::run_git_in_dir(git_conn, worktree_path, &["merge-base", &candidate, "HEAD"])
+                .await
+        {
+            let sha = output.trim();
+            if !sha.is_empty() {
+                return Ok(sha.to_string());
+            }
+        }
+    }
+
+    Err(format!(
+        "Could not find where this worktree diverged from '{}'. Neither '{}' nor 'origin/{}' \
+         resolves to a commit shared with HEAD.",
+        branch, branch, branch
+    ))
+}
+
 // ============================================================================
 // get_worktree_diff — REQ-07
 // ============================================================================
@@ -242,16 +274,12 @@ pub async fn get_worktree_diff(
         DiffTarget::Head => {
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "HEAD"]).await?
         }
-        DiffTarget::Branch { branch } => {
-            let range = format!("origin/{}..HEAD", branch);
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
-        }
         DiffTarget::Commit { sha } => {
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha]).await?
         }
         DiffTarget::BranchAll { branch } => {
-            let target = format!("origin/{}", branch);
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &target]).await?
+            let base = resolve_divergence_point(&git_conn, &worktree_path, branch).await?;
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &base]).await?
         }
         DiffTarget::CommitRange { from, to } => {
             let range = format!("{}..{}", from, to);
@@ -327,11 +355,16 @@ pub async fn diff_stats_in(
     worktree_path: &str,
     diff_target: &DiffTarget,
 ) -> Result<WorktreeDiffStats, String> {
+    // Must resolve the same way `get_worktree_diff` does, or the stats and the diff disagree —
+    // and these stats are what the turn-ended handler uses to decide whether an agent changed
+    // anything at all.
     let stat_args: Vec<String> = match diff_target {
         DiffTarget::Head => vec!["diff".into(), "--stat".into(), "HEAD".into()],
-        DiffTarget::Branch { branch } => vec!["diff".into(), "--stat".into(), format!("origin/{}..HEAD", branch)],
         DiffTarget::Commit { sha } => vec!["diff".into(), "--stat".into(), sha.clone()],
-        DiffTarget::BranchAll { branch } => vec!["diff".into(), "--stat".into(), format!("origin/{}", branch)],
+        DiffTarget::BranchAll { branch } => {
+            let base = resolve_divergence_point(git_conn, worktree_path, branch).await?;
+            vec!["diff".into(), "--stat".into(), base]
+        }
         DiffTarget::CommitRange { from, to } => vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)],
     };
     let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
@@ -473,4 +506,96 @@ pub async fn get_untracked_file_content(
         &["diff", "--no-index", "/dev/null", &file_path],
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::GitConnection;
+    use std::path::Path;
+    use std::process::Command;
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(repo)
+            .args(args)
+            .output()
+            .unwrap_or_else(|e| panic!("git {:?} failed to run: {}", args, e));
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    /// Pins both halves of the bug this replaced.
+    ///
+    /// The repository has **no remote**, so the old hardcoded `origin/<branch>` could not resolve
+    /// at all. And the base branch moves forward after the worktree diverges, so returning the
+    /// branch tip rather than the merge base would drag main's later commit into the diff as a
+    /// reversed change.
+    #[tokio::test]
+    async fn divergence_point_is_the_merge_base_of_a_local_branch() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        git(repo, &["init", "-b", "main"]);
+        git(repo, &["config", "user.name", "Maestro Test"]);
+        git(repo, &["config", "user.email", "maestro@example.test"]);
+        git(repo, &["config", "commit.gpgsign", "false"]);
+        git(repo, &["config", "core.hooksPath", ""]);
+
+        std::fs::write(repo.join("a.txt"), "base\n").expect("write base file");
+        git(repo, &["add", "a.txt"]);
+        git(repo, &["commit", "-m", "base"]);
+        let divergence = git(repo, &["rev-parse", "HEAD"]);
+
+        git(repo, &["checkout", "-b", "task-1"]);
+        std::fs::write(repo.join("b.txt"), "task\n").expect("write task file");
+        git(repo, &["add", "b.txt"]);
+        git(repo, &["commit", "-m", "task change"]);
+
+        // main moves on after we branched. The tip is now wrong; the merge base is still `base`.
+        git(repo, &["checkout", "main"]);
+        std::fs::write(repo.join("c.txt"), "main\n").expect("write main file");
+        git(repo, &["add", "c.txt"]);
+        git(repo, &["commit", "-m", "main change"]);
+        let main_tip = git(repo, &["rev-parse", "HEAD"]);
+
+        git(repo, &["checkout", "task-1"]);
+
+        let connection = GitConnection::Local {
+            path: repo.to_string_lossy().into_owned(),
+        };
+        let resolved = resolve_divergence_point(&connection, &repo.to_string_lossy(), "main")
+            .await
+            .expect("a local branch with no remote must still resolve");
+
+        assert_eq!(resolved, divergence, "must be the merge base, not the branch tip");
+        assert_ne!(resolved, main_tip);
+    }
+
+    #[tokio::test]
+    async fn divergence_point_reports_an_unresolvable_branch() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        git(repo, &["init", "-b", "main"]);
+        git(repo, &["config", "user.name", "Maestro Test"]);
+        git(repo, &["config", "user.email", "maestro@example.test"]);
+        git(repo, &["config", "commit.gpgsign", "false"]);
+        git(repo, &["config", "core.hooksPath", ""]);
+        std::fs::write(repo.join("a.txt"), "base\n").expect("write base file");
+        git(repo, &["add", "a.txt"]);
+        git(repo, &["commit", "-m", "base"]);
+
+        let connection = GitConnection::Local {
+            path: repo.to_string_lossy().into_owned(),
+        };
+        let error = resolve_divergence_point(&connection, &repo.to_string_lossy(), "no-such-branch")
+            .await
+            .expect_err("an unknown branch must not silently resolve");
+
+        assert!(error.contains("no-such-branch"), "error should name the branch: {}", error);
+    }
 }

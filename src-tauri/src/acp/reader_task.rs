@@ -270,7 +270,7 @@ async fn resolve_turn_end(
         match transition::apply_if_status(
             &conn,
             task_id,
-            Some(crate::models::TaskStatus::InProgress),
+            Some(&[crate::models::TaskStatus::InProgress]),
             event,
         ) {
             Ok(result) => result.is_some(),

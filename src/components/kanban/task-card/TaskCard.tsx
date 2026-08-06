@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Task, TaskStatus, TaskPhase, PhaseStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import {
@@ -330,9 +330,10 @@ function FooterCTAs({
           }}
           variant="ghost"
           className={cn(base, "h-auto bg-foreground text-background")}
+          title="Discard this run and return the task to Planning"
         >
           <Square className="w-2.5 h-2.5 fill-current" />
-          Stop
+          Abandon
         </Button>
         {activeSession && (
           <Button
@@ -414,6 +415,8 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const authRequired = useAuthRequiredTask(task.id);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [emptyReviewConfirmOpen, setEmptyReviewConfirmOpen] = useState(false);
+  // Abandoning deletes the worktree and its branch, so it cannot be a bare click on a card.
+  const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -572,7 +575,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           }
           isSendingToReview={sendToReview.isPending}
           onExecute={() => void handleExecute(task)}
-          onStop={() => interruptTask.mutate(task.id)}
+          onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}
           onArchive={() => archiveTask.mutate(task.id)}
@@ -626,6 +629,31 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
       />
+      <AlertDialog open={abandonConfirmOpen} onOpenChange={setAbandonConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-destructive" />
+              Abandon this run?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The agent stops and everything it produced is deleted — the worktree, its branch and
+              any uncommitted work in it. The task itself returns to Planning with its description
+              intact, as though it had never run. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep working</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => interruptTask.mutate(task.id)}
+            >
+              Abandon
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={emptyReviewConfirmOpen} onOpenChange={setEmptyReviewConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

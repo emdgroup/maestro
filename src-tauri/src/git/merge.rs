@@ -257,11 +257,23 @@ pub async fn approve_task_and_merge(
     let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
         .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
-    // 3. Where the agent's work is: its worktree, or the project itself when it has none.
-    let full_worktree_path = match &worktree {
-        Some((_, path, _)) => format!("{}/{}", repo_path, path),
-        None => repo_path.clone(),
+    // 3. The agent's work lives in its worktree, and there is no other place it can be.
+    //
+    // Worktrees are enforced wherever git is available and Review exists only for git projects,
+    // so a task that reaches here without one is a corrupted row — most likely a worktree
+    // deletion that failed silently after an earlier merge, which `finalize_successful_merge`
+    // swallows by design. Falling back to the project root, as this used to, would stage and
+    // commit whatever happened to be dirty in the user's checkout under this task's commit
+    // message. Refusing is the only safe answer.
+    let Some((branch_name, worktree_rel_path, worktree_id)) = worktree else {
+        return Err(format!(
+            "Task {} is in review but has no worktree on record, so there is nothing safe to \
+             commit. Re-run the task rather than approving it.",
+            task_id
+        ));
     };
+
+    let full_worktree_path = format!("{}/{}", repo_path, worktree_rel_path);
 
     // 3a. Stage and commit modified tracked files (agents may modify without committing)
     run_git_in_dir(&git_conn, &full_worktree_path, &["add", "-u"]).await
@@ -300,25 +312,9 @@ pub async fn approve_task_and_merge(
         ).await.map_err(|e| format!("Failed to commit changes: {}", e))?;
     }
 
-    // Approval is terminal whichever strategy was chosen; commit-only differs only in leaving the
-    // branch unmerged and the worktree on disk. This used to return without writing anything, so an
-    // approved task stayed in Review looking exactly like one still waiting to be reviewed.
-    //
-    // A task with no worktree takes the same exit for a different reason: it has no branch of its
-    // own, so the commit above already landed the work and there is nothing left to merge.
-    let Some((branch_name, _, worktree_id)) = worktree else {
-        {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-            transition::apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge)?;
-        }
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-        return Ok(MergeResult {
-            success: true,
-            task_status: "Done".to_string(),
-            conflicts: vec![],
-        });
-    };
-
+    // Commit-only leaves the branch unmerged and the worktree on disk, but still lands the task —
+    // this used to return without writing any status, so an approved task stayed in Review looking
+    // exactly like one nobody had looked at yet.
     if merge_strategy == "CommitOnly" {
         {
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -428,6 +424,36 @@ pub(crate) async fn finalize_successful_merge(
 /// 2. Creates a RequestChanges review with formatted conflict feedback
 ///
 /// Provides visibility to reviewers about which files had conflicts.
+/// Record a review decision for a task that may already have one.
+///
+/// `task_reviews.task_id` is UNIQUE, and by the time a merge conflict is reported the approve
+/// flow has already written an `Approve` row for that task. A plain INSERT therefore collided
+/// every single time: the transition had run, so the task really did move to Rework, but the
+/// conflict feedback was lost and the caller saw a generic failure instead of the conflict.
+///
+/// `ON CONFLICT DO UPDATE` rather than `INSERT OR REPLACE`, because REPLACE deletes the existing
+/// row and `review_comments.review_id` cascades off it — it would take the user's per-file
+/// comments with it. Updating in place keeps the row id, and the comments hanging off it.
+fn upsert_review_feedback(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    decision: &str,
+    general_feedback: &str,
+    now: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)
+         ON CONFLICT(task_id) DO UPDATE SET
+             decision = excluded.decision,
+             general_feedback = excluded.general_feedback,
+             reviewed_at = excluded.reviewed_at",
+        rusqlite::params![task_id, decision, general_feedback, now],
+    )
+    .map_err(|e| format!("Save feedback failed: {}", e))?;
+    Ok(())
+}
+
 pub(crate) async fn reject_merge_on_conflict(
     app_state: &Arc<AppState>,
     task_id: i32,
@@ -440,13 +466,7 @@ pub(crate) async fn reject_merge_on_conflict(
     // Auto-reject to InProgress per CONTEXT.md decision
     transition::apply(&conn, task_id, TaskTransition::MergeConflict)?;
 
-    // Save conflict feedback as review comment for visibility
-    conn.execute(
-        "INSERT INTO task_reviews (task_id, decision, general_feedback, created_at)
-         VALUES (?, 'RequestChanges', ?, ?)",
-        rusqlite::params![task_id, &conflict_feedback, &now],
-    )
-    .map_err(|e| format!("Save feedback failed: {}", e))?;
+    upsert_review_feedback(&conn, task_id, "RequestChanges", &conflict_feedback, &now)?;
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(())
@@ -457,6 +477,70 @@ mod tests {
     use super::*;
     use std::path::Path;
     use std::process::Command;
+
+    /// A merge conflict arrives after the approve flow has already written an `Approve` row, so
+    /// this path has to survive a task that already has a review. It used to fail on the UNIQUE
+    /// constraint every time, losing the conflict feedback and reporting a generic error.
+    #[test]
+    fn conflict_feedback_replaces_an_existing_review_without_dropping_comments() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        crate::core::schema::initialize_schema(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert project");
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'demo task', 'Review', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert task");
+
+        conn.execute(
+            "INSERT INTO task_reviews (task_id, decision, general_feedback, created_at) \
+             VALUES (1, 'Approve', 'looks good', '2026-01-01')",
+            [],
+        )
+        .expect("insert approve row");
+        let review_id: i32 = conn
+            .query_row("SELECT id FROM task_reviews WHERE task_id = 1", [], |r| r.get(0))
+            .expect("read review id");
+        conn.execute(
+            "INSERT INTO review_comments (review_id, file_path, comment, created_at) \
+             VALUES (?, 'src/main.rs', 'rename this', '2026-01-01')",
+            [review_id],
+        )
+        .expect("insert comment");
+
+        upsert_review_feedback(&conn, 1, "RequestChanges", "Merge conflict detected:\nsrc/main.rs", "2026-02-02")
+            .expect("upsert must not collide with the existing review");
+
+        let (id, decision, feedback): (i32, String, String) = conn
+            .query_row(
+                "SELECT id, decision, general_feedback FROM task_reviews WHERE task_id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("review still present");
+
+        assert_eq!(id, review_id, "the row must be updated in place, not replaced");
+        assert_eq!(decision, "RequestChanges");
+        assert!(feedback.contains("Merge conflict"));
+
+        let comments: i32 = conn
+            .query_row("SELECT COUNT(*) FROM review_comments WHERE review_id = ?", [review_id], |r| {
+                r.get(0)
+            })
+            .expect("count comments");
+        assert_eq!(comments, 1, "per-file comments must survive — REPLACE would cascade them away");
+
+        let rows: i32 = conn
+            .query_row("SELECT COUNT(*) FROM task_reviews WHERE task_id = 1", [], |r| r.get(0))
+            .expect("count reviews");
+        assert_eq!(rows, 1);
+    }
 
     fn git(repo: &Path, args: &[&str]) -> String {
         let output = Command::new("git")

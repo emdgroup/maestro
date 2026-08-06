@@ -53,11 +53,18 @@ const ALL_STATUSES: TaskStatus[] = [
 
 /// Everywhere the user may send a task by hand.
 ///
-/// This was Planning and Queue alone, which made Done a trap: nothing — not the picker, not drag
-/// and drop, not archiving — could take a task back out of it. InProgress and Cancelled stay out
-/// deliberately: InProgress claims an agent is working, which only Execute can make true, and
-/// cancelling has its own button below because it takes the task off the board entirely.
-const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue", "Review", "Done"]);
+/// Only the two columns a task sits in before it runs. Everything past that point is reached by
+/// an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
+/// Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
+/// no action had made true — most visibly, re-selecting Review on a task already in Review
+/// applies `ManualMove`, which parks it and strips the phase and ball off a live review.
+///
+/// This does still let a cancelled task be re-filed to Planning, which is how restoring from the
+/// archive works.
+const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
+
+/// Done is terminal: view the outcome and archive it, nothing else.
+const STATUS_IS_LOCKED = (status: TaskStatus) => status === "Done";
 
 interface TaskDraft {
   title: string;
@@ -181,6 +188,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   function handleStatusChange(newStatus: string | null) {
     if (!newStatus || !task) return;
+    // Re-picking the status a task is already in still applies `ManualMove`, which parks it —
+    // clearing phase, phase_status and ball. On anything with live pipeline state that silently
+    // throws it away, so a no-op selection has to stay a no-op.
+    if (newStatus === task.status) return;
     if (newStatus === "Queue" && !task.agent_id && !defaultAgent) {
       setAgentError("Assign an agent to this task, or set a project default in Settings.");
       return;
@@ -244,7 +255,11 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 {isEditable ? "EDIT TASK" : "TASK DETAIL"}
               </DialogTitle>
               <div className="flex-1" />
-              <Select value={task.status} onValueChange={handleStatusChange}>
+              <Select
+                value={task.status}
+                onValueChange={handleStatusChange}
+                disabled={STATUS_IS_LOCKED(task.status)}
+              >
                 <SelectTrigger size="sm" className="w-32">
                   <SelectValue />
                 </SelectTrigger>

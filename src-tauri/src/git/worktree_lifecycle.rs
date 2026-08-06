@@ -502,6 +502,96 @@ pub async fn delete_worktree_for_task(
     Ok(())
 }
 
+/// Throw away everything a task's run produced: its worktree, its branch, and the commits it
+/// left on the project path when it ran without one.
+///
+/// Every git step is best-effort on purpose. The caller has already decided the work is being
+/// discarded, so a worktree that is gone from disk, a branch that was never created, or a repo
+/// that has moved on must not leave the task wedged in a half-cleaned state — the DB row removal
+/// and the read of the task row are the only steps that must succeed.
+///
+/// The branch is deleted with `-D`, not `-d`: the whole point is to discard unmerged work, so a
+/// safe delete would refuse in exactly the case this is called for.
+pub async fn discard_task_workspace(
+    app_state: &Arc<AppState>,
+    task_id: i32,
+) -> Result<(), String> {
+    // Gather worktree and task info while holding the lock briefly
+    let (worktree_info, execution_start_sha, project_id) = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        // Query associated worktree
+        let wt: Option<(i32, String, String)> = conn.query_row(
+            "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
+            rusqlite::params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).ok();
+
+        // Get execution_start_sha and project_id from task
+        let (sha, pid): (Option<String>, i32) = conn.query_row(
+            "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
+            rusqlite::params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).map_err(|e| format!("Failed to read task: {}", e))?;
+
+        (wt, sha, pid)
+    };
+
+    // Perform async git cleanup outside the DB lock
+    if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
+        // Delete the worktree (same logic as delete_worktree_for_task)
+        let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+
+        // Remove worktree from disk (best effort)
+        let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+
+        // Delete branch (best effort)
+        let _ = crate::git::run_git_in_dir_lossy(
+            &git_conn,
+            git_conn.path(),
+            &["branch", "-D", &branch_name],
+        )
+        .await;
+
+        // Delete worktree DB row
+        {
+            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            conn.execute(
+                "DELETE FROM worktrees WHERE id = ?",
+                rusqlite::params![worktree_id],
+            )
+            .map_err(|e| format!("Failed to delete worktree: {}", e))?;
+        }
+
+        app_state.app_handle.emit("worktrees-changed", ()).ok();
+    } else if execution_start_sha.is_some() {
+        // A task with no worktree row used to be rolled back in place here: `reset --hard` to its
+        // start sha, then `checkout -- .` and `clean -fd` on the *project* path.
+        //
+        // That is not survivable now. Worktrees are enforced wherever git is available, so the
+        // only tasks that reach this arm are legacy or corrupt rows — and this function is now
+        // reached from Stop, a single click on a card, where it previously only ran behind the
+        // Discard confirmation. Wiping every uncommitted change in the user's actual checkout,
+        // including work belonging to no task at all, is a far worse outcome than leaving a
+        // stale branch behind.
+        log::warn!(
+            "[git] task {} has no worktree to discard; leaving the project tree untouched",
+            task_id
+        );
+    }
+
+    // Clear execution_start_sha now that cleanup is done
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        conn.execute(
+            "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
+            rusqlite::params![task_id],
+        ).ok();
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{branch_has_no_own_commits, canonicalize_repo_path, path_is_within};

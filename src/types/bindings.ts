@@ -1788,12 +1788,18 @@ async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, s
 }
 },
 /**
- * Stop the active ACP or PTY session for a task and move the task back to Planning.
+ * Stop the active ACP or PTY session for a task, then abandon everything the run produced.
  * 
- * Searches ACP sessions and PTY session metadata for an entry associated with the
- * given task_id. If found, replicates the teardown logic from cancel_acp_session or
- * close_pty_session respectively. After all async work is done, updates the task
- * status to Planning via the sync DB mutex (never held across an await point).
+ * Stop is abandonment, not a pause: the worktree and its branch are deleted and the task returns
+ * to Planning as if it had never run. There is no resume — a stopped task is executed again from
+ * the backlog, which cannot start from a half-finished tree, and leaving the worktree behind
+ * would strand it with nothing in the UI pointing at it.
+ * 
+ * Searches ACP sessions and PTY session metadata for an entry associated with the given task_id.
+ * If found, replicates the teardown logic from cancel_acp_session or close_pty_session
+ * respectively. A task with no live session is not an error: its session may have died on its
+ * own, and the worktree it left behind is exactly what still needs discarding. After all async
+ * work is done, updates the task status via the sync DB mutex (never held across an await point).
  */
 async interruptTask(taskId: number) : Promise<Result<null, string>> {
     try {
@@ -1835,8 +1841,13 @@ async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | n
  * applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
  * phase status, ball on nobody, so a card sat through its entire run looking idle and never
  * reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+ * 
+ * Returns `None` when the task is no longer in a column execution can start from — the user
+ * dragged it back to Planning, or cancelled it, while the spawn was in flight. Claiming it
+ * anyway would silently overwrite that action, so the caller is expected to tear down the
+ * session it just created.
  */
-async markTaskExecutionStarted(taskId: number) : Promise<Result<Task, string>> {
+async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { taskId }) };
 } catch (e) {
@@ -2035,7 +2046,18 @@ config: ProjectIssueTrackingConfig }
  * - BranchAll: `git diff --unified=6 origin/{branch}` (all changes including uncommitted)
  * - CommitRange: `git diff --unified=6 {from}..{to}` (single commit view)
  */
-export type DiffTarget = { type: "Head" } | { type: "Branch"; branch: string } | { type: "Commit"; sha: string } | { type: "BranchAll"; branch: string } | { type: "CommitRange"; from: string; to: string }
+export type DiffTarget = { type: "Head" } | { type: "Commit"; sha: string } | 
+/**
+ * Everything this worktree has done since it diverged from `branch`.
+ * 
+ * Resolved through `git merge-base`, and compared against the **working tree** rather than
+ * HEAD, so the result is the same whether or not the agent committed — which is the point.
+ * There was a second variant here (`Branch`) that used `origin/<branch>..HEAD`: it named the
+ * remote rather than the local branch, used two-dot semantics so commits the base gained
+ * after we branched showed up as reversed changes, and being a commit range could not see
+ * uncommitted work at all. Nothing ever constructed it.
+ */
+{ type: "BranchAll"; branch: string } | { type: "CommitRange"; from: string; to: string }
 export type DirtyStatus = { modified_count: number; untracked_count: number }
 /**
  * Agent discovered by maestro-server's CDN registry check.
