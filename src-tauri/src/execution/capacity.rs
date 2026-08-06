@@ -116,17 +116,37 @@ pub fn resolve_capacity(
     }
 }
 
-/// Read available memory in MB on a host, or `None` when it cannot be determined.
+/// Available memory on this machine, in MB.
 ///
-/// Linux — which covers WSL and most remotes — reports `MemAvailable` in `/proc/meminfo`, which is
-/// the kernel's own estimate of what can be allocated without swapping and is exactly the question
-/// being asked. `MemFree` is not a substitute: it excludes reclaimable page cache and would size a
-/// busy host at nearly zero.
+/// `sysinfo` rather than a hand-rolled probe per platform: the three calls involved are
+/// `GlobalMemoryStatusEx`, `host_statistics64` and `/proc/meminfo`, and owning that unsafe code to
+/// save one dependency is a poor trade. Only the `system` feature is enabled, which costs three
+/// crates, two of them platform-gated.
 ///
-/// Everything else returns `None` for now and takes the fixed limit. macOS needs `vm_stat`, a
-/// container's real ceiling is its cgroup limit rather than the host's free memory, and reading
-/// this machine's own memory needs a dependency the tree does not yet carry.
+/// Refreshes RAM alone. The default refresh walks processes, disks and networks, which is a
+/// meaningful cost to pay on every drain for a number that is one field.
+fn local_available_memory_mb() -> u64 {
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+
+    let system = System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
+
+    system.available_memory() / (1024 * 1024)
+}
+
+/// Read available memory in MB on the host that will run the agents, or `None` when it cannot be
+/// determined.
+///
+/// Remote hosts are asked for `MemAvailable` from `/proc/meminfo`, which covers Linux and WSL. It
+/// is deliberately not `MemFree`: that excludes reclaimable page cache and would size a busy host
+/// at nearly zero. A remote macOS host has no `/proc`, and a container's real ceiling is its cgroup
+/// limit rather than the host's free memory — both return `None` and take the fixed limit.
 pub async fn available_memory_mb(conn: &crate::models::GitConnection) -> Option<u64> {
+    if matches!(conn, crate::models::GitConnection::Local { .. }) {
+        return Some(local_available_memory_mb());
+    }
+
     let output =
         crate::connectivity::exec_channel::run_on(conn, None, "cat", &["/proc/meminfo"]).await.ok()?;
 
@@ -216,6 +236,26 @@ mod tests {
 
         assert_eq!(parse_mem_available_kb(meminfo), Some(5242880));
         assert_eq!(slots_for_memory(parse_mem_available_kb(meminfo).unwrap() / 1024), 10);
+    }
+
+    /// `sysinfo` reports bytes, `/proc/meminfo` reports kB, and this function returns MB — three
+    /// units for one number, and being wrong by 1024 sizes the farm at either zero agents or
+    /// thousands.
+    ///
+    /// Each bound catches a specific regression rather than being decorative. The floor catches
+    /// `sysinfo` going back to kB, which it reported before 0.30: an 8 GB machine would come out
+    /// as 8. The ceiling catches the division being dropped: the same machine would come out as
+    /// 8.6 billion. Neither bound can catch every possible slip on every machine, but these are
+    /// the two ways this has actually gone wrong.
+    #[test]
+    fn local_memory_is_reported_in_megabytes() {
+        let mb = local_available_memory_mb();
+
+        assert!(
+            (16..2_097_152).contains(&mb),
+            "{} MB is not a plausible amount of free memory — check the unit conversion",
+            mb
+        );
     }
 
     #[test]
