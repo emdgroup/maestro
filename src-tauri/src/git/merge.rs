@@ -312,10 +312,27 @@ pub async fn approve_task_and_merge(
         ).await.map_err(|e| format!("Failed to commit changes: {}", e))?;
     }
 
+    // Push before landing, so a push that fails leaves the task in Review rather than reporting
+    // Done for work that never left the machine.
+    if merge_strategy == "CommitAndPush" {
+        let status = crate::integration::code_hosting_handlers::code_hosting_status(
+            app_state.inner(),
+            project_id,
+        )
+        .await?;
+        let Some(remote) = status.remote else {
+            return Err(
+                "This project has no git remote, so there is nothing to push to.".to_string()
+            );
+        };
+        crate::git::push_branch(&git_conn, &full_worktree_path, &remote, &branch_name).await?;
+    }
+
     // Commit-only leaves the branch unmerged and the worktree on disk, but still lands the task —
     // this used to return without writing any status, so an approved task stayed in Review looking
-    // exactly like one nobody had looked at yet.
-    if merge_strategy == "CommitOnly" {
+    // exactly like one nobody had looked at yet. A pushed branch lands the same way: it is on the
+    // remote but still unmerged, which is what `ApprovedWithoutMerge` already means.
+    if merge_strategy == "CommitOnly" || merge_strategy == "CommitAndPush" {
         {
             let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
             transition::apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge)?;

@@ -34,9 +34,17 @@ import {
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useKanban } from "@/contexts/KanbanContext";
+import { useCodeHostingStatus } from "@/services/integration.service";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
 import type { DiffTarget, Task } from "@/types/bindings";
+
+/** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
+const MERGE_STRATEGIES: Record<string, string> = {
+  "commit-only": "CommitOnly",
+  "commit-push": "CommitAndPush",
+  "merge-delete": "CommitAndMerge",
+};
 
 interface TaskReviewPanelProps {
   task: Task;
@@ -110,6 +118,7 @@ export function TaskReviewPanel({
     onDirtyCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
+  const codeHostingQuery = useCodeHostingStatus(projectId);
   const cancelSession = useCancelActiveSessionMutation();
 
   // Map scope to DiffTarget
@@ -319,7 +328,7 @@ export function TaskReviewPanel({
         { taskId: task.id, decision: "Approve", generalFeedback: null, perFileComments: null },
         {
           onSuccess: () => {
-            const strategy = data.mergeStrategy === "commit-only" ? "CommitOnly" : "CommitAndMerge";
+            const strategy = MERGE_STRATEGIES[data.mergeStrategy] ?? "CommitAndMerge";
             approveAndMerge(
               {
                 taskId: task.id,
@@ -640,6 +649,7 @@ export function TaskReviewPanel({
         hasUncommitted={hasUncommitted}
         untrackedCount={untrackedFiles.length}
         commitMessage={commitMessageQuery.data ?? ""}
+        pushRemote={codeHostingQuery.data?.remote}
         onConfirm={handleApproveConfirm}
         isPending={isSaving || isApproving}
       />

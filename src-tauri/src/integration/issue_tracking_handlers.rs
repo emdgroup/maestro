@@ -52,7 +52,7 @@ pub async fn save_project_issue_tracking_config(
 /// host against the `instance_url` of a connection the user has already made — a
 /// self-hosted Forgejo and a self-hosted Gitea are indistinguishable from their URL,
 /// so guessing would be worse than not detecting.
-fn provider_for_host(host: &str, app_state: &AppState) -> Option<String> {
+pub(crate) fn provider_for_host(host: &str, app_state: &AppState) -> Option<String> {
     let well_known = match host {
         "github.com" => Some("github"),
         "gitlab.com" => Some("gitlab"),
@@ -92,16 +92,16 @@ fn stored_integrations(app_state: &AppState) -> Vec<(String, IntegrationCredenti
     found
 }
 
-struct MatchedIntegration {
-    id: String,
-    token: String,
-    instance_url: Option<String>,
+pub(crate) struct MatchedIntegration {
+    pub id: String,
+    pub token: String,
+    pub instance_url: Option<String>,
 }
 
 /// Find credentials usable for `provider`, preferring an account whose instance URL is
 /// the host we detected. Mirrors the CLI fallbacks `list_remote_issues` already applies,
 /// so "connected" here means the same thing as "issues will actually load".
-async fn find_integration(
+pub(crate) async fn find_integration(
     provider: &str,
     host: &str,
     app_state: &AppState,

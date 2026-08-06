@@ -18,7 +18,7 @@ pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy, run
 pub use ops::{
     BranchList, ParsedWorktree,
     create_worktree, delete_worktree, git_status,
-    list_branches, get_current_branch, list_worktrees, prune_remote_refs,
+    list_branches, get_current_branch, list_worktrees, prune_remote_refs, push_branch,
     parse_worktree_list, parse_branch_list,
 };
 pub use merge::squash_merge_to_base;

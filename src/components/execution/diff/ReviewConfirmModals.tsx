@@ -121,6 +121,8 @@ interface ApproveModalProps {
   hasUncommitted: boolean;
   untrackedCount: number;
   commitMessage: string;
+  /** Name of the remote to push to, when the project has one. */
+  pushRemote?: string | null;
   onConfirm: (data: {
     mergeStrategy: string;
     includeUntracked: boolean;
@@ -136,6 +138,7 @@ export function ApproveModal({
   hasUncommitted,
   untrackedCount,
   commitMessage: initialCommitMessage,
+  pushRemote,
   onConfirm,
   isPending,
 }: ApproveModalProps) {
@@ -147,7 +150,10 @@ export function ApproveModal({
     setCommitMessage(initialCommitMessage);
   }, [initialCommitMessage]);
 
-  const showRadio = hasWorktree && hasUncommitted;
+  const canPush = hasWorktree && !!pushRemote;
+  // Pushing is worth offering even when everything is already committed, which is why this
+  // no longer keys off uncommitted changes alone.
+  const showRadio = hasWorktree && (hasUncommitted || canPush);
 
   function getDescription(): string {
     if (hasWorktree && !hasUncommitted)
@@ -190,13 +196,21 @@ export function ApproveModal({
                 <RadioGroupItem value="commit-only" />
                 Commit only (keep worktree)
               </label>
+              {canPush && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="commit-push" />
+                  Commit + Push to {pushRemote}
+                </label>
+              )}
             </RadioGroup>
-            {/* Both strategies approve the task, so both move it to Done. Worth saying, because
-                keeping the worktree reads like the task is still in flight. */}
+            {/* Every strategy approves the task, so all of them move it to Done. Worth saying,
+                because keeping the worktree reads like the task is still in flight. */}
             <p className="text-xs text-muted-foreground">
-              {strategy === "commit-only"
-                ? "The task moves to Done. The branch stays unmerged and the worktree stays on disk for you to merge or push yourself."
-                : "The task moves to Done and the worktree is deleted."}
+              {strategy === "commit-only" &&
+                "The task moves to Done. The branch stays unmerged and the worktree stays on disk for you to merge or push yourself."}
+              {strategy === "commit-push" &&
+                `The branch is pushed to ${pushRemote} and the task moves to Done. It stays unmerged, and the worktree stays on disk.`}
+              {strategy === "merge-delete" && "The task moves to Done and the worktree is deleted."}
             </p>
           </>
         )}

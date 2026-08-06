@@ -1673,6 +1673,59 @@ async listRemoteIssues(projectId: number) : Promise<Result<RemoteIssue[], string
 }
 },
 /**
+ * Read the code-hosting field from `.maestro/settings.json`.
+ */
+async getProjectCodeHostingConfig(projectId: number) : Promise<Result<ProjectCodeHostingConfig | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_project_code_hosting_config", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Write the code-hosting field into `.maestro/settings.json`.
+ */
+async saveProjectCodeHostingConfig(projectId: number, codeHosting: ProjectCodeHostingConfig | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_project_code_hosting_config", { projectId, codeHosting }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Choose how approved work leaves Review for this project.
+ */
+async saveProjectLandingMode(projectId: number, landingMode: LandingMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_project_landing_mode", { projectId, landingMode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Work out what this project can do with its remote, and record the parts of the answer
+ * that are the same for the whole team.
+ * 
+ * Deliberately re-run rather than cached: the top rung asks whether a credential answers
+ * *right now*, which `gh auth token` can satisfy without any integration being stored, and
+ * which stops being true when a token expires. Persisting it would let one teammate commit
+ * a file promising another a PR path they do not have.
+ * 
+ * Idempotent on the write: a project that already has `code_hosting`, or that opted out, is
+ * left alone and reports `applied: false`.
+ */
+async getProjectCodeHostingStatus(projectId: number) : Promise<Result<CodeHostingStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_project_code_hosting_status", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Batch-import remote issues as Backlog tasks for a project, skipping any that have already
  * been imported (by external_id + project_id). Returns the list of newly-created tasks.
  */
@@ -2204,6 +2257,51 @@ export type BitbucketProjectOption = { key: string; name: string }
  */
 export type BitbucketRepoOption = { slug: string; name: string; description: string | null; clone_url: string | null }
 export type BranchList = { local: string[]; remote: string[] }
+/**
+ * How far up the capability ladder this project reaches.
+ * 
+ * Each rung removes one option from Approve and never blocks it; the bottom of the ladder
+ * — merge locally — is always available and is not represented here.
+ */
+export type CodeHostingRung = 
+/**
+ * No remote at all. Nothing to push to.
+ */
+"NoRemote" | 
+/**
+ * A remote we can push to, on a host we cannot name. Plain git server, or a
+ * self-hosted forge nobody has connected an integration for yet.
+ */
+"ForgeUnknown" | 
+/**
+ * The forge is known but no credential answered for it right now.
+ */
+"NotConnected" | 
+/**
+ * Push and pull requests are both available.
+ */
+"Ready"
+/**
+ * The answer to "what can this project do with its remote", as of this moment.
+ */
+export type CodeHostingStatus = { rung: CodeHostingRung; 
+/**
+ * What the user has chosen, not what is possible — `Merge` unless they said otherwise.
+ */
+landing_mode: LandingMode; 
+/**
+ * Name of the remote to push to. Present at every rung above `NoRemote`, including
+ * the one where the forge is unknown, because push does not need a forge.
+ */
+remote: string | null; 
+/**
+ * Forge coordinates. `None` until the forge is identified.
+ */
+config: ProjectCodeHostingConfig | null; 
+/**
+ * Whether this call wrote `code_hosting` into `.maestro/settings.json`.
+ */
+applied: boolean }
 export type CommitInfo = { sha: string; message: string; file_count: number }
 export type ConcurrencyMode = 
 /**
@@ -2340,6 +2438,22 @@ instance_url: string | null }
 export type JiraProjectOption = { key: string; name: string; avatar_url: string | null; is_favourite: boolean }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
+ * How approved work leaves Review.
+ */
+export type LandingMode = 
+/**
+ * Merge into the target branch locally. The default, and what shipped before PRs existed.
+ */
+"Merge" | 
+/**
+ * Push the branch and open a pull request.
+ */
+"PullRequest" | 
+/**
+ * Push the branch and stop there — someone else lands it.
+ */
+"PushOnly"
+/**
  * A Linear team, exported to TypeScript bindings for the team picker (Phase 55).
  */
 export type LinearTeam = { id: string; name: string; key: string }
@@ -2390,6 +2504,29 @@ export type Project = { id: number; name: string; path: string; created_at: stri
  * Project-level agent detection: which agent tools have config markers in the project dir.
  */
 export type ProjectAgentMatch = { agent_id: string; markers_found: string[] }
+/**
+ * Where this project's remote is hosted, and enough of the remote's path to address it
+ * through the forge's API.
+ * 
+ * Everything here is the same for every member of the team, which is what makes it safe
+ * to keep in a committed file. Whether *you* hold a credential for `provider` is resolved
+ * at approve time and deliberately not stored — a connected teammate must not be able to
+ * commit a file telling an unconnected one that a PR is available.
+ */
+export type ProjectCodeHostingConfig = { provider: string; 
+/**
+ * Host of the remote URL, so a self-hosted instance stays distinguishable.
+ */
+host: string; 
+/**
+ * Set only for the two-segment `owner/repo` shape every forge but GitLab and
+ * Azure DevOps uses.
+ */
+owner?: string | null; repo?: string | null; 
+/**
+ * The whole remote path, so a namespace that nests deeper than `owner/repo` survives.
+ */
+project_path: string }
 export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }

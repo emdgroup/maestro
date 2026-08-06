@@ -63,6 +63,27 @@ pub async fn prune_remote_refs(conn: &GitConnection) {
     }
 }
 
+/// Push `branch` to `remote`, setting it as the branch's upstream.
+///
+/// Runs down the same exec channel as every other git command, which means it executes on the
+/// machine that owns the repository and uses *that* machine's git configuration — its SSH agent,
+/// its credential helper, its `~/.gitconfig`. Maestro holds no credential of its own, which is
+/// why this needs no per-connection branch: the host the user already pushes from by hand is the
+/// host doing the pushing.
+///
+/// A missing or wrong credential therefore surfaces as git's own message rather than as
+/// something we invent. It cannot hang waiting for one either — the exec channel gives git a
+/// null stdin, so git has no terminal to prompt on and fails instead.
+pub async fn push_branch(
+    conn: &GitConnection,
+    repo_path: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<(), String> {
+    run_git_in_dir(conn, repo_path, &["push", "--set-upstream", remote, branch]).await?;
+    Ok(())
+}
+
 pub async fn git_status(conn: &GitConnection) -> Result<String, String> {
     run_git_in_dir(conn, conn.path(), &["status", "--porcelain"]).await
 }
