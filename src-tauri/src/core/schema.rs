@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 27;
+pub const SCHEMA_VERSION: u32 = 25;
 
-pub const SCHEMA_V27_FULL: &str = r#"
+pub const SCHEMA_V25_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -297,7 +297,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V27_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -318,7 +318,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V27_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -350,82 +350,33 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 25 {
         migrate_to_v25(conn)?;
     }
-    if from < 26 {
-        migrate_to_v26(conn)?;
-    }
-    if from < 27 {
-        migrate_to_v27(conn)?;
-    }
     Ok(())
 }
 
-/// Add the deferred-execution marker.
+/// Everything the pipeline rework added to a v24 database.
 ///
-/// Nothing is backfilled: the column records a promise the user was given, and no existing task
-/// was ever given one.
-fn migrate_to_v27(conn: &Connection) -> SqlResult<()> {
-    let exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'execute_requested_at'",
-            [],
-            |row| row.get::<_, i32>(0),
-        )
-        .unwrap_or(0)
-        > 0;
-
-    if !exists {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN execute_requested_at TEXT;")?;
-    }
-
-    Ok(())
-}
-
-/// Add the Done completion qualifier and the task outcome thread.
+/// This was built as three separate steps and collapsed into one, because none of them was ever
+/// released: v24 is what shipped in v0.11.0 through v0.16.0, and no database outside this
+/// repository has ever held v25 or later. Keeping three migrations for a state nothing was in
+/// would be three code paths maintained to serve nobody.
 ///
-/// Existing Done tasks are deliberately left with `completion = NULL` rather than guessed at. The
-/// board cannot tell a merged task from an approved-and-abandoned one after the fact, and a wrong
-/// qualifier is worse than an absent one: `LocalOnly` is the variant that tells a user their work
-/// is still sitting in a worktree, so inventing it would send them looking for something that is
-/// not there, and omitting it would hide work that is.
-fn migrate_to_v26(conn: &Connection) -> SqlResult<()> {
-    let completion_exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'completion'",
-            [],
-            |row| row.get::<_, i32>(0),
-        )
-        .unwrap_or(0)
-        > 0;
-
-    if !completion_exists {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN completion TEXT;")?;
-    }
-
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS task_comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL,
-            kind TEXT NOT NULL,
-            author TEXT NOT NULL,
-            body TEXT,
-            external_ref TEXT,
-            phase TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);",
-    )?;
-
-    Ok(())
-}
-
-/// Add the pipeline activity triple (`phase`, `phase_status`, `ball`) and backfill it from
-/// `status`, so an existing board keeps working without a run through every task.
+/// Two things it deliberately does *not* backfill:
+///
+/// `completion` stays NULL on existing Done tasks. The board cannot tell a merged task from an
+/// approved-and-abandoned one after the fact, and a wrong qualifier is worse than an absent one:
+/// `LocalOnly` is the variant that says the work is still sitting in a worktree, so inventing it
+/// would send a user looking for something that is not there, and omitting it would hide work that
+/// is.
+///
+/// `execute_requested_at` stays NULL everywhere. It records a promise the user was given, and no
+/// existing task was ever given one.
 fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
     for (name, definition) in [
         ("phase", "phase TEXT"),
         ("phase_status", "phase_status TEXT"),
         ("ball", "ball TEXT NOT NULL DEFAULT 'None'"),
+        ("completion", "completion TEXT"),
+        ("execute_requested_at", "execute_requested_at TEXT"),
     ] {
         let col_exists: bool = conn
             .query_row(
@@ -457,6 +408,21 @@ fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
            WHERE status = 'Review';
          UPDATE tasks SET phase = NULL, phase_status = NULL, ball = 'None' \
            WHERE status IN ('Planning', 'Queue', 'Done', 'Cancelled');",
+    )?;
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            author TEXT NOT NULL,
+            body TEXT,
+            external_ref TEXT,
+            phase TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);",
     )?;
 
     Ok(())
@@ -546,7 +512,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 27);
+        assert_eq!(version, 25);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -686,10 +652,12 @@ mod tests {
         assert_eq!(statuses, vec!["Planning".to_string(), "Queue".to_string()]);
     }
 
-    /// v25 adds the pipeline triple. Existing rows must be backfilled from `status`, and the
-    /// 'Backlog' cleanup must run again because `reject_review` kept writing it after v24.
+    /// v24 → v25 is the only upgrade the pipeline rework has to survive, because v24 is what
+    /// shipped and nothing else was ever released. It has to backfill the pipeline triple from
+    /// `status`, repeat the 'Backlog' cleanup (`reject_review` kept writing it after v24), add the
+    /// two nullable columns without inventing values for them, and create the outcome thread.
     #[test]
-    fn test_migration_to_v25_backfills_phase_from_status() {
+    fn test_migration_from_the_last_released_schema() {
         let conn = Connection::open_in_memory().unwrap();
         initialize_schema(&conn).unwrap();
         conn.execute(
@@ -703,10 +671,13 @@ mod tests {
              VALUES (1, 1, 'running', 'InProgress', 'main', '2026-01-01', '2026-01-01'), \
                     (2, 1, 'in review', 'Review', 'main', '2026-01-01', '2026-01-01'), \
                     (3, 1, 'parked', 'Planning', 'main', '2026-01-01', '2026-01-01'), \
-                    (4, 1, 'post-v24 backlog', 'Backlog', 'main', '2026-01-01', '2026-01-01')",
+                    (4, 1, 'post-v24 backlog', 'Backlog', 'main', '2026-01-01', '2026-01-01'), \
+                    (5, 1, 'finished long ago', 'Done', 'main', '2026-01-01', '2026-01-01')",
             [],
         )
         .unwrap();
+        // A real v24 database has no outcome thread.
+        conn.execute_batch("DROP TABLE task_comments;").unwrap();
 
         conn.execute("PRAGMA user_version = 24", []).unwrap();
         initialize_schema(&conn).unwrap();
@@ -731,82 +702,34 @@ mod tests {
         assert_eq!(row(3), ("Planning".into(), None, None, "None".into()));
         // Rewritten to Planning by the repeated cleanup, then backfilled as a parked task.
         assert_eq!(row(4), ("Planning".into(), None, None, "None".into()));
-    }
 
-    /// v26 adds the completion qualifier and the outcome thread. Existing Done tasks keep a NULL
-    /// completion rather than being guessed at, and the thread table has to survive the upgrade
-    /// for a database that never had it.
-    #[test]
-    fn test_migration_to_v26_adds_completion_and_the_comment_thread() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at) \
-             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
-             VALUES (1, 1, 'finished long ago', 'Done', 'main', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .unwrap();
-        conn.execute_batch("DROP TABLE task_comments;").unwrap();
-
-        conn.execute("PRAGMA user_version = 25", []).unwrap();
-        initialize_schema(&conn).unwrap();
-
-        let completion: Option<String> = conn
-            .query_row("SELECT completion FROM tasks WHERE id = 1", [], |r| r.get(0))
-            .unwrap();
+        let (completion, requested): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT completion, execute_requested_at FROM tasks WHERE id = 5",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("both columns must exist after migrating");
         assert_eq!(
             completion, None,
             "a pre-existing Done task must not be given a completion the board cannot know"
         );
+        assert_eq!(requested, None, "no existing task was ever promised a slot");
 
         conn.execute(
             "INSERT INTO task_comments (task_id, kind, author, body, created_at) \
-             VALUES (1, 'note', 'user', 'still here', '2026-01-02')",
+             VALUES (5, 'note', 'user', 'still here', '2026-01-02')",
             [],
         )
         .expect("the outcome thread must exist after migrating");
 
         // The thread is part of the task, so deleting the task takes it.
         conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
-        conn.execute("DELETE FROM tasks WHERE id = 1", []).unwrap();
+        conn.execute("DELETE FROM tasks WHERE id = 5", []).unwrap();
         let orphans: i64 = conn
             .query_row("SELECT COUNT(*) FROM task_comments", [], |r| r.get(0))
             .unwrap();
         assert_eq!(orphans, 0, "comments must cascade with their task");
-    }
-
-    /// v27 adds the deferred-execution marker. A database that predates it keeps its tasks, and
-    /// none of them acquires a promise that was never made.
-    #[test]
-    fn test_migration_to_v27_adds_the_deferral_marker() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at) \
-             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
-             VALUES (1, 1, 'waiting', 'Queue', 'main', '2026-01-01', '2026-01-01')",
-            [],
-        )
-        .unwrap();
-
-        conn.execute("PRAGMA user_version = 26", []).unwrap();
-        initialize_schema(&conn).unwrap();
-
-        let marker: Option<String> = conn
-            .query_row("SELECT execute_requested_at FROM tasks WHERE id = 1", [], |r| r.get(0))
-            .expect("the column must exist after migrating");
-        assert_eq!(marker, None, "no existing task was ever promised a slot");
     }
 
     #[test]
