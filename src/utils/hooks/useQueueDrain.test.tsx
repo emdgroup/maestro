@@ -100,6 +100,19 @@ describe("useQueueDrain", () => {
     expect(drainReadyQueue).toHaveBeenCalledTimes(1);
   });
 
+  /// A drag that ends where it started changes nothing, so no `tasks-changed` follows it. Without
+  /// this trigger the task the drain skipped would wait for something unrelated to move the board.
+  it("drains when a held task is released", async () => {
+    render();
+    await vi.advanceTimersByTimeAsync(500);
+    drainReadyQueue.mockClear();
+
+    listeners.get("task-hold-released")?.();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(drainReadyQueue).toHaveBeenCalledTimes(1);
+  });
+
   /// One transition emits several events. Draining per event would ask the backend the same
   /// question three times and race its own answers.
   it("collapses a burst of events into one drain", async () => {

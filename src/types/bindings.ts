@@ -1974,6 +1974,39 @@ async releaseTaskExecutionClaim(taskId: number, failed: boolean) : Promise<Resul
 }
 },
 /**
+ * Take or renew a hold on a task the user is interacting with.
+ * 
+ * The scheduler skips held tasks. Renewal rather than a one-shot flag because the thing being
+ * described — a pointer that is down, a modal that is open — has no reliable end event: a closed
+ * window or a killed renderer never sends one, and a task nothing can start is worse than one
+ * started a moment early.
+ */
+async holdTask(taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hold_task", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Release a hold, and tell the scheduler to look again.
+ * 
+ * The event matters. A drag that ends where it started changes nothing, so it emits no
+ * `tasks-changed` — without this the task would sit unscheduled until some unrelated thing
+ * happened to move the board, which is the stalled-queue failure this design keeps running into.
+ * It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
+ * would be a cost paid on every drag.
+ */
+async releaseTaskHold(taskId: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("release_task_hold", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Cancel a task: sets status=Cancelled and archived_at in one statement
  */
 async cancelTask(taskId: number) : Promise<Result<Task, string>> {

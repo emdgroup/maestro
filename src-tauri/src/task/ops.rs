@@ -262,3 +262,31 @@ pub fn release_task_execution_claim(
     }
     Ok(task)
 }
+
+/// Take or renew a hold on a task the user is interacting with.
+///
+/// The scheduler skips held tasks. Renewal rather than a one-shot flag because the thing being
+/// described — a pointer that is down, a modal that is open — has no reliable end event: a closed
+/// window or a killed renderer never sends one, and a task nothing can start is worse than one
+/// started a moment early.
+#[tauri::command]
+#[specta::specta]
+pub fn hold_task(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
+    app_state.task_holds.hold(task_id, crate::task::holds::HOLD_TTL);
+    Ok(())
+}
+
+/// Release a hold, and tell the scheduler to look again.
+///
+/// The event matters. A drag that ends where it started changes nothing, so it emits no
+/// `tasks-changed` — without this the task would sit unscheduled until some unrelated thing
+/// happened to move the board, which is the stalled-queue failure this design keeps running into.
+/// It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
+/// would be a cost paid on every drag.
+#[tauri::command]
+#[specta::specta]
+pub fn release_task_hold(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
+    app_state.task_holds.release(task_id);
+    app_state.app_handle.emit("task-hold-released", task_id).ok();
+    Ok(())
+}

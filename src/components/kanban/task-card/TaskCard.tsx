@@ -3,6 +3,7 @@ import { Task, TaskStatus, TaskPhase, PhaseStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import { Button, buttonVariants } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
+import { useTaskHold } from "@/hooks/useTaskHold";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import {
   useInterruptTaskMutation,
@@ -513,6 +514,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     disabled: !isDraggable,
     collisionDetector: pointerIntersection,
   });
+
+  // A card dropped somewhere it can be started is a card the scheduler could claim mid-gesture,
+  // which would yank it out from under the pointer.
+  useTaskHold(task.id, isDragging);
 
   const dragOccurredRef = useRef(false);
   useEffect(() => {

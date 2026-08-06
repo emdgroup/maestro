@@ -232,6 +232,10 @@ pub async fn drain_ready_queue(
         queue_candidates(&conn, project_id, settings.auto_mode)?
     };
 
+    // Whatever the user has their hands on is not the scheduler's to take. Applied after the query
+    // rather than in it because a drag is a client-side fact with no row behind it.
+    let candidates = app_state.task_holds.retain_unheld(candidates);
+
     if candidates.is_empty() {
         return Ok(vec![]);
     }

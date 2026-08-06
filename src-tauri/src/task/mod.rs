@@ -2,6 +2,7 @@ pub mod attachments;
 pub mod comments;
 pub mod crud;
 pub mod handlers;
+pub mod holds;
 pub mod instructions;
 pub mod models;
 pub mod ops;

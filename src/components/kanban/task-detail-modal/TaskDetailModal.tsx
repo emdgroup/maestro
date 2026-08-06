@@ -29,6 +29,7 @@ import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { useDefaultAgent } from "@/store/configStore";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useIsTaskEditable } from "@/hooks/useIsTaskEditable";
+import { useTaskHold } from "@/hooks/useTaskHold";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { EditableField } from "./EditableField";
@@ -108,6 +109,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const { setActiveTaskId } = useNavigationActions();
 
   const isEditable = useIsTaskEditable(taskId);
+
+  // Held while the modal is open, so auto-mode cannot start the task the user is halfway through
+  // rewriting — the agent would be given a prompt the user had already moved on from.
+  useTaskHold(taskId, taskId !== null);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",

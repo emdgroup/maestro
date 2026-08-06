@@ -139,6 +139,9 @@ pub struct AppState {
     /// Set to true at the start of the close sequence so that session cancel events
     /// triggered during shutdown don't overwrite state.json with an empty session list.
     pub is_closing: std::sync::atomic::AtomicBool,
+    /// Tasks the user is currently dragging or editing, which the scheduler must leave alone.
+    /// In memory on purpose — a hold that survived a crash would be a task nothing could start.
+    pub task_holds: crate::task::holds::TaskHolds,
 }
 
 impl AppState {
@@ -169,6 +172,7 @@ impl AppState {
             active_project_lock: Mutex::new(None),
             token_manager: crate::integration::TokenManager::new(),
             is_closing: std::sync::atomic::AtomicBool::new(false),
+            task_holds: crate::task::holds::TaskHolds::default(),
         }
     }
 

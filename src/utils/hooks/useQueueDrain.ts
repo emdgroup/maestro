@@ -81,10 +81,17 @@ export function useQueueDrain(
     schedule();
 
     // Every event that can free a slot or add a candidate: a session ending, a review approved, a
-    // task dragged into Queue, auto-mode switched on. All of them are already emitted.
-    const unlisteners = ["tasks-changed", "sessions-changed", "settings-changed"].map((event) =>
-      listen(event, schedule),
-    );
+    // task dragged into Queue, auto-mode switched on.
+    //
+    // `task-hold-released` is the odd one out and has to be here: a drag that ends where it
+    // started changes nothing, so it emits no `tasks-changed`, and the task it was skipped from
+    // would otherwise wait for something unrelated to move the board.
+    const unlisteners = [
+      "tasks-changed",
+      "sessions-changed",
+      "settings-changed",
+      "task-hold-released",
+    ].map((event) => listen(event, schedule));
 
     return () => {
       cancelled = true;
