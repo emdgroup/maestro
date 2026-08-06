@@ -853,7 +853,14 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onOpenChange={setPlanOpen}
         // Explicitly the coder: `execute` routes a standing start through the planner when the
         // project has one, and approving a plan is the one case that must not.
-        onApprove={() => void handleExecute(task, { role: "Coder" })}
+        // Handed the planner's session, which `execute` reuses only if the coder runs the same
+        // agent — what the plan file cannot carry is why the plan is what it is.
+        onApprove={() =>
+          void handleExecute(task, {
+            role: "Coder",
+            handoffFrom: activeSession?.session_key ?? null,
+          })
+        }
         onReplan={() => void handleExecute(task, { role: "Planner" })}
       />
       <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>

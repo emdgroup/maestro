@@ -650,7 +650,26 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      role: "Coder",
+      handoffFrom: null,
+    });
+  });
+
+  /// D31's handoff: the planner's session is offered to the coder, which reuses it only if both
+  /// run the same agent. What it carries is the reasoning the plan itself does not.
+  it("offers the planner's session to the coder", async () => {
+    activeSession.current = { session_key: 12 };
+    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+    renderCard(atTheGate);
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      role: "Coder",
+      handoffFrom: 12,
+    });
   });
 
   it("planning again runs the planner", async () => {
