@@ -33,6 +33,7 @@ export const taskQueryKeys = {
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
   relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
   instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
+  comments: (taskId: number) => [...taskQueryKeys.base, "comments", taskId] as const,
   attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
   commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
   proxyImage: (projectId: number, filePath: string) =>
@@ -540,10 +541,59 @@ export function useSendTaskToReviewMutation() {
 }
 
 /**
- * Mutation hook for recording that an agent has started working on a task.
+ * The task's outcome thread, oldest entry first.
+ *
+ * Refetches on `task-comments-changed`, which the backend emits when a phase records its closing
+ * message — otherwise a thread left open while an agent finishes would stay blank.
+ */
+export function useTaskCommentsQuery(taskId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (taskId === undefined) return;
+    const unlisten = listen<number>("task-comments-changed", (event) => {
+      if (event.payload === taskId) {
+        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
+      }
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [taskId, queryClient]);
+
+  return useQuery({
+    queryKey: taskQueryKeys.comments(taskId ?? -1),
+    queryFn: () => api.listTaskComments(taskId!),
+    enabled: taskId !== undefined,
+  });
+}
+
+/**
+ * Mutation hook for adding a note of the user's own to a task's thread.
+ *
+ * Only notes are writable from the UI — the typed kinds are the pipeline's record of what an agent
+ * concluded, and a hand-written one would make a gate's evidence forgeable.
+ */
+export function useAddTaskNoteMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, body }: { taskId: number; body: string }) =>
+      api.addTaskNote(taskId, body),
+    onSuccess: (_data, { taskId }) => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
+    },
+    onError: createErrorToastHandler("Failed to add the note"),
+  });
+}
+
+/**
+ * Mutation hook for claiming a task before its session is spawned.
  *
  * Not `updateTask({ status: "InProgress" })` — that is a manual move, which parks the task with
  * no phase and the ball on nobody, so the card looks idle for the whole run.
+ *
+ * Resolves to null when the task cannot be claimed, which the caller must treat as a refusal to
+ * start rather than an error.
  */
 export function useMarkTaskExecutionStartedMutation() {
   const queryClient = useQueryClient();
@@ -553,6 +603,40 @@ export function useMarkTaskExecutionStartedMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to mark task as started"),
+  });
+}
+
+/**
+ * Mutation hook for moving a claimed task to In Progress once its session is live.
+ *
+ * Resolves to null when the task is no longer the one that was claimed.
+ */
+export function useMarkTaskSessionReadyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.markTaskSessionReady(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to mark the session as ready"),
+  });
+}
+
+/**
+ * Mutation hook for handing back a claim whose spawn never produced a session.
+ *
+ * `failed` decides what the user sees: true leaves the card red so a spawn error is visible and
+ * retryable, false simply parks the task again because cancelling is not a failure.
+ */
+export function useReleaseTaskExecutionClaimMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, failed }: { taskId: number; failed: boolean }) =>
+      api.releaseTaskExecutionClaim(taskId, failed),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to release the execution claim"),
   });
 }
 

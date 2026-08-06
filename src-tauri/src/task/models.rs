@@ -16,7 +16,7 @@ pub const TASK_SELECT: &str =
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
-     execution_start_sha, phase, phase_status, ball FROM tasks";
+     execution_start_sha, phase, phase_status, ball, completion FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -68,6 +68,10 @@ pub struct Task {
     #[specta(optional)]
     pub phase_status: Option<PhaseStatus>,
     pub ball: TaskBall,
+    /// How a Done task got there. `None` on every task that is not Done, and on Done tasks in a
+    /// non-git project, where none of the variants mean anything.
+    #[specta(optional)]
+    pub completion: Option<TaskCompletion>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -87,6 +91,31 @@ pub struct TaskInstruction {
     pub task_id: i32,
     pub content: String,
     pub source: String,
+    pub created_at: String,
+}
+
+/// One entry in a task's outcome thread.
+///
+/// `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+/// string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
+/// arriving from an older or newer build should render as itself, not fail to deserialise the
+/// whole thread.
+///
+/// `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct TaskComment {
+    pub id: i32,
+    pub task_id: i32,
+    pub kind: String,
+    pub author: String,
+    #[specta(optional)]
+    pub body: Option<String>,
+    #[specta(optional)]
+    pub external_ref: Option<String>,
+    /// The phase that produced it, so a thread can be read back against the pipeline.
+    #[specta(optional)]
+    pub phase: Option<String>,
     pub created_at: String,
 }
 
@@ -178,6 +207,7 @@ impl Task {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(TaskBall::None),
+            completion: row.get::<_, Option<String>>(28)?.and_then(|s| s.parse().ok()),
         })
     }
 }
@@ -207,19 +237,25 @@ pub enum TaskStatus {
 
 /// What the pipeline is doing to a task right now, independent of which column it sits in.
 ///
-/// `Refining`, `PlanReview` and `SelfReview` are defined but inert: no transition produces them
-/// until the refiner, planner and reviewer roles land. They exist now so adding those roles does
-/// not need a second migration.
+/// `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
+/// no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
+/// now so adding those roles does not need a second migration.
+///
+/// A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
+/// lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskPhase {
+    Spawning,
     Refining,
+    Drafting,
     PlanReview,
     Implementing,
     Rework,
     SelfReview,
     Approval,
+    AwaitingMerge,
 }
 
 /// How the current phase is going.
@@ -242,13 +278,35 @@ pub enum PhaseStatus {
 ///
 /// A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
 /// what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+///
+/// `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
+/// reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
+/// cannot act on, which is the one thing that filter has to get right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskBall {
     Agent,
     User,
+    External,
     None,
+}
+
+/// How a task reached `Done`, and therefore what is left over.
+///
+/// Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
+/// worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
+///
+/// `LocalOnly` is the one that carries unfinished business: the changes were committed and
+/// approved but never merged, and the worktree is still alive holding them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskCompletion {
+    Merged,
+    MergedViaPR,
+    LocalOnly,
+    NoChanges,
 }
 
 // Unlike TaskStatus and TaskPriority above, these three reject unknown input rather than falling
@@ -260,12 +318,15 @@ impl FromStr for TaskPhase {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "Spawning" => Ok(TaskPhase::Spawning),
             "Refining" => Ok(TaskPhase::Refining),
+            "Drafting" => Ok(TaskPhase::Drafting),
             "PlanReview" => Ok(TaskPhase::PlanReview),
             "Implementing" => Ok(TaskPhase::Implementing),
             "Rework" => Ok(TaskPhase::Rework),
             "SelfReview" => Ok(TaskPhase::SelfReview),
             "Approval" => Ok(TaskPhase::Approval),
+            "AwaitingMerge" => Ok(TaskPhase::AwaitingMerge),
             other => Err(format!("Unknown task phase: {}", other)),
         }
     }
@@ -292,8 +353,23 @@ impl FromStr for TaskBall {
         match s {
             "Agent" => Ok(TaskBall::Agent),
             "User" => Ok(TaskBall::User),
+            "External" => Ok(TaskBall::External),
             "None" => Ok(TaskBall::None),
             other => Err(format!("Unknown task ball: {}", other)),
+        }
+    }
+}
+
+impl FromStr for TaskCompletion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Merged" => Ok(TaskCompletion::Merged),
+            "MergedViaPR" => Ok(TaskCompletion::MergedViaPR),
+            "LocalOnly" => Ok(TaskCompletion::LocalOnly),
+            "NoChanges" => Ok(TaskCompletion::NoChanges),
+            other => Err(format!("Unknown task completion: {}", other)),
         }
     }
 }
@@ -301,12 +377,15 @@ impl FromStr for TaskBall {
 impl TaskPhase {
     pub fn as_str(self) -> &'static str {
         match self {
+            TaskPhase::Spawning => "Spawning",
             TaskPhase::Refining => "Refining",
+            TaskPhase::Drafting => "Drafting",
             TaskPhase::PlanReview => "PlanReview",
             TaskPhase::Implementing => "Implementing",
             TaskPhase::Rework => "Rework",
             TaskPhase::SelfReview => "SelfReview",
             TaskPhase::Approval => "Approval",
+            TaskPhase::AwaitingMerge => "AwaitingMerge",
         }
     }
 }
@@ -327,7 +406,19 @@ impl TaskBall {
         match self {
             TaskBall::Agent => "Agent",
             TaskBall::User => "User",
+            TaskBall::External => "External",
             TaskBall::None => "None",
+        }
+    }
+}
+
+impl TaskCompletion {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskCompletion::Merged => "Merged",
+            TaskCompletion::MergedViaPR => "MergedViaPR",
+            TaskCompletion::LocalOnly => "LocalOnly",
+            TaskCompletion::NoChanges => "NoChanges",
         }
     }
 }

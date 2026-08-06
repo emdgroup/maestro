@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 
-pub const SCHEMA_V25_FULL: &str = r#"
+pub const SCHEMA_V26_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     phase TEXT,
     phase_status TEXT,
     ball TEXT NOT NULL DEFAULT 'None',
+    -- How a Done task got there: Merged / MergedViaPR / LocalOnly / NoChanges. NULL on anything
+    -- that is not Done, and on Done tasks in a non-git project where none of those mean anything.
+    completion TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -95,6 +98,26 @@ CREATE TABLE IF NOT EXISTS task_instructions (
     created_at TEXT NOT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+
+-- The task's outcome thread: the closing message of each phase, artifacts, and user notes.
+-- Append-only and client-side, so it survives archiving and the death of the session that
+-- produced it. `kind` is what the gates point at — a plan gate gates on the latest 'plan' entry.
+--
+-- Content is inline-or-reference by design: `body` holds the text, `external_ref` a pointer to
+-- bytes stored elsewhere. Exactly one is set. Artifacts are small enough to inline today, and the
+-- column is what keeps moving them out later from being a migration of stored data.
+CREATE TABLE IF NOT EXISTS task_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    author TEXT NOT NULL,
+    body TEXT,
+    external_ref TEXT,
+    phase TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
 
 -- Task attachments table: stores file attachment metadata for tasks
 CREATE TABLE IF NOT EXISTS task_attachments (
@@ -270,7 +293,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V25_FULL)?;
+        conn.execute_batch(SCHEMA_V26_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -291,7 +314,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V25_FULL)?;
+        conn.execute_batch(SCHEMA_V26_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -323,6 +346,48 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 25 {
         migrate_to_v25(conn)?;
     }
+    if from < 26 {
+        migrate_to_v26(conn)?;
+    }
+    Ok(())
+}
+
+/// Add the Done completion qualifier and the task outcome thread.
+///
+/// Existing Done tasks are deliberately left with `completion = NULL` rather than guessed at. The
+/// board cannot tell a merged task from an approved-and-abandoned one after the fact, and a wrong
+/// qualifier is worse than an absent one: `LocalOnly` is the variant that tells a user their work
+/// is still sitting in a worktree, so inventing it would send them looking for something that is
+/// not there, and omitting it would hide work that is.
+fn migrate_to_v26(conn: &Connection) -> SqlResult<()> {
+    let completion_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'completion'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if !completion_exists {
+        conn.execute_batch("ALTER TABLE tasks ADD COLUMN completion TEXT;")?;
+    }
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            author TEXT NOT NULL,
+            body TEXT,
+            external_ref TEXT,
+            phase TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);",
+    )?;
+
     Ok(())
 }
 
@@ -453,7 +518,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 25);
+        assert_eq!(version, 26);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -638,6 +703,54 @@ mod tests {
         assert_eq!(row(3), ("Planning".into(), None, None, "None".into()));
         // Rewritten to Planning by the repeated cleanup, then backfilled as a parked task.
         assert_eq!(row(4), ("Planning".into(), None, None, "None".into()));
+    }
+
+    /// v26 adds the completion qualifier and the outcome thread. Existing Done tasks keep a NULL
+    /// completion rather than being guessed at, and the thread table has to survive the upgrade
+    /// for a database that never had it.
+    #[test]
+    fn test_migration_to_v26_adds_completion_and_the_comment_thread() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'finished long ago', 'Done', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch("DROP TABLE task_comments;").unwrap();
+
+        conn.execute("PRAGMA user_version = 25", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let completion: Option<String> = conn
+            .query_row("SELECT completion FROM tasks WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            completion, None,
+            "a pre-existing Done task must not be given a completion the board cannot know"
+        );
+
+        conn.execute(
+            "INSERT INTO task_comments (task_id, kind, author, body, created_at) \
+             VALUES (1, 'note', 'user', 'still here', '2026-01-02')",
+            [],
+        )
+        .expect("the outcome thread must exist after migrating");
+
+        // The thread is part of the task, so deleting the task takes it.
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        conn.execute("DELETE FROM tasks WHERE id = 1", []).unwrap();
+        let orphans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_comments", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphans, 0, "comments must cascade with their task");
     }
 
     #[test]

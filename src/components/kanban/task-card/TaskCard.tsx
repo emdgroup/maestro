@@ -67,12 +67,15 @@ function AgentAvatar({ agentId }: { agentId: string }) {
 }
 
 const PHASE_LABELS: Record<TaskPhase, string> = {
+  Spawning: "Starting",
   Refining: "Refining",
+  Drafting: "Planning",
   PlanReview: "Plan review",
   Implementing: "Implementing",
   Rework: "Rework",
   SelfReview: "Self review",
   Approval: "Approval",
+  AwaitingMerge: "Awaiting merge",
 };
 
 /// Three intensities, keyed on `phase_status`. Only `Blocked` animates: it is the one case where
@@ -87,8 +90,28 @@ const PHASE_STATUS_RING: Partial<Record<PhaseStatus, string>> = {
   Failed: "border-destructive ring-1 ring-destructive/40",
 };
 
+/// Only shown when it says something the column does not. A merged task is finished and Done
+/// already conveys that; `LocalOnly` means the changes are still sitting in a worktree, and
+/// `NoChanges` means the agent finished empty-handed — both are things the user has to be told,
+/// because neither is what "Done" implies on its own.
+const COMPLETION_LABELS: Partial<Record<NonNullable<Task["completion"]>, string>> = {
+  LocalOnly: "not merged",
+  NoChanges: "no changes",
+};
+
+function CompletionLine({ task }: { task: Task }) {
+  const label = task.completion ? COMPLETION_LABELS[task.completion] : undefined;
+  if (!label) return null;
+
+  return (
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span className="font-bold shrink-0 uppercase tracking-wide text-warning">{label}</span>
+    </div>
+  );
+}
+
 function PhaseLine({ task }: { task: Task }) {
-  if (!task.phase) return null;
+  if (!task.phase) return <CompletionLine task={task} />;
   const failed = task.phase_status === "Failed";
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
@@ -222,6 +245,11 @@ function FooterCTAs({
   // restarted by first dragging it to Queue — a step that means nothing to the user and exists
   // only because this branch used to be Queue-only.
   if (task.status === "Planning" || task.status === "Queue") {
+    // A claimed task keeps its column, so `Spawning` is the only thing distinguishing a task
+    // waiting to start from one already starting. Offering Execute again would be a second click
+    // the backend refuses — visible to the user only as a button that does nothing.
+    const starting = task.phase === "Spawning" && task.phase_status !== "Failed";
+
     return (
       <div className="flex gap-1 mt-1.5">
         <Button
@@ -229,12 +257,18 @@ function FooterCTAs({
             e.stopPropagation();
             onExecute();
           }}
-          disabled={isExecuting}
+          disabled={isExecuting || starting}
           variant="ghost"
           className={cn(base, "h-auto")}
+          // A failed spawn keeps the claim so the card can show it, and this is the retry.
+          title={task.phase_status === "Failed" ? "Try starting this task again" : undefined}
         >
           <Play className="w-2.5 h-2.5 fill-current" />
-          {isExecuting ? "Starting…" : "Execute"}
+          {isExecuting || starting
+            ? "Starting…"
+            : task.phase_status === "Failed"
+              ? "Retry"
+              : "Execute"}
         </Button>
       </div>
     );

@@ -147,19 +147,28 @@ pub async fn send_task_to_review(
 ) -> Result<Option<crate::models::Task>, String> {
     let is_git_repo = crate::acp::reader_task::is_task_project_git_repo(&app_state, task_id).await;
 
-    if !force
-        && is_git_repo
-        && crate::acp::reader_task::task_has_changes(&app_state, task_id).await == Some(false)
-    {
+    let has_changes = if is_git_repo {
+        crate::acp::reader_task::task_has_changes(&app_state, task_id).await
+    } else {
+        None
+    };
+
+    if !force && has_changes == Some(false) {
         return Ok(None);
     }
+
+    // Forcing is the user setting the empty-diff evidence aside and asking for a review anyway, so
+    // the transition is told there is none — `None` routes to the review gate, which is the point
+    // of the button. Passing `Some(false)` through would send the task to Done instead, which is
+    // the one place the user has just declined to go.
+    let has_changes = if force { None } else { has_changes };
 
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply(
             &conn,
             task_id,
-            crate::task::transition::TaskTransition::TurnCompleted { is_git_repo },
+            crate::task::transition::TaskTransition::TurnCompleted { is_git_repo, has_changes },
         )?
     };
 
@@ -167,17 +176,16 @@ pub async fn send_task_to_review(
     Ok(Some(task))
 }
 
-/// Records that an agent has begun working on a task.
+/// Claims a task for execution, before anything is spawned.
 ///
-/// The execute flow used to reach In Progress by writing `status` through `update_task`, which
-/// applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
-/// phase status, ball on nobody, so a card sat through its entire run looking idle and never
-/// reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+/// The claim is the start of the spawn, not the end of it. The task keeps its column and takes the
+/// `Spawning` phase, which does three things at once: the board shows that the task is being
+/// started, the queue drain stops re-picking it, and a spawn that fails leaves it where the user
+/// launched it rather than stranded in In Progress.
 ///
-/// Returns `None` when the task is no longer in a column execution can start from — the user
-/// dragged it back to Planning, or cancelled it, while the spawn was in flight. Claiming it
-/// anyway would silently overwrite that action, so the caller is expected to tear down the
-/// session it just created.
+/// Returns `None` when the task is not in a column execution can start from, or when it is already
+/// being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
+/// from building two sessions for one task.
 #[tauri::command]
 #[specta::specta]
 pub fn mark_task_execution_started(
@@ -188,12 +196,65 @@ pub fn mark_task_execution_started(
 
     let task = {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply_if_status(
+        crate::task::transition::claim_for_execution(
             &conn,
             task_id,
-            Some(&[TaskStatus::Planning, TaskStatus::Queue]),
-            crate::task::transition::TaskTransition::ExecutionStarted,
+            &[TaskStatus::Planning, TaskStatus::Queue],
         )?
+    };
+
+    if task.is_some() {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+    Ok(task)
+}
+
+/// Records that the session is up and the agent is working, moving the task to In Progress.
+///
+/// Guarded on the task still being the one that was claimed: a user who dragged the card away
+/// mid-spawn, or stopped it, must not have that undone by a session that finished starting
+/// afterwards. `None` tells the caller its session no longer belongs to anything and should be
+/// torn down.
+#[tauri::command]
+#[specta::specta]
+pub fn mark_task_session_ready(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<Option<crate::models::Task>, String> {
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::transition::apply_if_spawning(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::SessionReady,
+        )?
+    };
+
+    if task.is_some() {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+    Ok(task)
+}
+
+/// Releases a claim whose spawn never completed.
+///
+/// `failed` separates the two ways that happens. A spawn that errored leaves the card red at
+/// `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
+/// simply parks the task again, because nothing went wrong.
+#[tauri::command]
+#[specta::specta]
+pub fn release_task_execution_claim(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    failed: bool,
+) -> Result<Option<crate::models::Task>, String> {
+    use crate::task::transition::TaskTransition;
+
+    let event = if failed { TaskTransition::PhaseFailed } else { TaskTransition::SpawnAborted };
+
+    let task = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::transition::apply_if_spawning(&conn, task_id, event)?
     };
 
     if task.is_some() {

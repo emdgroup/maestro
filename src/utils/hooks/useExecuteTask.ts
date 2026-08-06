@@ -6,7 +6,11 @@ import { slugifyName } from "@/lib/generateSessionName";
 import type { Task, JsonValue, ConnectionKey } from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
-import { useMarkTaskExecutionStartedMutation } from "@/services/task.service";
+import {
+  useMarkTaskExecutionStartedMutation,
+  useMarkTaskSessionReadyMutation,
+  useReleaseTaskExecutionClaimMutation,
+} from "@/services/task.service";
 import { useDefaultAgent } from "@/store/configStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
@@ -36,6 +40,8 @@ export function useExecuteTask(
   const { resolveWorktree } = useResolveWorktree();
   const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
   const markExecutionStarted = useMarkTaskExecutionStartedMutation();
+  const markSessionReady = useMarkTaskSessionReadyMutation();
+  const releaseClaim = useReleaseTaskExecutionClaimMutation();
   const [isExecuting, setIsExecuting] = useState(false);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
@@ -49,8 +55,23 @@ export function useExecuteTask(
       return;
     }
 
+    // Claim before anything is built. The claim marks the task `Spawning`, which is what stops a
+    // second click or the auto-mode drain from starting the same task twice, and what makes the
+    // in-flight state visible instead of leaving the card looking untouched for the whole spawn.
+    //
+    // Null means the task is not startable — already being spawned, or moved since the button was
+    // rendered. Nothing has been created yet, so there is nothing to tear down.
+    const claimed = await markExecutionStarted.mutateAsync(task.id);
+    if (!claimed) {
+      toast.info(`"${task.title}" is no longer waiting to start`);
+      return;
+    }
+
     setIsExecuting(true);
     let logId: number | null = null;
+    // Set once the task owns a live session; until then any exit has to hand the claim back.
+    let claimHandedOver = false;
+    let spawnFailed = false;
 
     try {
       // Resolve cwd and branch
@@ -229,14 +250,11 @@ export function useExecuteTask(
       // Clear review from DB after successful injection to prevent re-injection on next cold start
       api.clearTaskReview(task.id).catch(() => {});
 
-      // Not a status write: an agent starting is its own event, and only that event puts the card
-      // into Implementing/Running with the ball on the agent.
-      //
-      // Null means the user dragged the task out of Planning/Queue while the spawn was in flight.
-      // Their action wins — claiming it anyway would silently undo the drag — so the session we
-      // just built gets torn down instead.
-      const claimed = await markExecutionStarted.mutateAsync(task.id);
-      if (!claimed) {
+      // The session is up and prompted, so the task moves to In Progress. Null means it stopped
+      // being the task we claimed — the user dragged or stopped it while the spawn was in flight.
+      // Their action wins, so the session we just built gets torn down instead.
+      const started = await markSessionReady.mutateAsync(task.id);
+      if (!started) {
         api.cancelAcpSession(logId).catch((err) => {
           console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
         });
@@ -244,6 +262,7 @@ export function useExecuteTask(
         return;
       }
 
+      claimHandedOver = true;
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -255,6 +274,8 @@ export function useExecuteTask(
         return;
       }
 
+      spawnFailed = true;
+
       if (logId !== null) {
         try {
           await api.cancelAcpSession(logId);
@@ -264,6 +285,17 @@ export function useExecuteTask(
       }
       toast.error(`Execution failed: ${errorMsg}`);
     } finally {
+      // Every exit that did not hand the task a live session gives the claim back — the dirty
+      // dialog being cancelled, an auth prompt, a spawn error, or the task having moved. Leaving
+      // it claimed would park the card at `Spawning` forever with nothing left to move it on, and
+      // the queue drain skips exactly that state.
+      //
+      // Only a failure leaves the card red: cancelling at a prompt is not something to report.
+      if (!claimHandedOver) {
+        releaseClaim
+          .mutateAsync({ taskId: task.id, failed: spawnFailed })
+          .catch((err) => console.error("Failed to release the execution claim:", err));
+      }
       setIsExecuting(false);
     }
   };

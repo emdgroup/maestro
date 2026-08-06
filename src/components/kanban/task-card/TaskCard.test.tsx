@@ -289,6 +289,58 @@ describe("TaskCard execute affordance", () => {
   });
 });
 
+/// A claimed task keeps its column, so `Spawning` is the only thing that distinguishes a task
+/// waiting to start from one already starting. The card has to say which.
+describe("TaskCard spawning state", () => {
+  it("shows a starting task as busy and refuses a second Execute", () => {
+    renderCard({
+      status: "Queue",
+      phase: "Spawning",
+      phase_status: "Running",
+      ball: "Agent",
+    });
+
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /starting/i })).toBeDisabled();
+  });
+
+  /// A failed spawn keeps its claim so the card can show it, which would be a dead end without
+  /// a way to try again.
+  it("offers a retry on a failed spawn", () => {
+    renderCard({
+      status: "Queue",
+      phase: "Spawning",
+      phase_status: "Failed",
+      ball: "User",
+    });
+
+    const retry = screen.getByRole("button", { name: /retry/i });
+    expect(retry).toBeInTheDocument();
+    expect(retry).not.toBeDisabled();
+  });
+});
+
+/// Done says the task is finished; it does not say the changes are still sitting in a worktree.
+describe("TaskCard completion", () => {
+  it("flags a task whose changes were never merged", () => {
+    renderCard({ status: "Done", completion: "LocalOnly" });
+    expect(screen.getByText("not merged")).toBeInTheDocument();
+  });
+
+  it("flags a task that finished empty-handed", () => {
+    renderCard({ status: "Done", completion: "NoChanges" });
+    expect(screen.getByText("no changes")).toBeInTheDocument();
+  });
+
+  /// Merged is what Done already means, so saying it again is noise.
+  it("says nothing extra about a merged task", () => {
+    const { container } = render(
+      <TaskCard task={makeTask({ status: "Done", completion: "Merged" })} index={0} />,
+    );
+    expect(container.textContent).not.toMatch(/not merged|no changes/i);
+  });
+});
+
 /// A task keeps its session into Review — that is what Join is for. The button existed but the
 /// card looked the session up only while the task was In Progress, so it could never render, and
 /// nothing asserted otherwise. These pin both halves.

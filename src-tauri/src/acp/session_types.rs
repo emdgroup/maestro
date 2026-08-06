@@ -221,6 +221,8 @@ pub struct AcpProcess {
     /// Set when the agent emits the completion marker. Read and reset on each turn ending, so it
     /// only applies to the turn it appeared in.
     pub declared_complete: Arc<AtomicBool>,
+    /// The agent's last run of prose before the turn ends, drained into the task's outcome thread.
+    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -287,6 +289,7 @@ pub struct ReaderTaskContext {
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
     pub declared_complete: Arc<AtomicBool>,
+    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     pub session_name: Option<String>,
     pub agent_id: String,
     pub project_id: Option<i32>,
@@ -316,6 +319,8 @@ impl AcpProcess {
             super::completion::CompletionMarkerFilter::new(),
         ));
         let declared_complete = Arc::new(AtomicBool::new(false));
+        let closing_message =
+            Arc::new(std::sync::Mutex::new(super::completion::ClosingMessage::default()));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,
@@ -330,6 +335,7 @@ impl AcpProcess {
             canvas_extractor: Arc::clone(&canvas_extractor),
             completion_filter: Arc::clone(&completion_filter),
             declared_complete: Arc::clone(&declared_complete),
+            closing_message: Arc::clone(&closing_message),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
             project_id: params.project_id,
@@ -359,6 +365,7 @@ impl AcpProcess {
             canvas_extractor,
             completion_filter,
             declared_complete,
+            closing_message,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
             prompt_capabilities: None,

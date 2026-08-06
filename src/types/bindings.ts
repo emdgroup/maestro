@@ -251,6 +251,36 @@ async addTaskInstruction(taskId: number, content: string, source: string) : Prom
 }
 },
 /**
+ * Read a task's thread, oldest first.
+ * 
+ * Ordered by `id` rather than `created_at`: two entries written in the same phase transition can
+ * share a timestamp to the second, and a thread that reorders itself on reload is worse than one
+ * that is merely approximate about when things happened.
+ */
+async listTaskComments(taskId: number) : Promise<Result<TaskComment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_task_comments", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Add a note of the user's own to a task's thread.
+ * 
+ * Only `note` is writable from the UI. The typed kinds are produced by the pipeline and stand as
+ * the record of what an agent concluded — letting a user post one by hand would make "the plan
+ * the gate approved" something anybody could forge after the fact.
+ */
+async addTaskNote(taskId: number, body: string) : Promise<Result<TaskComment, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_task_note", { taskId, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * List git branches and the current branch for a project
  * 
  * Returns a tuple of (branches, current_branch).
@@ -1835,21 +1865,51 @@ async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | n
 }
 },
 /**
- * Records that an agent has begun working on a task.
+ * Claims a task for execution, before anything is spawned.
  * 
- * The execute flow used to reach In Progress by writing `status` through `update_task`, which
- * applies `ManualMove` — the event for a user dragging a card. That parks the task: no phase, no
- * phase status, ball on nobody, so a card sat through its entire run looking idle and never
- * reached the `Blocked` or `Failed` states the rest of the pipeline depends on.
+ * The claim is the start of the spawn, not the end of it. The task keeps its column and takes the
+ * `Spawning` phase, which does three things at once: the board shows that the task is being
+ * started, the queue drain stops re-picking it, and a spawn that fails leaves it where the user
+ * launched it rather than stranded in In Progress.
  * 
- * Returns `None` when the task is no longer in a column execution can start from — the user
- * dragged it back to Planning, or cancelled it, while the spawn was in flight. Claiming it
- * anyway would silently overwrite that action, so the caller is expected to tear down the
- * session it just created.
+ * Returns `None` when the task is not in a column execution can start from, or when it is already
+ * being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
+ * from building two sessions for one task.
  */
 async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Records that the session is up and the agent is working, moving the task to In Progress.
+ * 
+ * Guarded on the task still being the one that was claimed: a user who dragged the card away
+ * mid-spawn, or stopped it, must not have that undone by a session that finished starting
+ * afterwards. `None` tells the caller its session no longer belongs to anything and should be
+ * torn down.
+ */
+async markTaskSessionReady(taskId: number) : Promise<Result<Task | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Releases a claim whose spawn never completed.
+ * 
+ * `failed` separates the two ways that happens. A spawn that errored leaves the card red at
+ * `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
+ * simply parks the task again, because nothing went wrong.
+ */
+async releaseTaskExecutionClaim(taskId: number, failed: boolean) : Promise<Result<Task | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("release_task_execution_claim", { taskId, failed }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2196,25 +2256,62 @@ export type Task = { id: number; project_id: number; title: string; description?
  * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
  * `task::transition`, never by ad-hoc SQL.
  */
-phase?: TaskPhase | null; phase_status?: PhaseStatus | null; ball: TaskBall }
+phase?: TaskPhase | null; phase_status?: PhaseStatus | null; ball: TaskBall; 
+/**
+ * How a Done task got there. `None` on every task that is not Done, and on Done tasks in a
+ * non-git project, where none of the variants mean anything.
+ */
+completion?: TaskCompletion | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
  * 
  * A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
  * what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+ * 
+ * `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
+ * reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
+ * cannot act on, which is the one thing that filter has to get right.
  */
-export type TaskBall = "Agent" | "User" | "None"
+export type TaskBall = "Agent" | "User" | "External" | "None"
+/**
+ * One entry in a task's outcome thread.
+ * 
+ * `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+ * string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
+ * arriving from an older or newer build should render as itself, not fail to deserialise the
+ * whole thread.
+ * 
+ * `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
+ */
+export type TaskComment = { id: number; task_id: number; kind: string; author: string; body?: string | null; external_ref?: string | null; 
+/**
+ * The phase that produced it, so a thread can be read back against the pipeline.
+ */
+phase?: string | null; created_at: string }
+/**
+ * How a task reached `Done`, and therefore what is left over.
+ * 
+ * Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
+ * worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
+ * 
+ * `LocalOnly` is the one that carries unfinished business: the changes were committed and
+ * approved but never merged, and the worktree is still alive holding them.
+ */
+export type TaskCompletion = "Merged" | "MergedViaPR" | "LocalOnly" | "NoChanges"
 export type TaskConfigRequest = { model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; permission_mode_override?: string | null }
 export type TaskInstruction = { id: number; task_id: number; content: string; source: string; created_at: string }
 /**
  * What the pipeline is doing to a task right now, independent of which column it sits in.
  * 
- * `Refining`, `PlanReview` and `SelfReview` are defined but inert: no transition produces them
- * until the refiner, planner and reviewer roles land. They exist now so adding those roles does
- * not need a second migration.
+ * `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
+ * no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
+ * now so adding those roles does not need a second migration.
+ * 
+ * A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
+ * lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
  */
-export type TaskPhase = "Refining" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval"
+export type TaskPhase = "Spawning" | "Refining" | "Drafting" | "PlanReview" | "Implementing" | "Rework" | "SelfReview" | "Approval" | "AwaitingMerge"
 export type TaskPriority = "Urgent" | "High" | "Medium" | "Low" | "None"
 export type TaskRelationship = { id: number; from_task_id: number; to_task_id: number; relationship_type: string; created_at: string }
 /**

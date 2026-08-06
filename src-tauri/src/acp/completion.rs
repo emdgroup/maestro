@@ -125,6 +125,75 @@ fn safe_forward_len(text: &str) -> usize {
     text.len()
 }
 
+/// The agent's closing message for the current turn.
+///
+/// Not a transcript: the accumulator is cleared whenever the agent does something other than
+/// speak, so what survives is the last run of prose before the turn ended — which is the summary
+/// of what happened, not the narration of it happening. Everything earlier is still in the session
+/// while the session lives, and the point of the outcome thread is what is left afterwards.
+#[derive(Default)]
+pub struct ClosingMessage {
+    text: String,
+}
+
+impl ClosingMessage {
+    /// Beyond this the entry stops being a summary and starts being a transcript. Agents that end
+    /// a turn with a wall of text get the head of it, where the conclusion is.
+    const MAX_BYTES: usize = 16 * 1024;
+
+    pub fn push(&mut self, chunk: &str) {
+        if self.text.len() >= Self::MAX_BYTES {
+            return;
+        }
+        self.text.push_str(chunk);
+        if self.text.len() > Self::MAX_BYTES {
+            // Truncate on a character boundary — `String::truncate` panics otherwise, and agent
+            // output is full of multi-byte characters.
+            let mut cut = Self::MAX_BYTES;
+            while cut > 0 && !self.text.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            self.text.truncate(cut);
+            self.text.push_str("\n\n_(truncated)_");
+        }
+    }
+
+    /// The agent did something other than talk, so anything said before it was working, not
+    /// concluding.
+    pub fn reset(&mut self) {
+        self.text.clear();
+    }
+
+    pub fn take(&mut self) -> String {
+        std::mem::take(&mut self.text)
+    }
+}
+
+/// Accumulate an agent's prose and discard it again when the agent acts.
+///
+/// Called for every session update, so the decision about what counts as "acting" lives in one
+/// place rather than being spread across the reader.
+pub(crate) fn track_closing_message(
+    payload: &serde_json::Value,
+    text: Option<&str>,
+    closing_message: &std::sync::Arc<std::sync::Mutex<ClosingMessage>>,
+) {
+    let Ok(mut closing) = closing_message.lock() else {
+        return;
+    };
+
+    match payload.get("sessionUpdate").and_then(|v| v.as_str()) {
+        Some("agent_message_chunk") => {
+            if let Some(text) = text {
+                closing.push(text);
+            }
+        }
+        // Thoughts are reasoning, not the answer, and they are not shown to the user either.
+        Some("agent_thought_chunk") | None => {}
+        _ => closing.reset(),
+    }
+}
+
 /// Strip the completion marker from an `agent_message_chunk` payload.
 ///
 /// Returns the modified payload — `None` when the chunk was nothing but a marker and there is

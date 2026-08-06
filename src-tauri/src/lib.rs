@@ -50,6 +50,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::delete_task_relationship,
             crate::ipc::list_task_instructions,
             crate::ipc::add_task_instruction,
+            crate::ipc::list_task_comments,
+            crate::ipc::add_task_note,
             crate::ipc::list_project_branches,
             crate::ipc::get_linux_install_type,
             crate::ipc::get_settings,
@@ -198,6 +200,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::interrupt_task,
             crate::ipc::send_task_to_review,
             crate::ipc::mark_task_execution_started,
+            crate::ipc::mark_task_session_ready,
+            crate::ipc::release_task_execution_claim,
             // Task detail screen (Phase 62)
             crate::ipc::cancel_task,
             // ACP authentication

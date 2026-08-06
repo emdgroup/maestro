@@ -39,6 +39,7 @@ import {
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
 import { BranchSection } from "@/components/kanban/shared/BranchSection";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
+import { OutcomeThread } from "./OutcomeThread";
 
 // Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
 // picker showing nothing at all for it reads as a bug.
@@ -374,6 +375,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
                 {agentError && <p className="text-xs text-destructive">{agentError}</p>}
               </div>
+
+              {/* The only record a Done or archived task has: once the session closes, its
+                  transcript is gone and this is what remains. */}
+              <OutcomeThread taskId={task.id} />
             </div>
 
             {/* Footer */}

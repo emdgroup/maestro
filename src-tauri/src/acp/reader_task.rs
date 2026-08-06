@@ -57,6 +57,7 @@ pub(crate) fn spawn_reader_task(
         canvas_extractor,
         completion_filter,
         declared_complete,
+        closing_message,
         session_name,
         agent_id,
         project_id,
@@ -127,8 +128,14 @@ pub(crate) fn spawn_reader_task(
                     // Read and reset: a declaration applies only to the turn it appeared in.
                     let declared =
                         declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    // Drained here rather than in the spawned task, so the accumulator is empty
+                    // before the next turn starts writing into it.
+                    let closing = closing_message
+                        .lock()
+                        .map(|mut m| m.take())
+                        .unwrap_or_default();
                     tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared).await;
+                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
                     });
                 }
             }
@@ -147,6 +154,7 @@ pub(crate) fn spawn_reader_task(
                 &canvas_extractor,
                 &completion_filter,
                 &declared_complete,
+                &closing_message,
             ) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
@@ -238,15 +246,18 @@ async fn resolve_turn_end(
     task_id: i32,
     stop_reason: &str,
     declared_complete: bool,
+    closing_message: String,
 ) {
     use crate::acp::completion::{classify_turn, TurnOutcome};
     use crate::task::transition::{self, TaskTransition};
 
     let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
 
-    // Only worth the git call when it could change the answer: a declared completion is believed
-    // regardless, and a non-git project has no diff to consult.
-    let has_changes = if is_git_repo && !declared_complete && stop_reason == "end_turn" {
+    // A declared completion used to skip this call, on the grounds that the agent was believed
+    // either way. It no longer is: an agent that declares itself done having changed nothing goes
+    // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
+    // the answer is needed for.
+    let has_changes = if is_git_repo && stop_reason == "end_turn" {
         task_has_changes(app_state, task_id).await
     } else {
         None
@@ -255,7 +266,7 @@ async fn resolve_turn_end(
     let outcome = classify_turn(stop_reason, declared_complete, has_changes);
 
     let event = match outcome {
-        TurnOutcome::Complete => TaskTransition::TurnCompleted { is_git_repo },
+        TurnOutcome::Complete => TaskTransition::TurnCompleted { is_git_repo, has_changes },
         TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
         TurnOutcome::Failed => TaskTransition::PhaseFailed,
         TurnOutcome::Ignore => return,
@@ -265,9 +276,16 @@ async fn resolve_turn_end(
         let Ok(conn) = app_state.db.lock() else {
             return;
         };
+
+        // The phase the agent was in, read before the transition rewrites it — the outcome belongs
+        // to the phase that produced it, not the one the task lands in.
+        let phase: Option<String> = conn
+            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap_or(None);
+
         // Guarded on InProgress because this runs on a detached task: by the time it lands the
         // user may have stopped the session or moved the card, and acting then would undo them.
-        match transition::apply_if_status(
+        let changed = match transition::apply_if_status(
             &conn,
             task_id,
             Some(&[crate::models::TaskStatus::InProgress]),
@@ -278,11 +296,25 @@ async fn resolve_turn_end(
                 log::warn!("[acp] could not resolve turn end for task {task_id}: {e}");
                 false
             }
+        };
+
+        // Only when the transition applied. A turn resolved against a task the user already moved
+        // has no claim on its record either.
+        if changed {
+            crate::task::comments::record_outcome(
+                &conn,
+                task_id,
+                phase.as_deref(),
+                &closing_message,
+            );
         }
+
+        changed
     };
 
     if changed {
         app_state.app_handle.emit("tasks-changed", ()).ok();
+        app_state.app_handle.emit("task-comments-changed", task_id).ok();
     }
 }
 
@@ -509,6 +541,7 @@ fn handle_server_message(
     canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
     declared_complete: &Arc<std::sync::atomic::AtomicBool>,
+    closing_message: &Arc<std::sync::Mutex<crate::acp::completion::ClosingMessage>>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
@@ -548,6 +581,12 @@ fn handle_server_message(
             });
 
             if let Some(payload) = payload_opt {
+                // After stripping, so the marker never reaches the outcome thread either.
+                crate::acp::completion::track_closing_message(
+                    &payload,
+                    payload.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()),
+                    closing_message,
+                );
                 emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
             }
         }
@@ -901,6 +940,7 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.canvas_extractor),
                 Arc::clone(&s.completion_filter),
                 Arc::clone(&s.declared_complete),
+                Arc::clone(&s.closing_message),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
@@ -919,6 +959,7 @@ async fn handle_shared_server_message(
             canvas_extractor,
             completion_filter,
             declared_complete,
+            closing_message,
             session_name,
             agent_id,
             pid,
@@ -952,8 +993,14 @@ async fn handle_shared_server_message(
                     let stop_reason = turn_ended.stop_reason.clone();
                     let declared =
                         declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    // Drained here rather than in the spawned task, so the accumulator is empty
+                    // before the next turn starts writing into it.
+                    let closing = closing_message
+                        .lock()
+                        .map(|mut m| m.take())
+                        .unwrap_or_default();
                     tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared).await;
+                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
                     });
                 }
             }
@@ -1011,6 +1058,7 @@ async fn handle_shared_server_message(
                 &canvas_extractor,
                 &completion_filter,
                 &declared_complete,
+                &closing_message,
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;

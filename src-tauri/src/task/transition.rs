@@ -13,7 +13,9 @@
 use chrono::Utc;
 use rusqlite::Connection;
 
-use crate::models::{PhaseStatus, Task, TaskBall, TaskPhase, TaskStatus, TASK_SELECT};
+use crate::models::{
+    PhaseStatus, Task, TaskBall, TaskCompletion, TaskPhase, TaskStatus, TASK_SELECT,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TaskState {
@@ -21,16 +23,36 @@ pub struct TaskState {
     pub phase: Option<TaskPhase>,
     pub phase_status: Option<PhaseStatus>,
     pub ball: TaskBall,
+    pub completion: Option<TaskCompletion>,
 }
 
 impl TaskState {
     /// No pipeline activity: parked in a column with nothing running and nobody blocked.
+    ///
+    /// Clears `completion` as well, so a task dragged out of Done cannot keep claiming it merged.
     fn parked(status: TaskStatus) -> Self {
-        TaskState { status, phase: None, phase_status: None, ball: TaskBall::None }
+        TaskState {
+            status,
+            phase: None,
+            phase_status: None,
+            ball: TaskBall::None,
+            completion: None,
+        }
+    }
+
+    /// Parked at Done, recording how it got there.
+    fn done(completion: Option<TaskCompletion>) -> Self {
+        TaskState { completion, ..TaskState::parked(TaskStatus::Done) }
     }
 
     fn active(status: TaskStatus, phase: TaskPhase, phase_status: PhaseStatus, ball: TaskBall) -> Self {
-        TaskState { status, phase: Some(phase), phase_status: Some(phase_status), ball }
+        TaskState {
+            status,
+            phase: Some(phase),
+            phase_status: Some(phase_status),
+            ball,
+            completion: None,
+        }
     }
 }
 
@@ -39,18 +61,33 @@ impl TaskState {
 pub enum TaskTransition {
     /// The user dragged the card or picked a status directly.
     ManualMove(TaskStatus),
-    /// An agent session was spawned for the task.
+    /// The task has been claimed and a session is being spawned for it.
+    ///
+    /// This does *not* move the task to In Progress. The claim and the start are separate events
+    /// because spawning can fail, and a task that never reached an agent belongs in the queue it
+    /// was taken from, not in a column implying work happened.
     ExecutionStarted,
+    /// The session is up and the agent is working.
+    SessionReady,
+    /// The spawn was abandoned before the session came up — the user cancelled at a prompt.
+    ///
+    /// Distinct from `PhaseFailed`, which leaves a red card for a failure the user has to look at.
+    /// Cancelling is not a failure, so the task simply goes back to being parked where it was.
+    SpawnAborted,
     /// The agent stopped mid-phase and needs an answer to continue.
     AwaitingUserInput,
     /// That answer arrived, or the turn resumed some other way.
     Unblocked,
     /// The agent ended its turn.
     ///
-    /// This still fires on every `end_turn`, exactly as before — a turn ending is not the same
-    /// as the work being finished, and separating the two is deliberately left for later. This
-    /// event only gives the existing behaviour a name so there is one place to change it.
-    TurnCompleted { is_git_repo: bool },
+    /// Where that lands depends on which phase ended — a planner finishing means "plan ready",
+    /// not "work done" — and on whether anything actually changed.
+    ///
+    /// `has_changes` is deliberately three-valued. `Some(false)` is the only value that routes a
+    /// task to Done without review; `None` means the question could not be answered (no repo, no
+    /// worktree, a failed git call) and must fall through to review, because silently closing a
+    /// task on missing evidence is the one outcome with no way back.
+    TurnCompleted { is_git_repo: bool, has_changes: Option<bool> },
     /// The user stopped the running session.
     Stopped,
     /// Review feedback was recorded and the task goes back for another pass.
@@ -61,9 +98,9 @@ pub enum TaskTransition {
     Merged,
     /// The user approved the work but chose to commit it without merging, keeping the worktree.
     ///
-    /// Lands in the same place as `Merged` — approval is terminal on the board either way — but
-    /// stays a separate event because the repository is left in a different state, and the two
-    /// would otherwise be indistinguishable at the one place that decides what approval means.
+    /// Lands in the same column as `Merged`, but with a different completion qualifier: the
+    /// changes were never merged and the worktree is still holding them, which is the one Done
+    /// variant that carries unfinished business.
     ApprovedWithoutMerge,
     /// The user discarded the work but kept the task.
     Discarded,
@@ -87,9 +124,23 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
     match event {
         TaskTransition::ManualMove(status) => TaskState::parked(status),
 
-        TaskTransition::ExecutionStarted => {
+        // Keeps its column. The task is claimed but nothing is running yet, so moving it would
+        // announce work that has not started and, if the spawn fails, strand it somewhere it was
+        // never queued from. Execute is offered from Planning as well as Queue, and a failure
+        // belongs back where the user launched it.
+        TaskTransition::ExecutionStarted => TaskState {
+            phase: Some(Spawning),
+            phase_status: Some(Running),
+            ball: Ball::Agent,
+            completion: None,
+            ..current
+        },
+
+        TaskTransition::SessionReady => {
             TaskState::active(InProgress, Implementing, Running, Ball::Agent)
         }
+
+        TaskTransition::SpawnAborted => TaskState::parked(current.status),
 
         TaskTransition::AwaitingUserInput => TaskState {
             phase_status: Some(Blocked),
@@ -103,14 +154,26 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             ..current
         },
 
-        // Without a repo there is nothing to review, so the task is simply finished.
-        TaskTransition::TurnCompleted { is_git_repo } => {
-            if is_git_repo {
-                TaskState::active(Review, Approval, Waiting, Ball::User)
-            } else {
-                TaskState::parked(Done)
-            }
-        }
+        TaskTransition::TurnCompleted { is_git_repo, has_changes } => match current.phase {
+            // A planner ending its turn has produced a plan, not an implementation. The gate is
+            // inside In Progress — it is not the Review column, which reviews a diff.
+            Some(Drafting) => TaskState::active(InProgress, PlanReview, Waiting, Ball::User),
+
+            // The refiner's gate has no phase of its own: Planning runs one role, so `Refining`
+            // with nothing running is unambiguously "a proposal is waiting for you".
+            Some(Refining) => TaskState::active(Planning, Refining, Waiting, Ball::User),
+
+            // Without a repo there is nothing to review, so the task is simply finished. No
+            // completion qualifier: merged, local-only and no-changes all describe a git
+            // repository, and none of them is true here.
+            _ if !is_git_repo => TaskState::done(None),
+
+            // Demonstrably nothing changed. Review would open an empty diff and In Progress would
+            // strand the task, so Done says what happened and the outcome thread says why.
+            _ if has_changes == Some(false) => TaskState::done(Some(TaskCompletion::NoChanges)),
+
+            _ => TaskState::active(Review, Approval, Waiting, Ball::User),
+        },
 
         TaskTransition::Stopped => TaskState::parked(Planning),
 
@@ -123,7 +186,9 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             TaskState::active(InProgress, Rework, Failed, Ball::User)
         }
 
-        TaskTransition::Merged | TaskTransition::ApprovedWithoutMerge => TaskState::parked(Done),
+        TaskTransition::Merged => TaskState::done(Some(TaskCompletion::Merged)),
+
+        TaskTransition::ApprovedWithoutMerge => TaskState::done(Some(TaskCompletion::LocalOnly)),
 
         // There is no Backlog column; discarding returns the task to Planning.
         TaskTransition::Discarded => TaskState::parked(Planning),
@@ -140,18 +205,20 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
 fn read_state(conn: &Connection, task_id: i32) -> Result<TaskState, String> {
     conn.query_row(
-        "SELECT status, phase, phase_status, ball FROM tasks WHERE id = ?",
+        "SELECT status, phase, phase_status, ball, completion FROM tasks WHERE id = ?",
         [task_id],
         |row| {
             let status: String = row.get(0)?;
             let phase: Option<String> = row.get(1)?;
             let phase_status: Option<String> = row.get(2)?;
             let ball: String = row.get(3)?;
+            let completion: Option<String> = row.get(4)?;
             Ok(TaskState {
                 status: status.parse().unwrap_or(TaskStatus::Planning),
                 phase: phase.and_then(|s| s.parse().ok()),
                 phase_status: phase_status.and_then(|s| s.parse().ok()),
                 ball: ball.parse().unwrap_or(TaskBall::None),
+                completion: completion.and_then(|s| s.parse().ok()),
             })
         },
     )
@@ -196,13 +263,14 @@ pub fn apply_if_status(
     let now = Utc::now().to_rfc3339();
 
     conn.execute(
-        "UPDATE tasks SET status = ?, phase = ?, phase_status = ?, ball = ?, updated_at = ? \
-         WHERE id = ?",
+        "UPDATE tasks SET status = ?, phase = ?, phase_status = ?, ball = ?, completion = ?, \
+         updated_at = ? WHERE id = ?",
         rusqlite::params![
             next.status.as_str(),
             next.phase.map(TaskPhase::as_str),
             next.phase_status.map(PhaseStatus::as_str),
             next.ball.as_str(),
+            next.completion.map(TaskCompletion::as_str),
             &now,
             task_id,
         ],
@@ -213,6 +281,51 @@ pub fn apply_if_status(
     conn.query_row(&query, [task_id], Task::from_row)
         .map(Some)
         .map_err(|e| format!("Failed to read back task {}: {}", task_id, e))
+}
+
+/// Claim a task for execution, refusing one that is not in `expected` or is already being spawned.
+///
+/// The phase guard is the one `apply_if_status` cannot express: a claimed task keeps its column, so
+/// status alone cannot tell "queued" from "already starting". Without it, a second Execute click —
+/// or a manual click racing the auto-mode drain — builds a second session for one task and orphans
+/// the first.
+///
+/// A *failed* spawn is claimable, because it is the retry. The claim is kept on failure so the card
+/// can show what happened, which would otherwise make the failure state a dead end.
+pub fn claim_for_execution(
+    conn: &Connection,
+    task_id: i32,
+    expected: &[TaskStatus],
+) -> Result<Option<Task>, String> {
+    let current = read_state(conn, task_id)?;
+
+    let claimable = match (current.phase, current.phase_status) {
+        (None, _) => true,
+        (Some(TaskPhase::Spawning), Some(PhaseStatus::Failed)) => true,
+        _ => false,
+    };
+
+    if !expected.contains(&current.status) || !claimable {
+        return Ok(None);
+    }
+
+    apply(conn, task_id, TaskTransition::ExecutionStarted).map(Some)
+}
+
+/// Apply a transition only to a task still sitting in the `Spawning` phase.
+///
+/// Everything that finishes a spawn goes through here, so that a spawn landing after the user
+/// already stopped or moved the task cannot resurrect it. `Failed` counts as still spawning: a
+/// retry of a failed spawn has to be able to succeed.
+pub fn apply_if_spawning(
+    conn: &Connection,
+    task_id: i32,
+    event: TaskTransition,
+) -> Result<Option<Task>, String> {
+    if read_state(conn, task_id)?.phase != Some(TaskPhase::Spawning) {
+        return Ok(None);
+    }
+    apply(conn, task_id, event).map(Some)
 }
 
 /// Apply a transition only when it would actually change the stored state.
@@ -271,13 +384,50 @@ mod tests {
         )
     }
 
+    fn spawning(status: TaskStatus) -> TaskState {
+        TaskState::active(status, TaskPhase::Spawning, PhaseStatus::Running, TaskBall::Agent)
+    }
+
+    /// The claim must not move the card. Announcing In Progress before a session exists is what
+    /// left a failed spawn stranded in a column it was never queued from.
     #[test]
-    fn execution_started_hands_the_ball_to_the_agent() {
-        let next = resolve(
-            TaskTransition::ExecutionStarted,
-            TaskState::parked(TaskStatus::Queue),
-        );
+    fn a_claim_marks_the_task_spawning_without_moving_it() {
+        for status in [TaskStatus::Planning, TaskStatus::Queue] {
+            let next = resolve(TaskTransition::ExecutionStarted, TaskState::parked(status));
+            assert_eq!(next, spawning(status));
+        }
+    }
+
+    #[test]
+    fn session_ready_hands_the_ball_to_the_agent_in_progress() {
+        let next = resolve(TaskTransition::SessionReady, spawning(TaskStatus::Queue));
         assert_eq!(next, implementing());
+    }
+
+    /// A cancelled spawn is not a failure, so it parks the task back where it was rather than
+    /// leaving a red card the user has to dismiss.
+    #[test]
+    fn an_aborted_spawn_parks_the_task_where_it_started() {
+        for status in [TaskStatus::Planning, TaskStatus::Queue] {
+            let next = resolve(TaskTransition::SpawnAborted, spawning(status));
+            assert_eq!(next, TaskState::parked(status));
+        }
+    }
+
+    /// The errored-in-queue state, which is an ordinary active row rather than an exception to
+    /// the phase invariant.
+    #[test]
+    fn a_failed_spawn_stays_in_its_column_as_a_failed_phase() {
+        let next = resolve(TaskTransition::PhaseFailed, spawning(TaskStatus::Queue));
+        assert_eq!(
+            next,
+            TaskState::active(
+                TaskStatus::Queue,
+                TaskPhase::Spawning,
+                PhaseStatus::Failed,
+                TaskBall::User
+            )
+        );
     }
 
     #[test]
@@ -314,7 +464,7 @@ mod tests {
     #[test]
     fn turn_completed_routes_on_whether_there_is_a_repo() {
         let with_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true },
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
             implementing(),
         );
         assert_eq!(
@@ -327,11 +477,88 @@ mod tests {
             )
         );
 
+        // No repository means none of the completion qualifiers describe anything real.
         let without_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: false },
+            TaskTransition::TurnCompleted { is_git_repo: false, has_changes: None },
             implementing(),
         );
         assert_eq!(without_repo, TaskState::parked(TaskStatus::Done));
+        assert_eq!(without_repo.completion, None);
+    }
+
+    /// An agent that finished having changed nothing is done, not stuck: review would open an
+    /// empty diff and In Progress would strand it.
+    #[test]
+    fn a_turn_that_changed_nothing_completes_as_no_changes() {
+        let next = resolve(
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(false) },
+            implementing(),
+        );
+        assert_eq!(next.status, TaskStatus::Done);
+        assert_eq!(next.completion, Some(TaskCompletion::NoChanges));
+    }
+
+    /// The asymmetry that matters: unknown is not the same as none. Closing a task on missing
+    /// evidence is the one outcome with no way back, so it goes to review instead.
+    #[test]
+    fn an_unanswerable_change_check_routes_to_review() {
+        let next = resolve(
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            implementing(),
+        );
+        assert_eq!(next.status, TaskStatus::Review);
+    }
+
+    /// A planner ending its turn produced a plan, not an implementation, so it must not land in
+    /// the column that reviews a diff.
+    #[test]
+    fn a_finished_plan_lands_at_the_plan_gate_not_review() {
+        let drafting = TaskState::active(
+            TaskStatus::InProgress,
+            TaskPhase::Drafting,
+            PhaseStatus::Running,
+            TaskBall::Agent,
+        );
+
+        let next = resolve(
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+            drafting,
+        );
+        assert_eq!(
+            next,
+            TaskState::active(
+                TaskStatus::InProgress,
+                TaskPhase::PlanReview,
+                PhaseStatus::Waiting,
+                TaskBall::User
+            )
+        );
+    }
+
+    /// Refinement happens in the backlog and produces a proposal. Finishing it must not push the
+    /// task into the pipeline.
+    #[test]
+    fn a_finished_refinement_waits_in_planning() {
+        let refining = TaskState::active(
+            TaskStatus::Planning,
+            TaskPhase::Refining,
+            PhaseStatus::Running,
+            TaskBall::Agent,
+        );
+
+        let next = resolve(
+            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None },
+            refining,
+        );
+        assert_eq!(
+            next,
+            TaskState::active(
+                TaskStatus::Planning,
+                TaskPhase::Refining,
+                PhaseStatus::Waiting,
+                TaskBall::User
+            )
+        );
     }
 
     #[test]
@@ -379,8 +606,6 @@ mod tests {
     #[test]
     fn terminal_events_park_the_task() {
         for (event, status) in [
-            (TaskTransition::Merged, TaskStatus::Done),
-            (TaskTransition::ApprovedWithoutMerge, TaskStatus::Done),
             (TaskTransition::Stopped, TaskStatus::Planning),
             (TaskTransition::Discarded, TaskStatus::Planning),
             (TaskTransition::Cancelled, TaskStatus::Cancelled),
@@ -389,6 +614,31 @@ mod tests {
             assert_eq!(next, TaskState::parked(status), "for {:?}", event);
             assert_eq!(next.ball, TaskBall::None, "for {:?}", event);
         }
+    }
+
+    /// The two approve paths land in the same column but leave the repository in different
+    /// states, and `LocalOnly` is the one that tells the user their work is still in a worktree.
+    #[test]
+    fn the_two_approve_paths_are_distinguishable_in_done() {
+        for (event, completion) in [
+            (TaskTransition::Merged, TaskCompletion::Merged),
+            (TaskTransition::ApprovedWithoutMerge, TaskCompletion::LocalOnly),
+        ] {
+            let next = resolve(event, implementing());
+            assert_eq!(next.status, TaskStatus::Done, "for {:?}", event);
+            assert_eq!(next.ball, TaskBall::None, "for {:?}", event);
+            assert_eq!(next.completion, Some(completion), "for {:?}", event);
+        }
+    }
+
+    /// Dragging a task out of Done must not leave it claiming to have merged.
+    #[test]
+    fn parking_clears_a_stale_completion() {
+        let merged = resolve(TaskTransition::Merged, implementing());
+        assert_eq!(merged.completion, Some(TaskCompletion::Merged));
+
+        let moved = resolve(TaskTransition::ManualMove(TaskStatus::Planning), merged);
+        assert_eq!(moved.completion, None);
     }
 
     /// Discarding used to write the string 'Backlog', which no `TaskStatus` variant matches.
@@ -421,16 +671,42 @@ mod tests {
             (conn, 1)
         }
 
+        /// Drives the whole claim → ready sequence the execute flow performs.
+        fn start_execution(conn: &Connection, task_id: i32) {
+            claim_for_execution(conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
+                .unwrap()
+                .expect("claim");
+            apply_if_spawning(conn, task_id, TaskTransition::SessionReady)
+                .unwrap()
+                .expect("session ready");
+        }
+
         #[test]
-        fn apply_persists_all_four_fields() {
+        fn apply_persists_every_lifecycle_field() {
             let (conn, task_id) = db_with_task();
-            let task = apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            let task =
+                apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap().unwrap();
 
             assert_eq!(task.status, TaskStatus::InProgress);
             assert_eq!(task.phase, Some(TaskPhase::Implementing));
             assert_eq!(task.phase_status, Some(PhaseStatus::Running));
             assert_eq!(task.ball, TaskBall::Agent);
+            assert_eq!(task.completion, None);
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
+        }
+
+        #[test]
+        fn completion_survives_a_round_trip_through_the_database() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+
+            let task = apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge).unwrap();
+            assert_eq!(task.completion, Some(TaskCompletion::LocalOnly));
+            assert_eq!(
+                read_state(&conn, task_id).unwrap().completion,
+                Some(TaskCompletion::LocalOnly)
+            );
         }
 
         #[test]
@@ -438,13 +714,7 @@ mod tests {
             let (conn, task_id) = db_with_task();
             apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
 
-            let claimed = apply_if_status(
-                &conn,
-                task_id,
-                Some(&[TaskStatus::Queue]),
-                TaskTransition::ExecutionStarted,
-            )
-            .unwrap();
+            let claimed = claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap();
 
             assert!(claimed.is_none(), "a task no longer queued must not be claimed");
             assert_eq!(read_state(&conn, task_id).unwrap().status, TaskStatus::Planning);
@@ -460,26 +730,82 @@ mod tests {
                 let (conn, task_id) = db_with_task();
                 apply(&conn, task_id, TaskTransition::ManualMove(start)).unwrap();
 
-                let claimed =
-                    apply_if_status(&conn, task_id, Some(&allowed), TaskTransition::ExecutionStarted)
-                        .unwrap();
+                let claimed = claim_for_execution(&conn, task_id, &allowed).unwrap();
 
                 assert!(claimed.is_some(), "execution must start from {:?}", start);
-                assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
+                assert_eq!(read_state(&conn, task_id).unwrap(), spawning(start));
             }
 
             let (conn, task_id) = db_with_task();
             apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Done)).unwrap();
-            let claimed =
-                apply_if_status(&conn, task_id, Some(&allowed), TaskTransition::ExecutionStarted)
-                    .unwrap();
+            let claimed = claim_for_execution(&conn, task_id, &allowed).unwrap();
             assert!(claimed.is_none(), "a task that moved elsewhere must not be claimed");
+        }
+
+        /// Two Execute clicks, or a click racing the auto-mode drain, must build one session.
+        /// Status alone cannot catch this — a claimed task keeps its column.
+        #[test]
+        fn a_task_already_spawning_cannot_be_claimed_again() {
+            let (conn, task_id) = db_with_task();
+            let allowed = [TaskStatus::Planning, TaskStatus::Queue];
+
+            assert!(claim_for_execution(&conn, task_id, &allowed).unwrap().is_some());
+            assert!(
+                claim_for_execution(&conn, task_id, &allowed).unwrap().is_none(),
+                "a second claim on a spawning task must be refused"
+            );
+        }
+
+        /// A spawn landing after the user stopped or moved the task must not resurrect it.
+        #[test]
+        fn a_late_spawn_cannot_move_a_task_that_left() {
+            let (conn, task_id) = db_with_task();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+
+            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+            let before = read_state(&conn, task_id).unwrap();
+
+            assert!(apply_if_spawning(&conn, task_id, TaskTransition::SessionReady)
+                .unwrap()
+                .is_none());
+            assert_eq!(read_state(&conn, task_id).unwrap(), before);
+        }
+
+        /// A failed spawn stays claimed so the card can show it, which would make the failure a
+        /// dead end unless the claim path treats it as retryable.
+        #[test]
+        fn a_failed_spawn_can_be_claimed_again() {
+            let (conn, task_id) = db_with_task();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::PhaseFailed).unwrap().unwrap();
+            assert_eq!(read_state(&conn, task_id).unwrap().phase_status, Some(PhaseStatus::Failed));
+
+            let retried = claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap();
+            assert!(retried.is_some(), "a failed spawn must be retryable");
+            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::Queue));
+
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap().unwrap();
+            assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
+        }
+
+        /// The retry exception must not widen into "any task with a phase can be re-claimed" —
+        /// a running agent's task is not startable.
+        #[test]
+        fn a_task_with_a_live_phase_cannot_be_claimed() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Queue)).unwrap();
+            apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady).unwrap();
+
+            // Now InProgress/Implementing — not in `expected`, and not spawning either.
+            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().is_none());
         }
 
         #[test]
         fn apply_if_changed_skips_a_no_op_write() {
             let (conn, task_id) = db_with_task();
-            apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+            start_execution(&conn, task_id);
             apply(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
 
             let second = apply_if_changed(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
@@ -489,14 +815,19 @@ mod tests {
         #[test]
         fn clear_blocked_only_touches_blocked_tasks() {
             let (conn, task_id) = db_with_task();
-            apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+            start_execution(&conn, task_id);
             apply(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
 
             assert!(clear_blocked(&conn, task_id).unwrap().is_some());
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
 
             // A task parked at a review gate is waiting, not blocked, and must be left alone.
-            apply(&conn, task_id, TaskTransition::TurnCompleted { is_git_repo: true }).unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
+            )
+            .unwrap();
             let before = read_state(&conn, task_id).unwrap();
             assert!(clear_blocked(&conn, task_id).unwrap().is_none());
             assert_eq!(read_state(&conn, task_id).unwrap(), before);
@@ -504,9 +835,9 @@ mod tests {
 
         #[test]
         fn a_dying_session_fails_a_running_or_blocked_phase() {
-            for setup in [TaskTransition::ExecutionStarted, TaskTransition::AwaitingUserInput] {
+            for setup in [TaskTransition::SessionReady, TaskTransition::AwaitingUserInput] {
                 let (conn, task_id) = db_with_task();
-                apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+                start_execution(&conn, task_id);
                 apply(&conn, task_id, setup).unwrap();
 
                 let failed = fail_if_agent_running(&conn, task_id).unwrap();
@@ -525,10 +856,10 @@ mod tests {
             for terminal in [
                 TaskTransition::Merged,
                 TaskTransition::Stopped,
-                TaskTransition::TurnCompleted { is_git_repo: true },
+                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true) },
             ] {
                 let (conn, task_id) = db_with_task();
-                apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
+                start_execution(&conn, task_id);
                 apply(&conn, task_id, terminal).unwrap();
                 let before = read_state(&conn, task_id).unwrap();
 

@@ -9,6 +9,7 @@ import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
 import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { useUpdateTask } from "@/services/task.service";
+import { priorityAfterDrop } from "@/lib/queue-priority";
 
 const BOARD_STATUSES: Array<TaskStatus> = ["Planning", "Queue", "InProgress", "Review", "Done"];
 
@@ -131,9 +132,21 @@ export function BoardView({ tasks }: BoardViewProps) {
 
           if (!newStatus || newStatus === oldStatus) return;
 
+          // Position in the Queue *is* priority — the column is sorted by it, so a card that
+          // jumped ahead of higher-priority work has to claim that priority or the order it was
+          // just given would be undone on the next render.
+          //
+          // Clamped rather than adopted: a card only moves as far as it must to keep the column
+          // coherent, so landing among equals leaves it alone.
+          const priority =
+            newStatus === "Queue" ? priorityAfterDrop(final.Queue, taskId, tasks) : null;
+
           const doUpdate = () =>
             updateTask.mutate(
-              { taskId, updates: { status: newStatus } },
+              {
+                taskId,
+                updates: { status: newStatus, ...(priority ? { priority } : {}) },
+              },
               {
                 onError: () => {
                   liveDndRef.current = previousDndRef.current;
