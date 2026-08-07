@@ -274,9 +274,16 @@ pub(crate) fn track_closing_message(
                 closing.push(text);
             }
         }
-        // Thoughts are reasoning, not the answer, and they are not shown to the user either.
-        Some("agent_thought_chunk") | None => {}
-        _ => closing.reset(),
+        // A *new* tool call is the agent acting, so whatever it said beforehand was narration.
+        // A user message means the prose before it belongs to an earlier exchange.
+        Some("tool_call") | Some("user_message_chunk") => closing.reset(),
+        // Everything else — thoughts, plans, mode changes, and crucially `tool_call_update` — is
+        // not the agent acting. `tool_call_update` is the status of a call already made, and it
+        // can arrive *after* the agent's closing words: `ExitPlanMode` is the tool every role held
+        // in plan mode ends its turn on, and resolving it last used to wipe the closing message.
+        // That left the proposal and plan gates with nothing to show and their accept buttons
+        // disabled, and made an empty reviewer verdict classify as `Approved`.
+        _ => {}
     }
 }
 
@@ -331,6 +338,69 @@ pub(crate) fn strip_completion_marker_from_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod closing_message {
+        use super::*;
+
+        fn update(kind: &str) -> serde_json::Value {
+            serde_json::json!({ "sessionUpdate": kind })
+        }
+
+        fn track(updates: &[(&str, Option<&str>)]) -> String {
+            let closing = std::sync::Arc::new(std::sync::Mutex::new(ClosingMessage::default()));
+            for (kind, text) in updates {
+                track_closing_message(&update(kind), *text, &closing);
+            }
+            let mut guard = closing.lock().unwrap();
+            guard.take()
+        }
+
+        #[test]
+        fn the_last_run_of_prose_survives_and_the_narration_before_it_does_not() {
+            let closing = track(&[
+                ("agent_message_chunk", Some("let me look at that")),
+                ("tool_call", None),
+                ("agent_message_chunk", Some("here is what I found")),
+            ]);
+            assert_eq!(closing, "here is what I found");
+        }
+
+        /// The defect this pass found. `ExitPlanMode` is the tool every role held in plan mode ends
+        /// its turn on, and its completion arrives after the agent has finished speaking. Treating
+        /// that as "the agent acted" emptied the buffer, which left the proposal and plan gates
+        /// with nothing to show and no way to accept, and made an empty reviewer verdict read as
+        /// approval.
+        #[test]
+        fn a_tool_finishing_after_the_agent_speaks_does_not_wipe_the_message() {
+            let closing = track(&[
+                ("tool_call", None),
+                ("agent_message_chunk", Some("the plan is above")),
+                ("tool_call_update", None),
+            ]);
+            assert_eq!(closing, "the plan is above");
+        }
+
+        #[test]
+        fn thoughts_plans_and_mode_changes_leave_the_message_alone() {
+            let closing = track(&[
+                ("agent_message_chunk", Some("done")),
+                ("agent_thought_chunk", Some("reconsidering")),
+                ("plan", None),
+                ("current_mode_update", None),
+            ]);
+            assert_eq!(closing, "done");
+        }
+
+        #[test]
+        fn a_user_turn_discards_what_the_agent_said_before_it() {
+            let closing = track(&[
+                ("agent_message_chunk", Some("anything else?")),
+                ("user_message_chunk", Some("yes, do this")),
+                ("agent_message_chunk", Some("finished")),
+            ]);
+            assert_eq!(closing, "finished");
+        }
+    }
 
     mod classification {
         use super::*;
