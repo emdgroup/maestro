@@ -279,6 +279,18 @@ pub enum TaskPhase {
     AwaitingMerge,
 }
 
+impl TaskPhase {
+    /// Whether the phase belongs to a role that writes nothing.
+    ///
+    /// The phase is how the backend recognises the role at all: `AgentRole` is an argument the
+    /// frontend passes to Execute and is never persisted, so anything downstream of the spawn —
+    /// the permission path in particular — has only this to go on. Mirrors
+    /// `AgentRole::is_read_only`, and the two must agree.
+    pub fn is_read_only(self) -> bool {
+        matches!(self, TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview)
+    }
+}
+
 /// How the current phase is going.
 ///
 /// `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`

@@ -563,15 +563,19 @@ describe("TaskCard refinement", () => {
     expect(screen.getByText("A sharper description")).toBeInTheDocument();
   });
 
-  /// The comparison is the point of the gate. Showing only the proposal would make accepting a
-  /// leap of faith about what it replaces.
-  it("shows the current description beside the proposal", async () => {
+  /// The gate used to show the current description beside the proposal. Both are markdown
+  /// documents, so half-width preformatted columns read as neither prose nor a diff — and the
+  /// description is on the card the dialog opened from. The safety the comparison was there for is
+  /// that accepting is the first write, which the dialog says in words.
+  it("shows the proposal on its own, without the description it would replace", async () => {
     comments.current = [{ id: 1, kind: "proposal", body: "A sharper description" }];
     renderCard({ ...atTheGate, description: "The original wording" });
 
     await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
 
-    expect(screen.getByText("The original wording")).toBeInTheDocument();
+    expect(screen.getByText("A sharper description")).toBeInTheDocument();
+    expect(screen.queryByText("The original wording")).not.toBeInTheDocument();
+    expect(screen.getByText(/nothing has changed yet/i)).toBeInTheDocument();
   });
 
   it("takes the newest proposal, not the first", async () => {
@@ -630,19 +634,34 @@ describe("TaskCard plan gate", () => {
   });
 
   /// The plan lives in the task's thread, not in the session that wrote it, so a gate reached days
-  /// later still works. The card must not report a lost session as the problem.
+  /// later still works. The card must not report a lost session as the problem — and at this gate
+  /// there is always no session, because the planner's is closed the moment its plan is taken. A
+  /// live run put "Session lost / Recover" here with the finished plan unreachable behind it.
   it("says nothing about a lost session at the gate", () => {
     renderCard(atTheGate);
     expect(screen.queryByText(/session lost/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /recover/i })).not.toBeInTheDocument();
   });
 
-  it("shows the plan", async () => {
-    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+  /// No Join either, even if a session somehow survives. There is nothing to say to a planner that
+  /// has already delivered: the one useful thing to tell it is what is wrong with its plan, and the
+  /// gate takes that itself.
+  it("offers nothing to join at the gate", () => {
+    activeSession.current = { session_key: 12 };
+    renderCard(atTheGate);
+    expect(screen.queryByRole("button", { name: /join/i })).not.toBeInTheDocument();
+  });
+
+  /// Rendered, not dumped. A plan is a markdown document — headings, numbered steps, code spans —
+  /// and the preformatted block it used to land in turned all of that back into its own syntax.
+  it("shows the plan as markdown", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: "## Steps\n\n1. Do the thing" }];
     renderCard(atTheGate);
 
     await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
 
-    expect(screen.getByText("1. Do the thing")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Steps" })).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent("Do the thing");
   });
 
   /// Approving must name the coder. `execute` routes a standing start through the planner when
@@ -654,15 +673,14 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
-      role: "Coder",
-      handoffFrom: null,
-    });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
   });
 
-  /// D31's handoff: the planner's session is offered to the coder, which reuses it only if both
-  /// run the same agent. What it carries is the reasoning the plan itself does not.
-  it("offers the planner's session to the coder", async () => {
+  /// The planner's session is never handed on, even when one is somehow still open. It was, once:
+  /// the coder reused it whenever both roles ran the same agent. That only ever worked when they
+  /// did, and a project is free to put a different agent — or a different vendor — behind each, so
+  /// the plan travels as text and the coder always starts clean.
+  it("never hands the planner's session to the coder", async () => {
     activeSession.current = { session_key: 12 };
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
     renderCard(atTheGate);
@@ -670,20 +688,40 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
-      role: "Coder",
-      handoffFrom: 12,
-    });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
   });
 
-  it("planning again runs the planner", async () => {
+  it("planning again runs the planner with no feedback", async () => {
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
     renderCard(atTheGate);
     await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
 
     await userEvent.click(screen.getByRole("button", { name: /plan again/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Planner" });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      role: "Planner",
+      feedback: "",
+    });
+  });
+
+  /// Notes on the plan turn the approve button into a request for a better one. Offering to
+  /// implement a plan the user has just written objections to would be offering the wrong thing:
+  /// the objections *are* the answer, and the coder has no way to act on them.
+  it("turns approval into a refinement once the plan is annotated", async () => {
+    comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
+    renderCard(atTheGate);
+    await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
+
+    expect(screen.getByRole("button", { name: /start implementing/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "" }), "Use the existing helper");
+    await userEvent.click(screen.getByRole("button", { name: /refine plan/i }));
+
+    expect(screen.queryByRole("button", { name: /start implementing/i })).not.toBeInTheDocument();
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
+      role: "Planner",
+      feedback: "Use the existing helper",
+    });
   });
 
   it("refuses to approve an empty plan", async () => {

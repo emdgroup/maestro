@@ -103,11 +103,9 @@ pub(crate) fn spawn_reader_task(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if try_auto_approve_permission(&app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(&app_state, tid, log_id, perm_req).await {
                         continue;
                     }
-                    // Not auto-approved: the agent is stopped until the user answers.
-                    mark_task_blocked(&app_state, tid);
                 }
             }
 
@@ -519,27 +517,77 @@ pub(crate) async fn is_task_project_git_repo(
     }
 }
 
+/// Decide what the board does with a permission request, and report whether it answered.
+///
+/// `true` means the request is settled and must not reach the UI. `false` leaves it for the user,
+/// having first marked the task blocked so the card says the agent is stopped.
+///
+/// Both readers go through here, and that is the point. They did not before: the shared reader —
+/// which is the *ordinary local path*, since a connection server serves every session on a
+/// connection and only a directly-spawned session gets its own loop — called auto-approve alone.
+/// So the plan interception was written, tested, and never once ran outside SSH. Two call sites
+/// that must agree on which of three answers a request gets will not stay agreeing, so there is
+/// now one.
+async fn handle_permission_request(
+    app_state: &Arc<crate::core::AppState>,
+    task_id: i32,
+    log_id: i32,
+    perm_req: &crate::acp::transport::PermissionRequest,
+) -> bool {
+    if try_auto_approve_permission(app_state, task_id, log_id, perm_req).await {
+        return true;
+    }
+    if try_conclude_plan_mode_phase(app_state, task_id, log_id, perm_req).await {
+        return true;
+    }
+    // Nobody answered for it: the agent is stopped until the user does.
+    mark_task_blocked(app_state, task_id);
+    false
+}
+
 async fn try_auto_approve_permission(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
     log_id: i32,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
-    let auto_approve = app_state
-        .db
-        .lock()
-        .ok()
-        .and_then(|conn| {
-            conn.query_row(
-            "SELECT auto_approve FROM tasks WHERE id = ?",
+    let settings = app_state.db.lock().ok().and_then(|conn| {
+        conn.query_row(
+            "SELECT auto_approve, phase FROM tasks WHERE id = ?",
             [task_id],
-            |row| row.get::<_, bool>(0),
-            )
-            .ok()
-        })
-        .unwrap_or(false);
+            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .ok()
+    });
+
+    let Some((auto_approve, phase)) = settings else { return false };
 
     if !auto_approve {
+        return false;
+    }
+
+    // Auto-approve is a coder's affordance: it exists so a task that has been told to get on with
+    // it is not stopped by a prompt for an edit it was always going to be allowed to make. It must
+    // not answer for a role that exists *because* it cannot write.
+    //
+    // The request that matters is `ExitPlanMode`. In plan mode an agent's writes are refused
+    // outright rather than prompted, so it is close to the only permission a read-only role ever
+    // asks for — and the `allow_always` option this function prefers means "leave plan mode and
+    // stop asking". Approving it handed the read-only guarantee back: a live run had the *planner*
+    // implement its own task, tests and all, and then stop at the plan gate to ask whether the plan
+    // was any good.
+    //
+    // Refusing sends it to the user as a blocked task, which is the decision the gates are built
+    // on being human in the first place.
+    let read_only = phase
+        .as_deref()
+        .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
+        .is_some_and(|p| p.is_read_only());
+    if read_only {
+        log::debug!(
+            "[acp] not auto-approving a permission request for task {task_id}: \
+             {phase:?} is a read-only phase"
+        );
         return false;
     }
 
@@ -596,6 +644,139 @@ async fn try_auto_approve_permission(
         },
     ));
     let _ = crate::acp::write_to_acp_session(app_state, log_id, &response).await;
+    true
+}
+
+/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
+///
+/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
+/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
+/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
+/// read-only role write access — a live run had the *planner* implement its own task, tests and
+/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
+/// reread its plan, polish it and ask again, so the gate never opens.
+///
+/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
+/// the session that produced it has no further part to play: a project can put a different agent
+/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
+/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
+/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
+/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
+///
+/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
+/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
+/// many days pass before someone looks at the gate — and still able to be prompted into
+/// implementing the work it was supposed to only describe.
+///
+/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
+/// asked whether the session was currently held in `plan`, which is a question the host cannot
+/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
+/// `current_mode_update` the agent chose to send. The plan in the payload is the better
+/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
+/// reviewer running in `default` asking for permission to write still reaches the user as the real
+/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
+/// vocabulary.
+async fn try_conclude_plan_mode_phase(
+    app_state: &Arc<crate::core::AppState>,
+    task_id: i32,
+    log_id: i32,
+    perm_req: &crate::acp::transport::PermissionRequest,
+) -> bool {
+    let Some(plan) = perm_req
+        .payload
+        .get("toolCall")
+        .and_then(|call| call.get("rawInput"))
+        .and_then(|input| input.get("plan"))
+        .and_then(|plan| plan.as_str())
+        .map(str::trim)
+        .filter(|plan| !plan.is_empty())
+    else {
+        log::debug!(
+            "[acp] task {task_id}: permission request carries no plan, leaving it to the user"
+        );
+        return false;
+    };
+
+    let recorded = {
+        let Ok(conn) = app_state.db.lock() else { return false };
+        let phase: Option<String> = conn
+            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap_or(None);
+
+        let read_only_phase = phase
+            .as_deref()
+            .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
+            .is_some_and(|p| p.is_read_only());
+        if !read_only_phase {
+            log::debug!("[acp] task {task_id}: {phase:?} may write, so its plan is not a gate");
+            return false;
+        }
+
+        // Order matters: the thread entry is what the gate reads, so a transition that lands
+        // without it would open a gate with nothing in it — the defect this whole path exists to
+        // close.
+        crate::task::comments::record_outcome(&conn, task_id, phase.as_deref(), plan);
+        crate::task::transition::apply_if_active(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::ArtifactDelivered,
+        )
+    };
+
+    match recorded {
+        // Told to the board before the session is closed below. Both halves are needed and the
+        // order is not cosmetic: closing the session emits `sessions-changed` on its own, so a
+        // board that has been told the session is gone but not that the task reached its gate
+        // renders the phase it still believes is running with no agent behind it — which is
+        // exactly the shape of a crashed session. The card said "Session lost" and offered
+        // Recover, with the finished plan sitting unreachable behind it.
+        Ok(Some(_)) => {
+            app_state.app_handle.emit("tasks-changed", ()).ok();
+            app_state.app_handle.emit("task-comments-changed", task_id).ok();
+        }
+        Ok(None) => return false,
+        Err(e) => {
+            log::warn!("[acp] could not close the read-only phase of task {task_id}: {e}");
+            return false;
+        }
+    }
+
+    let session_id = format!("session-{}", log_id);
+    let refusal = perm_req
+        .payload
+        .get("options")
+        .and_then(|v| v.as_array())
+        .and_then(|options| {
+            options.iter().find_map(|option| {
+                let kind = option.get("kind").and_then(|v| v.as_str())?;
+                kind.contains("reject")
+                    .then(|| option.get("optionId").and_then(|v| v.as_str()))
+                    .flatten()
+                    .map(str::to_string)
+            })
+        });
+
+    // An agent that offers no refusal is left unanswered rather than granted: the session is closed
+    // below either way, and the one thing that must not happen is the mode changing.
+    if let Some(option_id) = refusal {
+        let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
+            crate::acp::transport::PermissionResponse {
+                session_id,
+                request_id: perm_req.request_id.clone(),
+                option_id: Some(option_id),
+            },
+        ));
+        if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &response).await {
+            log::warn!("[acp] could not refuse the mode change for task {task_id}: {e}");
+        }
+    }
+
+    // After the transition, not before: ending a session runs `fail_if_agent_running`, which would
+    // turn the card red if the task were still `Running`. It is a no-op against the `Waiting` the
+    // gate above just wrote, which is the ordering this depends on.
+    crate::acp::session_handlers::end_acp_session(app_state, log_id).await;
+    log::info!("[acp] took the plan for task {task_id} and closed its planning session");
+
     true
 }
 
@@ -1079,11 +1260,9 @@ async fn handle_shared_server_message(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if try_auto_approve_permission(app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(app_state, tid, log_id, perm_req).await {
                         return;
                     }
-                    // Not auto-approved: the agent is stopped until the user answers.
-                    mark_task_blocked(app_state, tid);
                 }
             }
 

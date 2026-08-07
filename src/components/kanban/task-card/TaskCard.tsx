@@ -396,9 +396,14 @@ function FooterCTAs({
     );
   }
 
-  // The plan gate. Ahead of the In Progress branch, whose first concern is a lost session — but
-  // the plan is finished and waiting here, and losing the session that wrote it costs nothing:
-  // the plan is in the task's thread, not in the session.
+  // The plan gate. Ahead of the In Progress branch, whose first concern is a lost session — and
+  // at this gate there is *always* no session, because the planner's is closed the moment its plan
+  // is taken. Falling through to that branch is what put "Session lost / Recover" on the card with
+  // the finished plan unreachable behind it.
+  //
+  // Nothing to join here for the same reason. There was a Join button, on the theory that the user
+  // might want to question the planner before deciding; the plan is in the thread and the agent
+  // that wrote it is gone, so the only way to say something about a plan is to say it at the gate.
   if (task.phase === "PlanReview") {
     return (
       <div className="flex gap-1 mt-1.5">
@@ -413,20 +418,6 @@ function FooterCTAs({
           <ListChecks className="w-2.5 h-2.5" />
           Read plan
         </Button>
-        {activeSession && (
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onJoin();
-            }}
-            variant="ghost"
-            className={cn(base, "h-auto")}
-            title="Talk to the planner before deciding"
-          >
-            <BotMessageSquare className="w-2.5 h-2.5" />
-            Join
-          </Button>
-        )}
       </div>
     );
   }
@@ -892,15 +883,8 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onOpenChange={setPlanOpen}
         // Explicitly the coder: `execute` routes a standing start through the planner when the
         // project has one, and approving a plan is the one case that must not.
-        // Handed the planner's session, which `execute` reuses only if the coder runs the same
-        // agent — what the plan file cannot carry is why the plan is what it is.
-        onApprove={() =>
-          void handleExecute(task, {
-            role: "Coder",
-            handoffFrom: activeSession?.session_key ?? null,
-          })
-        }
-        onReplan={() => void handleExecute(task, { role: "Planner" })}
+        onApprove={() => void handleExecute(task, { role: "Coder" })}
+        onReplan={(feedback) => void handleExecute(task, { role: "Planner", feedback })}
       />
       <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
         <AlertDialogContent>

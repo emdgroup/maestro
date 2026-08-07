@@ -6,9 +6,15 @@
 //! database rather than in the project, because for an SSH or WSL project the project is on the
 //! remote host — where the coder could read and rewrite its own record.
 //!
-//! Append-only. Entries are never edited, and a correction is a new entry, so the thread reads as
-//! a history rather than a mutable summary. That is also what makes it safe for a gate to point at
-//! one: the entry a plan gate approved cannot change under it.
+//! Entries are never edited, and a correction is a new entry, so the thread reads as a history
+//! rather than a mutable summary. That is also what makes it safe for a gate to point at one: the
+//! entry a plan gate approved cannot change under it.
+//!
+//! Two kinds are not history, and [`holds_a_single_value`] says which. A proposal and a plan are
+//! both *about the task as it stands now*: re-running the refiner reads the description it has
+//! already been given and answers again, so the previous answer is not a past event, it is a stale
+//! copy of a field that has since moved. A verdict is the opposite — each one is a review round
+//! that happened, and `review_rounds` counts them.
 
 use std::sync::Arc;
 
@@ -18,6 +24,15 @@ use tauri::{Emitter, State};
 
 use crate::core::AppState;
 use crate::models::TaskComment;
+
+/// Whether a kind is the task's current answer rather than one of a series.
+///
+/// See the module docs: re-running a refiner or a planner replaces what the last run said about a
+/// task, because both read the task as it stands and neither is a record of something that
+/// happened to it. Everything else accumulates.
+pub fn holds_a_single_value(kind: &str) -> bool {
+    matches!(kind, "proposal" | "plan")
+}
 
 /// Write one entry, returning it as stored.
 ///
@@ -33,6 +48,14 @@ pub fn append(
     external_ref: Option<&str>,
     phase: Option<&str>,
 ) -> Result<TaskComment, String> {
+    if holds_a_single_value(kind) {
+        conn.execute(
+            "DELETE FROM task_comments WHERE task_id = ? AND kind = ?",
+            rusqlite::params![task_id, kind],
+        )
+        .map_err(|e| format!("Failed to replace task {} {}: {}", task_id, kind, e))?;
+    }
+
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO task_comments (task_id, kind, author, body, external_ref, phase, created_at) \
@@ -234,6 +257,7 @@ mod tests {
 
     /// The thread is a history, so entries accumulate rather than replacing one another — this is
     /// what `task_reviews`' `NOT NULL UNIQUE` got wrong and why a second review always failed.
+    /// A verdict in particular is a round that happened, and `review_rounds` counts them.
     #[test]
     fn entries_accumulate_rather_than_replacing() {
         let (conn, task_id) = db_with_task();
@@ -242,6 +266,29 @@ mod tests {
         append(&conn, task_id, "verdict", "agent", Some("second pass"), None, None).unwrap();
 
         assert_eq!(kinds(&conn, task_id), vec!["verdict".to_string(), "verdict".to_string()]);
+    }
+
+    /// The exception. Re-running a refiner is not a second event, it is the same question asked
+    /// again of a description that has since changed — so the previous answer is stale rather than
+    /// historical, and leaving it stacked it above the current one with nothing to tell them apart.
+    #[test]
+    fn a_proposal_and_a_plan_replace_the_last_one_instead_of_stacking() {
+        let (conn, task_id) = db_with_task();
+
+        record_outcome(&conn, task_id, Some("Refining"), "first attempt");
+        record_outcome(&conn, task_id, Some("Drafting"), "first plan");
+        record_outcome(&conn, task_id, Some("Refining"), "second attempt");
+        record_outcome(&conn, task_id, Some("Drafting"), "second plan");
+
+        assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan"]);
+        assert_eq!(
+            latest_of_kind(&conn, task_id, "proposal").unwrap().unwrap().body.unwrap(),
+            "second attempt"
+        );
+        assert_eq!(
+            latest_of_kind(&conn, task_id, "plan").unwrap().unwrap().body.unwrap(),
+            "second plan"
+        );
     }
 
     /// A gate has to find the thing it gates on. Typing the entry by the phase that produced it is
@@ -258,8 +305,9 @@ mod tests {
         assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan", "verdict", "outcome"]);
     }
 
-    /// The gate must read the newest proposal. Refinement is freely repeatable, so an older one is
-    /// almost always present and picking it would apply text the user has already moved past.
+    /// A gate reads its entry by kind, so entries of other kinds landing in between — a user note,
+    /// a verdict — must not become what it finds. Superseding makes the proposal case unambiguous
+    /// on its own, but the lookup is what the other kinds still rely on.
     #[test]
     fn the_latest_entry_of_a_kind_wins() {
         let (conn, task_id) = db_with_task();

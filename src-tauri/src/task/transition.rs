@@ -107,6 +107,15 @@ pub enum TaskTransition {
     /// The ball goes to `Agent`, not `User` — that is what separates this from the user's own
     /// rework request, and it is what tells the board to start a coder without being asked.
     ReviewRejected,
+    /// A role held in a read-only mode delivered its artifact and was stopped at that point.
+    ///
+    /// Not a turn ending, which is why it is not `TurnCompleted`. An agent held in plan mode has
+    /// no way to say "I am finished" other than asking to leave plan mode — that request *is* the
+    /// artifact, and it arrives mid-turn. Granting it would hand a read-only role write access
+    /// (which is how a planner once implemented its own task); refusing it just makes the agent
+    /// polish the plan and ask again. So the board takes the plan, refuses the request, and
+    /// interrupts the turn.
+    ArtifactDelivered,
     /// The user stopped the running session.
     Stopped,
     /// The user answered the refiner's proposal gate.
@@ -217,6 +226,16 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         TaskTransition::ReviewFinished => TaskState::active(Review, Approval, Waiting, Ball::User),
 
         TaskTransition::ReviewRejected => TaskState::active(InProgress, Rework, Waiting, Ball::Agent),
+
+        // The same two destinations `TurnCompleted` gives these phases, reached by the other route
+        // a read-only role can finish by. Anything else keeps its state: the event is only ever
+        // raised from a read-only phase, and a task that has moved on since must not be dragged
+        // back to a gate by a request still in flight.
+        TaskTransition::ArtifactDelivered => match current.phase {
+            Some(Drafting) => TaskState::active(InProgress, PlanReview, Waiting, Ball::User),
+            Some(Refining) => TaskState::active(Planning, Refining, Waiting, Ball::User),
+            _ => current,
+        },
 
         TaskTransition::TurnCompleted { is_git_repo, has_changes, reviewer_pending } => match current.phase {
             // A planner ending its turn has produced a plan, not an implementation. The gate is
@@ -492,6 +511,81 @@ pub fn fail_if_agent_running(conn: &Connection, task_id: i32) -> Result<Option<T
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The permission path reads the phase to decide whether the agent it is about to answer for is
+    /// allowed to write, so this mapping is what stands between `auto_approve` and a read-only role
+    /// being let out of read-only. A phase added to the pipeline without a line here defaults to
+    /// writable, which is the wrong way round — hence pinning the whole set rather than a sample.
+    #[test]
+    fn exactly_the_three_read_only_phases_are_read_only() {
+        for phase in [TaskPhase::Refining, TaskPhase::Drafting, TaskPhase::SelfReview] {
+            assert!(phase.is_read_only(), "{phase:?} should be read-only");
+        }
+        for phase in [
+            TaskPhase::Spawning,
+            TaskPhase::PlanReview,
+            TaskPhase::Implementing,
+            TaskPhase::Rework,
+            TaskPhase::Approval,
+            TaskPhase::AwaitingMerge,
+        ] {
+            assert!(!phase.is_read_only(), "{phase:?} should not be read-only");
+        }
+    }
+
+    /// A plan-mode agent's request to leave plan mode is the only "I am finished" it has, so it
+    /// must reach the same gate a turn ending would. The two destinations are duplicated from
+    /// `TurnCompleted` deliberately — this arrives mid-turn and cannot carry a turn's evidence —
+    /// and a drift between them would strand one route at a gate the other does not use.
+    #[test]
+    fn a_delivered_artifact_reaches_the_same_gate_a_finished_turn_would() {
+        for (phase, status) in [(TaskPhase::Drafting, TaskStatus::InProgress), (
+            TaskPhase::Refining,
+            TaskStatus::Planning,
+        )] {
+            let running = TaskState::active(status, phase, PhaseStatus::Running, TaskBall::Agent);
+            let delivered = resolve(TaskTransition::ArtifactDelivered, running.clone());
+            let finished = resolve(
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(false),
+                    reviewer_pending: false,
+                },
+                running,
+            );
+            assert_eq!(delivered, finished, "{phase:?}");
+            assert_eq!(delivered.ball, TaskBall::User, "{phase:?}");
+        }
+    }
+
+    /// The request can land after the user has already moved the task — stopped it, answered the
+    /// gate — and a late one must not drag it back.
+    #[test]
+    fn a_delivered_artifact_does_not_move_a_task_that_left_its_read_only_phase() {
+        let elsewhere = implementing();
+        assert_eq!(
+            resolve(TaskTransition::ArtifactDelivered, elsewhere.clone()),
+            elsewhere
+        );
+    }
+
+    /// `TaskPhase::is_read_only` and `AgentRole::is_read_only` are two spellings of one rule, and a
+    /// disagreement between them would put an agent in a phase whose permissions do not match the
+    /// profile it was resolved from.
+    #[test]
+    fn the_phase_and_role_read_only_rules_agree() {
+        let pairs = [
+            (TaskPhase::Refining, AgentRole::Refiner),
+            (TaskPhase::Drafting, AgentRole::Planner),
+            (TaskPhase::SelfReview, AgentRole::Reviewer),
+            (TaskPhase::Implementing, AgentRole::Coder),
+            (TaskPhase::Rework, AgentRole::Coder),
+            (TaskPhase::AwaitingMerge, AgentRole::Coder),
+        ];
+        for (phase, role) in pairs {
+            assert_eq!(phase.is_read_only(), role.is_read_only(), "{phase:?} vs {role:?}");
+        }
+    }
 
     fn implementing() -> TaskState {
         TaskState::active(

@@ -25,6 +25,15 @@ use crate::models::GitConnection;
 
 pub const PROFILES_FILE: &str = "profiles.json";
 
+/// Modes in which a role that must not write, does not write unattended.
+///
+/// `readonly` and `plan` refuse a write outright. `default` turns one into a permission prompt,
+/// which for a read-only phase cannot be auto-answered, so it becomes the user's decision rather
+/// than the agent's. Ordered from strongest to weakest, and deliberately not a preference list —
+/// which of the three a role should use depends on what it has to deliver, not on which is
+/// strictest. See `READ_ONLY_MODES` in `useExecuteTask.ts` for the fallback preference.
+const READ_ONLY_SAFE_MODES: [&str; 3] = ["readonly", "plan", "default"];
+
 /// What a profile does when the agent it names cannot honour part of it.
 ///
 /// Agents differ in which models and permission modes they expose, and `effort` is not universal
@@ -205,9 +214,21 @@ pub fn apply_capabilities(
         other => other.clone(),
     };
 
-    // A read-only role that ended up with no mode is the case `Fail` exists for: the guarantee the
-    // gates depend on cannot be provided, and spawning anyway would provide the opposite.
-    if profile.role.is_read_only() && permission_mode.is_none() {
+    // A read-only role left in a mode that lets the agent write is the case `Fail` exists for: the
+    // guarantee the gates depend on cannot be provided, and spawning anyway would provide the
+    // opposite.
+    //
+    // Checking the mode rather than merely its presence is load-bearing. `default` is a legitimate
+    // way to hold a role that has to deliver prose — `plan` is the only read-only mode claude-code
+    // offers, and a plan-mode agent cannot end a turn without asking to leave it — because a write
+    // becomes a permission prompt, and `try_auto_approve_permission` refuses to answer one in a
+    // read-only phase, so it reaches the user. `acceptEdits` and `bypassPermissions` do not hold
+    // anything, and a presence check called them read-only.
+    if profile.role.is_read_only()
+        && !permission_mode
+            .as_deref()
+            .is_some_and(|mode| READ_ONLY_SAFE_MODES.contains(&mode))
+    {
         warnings.push(format!(
             "'{}' could not be held read-only for the {:?} role",
             profile.agent_id, profile.role
@@ -461,6 +482,35 @@ mod tests {
 
         p.fallback_behaviour = FallbackBehaviour::Fail;
         assert!(apply_capabilities(&p, &capabilities).is_err());
+    }
+
+    /// The check used to be for a mode being *present*, which called `acceptEdits` read-only. A
+    /// live run found the consequence: the planner implemented the task it was only supposed to
+    /// plan for.
+    #[test]
+    fn a_writable_mode_does_not_count_as_holding_a_read_only_role() {
+        let mut p = profile(AgentRole::Planner);
+        p.permission_mode = Some("acceptEdits".to_string());
+
+        let resolved = apply_capabilities(&p, &capable()).unwrap();
+        assert_eq!(resolved.permission_mode.as_deref(), Some("acceptEdits"));
+        assert_eq!(resolved.warnings.len(), 1, "{:?}", resolved.warnings);
+    }
+
+    /// `default` is how the roles that deliver prose are held: `plan` is the only read-only mode
+    /// claude-code offers, and a plan-mode agent cannot end a turn without asking to leave it. A
+    /// write becomes a prompt the user answers, so the role is held — just not by construction.
+    #[test]
+    fn default_holds_a_read_only_role_without_a_warning() {
+        let mut p = profile(AgentRole::Refiner);
+        p.permission_mode = Some("default".to_string());
+
+        let capabilities = AgentCapabilities {
+            mode_ids: vec!["default".to_string(), "acceptEdits".to_string()],
+            ..Default::default()
+        };
+        let resolved = apply_capabilities(&p, &capabilities).unwrap();
+        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
     }
 
     /// The coder is the one role that may legitimately run with the agent's default mode.

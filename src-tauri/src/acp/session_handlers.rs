@@ -215,6 +215,17 @@ pub async fn cancel_acp_session(
     app_state: State<'_, Arc<AppState>>,
     log_id: i32,
 ) -> Result<(), String> {
+    end_acp_session(&app_state, log_id).await;
+    Ok(())
+}
+
+/// The body of `cancel_acp_session`, reachable from inside the backend.
+///
+/// The command form takes Tauri's `State`, which nothing running in a reader loop has. Split out
+/// because the plan interception ends the planner's session itself: a plan and its implementation
+/// can be different agents entirely, so the session that produced the plan has no part in carrying
+/// it out and is closed at the moment the plan is taken.
+pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
 
     // This used to refuse outright when the owning task was InProgress or Review, telling the user
@@ -224,7 +235,11 @@ pub async fn cancel_acp_session(
     // the task is failed here rather than being refused.
     let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
-    let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
+    if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &cancel_msg).await {
+        // Best-effort: the transport may already be gone, which is one of the reasons to cancel.
+        // The teardown below is what actually ends the session, so it proceeds regardless.
+        log::debug!("[acp] cancel message not delivered for log_id={log_id}: {e}");
+    }
 
     // The connection server outlives its sessions deliberately: it is per connection, not per
     // session, and closing the last session used to drop it, which killed the transport and
@@ -266,10 +281,9 @@ pub async fn cancel_acp_session(
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     if let Some(pid) = project_id_for_save {
-        let state = Arc::clone(&*app_state);
+        let state = Arc::clone(app_state);
         tokio::spawn(crate::project::handlers::save_current_sessions_for_project(state, pid));
     }
-    Ok(())
 }
 
 /// Interrupt the current ACP turn without killing the session.

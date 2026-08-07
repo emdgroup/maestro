@@ -329,14 +329,21 @@ pub fn close_refinement(
 
         if accept {
             let proposal = crate::task::comments::latest_of_kind(&conn, task_id, "proposal")?
-                .and_then(|comment| comment.body)
                 .ok_or("This task has no proposal to accept")?;
+            let body = proposal.body.clone().ok_or("This task has no proposal to accept")?;
 
             conn.execute(
                 "UPDATE tasks SET description = ? WHERE id = ?",
-                rusqlite::params![proposal, task_id],
+                rusqlite::params![body, task_id],
             )
             .map_err(|e| format!("Failed to apply the proposal to task {}: {}", task_id, e))?;
+
+            // An accepted proposal *is* the description now, and the thread sat directly beneath it
+            // showing the same text twice. The thread is otherwise append-only, and a rejected
+            // proposal still stays: that one exists nowhere else, and what was suggested and turned
+            // down is the part of the history worth keeping.
+            conn.execute("DELETE FROM task_comments WHERE id = ?", [proposal.id])
+                .map_err(|e| format!("Failed to tidy task {}'s thread: {}", task_id, e))?;
         }
 
         crate::task::transition::apply(

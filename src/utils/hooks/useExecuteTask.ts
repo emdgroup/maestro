@@ -43,7 +43,9 @@ const COMPLETION_PROTOCOL =
 const REFINER_PROTOCOL =
   "Read whatever you need from the repository, then reply with the improved task description and " +
   "nothing else — no preamble, no summary of your changes, no code fences around the whole reply. " +
-  "Your reply is what will replace the description if the user accepts it. Do not modify any files.";
+  "Your reply is what will replace the description if the user accepts it. The task keeps its " +
+  "existing title, so do not restate it as a heading — start with the description itself. Do not " +
+  "modify any files.";
 
 /// What the planner is for, in the absence of a profile that says it better.
 ///
@@ -98,13 +100,13 @@ export function useExecuteTask(
   /// `role` decides which profile is resolved, whether the agent gets a worktree, whether it is
   /// held read-only, and — through `mark_task_session_ready` — which column and phase the task
   /// lands in. Everything else about starting an agent is the same for all four.
+  ///
+  /// `feedback` is what the user wrote at a gate: notes on a plan they want addressed rather than
+  /// started over from. Not persisted, because it is only meaningful in the prompt it is about to
+  /// become — the plan it refers to is replaced by the one this run produces.
   const execute = async (
     task: Task,
-    {
-      respectCapacity = false,
-      role: requestedRole = "Coder" as AgentRole,
-      handoffFrom = null as number | null,
-    } = {},
+    { respectCapacity = false, role: requestedRole = "Coder" as AgentRole, feedback = "" } = {},
   ) => {
     if (!projectId) return;
 
@@ -171,23 +173,6 @@ export function useExecuteTask(
       return;
     }
 
-    // D31: a session is reusable when the next role runs the same agent in the same working
-    // directory. Same task means the same worktree, so the agent is the only thing left to check —
-    // a different `agent_id` is a different subprocess and cannot be talked into being this one.
-    //
-    // What the handoff carries is the part the plan does not: the alternatives the planner
-    // rejected, the constraints it found, and the user's questions at the gate. The plan itself
-    // travels in the thread either way, which is why a fresh session is a downgrade rather than a
-    // failure.
-    const plannerAgentId =
-      handoffFrom !== null && role === "Coder"
-        ? await api
-            .resolveAgentProfile(projectId, "Planner", null, [], [], false)
-            .then((profile) => profile?.agent_id ?? null)
-            .catch(() => null)
-        : null;
-    const reuseSession = plannerAgentId === agentId ? handoffFrom : null;
-
     // Claim before anything is built. The claim marks the task `Spawning`, which is what stops a
     // second click or the auto-mode drain from starting the same task twice, and what makes the
     // in-flight state visible instead of leaving the card looking untouched for the whole spawn.
@@ -244,68 +229,67 @@ export function useExecuteTask(
         console.warn("Dirty worktree check failed, proceeding anyway:", err);
       }
 
-      // `[]` means *unknown*, not *none* — the same rule the profile resolver uses. On the handoff
-      // path nothing re-advertises the session's modes, so nothing is degraded away.
+      // `[]` means *unknown*, not *none* — the same rule the profile resolver uses.
+      //
+      // Always a fresh session. A previous role's session is never reused, not even when it runs
+      // the same agent in the same worktree: the planner's is closed the moment its plan is taken,
+      // because a plan and its implementation can be different agents on different models and a
+      // pipeline that only works when they happen to match is a pipeline with a hidden precondition.
       let capturedModeIds: string[] = [];
 
-      if (reuseSession !== null) {
-        logId = reuseSession;
-      } else {
-        // Spawn ACP session
-        const spawnResult = await spawnAcpSessionMutation.mutateAsync({
-          agentId,
-          cwd,
-          sessionName: task.title,
-          projectId,
-          connection,
-          worktreeBranch: branchName ?? null,
-          taskId: task.id,
-          taskName: task.title,
-        });
-        logId = spawnResult.log_id;
+      const spawnResult = await spawnAcpSessionMutation.mutateAsync({
+        agentId,
+        cwd,
+        sessionName: task.title,
+        projectId,
+        connection,
+        worktreeBranch: branchName ?? null,
+        taskId: task.id,
+        taskName: task.title,
+      });
+      logId = spawnResult.log_id;
 
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            unlistenSpawnOk();
-            unlistenSessionError();
-            reject(new Error("Agent spawn timed out after 30s"));
-          }, 30_000);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          unlistenSpawnOk();
+          unlistenSessionError();
+          reject(new Error("Agent spawn timed out after 30s"));
+        }, 30_000);
 
-          let unlistenSpawnOk: () => void = () => {};
-          let unlistenModes: () => void = () => {};
-          let unlistenSessionError: () => void = () => {};
+        let unlistenSpawnOk: () => void = () => {};
+        let unlistenModes: () => void = () => {};
+        let unlistenSessionError: () => void = () => {};
 
-          listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
-            `acp://session-modes/${logId}`,
-            (e) => {
-              capturedModeIds = e.payload.available_modes.map((m) => m.mode_id);
-              unlistenModes();
-            },
-          ).then((fn) => {
-            unlistenModes = fn;
-          });
-
-          listen<null>(`acp://spawn-ok/${logId}`, () => {
-            clearTimeout(timer);
-            unlistenSpawnOk();
+        listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
+          `acp://session-modes/${logId}`,
+          (e) => {
+            capturedModeIds = e.payload.available_modes.map((m) => m.mode_id);
             unlistenModes();
-            unlistenSessionError();
-            resolve();
-          }).then((fn) => {
-            unlistenSpawnOk = fn;
-          });
-
-          listen<string>(`acp://session-error/${logId}`, (e) => {
-            clearTimeout(timer);
-            unlistenSpawnOk();
-            unlistenModes();
-            unlistenSessionError();
-            reject(new Error(e.payload));
-          }).then((fn) => {
-            unlistenSessionError = fn;
-          });
+          },
+        ).then((fn) => {
+          unlistenModes = fn;
         });
-      }
+
+        listen<null>(`acp://spawn-ok/${logId}`, () => {
+          clearTimeout(timer);
+          unlistenSpawnOk();
+          unlistenModes();
+          unlistenSessionError();
+          resolve();
+        }).then((fn) => {
+          unlistenSpawnOk = fn;
+        });
+
+        listen<string>(`acp://session-error/${logId}`, (e) => {
+          clearTimeout(timer);
+          unlistenSpawnOk();
+          unlistenModes();
+          unlistenSessionError();
+          reject(new Error(e.payload));
+        }).then((fn) => {
+          unlistenSessionError = fn;
+        });
+      });
 
       // Asked again now that the agent has said what it supports, so anything it cannot honour is
       // dropped with a warning rather than being sent and silently failing.
@@ -393,9 +377,33 @@ export function useExecuteTask(
         text: `${rolePrompt}${promptText}\n\n---\n${protocol}`,
       });
 
-      // The plan the user approved, carried into the implementation. Needed even when the coder
-      // reuses the planner's session, because the gate may have run days later against a session
-      // that was restored rather than the one that wrote it.
+      // A re-plan the user asked for rather than a fresh one: they read the plan, wrote down what
+      // was wrong with it, and pressed Refine. The planner that wrote it is gone — its session is
+      // closed when its plan is taken — so the plan has to be handed back the same way it is handed
+      // to a coder, as text.
+      //
+      // Only when there is feedback. "Plan again" with nothing written means start over, and
+      // showing the planner its last attempt is the surest way to get that attempt again.
+      if (role === "Planner" && feedback.trim()) {
+        const previous = await api
+          .listTaskComments(task.id)
+          .then((all) => [...all].reverse().find((c) => c.kind === "plan")?.body ?? null)
+          .catch(() => null);
+
+        if (previous?.trim()) {
+          contentBlocks.push({
+            type: "text",
+            text: `## Your previous plan\n\n${previous.trim()}`,
+          });
+        }
+        contentBlocks.push({
+          type: "text",
+          text: `## What the user wants changed about it\n\n${feedback.trim()}\n\nReply with the revised plan in full — it replaces the one above.`,
+        });
+      }
+
+      // The plan the user approved, carried into the implementation. The coder never inherits the
+      // planner's session, so this is the only way the plan reaches it.
       if (role === "Coder") {
         const entries = await api
           .listTaskComments(task.id)
@@ -485,14 +493,9 @@ export function useExecuteTask(
       // in flight. Their action wins, so the session we just built gets torn down instead.
       const started = await markSessionReady.mutateAsync({ taskId: task.id, role });
       if (!started) {
-        // Only a session we created. On the handoff path the session was the planner's before it
-        // was ours, and the user moving the card is not a reason to close the one they may have
-        // been talking to.
-        if (reuseSession === null) {
-          api.cancelAcpSession(logId).catch((err) => {
-            console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
-          });
-        }
+        api.cancelAcpSession(logId).catch((err) => {
+          console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
+        });
         toast.info(`"${task.title}" was moved while starting`);
         return;
       }
@@ -511,9 +514,7 @@ export function useExecuteTask(
 
       spawnFailed = true;
 
-      // As above: a borrowed session outlives a failed handoff, so the user can join it and see
-      // what went wrong rather than being left with a red card and nothing to look at.
-      if (logId !== null && reuseSession === null) {
+      if (logId !== null) {
         try {
           await api.cancelAcpSession(logId);
         } catch {

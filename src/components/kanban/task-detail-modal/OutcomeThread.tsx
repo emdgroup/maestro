@@ -5,6 +5,8 @@ import { Textarea } from "@/ui/textarea";
 import { cn } from "@/lib/utils.ts";
 import type { TaskComment } from "@/types/bindings";
 import { useTaskCommentsQuery, useAddTaskNoteMutation } from "@/services/task.service";
+import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { useSelectedProject } from "@/store/projectStore";
 
 /// What each kind of entry is called on screen. Unknown kinds render as themselves rather than
 /// being dropped: the pipeline gains kinds as roles land, and a thread written by a newer build
@@ -24,6 +26,7 @@ function entryLabel(comment: TaskComment): string {
 
 function Entry({ comment }: { comment: TaskComment }) {
   const fromAgent = comment.author === "agent";
+  const projectId = useSelectedProject()?.id;
 
   return (
     <div className="flex gap-2 text-sm">
@@ -41,7 +44,12 @@ function Entry({ comment }: { comment: TaskComment }) {
           <span>{new Date(comment.created_at).toLocaleString()}</span>
         </div>
         {comment.body ? (
-          <p className="whitespace-pre-wrap break-words text-foreground/90">{comment.body}</p>
+          // Agents write markdown — plans and refined descriptions arrive with headings, tables and
+          // fenced code. Rendered as preformatted text they read as raw pipes and hashes, which is
+          // the opposite of what the gate above them is asking the user to judge.
+          <div className="break-words text-foreground/90">
+            <MarkdownBlock text={comment.body} projectId={projectId} />
+          </div>
         ) : (
           // An entry whose content lives outside the database. Nothing produces these yet; the
           // branch exists so that moving artifacts out later is not also a UI change.
@@ -73,8 +81,14 @@ export function OutcomeThread({ taskId }: { taskId: number }) {
   };
 
   return (
-    <div className="shrink-0 space-y-3 pt-3 border-t border-border">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Outcome</h3>
+    // Capped and scrolled rather than sized to its content. An entry is a whole plan or a whole
+    // refined description, and letting the thread take the height it wants starved the description
+    // above it — which is `flex-1`, so it is the one that gives — down to a single clipped line,
+    // and ran the last entry underneath the footer.
+    <div className="shrink-0 flex flex-col min-h-0 max-h-72 gap-3 pt-3 border-t border-border">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground shrink-0">
+        Outcome
+      </h3>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -83,7 +97,7 @@ export function OutcomeThread({ taskId }: { taskId: number }) {
           Nothing recorded yet. An agent's closing message lands here when a phase finishes.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-3 pr-1">
           {comments.map((comment) => (
             <Entry key={comment.id} comment={comment} />
           ))}
