@@ -59,14 +59,35 @@ describe("useAgentPipeline", () => {
     render([pendingReview]);
     await settle();
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }), { role: "Reviewer" });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }), {
+      role: "Reviewer",
+      unattended: true,
+    });
+  });
+
+  /// Every start from here is unattended, and it is not a nicety. This hook takes `execute` and
+  /// none of the dialog state beside it, so anything `execute` stops to ask has nothing rendered
+  /// that could answer it. A live CI fix round deadlocked on the dirty-worktree prompt — awaiting
+  /// a promise no visible dialog could resolve — and the task stayed at `Spawning` for good,
+  /// because the claim is released in a `finally` that never runs.
+  it("never starts a handoff that could stop to ask a question", async () => {
+    render([pendingReview, pendingRework]);
+    await settle();
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    for (const [, options] of execute.mock.calls) {
+      expect(options).toMatchObject({ unattended: true });
+    }
   });
 
   it("starts a coder for a rejected review", async () => {
     render([pendingRework]);
     await settle();
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 6 }), { role: "Coder" });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 6 }), {
+      role: "Coder",
+      unattended: true,
+    });
   });
 
   // The signal is Waiting + Agent, and nothing else. A gate waiting on a person must never start
@@ -136,7 +157,10 @@ describe("useAgentPipeline CI fixes", () => {
     render([redBuild]);
     await settle();
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }), { role: "Coder" });
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }), {
+      role: "Coder",
+      unattended: true,
+    });
   });
 
   // The ordinary state of an open pull request. Starting an agent for every one of these would

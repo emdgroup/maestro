@@ -104,9 +104,18 @@ export function useExecuteTask(
   /// `feedback` is what the user wrote at a gate: notes on a plan they want addressed rather than
   /// started over from. Not persisted, because it is only meaningful in the prompt it is about to
   /// become — the plan it refers to is replaced by the one this run produces.
+  ///
+  /// `unattended` says nobody pressed anything and nobody is watching: the board handed one role's
+  /// work to the next. Anything that would stop to ask a question has to be skipped rather than
+  /// merely defaulted, because the caller renders none of the dialogs that would ask it.
   const execute = async (
     task: Task,
-    { respectCapacity = false, role: requestedRole = "Coder" as AgentRole, feedback = "" } = {},
+    {
+      respectCapacity = false,
+      role: requestedRole = "Coder" as AgentRole,
+      feedback = "",
+      unattended = false,
+    } = {},
   ) => {
     if (!projectId) return;
 
@@ -203,13 +212,24 @@ export function useExecuteTask(
           })
         : { cwd: projectPath, branchName: null };
 
-      // Only for an agent that will write. The prompt exists to stop a coder building on top of
-      // someone else's uncommitted work; offering to stash or discard the user's changes before a
-      // read-only agent that cannot touch them would be destroying work for no reason at all.
+      // Only for an agent that will write, and only when somebody is there to answer. The prompt
+      // exists to stop a coder building on top of someone else's uncommitted work; offering to
+      // stash or discard the user's changes before a read-only agent that cannot touch them would
+      // be destroying work for no reason at all.
+      //
+      // A handoff is skipped for two independent reasons, either of which would be enough. The
+      // uncommitted work in a handoff's worktree is *this task's own*, left by the round before —
+      // stashing or discarding it would destroy the very thing the agent is being asked to carry
+      // on from. And nothing renders this dialog on that path: `useAgentPipeline` takes `execute`
+      // and none of the dialog state beside it, so the promise below had nothing that could ever
+      // resolve it. A live CI fix round deadlocked here over a `.claude/settings.local.json` the
+      // agent had written itself, pinned at `Spawning` with the claim never released, because
+      // `finally` cannot run on a promise that never settles.
       try {
-        const dirtyStatus = readOnly
-          ? { modified_count: 0, untracked_count: 0 }
-          : await api.checkWorktreeDirty(projectId, cwd);
+        const dirtyStatus =
+          readOnly || unattended
+            ? { modified_count: 0, untracked_count: 0 }
+            : await api.checkWorktreeDirty(projectId, cwd);
         if (dirtyStatus.modified_count > 0 || dirtyStatus.untracked_count > 0) {
           const choice = await new Promise<DirtyChoice | "cancel">((resolve) => {
             dirtyResolveRef.current = resolve;

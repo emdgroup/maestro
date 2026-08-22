@@ -61,7 +61,11 @@ export function useAgentPipeline(
     const timer = setTimeout(() => {
       for (const [task, role] of due) {
         startedRef.current.add(task.id);
-        void executeRef.current(task, { role });
+        // `unattended` because this hook takes `execute` and none of the dialog state beside it,
+        // so anything `execute` stops to ask has nothing here that could answer. A CI fix round
+        // deadlocked on exactly that: the dirty-worktree prompt awaited a promise no rendered
+        // dialog could resolve, and the task sat at `Spawning` with its claim never released.
+        void executeRef.current(task, { role, unattended: true });
       }
     }, DEBOUNCE_MS);
 
