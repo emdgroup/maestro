@@ -210,10 +210,22 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         // a planner and a coder both work inside In Progress but at different gates; a reviewer
         // reads a diff, which only exists once the work is in Review.
         TaskTransition::SessionReady(role) => match role {
-            // A coder starting on a task that is already awaiting merge is fixing the build on an
-            // open pull request, not starting the work over. Sending it to In Progress would
-            // detach it from the pull request its commits are about to be pushed to.
-            AgentRole::Coder if current.phase == Some(AwaitingMerge) => {
+            // A coder starting on a task that is already in Review is fixing the build on an open
+            // pull request, not starting the work over. Sending it to In Progress would detach it
+            // from the pull request its commits are about to be pushed to, and the turn-ended
+            // handler gates the push on the phase, so the fix would never reach the forge.
+            //
+            // The test is the *column*, not the phase, because the phase is already gone by the
+            // time this runs: every start goes through `ExecutionStarted` first, which overwrites
+            // `phase` with `Spawning`. It leaves `status` alone — deliberately, so a failed spawn
+            // stays where the user launched it — and that is the only part of the claim that still
+            // remembers where the task came from. Reading `phase` here matched only when called
+            // directly, which is to say only from the tests.
+            //
+            // Review is unambiguous for a coder: both routes back from a review, `ReviewRejected`
+            // and `ReworkRequested`, land at `InProgress/Rework`, and Execute is not offered on a
+            // Review card.
+            AgentRole::Coder if current.status == Review => {
                 TaskState::active(Review, AwaitingMerge, Running, Ball::Agent)
             }
             AgentRole::Refiner => TaskState::active(Planning, Refining, Running, Ball::Agent),
@@ -1295,6 +1307,63 @@ mod tests {
                     "{phase:?} must not be claimable twice"
                 );
             }
+        }
+
+        /// Through the claim, not around it — which is the whole point.
+        ///
+        /// `resolve` was asked whether the phase was `AwaitingMerge`, and by the time a session is
+        /// ready it never is: `ExecutionStarted` has already overwritten it with `Spawning`. The
+        /// unit test above passes because it hands `resolve` the pre-claim state directly, so the
+        /// guard matched in the tests and nowhere else, and a live CI fix round landed in
+        /// `InProgress/Implementing`. From there `reader_task` gates the push on the phase, so the
+        /// fix would never have reached the pull request it was written for — it would have gone
+        /// round the review loop and asked to open a second one.
+        #[test]
+        fn a_ci_fix_stays_on_its_pull_request_across_the_claim() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            apply(&conn, task_id, TaskTransition::CiFixRequested).unwrap();
+
+            claim_for_execution(&conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
+                .unwrap()
+                .expect("the red-build handoff must be claimable");
+            // The claim keeps the column and drops the phase. The column is what survives to say
+            // where this came from.
+            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::Review));
+
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                read_state(&conn, task_id).unwrap(),
+                TaskState::active(
+                    TaskStatus::Review,
+                    TaskPhase::AwaitingMerge,
+                    PhaseStatus::Running,
+                    TaskBall::Agent
+                ),
+                "a coder fixing a red build must stay attached to its pull request"
+            );
+        }
+
+        /// The other coder start must not be caught by the same guard: a rework round is ordinary
+        /// work in In Progress, and sending it to `AwaitingMerge` would try to push it to a pull
+        /// request that does not exist.
+        #[test]
+        fn a_rework_round_is_still_ordinary_work() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            apply(&conn, task_id, TaskTransition::ReviewRejected).unwrap();
+
+            claim_for_execution(&conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
+                .unwrap()
+                .expect("a rejected review is a handoff");
+            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
         }
 
         /// The human review gate is not a handoff. Something is waiting there, but it is a person
