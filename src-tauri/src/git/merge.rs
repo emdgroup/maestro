@@ -652,13 +652,21 @@ pub async fn reconcile_pull_requests(
                 changed.push(task_id);
                 landed = true;
             }
+            // Unlike a merge, this leaves the task in `AwaitingMerge` — deliberately, since a
+            // closed pull request is a decision for the user and not a route anywhere. That keeps
+            // the task in this sweep's candidate set for as long as it sits there, so the write has
+            // to be conditional or every three minutes would re-decide it: bumping `updated_at`,
+            // repeating the log line, and refetching the whole board through `changed`.
             PullRequestState::Closed => {
-                {
+                let news = {
                     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                    transition::apply(&conn, task_id, TaskTransition::PullRequestClosed)?;
+                    transition::apply_if_changed(&conn, task_id, TaskTransition::PullRequestClosed)?
+                        .is_some()
+                };
+                if news {
+                    log::info!("Pull request #{} was closed without merging; task {} needs a decision", number, task_id);
+                    changed.push(task_id);
                 }
-                log::info!("Pull request #{} was closed without merging; task {} needs a decision", number, task_id);
-                changed.push(task_id);
             }
         }
     }
@@ -902,8 +910,13 @@ pub(crate) async fn finalize_successful_merge(
 
     match crate::git::delete_worktree(&git_conn, worktree_path).await {
         Ok(()) => {
-            // Delete branch — non-fatal, best effort
-            let _ = run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-D", branch_name]).await;
+            // Best effort, but not silent: this refused once after a squash merge and left the
+            // branch behind, and because the error went nowhere the only way to notice was to
+            // compare the repository against what this function claims to do. git's own message is
+            // the diagnosis, so it has to reach the log.
+            if let Err(e) = run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-D", branch_name]).await {
+                log::warn!("Merged task {} but could not delete branch {}: {}", task_id, branch_name, e);
+            }
             // Delete from database on successful cleanup
             {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -914,8 +927,10 @@ pub(crate) async fn finalize_successful_merge(
                 .map_err(|e| format!("Failed to delete worktree from DB: {}", e))?;
             }
         }
-        Err(_e) => {
-            // Cleanup failed — zombie cleanup will retry
+        // Left for `cleanup_zombie_worktrees` to retry, which is why this is not an error — but a
+        // retry that keeps failing is indistinguishable from one that never ran unless it says so.
+        Err(e) => {
+            log::warn!("Merged task {} but could not remove worktree {}: {}", task_id, worktree_path, e);
         }
     }
 
@@ -1097,6 +1112,32 @@ mod tests {
             .query_row("SELECT pull_request_ci FROM tasks WHERE id = 1", [], |row| row.get(0))
             .expect("read back");
         assert_eq!(stored, None);
+    }
+
+    /// A closed pull request is the one outcome that leaves the task in `AwaitingMerge`, so unlike
+    /// a merge it stays in the sweep's candidate set until a person moves it. Observed live on a
+    /// real pull request: three sweeps three minutes apart, each rewriting the row, bumping
+    /// `updated_at` and repeating the log line, because the arm applied the transition blind.
+    #[test]
+    fn a_pull_request_that_is_still_closed_is_not_closed_again() {
+        let conn = awaiting_merge();
+
+        let first = transition::apply_if_changed(&conn, 1, TaskTransition::PullRequestClosed)
+            .expect("apply");
+        assert!(first.is_some(), "the pull request going away is news");
+
+        let updated_at: String = conn
+            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read back");
+
+        let second = transition::apply_if_changed(&conn, 1, TaskTransition::PullRequestClosed)
+            .expect("apply");
+        assert!(second.is_none(), "finding it closed again is not");
+
+        let after: String = conn
+            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read back");
+        assert_eq!(after, updated_at, "a poll must not count as an edit");
     }
 
     /// The fix loop only acts on a pull request the forge still holds, and only while rounds
