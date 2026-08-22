@@ -152,7 +152,7 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
         {entries.map((entry, i) =>
           entry.status === "in_progress" ? (
             <div key={i} className="flex-1 h-0.75 rounded-sm relative overflow-hidden bg-accent/20">
-              <div className="absolute inset-y-0 w-[60%] rounded-r-sm animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
+              <div className="absolute inset-y-0 left-0 w-[60%] rounded-r-sm animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
             </div>
           ) : (
             <div
