@@ -85,6 +85,26 @@ const PHASE_LABELS: Record<TaskPhase, string> = {
   AwaitingMerge: "Awaiting merge",
 };
 
+/// What the card says instead once the ball is with the user.
+///
+/// A phase name answers "which stage is this", which is the right question while an agent is
+/// working and the wrong one the moment the task is waiting on a person — then the only question is
+/// what is being asked of them. `Approval` is the worst of them: it reads as a verdict already
+/// delivered, and it appears directly after a reviewer whose message says `APPROVED`. A live run
+/// stalled there, with the user reading the card as "this is approved" rather than "approve this".
+///
+/// Until now the sole signal that a card wanted something was its label being accent-coloured
+/// rather than grey, which is a distinction that carries no meaning on its own and none at all to
+/// anyone not separating those two colours. The words carry it now; the colour stays as emphasis.
+///
+/// Deliberately not exhaustive. A phase absent here has no user gate — or, like a `Blocked` agent,
+/// already says so through the pulsing border it is the only phase status to get.
+const USER_GATE_LABELS: Partial<Record<TaskPhase, string>> = {
+  Refining: "Proposal for you",
+  PlanReview: "Plan for you",
+  Approval: "Needs your approval",
+};
+
 /// Three intensities, keyed on `phase_status`. Only `Blocked` animates: it is the one case where
 /// an agent is stopped dead waiting on the user. Spreading the pulse across every card the user
 /// owns — including a review gate untouched for days — is what would turn it into wallpaper.
@@ -137,7 +157,8 @@ function PhaseLine({ task }: { task: Task }) {
   const label =
     failed && task.phase === "AwaitingMerge"
       ? "Pull request closed"
-      : PHASE_LABELS[task.phase] + (failed ? " · failed" : "");
+      : (!failed && task.ball === "User" && USER_GATE_LABELS[task.phase]) ||
+        PHASE_LABELS[task.phase] + (failed ? " · failed" : "");
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
       <span

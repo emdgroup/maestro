@@ -626,6 +626,34 @@ describe("TaskCard plan gate", () => {
     ball: "User",
   };
 
+  /// The label has to ask, not describe. `APPROVAL` under a reviewer that just said `APPROVED`
+  /// reads as a verdict already delivered — a live run stalled on exactly that.
+  it("says what is wanted of the user rather than naming the phase", () => {
+    renderCard({
+      status: "Review",
+      phase: "Approval",
+      phase_status: "Waiting",
+      ball: "User",
+    });
+
+    expect(screen.getByText(/needs your approval/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^approval$/i)).not.toBeInTheDocument();
+  });
+
+  /// Only when it is the user's move. The same phase with an agent working keeps the stage name,
+  /// which is the useful thing to know while something is running.
+  it("keeps the phase name while the ball is with an agent", () => {
+    renderCard({
+      status: "Review",
+      phase: "SelfReview",
+      phase_status: "Running",
+      ball: "Agent",
+    });
+
+    expect(screen.getByText(/self review/i)).toBeInTheDocument();
+    expect(screen.queryByText(/needs your/i)).not.toBeInTheDocument();
+  });
+
   it("offers the plan rather than the running-agent controls", () => {
     renderCard(atTheGate);
 
