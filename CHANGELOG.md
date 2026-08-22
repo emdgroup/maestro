@@ -2,11 +2,10 @@
 
 ## [0.17.1](https://github.com/emdgroup/maestro/compare/v0.17.0...v0.17.1) (2026-08-22)
 
-
 ### Bug Fixes
 
-* limit review file open-in-tab click to the file name ([#243](https://github.com/emdgroup/maestro/issues/243)) ([c2271d5](https://github.com/emdgroup/maestro/commit/c2271d52ab4be6dabdffdf4f7597a53f86581af2))
-* stop the plan rail comet stair-stepping its top edge ([#245](https://github.com/emdgroup/maestro/issues/245)) ([0e0d491](https://github.com/emdgroup/maestro/commit/0e0d491def4347e08da99d8ba614ff9f7a3fe4c6))
+- limit review file open-in-tab click to the file name ([#243](https://github.com/emdgroup/maestro/issues/243)) ([c2271d5](https://github.com/emdgroup/maestro/commit/c2271d52ab4be6dabdffdf4f7597a53f86581af2))
+- stop the plan rail comet stair-stepping its top edge ([#245](https://github.com/emdgroup/maestro/issues/245)) ([0e0d491](https://github.com/emdgroup/maestro/commit/0e0d491def4347e08da99d8ba614ff9f7a3fe4c6))
 
 ## [0.17.0](https://github.com/emdgroup/maestro/compare/v0.16.0...v0.17.0) (2026-08-08)
 
