@@ -408,6 +408,15 @@ pub fn apply_if_status(
 ///
 /// A *failed* spawn is claimable, because it is the retry. The claim is kept on failure so the card
 /// can show what happened, which would otherwise make the failure state a dead end.
+///
+/// A **handoff** — one role finishing and the board asking for the next — bypasses `expected`
+/// entirely. That list describes the columns a *user* may press Execute from, and a handoff is not
+/// a user pressing anything: the phase already names the role about to start, and it pins the column
+/// far more precisely than the list does. Checking the list anyway is what killed every one of them.
+/// A reviewer works in Review and the caller only ever listed Planning, Queue and In Progress, so
+/// `useAgentPipeline` asked for a reviewer on every board update and was refused every time — the
+/// review loop, the rework round and the red-build fix could not start at all, and the task sat at
+/// `SelfReview/Waiting` with nothing left to move it.
 pub fn claim_for_execution(
     conn: &Connection,
     task_id: i32,
@@ -415,19 +424,33 @@ pub fn claim_for_execution(
 ) -> Result<Option<Task>, String> {
     let current = read_state(conn, task_id)?;
 
-    let claimable = match (current.phase, current.phase_status) {
-        (None, _) => true,
-        (Some(TaskPhase::Spawning), Some(PhaseStatus::Failed)) => true,
-        // The plan gate is a handover, not a resting place: approving the plan is what starts the
-        // coder, so the gate has to be claimable even though the task already has a phase.
-        (Some(TaskPhase::PlanReview), Some(PhaseStatus::Waiting)) => true,
-        _ => false,
-    };
+    // `Approval` is the one Waiting phase deliberately absent: what waits there is a person choosing
+    // how to land the work, not a role to spawn.
+    let handoff = matches!(
+        (current.phase, current.phase_status),
+        (
+            Some(TaskPhase::SelfReview | TaskPhase::Rework | TaskPhase::AwaitingMerge),
+            Some(PhaseStatus::Waiting)
+        )
+    );
 
-    if !expected.contains(&current.status) || !claimable {
+    let claimable = handoff
+        || match (current.phase, current.phase_status) {
+            (None, _) => true,
+            (Some(TaskPhase::Spawning), Some(PhaseStatus::Failed)) => true,
+            // The plan gate is a handover, not a resting place: approving the plan is what starts
+            // the coder, so the gate has to be claimable even though the task already has a phase.
+            (Some(TaskPhase::PlanReview), Some(PhaseStatus::Waiting)) => true,
+            _ => false,
+        };
+
+    if !claimable || (!handoff && !expected.contains(&current.status)) {
         return Ok(None);
     }
 
+    // Still through `ExecutionStarted`, so the phase becomes `Spawning` and a second attempt finds
+    // a state that is neither a handoff nor otherwise claimable. That is what keeps one handoff from
+    // building two sessions while the first is still coming up.
     apply(conn, task_id, TaskTransition::ExecutionStarted).map(Some)
 }
 
@@ -1172,6 +1195,77 @@ mod tests {
 
             assert!(claimed.is_some(), "the plan gate must hand off to the coder");
             assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::InProgress));
+        }
+
+        /// Every handoff the board performs has to be claimable, and the reviewer's proves the
+        /// point on its own: it works in Review, which no caller lists among the columns a user may
+        /// press Execute from. Checking that list for a handoff refused all three of them, so a
+        /// coder finishing left the task at `SelfReview/Waiting` with nothing able to start.
+        #[test]
+        fn every_handoff_can_be_claimed_from_the_column_its_role_works_in() {
+            // Reached the way the board reaches them, so a change to what produces a handoff shows
+            // up here rather than in a hand-written state that quietly stops matching.
+            let handoffs: [(TaskTransition, TaskPhase, TaskStatus); 3] = [
+                (
+                    TaskTransition::TurnCompleted {
+                        is_git_repo: true,
+                        has_changes: Some(true),
+                        reviewer_pending: true,
+                    },
+                    TaskPhase::SelfReview,
+                    TaskStatus::Review,
+                ),
+                (TaskTransition::ReviewRejected, TaskPhase::Rework, TaskStatus::InProgress),
+                (TaskTransition::CiFixRequested, TaskPhase::AwaitingMerge, TaskStatus::Review),
+            ];
+
+            for (event, phase, status) in handoffs {
+                let (conn, task_id) = db_with_task();
+                start_execution(&conn, task_id);
+                apply(&conn, task_id, event).unwrap();
+                assert_eq!(
+                    read_state(&conn, task_id).unwrap(),
+                    TaskState::active(status, phase, PhaseStatus::Waiting, TaskBall::Agent),
+                );
+
+                // The caller's list names the user's columns, and deliberately not this one.
+                let claimed =
+                    claim_for_execution(&conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
+                        .unwrap();
+
+                assert!(claimed.is_some(), "{phase:?} is a handoff and must start");
+                assert_eq!(read_state(&conn, task_id).unwrap(), spawning(status));
+
+                // And exactly once: the claim itself is what stops the board asking twice while
+                // the first session is still coming up.
+                assert!(
+                    claim_for_execution(&conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
+                        .unwrap()
+                        .is_none(),
+                    "{phase:?} must not be claimable twice"
+                );
+            }
+        }
+
+        /// The human review gate is not a handoff. Something is waiting there, but it is a person
+        /// choosing how to land the work — starting an agent for them would be inventing a decision.
+        #[test]
+        fn the_approval_gate_is_not_a_handoff() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: false,
+                },
+            )
+            .unwrap();
+            assert_eq!(read_state(&conn, task_id).unwrap().phase, Some(TaskPhase::Approval));
+
+            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Review]).unwrap().is_none());
         }
 
         /// The retry exception must not widen into "any task with a phase can be re-claimed" —
