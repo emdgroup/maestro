@@ -151,6 +151,19 @@ pub enum TaskTransition {
     /// rejected, reopened elsewhere — have no common answer, and guessing one is how a task ends
     /// up quietly restarted. The card turns red where it stands and the user decides.
     PullRequestClosed,
+    /// The forge says the open pull request no longer merges cleanly.
+    ///
+    /// Amber, not red. `PullRequestClosed` is the red one and it means the pull request is gone;
+    /// this one means it is still there and still wanted, and somebody has to rebase it. Same
+    /// phase, ball on the user, `Waiting` rather than `Failed` — which is also what makes the
+    /// state legible without storing it: at `AwaitingMerge`, `Waiting` with the ball on the user
+    /// is this and nothing else.
+    PullRequestConflicted,
+    /// The conflict cleared and the pull request is back with the forge.
+    ///
+    /// Lands where `PullRequestOpened` does, and is a separate event for the same reason
+    /// `CiFixPushed` is: what `resolve` returns is not what happened.
+    PullRequestMergeable,
     /// CI on the open pull request failed and an agent is being sent to fix it.
     ///
     /// Stays at `AwaitingMerge` rather than going back to In Progress: the pull request is still
@@ -288,6 +301,14 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::PullRequestClosed => {
             TaskState::active(Review, AwaitingMerge, Failed, Ball::User)
+        }
+
+        TaskTransition::PullRequestConflicted => {
+            TaskState::active(Review, AwaitingMerge, Waiting, Ball::User)
+        }
+
+        TaskTransition::PullRequestMergeable => {
+            TaskState::active(Review, AwaitingMerge, Waiting, Ball::External)
         }
 
         TaskTransition::CiFixRequested => {
@@ -1015,6 +1036,35 @@ mod tests {
         let fresh = resolve(TaskTransition::SessionReady(AgentRole::Coder), implementing());
         assert_eq!(fresh.status, TaskStatus::InProgress);
         assert_eq!(fresh.phase, Some(TaskPhase::Implementing));
+    }
+
+    /// The distinction the conflict feature turns on. `Failed` is already taken at this phase and
+    /// already means "the pull request is gone"; a conflicted one is still open and still wanted.
+    /// Getting these the same way round would tell a user their pull request had been closed every
+    /// time somebody else's merge moved the base branch.
+    ///
+    /// It also pins what the card reads instead of a stored flag: at `AwaitingMerge`, `Waiting`
+    /// with the ball on the user is a conflict and nothing else.
+    #[test]
+    fn a_conflicted_pull_request_is_amber_and_not_a_closed_one() {
+        let awaiting = resolve(TaskTransition::PullRequestOpened, implementing());
+
+        let conflicted = resolve(TaskTransition::PullRequestConflicted, awaiting);
+        assert_eq!(conflicted.status, TaskStatus::Review);
+        assert_eq!(conflicted.phase, Some(TaskPhase::AwaitingMerge));
+        assert_eq!(conflicted.phase_status, Some(PhaseStatus::Waiting));
+        assert_eq!(conflicted.ball, TaskBall::User);
+
+        let closed = resolve(TaskTransition::PullRequestClosed, awaiting);
+        assert_ne!(
+            conflicted, closed,
+            "a conflict must not land in the state that means the pull request was closed"
+        );
+        assert_eq!(closed.phase_status, Some(PhaseStatus::Failed));
+
+        // And the way back out, or the task would sit with the user for ever once rebased.
+        let cleared = resolve(TaskTransition::PullRequestMergeable, conflicted);
+        assert_eq!(cleared, awaiting);
     }
 
     /// Dragging a task out of Done must not leave it claiming to have merged.

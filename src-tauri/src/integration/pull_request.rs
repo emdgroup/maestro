@@ -40,6 +40,21 @@ pub enum PullRequestState {
     Closed,
 }
 
+/// What one look at the forge says about a pull request.
+///
+/// `mergeable` is three-valued on purpose, and `None` means "no answer" rather than "mergeable".
+/// GitHub computes the merge commit in the background and returns `null` on the first read after
+/// any push; GitLab never answers at all. A conflict has to be positively reported before a task
+/// is taken off the forge and handed to a person.
+///
+/// `head_sha` rides along because the caller needs it to ask about CI, and it arrives in the same
+/// response. Fetching it separately was a second identical request per task per sweep.
+pub struct PullRequestDetails {
+    pub state: PullRequestState,
+    pub mergeable: Option<bool>,
+    pub head_sha: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct GitHubStylePullRequest {
     number: i64,
@@ -82,10 +97,10 @@ pub async fn create_pull_request(
 /// This is the whole of "offline reconciliation": the question is about current state, not about
 /// events, so an app that was closed when the PR merged learns the same thing on next launch as
 /// one that was watching. There is nothing to replay and no webhook to miss.
-pub async fn fetch_pull_request_state(
+pub async fn fetch_pull_request(
     target: &PullRequestTarget<'_>,
     number: i64,
-) -> Result<PullRequestState, String> {
+) -> Result<PullRequestDetails, String> {
     match target.config.provider.as_str() {
         "github" => {
             let (owner, repo) = owner_repo(target.config)?;
@@ -99,7 +114,7 @@ pub async fn fetch_pull_request_state(
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let pr: GitHubStyleState = read_json(response, "GitHub").await?;
-            Ok(github_style_state(&pr))
+            Ok(github_style_details(pr))
         }
         "gitlab" => {
             let url = format!(
@@ -115,11 +130,17 @@ pub async fn fetch_pull_request_state(
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let mr: GitLabState = read_json(response, "GitLab").await?;
-            Ok(match mr.state.as_str() {
-                "merged" => PullRequestState::Merged,
-                "closed" => PullRequestState::Closed,
-                // `opened` and `locked` are both still in play.
-                _ => PullRequestState::Open,
+            Ok(PullRequestDetails {
+                state: match mr.state.as_str() {
+                    "merged" => PullRequestState::Merged,
+                    "closed" => PullRequestState::Closed,
+                    // `opened` and `locked` are both still in play.
+                    _ => PullRequestState::Open,
+                },
+                // GitLab spells this `has_conflicts` on a different shape. Left unread rather than
+                // half-read, so a conflict is never inferred from a field nobody parsed.
+                mergeable: None,
+                head_sha: None,
             })
         }
         "gitea" | "forgejo" => {
@@ -138,7 +159,7 @@ pub async fn fetch_pull_request_state(
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let pr: GitHubStyleState = read_json(response, "Gitea").await?;
-            Ok(github_style_state(&pr))
+            Ok(github_style_details(pr))
         }
         other => Err(format!("Cannot read pull request state on `{}`.", other)),
     }
@@ -162,32 +183,28 @@ pub enum CiState {
 /// Every unclear answer is `Unknown` rather than a guess, because the only thing done with a
 /// `Failing` is to start an agent: a misread pending pipeline would spend a round fixing a build
 /// that had not finished, and a misread configuration-less repository would spend one forever.
+///
+/// `head_sha` comes from the caller's `fetch_pull_request` rather than from a request of its own.
+/// The sweep asks about CI on every pass now that the card shows it, so fetching the pull request
+/// again here would be a second identical GitHub request per task per sweep.
 pub async fn fetch_ci_state(
     target: &PullRequestTarget<'_>,
     number: i64,
+    head_sha: Option<&str>,
 ) -> Result<CiState, String> {
     match target.config.provider.as_str() {
         "github" => {
+            let Some(sha) = head_sha else {
+                return Ok(CiState::Unknown);
+            };
             let (owner, repo) = owner_repo(target.config)?;
             let client = build_http_client()?;
             let api = github_api_base(target);
             let auth = format!("Bearer {}", target.token);
 
-            let pr: GitHubHead = read_json(
-                client
-                    .get(format!("{}/repos/{}/{}/pulls/{}", api, owner, repo, number))
-                    .header("Authorization", &auth)
-                    .header("User-Agent", "maestro/1.0")
-                    .send()
-                    .await
-                    .map_err(|e| format!("Network error: {}", e))?,
-                "GitHub",
-            )
-            .await?;
-
             let runs: GitHubCheckRuns = read_json(
                 client
-                    .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, pr.head.sha))
+                    .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, sha))
                     .header("Authorization", &auth)
                     .header("User-Agent", "maestro/1.0")
                     .send()
@@ -252,11 +269,6 @@ fn summarise_check_runs(runs: &[GitHubCheckRun]) -> CiState {
 }
 
 #[derive(Deserialize)]
-struct GitHubHead {
-    head: GitHubHeadRef,
-}
-
-#[derive(Deserialize)]
 struct GitHubHeadRef {
     sha: String,
 }
@@ -288,6 +300,10 @@ struct GitHubStyleState {
     state: String,
     #[serde(default)]
     merged: bool,
+    #[serde(default)]
+    mergeable: Option<bool>,
+    #[serde(default)]
+    head: Option<GitHubHeadRef>,
 }
 
 #[derive(Deserialize)]
@@ -297,13 +313,18 @@ struct GitLabState {
 
 /// GitHub and Gitea both report a merged PR as `closed` with a separate `merged` flag, so the
 /// flag has to be consulted first or every merge would read as a rejection.
-fn github_style_state(pr: &GitHubStyleState) -> PullRequestState {
-    if pr.merged {
+fn github_style_details(pr: GitHubStyleState) -> PullRequestDetails {
+    let state = if pr.merged {
         PullRequestState::Merged
     } else if pr.state == "closed" {
         PullRequestState::Closed
     } else {
         PullRequestState::Open
+    };
+    PullRequestDetails {
+        state,
+        mergeable: pr.mergeable,
+        head_sha: pr.head.map(|head| head.sha),
     }
 }
 
@@ -442,18 +463,46 @@ async fn read_json<T: for<'de> Deserialize<'de>>(
 mod tests {
     use super::*;
 
+    fn details(body: &str) -> PullRequestDetails {
+        github_style_details(serde_json::from_str(body).expect("body should parse"))
+    }
+
     /// GitHub reports a merged PR as `state: "closed"`. Reading the state alone would land every
     /// merged pull request in D28's rejected-PR error path.
     #[test]
     fn a_merged_pull_request_is_not_a_closed_one() {
-        let merged = GitHubStyleState { state: "closed".into(), merged: true };
-        assert_eq!(github_style_state(&merged), PullRequestState::Merged);
+        assert_eq!(
+            details(r#"{"state":"closed","merged":true}"#).state,
+            PullRequestState::Merged
+        );
+        assert_eq!(
+            details(r#"{"state":"closed","merged":false}"#).state,
+            PullRequestState::Closed
+        );
+        assert_eq!(details(r#"{"state":"open","merged":false}"#).state, PullRequestState::Open);
+    }
 
-        let rejected = GitHubStyleState { state: "closed".into(), merged: false };
-        assert_eq!(github_style_state(&rejected), PullRequestState::Closed);
+    /// GitHub computes the merge commit in the background and answers `null` until it has one,
+    /// which is what the first read after every push gets. Reading that as mergeable would hand a
+    /// task back to the forge with the conflict still in it; reading it as a conflict would hand
+    /// every freshly pushed pull request to the user.
+    #[test]
+    fn a_pull_request_the_forge_has_not_finished_thinking_about_is_neither() {
+        assert_eq!(details(r#"{"state":"open","mergeable":null}"#).mergeable, None);
+        assert_eq!(details(r#"{"state":"open","mergeable":false}"#).mergeable, Some(false));
+        assert_eq!(details(r#"{"state":"open","mergeable":true}"#).mergeable, Some(true));
 
-        let open = GitHubStyleState { state: "open".into(), merged: false };
-        assert_eq!(github_style_state(&open), PullRequestState::Open);
+        // Gitea omits both fields on older versions, and the sweep has to survive that rather
+        // than fail the whole pass on a body it could otherwise read.
+        let bare = details(r#"{"state":"open"}"#);
+        assert_eq!(bare.mergeable, None);
+        assert_eq!(bare.head_sha, None);
+
+        assert_eq!(
+            details(r#"{"state":"open","head":{"sha":"deadbeef"}}"#).head_sha.as_deref(),
+            Some("deadbeef"),
+            "the sha rides along so CI needs no second request"
+        );
     }
 
     fn run(name: &str, status: &str, conclusion: Option<&str>) -> GitHubCheckRun {

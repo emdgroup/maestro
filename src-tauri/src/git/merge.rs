@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use chrono::Utc;
-use crate::models::{GitConnection, MergeResult};
+use rusqlite::Connection;
+use crate::models::{GitConnection, MergeResult, PullRequestCi};
 use crate::core::{AppState, get_project_with_git_conn};
 use crate::acp::ConnectionKey;
 use crate::task::transition::{self, TaskTransition};
@@ -482,7 +483,10 @@ async fn open_pull_request_for_task(
     {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
-            "UPDATE tasks SET pull_request_url = ?, pull_request_number = ? WHERE id = ?",
+            // `pull_request_ci` is cleared alongside, or a second pull request on the same task
+            // would inherit the first one's verdict until the next sweep overwrote it.
+            "UPDATE tasks SET pull_request_url = ?, pull_request_number = ?, \
+             pull_request_ci = NULL WHERE id = ?",
             rusqlite::params![&created.url, created.number, task_id],
         )
         .map_err(|e| format!("Failed to record the pull request: {}", e))?;
@@ -500,7 +504,9 @@ async fn open_pull_request_for_task(
 /// pull request merged learns exactly what a running one would have. Nothing to replay, no
 /// webhook to miss.
 ///
-/// Returns the ids of the tasks whose state changed.
+/// Returns the ids of the tasks whose state changed — which includes a task whose only change was
+/// the cached CI verdict, because the card shows that and the caller's refetch is keyed on this
+/// list being non-empty.
 ///
 /// Every failure here is a warning rather than an error. A rate limit, an expired token or a
 /// dropped connection means "ask again in a few minutes", and turning that into a red card would
@@ -514,7 +520,7 @@ pub async fn reconcile_pull_requests(
     use crate::integration::code_hosting_handlers::code_hosting_status;
     use crate::integration::issue_tracking_handlers::find_integration;
     use crate::integration::pull_request::{
-        fetch_pull_request_state, PullRequestState, PullRequestTarget,
+        fetch_ci_state, fetch_pull_request, CiState, PullRequestState, PullRequestTarget,
     };
 
     let waiting: Vec<(i32, i64)> = {
@@ -561,33 +567,80 @@ pub async fn reconcile_pull_requests(
     };
 
     let mut changed = Vec::new();
+    let mut landed = false;
     for (task_id, number) in waiting {
-        let state = match fetch_pull_request_state(&target, number).await {
-            Ok(state) => state,
+        let details = match fetch_pull_request(&target, number).await {
+            Ok(details) => details,
             Err(e) => {
                 log::warn!("Could not read pull request #{} for task {}: {}", number, task_id, e);
                 continue;
             }
         };
 
-        match state {
+        match details.state {
             PullRequestState::Open => {
-                if let Err(e) = maybe_fix_ci(app_state.inner(), task_id, &target, number).await {
-                    log::warn!("Could not check CI for pull request #{}: {}", number, e);
+                let (ball, fix_rounds): (String, i32) = {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    conn.query_row(
+                        "SELECT ball, fix_rounds FROM tasks WHERE id = ?",
+                        [task_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .map_err(|e| format!("Task {} not found: {}", task_id, e))?
+                };
+
+                // The forge only moves a task nobody is holding. A conflict surfacing while a
+                // CI-fix coder is mid-turn would take the session's task out from under it, and
+                // that turn ends in a push the next sweep should be reading anyway.
+                if ball == "External" && details.mergeable == Some(false) {
+                    {
+                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                        transition::apply(&conn, task_id, TaskTransition::PullRequestConflicted)?;
+                    }
+                    log::info!("Pull request #{} conflicts; task {} needs a rebase", number, task_id);
+                    changed.push(task_id);
+                    // CI is not asked. Fixing a build on a branch that cannot merge spends a round
+                    // on work the rebase will invalidate, and `request_ci_fix` would refuse it
+                    // anyway now that the ball has moved.
                     continue;
                 }
-                // `maybe_fix_ci` moves the task itself when it acts; the sweep only reports.
-                let ball: Option<String> = app_state
-                    .db
-                    .lock()
-                    .ok()
-                    .and_then(|conn| {
-                        conn.query_row("SELECT ball FROM tasks WHERE id = ?", [task_id], |row| {
-                            row.get(0)
-                        })
-                        .ok()
-                    });
-                if ball.as_deref() == Some("Agent") {
+
+                // `AwaitingMerge` + `Waiting` + the ball on the user is a conflict this sweep
+                // raised and nothing else, so the ball alone is the flag. Only `Some(true)` clears
+                // it: `None` is the forge still computing the merge commit, and treating that as
+                // resolved would hand the task back with the conflict still in it.
+                if ball == "User" {
+                    if details.mergeable != Some(true) {
+                        continue;
+                    }
+                    {
+                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                        transition::apply(&conn, task_id, TaskTransition::PullRequestMergeable)?;
+                    }
+                    log::info!("Pull request #{} merges again; task {} is back with the forge", number, task_id);
+                    changed.push(task_id);
+                }
+
+                let ci = match fetch_ci_state(&target, number, details.head_sha.as_deref()).await {
+                    Ok(ci) => ci,
+                    Err(e) => {
+                        log::warn!("Could not read CI for pull request #{}: {}", number, e);
+                        continue;
+                    }
+                };
+
+                let touched = {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    let fixing = match &ci {
+                        CiState::Failing(checks) => {
+                            request_ci_fix(&conn, task_id, number, checks, &ball, fix_rounds)?
+                        }
+                        _ => false,
+                    };
+                    let recorded = record_pull_request_ci(&conn, task_id, cached_ci(&ci))?;
+                    fixing || recorded
+                };
+                if touched && changed.last() != Some(&task_id) {
                     changed.push(task_id);
                 }
             }
@@ -597,6 +650,7 @@ pub async fn reconcile_pull_requests(
                     continue;
                 }
                 changed.push(task_id);
+                landed = true;
             }
             PullRequestState::Closed => {
                 {
@@ -611,6 +665,10 @@ pub async fn reconcile_pull_requests(
 
     if !changed.is_empty() {
         app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+    // Only a merge touches a worktree. Emitting this for every CI verdict would refetch the
+    // worktree list every three minutes for every open pull request.
+    if landed {
         app_state.app_handle.emit("worktrees-changed", ()).ok();
     }
 
@@ -624,36 +682,64 @@ pub async fn reconcile_pull_requests(
 /// secret, a flaky runner, an infrastructure outage — stays red however many times it tries.
 pub const FIX_ROUND_CAP: i32 = 3;
 
-/// Send an agent to fix a red build, if the pull request has one and the loop has rounds left.
+/// What of a `CiState` is worth caching on the task.
 ///
-/// Does nothing at all unless CI has *finished* and *failed*. Pending, passing, absent and
-/// unreadable are all left alone, because the only thing this does is start an agent that pushes
-/// commits to an open pull request, and every unclear case resolves itself on the next sweep.
-async fn maybe_fix_ci(
-    app_state: &AppState,
-    task_id: i32,
-    target: &crate::integration::pull_request::PullRequestTarget<'_>,
-    number: i64,
-) -> Result<(), String> {
-    use crate::integration::pull_request::{fetch_ci_state, CiState};
+/// `Unknown` has no entry: "no CI configured" and "the forge would not say" are the same silence on
+/// the card as "not swept yet", so a variant for them would render identically to their absence.
+fn cached_ci(ci: &crate::integration::pull_request::CiState) -> Option<PullRequestCi> {
+    use crate::integration::pull_request::CiState;
+    match ci {
+        CiState::Passing => Some(PullRequestCi::Passing),
+        CiState::Failing(_) => Some(PullRequestCi::Failing),
+        CiState::Pending => Some(PullRequestCi::Pending),
+        CiState::Unknown => None,
+    }
+}
 
-    // Already being fixed, or already back with the user. Either way not ours.
-    let (ball, rounds): (String, i32) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT ball, fix_rounds FROM tasks WHERE id = ?",
-            [task_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("Task {} not found: {}", task_id, e))?
-    };
-    if ball != "External" || rounds >= FIX_ROUND_CAP {
-        return Ok(());
+/// Cache what CI last said, and report whether that was news.
+///
+/// Compared before writing rather than written blind, because the sweep runs every three minutes
+/// against every open pull request and its caller turns "something changed" into a board-wide
+/// refetch. `updated_at` is deliberately untouched: a poll is not an edit to the task.
+fn record_pull_request_ci(
+    conn: &Connection,
+    task_id: i32,
+    ci: Option<PullRequestCi>,
+) -> Result<bool, String> {
+    let stored: Option<String> = conn
+        .query_row("SELECT pull_request_ci FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+        .map_err(|e| format!("Task {} not found: {}", task_id, e))?;
+
+    let next = ci.map(PullRequestCi::as_str);
+    if stored.as_deref() == next {
+        return Ok(false);
     }
 
-    let CiState::Failing(checks) = fetch_ci_state(target, number).await? else {
-        return Ok(());
-    };
+    conn.execute(
+        "UPDATE tasks SET pull_request_ci = ? WHERE id = ?",
+        rusqlite::params![next, task_id],
+    )
+    .map_err(|e| format!("Could not record CI for task {}: {}", task_id, e))?;
+    Ok(true)
+}
+
+/// Send an agent to fix a red build, if the loop has rounds left, and report whether one was sent.
+///
+/// The caller has already established that CI finished and failed. Pending, passing, absent and
+/// unreadable never reach here, because the only thing this does is start an agent that pushes
+/// commits to an open pull request, and every unclear case resolves itself on the next sweep.
+fn request_ci_fix(
+    conn: &Connection,
+    task_id: i32,
+    number: i64,
+    checks: &[String],
+    ball: &str,
+    fix_rounds: i32,
+) -> Result<bool, String> {
+    // Already being fixed, or already back with the user. Either way not ours.
+    if ball != "External" || fix_rounds >= FIX_ROUND_CAP {
+        return Ok(false);
+    }
 
     // The failing checks go in the outcome thread rather than into a prompt from here, because the
     // agent is started by the frontend and this is the same route the reviewer's findings take.
@@ -663,31 +749,28 @@ async fn maybe_fix_ci(
         checks.iter().map(|check| format!("- {}", check)).collect::<Vec<_>>().join("\n")
     );
 
-    {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::comments::append(
-            &conn,
-            task_id,
-            "ci",
-            "maestro",
-            Some(&report),
-            None,
-            Some("AwaitingMerge"),
-        )?;
-        conn.execute("UPDATE tasks SET fix_rounds = fix_rounds + 1 WHERE id = ?", [task_id])
-            .map_err(|e| format!("Could not count a fix round for task {}: {}", task_id, e))?;
-        transition::apply(&conn, task_id, TaskTransition::CiFixRequested)?;
-    }
+    crate::task::comments::append(
+        conn,
+        task_id,
+        "ci",
+        "maestro",
+        Some(&report),
+        None,
+        Some("AwaitingMerge"),
+    )?;
+    conn.execute("UPDATE tasks SET fix_rounds = fix_rounds + 1 WHERE id = ?", [task_id])
+        .map_err(|e| format!("Could not count a fix round for task {}: {}", task_id, e))?;
+    transition::apply(conn, task_id, TaskTransition::CiFixRequested)?;
 
     log::info!(
         "CI failed on pull request #{} for task {} ({}); sending an agent (round {} of {})",
         number,
         task_id,
         checks.join(", "),
-        rounds + 1,
+        fix_rounds + 1,
         FIX_ROUND_CAP
     );
-    Ok(())
+    Ok(true)
 }
 
 /// Push the fixing agent's work to the pull request it belongs to and hand the task back to the
@@ -962,6 +1045,101 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM task_reviews WHERE task_id = 1", [], |r| r.get(0))
             .expect("count reviews");
         assert_eq!(rows, 1);
+    }
+
+    /// A task parked at `AwaitingMerge` with an open pull request, in the state the sweep finds it.
+    fn awaiting_merge() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        crate::core::schema::initialize_schema(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert project");
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, phase, phase_status, \
+             ball, pull_request_number, created_at, updated_at) \
+             VALUES (1, 1, 'demo task', 'Review', 'main', 'AwaitingMerge', 'Waiting', 'External', \
+             7, '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert task");
+        conn
+    }
+
+    /// The sweep runs every three minutes against every open pull request, and its caller turns a
+    /// non-empty changed list into a board-wide refetch. A blind write would therefore refetch the
+    /// whole board for every open pull request for ever, whether or not CI had moved.
+    #[test]
+    fn a_settled_pull_request_is_not_news() {
+        let conn = awaiting_merge();
+
+        assert!(
+            record_pull_request_ci(&conn, 1, Some(PullRequestCi::Passing)).expect("record"),
+            "the first verdict is always news"
+        );
+        assert!(
+            !record_pull_request_ci(&conn, 1, Some(PullRequestCi::Passing)).expect("record"),
+            "the same verdict again is not"
+        );
+        assert!(
+            record_pull_request_ci(&conn, 1, Some(PullRequestCi::Failing)).expect("record"),
+            "a build going red is"
+        );
+
+        // Losing CI entirely — a rerun that clears the checks, or a repository that drops them —
+        // has to clear the cache too, or the card would keep claiming a verdict nobody holds.
+        assert!(record_pull_request_ci(&conn, 1, None).expect("record"));
+        assert!(!record_pull_request_ci(&conn, 1, None).expect("record"));
+
+        let stored: Option<String> = conn
+            .query_row("SELECT pull_request_ci FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read back");
+        assert_eq!(stored, None);
+    }
+
+    /// The fix loop only acts on a pull request the forge still holds, and only while rounds
+    /// remain. Both guards matter for spend: each round pushes commits to a pull request other
+    /// people can see.
+    #[test]
+    fn a_red_build_is_only_fixed_for_a_task_the_forge_still_holds() {
+        let checks = vec!["test".to_string()];
+
+        let conn = awaiting_merge();
+        assert!(
+            !request_ci_fix(&conn, 1, 7, &checks, "Agent", 0).expect("fix"),
+            "a coder is already on it"
+        );
+        assert!(
+            !request_ci_fix(&conn, 1, 7, &checks, "External", FIX_ROUND_CAP).expect("fix"),
+            "the rounds are spent and the user has to look"
+        );
+
+        let rounds: i32 = conn
+            .query_row("SELECT fix_rounds FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read rounds");
+        assert_eq!(rounds, 0, "a refusal must not count as a round");
+
+        assert!(request_ci_fix(&conn, 1, 7, &checks, "External", 0).expect("fix"));
+
+        let (rounds, ball): (i32, String) = conn
+            .query_row("SELECT fix_rounds, ball FROM tasks WHERE id = 1", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("read task");
+        assert_eq!(rounds, 1);
+        assert_eq!(ball, "Agent", "the board starts the coder off the ball");
+
+        // The findings reach the coder through the thread, the same route the reviewer's take.
+        let report: String = conn
+            .query_row(
+                "SELECT body FROM task_comments WHERE task_id = 1 AND kind = 'ci'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ci entry");
+        assert!(report.contains("test"), "the failing check has to be named: {report}");
     }
 
     fn git(repo: &Path, args: &[&str]) -> String {

@@ -787,6 +787,41 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 
+  /// The half of the user's report that was right. The sweep was working and the card said
+  /// nothing, so for the three minutes between a red build and the next pass a healthy pull
+  /// request and a broken one looked identical.
+  it("says what the forge thinks of the checks", () => {
+    renderCard({ ...awaitingMerge, pull_request_ci: "Passing" });
+
+    expect(screen.getByText(/checks passed/i)).toBeInTheDocument();
+    expect(screen.getByText(/PR #42/)).toBeInTheDocument();
+  });
+
+  it("says when a build is red", () => {
+    renderCard({ ...awaitingMerge, pull_request_ci: "Failing" });
+
+    expect(screen.getByText(/CI failing/i)).toBeInTheDocument();
+  });
+
+  /// A repository with no CI has nothing to report, and "no checks" on every card in a project
+  /// that will never have any is noise. The absence is the answer.
+  it("says nothing extra when the repository has no CI", () => {
+    renderCard({ ...awaitingMerge, pull_request_ci: null });
+
+    expect(screen.getByText(/PR #42/)).toBeInTheDocument();
+    expect(screen.queryByText(/checks/i)).not.toBeInTheDocument();
+  });
+
+  /// The card-side twin of `a_conflicted_pull_request_is_amber_and_not_a_closed_one`. A conflict
+  /// is derived from the lifecycle fields rather than stored, so this pins the derivation: the
+  /// same phase with the ball on the user and `Waiting` rather than `Failed`.
+  it("shows a conflict as something for the user, not as a closed pull request", () => {
+    renderCard({ ...awaitingMerge, phase_status: "Waiting", ball: "User" });
+
+    expect(screen.getByText(/conflicts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pull request closed/i)).not.toBeInTheDocument();
+  });
+
   // A task can reach AwaitingMerge without a URL only if the write failed, and a button that
   // opens nothing is worse than the ordinary Review card.
   it("falls back to the ordinary Review card when no URL was recorded", () => {

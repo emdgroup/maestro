@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- review_rounds: a task that spent its review rounds must still be able to fix a red build,
     -- and a shared counter would make both cap messages wrong.
     fix_rounds INTEGER NOT NULL DEFAULT 0,
+    -- What the forge's CI last said about the open pull request: Passing / Failing / Pending.
+    -- A display cache, not a lifecycle field — the sweep runs every three minutes and this is what
+    -- lets the card answer "can this land" in between. NULL whenever there is nothing to say.
+    pull_request_ci TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -393,6 +397,7 @@ fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
         ("pull_request_number", "pull_request_number INTEGER"),
         ("review_rounds", "review_rounds INTEGER NOT NULL DEFAULT 0"),
         ("fix_rounds", "fix_rounds INTEGER NOT NULL DEFAULT 0"),
+        ("pull_request_ci", "pull_request_ci TEXT"),
     ] {
         let col_exists: bool = conn
             .query_row(

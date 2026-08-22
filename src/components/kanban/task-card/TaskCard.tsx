@@ -137,6 +137,60 @@ function CompletionLine({ task }: { task: Task }) {
   );
 }
 
+const CI_LABELS: Record<NonNullable<Task["pull_request_ci"]>, string> = {
+  Passing: "checks passed",
+  Failing: "CI failing",
+  Pending: "checks running",
+};
+
+const CI_TONES: Record<NonNullable<Task["pull_request_ci"]>, string> = {
+  Passing: "text-success",
+  Failing: "text-destructive",
+  Pending: "text-muted-foreground",
+};
+
+/// What the forge last said, in the slot the phase name had.
+///
+/// "Awaiting merge" only ever repeated the column the card is already sitting in. The question at
+/// this card is whether the thing being waited on can land, and until now the answer was nowhere:
+/// between a red build and the next three-minute sweep, a healthy pull request and a broken one
+/// looked identical, which is what made a working sweep read as no sweep at all.
+///
+/// The conflict is derived rather than stored. `AwaitingMerge` with `Waiting` and the ball on the
+/// user is reachable only through `PullRequestConflicted` — `AwaitingUserInput` gives `Blocked` and
+/// a closed pull request gives `Failed` — so a cached flag would be a second copy of a fact the
+/// lifecycle fields already carry, and one a sweep that learned nothing could overwrite.
+function PullRequestLine({ task }: { task: Task }) {
+  const conflicted = task.phase_status === "Waiting" && task.ball === "User";
+  const ci = task.pull_request_ci;
+  const detail = conflicted
+    ? { label: "conflicts", tone: "text-warning" }
+    : ci
+      ? { label: CI_LABELS[ci], tone: CI_TONES[ci] }
+      : null;
+
+  return (
+    <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span
+        className={cn(
+          "font-bold shrink-0 uppercase tracking-wide",
+          conflicted ? "text-warning" : "text-muted-foreground",
+        )}
+      >
+        {task.pull_request_number ? `PR #${task.pull_request_number}` : PHASE_LABELS.AwaitingMerge}
+      </span>
+      {detail && (
+        <>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className={cn("uppercase tracking-wide truncate", detail.tone)}>
+            {detail.label}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PhaseLine({ task }: { task: Task }) {
   // A deferred task has no phase — nothing is running — but it is not idle either. The user pressed
   // Execute and was told it would start when an agent freed up, and without this the card is
@@ -152,6 +206,7 @@ function PhaseLine({ task }: { task: Task }) {
   }
   if (!task.phase) return <CompletionLine task={task} />;
   const failed = task.phase_status === "Failed";
+  if (task.phase === "AwaitingMerge" && !failed) return <PullRequestLine task={task} />;
   // A pull request somebody closed did not "fail to await merge". It is still the error state
   // D28 asks for — red, ball with the user — but the words have to say what happened.
   const label =

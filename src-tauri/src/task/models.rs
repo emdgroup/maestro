@@ -10,7 +10,8 @@ use std::str::FromStr;
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
 /// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
 /// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
-/// execute_requested_at(29)
+/// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
+/// fix_rounds(33), pull_request_ci(34)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
@@ -18,7 +19,8 @@ pub const TASK_SELECT: &str =
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
      execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
-     pull_request_url, pull_request_number, review_rounds, fix_rounds FROM tasks";
+     pull_request_url, pull_request_number, review_rounds, fix_rounds, \
+     pull_request_ci FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -88,6 +90,10 @@ pub struct Task {
     pub review_rounds: i32,
     /// How many times an agent has been sent to fix this task's CI, bounded by `FIX_ROUND_CAP`.
     pub fix_rounds: i32,
+    /// What the forge's CI last said about the open pull request. Refreshed by the reconcile
+    /// sweep; `None` while there is nothing to say.
+    #[specta(optional)]
+    pub pull_request_ci: Option<PullRequestCi>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -229,6 +235,7 @@ impl Task {
             pull_request_number: row.get(31)?,
             review_rounds: row.get(32)?,
             fix_rounds: row.get(33)?,
+            pull_request_ci: row.get::<_, Option<String>>(34)?.and_then(|s| s.parse().ok()),
         })
     }
 }
@@ -342,6 +349,28 @@ pub enum TaskCompletion {
     NoChanges,
 }
 
+/// What the forge's CI last said about an open pull request's head commit.
+///
+/// A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
+/// what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
+/// the fix loop reads, freshly, from the forge.
+///
+/// `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
+/// answer, and a pull request not swept yet. They are one silence on the card, so a fourth variant
+/// distinguishing them would render identically to its own absence.
+///
+/// Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
+/// is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
+/// fields already carry — and one a sweep that learned nothing could overwrite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum PullRequestCi {
+    Passing,
+    Failing,
+    Pending,
+}
+
 // Unlike TaskStatus and TaskPriority above, these three reject unknown input rather than falling
 // back to a default. `from_row` reads phase and phase_status into an Option and discards the
 // error, so a stray value becomes "no phase" instead of silently claiming to be a real one; a
@@ -407,6 +436,19 @@ impl FromStr for TaskCompletion {
     }
 }
 
+impl FromStr for PullRequestCi {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Passing" => Ok(PullRequestCi::Passing),
+            "Failing" => Ok(PullRequestCi::Failing),
+            "Pending" => Ok(PullRequestCi::Pending),
+            other => Err(format!("Unknown pull request CI state: {}", other)),
+        }
+    }
+}
+
 impl TaskPhase {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -452,6 +494,16 @@ impl TaskCompletion {
             TaskCompletion::MergedViaPR => "MergedViaPR",
             TaskCompletion::LocalOnly => "LocalOnly",
             TaskCompletion::NoChanges => "NoChanges",
+        }
+    }
+}
+
+impl PullRequestCi {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PullRequestCi::Passing => "Passing",
+            PullRequestCi::Failing => "Failing",
+            PullRequestCi::Pending => "Pending",
         }
     }
 }

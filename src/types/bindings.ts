@@ -684,7 +684,9 @@ async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracke
  * pull request merged learns exactly what a running one would have. Nothing to replay, no
  * webhook to miss.
  * 
- * Returns the ids of the tasks whose state changed.
+ * Returns the ids of the tasks whose state changed — which includes a task whose only change was
+ * the cached CI verdict, because the card shows that and the caller's refetch is keyed on this
+ * list being non-empty.
  * 
  * Every failure here is a warning rather than an error. A rate limit, an expired token or a
  * dropped connection means "ask again in a few minutes", and turning that into a red card would
@@ -2557,6 +2559,22 @@ export type ProjectConfigRequest = { default_agent: string | null; startup_tab: 
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
+ * What the forge's CI last said about an open pull request's head commit.
+ * 
+ * A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
+ * what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
+ * the fix loop reads, freshly, from the forge.
+ * 
+ * `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
+ * answer, and a pull request not swept yet. They are one silence on the card, so a fourth variant
+ * distinguishing them would render identically to its own absence.
+ * 
+ * Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
+ * is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
+ * fields already carry — and one a sweep that learned nothing could overwrite.
+ */
+export type PullRequestCi = "Passing" | "Failing" | "Pending"
+/**
  * What the board shows: how many slots this host has, how many are taken, and why.
  */
 export type QueueCapacity = { slots: number; used: number; mode: ConcurrencyMode; reason: string }
@@ -2646,7 +2664,12 @@ review_rounds: number;
 /**
  * How many times an agent has been sent to fix this task's CI, bounded by `FIX_ROUND_CAP`.
  */
-fix_rounds: number }
+fix_rounds: number; 
+/**
+ * What the forge's CI last said about the open pull request. Refreshed by the reconcile
+ * sweep; `None` while there is nothing to say.
+ */
+pull_request_ci?: PullRequestCi | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.
