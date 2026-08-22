@@ -694,17 +694,21 @@
   animation: av-pulse-destructive 2s ease-in-out infinite;
 }
 
+/* Translated rather than offset with `left` so the comet stays on the compositor:
+   animating a layout property repaints the rounded clip every frame, which
+   stair-steps the top edge of the 3px rail on fractional device pixels. */
 @keyframes rail-comet {
   0% {
-    left: -60%;
+    transform: translateX(-100%);
   }
   100% {
-    left: 110%;
+    transform: translateX(183%);
   }
 }
 
 @utility animate-rail-comet {
   animation: rail-comet 1.6s ease-in infinite;
+  will-change: transform;
 }
 
 @keyframes shake {
