@@ -47,9 +47,11 @@ jobs:
       # filtered out. Drop entries as dependency bumps clear them; that
       # belongs in a dependency PR, not a CI one.
       #
-      # The fast-uri and ip-address advisories are gone instead of listed:
-      # only one major of each is in the tree, so package.json pins the
-      # patched version outright. brace-expansion and undici cannot be
+      # The fast-uri, ip-address, js-yaml and nanoid advisories are gone
+      # instead of listed: only one major of each is in the tree, so
+      # package.json pins the patched version outright. Note nanoid's two
+      # advisories have different fixed versions (3.3.16 and 3.3.17) — the
+      # pin has to clear the later one. brace-expansion and undici cannot be
       # handled that way — the tree holds several majors of each (1.x, 2.x
       # and 5.x; 6.x and 7.x) and bun applies an override to every instance
       # of a name, so pinning would drag the other consumers across a major.

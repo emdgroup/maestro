@@ -39,7 +39,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useSidePanelState } from "./useSidePanelState";
 import { useWorkingFileTracker } from "./useWorkingFileTracker";
-import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
 import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
@@ -193,6 +193,14 @@ export function AgentActivityPanel({
   }, [activeSessions, sessionKey]);
 
   const isSessionActive = isSelected && activeTab === "agents";
+
+  // The session's own working directory, not the project root: an isolated task runs in
+  // `<project>/.maestro/worktrees/<name>`, and rooting the file tree at the project instead
+  // hid every file the agent actually touched behind a dot-directory the listing prunes.
+  // Shares its fetch with `useSessionDiffStats` below. One value feeds both the panel and
+  // `handleOpenFile` so the relative paths handed over always match the tree's root.
+  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
+  const workspacePath = sessionMeta?.cwd ?? selectedProject?.path ?? "";
 
   // Shares its fetch with SidePanelContent's identical call; read here so the Review tab can
   // open itself when the session's first change lands.
@@ -375,14 +383,14 @@ export function AgentActivityPanel({
     (uri: string) => {
       // Tool calls report Windows paths with backslashes and an arbitrarily cased
       // drive letter, so compare on a normalised copy — a missed prefix would send
-      // an absolute path to a panel that resolves everything against the project.
+      // an absolute path to a panel that resolves everything against the workspace.
       const abs = toPosixPath(uri.startsWith("file://") ? uri.slice(7) : uri);
-      const base = toPosixPath(selectedProject?.path ?? "").replace(/\/+$/, "");
-      const inProject = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
-      addDynamicTab("files", inProject ? abs.slice(base.length + 1) : abs);
+      const base = toPosixPath(workspacePath).replace(/\/+$/, "");
+      const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
+      addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs);
       setSidePanelCollapsed(false);
     },
-    [addDynamicTab, selectedProject, setSidePanelCollapsed],
+    [addDynamicTab, workspacePath, setSidePanelCollapsed],
   );
 
   const lastUserMessage = useMemo(() => {
@@ -625,6 +633,7 @@ export function AgentActivityPanel({
             <AgentScrollOverlays
               userMessages={userMessages}
               orderedSectionIds={orderedSectionIds}
+              isSelected={isSelected}
               isCenteredCompose={isCenteredCompose}
               planOverlay={null}
               composeBarRef={composeBarRef}
@@ -739,7 +748,7 @@ export function AgentActivityPanel({
             onOpenFile={handleOpenFile}
             workingFiles={localWorkingFiles}
             taskId={taskId}
-            projectPath={selectedProject?.path ?? ""}
+            workspacePath={workspacePath}
             connection={connection}
             canvasMap={liveState.canvasMap}
             latestCanvasSurfaceId={latestCanvasSurfaceId}

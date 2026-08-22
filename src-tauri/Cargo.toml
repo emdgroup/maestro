@@ -1,6 +1,6 @@
 [package]
 name = "maestro"
-version = "0.16.0"
+version = "0.17.0"
 description = "Maestro: AI Agent Orchestration for Autonomous Coding"
 authors = ["you"]
 license = "Apache-2.0"
@@ -32,6 +32,7 @@ tauri-plugin-process = "2"
 octocrab = { version = "0.54", default-features = false, features = [
   "default-client",
   "rustls",
+  "rustls-ring",
   "jwt-rust-crypto",
 ] }
 graphql_client = { version = "0.16", default-features = false }
@@ -48,7 +49,7 @@ base64 = "0.23"
 machine-uid = "0.6"
 rand = { version = "0.8", features = ["getrandom"] }
 portable-pty = "0.9.0"
-russh = { version = "0.62.2", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh = { version = "0.63.0", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.1"
 keyring = { version = "3.6.3", features = [
   "windows-native",

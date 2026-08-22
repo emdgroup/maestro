@@ -192,8 +192,12 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
       {/* items-end: without it the bubble stretches to the action bar's width, so a
           two-character message gets a bubble sized for "copy + just now".
           gap-0: the bar is part of the bubble, not a sibling block — the default gap
-          would sit it further from the text than the agent side's bar. */}
-      <MessageContent className="w-fit max-w-[calc(100%-2.5rem)] items-end gap-0">
+          would sit it further from the text than the agent side's bar.
+          max-w: the 100% is the stream column, of which the avatar and gap take only
+          2.375rem — so an inset of just that much let the bubble reach the far edge and
+          stop reading as a bubble. 5rem leaves a visible gutter on the left while still
+          giving a long message most of the column. */}
+      <MessageContent className="w-fit max-w-[calc(100%-5rem)] items-end gap-0">
         {/* max-w-full: the bubble is sized shrink-to-fit on a flex cross axis, where
             min-width:auto does not apply — so a table or an unbreakable token (a long
             path, a code span) grows it past the max-width above and, being right-

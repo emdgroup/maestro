@@ -474,22 +474,27 @@ export function ReviewChangesPanelCompact({
                       )}
                     />
                     {onOpenFile ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Diff paths are relative to the session worktree, which is not
-                            // where the Files tab resolves relative paths — hand it an
-                            // absolute path and let it work out the prefix.
-                            onOpenFile(cwd ? `${cwd}/${key}` : key);
-                          }}
-                          className="text-xs font-mono truncate text-foreground/80 flex-1 min-w-0 text-left hover:underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          {key}
-                        </TooltipTrigger>
-                        <TooltipContent>Open in a Files tab</TooltipContent>
-                      </Tooltip>
+                      // The wrapper takes the free space so the stats stay right-aligned;
+                      // the button itself only spans the file name, so clicking the empty
+                      // rest of the row still toggles the diff.
+                      <div className="flex-1 min-w-0 flex">
+                        <Tooltip>
+                          <TooltipTrigger
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Diff paths are relative to the session worktree, which is not
+                              // where the Files tab resolves relative paths — hand it an
+                              // absolute path and let it work out the prefix.
+                              onOpenFile(cwd ? `${cwd}/${key}` : key);
+                            }}
+                            className="text-xs font-mono truncate max-w-full text-foreground/80 text-left hover:underline underline-offset-2 hover:text-foreground transition-colors"
+                          >
+                            {key}
+                          </TooltipTrigger>
+                          <TooltipContent>Open in a Files tab</TooltipContent>
+                        </Tooltip>
+                      </div>
                     ) : (
                       <span className="text-xs font-mono truncate text-foreground/80 flex-1">
                         {key}

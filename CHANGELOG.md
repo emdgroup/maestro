@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.17.0](https://github.com/emdgroup/maestro/compare/v0.16.0...v0.17.0) (2026-08-08)
+
+### Features
+
+- annotate a canvas by picking a component or marqueeing a region ([#216](https://github.com/emdgroup/maestro/issues/216)) ([76994a6](https://github.com/emdgroup/maestro/commit/76994a6c8ffb26a50e0e394f151622fb11f63724))
+- annotate a session's plan and diff, then send the notes back ([#202](https://github.com/emdgroup/maestro/issues/202)) ([7d2c93f](https://github.com/emdgroup/maestro/commit/7d2c93f9cc2604217094a4cf54c2351e5596e2ec))
+- open and copy a review file's path from its card header ([#213](https://github.com/emdgroup/maestro/issues/213)) ([98c8c73](https://github.com/emdgroup/maestro/commit/98c8c735e41e2e5b3477321fa6dc3089b4dcda25))
+- replace the webview context menu with an app-controlled one ([#212](https://github.com/emdgroup/maestro/issues/212)) ([1a69e13](https://github.com/emdgroup/maestro/commit/1a69e137e005c487cfd586c9fb61d4a69c0d8a9b))
+- scroll the active side panel tab clear of the strip edges ([#210](https://github.com/emdgroup/maestro/issues/210)) ([68099e7](https://github.com/emdgroup/maestro/commit/68099e7ba59fac284bbe65bbabdf514f08c4760d))
+- toggle hidden files in the workspace file tree ([#205](https://github.com/emdgroup/maestro/issues/205)) ([18d99dd](https://github.com/emdgroup/maestro/commit/18d99dd2d7fd5118a714ffd57d74c5e827fc4bc6))
+
+### Bug Fixes
+
+- keep the connection server alive when the last session closes ([#199](https://github.com/emdgroup/maestro/issues/199)) ([25fa04c](https://github.com/emdgroup/maestro/commit/25fa04c05000b2934c84929875e34fcfbbcf7e5c))
+- keep the pinned user message working across session switches ([#227](https://github.com/emdgroup/maestro/issues/227)) ([eae2400](https://github.com/emdgroup/maestro/commit/eae24002de42f48952cd6d3ce095a0e70ae03976))
+- paint inline diff rows across the full scroll width ([#215](https://github.com/emdgroup/maestro/issues/215)) ([46b944c](https://github.com/emdgroup/maestro/commit/46b944c89f6fd2282a1873631950e1b688457b7a))
+- resolve @-mention file URIs against the session's worktree ([#204](https://github.com/emdgroup/maestro/issues/204)) ([66aed7f](https://github.com/emdgroup/maestro/commit/66aed7f2d8ac12efe6ea5150e52b54bfa2d870b3))
+- root the workspace file browser at the session's worktree ([#218](https://github.com/emdgroup/maestro/issues/218)) ([44772f4](https://github.com/emdgroup/maestro/commit/44772f443499d259d8a0b6d18dac050cf2c59207))
+- stop failed worktree removal leaving orphaned directories on Windows ([#217](https://github.com/emdgroup/maestro/issues/217)) ([05f6a3e](https://github.com/emdgroup/maestro/commit/05f6a3ea2abbe242fc95783281b40c0b0bd287ad))
+- stop sessions getting stuck in "thinking" with a dead interrupt button ([#207](https://github.com/emdgroup/maestro/issues/207)) ([45aaa79](https://github.com/emdgroup/maestro/commit/45aaa793a77b18dacf0bd0240ad1284791866da3))
+- stop wide content pushing the user bubble off the stream ([#209](https://github.com/emdgroup/maestro/issues/209)) ([a920546](https://github.com/emdgroup/maestro/commit/a9205465cec22cc9ca63cb0bd5ac8dca279ddbbb))
+- use the accent color for selected text ([#200](https://github.com/emdgroup/maestro/issues/200)) ([da13f22](https://github.com/emdgroup/maestro/commit/da13f22e38c4b4dc56a52e5a1e4e7998dbb3bac9))
+
 ## [0.16.0](https://github.com/emdgroup/maestro/compare/v0.15.0...v0.16.0) (2026-07-31)
 
 ### Features

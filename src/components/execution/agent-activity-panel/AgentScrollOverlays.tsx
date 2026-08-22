@@ -18,51 +18,31 @@ import {
   useMessageScrollerVisibility,
 } from "@/ui/message-scroller";
 
-interface AgentScrollOverlaysProps {
-  userMessages: UserMessageItem[];
-  orderedSectionIds: string[];
-  isCenteredCompose: boolean;
-  planOverlay: React.ReactNode;
-  composeBarRef: React.RefObject<ComposeBarHandle | null>;
-  onSend: (content: string, contentBlocks?: JsonValue) => void;
-  onCancel: () => Promise<void>;
-  isProcessing: boolean;
-  commands: AvailableCommand[];
-  embeddedContext: boolean;
-  logId: number;
-  projectPath: string | null;
-  configOptions: ConfigOption[];
-  configValues: Record<string, string>;
-  usageState: UsageState | null;
-  onConfigChange: (optionId: string, value: string) => Promise<void>;
-  promptCapabilities: AcpPromptCapabilities | null;
-}
+/*
+  Rendered only while the session is selected, which is what keeps the pin working.
 
-export function AgentScrollOverlays({
+  The scroller builds its IntersectionObserver once, from the first subscriber to
+  `useMessageScrollerVisibility`, and gives up silently if the viewport element does not
+  exist yet — it never retries. AgentActivityPanel only mounts the viewport for the
+  selected session, so a subscription that outlives selection either never gets an
+  observer (subscribed while hidden) or keeps one rooted at a detached viewport
+  (subscribed, then deselected and reselected). Either way `visibleMessageIds` stays
+  empty and the pin silently never appears.
+
+  Mounting the only subscriber alongside the viewport drives the subscriber count 0 → 1
+  → 0 across selection changes, so the scroller tears the observer down and rebuilds it
+  against the live viewport each time. Keep this separate from AgentScrollOverlays: that
+  component must stay mounted so the centered ComposeBar keeps its unsent draft.
+*/
+function PinnedUserMessage({
   userMessages,
   orderedSectionIds,
-  isCenteredCompose,
-  planOverlay,
-  composeBarRef,
-  onSend,
-  onCancel,
-  isProcessing,
-  commands,
-  embeddedContext,
-  logId,
-  projectPath,
-  configOptions,
-  configValues,
-  usageState,
-  onConfigChange,
-  promptCapabilities,
-}: AgentScrollOverlaysProps) {
-  const { scrollToEnd, scrollToMessage } = useMessageScroller();
-  const scrollable = useMessageScrollerScrollable();
+}: {
+  userMessages: UserMessageItem[];
+  orderedSectionIds: string[];
+}) {
+  const { scrollToMessage } = useMessageScroller();
   const visibility = useMessageScrollerVisibility();
-
-  const showScrollFab = scrollable.end;
-  const hasUnread = scrollable.end && isProcessing;
 
   const pinnedUserMessage = (() => {
     if (!userMessages.length) return null;
@@ -83,13 +63,87 @@ export function AgentScrollOverlays({
     return result;
   })();
 
-  const scrollToBottom = useCallback(() => scrollToEnd({ behavior: "smooth" }), [scrollToEnd]);
-
   const scrollToPinnedMsg = useCallback(() => {
     if (pinnedUserMessage) {
       scrollToMessage(pinnedUserMessage.id, { align: "start", behavior: "smooth" });
     }
   }, [pinnedUserMessage, scrollToMessage]);
+
+  return (
+    <AnimatePresence>
+      {pinnedUserMessage && (
+        <motion.button
+          key="pinned-user-msg"
+          type="button"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.15 }}
+          onClick={scrollToPinnedMsg}
+          className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-xs bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
+          aria-label="Scroll to last message"
+        >
+          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center shrink-0">
+            <User className="w-2.5 h-2.5 text-accent/70" />
+          </div>
+          <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
+            {parseUserContent(pinnedUserMessage.content).text}
+          </span>
+          <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 opacity-50" />
+        </motion.button>
+      )}
+    </AnimatePresence>
+  );
+}
+
+interface AgentScrollOverlaysProps {
+  userMessages: UserMessageItem[];
+  orderedSectionIds: string[];
+  isSelected: boolean;
+  isCenteredCompose: boolean;
+  planOverlay: React.ReactNode;
+  composeBarRef: React.RefObject<ComposeBarHandle | null>;
+  onSend: (content: string, contentBlocks?: JsonValue) => void;
+  onCancel: () => Promise<void>;
+  isProcessing: boolean;
+  commands: AvailableCommand[];
+  embeddedContext: boolean;
+  logId: number;
+  projectPath: string | null;
+  configOptions: ConfigOption[];
+  configValues: Record<string, string>;
+  usageState: UsageState | null;
+  onConfigChange: (optionId: string, value: string) => Promise<void>;
+  promptCapabilities: AcpPromptCapabilities | null;
+}
+
+export function AgentScrollOverlays({
+  userMessages,
+  orderedSectionIds,
+  isSelected,
+  isCenteredCompose,
+  planOverlay,
+  composeBarRef,
+  onSend,
+  onCancel,
+  isProcessing,
+  commands,
+  embeddedContext,
+  logId,
+  projectPath,
+  configOptions,
+  configValues,
+  usageState,
+  onConfigChange,
+  promptCapabilities,
+}: AgentScrollOverlaysProps) {
+  const { scrollToEnd } = useMessageScroller();
+  const scrollable = useMessageScrollerScrollable();
+
+  const showScrollFab = scrollable.end;
+  const hasUnread = scrollable.end && isProcessing;
+
+  const scrollToBottom = useCallback(() => scrollToEnd({ behavior: "smooth" }), [scrollToEnd]);
 
   return (
     <>
@@ -136,29 +190,9 @@ export function AgentScrollOverlays({
         <div className="absolute inset-0 z-30 flex flex-col bg-background">{planOverlay}</div>
       )}
 
-      <AnimatePresence>
-        {pinnedUserMessage && (
-          <motion.button
-            key="pinned-user-msg"
-            type="button"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            onClick={scrollToPinnedMsg}
-            className="absolute top-2 left-2 right-2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl backdrop-blur-xs bg-input/60 border border-border/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:bg-input/70 transition-colors"
-            aria-label="Scroll to last message"
-          >
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-accent/60 to-accent/15 flex items-center justify-center shrink-0">
-              <User className="w-2.5 h-2.5 text-accent/70" />
-            </div>
-            <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
-              {parseUserContent(pinnedUserMessage.content).text}
-            </span>
-            <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 opacity-50" />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {isSelected && (
+        <PinnedUserMessage userMessages={userMessages} orderedSectionIds={orderedSectionIds} />
+      )}
 
       <AnimatePresence>
         {showScrollFab && (
