@@ -28,6 +28,7 @@ import { sanitizeSchema } from "./markdown-sanitize";
 import { COMMAND_TAG, rehypeSlashCommands } from "./markdown-commands";
 import type { AvailableCommand } from "./types";
 import { InteractiveTable, InteractiveTh, InteractiveTbody } from "./MarkdownTableSort";
+import { FrontmatterTable, splitFrontmatter } from "./MarkdownFrontmatter";
 import { CodeBlockWrapper } from "./HighlightedCode";
 import { MermaidBlock } from "./MermaidBlock";
 import { SvgBlock } from "./SvgBlock";
@@ -294,12 +295,16 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     [projectId, baseDir],
   );
 
-  const processedText = useMemo(() => stripMarkdownFences(text), [text]);
+  // Frontmatter is only valid at offset 0, so it comes off the untouched text
+  // before the fence pass rewrites anything.
+  const { data: frontmatter, body } = useMemo(() => splitFrontmatter(text), [text]);
+  const processedText = useMemo(() => stripMarkdownFences(body), [body]);
 
   // Reset the pre marker: a MarkdownBlock nested via a ```markdown fence sits
   // inside the outer document's <pre> provider, but starts a fresh document.
   const content = (
     <InsidePreContext.Provider value={false}>
+      {frontmatter && <FrontmatterTable data={frontmatter} />}
       <Markdown
         remarkPlugins={
           breaks ? [remarkBreaks, ...MARKDOWN_PLUGINS.remark!] : MARKDOWN_PLUGINS.remark
