@@ -29,8 +29,34 @@ pub async fn get_project_settings(
     Ok(crate::models::ProjectConfigResponse {
         default_agent: config.default_agent,
         startup_tab: config.startup_tab,
+        accent_color: config.accent_color,
+        accent_color_auto_assign: config.accent_color_auto_assign,
         default_existing_worktree: config.default_existing_worktree,
     })
+}
+
+/// Set only the project's accent colour in .maestro/settings.json.
+///
+/// Separate from `update_project_settings` so the settings form (which writes the whole
+/// `ProjectConfigRequest`) can never clobber a colour picked in the header a moment earlier.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_project_accent_color(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    accent_color: Option<String>,
+) -> Result<(), String> {
+    let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let mut config: crate::models::ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
+    config.accent_color = accent_color;
+    // Records that the colour is now settled, whether that is a hue or a deliberate "follow
+    // the global default" — the latter stores no hue, so without this the first-open
+    // assignment would overwrite the choice on the next open.
+    config.accent_color_auto_assign = Some(false);
+    config.updated_at = Utc::now().to_rfc3339();
+
+    write_maestro_json(&conn, SETTINGS_FILE, &config).await
 }
 
 /// Update project-level configuration in .maestro/settings.json

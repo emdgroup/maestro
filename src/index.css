@@ -448,6 +448,110 @@
   width: var(--sidebar-width-icon, 52px);
 }
 
+/* ── Project colour: accent gradient + rising bubbles ──
+   Used by the header bar and by the welcome screen. Both fade from an accent tint at the top
+   to nothing at the bottom, with bubbles rising through. Everything reads the live --accent,
+   so the whole assembly follows the selected project's colour with no extra wiring.
+
+   Light needs heavier mixes than dark to land in the same place: its accent is oklch(50% …)
+   against a 98% background, so the same alpha that glows on dark washes out on white. The
+   bubble body is also darkened slightly, otherwise the discs disappear into the page. The
+   screen tint is the exception in both themes — spread over a window rather than a 48px bar,
+   the header's mix is too heavy, so each is dialled back on its own. */
+:root {
+  --header-tint: color-mix(in oklch, var(--accent) 34%, transparent);
+  --screen-tint: color-mix(in oklch, var(--accent) 24%, transparent);
+  --bubble-body: color-mix(in oklch, oklch(from var(--accent) calc(l - 0.04) c h) 55%, transparent);
+  --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.14) c h) 60%, transparent);
+}
+.dark {
+  --header-tint: color-mix(in oklch, var(--accent) 24%, transparent);
+  --screen-tint: color-mix(in oklch, var(--accent) 16%, transparent);
+  --bubble-body: color-mix(in oklch, var(--accent) 36%, transparent);
+  --bubble-hi: color-mix(in oklch, oklch(from var(--accent) calc(l + 0.09) c h) 46%, transparent);
+}
+
+.header-gradient,
+.screen-gradient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.header-gradient {
+  background: linear-gradient(to bottom, var(--header-tint), transparent);
+}
+
+.screen-gradient {
+  background: linear-gradient(to bottom, var(--screen-tint), transparent);
+}
+
+/* Across a whole window the tint changes by less than one 8-bit step per pixel, so its
+   quantisation shows as horizontal bands. Fine noise dithers those edges away — masked to the
+   gradient's own shape so no grain lands on the clean part of the page, and kept under 2%,
+   past which it reads as film grain rather than as a smoother gradient. The header gradient
+   needs none of this: over 48px the steps are too close together to separate. */
+.screen-gradient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+}
+
+/* The field is clipped to its container, which would slice any bubble straddling the bottom
+   edge into a flat-bottomed disc. Fading the mask out over the lowest 16px hides the cut:
+   bubbles surface into view instead. Both spellings — WebKit still needs the prefix. */
+.accent-bubbles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 16px);
+  mask-image: linear-gradient(to top, transparent 0, #000 16px);
+}
+
+.accent-bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, var(--bubble-hi), var(--bubble-body) 62%);
+  opacity: 0;
+  left: var(--bx);
+  bottom: var(--bt, -12px);
+  width: var(--bs);
+  height: var(--bs);
+  animation: bubble-up var(--bu, 7s) linear infinite;
+  animation-delay: var(--be, 0s);
+}
+
+@keyframes bubble-up {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  7% {
+    opacity: var(--bo, 0.5);
+  }
+  50% {
+    transform: translateY(calc(var(--bv, -72px) / 2)) translateX(var(--bw, 4px));
+  }
+  96% {
+    opacity: var(--bo, 0.5);
+  }
+  100% {
+    transform: translateY(var(--bv, -72px)) translateX(calc(var(--bw, 4px) * -0.5));
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accent-bubbles {
+    display: none;
+  }
+}
+
 .shimmer-thinking-icon {
   mask-image: linear-gradient(
     90deg,

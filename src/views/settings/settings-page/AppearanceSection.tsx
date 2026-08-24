@@ -1,10 +1,11 @@
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
+import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Check, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { EnterKeyBehavior, TerminalColorMode } from "@/types/bindings";
+import type { EnterKeyBehavior, NewProjectColor, TerminalColorMode } from "@/types/bindings";
 
 const UI_SCALE_PRESETS = [
   { value: "100", label: "Default", hint: "100%", fontSize: 13 },
@@ -15,9 +16,19 @@ const UI_SCALE_PRESETS = [
 export function AppearanceSection() {
   const { data: appSettings } = useSettings();
   const saveAppSettings = useSaveSettings({ successToast: false });
-  const { uiScale, setUiScale } = useTheme();
+  const {
+    uiScale,
+    setUiScale,
+    isDark,
+    projectAccentHue,
+    setProjectAccentColor,
+    globalAccentHue,
+    setGlobalAccentColor,
+    systemAccentHue,
+  } = useTheme();
   const terminalColorMode = appSettings?.terminal_color_mode ?? "follow_theme";
   const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
+  const newProjectColor = appSettings?.new_project_color ?? "auto";
   const activeScale = uiScale ?? "100";
 
   function handleTerminalColorModeChange(value: string | null) {
@@ -25,6 +36,15 @@ export function AppearanceSection() {
     saveAppSettings.mutate({
       ...appSettings,
       terminal_color_mode: value as TerminalColorMode,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  function handleNewProjectColorChange(value: string | null) {
+    if (!appSettings || !value) return;
+    saveAppSettings.mutate({
+      ...appSettings,
+      new_project_color: value as NewProjectColor,
       updated_at: new Date().toISOString(),
     });
   }
@@ -44,6 +64,65 @@ export function AppearanceSection() {
         <Monitor className="w-4 h-4 text-muted-foreground" />
         Appearance
       </h3>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">Global Default Color</div>
+            <div className="text-xs text-muted-foreground">
+              Used by projects with no color of their own, and before a project is opened
+            </div>
+          </div>
+          <SwatchPicker
+            title="Global Default"
+            selectedHue={globalAccentHue}
+            fallbackHue={systemAccentHue ?? 250}
+            fallbackLabel="Auto"
+            fallbackDescription="Follows OS accent"
+            isDark={isDark}
+            onSelect={(hue) => void setGlobalAccentColor(hue)}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">This Project&apos;s Color</div>
+            <div className="text-xs text-muted-foreground">
+              Colors the header so you can tell projects apart at a glance
+            </div>
+          </div>
+          <SwatchPicker
+            title="Project Color"
+            selectedHue={projectAccentHue}
+            fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
+            fallbackLabel="Global default"
+            fallbackDescription="Follows the setting above"
+            isDark={isDark}
+            onSelect={(hue) => void setProjectAccentColor(hue)}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-sm font-medium">New Projects</Label>
+        <Select value={newProjectColor} onValueChange={handleNewProjectColorChange}>
+          <SelectTrigger className="w-full bg-muted">
+            <SelectValue>
+              {newProjectColor === "auto"
+                ? "Assign a color automatically"
+                : "Use the global default"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Assign a color automatically</SelectItem>
+            <SelectItem value="global">Use the global default</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Whether a project opened for the first time gets a random color from the palette or stays
+          on the global default
+        </p>
+      </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">

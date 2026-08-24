@@ -526,6 +526,12 @@ impl TaskStatus {
 pub struct ProjectConfigResponse {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
+    /// Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
+    /// request, and a colour field there would let a form save clobber a colour picked in the
+    /// header moments earlier. Writes go through `set_project_accent_color` instead.
+    pub accent_color: Option<String>,
+    /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
+    pub accent_color_auto_assign: Option<bool>,
     pub default_existing_worktree: bool,
 }
 

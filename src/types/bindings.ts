@@ -782,6 +782,20 @@ async updateProjectSettings(projectId: number, settings: ProjectConfigRequest) :
 }
 },
 /**
+ * Set only the project's accent colour in .maestro/settings.json.
+ * 
+ * Separate from `update_project_settings` so the settings form (which writes the whole
+ * `ProjectConfigRequest`) can never clobber a colour picked in the header a moment earlier.
+ */
+async setProjectAccentColor(projectId: number, accentColor: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_project_accent_color", { projectId, accentColor }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Pre-warm the shared maestro-server process for a project and optionally
  * pre-initialize the default agent so the first session spawn is near-instant.
  * 
@@ -2237,7 +2251,16 @@ export type AppSettings = { theme_preference: string | null; auto_mode?: boolean
  * Whether `max_concurrent_agents` is the limit, or a fallback for when the host's free
  * memory cannot be read. See `execution::capacity`.
  */
-concurrency_mode?: ConcurrencyMode; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; accent_color?: string | null; terminal_color_mode?: TerminalColorMode; enter_key_behavior?: EnterKeyBehavior; agent_stream_width?: AgentStreamWidth; updated_at: string; auto_update?: boolean; ui_scale?: string | null; 
+concurrency_mode?: ConcurrencyMode; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
+/**
+ * Global default accent hue in degrees, as a string. Projects without their own
+ * `accent_color` follow this; `None` follows the OS accent colour.
+ */
+accent_color?: string | null; 
+/**
+ * Whether a project that has never chosen a colour gets a random preset on first open.
+ */
+new_project_color?: NewProjectColor; terminal_color_mode?: TerminalColorMode; enter_key_behavior?: EnterKeyBehavior; agent_stream_width?: AgentStreamWidth; updated_at: string; auto_update?: boolean; ui_scale?: string | null; 
 /**
  * One of `core::logging::LOG_LEVELS`. `None` means the `info` default.
  */
@@ -2505,6 +2528,18 @@ export type MergeResult = { success: boolean; task_status: string; conflicts: st
  */
 pull_request_url?: string | null }
 /**
+ * What colour a project that has never chosen one gets on first open.
+ */
+export type NewProjectColor = 
+/**
+ * Pick one of the preset hues at random and persist it to the project.
+ */
+"auto" | 
+/**
+ * Leave the project colourless so it follows the global default.
+ */
+"global"
+/**
  * How the current phase is going.
  * 
  * `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
@@ -2556,7 +2591,17 @@ owner?: string | null; repo?: string | null;
  */
 project_path: string }
 export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
-export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
+export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; 
+/**
+ * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
+ * request, and a colour field there would let a form save clobber a colour picked in the
+ * header moments earlier. Writes go through `set_project_accent_color` instead.
+ */
+accent_color: string | null; 
+/**
+ * `Some(false)` once the colour has been decided; see `ProjectConfig`.
+ */
+accent_color_auto_assign: boolean | null; default_existing_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * What the forge's CI last said about an open pull request's head commit.
