@@ -12,6 +12,6 @@ pub use crate::project::{Project, ProjectStatus, ProjectConfig, ProjectIssueTrac
 pub use crate::task::{Task, TaskStatus, TaskPriority, TaskRelationship, TaskInstruction, TaskAttachment, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, TASK_SELECT};
 pub use crate::connectivity::{GitConnection, ConnectionStatus};
 pub use crate::execution::{Worktree, WorktreeWithStatus, AheadBehind, ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult, PtySessionMeta, WORKTREE_DIR, WORKTREE_PATH_PREFIX, WORKTREE_SESSION_PATH_PREFIX, worktree_path_for_task, worktree_path_for_session, is_maestro_created_worktree};
-pub use settings::{AgentStreamWidth, AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
+pub use settings::{AgentStreamWidth, AppSettings, ActivityVisibility, EnterKeyBehavior, NewProjectColor, TerminalColorMode};
 pub use crate::git::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 pub use crate::integration::{IssueTrackingConfig, RemoteIssue, IntegrationStatus, CredentialSource};

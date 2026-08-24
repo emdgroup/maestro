@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{AgentStreamWidth, AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
+use crate::models::{AgentStreamWidth, AppSettings, ActivityVisibility, EnterKeyBehavior, NewProjectColor, TerminalColorMode};
 
 /// Load application settings from the database
 ///
@@ -62,6 +62,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
 
     let accent_color = settings_map.get("accent_color").filter(|v| !v.is_empty()).cloned();
 
+    let new_project_color = settings_map
+        .get("new_project_color")
+        .and_then(|v| v.parse::<NewProjectColor>().ok())
+        .unwrap_or_default();
+
     let terminal_color_mode = settings_map
         .get("terminal_color_mode")
         .and_then(|v| v.parse::<TerminalColorMode>().ok())
@@ -108,6 +113,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         thinking_visibility,
         tool_call_visibility,
         accent_color,
+        new_project_color,
         terminal_color_mode,
         enter_key_behavior,
         agent_stream_width,
@@ -134,6 +140,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let thinking_vis = settings.thinking_visibility.to_string();
     let tool_call_vis = settings.tool_call_visibility.to_string();
     let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
+    let new_project_color_str = settings.new_project_color.to_string();
     let terminal_color_mode_str = settings.terminal_color_mode.to_string();
     let enter_key_behavior_str = settings.enter_key_behavior.to_string();
     let agent_stream_width_str = settings.agent_stream_width.to_string();
@@ -151,6 +158,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("thinking_visibility", thinking_vis.as_str()),
         ("tool_call_visibility", tool_call_vis.as_str()),
         ("accent_color", accent_color_str.as_str()),
+        ("new_project_color", new_project_color_str.as_str()),
         ("terminal_color_mode", terminal_color_mode_str.as_str()),
         ("enter_key_behavior", enter_key_behavior_str.as_str()),
         ("agent_stream_width", agent_stream_width_str.as_str()),
@@ -207,6 +215,7 @@ mod tests {
             thinking_visibility: crate::models::ActivityVisibility::Auto,
             tool_call_visibility: crate::models::ActivityVisibility::Auto,
             accent_color: None,
+            new_project_color: crate::models::NewProjectColor::Global,
             terminal_color_mode: crate::models::TerminalColorMode::FollowTheme,
             enter_key_behavior: crate::models::EnterKeyBehavior::SendPrompt,
             agent_stream_width: crate::models::AgentStreamWidth::Full,
@@ -225,9 +234,27 @@ mod tests {
         assert_eq!(loaded.theme_preference, settings.theme_preference);
         assert_eq!(loaded.log_level, settings.log_level);
         assert_eq!(loaded.log_directory, settings.log_directory);
+        assert_eq!(loaded.new_project_color, crate::models::NewProjectColor::Global);
         assert!(!loaded.notify_on_done);
         assert!(loaded.notify_on_input_needed);
         assert!(!loaded.notify_on_failure);
+    }
+
+    /// An unparseable stored value must fall back to the default rather than erroring, matching
+    /// how `log_level` behaves.
+    #[test]
+    fn unparseable_new_project_color_falls_back_to_default() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('new_project_color', 'rainbow', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        let loaded = load_settings(&conn).unwrap();
+        assert_eq!(loaded.new_project_color, crate::models::NewProjectColor::Auto);
     }
 
     /// An unset directory must come back as `None`, not `Some("")` — the empty string would be

@@ -65,11 +65,15 @@ export function useProjectById(projectId: number) {
 /**
  * Query hook for fetching project settings/configuration
  */
-export function useProjectSettings(projectId: number) {
+export function useProjectSettings(projectId: number | null) {
   return useQuery({
-    queryKey: projectQueryKeys.settingsDetail(projectId),
-    queryFn: () => api.getProjectSettings(projectId),
+    queryKey: projectQueryKeys.settingsDetail(projectId ?? -1),
+    queryFn: () => {
+      if (projectId == null) throw new Error("projectId required");
+      return api.getProjectSettings(projectId);
+    },
     staleTime: Infinity,
+    enabled: projectId != null,
   });
 }
 
@@ -142,6 +146,28 @@ export function useUpdateProjectSettings() {
       });
     },
     onError: createErrorToastHandler("Failed to update project settings"),
+  });
+}
+
+/**
+ * Mutation hook for setting only the project's accent colour.
+ * Separate from useUpdateProjectSettings so the settings form's whole-config save can never
+ * clobber a colour picked in the header (the request type has no colour field by design).
+ */
+export function useSetProjectAccentColor() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, accentColor }: { projectId: number; accentColor: string | null }) =>
+      api.setProjectAccentColor(projectId, accentColor),
+    // On settle, not on success: the caller paints the new colour optimistically, so a failed
+    // write has to refetch too or the UI keeps showing a colour that was never stored.
+    onSettled: (_data, _error, { projectId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.settingsDetail(projectId),
+      });
+    },
+    onError: createErrorToastHandler("Failed to set project color"),
   });
 }
 

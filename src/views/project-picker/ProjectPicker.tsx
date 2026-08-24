@@ -11,6 +11,7 @@ import { ConnectionList } from "./connection-list/ConnectionList";
 import { ProjectList } from "./project-list/ProjectList";
 import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
+import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
   slideVariants,
@@ -79,14 +80,19 @@ export function ProjectPicker() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background text-foreground p-8 relative">
+      {/* The screen paints its own background, so these cannot sit behind it on a negative
+          layer the way they do in the header — they go at z-0 and the content is raised. */}
+      <span aria-hidden className="screen-gradient z-0" />
+      <AccentBubbles variant="screen" className="z-0" />
+
       {/* Theme Toggle - Top Right */}
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 z-10">
         <ThemeToggle />
       </div>
 
       <VersionBadge />
 
-      <div className="max-w-3xl w-full">
+      <div className="max-w-3xl w-full relative z-10">
         <div className="text-center mb-8">
           <img src="/maestro-logo.png" alt="Maestro logo" className="w-20 h-20 mx-auto mb-4" />
           <h1 className="text-3xl font-semibold mb-3">Maestro</h1>
