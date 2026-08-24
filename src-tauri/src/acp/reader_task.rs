@@ -351,8 +351,11 @@ async fn resolve_turn_end(
 /// Two conditions, both necessary. The project must define a `Reviewer` profile, which is how a
 /// team opts in — a project without one keeps the pipeline it had. And the loop must have rounds
 /// left, or a reviewer would be started only to have its verdict escalated anyway.
+///
+/// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
+/// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
 pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_id: i32) -> bool {
-    use crate::acp::completion::REVIEW_ROUND_CAP;
+    use crate::acp::completion::review_rounds_remain;
 
     let Ok(Some((project_id, rounds))) = ({
         app_state.db.lock().map(|conn| {
@@ -367,7 +370,7 @@ pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_
         return false;
     };
 
-    if rounds >= REVIEW_ROUND_CAP {
+    if !review_rounds_remain(rounds) {
         return false;
     }
 
@@ -390,7 +393,9 @@ fn review_verdict_event(
     task_id: i32,
     reply: &str,
 ) -> crate::task::transition::TaskTransition {
-    use crate::acp::completion::{classify_verdict, ReviewVerdict, REVIEW_ROUND_CAP};
+    use crate::acp::completion::{
+        classify_verdict, review_rounds_remain, ReviewVerdict, REVIEW_ROUND_CAP,
+    };
     use crate::task::transition::TaskTransition;
 
     if classify_verdict(reply) == ReviewVerdict::Approved {
@@ -404,7 +409,9 @@ fn review_verdict_event(
         .query_row("SELECT review_rounds FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
         .unwrap_or(REVIEW_ROUND_CAP);
 
-    if rounds + 1 >= REVIEW_ROUND_CAP {
+    // The backstop rather than the primary guard: `reviewer_should_run` already refuses to start a
+    // reviewer with no rounds left, so reaching this means one was started another way.
+    if !review_rounds_remain(rounds) {
         log::info!(
             "Task {} hit the review round cap ({}); escalating to the user",
             task_id,

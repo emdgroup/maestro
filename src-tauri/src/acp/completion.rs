@@ -21,7 +21,22 @@ pub const COMPLETION_MARKER: &str = "<maestro-task-complete/>";
 /// hand work to each other with nobody in between, so the loop needs an end that is not "until
 /// the reviewer is satisfied". A reviewer and a coder that disagree about the same code will
 /// disagree about it indefinitely, and every round costs money.
+///
+/// Send-backs, not reviews — `review_rounds` reaches this number and stops, the same way
+/// `fix_rounds` does against `FIX_ROUND_CAP`. So a task that never satisfies its reviewer pays for
+/// three reviews and three coder rounds, and the fourth review is not bought: `reviewer_should_run`
+/// declines it and the user gets the work instead.
 pub const REVIEW_ROUND_CAP: i32 = 3;
+
+/// Whether the loop may send a task back once more.
+///
+/// One predicate for both guards — `reviewer_should_run` before a reviewer is started, and the
+/// verdict handler before one is acted on. They were written with different comparisons, and that
+/// disagreement is the whole bug: the verdict handler tested `rounds + 1`, so it escalated a round
+/// early and spent the cap on two send-backs, which in turn made the other guard unreachable.
+pub fn review_rounds_remain(rounds: i32) -> bool {
+    rounds < REVIEW_ROUND_CAP
+}
 
 /// What the review agent concluded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -399,6 +414,35 @@ mod tests {
                 ("agent_message_chunk", Some("finished")),
             ]);
             assert_eq!(closing, "finished");
+        }
+    }
+
+    mod review_loop {
+        use super::*;
+
+        /// The cap counts send-backs, and the number in the constant is the number the loop gets —
+        /// which it did not: the verdict handler compared `rounds + 1` and stopped at two, while
+        /// `reviewer_should_run` compared `rounds` and so could never fire. One predicate now, and
+        /// this is the arithmetic both of them read.
+        #[test]
+        fn the_cap_is_the_number_of_send_backs_the_loop_gets() {
+            let send_backs = (0..)
+                .take_while(|rounds| review_rounds_remain(*rounds))
+                .count();
+            assert_eq!(
+                send_backs as i32, REVIEW_ROUND_CAP,
+                "a task rejected every time must be sent back REVIEW_ROUND_CAP times"
+            );
+        }
+
+        /// The guard that stops the loop, and the one that stops paying for a verdict nobody can
+        /// act on, have to agree about the round the loop ends on — the bug was that they did not.
+        #[test]
+        fn the_round_after_the_last_one_is_refused() {
+            assert!(review_rounds_remain(REVIEW_ROUND_CAP - 1));
+            assert!(!review_rounds_remain(REVIEW_ROUND_CAP));
+            // A count that somehow ran past the cap must not wrap back into "carry on".
+            assert!(!review_rounds_remain(REVIEW_ROUND_CAP + 1));
         }
     }
 
