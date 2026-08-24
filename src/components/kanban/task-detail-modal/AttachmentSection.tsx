@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Paperclip, Upload, X } from "lucide-react";
 import type { TaskAttachment } from "@/types/bindings";
 import { cn } from "@/lib/utils.ts";
@@ -56,8 +56,12 @@ export function AttachmentSection({ taskId, projectId, isEditable }: AttachmentS
   const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
   const addAttachment = useAddTaskAttachmentMutation();
   const removeAttachment = useDeleteTaskAttachmentMutation();
+  // Mirrored from an effect rather than assigned during render — read only by the
+  // file-input callback below, which runs after commit.
   const addAttachmentRef = useRef(addAttachment);
-  addAttachmentRef.current = addAttachment;
+  useEffect(() => {
+    addAttachmentRef.current = addAttachment;
+  });
 
   const [isDragOver, setIsDragOver] = useState(false);
   const resetDragOver = () => setIsDragOver(false);

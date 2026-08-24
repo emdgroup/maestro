@@ -34,10 +34,6 @@ export function EditableField({
   const capturedSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
-
-  useEffect(() => {
     if (editing && textareaRef.current) {
       textareaRef.current.focus();
       if (capturedSizeRef.current !== null) {
@@ -61,6 +57,9 @@ export function EditableField({
     } else {
       capturedSizeRef.current = null;
     }
+    // The draft is seeded here rather than mirrored from `value` by an effect: it is only
+    // ever read while editing, and this is the sole way in.
+    setDraft(value);
     setEditing(true);
   }
 

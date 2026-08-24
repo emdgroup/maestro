@@ -162,9 +162,14 @@ export function PlanPermissionOverlay({
   const tier = useLayoutTier(barRef);
   const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
+  // A layout-tier change re-lays out the accept options, so the stack collapses with it.
+  // Adjusted during render rather than from an effect — an effect would paint one frame
+  // of the new tier still expanded.
+  const [prevTier, setPrevTier] = useState(tier);
+  if (prevTier !== tier) {
+    setPrevTier(tier);
     setExpanded(false);
-  }, [tier]);
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {

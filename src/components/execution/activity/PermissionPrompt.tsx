@@ -51,12 +51,6 @@ const TOOL_ICON_MAP: Record<string, React.ElementType> = {
   delete_file: Trash2,
 };
 
-function getToolIcon(payload: Record<string, unknown>): React.ElementType {
-  const tool = payload.tool as string | undefined;
-  if (tool && TOOL_ICON_MAP[tool]) return TOOL_ICON_MAP[tool];
-  return Shield;
-}
-
 export function PermissionPrompt({
   requestId,
   payload,
@@ -78,7 +72,10 @@ export function PermissionPrompt({
     );
   }
 
-  const ToolIcon = getToolIcon(payload);
+  // Indexed inline rather than through a helper: the compiler cannot see through an
+  // opaque call returning a component, and reads it as one being created per render.
+  const toolName = payload.tool as string | undefined;
+  const ToolIcon = TOOL_ICON_MAP[toolName ?? ""] ?? Shield;
 
   return (
     <div className="rounded-[10px] border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent p-3.5 flex flex-col gap-2.5 shadow-[0_2px_8px_oklch(0%_0_0/0.08)]">

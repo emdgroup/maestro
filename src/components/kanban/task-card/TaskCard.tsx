@@ -146,11 +146,12 @@ function FooterCTAs({
   // ponytail: 2s debounce avoids flashing "session lost" during spawn race between sessions-changed and tasks-changed
   const isSessionLost = task.status === "InProgress" && !activeSession;
   const [sessionLostStable, setSessionLostStable] = useState(false);
+  // The debounce only ever raises the flag, so a session that is no longer lost cannot
+  // be stably lost — derived here rather than reset from the effect below.
+  const showSessionLost = isSessionLost && sessionLostStable;
+
   useEffect(() => {
-    if (!isSessionLost) {
-      setSessionLostStable(false);
-      return;
-    }
+    if (!isSessionLost) return;
     const t = setTimeout(() => setSessionLostStable(true), 2000);
     return () => clearTimeout(t);
   }, [isSessionLost]);
@@ -175,7 +176,7 @@ function FooterCTAs({
   }
 
   if (task.status === "InProgress") {
-    if (sessionLostStable) {
+    if (showSessionLost) {
       return (
         <div className="flex flex-col gap-1 mt-1.5">
           <p className="text-[10px] font-bold text-destructive text-center">Session lost</p>

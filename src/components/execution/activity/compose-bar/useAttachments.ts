@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { api } from "@/lib/tauri-utils";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";
@@ -12,8 +12,12 @@ interface Params {
 
 export function useAttachments({ promptCapabilities, logId }: Params) {
   const [attachments, setAttachments] = useState<ExternalAttachment[]>([]);
+  // Mirrored from an effect rather than assigned during render — read only by the
+  // paste handler, which runs after commit.
   const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  });
 
   const handleAttach = useCallback(async () => {
     const selected = await openFilePicker({ multiple: true });

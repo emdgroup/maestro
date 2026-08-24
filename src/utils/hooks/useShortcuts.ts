@@ -9,11 +9,14 @@ export function useShortcuts(scope: ShortcutScope, handlers: ShortcutHandlers): 
   const activeTab = useActiveTab();
   const activeTaskId = useActiveTaskId();
 
+  // Mirrored from an effect rather than assigned during render — the keydown
+  // listener below is the only reader and it always runs after a commit.
   const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
-
   const stateRef = useRef({ activeTab, activeTaskId });
-  stateRef.current = { activeTab, activeTaskId };
+  useEffect(() => {
+    handlersRef.current = handlers;
+    stateRef.current = { activeTab, activeTaskId };
+  });
 
   useEffect(() => {
     const defs = getShortcutsForScope(scope);

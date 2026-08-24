@@ -1,6 +1,7 @@
 import {
   useState,
   useRef,
+  useEffect,
   useCallback,
   useContext,
   createContext,
@@ -25,22 +26,35 @@ interface TableSort {
 interface TableSortContextValue {
   sort: TableSort;
   onSort: (col: number) => void;
-  getNextHeaderIndex: () => number;
 }
 export const TableSortContext = createContext<TableSortContextValue | null>(null);
 
 export function InteractiveTable({ children }: { children: ReactNode }) {
   const [sort, setSort] = useState<TableSort>({ col: null, asc: true });
-  const headerCountRef = useRef(0);
-  headerCountRef.current = 0;
-  const getNextHeaderIndex = useCallback(() => headerCountRef.current++, []);
+  const tableRef = useRef<HTMLTableElement>(null);
+
   const onSort = useCallback((col: number) => {
     setSort((prev) => ({ col, asc: prev.col === col ? !prev.asc : true }));
   }, []);
+
+  // A column's index is a DOM fact — `cellIndex` on sort, the cell's position in each row
+  // when sorting. So the sorted marker is written to the DOM here rather than each header
+  // discovering its own index and holding it in state, which needed a mount effect per
+  // column just to render an arrow. `InteractiveTh` is now stateless and the arrow is CSS.
+  useEffect(() => {
+    const cells = tableRef.current?.querySelectorAll<HTMLTableCellElement>("thead th");
+    cells?.forEach((cell, i) => {
+      cell.dataset.sort = sort.col === i ? (sort.asc ? "asc" : "desc") : "none";
+    });
+  }, [sort]);
+
   return (
-    <TableSortContext.Provider value={{ sort, onSort, getNextHeaderIndex }}>
+    <TableSortContext.Provider value={{ sort, onSort }}>
       <div className="overflow-x-auto my-3 rounded-lg border border-border">
-        <table className="w-full border-collapse text-xs [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-muted/30">
+        <table
+          ref={tableRef}
+          className="w-full border-collapse text-xs [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-muted/30"
+        >
           {children}
         </table>
       </div>
@@ -50,24 +64,15 @@ export function InteractiveTable({ children }: { children: ReactNode }) {
 
 export function InteractiveTh({ children }: { children: ReactNode }) {
   const ctx = useContext(TableSortContext);
-  const colRef = useRef(-1);
-  if (ctx && colRef.current === -1) {
-    colRef.current = ctx.getNextHeaderIndex();
-  }
-  const col = colRef.current;
-  const isSorted = ctx?.sort.col === col;
   return (
     <th
+      data-sort="none"
       className="group border-b border-border px-3 py-2 text-left align-bottom text-[11px] font-medium uppercase tracking-wide text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors"
-      onClick={() => ctx?.onSort(col)}
+      onClick={(e) => ctx?.onSort(e.currentTarget.cellIndex)}
     >
       <span className="inline-flex items-center gap-1">
         {children}
-        <span
-          className={`text-[8px] transition-opacity ${isSorted ? "opacity-70" : "opacity-0 group-hover:opacity-40"}`}
-        >
-          {isSorted ? (ctx.sort.asc ? "▲" : "▼") : "⇅"}
-        </span>
+        <span className="text-[8px] transition-opacity opacity-0 after:content-['⇅'] group-hover:opacity-40 group-data-[sort=asc]:opacity-70 group-data-[sort=asc]:after:content-['▲'] group-data-[sort=desc]:opacity-70 group-data-[sort=desc]:after:content-['▼']" />
       </span>
     </th>
   );

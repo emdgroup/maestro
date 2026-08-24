@@ -26,6 +26,13 @@ interface AgentAuthModalProps {
 
 const URL_RE = /https?:\/\/\S+/g;
 
+function connectionKeyId(key: ConnectionKey): string {
+  if (key.type === "local") return "local";
+  if (key.type === "ssh") return `ssh-${key.id}`;
+  if (key.type === "wsl") return `wsl-${key.id}`;
+  return `docker-${key.id}`;
+}
+
 function linkifyLine(line: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let last = 0;
@@ -71,9 +78,16 @@ export function AgentAuthModal({
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [isStartingTerminal, setIsStartingTerminal] = useState(false);
 
+  // Each auth run starts with an empty log. Cleared during render rather than from the
+  // effect below, which owns only the subscription to that run's output.
+  const [loggedRun, setLoggedRun] = useState(authenticate.isPending);
+  if (loggedRun !== authenticate.isPending) {
+    setLoggedRun(authenticate.isPending);
+    if (authenticate.isPending) setOutputLines([]);
+  }
+
   useEffect(() => {
     if (!authenticate.isPending) return;
-    setOutputLines([]);
     const connId = connectionKeyId(connection);
     let unlisten: (() => void) | undefined;
     listen<{ level: string; message: string }>(`acp://auth-output/${connId}`, (e) => {
@@ -120,13 +134,6 @@ export function AgentAuthModal({
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : String(err));
     }
-  }
-
-  function connectionKeyId(key: ConnectionKey): string {
-    if (key.type === "local") return "local";
-    if (key.type === "ssh") return `ssh-${key.id}`;
-    if (key.type === "wsl") return `wsl-${key.id}`;
-    return `docker-${key.id}`;
   }
 
   const isInProgress = authenticate.isPending || isStartingTerminal;

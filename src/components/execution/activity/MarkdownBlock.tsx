@@ -1,5 +1,4 @@
 import {
-  useState,
   useEffect,
   useMemo,
   memo,
@@ -22,7 +21,7 @@ import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ZoomableContent } from "@/ui/zoomable-content";
-import { commands } from "@/types/bindings";
+import { useProxyImageQuery } from "@/services/task.service";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { sanitizeSchema } from "./markdown-sanitize";
 import { COMMAND_TAG, rehypeSlashCommands } from "./markdown-commands";
@@ -323,7 +322,37 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   return <ImageProxyContext.Provider value={ctxValue}>{content}</ImageProxyContext.Provider>;
 });
 
-const imageProxyCache = new Map<string, string>();
+/**
+ * Turns an inline `data:` source into an object URL, revoked when it is replaced.
+ *
+ * Chromium blocks `data:` URLs in frames and treats large ones poorly in `img`, so the
+ * bytes are handed over as a blob instead. Derived rather than produced by an effect, so
+ * the image is present on the first frame.
+ */
+function useDataUrlBlob(src: string | undefined): string | null {
+  const blobUrl = useMemo(() => {
+    if (!src?.startsWith("data:")) return null;
+    try {
+      const comma = src.indexOf(",");
+      const meta = src.slice(5, comma); // e.g. "image/svg+xml;base64"
+      const isBase64 = meta.endsWith(";base64");
+      const mime = isBase64 ? meta.slice(0, -7) : meta;
+      const data = src.slice(comma + 1);
+      const bytes = isBase64
+        ? Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+        : new TextEncoder().encode(decodeURIComponent(data));
+      return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch {
+      return null;
+    }
+  }, [src]);
+
+  useEffect(() => {
+    if (blobUrl) return () => URL.revokeObjectURL(blobUrl);
+  }, [blobUrl]);
+
+  return blobUrl;
+}
 
 function ProxiedImage({
   src,
@@ -336,67 +365,27 @@ function ProxiedImage({
 }) {
   const ctx = useContext(ImageProxyContext);
   const insideAnchor = useContext(InsideAnchorContext);
-  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src);
-  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!src) {
-      setResolvedSrc(undefined);
-      return;
-    }
-    if (src.startsWith("blob:")) {
-      setResolvedSrc(src);
-      return;
-    }
-    if (src.startsWith("data:")) {
-      try {
-        const comma = src.indexOf(",");
-        const meta = src.slice(5, comma); // e.g. "image/svg+xml;base64"
-        const isBase64 = meta.endsWith(";base64");
-        const mime = isBase64 ? meta.slice(0, -7) : meta;
-        const data = src.slice(comma + 1);
-        const bytes = isBase64
-          ? Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
-          : new TextEncoder().encode(decodeURIComponent(data));
-        const blob = new Blob([bytes], { type: mime });
-        const url = URL.createObjectURL(blob);
-        setResolvedSrc(url);
-        return () => URL.revokeObjectURL(url);
-      } catch {
-        setResolvedSrc(src);
-        return;
-      }
-    }
-    if (!ctx) {
-      setResolvedSrc(src);
-      return;
-    }
+  const dataUrl = useDataUrlBlob(src);
 
-    const absolutePath = ctx.baseDir && _isLocalSrc(src) ? _resolveFilePath(src, ctx.baseDir) : src;
-    const cacheKey = `${ctx.projectId}:${absolutePath}`;
-    const cached = imageProxyCache.get(cacheKey);
-    if (cached) {
-      setResolvedSrc(cached);
-      return;
-    }
+  // Only a path the proxy has to fetch is asynchronous; `blob:`, `data:` and the
+  // no-context case all resolve here. The proxy result is a query rather than a bespoke
+  // Map plus loading state — `useProxyImageQuery` already caches it for the whole app.
+  const needsProxy = !!src && !!ctx && !src.startsWith("blob:") && !src.startsWith("data:");
+  const absolutePath =
+    needsProxy && ctx.baseDir && _isLocalSrc(src) ? _resolveFilePath(src, ctx.baseDir) : src;
+  const isHttp =
+    absolutePath?.startsWith("http://") === true || absolutePath?.startsWith("https://") === true;
 
-    const isHttp = absolutePath.startsWith("http://") || absolutePath.startsWith("https://");
-    if (isHttp) {
-      setResolvedSrc(src);
-    } else {
-      setLoading(true);
-    }
+  const proxyQuery = useProxyImageQuery(
+    ctx?.projectId ?? 0,
+    needsProxy ? (absolutePath ?? "") : "",
+  );
 
-    commands.proxyImage(ctx.projectId, absolutePath).then((result) => {
-      if (result.status === "ok") {
-        imageProxyCache.set(cacheKey, result.data);
-        setResolvedSrc(result.data);
-      } else if (!isHttp) {
-        setResolvedSrc(src);
-      }
-      setLoading(false);
-    });
-  }, [src, ctx]);
+  // An http source is shown straight away and only upgraded if the proxy succeeds, so it
+  // never sits behind a placeholder.
+  const loading = needsProxy && !isHttp && proxyQuery.isPending;
+  const resolvedSrc = needsProxy ? (proxyQuery.data ?? src) : (dataUrl ?? src);
 
   if (loading) {
     return <span className="inline-block w-32 h-20 bg-muted rounded-md animate-pulse my-2" />;

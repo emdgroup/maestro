@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
-import { api } from "@/lib/tauri-utils";
 import { Slider } from "@/ui/slider";
 import { MarkdownBlock, SvgBlock, MermaidBlock, HighlightedCode } from "./MarkdownBlock";
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
-import { useAcpSessionMeta } from "@/services/execution.service";
+import { useAcpSessionMeta, useSessionFileQuery } from "@/services/execution.service";
+import { useConnectionFileQuery } from "@/services/connection.service";
 import { useSelectedProject } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 
@@ -98,9 +98,6 @@ export function WorkingFileContentView({
   onZoomChange,
 }: WorkingFileContentViewProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
@@ -112,18 +109,14 @@ export function WorkingFileContentView({
   const [zoomState, setZoomState] = useState({ file: "", zoom: 100 });
   const zoom = zoomProp ?? (zoomState.file === filePath ? zoomState.zoom : 100);
   const setZoom = onZoomChange ?? ((z: number) => setZoomState({ file: filePath ?? "", zoom: z }));
+  // Mirrored from an effect rather than assigned during render — only the
+  // keyboard handler below reads them, and it runs after commit.
   const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const setZoomRef = useRef(setZoom);
-  setZoomRef.current = setZoom;
-
-  const [refreshTick, setRefreshTick] = useState(0);
   useEffect(() => {
-    if (!isActive) return;
-    setRefreshTick((t) => t + 1);
-    const id = setInterval(() => setRefreshTick((t) => t + 1), 3000);
-    return () => clearInterval(id);
-  }, [isActive]);
+    zoomRef.current = zoom;
+    setZoomRef.current = setZoom;
+  });
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -177,47 +170,35 @@ export function WorkingFileContentView({
 
   const baseDir = absolutePath ? absolutePath.replace(/\/[^/]+$/, "") : undefined;
 
-  useEffect(() => {
-    if (!relativePath && !isAbsoluteOutsideCwd) return;
-    setLoading(true);
-    setContent(null);
-    setLoadError(null);
-  }, [relativePath, isAbsoluteOutsideCwd, sessionKey, isBinary]);
+  // Wait for session cwd before loading absolute paths — without cwd we can't determine
+  // if the path is inside the session, and a local read of a remote path produces a
+  // spurious "path not found" error.
+  const awaitingCwd = filePath?.startsWith("/") === true && cwd === null;
 
-  useEffect(() => {
-    if (!relativePath && !isAbsoluteOutsideCwd) return;
-    // Wait for session cwd before loading absolute paths — without cwd we can't
-    // determine if the path is inside the session, and a local read of a remote
-    // path produces a spurious "path not found" error.
-    if (filePath?.startsWith("/") && cwd === null) return;
-    const loader = isAbsoluteOutsideCwd
-      ? isBinary
-        ? api.readFileBinary(connection, absolutePath!)
-        : api.readFile(connection, absolutePath!)
-      : isBinary
-        ? api.readSessionFileBinary(sessionKey, relativePath!)
-        : api.readSessionFile(sessionKey, relativePath!);
-    loader
-      .then((data) => {
-        setLoading(false);
-        setContent((prev) => (prev === data ? prev : data));
-        setLoadError(null);
-      })
-      .catch((err) => {
-        setLoadError(String(err));
-        setLoading(false);
-      });
-  }, [
-    relativePath,
-    isAbsoluteOutsideCwd,
-    absolutePath,
+  // Two queries rather than an effect that wrote loading, content and error by hand: the
+  // file either lives inside the session or at an absolute path on the connection, and
+  // only one is ever enabled. Polling while the tab is visible is `refetchInterval`, and
+  // switching files drops the previous contents through the query key rather than through
+  // a synchronous reset.
+  const POLL_MS = 3000;
+  const sessionFileQuery = useSessionFileQuery(
     sessionKey,
+    isAbsoluteOutsideCwd || awaitingCwd ? null : relativePath,
     isBinary,
-    refreshTick,
-    filePath,
-    cwd,
+    isActive ? POLL_MS : undefined,
+  );
+  const connectionFileQuery = useConnectionFileQuery(
     connection,
-  ]);
+    isAbsoluteOutsideCwd && !awaitingCwd ? absolutePath : null,
+    isBinary,
+    isActive ? POLL_MS : undefined,
+  );
+
+  const fileQuery = isAbsoluteOutsideCwd ? connectionFileQuery : sessionFileQuery;
+  const hasTarget = (relativePath !== null || isAbsoluteOutsideCwd) && !awaitingCwd;
+  const content = fileQuery.data ?? null;
+  const loading = hasTarget && fileQuery.isPending;
+  const loadError = fileQuery.error ? String(fileQuery.error) : null;
 
   function copyPath() {
     if (!absolutePath) return;

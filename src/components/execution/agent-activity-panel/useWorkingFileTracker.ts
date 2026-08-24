@@ -64,22 +64,25 @@ export function useWorkingFileTracker(
     }
     const now = Date.now();
     const working = new Set<string>();
+    const add = (path: string) => {
+      if (!isWorkingFile(path)) return;
+      working.add(path);
+      if (!seenAt.current.has(path)) seenAt.current.set(path, now);
+    };
+
     for (const item of items) {
       if (item.type !== "toolCall") continue;
       const tc = item.item;
       for (const c of tc.content) {
-        if (c.type === "diff" && isWorkingFile(c.path)) {
-          working.add(c.path);
-          if (!seenAt.current.has(c.path)) seenAt.current.set(c.path, now);
-        }
+        if (c.type === "diff") add(c.path);
       }
       if (WRITE_KINDS.has(tc.kind)) {
-        for (const loc of tc.locations) {
-          if (isWorkingFile(loc.path)) {
-            working.add(loc.path);
-            if (!seenAt.current.has(loc.path)) seenAt.current.set(loc.path, now);
-          }
-        }
+        for (const loc of tc.locations) add(loc.path);
+        // ACP puts the file on `locations`, but agents that skip it still send it on the
+        // tool input — the same fallback `agentMeta` resolves `filePath` with. Reading
+        // only `locations` here meant those agents produced no artifacts at all, so
+        // neither the Overview card nor the Artifacts tab ever appeared for them.
+        if (tc.meta?.filePath) add(tc.meta.filePath);
       }
     }
     return {

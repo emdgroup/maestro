@@ -18,13 +18,9 @@ const MODE_ICONS: Record<string, LucideIcon> = {
   bypassPermissions: ShieldOff,
 };
 
-function modeIcon(value: string): LucideIcon {
-  return MODE_ICONS[value] ?? Shield;
-}
-
 export function ModeSelector({ option, value, onChange, disabled }: SelectorProps) {
   const currentOption = option.options.find((o) => o.value === value);
-  const TriggerIcon = modeIcon(value);
+  const TriggerIcon = MODE_ICONS[value] ?? Shield;
 
   return (
     <BaseDropdownSelector
@@ -40,7 +36,7 @@ export function ModeSelector({ option, value, onChange, disabled }: SelectorProp
         </>
       }
       renderItem={(opt) => {
-        const ItemIcon = modeIcon(opt.value);
+        const ItemIcon = MODE_ICONS[opt.value] ?? Shield;
         return (
           <SelectPrimitive.Item key={opt.value} value={opt.value} className={ITEM_CLASS}>
             <ItemIcon className="size-4 shrink-0 mt-0.5 group-data-selected:text-accent group-data-highlighted:!text-accent-foreground" />

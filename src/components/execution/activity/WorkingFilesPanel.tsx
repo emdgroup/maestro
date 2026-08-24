@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { FileText, X, Copy, Check, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
-import { api } from "@/lib/tauri-utils";
 import { MarkdownBlock, SvgBlock, MermaidBlock, CodeBlockWrapper } from "./MarkdownBlock";
 import { Slider } from "@/ui/slider";
 import { imageMimeForExtension, langForExtension } from "./fileTypeUtils";
 import { type FileViewType, getFileViewType, injectScrollbarCSS } from "./fileViewUtils";
-import { useAcpSessionMeta } from "@/services/execution.service";
+import { useAcpSessionMeta, useSessionFileQuery } from "@/services/execution.service";
 import { WorkingFilesPanelCompact } from "./WorkingFilesPanelCompact";
 
 interface WorkingFilesPanelProps {
@@ -92,9 +91,6 @@ export function WorkingFilesPanel({
   const [selectedFile, setSelectedFile] = useState<string | null>(
     (initialFile && files.includes(initialFile) ? initialFile : null) ?? files[0] ?? null,
   );
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
@@ -105,10 +101,14 @@ export function WorkingFilesPanel({
   const [zoomState, setZoomState] = useState({ file: "", zoom: 100 });
   const zoom = zoomState.file === selectedFile ? zoomState.zoom : 100;
   const setZoom = (z: number) => setZoomState({ file: selectedFile ?? "", zoom: z });
+  // Mirrored from an effect rather than assigned during render — only the
+  // keyboard handler below reads them, and it runs after commit.
   const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const setZoomRef = useRef(setZoom);
-  setZoomRef.current = setZoom;
+  useEffect(() => {
+    zoomRef.current = zoom;
+    setZoomRef.current = setZoom;
+  });
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -160,25 +160,13 @@ export function WorkingFilesPanel({
   const viewType = selectedFile ? getFileViewType(selectedFile) : null;
   const isBinary = viewType === "image";
 
-  useEffect(() => {
-    if (!relativePath) return;
-    setLoading(true);
-    setContent(null);
-    setLoadError(null);
-    const loader = isBinary
-      ? api.readSessionFileBinary(sessionKey, relativePath)
-      : api.readSessionFile(sessionKey, relativePath);
-    loader
-      .then((data) => {
-        setLoading(false);
-        setContent(data);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoadError(String(err));
-        setLoading(false);
-      });
-  }, [relativePath, sessionKey, isBinary]);
+  // The read is a query rather than an effect writing three pieces of state: loading and
+  // error come from the query, and the previous file's contents are dropped by the key
+  // changing rather than by a synchronous reset.
+  const fileQuery = useSessionFileQuery(sessionKey, relativePath, isBinary);
+  const content = fileQuery.data ?? null;
+  const loading = fileQuery.isPending && relativePath !== null;
+  const loadError = fileQuery.error ? String(fileQuery.error) : null;
 
   function copyPath() {
     if (!absolutePath) return;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Bot, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
@@ -98,11 +98,14 @@ export function SubagentCard({ item, toolCallMap }: SubagentCardProps) {
       .filter((tc): tc is ToolCallItem => tc != null);
   }, [item.childToolCallIds, toolCallMap]);
 
-  useEffect(() => {
-    if (expanded && !displayText) {
-      setPromptOpen(true);
-    }
-  }, [expanded, displayText]);
+  // Expanding a subagent that has produced no output yet shows the prompt instead of an
+  // empty card. Adjusted during render rather than from an effect so the empty state is
+  // never painted first; the user can still collapse the prompt afterwards.
+  const [promptNudge, setPromptNudge] = useState({ expanded, hasText: !!displayText });
+  if (promptNudge.expanded !== expanded || promptNudge.hasText !== !!displayText) {
+    setPromptNudge({ expanded, hasText: !!displayText });
+    if (expanded && !displayText) setPromptOpen(true);
+  }
 
   return (
     <div

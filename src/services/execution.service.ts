@@ -16,6 +16,8 @@ export const executionQueryKeys = {
   projectAgents: (connection: ConnectionKey, cwd: string) =>
     ["projectAgents", connection, cwd] as const,
   sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
+  sessionFile: (sessionKey: number, relativePath: string, binary: boolean) =>
+    ["sessionFile", sessionKey, relativePath, binary] as const,
 };
 
 /**
@@ -344,6 +346,31 @@ export function useAcpSessionMeta(sessionKey: number | null) {
     queryKey: executionQueryKeys.sessionMeta(sessionKey),
     queryFn: () => api.getAcpSessionMeta(sessionKey!),
     enabled: sessionKey != null,
+  });
+}
+
+/**
+ * Contents of a file inside a session's working directory.
+ *
+ * `refetchIntervalMs` polls it, because a file the agent is still writing changes with no
+ * event to listen for. Pass `null` for the path to disable the query — the loading and
+ * error states then come from the query itself rather than being mirrored into component
+ * state around a bare `api` call.
+ */
+export function useSessionFileQuery(
+  sessionKey: number,
+  relativePath: string | null,
+  binary: boolean,
+  refetchIntervalMs?: number,
+) {
+  return useQuery({
+    queryKey: executionQueryKeys.sessionFile(sessionKey, relativePath ?? "", binary),
+    queryFn: () =>
+      binary
+        ? api.readSessionFileBinary(sessionKey, relativePath!)
+        : api.readSessionFile(sessionKey, relativePath!),
+    enabled: relativePath != null,
+    refetchInterval: refetchIntervalMs ?? false,
   });
 }
 
