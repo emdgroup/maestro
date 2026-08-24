@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ListChecks } from "lucide-react";
 import {
   Dialog,
@@ -46,9 +46,13 @@ export function PlanGate({
   const [feedback, setFeedback] = useState("");
 
   // A new plan is a new decision, so the notes on the last one do not carry over into it.
-  useEffect(() => {
+  // Adjusted during render rather than from an effect, which would paint one frame of the
+  // reopened gate still holding the previous plan's notes.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (open) setFeedback("");
-  }, [open]);
+  }
 
   const plan = [...(comments ?? [])].reverse().find((c) => c.kind === "plan");
   const body = plan?.body?.trim();

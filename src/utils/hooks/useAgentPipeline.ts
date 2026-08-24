@@ -28,8 +28,12 @@ export function useAgentPipeline(
 ) {
   const { execute } = useExecuteTask(projectId, projectPath, connection);
 
+  // Mirrored from an effect rather than assigned during render — only the debounced timer below
+  // reads it, and that fires long after the commit this effect runs in.
   const executeRef = useRef(execute);
-  executeRef.current = execute;
+  useEffect(() => {
+    executeRef.current = execute;
+  });
 
   /// Ids already handed to `execute` this session. The task's state does not change until the
   /// session is up, so without this the debounce window would start the same agent twice.

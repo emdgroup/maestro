@@ -33,10 +33,15 @@ export function useQueueDrain(
   // Read through refs so the listeners below are registered once per project rather than being
   // torn down and rebuilt on every task update — which, since a drain causes a task update, would
   // mean re-subscribing in the middle of the work the subscription triggered.
+  //
+  // Mirrored from an effect rather than assigned during render — only `drain` reads them, and it
+  // runs from a debounced timer or an event listener, never while rendering.
   const tasksRef = useRef(tasks);
-  tasksRef.current = tasks;
   const executeRef = useRef(execute);
-  executeRef.current = execute;
+  useEffect(() => {
+    tasksRef.current = tasks;
+    executeRef.current = execute;
+  });
 
   /// Guards against overlapping drains. Two in flight would each be told the same slots are free,
   /// since the first one's claims are not written until its spawns begin.
