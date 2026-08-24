@@ -27,10 +27,14 @@ export function useFileInput(
   onFile: (filename: string, filePath: string) => void,
   opts?: UseFileInputOpts,
 ) {
+  // Mirrored from an effect rather than assigned during render — the paste and
+  // drop handlers below are the only readers and they run after commit.
   const onFileRef = useRef(onFile);
-  onFileRef.current = onFile;
   const optsRef = useRef(opts);
-  optsRef.current = opts;
+  useEffect(() => {
+    onFileRef.current = onFile;
+    optsRef.current = opts;
+  });
 
   useEffect(() => {
     if (!isActive) return;

@@ -10,6 +10,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { useHorizontalScrollFade } from "@/hooks/useHorizontalScrollFade";
+import { DynamicIcon } from "@/ui/dynamic-icon";
 import {
   Attachment,
   AttachmentMedia,
@@ -126,14 +127,14 @@ function DocCard({
   attachment: ExternalAttachment;
   onRemove: () => void;
 }) {
-  const Icon = docIcon(attachment.displayName);
+  const icon = docIcon(attachment.displayName);
   const meta =
     attachment.sizeBytes !== undefined ? formatFileSize(attachment.sizeBytes) : undefined;
 
   return (
     <Attachment size="sm">
       <AttachmentMedia>
-        <Icon />
+        <DynamicIcon icon={icon} />
       </AttachmentMedia>
       <AttachmentContent>
         <AttachmentTitle>{attachment.displayName}</AttachmentTitle>

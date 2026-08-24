@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
 import { Input } from "@/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -41,12 +41,16 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
   const { data: tasks, isLoading } = useTasksQuery(projectId);
   const { setActiveTaskId } = useNavigationActions();
 
-  useEffect(() => {
+  // Closing the modal clears its filters so the next open starts fresh. Adjusted during
+  // render rather than from an effect — nothing external is being synchronised.
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
     if (!isOpen) {
       setSearch("");
       setFilter("all");
     }
-  }, [isOpen]);
+  }
 
   const archiveTasks = useMemo<Task[]>(() => {
     return (

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Skeleton } from "@/ui/skeleton";
@@ -71,9 +71,14 @@ export function CanvasHtml({ srcdoc, height = 200, title, className }: Props) {
       : inject + srcdoc;
   }, [srcdoc]);
 
-  useLayoutEffect(() => {
+  // A new srcdoc reloads the iframe, which will fire `load` again. Adjusted during render
+  // rather than from a layout effect so the skeleton is already showing on the frame that
+  // swaps the document, instead of one frame later.
+  const [loadedSrcdoc, setLoadedSrcdoc] = useState(themedSrcdoc);
+  if (loadedSrcdoc !== themedSrcdoc) {
+    setLoadedSrcdoc(themedSrcdoc);
     setLoaded(false);
-  }, [themedSrcdoc]);
+  }
 
   if (!themedSrcdoc) return null;
   return (

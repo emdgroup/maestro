@@ -86,9 +86,16 @@ export function ZoomableContent({
 
   // Measure natural size once after open (double rAF ensures React committed + browser laid out),
   // then immediately fit. Subsequent fitToView calls use stored dimensions — no DOM mutation needed.
+  // Opening reveals the controls; the effect below only starts the timer that hides them
+  // again. Adjusted during render so the lightbox never paints its first frame bare.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setControlsVisible(true);
+  }
+
   useEffect(() => {
     if (!open) return;
-    setControlsVisible(true);
     startIdleTimer();
     let raf1: number;
     let raf2: number;
@@ -213,9 +220,12 @@ export function ZoomableContent({
 
   const cursor = isDragging ? "cursor-grabbing" : "cursor-grab";
 
-  // Assign refs inline during render so drag handlers always see the latest values.
-  panRef.current = pan;
-  zoomRef.current = zoom;
+  // Mirror state into the refs the drag handlers read. Done from an effect rather
+  // than during render — the handlers fire from pointer events, always after commit.
+  useEffect(() => {
+    panRef.current = pan;
+    zoomRef.current = zoom;
+  });
 
   return (
     <>

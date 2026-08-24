@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useReducer } from "react";
 import { RefreshCw, CircleCheck, CircleX, ArrowDownToLine } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "@/ui/button";
@@ -27,7 +27,6 @@ export function UpdateCard() {
   const { data: appSettings } = useSettings();
   const saveAppSettings = useSaveSettings({ successToast: false });
   const [appVersion, setAppVersion] = useState<string>("…");
-  const [lastCheckedLabel, setLastCheckedLabel] = useState(() => formatLastChecked(lastChecked));
 
   const autoUpdate = appSettings?.auto_update ?? false;
 
@@ -37,12 +36,15 @@ export function UpdateCard() {
       .catch(() => {});
   }, []);
 
-  // Refresh "last checked" label every 30s
+  // The label is relative to the wall clock, so what goes stale is the current time, not
+  // `lastChecked`. The timer re-renders every 30s and the label is derived below — mirroring
+  // it into state only duplicated a value that `formatLastChecked` already computes.
+  const [, relabel] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
-    setLastCheckedLabel(formatLastChecked(lastChecked));
-    const id = setInterval(() => setLastCheckedLabel(formatLastChecked(lastChecked)), 30_000);
+    const id = setInterval(relabel, 30_000);
     return () => clearInterval(id);
-  }, [lastChecked]);
+  }, []);
+  const lastCheckedLabel = formatLastChecked(lastChecked);
 
   function handleAutoUpdateToggle(checked: boolean) {
     if (!appSettings) return;

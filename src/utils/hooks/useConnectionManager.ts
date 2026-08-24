@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import type {
   SshConnection,
   WslConnection,
@@ -24,6 +24,13 @@ import type { AuthSubmission } from "@/views/project-picker/ssh-auth-modal/SshAu
 interface connectionManagerProps {
   onConnectionSuccess: (connection: Connection) => void;
 }
+
+const LOCAL_CONNECTION: Connection = {
+  type: "local" as const,
+  id: localConnectionId,
+  displayName: "Local",
+  subtitle: "Browse local filesystem",
+};
 
 function toSshAuthMethod(auth: AuthSubmission): SshAuthMethod {
   if (auth.method === "password") return { Password: { save_password: auth.savePassword } };
@@ -51,13 +58,6 @@ export function useConnectionManager({ onConnectionSuccess }: connectionManagerP
   const { mutate: connectSshWithCreds } = useConnectSshWithCreds();
   const { mutate: connectSshWithKey } = useConnectSshWithKey();
   const { mutate: deleteSshConnection } = useDeleteSshConnection();
-
-  const local = useRef<Connection>({
-    type: "local" as const,
-    id: localConnectionId,
-    displayName: "Local",
-    subtitle: "Browse local filesystem",
-  });
 
   const buildConnection = useCallback(
     (sshConn: SshConnection): Connection => ({
@@ -101,7 +101,7 @@ export function useConnectionManager({ onConnectionSuccess }: connectionManagerP
         return buildWslConnection(distro.name, saved);
       });
     const dockerItems = dockerConnections.map(buildDockerConnection);
-    return [local.current, ...wslItems, ...dockerItems, ...sshConnections.map(buildConnection)];
+    return [LOCAL_CONNECTION, ...wslItems, ...dockerItems, ...sshConnections.map(buildConnection)];
   }, [
     sshConnections,
     wslDistros,
@@ -201,7 +201,7 @@ export function useConnectionManager({ onConnectionSuccess }: connectionManagerP
     setIsNewConnection(false);
     setUsername(connection.sshConnection?.username ?? "");
     if (connection.type === "local") {
-      onConnectionSuccess(local.current);
+      onConnectionSuccess(LOCAL_CONNECTION);
     } else if (connection.type === "docker") {
       onConnectionSuccess(connection);
     } else if (connection.type === "wsl") {

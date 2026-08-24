@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   Files,
   CheckCheck,
@@ -124,7 +124,6 @@ export function ReviewChangesPanelCompact({
     side: "old" | "new";
   } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const expandedInitRef = useRef(false);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const programmaticScrollRef = useRef(false);
@@ -132,9 +131,13 @@ export function ReviewChangesPanelCompact({
   // Auto-expand all files on first load, but only for small diffs — mounting hundreds
   // of DiffViewer components at once exhausts WebView2 memory.
   // ponytail: collapse by default when > 20 files — prevents N DiffViewer mounts on load
-  useEffect(() => {
-    if (allDisplayItems.length === 0 || expandedInitRef.current) return;
-    expandedInitRef.current = true;
+  //
+  // Runs once, on the first render where the async diff has produced items. Expressed
+  // during render with the one-shot flag in state rather than a ref, so nothing is read
+  // or written mid-render that the compiler cannot follow.
+  const [expandedSeeded, setExpandedSeeded] = useState(false);
+  if (!expandedSeeded && allDisplayItems.length > 0) {
+    setExpandedSeeded(true);
     if (allDisplayItems.length <= 20) {
       setExpandedFiles(
         new Set(
@@ -142,7 +145,7 @@ export function ReviewChangesPanelCompact({
         ),
       );
     }
-  }, [allDisplayItems]);
+  }
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedFiles((prev) => {

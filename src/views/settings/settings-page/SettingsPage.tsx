@@ -115,7 +115,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
               Loading settings...
             </div>
           ) : (
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            // `handleSubmit` is invoked at submit time rather than during render: it reads
+            // react-hook-form's field registry, which the library keeps in refs.
+            <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="space-y-6">
               <UpdateCard />
               <ProjectDefaultsSection
                 control={control}

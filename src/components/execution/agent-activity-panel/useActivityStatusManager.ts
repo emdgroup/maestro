@@ -44,8 +44,9 @@ export function useActivityStatusManager(
       return;
     }
 
-    const { items } = liveState;
-    const lastItem = items[items.length - 1];
+    // Read the field rather than destructuring: destructuring `liveState` makes the
+    // deps rule demand the whole object, which would re-run this on every store update.
+    const lastItem = liveState.items[liveState.items.length - 1];
 
     if (!lastItem || !liveState.isTurnActive) {
       if (!pendingSendRef.current) {

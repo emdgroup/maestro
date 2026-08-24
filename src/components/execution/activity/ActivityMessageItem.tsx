@@ -34,7 +34,11 @@ export function TypingDots({ className }: { className?: string }) {
 
 export function ActivityMessageItem({ message, showActions }: ActivityMessageItemProps) {
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
-  const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
+  const [recentlyStreamed, setRecentlyStreamed] = useState(false);
+  // The poll below only runs while streaming, so a message that has finished is never
+  // actively streaming regardless of the last poll — derived here rather than reset from
+  // the effect when streaming stops.
+  const isActivelyStreaming = message.isStreaming && recentlyStreamed;
 
   useEffect(() => {
     if (message.isStreaming) {
@@ -43,13 +47,9 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
   }, [message.text, message.isStreaming]);
 
   useEffect(() => {
-    if (!message.isStreaming) {
-      setIsActivelyStreaming(false);
-      return;
-    }
+    if (!message.isStreaming) return;
     const interval = setInterval(() => {
-      const stale = Date.now() - lastTextRef.current.time > 1500;
-      setIsActivelyStreaming(!stale);
+      setRecentlyStreamed(Date.now() - lastTextRef.current.time <= 1500);
     }, 250);
     return () => clearInterval(interval);
   }, [message.isStreaming]);

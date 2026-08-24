@@ -10,10 +10,7 @@ export function usePanelPositioner(
   );
 
   useLayoutEffect(() => {
-    if (!active) {
-      setPanelPos(null);
-      return;
-    }
+    if (!active) return;
     const el = containerRef.current;
     if (!el) return;
     const update = () => {
@@ -30,5 +27,7 @@ export function usePanelPositioner(
     };
   }, [active, containerRef]);
 
-  return panelPos;
+  // An inactive panel has no position. Gated here rather than cleared from the effect,
+  // so the stale measurement simply stops being visible instead of being unset.
+  return active ? panelPos : null;
 }

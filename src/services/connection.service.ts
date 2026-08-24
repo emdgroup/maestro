@@ -21,7 +21,29 @@ export const connectionQueryKeys = {
   defaultPath: () => [...connectionQueryKeys.fileBrowser(), "default-path"] as const,
   drives: () => [...connectionQueryKeys.fileBrowser(), "drives"] as const,
   status: (connectionId: number) => [...connectionQueryKeys.base, "status", connectionId] as const,
+  file: (connection: ConnectionKey, path: string, binary: boolean) =>
+    [...connectionQueryKeys.base, "file", connection, path, binary] as const,
 };
+
+/**
+ * Contents of a file at an absolute path on a connection, for paths outside any session's
+ * working directory. Pass `null` for the path to disable the query; `refetchIntervalMs`
+ * polls a file that is still being written.
+ */
+export function useConnectionFileQuery(
+  connection: ConnectionKey,
+  path: string | null,
+  binary: boolean,
+  refetchIntervalMs?: number,
+) {
+  return useQuery({
+    queryKey: connectionQueryKeys.file(connection, path ?? "", binary),
+    queryFn: () =>
+      binary ? api.readFileBinary(connection, path!) : api.readFile(connection, path!),
+    enabled: path != null,
+    refetchInterval: refetchIntervalMs ?? false,
+  });
+}
 
 /**
  * Query hook for fetching all SSH connections from database

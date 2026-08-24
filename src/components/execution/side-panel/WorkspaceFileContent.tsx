@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils.ts";
 import { Spinner } from "@/ui/spinner";
 import { langForExtension } from "@/components/execution/activity/fileTypeUtils";
@@ -6,15 +6,16 @@ import { HighlightedCode, MarkdownBlock } from "@/components/execution/activity/
 import { useSelectedProject } from "@/store/projectStore";
 
 function PdfViewer({ content, fileName }: { content: string; fileName: string }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  useEffect(() => {
+  // The URL is derived from the content and revoked when it is replaced, rather than
+  // being created in an effect and mirrored into state — which cost a first frame with
+  // no iframe at all. A `data:` URL is not an option: Chromium blocks those in frames.
+  const blobUrl = useMemo(() => {
     const bytes = Uint8Array.from(atob(content), (c) => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    setBlobUrl(url);
-    return () => URL.revokeObjectURL(url);
+    return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
   }, [content]);
-  if (!blobUrl) return null;
+
+  useEffect(() => () => URL.revokeObjectURL(blobUrl), [blobUrl]);
+
   return <iframe src={blobUrl} title={fileName} className="flex-1 w-full min-h-0" />;
 }
 

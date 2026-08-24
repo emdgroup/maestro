@@ -76,7 +76,7 @@ function Harness({
     hasArtifacts: false,
     changedFilesCount,
   });
-  const { sidePanelCollapsed, expandAuto } = panel;
+  const { sidePanelCollapsed, expandAuto, groupElementRef, syncCollapsedFromPanel } = panel;
   const { activeTabId, markTabSeen, unseenTabIds } = tabsState;
 
   useEffect(() => {
@@ -89,7 +89,7 @@ function Harness({
 
   return (
     <div
-      ref={panel.groupElementRef}
+      ref={groupElementRef}
       data-group="1"
       data-testid="group"
       data-collapsed={String(sidePanelCollapsed)}
@@ -100,7 +100,7 @@ function Harness({
       <button type="button" onClick={() => panel.setSidePanelCollapsed(false)}>
         open
       </button>
-      <button type="button" onClick={panel.syncCollapsedFromPanel}>
+      <button type="button" onClick={syncCollapsedFromPanel}>
         sync
       </button>
       <button type="button" onClick={() => tabsState.setActiveTabId("overview")}>

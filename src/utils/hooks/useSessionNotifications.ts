@@ -33,10 +33,14 @@ export function useSessionNotifications(
   sessions: ActiveSessionInfo[],
   settings: AppSettings | undefined,
 ) {
+  // Mirrored from an effect rather than assigned during render — both are read
+  // only inside the Tauri event callbacks below, which run long after commit.
   const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
   const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  useEffect(() => {
+    sessionsRef.current = sessions;
+    settingsRef.current = settings;
+  });
 
   // Windows and macOS drop the request once the window is focused; Linux holds the GTK urgency
   // hint until it is cleared explicitly.

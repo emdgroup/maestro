@@ -140,11 +140,18 @@ export function SidePanelContent({
   const canvasEntries = useMemo(() => [...canvasMap.entries()], [canvasMap]);
   const [canvasIdx, setCanvasIdx] = useState(0);
 
-  useEffect(() => {
-    if (!latestCanvasSurfaceId) return;
-    const idx = canvasEntries.findIndex(([id]) => id === latestCanvasSurfaceId);
-    if (idx >= 0) setCanvasIdx(idx);
-  }, [latestCanvasSurfaceId, canvasEntries]);
+  // Page to a surface the agent just produced, but only when that target changes — the
+  // user is free to page away afterwards, so the index cannot simply be derived from the
+  // latest surface. Latched on the resolved index so a surface whose entry has not landed
+  // in `canvasMap` yet is still followed once it does.
+  const latestCanvasIdx = latestCanvasSurfaceId
+    ? canvasEntries.findIndex(([id]) => id === latestCanvasSurfaceId)
+    : -1;
+  const [followedCanvasIdx, setFollowedCanvasIdx] = useState(latestCanvasIdx);
+  if (followedCanvasIdx !== latestCanvasIdx) {
+    setFollowedCanvasIdx(latestCanvasIdx);
+    if (latestCanvasIdx >= 0) setCanvasIdx(latestCanvasIdx);
+  }
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 

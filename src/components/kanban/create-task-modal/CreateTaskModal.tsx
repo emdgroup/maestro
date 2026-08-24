@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, useWatch, Controller } from "react-hook-form";
 import type { SubmitHandler } from "react-hook-form";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -68,8 +68,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
   const { mutate: createTask, isPending } = useCreateTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
+  // Mirrored from an effect rather than assigned during render — read only by the
+  // file-input callback below, which runs after commit.
   const addAttachmentRef = useRef(addAttachment);
-  addAttachmentRef.current = addAttachment;
+  useEffect(() => {
+    addAttachmentRef.current = addAttachment;
+  });
 
   const [error, setError] = useState<string | null>(null);
   const [createAnother, setCreateAnother] = useState(false);
@@ -77,24 +81,15 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [labels, setLabels] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
 
-  const [title, setTitleState] = useState("");
-  const titleRef = useRef("");
-  const [description, setDescriptionState] = useState("");
-  const descriptionRef = useRef("");
-
-  function setTitle(v: string) {
-    titleRef.current = v;
-    setTitleState(v);
-  }
-
-  function setDescription(v: string) {
-    descriptionRef.current = v;
-    setDescriptionState(v);
-  }
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
 
   const { pickFiles, isDragging } = useDraggableFileInput(isOpen, (filename, filePath) => {
     setPendingFiles((prev) => [...prev, { filename, filePath }]);
-    setDescription(appendToAttachmentsSection(descriptionRef.current, filename));
+    // Functional update, not a read of the latest value: `pickFiles` calls this once per
+    // selected file in a synchronous loop, so every file but the last would be dropped by
+    // a snapshot taken before the batch.
+    setDescription((prev) => appendToAttachmentsSection(prev, filename));
   });
 
   const { data: remoteIssues, isFetching: issuesFetching } = useListRemoteIssuesQuery(
@@ -106,7 +101,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     handleSubmit,
     control,
     reset,
-    watch,
     setValue,
     formState: { errors },
   } = useForm<FormData>({
@@ -119,10 +113,30 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     },
   });
 
-  const priority = watch("priority");
-  const agentId = watch("agentId");
-  const isolatedWorktree = watch("isolatedWorktree");
-  const autoApprove = watch("autoApprove");
+  // `useWatch` rather than `watch`: the latter reads the form's mutable store during
+  // render, which the compiler cannot track. Both re-render on change and both start
+  // from the `defaultValues` above, so the values seen here are the same.
+  const priority = useWatch({ control, name: "priority" });
+  const agentId = useWatch({ control, name: "agentId" });
+  const isolatedWorktree = useWatch({ control, name: "isolatedWorktree" });
+  const autoApprove = useWatch({ control, name: "autoApprove" });
+
+  // Opening or closing the modal re-seeds the whole form. This component's own state is
+  // adjusted during render so a reopened dialog never paints the previous task's fields;
+  // react-hook-form's store is reset from the effect below, because `reset` writes state
+  // owned by the library and doing that mid-render is not safe.
+  const [openState, setOpenState] = useState(isOpen);
+  if (openState !== isOpen) {
+    setOpenState(isOpen);
+    setTitle("");
+    setDescription("");
+    if (!isOpen) {
+      setError(null);
+      setSelectedIssue(null);
+      setPendingFiles([]);
+      setLabels([]);
+    }
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -133,16 +147,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         isolatedWorktree: true,
         autoApprove: false,
       });
-      setTitle("");
-      setDescription("");
     } else {
       reset();
-      setError(null);
-      setSelectedIssue(null);
-      setPendingFiles([]);
-      setTitle("");
-      setDescription("");
-      setLabels([]);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -162,7 +168,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
   const onSubmit: SubmitHandler<FormData> = (data) => {
     setError(null);
-    const currentTitle = titleRef.current.trim();
+    const currentTitle = title.trim();
     if (!currentTitle || currentTitle.length < 3) {
       setError("Title must be at least 3 characters");
       return;
@@ -172,7 +178,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       {
         project_id: projectId,
         title: currentTitle,
-        description: descriptionRef.current.trim() || null,
+        description: description.trim() || null,
         skills: [],
         labels,
         base_branch: data.baseBranch,
@@ -233,8 +239,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
           </DialogClose>
         </div>
 
+        {/* `handleSubmit` is invoked at submit time rather than during render: it reads
+            react-hook-form's field registry, which the library keeps in refs. */}
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={(e) => void handleSubmit(onSubmit)(e)}
           className="flex flex-col flex-1 min-h-0 overflow-hidden"
         >
           {/* Body */}
