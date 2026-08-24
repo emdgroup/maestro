@@ -295,7 +295,8 @@ async fn resolve_turn_end(
     }
 
     let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
-        review_verdict_event(app_state, task_id, &closing_message)
+        let Ok(conn) = app_state.db.lock() else { return };
+        review_verdict_event(&conn, task_id, &closing_message)
     } else {
         match outcome {
             TurnOutcome::Complete => TaskTransition::TurnCompleted {
@@ -389,7 +390,7 @@ pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_
 /// decision to spend another round is taken. Counting at the start would let a rejected task that
 /// never got a coder — the app closed, the host was full — be rejected again for free.
 fn review_verdict_event(
-    app_state: &crate::core::AppState,
+    conn: &rusqlite::Connection,
     task_id: i32,
     reply: &str,
 ) -> crate::task::transition::TaskTransition {
@@ -402,9 +403,6 @@ fn review_verdict_event(
         return TaskTransition::ReviewFinished;
     }
 
-    let Ok(conn) = app_state.db.lock() else {
-        return TaskTransition::ReviewFinished;
-    };
     let rounds: i32 = conn
         .query_row("SELECT review_rounds FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
         .unwrap_or(REVIEW_ROUND_CAP);
@@ -683,6 +681,45 @@ async fn try_auto_approve_permission(
 /// reviewer running in `default` asking for permission to write still reaches the user as the real
 /// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
 /// vocabulary.
+/// File a read-only role's deliverable and move the task on from it.
+///
+/// Split out from `try_conclude_plan_mode_phase` for the ordinary reason: everything above it in
+/// that function is a session and a payload, and none of this needed either. Which is how the bug
+/// below survived — the decision could not be tested without spawning an agent.
+///
+/// The three read-only phases are not interchangeable here. `is_read_only` admits `SelfReview`, so
+/// a plan-mode reviewer reaches this path, but `ArtifactDelivered` has arms only for `Drafting` and
+/// `Refining` and falls through to "change nothing". The caller then closes the session, leaving a
+/// task marked `Running` with no agent behind it and a reply that — though already filed as a
+/// verdict by `kind_for_phase` — never reached `classify_verdict`. The loop could not reject.
+///
+/// That is not an exotic configuration: with no `permission_mode` on the profile a read-only role
+/// takes the first of `READ_ONLY_MODES` its agent offers, so plan mode is the *default* a reviewer
+/// runs in.
+///
+/// The verdict is read off the plan payload because that is what the request carries. The reviewer's
+/// prose would be the better source, but the `tool_call` announcing `ExitPlanMode` resets the
+/// closing message before the permission request arrives. A plan that does not open with the verdict
+/// line classifies as `Approved`, which is the documented safe direction — the human gate, not
+/// another coder round on a guess.
+fn conclude_read_only_phase(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    phase: Option<&str>,
+    text: &str,
+) -> Result<Option<crate::models::Task>, String> {
+    // Order matters: the thread entry is what the gate reads, so a transition that lands without
+    // it would open a gate with nothing in it — the defect this whole path exists to close.
+    crate::task::comments::record_outcome(conn, task_id, phase, text);
+
+    let event = if phase == Some("SelfReview") {
+        review_verdict_event(conn, task_id, text)
+    } else {
+        crate::task::transition::TaskTransition::ArtifactDelivered
+    };
+    crate::task::transition::apply_if_active(conn, task_id, event)
+}
+
 async fn try_conclude_plan_mode_phase(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
@@ -719,15 +756,7 @@ async fn try_conclude_plan_mode_phase(
             return false;
         }
 
-        // Order matters: the thread entry is what the gate reads, so a transition that lands
-        // without it would open a gate with nothing in it — the defect this whole path exists to
-        // close.
-        crate::task::comments::record_outcome(&conn, task_id, phase.as_deref(), plan);
-        crate::task::transition::apply_if_active(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::ArtifactDelivered,
-        )
+        conclude_read_only_phase(&conn, task_id, phase.as_deref(), plan)
     };
 
     match recorded {
@@ -2040,5 +2069,160 @@ fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
         crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
         crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
         crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::transition::TaskTransition;
+
+    /// A task with a reviewer running on it, in the state both routes to a verdict find it.
+    fn under_review(rounds: i32) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        crate::core::schema::initialize_schema(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert project");
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, phase, phase_status, \
+             ball, review_rounds, created_at, updated_at) \
+             VALUES (1, 1, 'demo task', 'Review', 'main', 'SelfReview', 'Running', 'Agent', ?, \
+             '2026-01-01', '2026-01-01')",
+            [rounds],
+        )
+        .expect("insert task");
+        conn
+    }
+
+    fn rounds_on(conn: &rusqlite::Connection) -> i32 {
+        conn.query_row("SELECT review_rounds FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read rounds")
+    }
+
+    /// Both routes a reviewer can finish by — its turn ending, and the plan-mode exit request it
+    /// has instead — land here, and this is the only place the round is counted. It had no test
+    /// until the arithmetic in it turned out to be wrong.
+    #[test]
+    fn asking_for_changes_spends_a_round_and_sends_the_task_back() {
+        let conn = under_review(0);
+
+        let event = review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nThe null check is gone.");
+
+        assert_eq!(event, TaskTransition::ReviewRejected);
+        assert_eq!(rounds_on(&conn), 1, "the decision to spend a round is taken here");
+    }
+
+    /// Approval is free: it ends the loop rather than going round again, so counting it would
+    /// charge a task for the round that did not happen.
+    #[test]
+    fn approval_costs_nothing_and_ends_the_loop() {
+        let conn = under_review(1);
+
+        let event = review_verdict_event(&conn, 1, "APPROVED\n\nReads well.");
+
+        assert_eq!(event, TaskTransition::ReviewFinished);
+        assert_eq!(rounds_on(&conn), 1);
+    }
+
+    /// The last round the cap allows is still spent; the one after it goes to the user with the
+    /// verdict intact rather than starting a coder nobody bounded.
+    #[test]
+    fn the_round_after_the_cap_goes_to_the_user() {
+        use crate::acp::completion::REVIEW_ROUND_CAP;
+
+        let conn = under_review(REVIEW_ROUND_CAP - 1);
+        assert_eq!(
+            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
+            TaskTransition::ReviewRejected,
+            "the last round the cap allows must still be spent"
+        );
+        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP);
+
+        assert_eq!(
+            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
+            TaskTransition::ReviewFinished,
+            "and the next one escalates instead"
+        );
+        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP, "an escalation is not a round");
+    }
+
+    /// A reviewer in plan mode delivers through `ExitPlanMode`, and its payload is a plan rather
+    /// than the verdict line. Unparseable is `Approved` by design — the human gate, not another
+    /// coder round on a guess.
+    #[test]
+    fn a_plan_that_is_not_a_verdict_reaches_the_user_rather_than_a_coder() {
+        let conn = under_review(0);
+
+        let event = review_verdict_event(&conn, 1, "1. Fix the null check\n2. Add a test");
+
+        assert_eq!(event, TaskTransition::ReviewFinished);
+        assert_eq!(rounds_on(&conn), 0);
+    }
+
+    fn state_of(conn: &rusqlite::Connection) -> (String, Option<String>, Option<String>, String) {
+        conn.query_row(
+            "SELECT status, phase, phase_status, ball FROM tasks WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("read state")
+    }
+
+    /// The join `try_conclude_plan_mode_phase` makes, and the one that was wrong. Testing
+    /// `review_verdict_event` and the transition table separately said nothing about it: both were
+    /// correct on their own while the path between them sent a reviewer to the wrong one.
+    #[test]
+    fn a_plan_mode_reviewer_asking_for_changes_goes_back_to_a_coder() {
+        let conn = under_review(0);
+
+        let moved = conclude_read_only_phase(
+            &conn,
+            1,
+            Some("SelfReview"),
+            "CHANGES REQUESTED\n\nThe null check is gone.",
+        )
+        .expect("apply");
+
+        assert!(moved.is_some(), "the task must move; the caller closes the session either way");
+        let (status, phase, phase_status, ball) = state_of(&conn);
+        assert_eq!(
+            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            ("InProgress", Some("Rework"), Some("Waiting"), "Agent"),
+            "a rejected review is a handoff back to a coder, not a gate"
+        );
+        assert_eq!(rounds_on(&conn), 1);
+
+        let filed: String = conn
+            .query_row(
+                "SELECT kind FROM task_comments WHERE task_id = 1 ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read comment");
+        assert_eq!(filed, "verdict", "and it is filed as what it is");
+    }
+
+    /// The other two read-only phases still take the artifact route — the point is that the phase
+    /// decides, not that everything now goes through the verdict path.
+    #[test]
+    fn a_planner_still_delivers_its_plan_to_the_gate() {
+        let conn = under_review(0);
+        conn.execute("UPDATE tasks SET status = 'InProgress', phase = 'Drafting' WHERE id = 1", [])
+            .expect("move to drafting");
+
+        conclude_read_only_phase(&conn, 1, Some("Drafting"), "1. Fix it\n2. Test it")
+            .expect("apply")
+            .expect("the task must move");
+
+        let (status, phase, phase_status, ball) = state_of(&conn);
+        assert_eq!(
+            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            ("InProgress", Some("PlanReview"), Some("Waiting"), "User")
+        );
+        assert_eq!(rounds_on(&conn), 0, "a plan is not a review round");
     }
 }

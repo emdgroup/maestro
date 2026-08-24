@@ -614,6 +614,40 @@ mod tests {
         }
     }
 
+    /// `try_conclude_plan_mode_phase` admits any phase `is_read_only` admits, and this arm answers
+    /// only two of the three. The third, `SelfReview`, fell through to "change nothing" while the
+    /// caller went on to close the session — leaving a reviewer's task marked `Running` with no
+    /// agent, and its reply filed as a verdict nothing ever classified.
+    ///
+    /// `SelfReview` is routed to the verdict path instead, so what this pins is the drift: a
+    /// read-only phase that reaches `ArtifactDelivered` and has no arm here is the bug, and a
+    /// fourth read-only phase added later would land in exactly the same hole.
+    #[test]
+    fn every_read_only_phase_is_either_a_gate_or_deliberately_not_one() {
+        for phase in [TaskPhase::Refining, TaskPhase::Drafting, TaskPhase::SelfReview] {
+            assert!(phase.is_read_only(), "{phase:?} must be read-only for this test to mean anything");
+
+            let running =
+                TaskState::active(TaskStatus::InProgress, phase, PhaseStatus::Running, TaskBall::Agent);
+            let delivered = resolve(TaskTransition::ArtifactDelivered, running.clone());
+
+            if phase == TaskPhase::SelfReview {
+                assert_eq!(
+                    delivered, running,
+                    "SelfReview has no gate of its own — it must be routed to the verdict path \
+                     before ArtifactDelivered is reached, not silently pass through it"
+                );
+                continue;
+            }
+            assert_ne!(
+                delivered, running,
+                "{phase:?} reaches ArtifactDelivered and must move; leaving it Running strands the \
+                 task once the caller closes its session"
+            );
+            assert_eq!(delivered.ball, TaskBall::User, "{phase:?}");
+        }
+    }
+
     /// The request can land after the user has already moved the task — stopped it, answered the
     /// gate — and a late one must not drag it back.
     #[test]
