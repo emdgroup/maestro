@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import {
@@ -152,9 +152,13 @@ export function ApproveModal({
   const [includeUntracked, setIncludeUntracked] = useState(true);
   const [commitMessage, setCommitMessage] = useState(initialCommitMessage);
 
-  useEffect(() => {
+  // Re-seed the editable message when the prop changes, adjusted during render rather
+  // than from an effect so the modal never paints a frame with the previous message.
+  const [prevInitialCommitMessage, setPrevInitialCommitMessage] = useState(initialCommitMessage);
+  if (prevInitialCommitMessage !== initialCommitMessage) {
+    setPrevInitialCommitMessage(initialCommitMessage);
     setCommitMessage(initialCommitMessage);
-  }, [initialCommitMessage]);
+  }
 
   const canPush = hasWorktree && !!pushRemote;
   // Knowing the forge is not the same as being able to post to it, and the two props must not be

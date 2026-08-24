@@ -2,18 +2,24 @@ import * as React from "react";
 
 const MOBILE_BREAKPOINT = 768;
 
-export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
+const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`;
 
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-    mql.addEventListener("change", onChange);
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
+function subscribe(onChange: () => void): () => void {
+  const mql = window.matchMedia(QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
 
-  return !!isMobile;
+function getSnapshot(): boolean {
+  return window.innerWidth < MOBILE_BREAKPOINT;
+}
+
+/**
+ * The viewport width is external state, so it is read through `useSyncExternalStore`
+ * rather than mirrored into `useState` from an effect. That also removes the
+ * `undefined` first render the mirrored version produced, which reported every
+ * viewport as desktop until the effect ran.
+ */
+export function useIsMobile(): boolean {
+  return React.useSyncExternalStore(subscribe, getSnapshot);
 }

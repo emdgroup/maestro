@@ -124,7 +124,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
     setSelectedFileIndex,
     fileSearch,
     setFileSearch,
-  } = useStagingState(worktreePath, viewMode, worktree, diffFiles);
+  } = useStagingState(worktreePath, worktree, diffFiles);
 
   const selectedUntrackedPath =
     viewMode === "untracked" && selectedFileIndex !== null

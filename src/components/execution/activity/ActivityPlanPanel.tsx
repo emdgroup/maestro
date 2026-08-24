@@ -38,9 +38,16 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
   const inProgressEntry = entries.find((e) => e.status === "in_progress") ?? null;
   const inProgressKey = inProgressEntry?.content ?? null;
 
+  // A new step restarts the clock. Adjusted during render rather than from the effect,
+  // which owns only the ticking.
+  const [timedStep, setTimedStep] = useState(inProgressKey);
+  if (timedStep !== inProgressKey) {
+    setTimedStep(inProgressKey);
+    setElapsedSeconds(0);
+  }
+
   useEffect(() => {
     if (!inProgressKey) return;
-    setElapsedSeconds(0);
     const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, [inProgressKey]);

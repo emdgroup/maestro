@@ -1,4 +1,4 @@
-import { useState, useRef, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import type { WorktreeWithStatus } from "@/types/bindings";
 import type { DiffFileWithName } from "@/types/review";
 
@@ -23,7 +23,6 @@ export interface StagingState {
 
 export function useStagingState(
   worktreePath: string | null | undefined,
-  viewMode: "uncommitted" | "untracked",
   worktree: WorktreeWithStatus | null,
   diffFiles: DiffFileWithName[],
 ): StagingState {
@@ -36,8 +35,10 @@ export function useStagingState(
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [fileSearch, setFileSearch] = useState("");
 
-  const prevWorktreePathRef = useRef(worktreePath);
-  const prevViewModeRef = useRef(viewMode);
+  // Switching worktrees resets the staging selection. Tracked in state rather than a
+  // ref so the comparison stays a pure render-phase read — React re-renders with the
+  // new state before committing, so this is still a single visible frame.
+  const [prevWorktreePath, setPrevWorktreePath] = useState(worktreePath);
 
   function resetSelectionState() {
     setStagedFiles(new Set());
@@ -46,17 +47,13 @@ export function useStagingState(
     setCommitMessage("");
   }
 
-  if (prevWorktreePathRef.current !== worktreePath) {
-    prevWorktreePathRef.current = worktreePath;
+  if (prevWorktreePath !== worktreePath) {
+    setPrevWorktreePath(worktreePath);
     resetSelectionState();
     setFileSearch("");
     if (worktree) {
       setShelveName(buildDefaultShelveName(worktree));
     }
-  }
-
-  if (prevViewModeRef.current !== viewMode) {
-    prevViewModeRef.current = viewMode;
   }
 
   const effectiveSelectedFileIndex =

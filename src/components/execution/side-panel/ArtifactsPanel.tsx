@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { Files, ExternalLink, FolderDown } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -28,13 +28,12 @@ export function ArtifactsPanel({
   isActive = true,
   initialFile,
 }: ArtifactsPanelProps) {
-  const [selected, setSelected] = useState<string | null>(null);
+  // Null until the user picks a file; the effective selection is resolved during render.
+  const [pickedFile, setPickedFile] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const openTransfer = useFileTransfer();
   const downloadTransfer = useFileTransfer();
-  const initialFileAppliedRef = useRef(false);
-
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey ?? null);
   const cwd = sessionMeta ? sessionMeta.cwd.replace(/\/+$/, "") : null;
 
@@ -43,24 +42,17 @@ export function ArtifactsPanel({
     [files, cwd],
   );
 
+  // Precedence: what the user picked, else the file the caller asked to open, else the
+  // first one. Resolved during render rather than written back from effects, which had to
+  // guard themselves with a ref to avoid re-applying `initialFile` over a later click.
+  const requestedFile = initialFile ? (relativeFiles[files.indexOf(initialFile)] ?? null) : null;
+  const selected = pickedFile ?? requestedFile ?? relativeFiles[0] ?? null;
+
   const selectedAbsPath = useMemo(() => {
     if (!selected) return null;
     const idx = relativeFiles.indexOf(selected);
     return idx >= 0 ? (files[idx] ?? null) : null;
   }, [selected, relativeFiles, files]);
-
-  useEffect(() => {
-    if (selected === null && relativeFiles.length > 0) setSelected(relativeFiles[0]);
-  }, [relativeFiles, selected]);
-
-  useEffect(() => {
-    if (initialFileAppliedRef.current || !initialFile) return;
-    const idx = files.indexOf(initialFile);
-    if (idx >= 0 && relativeFiles[idx]) {
-      initialFileAppliedRef.current = true;
-      setSelected(relativeFiles[idx]);
-    }
-  }, [initialFile, files, relativeFiles]);
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
 
@@ -200,7 +192,7 @@ export function ArtifactsPanel({
               files={relativeFiles.map((f) => ({ fileName: f }))}
               selectedFile={selected}
               onSelectFile={(f) => {
-                setSelected(f);
+                setPickedFile(f);
                 setListOpen(false);
               }}
               className="flex-1 min-h-0"

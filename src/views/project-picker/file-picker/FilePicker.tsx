@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import type { SshConnection, WslConnection, DockerConnection } from "@/types/bindings";
 import { Folder, Home, FolderUp, HardDrive, FolderOpen } from "lucide-react";
@@ -78,13 +78,14 @@ export function FilePicker({
       : sshLoading;
 
   // Set initial path when initialization completes (WSL/Docker use home dir, local/SSH use standard init)
-  const prevInitialized = useRef(false);
-  if (!prevInitialized.current && !navigation.currentPath) {
+  // Latched in state rather than a ref so the render-phase read stays pure.
+  const [didSetInitialPath, setDidSetInitialPath] = useState(false);
+  if (!didSetInitialPath && !navigation.currentPath) {
     if (wslConnection && wslHome) {
-      prevInitialized.current = true;
+      setDidSetInitialPath(true);
       navigation.setCurrentPath(wslHome);
     } else if (dockerConnection && dockerHome) {
-      prevInitialized.current = true;
+      setDidSetInitialPath(true);
       navigation.setCurrentPath(dockerHome);
     } else if (
       !wslConnection &&
@@ -92,7 +93,7 @@ export function FilePicker({
       initialization.isInitialized &&
       initialization.initialPath
     ) {
-      prevInitialized.current = true;
+      setDidSetInitialPath(true);
       navigation.setCurrentPath(initialization.initialPath);
     }
   }
@@ -103,9 +104,9 @@ export function FilePicker({
     : directories.filter((dir) => !dir.startsWith("."));
 
   // Reset keyboard selection when path changes
-  const prevPath = useRef(navigation.currentPath);
-  if (prevPath.current !== navigation.currentPath) {
-    prevPath.current = navigation.currentPath;
+  const [prevPath, setPrevPath] = useState(navigation.currentPath);
+  if (prevPath !== navigation.currentPath) {
+    setPrevPath(navigation.currentPath);
     if (initialization.isInitialized) {
       resetKeyboardIndex(-1);
     }

@@ -68,11 +68,17 @@ export function BoardView({ tasks }: BoardViewProps) {
 
   const stableDndItems = useMemo(() => buildDndItems(tasks), [tasks]);
 
+  // The board owns its own item order while a drag is in flight, so server state is only
+  // adopted between drags. Adjusted during render rather than from an effect, which showed
+  // the pre-drop order for one frame after every drag.
+  const [adoptedDndItems, setAdoptedDndItems] = useState(stableDndItems);
+  if (!isDragActive && adoptedDndItems !== stableDndItems) {
+    setAdoptedDndItems(stableDndItems);
+    setDndItems(stableDndItems);
+  }
+
   useEffect(() => {
-    if (!isDragActive) {
-      setDndItems(stableDndItems);
-      liveDndRef.current = stableDndItems;
-    }
+    if (!isDragActive) liveDndRef.current = stableDndItems;
   }, [stableDndItems, isDragActive]);
 
   const getColumnTasks = (status: TaskStatus): Task[] => {

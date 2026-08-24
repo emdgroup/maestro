@@ -100,21 +100,36 @@ export const IssueTrackingSection = forwardRef<
     onValidityChange(isIssueTrackingValid);
   }, [isIssueTrackingValid, onValidityChange]);
 
-  useEffect(() => {
+  // A different project starts from a blank form; the query effect below then fills it
+  // from that project's stored config. Adjusted during render rather than from an effect
+  // so the new project never paints the previous one's selection.
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+  if (prevProjectId !== projectId) {
+    setPrevProjectId(projectId);
     setSelectedIntegrationId(null);
     setIssueTrackingFields({});
-  }, [projectId]);
+  }
 
-  useEffect(() => {
-    if (!projectIssueTrackingQuery.data) return;
-    const config = projectIssueTrackingQuery.data;
-    const match =
-      issueTrackingIntegrations.find((i) => i.id === config.integration_id) ??
-      issueTrackingIntegrations.find((i) => i.provider === config.provider) ??
-      null;
-    if (match) setSelectedIntegrationId(match.id);
-    setIssueTrackingFields(fieldsFromConfig(config));
-  }, [projectIssueTrackingQuery.data, issueTrackingIntegrations]);
+  // Populate the form from the project's stored config once the query resolves. Adjusted
+  // during render rather than from an effect so the settings page never paints an empty
+  // form over a config it already has.
+  // Latched on the resolved match as well as the config, so a config that arrives before
+  // the integrations list still selects its integration once that list lands.
+  const storedConfig = projectIssueTrackingQuery.data ?? null;
+  const matchedIntegrationId = storedConfig
+    ? ((
+        issueTrackingIntegrations.find((i) => i.id === storedConfig.integration_id) ??
+        issueTrackingIntegrations.find((i) => i.provider === storedConfig.provider)
+      )?.id ?? null)
+    : null;
+  const [loaded, setLoaded] = useState({ config: storedConfig, matchId: matchedIntegrationId });
+  if (loaded.config !== storedConfig || loaded.matchId !== matchedIntegrationId) {
+    setLoaded({ config: storedConfig, matchId: matchedIntegrationId });
+    if (storedConfig) {
+      if (matchedIntegrationId) setSelectedIntegrationId(matchedIntegrationId);
+      setIssueTrackingFields(fieldsFromConfig(storedConfig));
+    }
+  }
 
   useImperativeHandle(ref, () => ({
     save: async () => {

@@ -164,7 +164,14 @@ export function useAcpSessionLifecycle(
 
   // Write session-update handler to the shared ref so useAcpActivity (which registers
   // its listener before drain) can forward events here without a race condition.
-  if (sessionUpdateRef) {
+  //
+  // Assigned from an effect, with no dependency list so every render republishes the
+  // current closure. `AgentActivityPanel` calls `useAcpActivity` first, so its listener
+  // effect does run before this one — but that listener only buffers, and the ref is
+  // read from the 50ms flush timer (`useAcpActivity.ts`), never synchronously. By the
+  // time the first flush fires this has long since been assigned.
+  useEffect(() => {
+    if (!sessionUpdateRef) return;
     sessionUpdateRef.current = (raw: Record<string, unknown>) => {
       const p = raw as {
         sessionUpdate?: string;
@@ -215,7 +222,7 @@ export function useAcpSessionLifecycle(
         }
       }
     };
-  }
+  });
 
   return {
     configOptions,

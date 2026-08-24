@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ThinkingItem } from "./types";
@@ -32,29 +32,31 @@ export function ActivityThinkingBlock({ thinking }: ActivityThinkingBlockProps) 
           ? true
           : thinking.isStreaming; // "auto": expanded while streaming, collapsed otherwise
 
-  const [isActivelyStreaming, setIsActivelyStreaming] = useState(false);
-  const highWaterRef = useRef("");
+  // Staleness is tracked the same way `ActivityMessageItem` tracks it for messages: the
+  // time of the last chunk in a ref, polled against the clock. `isActivelyStreaming` is
+  // then derived, so a block that has finished is never actively streaming regardless of
+  // the last poll and nothing has to be reset when the stream ends.
+  const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  const [recentlyStreamed, setRecentlyStreamed] = useState(false);
+  const isActivelyStreaming = thinking.isStreaming && recentlyStreamed;
 
   useEffect(() => {
-    if (!thinking.isStreaming) {
-      setIsActivelyStreaming(false);
-      highWaterRef.current = "";
-      return;
+    if (thinking.isStreaming) {
+      lastTextRef.current = { text: thinking.text, time: Date.now() };
     }
-    // New text arrived — mark as actively streaming and reset stale timer
-    setIsActivelyStreaming(true);
-    const id = setTimeout(() => setIsActivelyStreaming(false), 1500);
-    return () => clearTimeout(id);
   }, [thinking.text, thinking.isStreaming]);
 
-  const completedText = useMemo(() => {
-    if (!isActivelyStreaming) return "";
-    const safe = getCompleteBlocksText(thinking.text);
-    if (safe.length > highWaterRef.current.length) {
-      highWaterRef.current = safe;
-    }
-    return highWaterRef.current;
-  }, [thinking.text, isActivelyStreaming]);
+  useEffect(() => {
+    if (!thinking.isStreaming) return;
+    const interval = setInterval(() => {
+      setRecentlyStreamed(Date.now() - lastTextRef.current.time <= 1500);
+    }, 250);
+    return () => clearInterval(interval);
+  }, [thinking.isStreaming]);
+
+  // Cutting at the last complete block keeps a half-written fence from rendering as raw
+  // markdown mid-stream. Pure in the text, so it is derived rather than accumulated.
+  const completedText = isActivelyStreaming ? getCompleteBlocksText(thinking.text) : "";
 
   if (visibility === "hide") return null;
 

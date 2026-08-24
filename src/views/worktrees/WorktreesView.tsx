@@ -87,16 +87,22 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     }
   }, [activeTab, refetchWorktrees]);
 
-  // Deep-link: pendingWorktreeId overrides selection on first mount
+  // Deep-link: pendingWorktreeId overrides selection once the worktree list resolves.
+  // The local selection is adjusted during render so the view opens on the right worktree
+  // in the same frame; clearing the shared navigation store stays in an effect, because
+  // writing another component's state during render is not safe.
+  const deepLinkedPath = pendingWorktreeId
+    ? (worktrees.find((w) => String(w.id) === pendingWorktreeId)?.path ?? null)
+    : null;
+  const [consumedDeepLink, setConsumedDeepLink] = useState(deepLinkedPath);
+  if (consumedDeepLink !== deepLinkedPath) {
+    setConsumedDeepLink(deepLinkedPath);
+    if (deepLinkedPath) setSelectedWorktreePath(deepLinkedPath);
+  }
+
   useEffect(() => {
-    if (pendingWorktreeId && worktrees.length > 0) {
-      const match = worktrees.find((w) => String(w.id) === pendingWorktreeId);
-      if (match) {
-        setSelectedWorktreePath(match.path);
-        clearPendingWorktree();
-      }
-    }
-  }, [worktrees, pendingWorktreeId, clearPendingWorktree]);
+    if (deepLinkedPath) clearPendingWorktree();
+  }, [deepLinkedPath, clearPendingWorktree]);
 
   const filteredWorktrees = useMemo<WorktreeWithStatus[]>(() => {
     return worktrees

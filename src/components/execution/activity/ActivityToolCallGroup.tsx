@@ -1,6 +1,7 @@
 import { useContext, useState } from "react";
 import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
+import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";
 import { OpenFileContext } from "./MarkdownBlock";
 import {
@@ -108,7 +109,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   // has no action, and bolding its digit would just be noise.
   const title = showCurrent ? rowLabel(current) : isSingle ? rowLabel(items[0]) : null;
 
-  const Icon = showCurrent ? rowIcon(current) : allSameKind ? rowIcon(items[0]) : Wrench;
+  const icon = showCurrent ? rowIcon(current) : allSameKind ? rowIcon(items[0]) : Wrench;
 
   // A group with nothing to open (a bare switch_mode, say) stays plain text.
   // Multiple items are always expandable so users can see which files were read.
@@ -125,7 +126,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
 
   const line = (
     <>
-      <Icon className={cn("size-3.5 shrink-0", showCommand && "mt-0.5")} />
+      <DynamicIcon icon={icon} className={cn("size-3.5 shrink-0", showCommand && "mt-0.5")} />
       {showCommand ? (
         <CommandLabel command={items[0].title} />
       ) : title != null ? (
@@ -150,7 +151,7 @@ export function ActivityToolCallGroup({ items }: ActivityToolCallGroupProps) {
   // own — clicking it opens the file rather than the group.
   const fileLine = fileItem && openFile && (
     <>
-      <Icon className={cn("size-3.5 shrink-0", showCurrent && "text-accent")} />
+      <DynamicIcon icon={icon} className={cn("size-3.5 shrink-0", showCurrent && "text-accent")} />
       <FileLabel
         tc={fileItem}
         expanded={open}

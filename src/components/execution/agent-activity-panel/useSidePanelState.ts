@@ -121,23 +121,35 @@ export function useSidePanelState({
     setSidePanelCollapsed(false);
   }, [currentVerdict]);
 
-  useEffect(() => {
+  // Selecting a session drops the maximised panel back to split view. Adjusted during
+  // render rather than from an effect so the new session never paints maximised first.
+  const [prevIsSelected, setPrevIsSelected] = useState(isSelected);
+  if (prevIsSelected !== isSelected) {
+    setPrevIsSelected(isSelected);
     if (isSelected) setMaximized(false);
-  }, [isSelected]);
+  }
 
   function handleMaximizedChange(v: boolean) {
     setMaximized(v);
     if (v) setSidePanelCollapsed(false);
   }
 
-  useEffect(() => {
-    if (!isPlanPermWithBody || !pendingPermission) return;
-    setSidePanelPlan({
-      requestId: pendingPermission.requestId,
-      payload: pendingPermission.payload,
-    });
-    setSidePanelCollapsed(false);
-  }, [isPlanPermWithBody, pendingPermission]);
+  // A plan permission arriving from the agent opens the panel on it. Adjusted during
+  // render rather than from an effect so the plan is on screen in the same frame the
+  // request lands, instead of one frame later.
+  const inboundPlanId =
+    isPlanPermWithBody && pendingPermission ? pendingPermission.requestId : null;
+  const [shownPlanId, setShownPlanId] = useState(inboundPlanId);
+  if (shownPlanId !== inboundPlanId) {
+    setShownPlanId(inboundPlanId);
+    if (inboundPlanId && pendingPermission) {
+      setSidePanelPlan({
+        requestId: pendingPermission.requestId,
+        payload: pendingPermission.payload,
+      });
+      setSidePanelCollapsed(false);
+    }
+  }
 
   const handleOpenPlanOverlaySplit = useCallback(() => {
     if (!pendingPermission || !isPlanPermWithBody) return;

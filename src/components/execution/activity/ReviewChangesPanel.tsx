@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { useReviewChangesData } from "./useReviewChangesData";
 import { ReviewChangesPanelCompact } from "./ReviewChangesPanelCompact";
@@ -31,7 +31,6 @@ export function ReviewChangesPanel({
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const [listOpen, setListOpen] = useState(false);
-  const initialFileAppliedRef = useRef(false);
 
   const toggleViewed = useCallback((fileName: string) => {
     setViewedFiles((prev) => {
@@ -53,18 +52,21 @@ export function ReviewChangesPanel({
     scope,
   } = useReviewChangesData({ sessionKey, isActive, onDiffStats });
 
-  useEffect(() => {
-    if (!initialFile || initialFileAppliedRef.current || allDisplayItems.length === 0) return;
-    const idx = allDisplayItems.findIndex((item) =>
-      item.kind === "diff"
-        ? initialFile.endsWith(item.file.fileName)
-        : item.path.endsWith(initialFile),
-    );
-    if (idx >= 0) {
-      setSelectedFileIndex(idx);
-      initialFileAppliedRef.current = true;
-    }
-  }, [allDisplayItems, initialFile]);
+  // The caller's requested file can only be resolved once the async diff has arrived, and
+  // must be applied exactly once so it never overrides a later click. Both are expressed
+  // during render — the one-shot flag is state rather than a ref so the read stays pure.
+  const initialFileIndex = initialFile
+    ? allDisplayItems.findIndex((item) =>
+        item.kind === "diff"
+          ? initialFile.endsWith(item.file.fileName)
+          : item.path.endsWith(initialFile),
+      )
+    : -1;
+  const [initialFileApplied, setInitialFileApplied] = useState(false);
+  if (!initialFileApplied && initialFileIndex >= 0) {
+    setInitialFileApplied(true);
+    setSelectedFileIndex(initialFileIndex);
+  }
 
   const fileSelectorFiles = useMemo(
     () =>

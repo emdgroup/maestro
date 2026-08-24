@@ -61,8 +61,11 @@ function PipRow({ items }: { items: ToolCallItem[] }) {
   );
 }
 
-function timeAgo(ms: number): string {
-  const m = Math.floor(ms / 60_000);
+// Takes an absolute timestamp and reads the clock itself, so the panel body stays
+// pure. These labels are minute-granular and the panel does not tick, so rows
+// resolving the clock a few milliseconds apart is not observable.
+function timeAgo(at: number): string {
+  const m = Math.floor((Date.now() - at) / 60_000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   return `${Math.floor(m / 60)}h ago`;
@@ -132,8 +135,6 @@ export function OverviewPanel({
   const extraAgentFiles = agentFiles.length - MAX_ROWS;
   const visibleUserFiles = userFiles.slice(0, MAX_ROWS);
   const extraUserFiles = userFiles.length - MAX_ROWS;
-
-  const now = Date.now();
 
   return (
     <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
@@ -303,7 +304,7 @@ export function OverviewPanel({
                             <TooltipContent>{path}</TooltipContent>
                           </Tooltip>
                           <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                            {timeAgo(now - addedAt)}
+                            {timeAgo(addedAt)}
                           </span>
                           <Tooltip>
                             <TooltipTrigger
@@ -378,7 +379,7 @@ export function OverviewPanel({
                           {fmtSize(att.file_size)}
                         </span>
                         <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                          {timeAgo(now - new Date(att.created_at).getTime())}
+                          {timeAgo(new Date(att.created_at).getTime())}
                         </span>
                       </div>
                     ))}

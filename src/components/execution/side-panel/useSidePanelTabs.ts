@@ -86,7 +86,6 @@ export function useSidePanelTabs({
   const prevPlanRef = useRef(false);
   const prevCanvasSizeRef = useRef(0);
   const prevArtifactsRef = useRef(false);
-  const prevChangedCountRef = useRef<number | null>(null);
 
   const markUnseen = useCallback((id: string) => {
     setUnseenTabIds((prev) => new Set(prev).add(id));
@@ -159,23 +158,26 @@ export function useSidePanelTabs({
   // steal focus either: unlike a canvas surface they arrive every few seconds while the
   // agent edits, and a tab that keeps grabbing focus mid-run is unusable. A Review tab the
   // user has closed stays closed.
-  useEffect(() => {
-    if (changedFilesCount === null) return;
-    const prev = prevChangedCountRef.current;
-    prevChangedCountRef.current = changedFilesCount;
-    if (prev === null || changedFilesCount <= prev) return;
-    if (prev === 0) {
-      setTabs((tabsPrev) => {
-        if (tabsPrev.some((t) => t.kind === "review")) return tabsPrev;
-        return [...tabsPrev, makeTab("review")];
-      });
-      setActiveTabId("review");
-      markUnseen("review");
-    } else if (tabs.some((t) => t.kind === "review")) {
-      markUnseen("review");
+  // Adjusted during render rather than from an effect: every update here is this hook's
+  // own state reacting to a changed prop, and the previous count is state for the same
+  // reason — a ref read during render is what the compiler cannot follow.
+  const [seenChangedCount, setSeenChangedCount] = useState(changedFilesCount);
+  if (changedFilesCount !== null && seenChangedCount !== changedFilesCount) {
+    const prev = seenChangedCount;
+    setSeenChangedCount(changedFilesCount);
+    if (prev !== null && changedFilesCount > prev) {
+      if (prev === 0) {
+        setTabs((tabsPrev) => {
+          if (tabsPrev.some((t) => t.kind === "review")) return tabsPrev;
+          return [...tabsPrev, makeTab("review")];
+        });
+        setActiveTabId("review");
+        markUnseen("review");
+      } else if (tabs.some((t) => t.kind === "review")) {
+        markUnseen("review");
+      }
     }
-    // `tabs` re-runs this harmlessly: the count is unchanged by then, so it returns early.
-  }, [changedFilesCount, markUnseen, tabs]);
+  }
 
   const closeTab = useCallback(
     (id: string) => {

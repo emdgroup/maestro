@@ -44,15 +44,14 @@ export function useReviewChangesData({
     wasActive.current = isActive;
   }, [isActive, refetch]);
 
-  const diffFiles = useMemo(
-    () => (diffResult?.diff ? parseDiffString(diffResult.diff) : []),
-    [diffResult?.diff],
-  );
+  // Read out of the optional chain first: an optional member expression in a
+  // dependency array is opaque to the compiler and drops the memoization.
+  const diff = diffResult?.diff;
+  const untracked = diffResult?.untracked_files;
 
-  const untrackedFiles = useMemo(
-    () => diffResult?.untracked_files ?? [],
-    [diffResult?.untracked_files],
-  );
+  const diffFiles = useMemo(() => (diff ? parseDiffString(diff) : []), [diff]);
+
+  const untrackedFiles = useMemo(() => untracked ?? [], [untracked]);
 
   const allDisplayItems = useMemo<DisplayItem[]>(
     () => [

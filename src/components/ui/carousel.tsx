@@ -56,14 +56,10 @@ function Carousel({
     },
     plugins,
   );
-  const [canScrollPrev, setCanScrollPrev] = React.useState(false);
-  const [canScrollNext, setCanScrollNext] = React.useState(false);
-
-  const onSelect = React.useCallback((api: CarouselApi) => {
-    if (!api) return;
-    setCanScrollPrev(api.canScrollPrev());
-    setCanScrollNext(api.canScrollNext());
-  }, []);
+  // Embla owns the scroll position. Rather than mirroring it into state — which needed a
+  // seeding call because Embla does not emit on subscribe — its events just force a
+  // re-render and the flags are read back from Embla below.
+  const [, onEmblaChange] = React.useReducer((n: number) => n + 1, 0);
 
   const scrollPrev = React.useCallback(() => {
     api?.scrollPrev();
@@ -93,14 +89,17 @@ function Carousel({
 
   React.useEffect(() => {
     if (!api) return;
-    onSelect(api);
-    api.on("reInit", onSelect);
-    api.on("select", onSelect);
+    api.on("reInit", onEmblaChange);
+    api.on("select", onEmblaChange);
 
     return () => {
-      api?.off("select", onSelect);
+      api.off("reInit", onEmblaChange);
+      api.off("select", onEmblaChange);
     };
-  }, [api, onSelect]);
+  }, [api]);
+
+  const canScrollPrev = api?.canScrollPrev() ?? false;
+  const canScrollNext = api?.canScrollNext() ?? false;
 
   return (
     <CarouselContext.Provider

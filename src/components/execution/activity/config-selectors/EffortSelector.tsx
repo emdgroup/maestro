@@ -38,14 +38,24 @@ export function EffortSelector({ option, value, onChange, disabled }: SelectorPr
 
   const shellRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-  // stale-closure guard for global handlers registered once
+  // stale-closure guard for global handlers registered once. Mirrored from an effect
+  // rather than assigned during render — the drag handlers read it from pointer events,
+  // which always run after commit.
   const live = useRef({ N, onChange, options });
-  live.current = { N, onChange, options };
-
   useEffect(() => {
+    live.current = { N, onChange, options };
+  });
+
+  // Follow the committed value. Compared against `value` alone, not the resolved index:
+  // the slider owns `idx` while the user drags, and re-syncing on an `options` identity
+  // change would snap the thumb mid-gesture. Adjusted during render rather than from an
+  // effect, which would paint one frame with the thumb on the old notch.
+  const [syncedValue, setSyncedValue] = useState(value);
+  if (syncedValue !== value) {
+    setSyncedValue(value);
     const i = options.findIndex((o) => o.value === value);
     if (i >= 0) setIdx(i);
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   // global drag + touch — registered once, reads live ref
   useEffect(() => {

@@ -87,6 +87,10 @@ export function CanvasAnnotationLayer({
 
   const [active, setActive] = useState(false);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
+  // Origin of the overlay frame in viewport coordinates. Captured in the same pass as
+  // `nodes` — both are viewport measurements and must come from one layout read, or a
+  // frame mid-scroll would offset fresh rects against a stale origin.
+  const [frameOrigin, setFrameOrigin] = useState({ left: 0, top: 0 });
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<DOMRect | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -103,7 +107,20 @@ export function CanvasAnnotationLayer({
   // Geometry is re-read rather than stored, for the reason `plan-anchor` rebuilds its Ranges: the
   // agent rewrites the surface mid-session and anything measured before that is a lie.
   const refresh = useCallback(() => {
-    if (contentRef.current) setNodes(readNodes(contentRef.current));
+    if (contentRef.current) {
+      const measured = readNodes(contentRef.current);
+      // Only adopt a measurement that found something. A collapsed side panel lays its
+      // contents out at zero size, which `readNodes` skips entirely — adopting that empty
+      // result discarded the geometry every saved note is resolved against, so re-opening
+      // the panel left them all reading as stale.
+      if (measured.length > 0) setNodes(measured);
+    }
+    const box = frameRef.current?.getBoundingClientRect();
+    if (box) {
+      setFrameOrigin((prev) =>
+        prev.left === box.left && prev.top === box.top ? prev : { left: box.left, top: box.top },
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -120,13 +137,21 @@ export function CanvasAnnotationLayer({
   }, [active, refresh, children, surface]);
 
   // Leaving the mode drops everything transient with it — a highlight with no way to act on it is
-  // just a decoration the user cannot dismiss.
+  // just a decoration the user cannot dismiss. Adjusted during render rather than from an effect,
+  // so the overlay never paints a frame of stale highlights after the mode is switched off.
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (!active) {
+      setHoverId(null);
+      setMarquee(null);
+      setPending(null);
+      setViewingId(null);
+    }
+  }
+
   useEffect(() => {
     if (active) return;
-    setHoverId(null);
-    setMarquee(null);
-    setPending(null);
-    setViewingId(null);
     pressRef.current = null;
   }, [active]);
 
@@ -150,19 +175,21 @@ export function CanvasAnnotationLayer({
     return { top, left: Math.min(Math.max(0, x - box.left), maxLeft) };
   }, []);
 
-  /** Viewport rect to one positioned inside the frame, which is what the overlay is sized to. */
+  /**
+   * Viewport rect to one positioned inside the frame, which is what the overlay is sized to.
+   *
+   * Subtracts the stored origin rather than measuring: this runs during render to build
+   * inline styles, and a `getBoundingClientRect()` there is both impure and a forced
+   * layout on every render of the overlay.
+   */
   const toFrame = useCallback(
-    (rect: { left: number; top: number; width: number; height: number }) => {
-      const box = frameRef.current?.getBoundingClientRect();
-      if (!box) return { left: 0, top: 0, width: 0, height: 0 };
-      return {
-        left: rect.left - box.left,
-        top: rect.top - box.top,
-        width: rect.width,
-        height: rect.height,
-      };
-    },
-    [],
+    (rect: { left: number; top: number; width: number; height: number }) => ({
+      left: rect.left - frameOrigin.left,
+      top: rect.top - frameOrigin.top,
+      width: rect.width,
+      height: rect.height,
+    }),
+    [frameOrigin],
   );
 
   const openComposer = useCallback(
@@ -359,8 +386,11 @@ export function CanvasAnnotationLayer({
       const scroller = scrollRef.current;
       const frame = frameRef.current;
       if (!scroller || !frame) return;
-      const rects = resolveRects(nodes, a.componentIds);
-      const bounds = boundingRect(rects);
+      // Measure here rather than trusting `nodes`: the observer that keeps it warm only
+      // runs in annotation mode, so revealing a note from the list with the mode off — or
+      // straight after re-opening the panel — would otherwise find nothing to scroll to.
+      const measured = nodes.length > 0 ? nodes : readNodes(contentRef.current ?? frame);
+      const bounds = boundingRect(resolveRects(measured, a.componentIds));
       if (!bounds) return;
       const top = bounds.top - frame.getBoundingClientRect().top;
       scroller.scrollTo({ top: Math.max(0, top - SCROLL_MARGIN), behavior: "smooth" });
@@ -447,8 +477,11 @@ export function CanvasAnnotationLayer({
             sendDisabled={sendDisabled}
             onGoTo={goTo}
             activeId={viewingId}
+            // `nodes` empty means "not measured yet", which is not the same as "the
+            // components are gone" — greying every note on an unmeasured surface made
+            // them look broken. Only an actual measurement can call one stale.
             isStale={(a) =>
-              a.kind === "canvas" && a.surfaceId === surface.surfaceId
+              a.kind === "canvas" && a.surfaceId === surface.surfaceId && nodes.length > 0
                 ? isStale(nodes, a.componentIds)
                 : false
             }

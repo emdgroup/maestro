@@ -169,11 +169,11 @@ export function TaskReviewPanel({
   const commitsQuery = useWorktreeCommitsQuery(projectId, reviewPath, baseBranch);
   const commits = commitsQuery.data || [];
 
-  // Parse diff to get structured file list
-  const diffFiles = useMemo(() => {
-    if (!diffQuery.data?.diff) return [];
-    return parseDiffString(diffQuery.data.diff);
-  }, [diffQuery.data?.diff]);
+  // Parse diff to get structured file list. Read out of the optional chain first:
+  // an optional member expression in a dependency array is opaque to the compiler
+  // and drops the memoization.
+  const diffText = diffQuery.data?.diff;
+  const diffFiles = useMemo(() => (diffText ? parseDiffString(diffText) : []), [diffText]);
 
   // Uncommitted file count (stable regardless of selected scope)
   const uncommittedFileCount = useMemo(() => {

@@ -141,10 +141,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
     setPendingSessionRetry,
     clearPendingSessionRetry,
   } = useBoardActions();
+  // Mirrored from an effect rather than assigned during render — both are read
+  // only inside the Tauri event callbacks below, which run after commit.
   const authRequiredTasksRef = useRef(authRequiredTasks);
-  authRequiredTasksRef.current = authRequiredTasks;
   const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
+  useEffect(() => {
+    authRequiredTasksRef.current = authRequiredTasks;
+    sessionsRef.current = sessions;
+  });
   const spawnAcpMutation = useSpawnAcpSessionMutation();
 
   useEffect(() => {
@@ -246,17 +250,28 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   const lastAcpAgentId =
     [...sessions].reverse().find((s) => s.execution_mode === "acp")?.agent_id ?? null;
 
+  // A deep link handed over by another view wins; otherwise the first session is selected
+  // once the list loads. Both are adjusted during render so the panel opens on the right
+  // session in the frame it appears. Clearing the shared navigation store stays in an
+  // effect, because writing another component's state during render is not safe.
+  const deepLinkedSessionKey = pendingAgentId
+    ? (visibleSessions.find((s) => String(s.task_id) === pendingAgentId)?.session_key ?? null)
+    : null;
+  const defaultSessionKey =
+    selectedSessionKey == null && visibleSessions.length > 0
+      ? visibleSessions[0].session_key
+      : null;
+  const targetSessionKey = deepLinkedSessionKey ?? defaultSessionKey;
+
+  const [appliedSessionKey, setAppliedSessionKey] = useState<number | null>(targetSessionKey);
+  if (appliedSessionKey !== targetSessionKey) {
+    setAppliedSessionKey(targetSessionKey);
+    if (targetSessionKey != null) setSelectedSessionKey(targetSessionKey);
+  }
+
   useEffect(() => {
-    if (pendingAgentId && visibleSessions.length > 0) {
-      const match = visibleSessions.find((s) => String(s.task_id) === pendingAgentId);
-      if (match) {
-        setSelectedSessionKey(match.session_key);
-        clearPendingAgent();
-      }
-    } else if (selectedSessionKey == null && visibleSessions.length > 0) {
-      setSelectedSessionKey(visibleSessions[0].session_key);
-    }
-  }, [visibleSessions, pendingAgentId, clearPendingAgent, selectedSessionKey]);
+    if (deepLinkedSessionKey != null) clearPendingAgent();
+  }, [deepLinkedSessionKey, clearPendingAgent]);
 
   const spawnShell = useCallback(
     async (

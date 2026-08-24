@@ -152,8 +152,12 @@ export function AgentActivityPanel({
   const activeTab = useActiveTab();
   const selectedProject = useSelectedProject();
 
+  // Mirrored from an effect rather than assigned during render — the session
+  // lifecycle hook only invokes it from ACP event callbacks, well after commit.
   const onUsageChangeRef = useRef(onUsageChange);
-  onUsageChangeRef.current = onUsageChange;
+  useEffect(() => {
+    onUsageChangeRef.current = onUsageChange;
+  });
 
   const composeBarRef = useRef<ComposeBarHandle>(null);
   const composeBarWrapperRef = useRef<HTMLDivElement>(null);
@@ -312,7 +316,11 @@ export function AgentActivityPanel({
     activityInfo?.status === "stale";
   const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
 
-  agentItemsCountRef.current = liveState.items.length;
+  // Mirrored from an effect rather than assigned during render — `usePermissionHandlers`
+  // reads it only from the respond/submit callbacks, which run after commit.
+  useEffect(() => {
+    agentItemsCountRef.current = liveState.items.length;
+  });
 
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
@@ -477,13 +485,16 @@ export function AgentActivityPanel({
     }
   }, [tabs, effectiveAuthKey, authRequiredTasks, setAuthTerminalInterrupted]);
 
-  const lastAgentSectionId = useMemo(() => {
-    for (let i = agentSections.length - 1; i >= 0; i--) {
-      const s = agentSections[i];
-      if (s.type === "agentSection") return getItemKey(s.items[0]);
+  // Not wrapped in useMemo: the result is a string compared by value, and the compiler
+  // could not preserve the manual memo anyway — it memoizes this itself.
+  let lastAgentSectionId: string | null = null;
+  for (let i = agentSections.length - 1; i >= 0; i--) {
+    const s = agentSections[i];
+    if (s.type === "agentSection") {
+      lastAgentSectionId = getItemKey(s.items[0]);
+      break;
     }
-    return null;
-  }, [agentSections]);
+  }
 
   const isSessionDead = liveState.sessionEnded;
   const elicitationContent = pendingElicitation
