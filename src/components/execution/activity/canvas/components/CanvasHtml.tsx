@@ -33,7 +33,7 @@ export function CanvasHtml({ srcdoc, height = 200, title, className }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [autoHeight, setAutoHeight] = useState(height);
   const [loaded, setLoaded] = useState(false);
-  const { theme, systemTheme, accentHue, systemAccentHue } = useTheme();
+  const { theme, systemTheme, effectiveAccentHue, systemAccentHue } = useTheme();
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -57,7 +57,7 @@ export function CanvasHtml({ srcdoc, height = 200, title, className }: Props) {
     const isDark = theme === "dark" || (theme === "system" && systemTheme === "dark");
     const css = `:root{color-scheme:${isDark ? "dark" : "light"};${vars}}body{background:var(--background);color:var(--foreground);margin:0;padding:0;font-family:system-ui,sans-serif}`;
     iframe.contentWindow.postMessage({ type: "canvas-theme-update", css }, "*");
-  }, [theme, systemTheme, accentHue, systemAccentHue]);
+  }, [theme, systemTheme, effectiveAccentHue, systemAccentHue]);
 
   const themedSrcdoc = useMemo(() => {
     if (!srcdoc) return null;

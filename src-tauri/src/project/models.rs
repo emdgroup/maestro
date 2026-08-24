@@ -71,6 +71,15 @@ pub struct ProjectConfig {
     pub issue_tracking_auto_detect: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_tab: Option<String>,
+    /// Accent hue in degrees, as a string, matching `AppSettings::accent_color`.
+    /// `None` means the project follows the global default colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color: Option<String>,
+    /// Set to `false` once the colour has been decided, so that the first-open assignment
+    /// doesn't hand the project a random one on next open. Needed because "follow the global
+    /// default" stores no hue and would otherwise look exactly like "never chosen".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color_auto_assign: Option<bool>,
     /// Preselect "Existing" instead of "New" in the New Session dialog's worktree toggle.
     pub default_existing_worktree: bool,
     /// Extra workspace roots handed to every agent alongside the session's own directory.

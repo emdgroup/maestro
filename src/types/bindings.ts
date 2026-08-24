@@ -911,6 +911,26 @@ export const commands = {
     }
   },
   /**
+   * Set only the project's accent colour in .maestro/settings.json.
+   *
+   * Separate from `update_project_settings` so the settings form (which writes the whole
+   * `ProjectConfigRequest`) can never clobber a colour picked in the header a moment earlier.
+   */
+  async setProjectAccentColor(
+    projectId: number,
+    accentColor: string | null,
+  ): Promise<Result<null, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("set_project_accent_color", { projectId, accentColor }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
+  /**
    * Pre-warm the shared maestro-server process for a project and optionally
    * pre-initialize the default agent so the first session spawn is near-instant.
    *
@@ -2661,7 +2681,15 @@ export type AppSettings = {
   max_concurrent_agents?: number;
   thinking_visibility?: ActivityVisibility;
   tool_call_visibility?: ActivityVisibility;
+  /**
+   * Global default accent hue in degrees, as a string. Projects without their own
+   * `accent_color` follow this; `None` follows the OS accent colour.
+   */
   accent_color?: string | null;
+  /**
+   * Whether a project that has never chosen a colour gets a random preset on first open.
+   */
+  new_project_color?: NewProjectColor;
   terminal_color_mode?: TerminalColorMode;
   enter_key_behavior?: EnterKeyBehavior;
   agent_stream_width?: AgentStreamWidth;
@@ -2894,6 +2922,10 @@ export type LogLocation = {
  */
 export type MergeResult = { success: boolean; task_status: string; conflicts: string[] };
 /**
+ * What colour a project that has never chosen one gets on first open.
+ */
+export type NewProjectColor = "auto" | "global";
+/**
  * Only produced once the server is up: every way of failing to reach it returns `Err` instead,
  * so there is no "server is broken" variant to report here.
  */
@@ -2929,6 +2961,16 @@ export type ProjectConfigRequest = {
 export type ProjectConfigResponse = {
   default_agent: string | null;
   startup_tab: string | null;
+  /**
+   * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
+   * request, and a colour field there would let a form save clobber a colour picked in the
+   * header moments earlier. Writes go through `set_project_accent_color` instead.
+   */
+  accent_color: string | null;
+  /**
+   * `Some(false)` once the colour has been decided; see `ProjectConfig`.
+   */
+  accent_color_auto_assign: boolean | null;
   default_existing_worktree: boolean;
 };
 export type ProjectIssueTrackingConfig = {

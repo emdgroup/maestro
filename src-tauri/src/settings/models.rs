@@ -98,6 +98,38 @@ impl std::str::FromStr for EnterKeyBehavior {
     }
 }
 
+/// What colour a project that has never chosen one gets on first open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[specta(export)]
+pub enum NewProjectColor {
+    /// Pick one of the preset hues at random and persist it to the project.
+    #[default]
+    Auto,
+    /// Leave the project colourless so it follows the global default.
+    Global,
+}
+
+impl std::fmt::Display for NewProjectColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Global => write!(f, "global"),
+        }
+    }
+}
+
+impl std::str::FromStr for NewProjectColor {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "auto" => Ok(Self::Auto),
+            "global" => Ok(Self::Global),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 #[specta(export)]
@@ -152,8 +184,13 @@ pub struct AppSettings {
     pub thinking_visibility: ActivityVisibility,
     #[serde(default)]
     pub tool_call_visibility: ActivityVisibility,
+    /// Global default accent hue in degrees, as a string. Projects without their own
+    /// `accent_color` follow this; `None` follows the OS accent colour.
     #[serde(default)]
     pub accent_color: Option<String>,
+    /// Whether a project that has never chosen a colour gets a random preset on first open.
+    #[serde(default)]
+    pub new_project_color: NewProjectColor,
     #[serde(default)]
     pub terminal_color_mode: TerminalColorMode,
     #[serde(default)]
@@ -193,6 +230,7 @@ impl Default for AppSettings {
             thinking_visibility: ActivityVisibility::Auto,
             tool_call_visibility: ActivityVisibility::Auto,
             accent_color: None,
+            new_project_color: NewProjectColor::Auto,
             terminal_color_mode: TerminalColorMode::FollowTheme,
             enter_key_behavior: EnterKeyBehavior::SendPrompt,
             agent_stream_width: AgentStreamWidth::Full,

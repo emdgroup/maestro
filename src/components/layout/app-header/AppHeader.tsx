@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils.ts";
 import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
+import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import {
   Select,
   SelectContent,
@@ -113,7 +114,11 @@ export function AppHeader({
   };
 
   return (
-    <header className="grid grid-cols-[1fr_auto_1fr] h-12 shrink-0 items-center border-b px-4 gap-4">
+    <header className="relative isolate grid grid-cols-[1fr_auto_1fr] h-12 shrink-0 items-center px-4 gap-4">
+      {/* Project-colour dressing: bubbles behind the accent gradient, both absolutely
+          positioned and -z-10, so the grid layout and the content above are untouched. */}
+      <AccentBubbles variant="header" className="-z-10" />
+      <span aria-hidden className="header-gradient -z-10" />
       {/* Left section: Logo + divider + Project Dropdown */}
       <div className="flex items-center gap-3 min-w-0">
         <Select value={currentProject} onValueChange={handleValueChange}>
@@ -179,7 +184,7 @@ export function AppHeader({
       {/* Center section: Tab Navigation */}
       <nav className="flex items-center flex-1 justify-center">
         <LayoutGroup id="tab-nav">
-          <div className="grid grid-cols-4 rounded-lg bg-muted p-1 gap-1">
+          <div className="grid grid-cols-4 rounded-lg bg-muted/60 p-1 gap-1">
             {VIEWS.map((view) => {
               const Icon = view.icon;
               const isActive = activeView === view.id;
@@ -240,7 +245,7 @@ export function AppHeader({
                   "flex items-center gap-1.5 rounded-md px-2 py-1 h-auto text-xs font-medium",
                   autoMode
                     ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80",
+                    : "bg-muted/60 text-muted-foreground hover:bg-muted/80",
                 )}
               />
             }
@@ -277,7 +282,7 @@ export function AppHeader({
         )}
 
         {/* Running agent count */}
-        <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1">
+        <div className="flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1">
           <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
           <span className="text-xs text-muted-foreground">{agentCount} running</span>
         </div>
