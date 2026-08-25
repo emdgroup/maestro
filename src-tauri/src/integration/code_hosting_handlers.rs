@@ -168,7 +168,7 @@ pub async fn code_hosting_status(
         return Ok(nothing);
     };
 
-    let Some(provider) = provider_for_host(&remote.host, &app_state) else {
+    let Some(provider) = provider_for_host(&remote.host, app_state) else {
         // Pushable, but there is no forge to open anything against.
         return Ok(CodeHostingStatus {
             rung: CodeHostingRung::ForgeUnknown,
@@ -194,7 +194,7 @@ pub async fn code_hosting_status(
         write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
     }
 
-    let connected = find_integration(&provider, &remote.host, &app_state).await.is_some();
+    let connected = find_integration(&provider, &remote.host, app_state).await.is_some();
 
     Ok(CodeHostingStatus {
         rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },

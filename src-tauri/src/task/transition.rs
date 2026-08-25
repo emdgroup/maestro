@@ -600,7 +600,7 @@ mod tests {
             TaskStatus::Planning,
         )] {
             let running = TaskState::active(status, phase, PhaseStatus::Running, TaskBall::Agent);
-            let delivered = resolve(TaskTransition::ArtifactDelivered, running.clone());
+            let delivered = resolve(TaskTransition::ArtifactDelivered, running);
             let finished = resolve(
                 TaskTransition::TurnCompleted {
                     is_git_repo: true,
@@ -629,7 +629,7 @@ mod tests {
 
             let running =
                 TaskState::active(TaskStatus::InProgress, phase, PhaseStatus::Running, TaskBall::Agent);
-            let delivered = resolve(TaskTransition::ArtifactDelivered, running.clone());
+            let delivered = resolve(TaskTransition::ArtifactDelivered, running);
 
             if phase == TaskPhase::SelfReview {
                 assert_eq!(
@@ -654,7 +654,7 @@ mod tests {
     fn a_delivered_artifact_does_not_move_a_task_that_left_its_read_only_phase() {
         let elsewhere = implementing();
         assert_eq!(
-            resolve(TaskTransition::ArtifactDelivered, elsewhere.clone()),
+            resolve(TaskTransition::ArtifactDelivered, elsewhere),
             elsewhere
         );
     }
