@@ -24,6 +24,7 @@ import {
   Play,
   Square,
   GitPullRequest,
+  ScanEye,
   Archive,
   MessageSquare,
   Flame,
@@ -535,7 +536,7 @@ function FooterCTAs({
         className={cn(base, "h-auto")}
         title="Move this task to review without waiting for the agent to finish"
       >
-        <GitPullRequest className="w-2.5 h-2.5" />
+        <ScanEye className="w-2.5 h-2.5" />
         Review
       </Button>
     );
@@ -659,7 +660,7 @@ function FooterCTAs({
           variant="ghost"
           className={cn(base, "h-auto")}
         >
-          <GitPullRequest className="w-2.5 h-2.5" />
+          <ScanEye className="w-2.5 h-2.5" />
           Review
         </Button>
       </div>
@@ -677,7 +678,7 @@ function FooterCTAs({
           variant="ghost"
           className={cn(base, "h-auto")}
         >
-          <GitPullRequest className="w-2.5 h-2.5" />
+          <ScanEye className="w-2.5 h-2.5" />
           Review
         </Button>
         {activeSession && (

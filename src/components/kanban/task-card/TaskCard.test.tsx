@@ -808,13 +808,22 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 
-  /// This one Review button shipped without an icon while its neighbour in the same row and both
-  /// other Review buttons had one, so it read as a different kind of control.
-  it("gives Review the same icon its siblings have", () => {
+  /// Review shipped with no icon, and the first fix gave it the pull-request one — which put two
+  /// buttons carrying the same glyph side by side in the same row, one opening the forge and the
+  /// other the diff. Asserting merely that an icon was present is what let that through, so this
+  /// pins the distinction rather than the presence.
+  it("does not give Review the same icon as the pull request link", () => {
     renderCard(awaitingMerge);
 
-    const review = screen.getByRole("button", { name: /^review$/i });
-    expect(review.querySelector("svg")).not.toBeNull();
+    const iconOf = (name: RegExp) =>
+      screen.getByRole("button", { name }).querySelector("svg")?.getAttribute("class");
+
+    const review = iconOf(/^review$/i);
+    const pullRequest = iconOf(/pull request/i);
+
+    expect(review).toBeTruthy();
+    expect(pullRequest).toBeTruthy();
+    expect(review).not.toEqual(pullRequest);
   });
 
   /// The half of the user's report that was right. The sweep was working and the card said

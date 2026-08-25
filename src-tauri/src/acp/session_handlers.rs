@@ -269,17 +269,6 @@ async fn tear_down_session(app_state: &Arc<AppState>, log_id: i32) -> (Option<i3
     (project_id, task_id)
 }
 
-/// Close any other live session belonging to `task_id`, keeping `keep_log_id`.
-///
-/// A task runs one role at a time but got a new session for each: `resolve_turn_end` moves the task
-/// and never touches `acp.sessions`, so a coder's session was still open while its reviewer ran, and
-/// the reviewer's while the next coder ran. One live task was observed holding five. That is not
-/// only untidy — `occupied_slots` counts every session carrying a task id, so those five were five
-/// slots and ~2 GB against the host's agent limit for work one of them was doing.
-///
-/// Nothing the pipeline needs is lost. The reviewer reads the diff, not the coder's transcript, and
-/// the plan interception already establishes that a role's session has no part in the next role's
-/// work. `session_aliases` keeps the history entry either way.
 /// Which live sessions this task no longer needs.
 ///
 /// Takes ids rather than the session map so the rule can be tested: `AcpProcess` owns a subprocess,
@@ -296,6 +285,17 @@ fn superseded_log_ids(
         .collect()
 }
 
+/// Close any other live session belonging to `task_id`, keeping `keep_log_id`.
+///
+/// A task runs one role at a time but got a new session for each: `resolve_turn_end` moves the task
+/// and never touches `acp.sessions`, so a coder's session was still open while its reviewer ran, and
+/// the reviewer's while the next coder ran. One live task was observed holding five. That is not
+/// only untidy — `occupied_slots` counts every session carrying a task id, so those five were five
+/// slots and ~2 GB against the host's agent limit for work one of them was doing.
+///
+/// Nothing the pipeline needs is lost. The reviewer reads the diff, not the coder's transcript, and
+/// the plan interception already establishes that a role's session has no part in the next role's
+/// work. `session_aliases` keeps the history entry either way.
 pub(crate) async fn close_superseded_sessions_for_task(
     app_state: &Arc<AppState>,
     task_id: i32,
