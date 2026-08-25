@@ -19,18 +19,18 @@ Ask "does this answer have shape?", not "did they ask for a chart?" — they alm
 Numbers over time, parts of a whole, items with attributes, a process with branches, a comparison:
 that is shape, and shape is what these formats are for.
 
-| What the answer is                                                        | Reach for                        |
-| ------------------------------------------------------------------------- | -------------------------------- |
-| Rows the user will filter or page through, or read next to a chart        | canvas `DataTable`               |
-| Numbers that move — over time, across categories, as proportions          | canvas `Chart`                   |
-| A mix: totals, a table and a trend answering one question together        | canvas dashboard (`Card`, `Row`) |
-| Static tabular content — a comparison, an inventory, an attribute grid    | GFM table (sortable columns)     |
-| Control flow, architecture, state machines, sequences of calls            | ` ```mermaid `                   |
-| A formula, complexity bound, derivation                                   | `$...$` / `$$...$$` (KaTeX)      |
-| A chemical equation                                                       | `\ce{...}` inside KaTeX (mhchem) |
-| A diagram of something physical or spatial — layout, geometry             | ` ```svg `                       |
-| A molecule                                                                | ` ```smiles `                    |
-| Code                                                                      | fenced block with a language tag |
+| What the answer is                                                     | Reach for                        |
+| ---------------------------------------------------------------------- | -------------------------------- |
+| Rows the user will filter or page through, or read next to a chart     | canvas `DataTable`               |
+| Numbers that move — over time, across categories, as proportions       | canvas `Chart`                   |
+| A mix: totals, a table and a trend answering one question together     | canvas dashboard (`Card`, `Row`) |
+| Static tabular content — a comparison, an inventory, an attribute grid | GFM table (sortable columns)     |
+| Control flow, architecture, state machines, sequences of calls         | ` ```mermaid `                   |
+| A formula, complexity bound, derivation                                | `$...$` / `$$...$$` (KaTeX)      |
+| A chemical equation                                                    | `\ce{...}` inside KaTeX (mhchem) |
+| A diagram of something physical or spatial — layout, geometry          | ` ```svg `                       |
+| A molecule                                                             | ` ```smiles `                    |
+| Code                                                                   | fenced block with a language tag |
 
 ### `DataTable` or a GFM table?
 
