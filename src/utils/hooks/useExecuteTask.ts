@@ -129,6 +129,19 @@ export function useExecuteTask(
   ) => {
     if (!projectId) return;
 
+    /// Which profile this task asked for, per role. Parsed defensively: it is written by the card's
+    /// override dialog, and a task that cannot be started is a worse outcome than one that starts
+    /// with the project's defaults.
+    let overrides: Record<string, string> = {};
+    if (task.profile_overrides) {
+      try {
+        overrides = JSON.parse(task.profile_overrides) as Record<string, string>;
+      } catch {
+        console.warn(`Ignoring unreadable profile overrides on task ${task.id}`);
+      }
+    }
+    const profileFor = (role: AgentRole) => overrides[role] ?? null;
+
     // Planning runs first when the project has a planner, which is what "optional plan agent"
     // means in practice — Execute is one button whether or not a plan stage exists.
     //
@@ -139,7 +152,7 @@ export function useExecuteTask(
       requestedRole === "Coder" &&
       task.phase == null &&
       (await api
-        .resolveAgentProfile(projectId, "Planner", null, [], [], false)
+        .resolveAgentProfile(projectId, "Planner", profileFor("Planner"), [], [], false)
         .then((profile) => profile !== null)
         .catch(() => false));
 
@@ -180,7 +193,7 @@ export function useExecuteTask(
     // what gets spawned; the model and mode are applied afterwards, once the agent has reported
     // what it supports.
     const roleProfile = await api
-      .resolveAgentProfile(projectId, role, null, [], [], false)
+      .resolveAgentProfile(projectId, role, profileFor(role), [], [], false)
       .catch(() => null);
 
     // The task's own agent is the coder's, so it must not be imposed on the other three: a task
@@ -324,7 +337,7 @@ export function useExecuteTask(
       // Asked again now that the agent has said what it supports, so anything it cannot honour is
       // dropped with a warning rather than being sent and silently failing.
       const resolved = await api
-        .resolveAgentProfile(projectId, role, null, [], capturedModeIds, false)
+        .resolveAgentProfile(projectId, role, profileFor(role), [], capturedModeIds, false)
         .catch(() => null);
 
       for (const warning of resolved?.warnings ?? []) {

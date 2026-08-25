@@ -122,6 +122,26 @@ export function useUpdateTask() {
 /**
  * Mutation hook for updating task settings
  */
+/**
+ * Mutation hook for choosing which agent profile a task uses for each role.
+ *
+ * Separate from `useUpdateTaskSettingsMutation` for the same reason the command is separate from
+ * `update_task_settings`: that one rewrites every override column it names, so a caller wanting to
+ * change one field has to resend the others correctly or silently clear them.
+ */
+export function useSetTaskProfileOverridesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, overrides }: { taskId: number; overrides: Record<string, string> }) =>
+      api.setTaskProfileOverrides(taskId, overrides),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to save the agents for this task"),
+  });
+}
+
 export function useUpdateTaskSettingsMutation() {
   const queryClient = useQueryClient();
 

@@ -53,6 +53,7 @@ vi.mock("@/services/task.service", () => ({
   useArchiveTaskMutation: () => ({ mutate: archive }),
   useCloseRefinementMutation: () => ({ mutate: closeRefinement, isPending: false }),
   useTaskCommentsQuery: () => ({ data: comments.current }),
+  useSetTaskProfileOverridesMutation: () => ({ mutate: setProfileOverrides }),
   useSendTaskToReviewMutation: () => ({
     mutate: (vars: unknown, opts?: { onSuccess?: (data: unknown) => void }) => {
       sendToReview.mutate(vars);
@@ -64,6 +65,15 @@ vi.mock("@/services/task.service", () => ({
 
 vi.mock("@/services/execution.service", () => ({
   useRecoverTaskSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+/// The per-task agent override dialog hangs off every card, so its queries have to be answered
+/// even for the cards that never open it.
+const setProfileOverrides = vi.hoisted(() => vi.fn());
+
+vi.mock("@/services/project.service", () => ({
+  useAgentProfilesQuery: () => ({ data: { profiles: [], defaults: {} } }),
+  useSaveAgentProfilesMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 
 /// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
@@ -308,17 +318,28 @@ describe("TaskCard empty-review confirmation", () => {
   });
 });
 
-/// Stop parks a task at Planning, so Planning is where a restart has to be possible. It used to be
-/// offered on Queue alone, which made Stop a one-way door out of the pipeline.
+/// Planning shapes a task and Queue runs it. Both columns used to offer Execute, which made
+/// dragging to Queue a step that changed nothing and gave the board a way to start work that the
+/// scheduler — the thing that owns capacity — knew nothing about.
 describe("TaskCard execute affordance", () => {
-  it.each(["Planning", "Queue"] as const)("offers Execute on a %s card", (status) => {
-    renderCard({ status });
+  it("offers Execute on a Queue card", () => {
+    renderCard({ status: "Queue" });
     expect(screen.getByText("Execute")).toBeInTheDocument();
   });
 
-  it.each(["InProgress", "Review", "Done"] as const)("omits Execute on a %s card", (status) => {
-    renderCard({ status });
-    expect(screen.queryByText("Execute")).not.toBeInTheDocument();
+  it.each(["Planning", "InProgress", "Review", "Done"] as const)(
+    "omits Execute on a %s card",
+    (status) => {
+      renderCard({ status });
+      expect(screen.queryByText("Execute")).not.toBeInTheDocument();
+    },
+  );
+
+  /// What Planning offers instead: shape the task, or choose which agents will run it.
+  it("offers Refine and the agent overrides on a Planning card", () => {
+    renderCard({ status: "Planning" });
+    expect(screen.getByText("Refine")).toBeInTheDocument();
+    expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 });
 
@@ -785,6 +806,15 @@ describe("TaskCard awaiting a pull request", () => {
     renderCard(awaitingMerge);
 
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
+  });
+
+  /// This one Review button shipped without an icon while its neighbour in the same row and both
+  /// other Review buttons had one, so it read as a different kind of control.
+  it("gives Review the same icon its siblings have", () => {
+    renderCard(awaitingMerge);
+
+    const review = screen.getByRole("button", { name: /^review$/i });
+    expect(review.querySelector("svg")).not.toBeNull();
   });
 
   /// The half of the user's report that was right. The sweep was working and the card said

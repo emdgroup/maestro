@@ -7,6 +7,7 @@ import { useTaskHold } from "@/hooks/useTaskHold";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { ProposalGate } from "./ProposalGate";
 import { PlanGate } from "./PlanGate";
+import { TaskProfilesDialog } from "./TaskProfilesDialog";
 import {
   useInterruptTaskMutation,
   useArchiveTaskMutation,
@@ -36,6 +37,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Sparkles,
+  SlidersHorizontal,
   ListChecks,
 } from "lucide-react";
 import {
@@ -301,6 +303,7 @@ interface FooterCTAsProps {
   onRefine: () => void;
   onOpenProposal: () => void;
   onOpenPlan: () => void;
+  onOpenProfiles: () => void;
   onStop: () => void;
   onJoin: () => void;
   onReview: () => void;
@@ -323,6 +326,7 @@ function FooterCTAs({
   onRefine,
   onOpenProposal,
   onOpenPlan,
+  onOpenProfiles,
   onStop,
   onJoin,
   onReview,
@@ -414,10 +418,44 @@ function FooterCTAs({
     );
   }
 
-  // Planning is where Stop parks a task, so without Execute here a stopped task could only be
-  // restarted by first dragging it to Queue — a step that means nothing to the user and exists
-  // only because this branch used to be Queue-only.
-  if (task.status === "Planning" || task.status === "Queue") {
+  // Planning shapes a task; Queue runs it. The two used to share this branch and both offered
+  // Execute, which made "drag it to Queue" a step that changed nothing — and gave the board two
+  // ways to start the same work, only one of which the scheduler knows about.
+  //
+  // Nothing here can start a task any more. That is the point: a task starts by being in Queue.
+  if (task.status === "Planning") {
+    return (
+      <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRefine();
+          }}
+          disabled={isExecuting}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+          title="Ask an agent to sharpen this task's description"
+        >
+          <Sparkles className="w-2.5 h-2.5" />
+          Refine
+        </Button>
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenProfiles();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+          title="Choose which agent runs each stage of this task"
+        >
+          <SlidersHorizontal className="w-2.5 h-2.5" />
+          Agents
+        </Button>
+      </div>
+    );
+  }
+
+  if (task.status === "Queue") {
     // A claimed task keeps its column, so `Spawning` is the only thing distinguishing a task
     // waiting to start from one already starting. Offering Execute again would be a second click
     // the backend refuses — visible to the user only as a button that does nothing.
@@ -451,23 +489,6 @@ function FooterCTAs({
               ? "Retry"
               : "Execute"}
         </Button>
-        {/* Refinement is a backlog activity: sharpening a ticket that is already queued to run is
-            editing something the scheduler may pick up mid-sentence. */}
-        {task.status === "Planning" && !starting && (
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRefine();
-            }}
-            disabled={isExecuting}
-            variant="ghost"
-            className={cn(base, "h-auto")}
-            title="Ask an agent to sharpen this task's description"
-          >
-            <Sparkles className="w-2.5 h-2.5" />
-            Refine
-          </Button>
-        )}
       </div>
     );
   }
@@ -638,6 +659,7 @@ function FooterCTAs({
           variant="ghost"
           className={cn(base, "h-auto")}
         >
+          <GitPullRequest className="w-2.5 h-2.5" />
           Review
         </Button>
       </div>
@@ -712,6 +734,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [proposalOpen, setProposalOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [profilesOpen, setProfilesOpen] = useState(false);
   const {
     execute: handleExecute,
     isExecuting,
@@ -886,6 +909,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           onRefine={() => void handleExecute(task, { role: "Refiner" })}
           onOpenProposal={() => setProposalOpen(true)}
           onOpenPlan={() => setPlanOpen(true)}
+          onOpenProfiles={() => setProfilesOpen(true)}
           onStop={() => setAbandonConfirmOpen(true)}
           onJoin={() => navigate({ agentId: String(task.id) })}
           onReview={() => openReview(task.id)}
@@ -955,6 +979,12 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         // project has one, and approving a plan is the one case that must not.
         onApprove={() => void handleExecute(task, { role: "Coder" })}
         onReplan={(feedback) => void handleExecute(task, { role: "Planner", feedback })}
+      />
+      <TaskProfilesDialog
+        task={task}
+        projectId={projectId}
+        open={profilesOpen}
+        onOpenChange={setProfilesOpen}
       />
       <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
         <AlertDialogContent>
