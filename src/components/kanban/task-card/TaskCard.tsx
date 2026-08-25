@@ -20,7 +20,6 @@ import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import { api } from "@/lib/tauri-utils";
 import { commands } from "@/types/bindings";
 import {
-  ShieldAlert,
   Play,
   Square,
   GitPullRequest,
@@ -782,7 +781,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     }
   }, [isDragging]);
 
-  const hasOptions = task.priority !== "None" || task.isolated_worktree || task.auto_approve;
+  const hasOptions = task.priority !== "None" || task.isolated_worktree;
 
   return (
     <>
@@ -859,12 +858,6 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
               <span className="flex items-center gap-0.5 text-[9.5px] text-secondary">
                 <GitBranch className="w-2.5 h-2.5" />
                 worktree
-              </span>
-            )}
-            {task.auto_approve && (
-              <span className="flex items-center gap-0.5 text-[9.5px] text-warning">
-                <ShieldAlert className="w-2.5 h-2.5" />
-                auto-approve
               </span>
             )}
           </div>

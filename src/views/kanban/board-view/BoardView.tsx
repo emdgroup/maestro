@@ -3,11 +3,9 @@ import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
 import { useActiveTerminalTaskId, useIsTerminalOpen, useBoardActions } from "@/store/boardStore";
 import { useIsGitRepo } from "@/store/projectStore";
-import { useDefaultAgent } from "@/store/configStore";
 import { Task, TaskStatus } from "@/types/bindings";
 import { KanbanColumn } from "@/components/kanban/kanban-column/KanbanColumn";
 import { ExecutionTerminal } from "@/components/execution/terminal/ExecutionTerminal";
-import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { useUpdateTask } from "@/services/task.service";
 import { priorityAfterDrop } from "@/lib/queue-priority";
 
@@ -41,7 +39,6 @@ export function BoardView({ tasks }: BoardViewProps) {
   const { closeTerminal } = useBoardActions();
   const updateTask = useUpdateTask();
   const isGitRepo = useIsGitRepo();
-  const defaultAgent = useDefaultAgent();
 
   const statuses = useMemo(
     () => (isGitRepo ? BOARD_STATUSES : BOARD_STATUSES.filter((s) => s !== "Review")),
@@ -49,10 +46,6 @@ export function BoardView({ tasks }: BoardViewProps) {
   );
 
   const [dndItems, setDndItems] = useState<DndItems>(() => buildDndItems(tasks));
-  const [agentPickerState, setAgentPickerState] = useState<{
-    task: Task;
-    proceed: () => void;
-  } | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [draggingTask, setDraggingTask] = useState<Task | null>(null);
 
@@ -147,26 +140,22 @@ export function BoardView({ tasks }: BoardViewProps) {
           const priority =
             newStatus === "Queue" ? priorityAfterDrop(final.Queue, taskId, tasks) : null;
 
-          const doUpdate = () =>
-            updateTask.mutate(
-              {
-                taskId,
-                updates: { status: newStatus, ...(priority ? { priority } : {}) },
+          // Straight to the update: dropping into Queue used to stop and ask which agent to use,
+          // and there is no longer a task-level answer to give. The project's profiles name an
+          // agent per role and are resolved when the role starts, so a missing one is a spawn-time
+          // failure with a message rather than a modal in the middle of a drag.
+          updateTask.mutate(
+            {
+              taskId,
+              updates: { status: newStatus, ...(priority ? { priority } : {}) },
+            },
+            {
+              onError: () => {
+                liveDndRef.current = previousDndRef.current;
+                setDndItems({ ...previousDndRef.current });
               },
-              {
-                onError: () => {
-                  liveDndRef.current = previousDndRef.current;
-                  setDndItems({ ...previousDndRef.current });
-                },
-              },
-            );
-
-          const task = tasks.find((t) => t.id === taskId);
-          if (newStatus === "Queue" && !task?.agent_id && !defaultAgent) {
-            setAgentPickerState({ task: task!, proceed: doUpdate });
-          } else {
-            doUpdate();
-          }
+            },
+          );
         }}
       >
         <div
@@ -204,21 +193,6 @@ export function BoardView({ tasks }: BoardViewProps) {
           }
           isActive={true}
           onClose={closeTerminal}
-        />
-      )}
-      {agentPickerState && (
-        <AgentPickerModal
-          open
-          task={agentPickerState.task}
-          proceed={(_agentId) => {
-            agentPickerState.proceed();
-            setAgentPickerState(null);
-          }}
-          onClose={() => {
-            liveDndRef.current = previousDndRef.current;
-            setDndItems({ ...previousDndRef.current });
-            setAgentPickerState(null);
-          }}
         />
       )}
     </div>

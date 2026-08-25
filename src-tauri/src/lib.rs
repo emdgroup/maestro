@@ -90,6 +90,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::set_project_accent_color,
             crate::ipc::prime_project_server,
             crate::ipc::update_task_settings,
+            crate::ipc::set_task_profile_overrides,
             crate::ipc::list_ssh_connections,
             crate::ipc::get_ssh_connection,
             crate::ipc::get_ssh_connection_status,

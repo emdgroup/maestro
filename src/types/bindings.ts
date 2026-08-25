@@ -824,6 +824,27 @@ async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<
 }
 },
 /**
+ * Choose which agent profile this task uses for each role.
+ * 
+ * Its own command rather than a field on `TaskConfigRequest`, for the reason
+ * `set_project_accent_color` is separate from the project settings form: that request rewrites
+ * every column it names, so a caller that only wanted to change one has to resend the rest
+ * correctly or silently clear them. The override dialog knows about roles and nothing else.
+ * 
+ * An empty map stores `NULL`, so "no overrides" has one representation rather than two.
+ * Ids are not checked against the project's profiles: a profile deleted after a task named it
+ * falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
+ * want anyway, and validating here would only move the same outcome earlier.
+ */
+async setTaskProfileOverrides(taskId: number, overrides: Partial<{ [key in string]: string }>) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { taskId, overrides }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Get all saved SSH connections
  */
 async listSshConnections() : Promise<Result<SshConnection[], string>> {
@@ -2714,7 +2735,14 @@ fix_rounds: number;
  * What the forge's CI last said about the open pull request. Refreshed by the reconcile
  * sweep; `None` while there is nothing to say.
  */
-pull_request_ci?: PullRequestCi | null }
+pull_request_ci?: PullRequestCi | null; 
+/**
+ * Which profile this task wants for a given role, as JSON keyed by role name. Carried as the
+ * raw string rather than a parsed map because nothing in Rust reads it: it is written by the
+ * card's override dialog and handed straight back to `resolve_agent_profile`, which already
+ * takes an override id and falls back when it names nothing.
+ */
+profile_overrides?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.

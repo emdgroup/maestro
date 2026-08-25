@@ -23,10 +23,7 @@ import {
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
 } from "@/services/task.service";
-import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
-import { useDefaultAgent } from "@/store/configStore";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useIsTaskEditable } from "@/hooks/useIsTaskEditable";
 import { useTaskHold } from "@/hooks/useTaskHold";
@@ -75,9 +72,7 @@ interface TaskDraft {
   title: string;
   description: string;
   priority: TaskPriority;
-  agentId: string | null;
   isolatedWorktree: boolean;
-  autoApprove: boolean;
   baseBranch: string;
   labels: string[];
 }
@@ -90,7 +85,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
-  const defaultAgent = useDefaultAgent();
 
   const { data: tasks } = useTasksQuery(projectId);
   const task = (tasks ?? []).find((t) => t.id === taskId) ?? null;
@@ -102,12 +96,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const addAttachment = useAddTaskAttachmentMutation();
   const addAttachmentRef = useRef(addAttachment);
   addAttachmentRef.current = addAttachment;
-
-  const connection = selectedProject
-    ? connectionKeyFromProject(selectedProject)
-    : { type: "local" as const };
-  const { data: discovery } = useAgentDiscoveryQuery(connection);
-  const agents = discovery?.agents ?? [];
 
   const { setActiveTaskId } = useNavigationActions();
 
@@ -121,9 +109,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     title: "",
     description: "",
     priority: "None",
-    agentId: null,
     isolatedWorktree: true,
-    autoApprove: false,
     baseBranch: "",
     labels: [],
   });
@@ -142,9 +128,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         title: task.title,
         description: task.description ?? "",
         priority: task.priority,
-        agentId: task.agent_id ?? null,
         isolatedWorktree: task.isolated_worktree,
-        autoApprove: task.auto_approve,
         baseBranch: task.base_branch ?? "",
         labels: task.labels ?? [],
       });
@@ -168,7 +152,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     },
   );
 
-  const [agentError, setAgentError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -201,11 +184,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     // clearing phase, phase_status and ball. On anything with live pipeline state that silently
     // throws it away, so a no-op selection has to stay a no-op.
     if (newStatus === task.status) return;
-    if (newStatus === "Queue" && !task.agent_id && !defaultAgent) {
-      setAgentError("Assign an agent to this task, or set a project default in Settings.");
-      return;
-    }
-    setAgentError(null);
+    // No agent check here any more. Which agent runs is decided per role by the project's profiles
+    // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
+    // now refuse every move to Queue rather than the ones it was written for.
     updateTask.mutate({ taskId: task.id, updates: { status: newStatus as TaskStatus } });
   }
 
@@ -218,10 +199,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           title: draft.title.trim(),
           description: draft.description || null,
           priority: draft.priority,
-          agent_id: draft.agentId,
           // A non-git project has no worktree toggle in the UI, so never persist it as on.
           isolated_worktree: isGitRepo ? draft.isolatedWorktree : false,
-          auto_approve: draft.autoApprove,
           base_branch: draft.baseBranch || undefined,
           labels: draft.labels,
         },
@@ -359,29 +338,14 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
                       : undefined
                   }
-                  agentId={draft.agentId}
-                  agents={agents}
-                  onAgentChange={
-                    isEditable
-                      ? (id) => markDirtySetDraft((d) => ({ ...d, agentId: id }))
-                      : undefined
-                  }
                   isolatedWorktree={draft.isolatedWorktree}
                   onIsolatedWorktreeChange={
                     isEditable
                       ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
                       : undefined
                   }
-                  autoApprove={draft.autoApprove}
-                  onAutoApproveChange={
-                    isEditable
-                      ? (v) => markDirtySetDraft((d) => ({ ...d, autoApprove: v }))
-                      : undefined
-                  }
                   isGitRepo={isGitRepo ?? false}
                 />
-
-                {agentError && <p className="text-xs text-destructive">{agentError}</p>}
               </div>
 
               {/* The only record a Done or archived task has: once the session closes, its

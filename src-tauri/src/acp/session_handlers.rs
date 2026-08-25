@@ -129,8 +129,7 @@ pub async fn spawn_acp_session(
         TaskMetadata { task_id, task_name: task_name.clone(), branch_name: branch_name.clone(), session_start_sha: session_start_sha.clone() },
         &req,
     ).await? {
-        app_state.app_handle.emit("sessions-changed", ()).ok();
-        return Ok(SpawnSessionResult { log_id });
+        return Ok(finish_spawn(&app_state, task_id, log_id).await);
     }
 
     // Cold path
@@ -204,8 +203,25 @@ pub async fn spawn_acp_session(
         }
     }
 
+    Ok(finish_spawn(&app_state, task_id, log_id).await)
+}
+
+/// What every successful spawn does once its session exists, whichever path built it.
+///
+/// One function rather than a copy per return, because the two paths have to agree that a spawn is
+/// only finished when the sessions it replaces are gone. Superseding *after* the new session is
+/// registered, never before: a spawn that fails must leave the task holding the session it already
+/// had rather than none at all.
+async fn finish_spawn(
+    app_state: &Arc<AppState>,
+    task_id: Option<i32>,
+    log_id: i32,
+) -> SpawnSessionResult {
+    if let Some(task_id) = task_id {
+        close_superseded_sessions_for_task(app_state, task_id, log_id).await;
+    }
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    Ok(SpawnSessionResult { log_id })
+    SpawnSessionResult { log_id }
 }
 
 /// Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
@@ -219,20 +235,18 @@ pub async fn cancel_acp_session(
     Ok(())
 }
 
-/// The body of `cancel_acp_session`, reachable from inside the backend.
+/// Stop a session and forget it, without touching the task it was working for.
 ///
-/// The command form takes Tauri's `State`, which nothing running in a reader loop has. Split out
-/// because the plan interception ends the planner's session itself: a plan and its implementation
-/// can be different agents entirely, so the session that produced the plan has no part in carrying
-/// it out and is closed at the moment the plan is taken.
-pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
-    use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
+/// The half of `end_acp_session` that is about the session rather than the task. Split out because
+/// superseding a session must *not* fail its task — the task is mid-spawn for the replacement, and
+/// `fail_if_agent_running` would redden the card on every handoff. Shared rather than copied: the
+/// one other place that tears a session down by hand, `interrupt_task`, has already drifted from
+/// this, and a third copy would drift too.
+///
+/// Returns the session's project and task ids, which the caller needs for its own bookkeeping.
+async fn tear_down_session(app_state: &Arc<AppState>, log_id: i32) -> (Option<i32>, Option<i32>) {
+    use crate::acp::transport::{CancelRequest, MaestroRpcMessage, ServerRequest};
 
-    // This used to refuse outright when the owning task was InProgress or Review, telling the user
-    // to press a Stop button that does not exist on a Review card — and, because the callers
-    // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
-    // stale-connection case it exists for. What the guard was protecting is handled below instead:
-    // the task is failed here rather than being refused.
     let session_id = session_id_for(log_id);
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
     if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &cancel_msg).await {
@@ -244,17 +258,87 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
     // The connection server outlives its sessions deliberately: it is per connection, not per
     // session, and closing the last session used to drop it, which killed the transport and
     // surfaced as a lost connection. It is torn down when the project or the app closes.
-    let (project_id_for_save, task_id) = {
-        let mut sessions = app_state.acp.sessions.lock().await;
-        let project_id_for_save = sessions.get(&log_id).and_then(|p| p.project_id);
-        let task_id = sessions.get(&log_id).and_then(|p| p.task_id);
-        if let Some(mut session) = sessions.remove(&log_id) {
-            if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-                let _ = cancel_tx.send(());
-            }
+    let mut sessions = app_state.acp.sessions.lock().await;
+    let project_id = sessions.get(&log_id).and_then(|p| p.project_id);
+    let task_id = sessions.get(&log_id).and_then(|p| p.task_id);
+    if let Some(mut session) = sessions.remove(&log_id) {
+        if let Some(cancel_tx) = session.reader_cancel_tx.take() {
+            let _ = cancel_tx.send(());
         }
-        (project_id_for_save, task_id)
+    }
+    (project_id, task_id)
+}
+
+/// Close any other live session belonging to `task_id`, keeping `keep_log_id`.
+///
+/// A task runs one role at a time but got a new session for each: `resolve_turn_end` moves the task
+/// and never touches `acp.sessions`, so a coder's session was still open while its reviewer ran, and
+/// the reviewer's while the next coder ran. One live task was observed holding five. That is not
+/// only untidy — `occupied_slots` counts every session carrying a task id, so those five were five
+/// slots and ~2 GB against the host's agent limit for work one of them was doing.
+///
+/// Nothing the pipeline needs is lost. The reviewer reads the diff, not the coder's transcript, and
+/// the plan interception already establishes that a role's session has no part in the next role's
+/// work. `session_aliases` keeps the history entry either way.
+/// Which live sessions this task no longer needs.
+///
+/// Takes ids rather than the session map so the rule can be tested: `AcpProcess` owns a subprocess,
+/// a writer and a cancel channel, none of which a test can conjure, and the two things that could
+/// be wrong here are ordinary — closing the session that was just built, or closing one belonging
+/// to another task.
+fn superseded_log_ids(
+    live: impl Iterator<Item = (i32, Option<i32>)>,
+    task_id: i32,
+    keep_log_id: i32,
+) -> Vec<i32> {
+    live.filter(|(log_id, owner)| *log_id != keep_log_id && *owner == Some(task_id))
+        .map(|(log_id, _)| log_id)
+        .collect()
+}
+
+pub(crate) async fn close_superseded_sessions_for_task(
+    app_state: &Arc<AppState>,
+    task_id: i32,
+    keep_log_id: i32,
+) {
+    // Collected before tearing anything down: `tear_down_session` takes the same lock.
+    let superseded = {
+        let sessions = app_state.acp.sessions.lock().await;
+        superseded_log_ids(
+            sessions.iter().map(|(log_id, process)| (*log_id, process.task_id)),
+            task_id,
+            keep_log_id,
+        )
     };
+
+    if superseded.is_empty() {
+        return;
+    }
+
+    for log_id in &superseded {
+        tear_down_session(app_state, *log_id).await;
+    }
+    log::debug!(
+        "[acp] task {task_id} kept session {keep_log_id} and closed {} superseded: {superseded:?}",
+        superseded.len()
+    );
+
+    app_state.app_handle.emit("sessions-changed", ()).ok();
+}
+
+/// The body of `cancel_acp_session`, reachable from inside the backend.
+///
+/// The command form takes Tauri's `State`, which nothing running in a reader loop has. Split out
+/// because the plan interception ends the planner's session itself: a plan and its implementation
+/// can be different agents entirely, so the session that produced the plan has no part in carrying
+/// it out and is closed at the moment the plan is taken.
+pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
+    // This used to refuse outright when the owning task was InProgress or Review, telling the user
+    // to press a Stop button that does not exist on a Review card — and, because the callers
+    // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
+    // stale-connection case it exists for. What the guard was protecting is handled below instead:
+    // the task is failed here rather than being refused.
+    let (project_id_for_save, task_id) = tear_down_session(app_state, log_id).await;
 
     // Recorded here, not left to `reader_task`. Only a *direct* session has a reader loop that a
     // cancel breaks; a session on a shared connection server — the ordinary local path — has no
@@ -521,4 +605,40 @@ pub async fn close_acp_session(
         &app_state,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The review loop is what made this necessary: coder → reviewer → coder leaves a session
+    /// behind at every handoff, and one live task was observed holding five. Each of them counts
+    /// against the host's agent limit in `occupied_slots`, which filters on `task_id.is_some()`
+    /// with no notion of a session having been superseded.
+    #[test]
+    fn a_new_session_supersedes_the_task_s_older_ones() {
+        let live = [(10, Some(7)), (11, Some(7)), (12, Some(7))];
+
+        let closing = superseded_log_ids(live.into_iter(), 7, 12);
+
+        assert_eq!(closing, vec![10, 11]);
+    }
+
+    /// The two ways this could be actively harmful rather than merely useless.
+    #[test]
+    fn it_keeps_the_new_session_and_leaves_other_tasks_alone() {
+        let live = [(10, Some(7)), (11, Some(8)), (12, None), (13, Some(7))];
+
+        let closing = superseded_log_ids(live.into_iter(), 7, 13);
+
+        assert_eq!(closing, vec![10], "task 8's session and the task-less one are not ours");
+        assert!(!closing.contains(&13), "the session just spawned must survive its own supersede");
+    }
+
+    /// The ordinary case, and the one that runs on every first spawn: nothing to close.
+    #[test]
+    fn a_task_s_first_session_supersedes_nothing() {
+        assert!(superseded_log_ids([(10, Some(7))].into_iter(), 7, 10).is_empty());
+        assert!(superseded_log_ids([].into_iter(), 7, 10).is_empty());
+    }
 }

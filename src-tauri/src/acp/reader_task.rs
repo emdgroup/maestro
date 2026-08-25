@@ -561,21 +561,24 @@ async fn try_auto_approve_permission(
     log_id: i32,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
-    let settings = app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row(
-            "SELECT auto_approve, phase FROM tasks WHERE id = ?",
-            [task_id],
-            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, Option<String>>(1)?)),
-        )
+    let phase = app_state.db.lock().ok().and_then(|conn| {
+        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
+            row.get::<_, Option<String>>(0)
+        })
         .ok()
     });
 
-    let Some((auto_approve, phase)) = settings else { return false };
+    let Some(phase) = phase else { return false };
 
-    if !auto_approve {
-        return false;
-    }
-
+    // There used to be a per-task `auto_approve` flag in front of this, and a checkbox on the card
+    // driving it. It said the same thing twice: a role's permission mode already decides whether
+    // the agent stops to ask, and a task carrying "Tasks" through this pipeline wants the workflow
+    // to run. Two switches that can disagree about one question is how a task ended up in a mode
+    // that prompts with nothing allowed to answer.
+    //
+    // The phase is the whole gate now, and it is the right one: it already encodes whether the role
+    // running may write.
+    //
     // Auto-approve is a coder's affordance: it exists so a task that has been told to get on with
     // it is not stopped by a prompt for an edit it was always going to be allowed to make. It must
     // not answer for a role that exists *because* it cannot write.

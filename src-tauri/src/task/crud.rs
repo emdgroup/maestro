@@ -310,6 +310,55 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
     Ok(())
 }
 
+/// Choose which agent profile this task uses for each role.
+///
+/// Its own command rather than a field on `TaskConfigRequest`, for the reason
+/// `set_project_accent_color` is separate from the project settings form: that request rewrites
+/// every column it names, so a caller that only wanted to change one has to resend the rest
+/// correctly or silently clear them. The override dialog knows about roles and nothing else.
+///
+/// An empty map stores `NULL`, so "no overrides" has one representation rather than two.
+/// Ids are not checked against the project's profiles: a profile deleted after a task named it
+/// falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
+/// want anyway, and validating here would only move the same outcome earlier.
+#[tauri::command]
+#[specta::specta]
+pub fn set_task_profile_overrides(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+    overrides: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        store_profile_overrides(&conn, task_id, &overrides)?;
+    }
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(())
+}
+
+/// The write, split from the command so it can be tested without an `AppState`.
+fn store_profile_overrides(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    overrides: &std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let stored = if overrides.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::to_string(overrides)
+                .map_err(|e| format!("Failed to serialize profile overrides: {}", e))?,
+        )
+    };
+
+    conn.execute(
+        "UPDATE tasks SET profile_overrides = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&stored, &Utc::now().to_rfc3339(), task_id],
+    )
+    .map_err(|e| format!("Failed to update task profile overrides: {}", e))?;
+    Ok(())
+}
+
 /// Update task-level configuration overrides
 #[tauri::command]
 #[specta::specta]
@@ -364,6 +413,42 @@ mod tests {
         )
         .unwrap();
         conn.last_insert_rowid() as i32
+    }
+
+    /// Read back through `TASK_SELECT`/`from_row` rather than by querying the column directly,
+    /// because the positional index is the part that can be wrong: `from_row` reads by number, and
+    /// a column appended to the SELECT without a matching index reads its neighbour instead.
+    #[test]
+    fn profile_overrides_round_trip_through_the_task_row() {
+        use std::collections::HashMap;
+
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let task = create_task_impl(
+            &conn, project_id, "Valid Task Name".to_string(),
+            None,
+            vec![], vec![], "main".to_string(),
+            None, None, false, true, None,
+        )
+        .unwrap();
+        assert!(task.profile_overrides.is_none(), "a new task defers to the project");
+
+        let overrides = HashMap::from([("Reviewer".to_string(), "strict-reviewer".to_string())]);
+        store_profile_overrides(&conn, task.id, &overrides).unwrap();
+
+        let query = format!("{} WHERE id = ?", crate::models::TASK_SELECT);
+        let stored: crate::models::Task =
+            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        let parsed: HashMap<String, String> =
+            serde_json::from_str(stored.profile_overrides.as_deref().unwrap()).unwrap();
+        assert_eq!(parsed, overrides);
+
+        // Clearing the last override returns the task to "the project decides", which has to be
+        // NULL rather than "{}" or two values would mean the same thing.
+        store_profile_overrides(&conn, task.id, &HashMap::new()).unwrap();
+        let cleared: crate::models::Task =
+            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        assert_eq!(cleared.profile_overrides, None);
     }
 
     #[test]

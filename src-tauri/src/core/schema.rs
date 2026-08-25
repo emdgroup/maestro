@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- A display cache, not a lifecycle field — the sweep runs every three minutes and this is what
     -- lets the card answer "can this land" in between. NULL whenever there is nothing to say.
     pull_request_ci TEXT,
+    -- Which agent profile this task wants for a given role, as a JSON object keyed by role name:
+    -- {"Reviewer": "strict-reviewer"}. A role absent from it uses the project's default, so NULL
+    -- and "{}" both mean "the project decides everything", which is what almost every task wants.
+    --
+    -- Profile ids rather than inlined settings, so a task cannot describe an agent the project
+    -- never defined: `ProfilesDocument::resolve` already takes an override id and falls back when
+    -- it names nothing, which is also what makes a deleted profile harmless here.
+    profile_overrides TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -398,6 +406,7 @@ fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
         ("review_rounds", "review_rounds INTEGER NOT NULL DEFAULT 0"),
         ("fix_rounds", "fix_rounds INTEGER NOT NULL DEFAULT 0"),
         ("pull_request_ci", "pull_request_ci TEXT"),
+        ("profile_overrides", "profile_overrides TEXT"),
     ] {
         let col_exists: bool = conn
             .query_row(

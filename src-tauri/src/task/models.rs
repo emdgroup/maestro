@@ -11,7 +11,7 @@ use std::str::FromStr;
 /// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
 /// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
 /// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
-/// fix_rounds(33), pull_request_ci(34)
+/// fix_rounds(33), pull_request_ci(34), profile_overrides(35)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
@@ -20,7 +20,7 @@ pub const TASK_SELECT: &str =
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
      execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
      pull_request_url, pull_request_number, review_rounds, fix_rounds, \
-     pull_request_ci FROM tasks";
+     pull_request_ci, profile_overrides FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -94,6 +94,12 @@ pub struct Task {
     /// sweep; `None` while there is nothing to say.
     #[specta(optional)]
     pub pull_request_ci: Option<PullRequestCi>,
+    /// Which profile this task wants for a given role, as JSON keyed by role name. Carried as the
+    /// raw string rather than a parsed map because nothing in Rust reads it: it is written by the
+    /// card's override dialog and handed straight back to `resolve_agent_profile`, which already
+    /// takes an override id and falls back when it names nothing.
+    #[specta(optional)]
+    pub profile_overrides: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -236,6 +242,7 @@ impl Task {
             review_rounds: row.get(32)?,
             fix_rounds: row.get(33)?,
             pull_request_ci: row.get::<_, Option<String>>(34)?.and_then(|s| s.parse().ok()),
+            profile_overrides: row.get(35)?,
         })
     }
 }

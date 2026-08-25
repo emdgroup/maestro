@@ -160,6 +160,12 @@ pub async fn set_acp_mode(
     log_id: i32,
     mode_id: String,
 ) -> Result<(), String> {
+    // At `info` because which mode a role ended up in is not otherwise knowable: the request itself
+    // is only traced, and the fallback list in `useExecuteTask` is a guess about names that differ
+    // per harness. Tuning it needs evidence, and a mode nobody can observe is a mode nobody can
+    // correct — during the live pass this was the reason a blocked reviewer could not be explained.
+    log::info!("[acp] session-{log_id} permission mode set to {mode_id}");
+
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
         session_id,

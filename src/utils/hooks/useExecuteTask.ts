@@ -70,9 +70,19 @@ const REVIEWER_PROTOCOL =
   "about what to fix and where, because your reply is what the coder is given. Do not modify any " +
   "files.";
 
-/// Modes that let an agent write, in preference order, and the read-only ones for the three roles
-/// that must not. Used only when no profile names a mode.
-const WRITABLE_MODES = ["acceptEdits", "auto", "build"];
+/// Modes that let an agent write, and the read-only ones for the three roles that must not. Used
+/// only when no profile names a mode.
+///
+/// A fallback list, not a ladder: harnesses disagree about what these are called, so this is read
+/// in order and the first one *this* agent advertises wins. Every name past the first exists
+/// because some harness uses it and no other — the list is expected to grow as harnesses are tried,
+/// which is why the resolved mode is logged.
+///
+/// `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
+/// running a command, and a task in this pipeline is meant to run without a person: stopping on
+/// every test run is the failure mode, not a safeguard. `bypassPermissions` is last for the
+/// opposite reason — it is the right answer only when a harness offers nothing better.
+const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissions"];
 const READ_ONLY_MODES = ["readonly", "plan"];
 
 export function useExecuteTask(
@@ -348,11 +358,7 @@ export function useExecuteTask(
         }
       } else if (capturedModeIds.length > 0) {
         try {
-          const priorities = readOnly
-            ? READ_ONLY_MODES
-            : task.auto_approve
-              ? ["bypassPermissions", "full-access", "auto"]
-              : WRITABLE_MODES;
+          const priorities = readOnly ? READ_ONLY_MODES : WRITABLE_MODES;
           // The read-only fallback deliberately has none: an agent that advertises modes and none
           // of them is read-only has told us it cannot be held. Picking "the least bad writable
           // mode" there would quietly hand write access to a role whose whole point is not having

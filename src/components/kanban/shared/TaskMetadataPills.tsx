@@ -1,39 +1,34 @@
-import { GitBranch, Shield, ShieldOff } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import type { TaskPriority } from "@/types/bindings";
 import { PriorityPicker } from "./PriorityPicker";
-import { AgentPicker } from "./AgentPicker";
-import type { Agent } from "./AgentPicker";
 import { TogglePill } from "./TogglePill";
 
+/// What a task decides for itself, which is now only how urgent it is and whether it gets a
+/// worktree.
+///
+/// It used to also pick the harness and toggle auto-approve. Both are answered by the project's
+/// agent profiles instead: a profile names the agent and the permission mode for its role, and a
+/// task that wants a different one picks a *profile* through the override dialog rather than
+/// describing an agent the project never defined. Two places to say the same thing is how a task
+/// ended up pinned to a mode its role could not use.
 interface TaskMetadataPillsProps {
   priority: TaskPriority;
   onPriorityChange?: (p: TaskPriority) => void;
-  agentId: string | null;
-  agents: Agent[];
-  onAgentChange?: (id: string | null) => void;
   isolatedWorktree: boolean;
   onIsolatedWorktreeChange?: (v: boolean) => void;
-  autoApprove: boolean;
-  onAutoApproveChange?: (v: boolean) => void;
   isGitRepo: boolean;
 }
 
 export function TaskMetadataPills({
   priority,
   onPriorityChange,
-  agentId,
-  agents,
-  onAgentChange,
   isolatedWorktree,
   onIsolatedWorktreeChange,
-  autoApprove,
-  onAutoApproveChange,
   isGitRepo,
 }: TaskMetadataPillsProps) {
   return (
     <div className="flex flex-wrap gap-2">
       <PriorityPicker value={priority} onChange={onPriorityChange} />
-      <AgentPicker agentId={agentId} agents={agents} onChange={onAgentChange} />
       {isGitRepo && (
         <TogglePill
           value={isolatedWorktree}
@@ -42,13 +37,6 @@ export function TaskMetadataPills({
           icon={<GitBranch className="size-3 shrink-0" />}
         />
       )}
-      <TogglePill
-        value={autoApprove}
-        onChange={onAutoApproveChange}
-        label="Auto-approve"
-        icon={<Shield className="size-3 shrink-0" />}
-        activeIcon={<ShieldOff className="size-3 shrink-0" />}
-      />
     </div>
   );
 }
