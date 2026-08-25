@@ -1,99 +1,100 @@
 ---
 name: maestro-output
-description: Rich output formats for the Maestro desktop app, which renders live canvas dashboards, Mermaid diagrams, LaTeX math, SVG and SMILES inline. Use this whenever you are about to present data, metrics, comparisons, test or build results, a status overview, a report, or any answer covering more than a handful of items — Maestro can show it instead of describing it, so reach for these formats even when the user never mentions charts, dashboards or diagrams. Applies only when the environment variable MAESTRO_SESSION is set; if it is not, you are in a plain terminal where none of this renders, and this skill does not apply.
+description: MANDATORY output formatting for the Maestro desktop app, which renders canvas dashboards, Mermaid, LaTeX, SVG and SMILES inline. You MUST invoke this skill before writing any answer containing — a table, an inventory, items with attributes, more than three numbers, test or build or CI results, a status overview, a comparison (canvas or a GFM table); a process, control flow, architecture, state machine, or sequence of calls (Mermaid); a formula, complexity bound, derivation, or chemical equation (LaTeX); a physical or spatial layout, geometry, or UI arrangement (SVG); a molecule (SMILES). Users never ask for a chart or a diagram, so invoke on the shape of your answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
+user-invocable: false
+allowed-tools: Bash(maestro-server validate-canvas*) Bash(echo *)
 ---
 
 # Rendering output in Maestro
 
-## First: are you actually in Maestro?
+Session check — `MAESTRO_SESSION` is: !`echo "${MAESTRO_SESSION:-unset}"`
 
-This skill is installed globally, so it is in context for every session of this agent on this
-machine — including the ones the user starts from a plain terminal that has nothing to do with
-Maestro. There, a canvas fence is unparsed JSON on the screen, Mermaid is a wall of arrow syntax,
-and `maestro-server` is not on `PATH`.
-
-Maestro sets `MAESTRO_SESSION=1` on every agent it spawns. Check it once, the first time you are
-about to use one of these formats — not at the start of every session, since most sessions never
-need it:
-
-```
-echo "${MAESTRO_SESSION:-unset}"
-```
-
-If it prints `unset`, stop here and answer in ordinary markdown. Everything below assumes you are
-inside Maestro.
+`unset` means a plain terminal, not Maestro: none of this renders and `maestro-server` is absent.
+Answer in ordinary markdown and ignore the rest of this file. If the line is blank or still shows
+a raw `${...}`, the check did not run — run `echo $MAESTRO_SESSION` yourself before deciding.
 
 ## Choosing a format
 
-Maestro is a desktop app, not a terminal. Someone who asks "what's failing in CI?" in a window
-with a rendering surface expects to _see_ the answer, not read a paragraph reconstructing it. The
-default of dumping a bulleted list is a habit from text-only environments, and here it throws away
-the medium.
+Ask "does this answer have shape?", not "did they ask for a chart?" — they almost never will.
+Numbers over time, parts of a whole, items with attributes, a process with branches, a comparison:
+that is shape, and shape is what these formats are for.
 
-So the question to ask before answering is not "did they ask for a chart?" — they almost never
-will — but "does this answer have shape?" Numbers over time, parts of a whole, items with
-attributes, a process with branches, a comparison: all of that has shape, and shape is what these
-formats are for.
+| What the answer is                                                        | Reach for                        |
+| ------------------------------------------------------------------------- | -------------------------------- |
+| Rows the user will filter or page through, or read next to a chart        | canvas `DataTable`               |
+| Numbers that move — over time, across categories, as proportions          | canvas `Chart`                   |
+| A mix: totals, a table and a trend answering one question together        | canvas dashboard (`Card`, `Row`) |
+| Static tabular content — a comparison, an inventory, an attribute grid    | GFM table (sortable columns)     |
+| Control flow, architecture, state machines, sequences of calls            | ` ```mermaid `                   |
+| A formula, complexity bound, derivation                                   | `$...$` / `$$...$$` (KaTeX)      |
+| A chemical equation                                                       | `\ce{...}` inside KaTeX (mhchem) |
+| A diagram of something physical or spatial — layout, geometry             | ` ```svg `                       |
+| A molecule                                                                | ` ```smiles `                    |
+| Code                                                                      | fenced block with a language tag |
 
-| What the answer is                                                   | Reach for                        |
-| -------------------------------------------------------------------- | -------------------------------- |
-| Several things with attributes you'd compare — services, runs, files | canvas `DataTable`               |
-| Numbers that move — over time, across categories, as proportions     | canvas `Chart`                   |
-| A mix: some totals, a table, a trend, all answering one question     | canvas dashboard (`Card`, `Row`) |
-| Anything you'd otherwise render as a static picture of data          | canvas                           |
-| Control flow, architecture, state machines, sequences of calls       | ` ```mermaid `                   |
-| A formula, complexity bound, derivation                              | `$...$` / `$$...$$` (KaTeX)      |
-| A diagram of something physical or spatial — layout, geometry        | ` ```svg `                       |
-| A molecule                                                           | ` ```smiles `                    |
-| A handful of rows with no live data behind them                      | GFM table (sortable columns)     |
-| Code                                                                 | fenced block with a language tag |
+### `DataTable` or a GFM table?
+
+This is the pair that gets confused, and row count is not what separates them — a 40-row GFM
+table is fine, and a 3-row `DataTable` can be right.
+
+Reach for canvas `DataTable` when the table is **interactive or live**: the user will filter it,
+page through it, or read it alongside a `Chart` on the same surface that shares its data, or rows
+keep arriving while tool calls run. That interaction is the whole reason the component exists.
+
+Otherwise use a GFM table. It already sorts on column click, it costs no validation round trip,
+and it stays readable when the user copies the answer out of Maestro.
 
 ### When plain prose is the right answer
 
-Reaching for canvas on everything is its own failure — it is slower, it costs a validation round
-trip, and a dashboard wrapped around a single number is worse than the number. Answer in ordinary
-markdown when:
-
-- the answer is one value, one sentence, or one file path;
-- the user asked _why_ or _how_ rather than _what_ — explanation is prose;
-- you are mid-task and reporting progress;
-- you have three rows and no numbers, where a GFM table is lighter and reads the same.
-
-The test is whether the reader would scan the answer or read it. Scanning wants structure.
-Reading wants sentences.
+Answer in ordinary markdown when the answer is one value or one sentence, when the user asked
+_why_ or _how_, or when you are mid-task reporting progress. The test is whether the reader would
+scan the answer or read it — scanning wants structure, reading wants sentences.
 
 ## Canvas
 
-Canvas surfaces are live: you create one, push data into it, and update components in place as
-more data arrives, so a dashboard can fill in while tool calls are still running rather than
-appearing all at once at the end.
+Canvas surfaces are live: create one, push data in, and update components in place as more data
+arrives, so a dashboard fills in while tool calls are still running. They are emitted as
+` ```maestro-canvas ` fences holding one JSON message, which Maestro strips from the text stream
+and renders.
 
-They are emitted as ` ```maestro-canvas ` fences containing one JSON message. Maestro strips the
-fence from the text stream and renders it.
+Read `references/canvas.md` before your first fence in a session — message protocol and its
+mandatory ordering, validation, component selection, and the failure patterns that leave a surface
+stuck on skeletons. Its component catalog is `references/canvas-catalog.json`.
 
-Read `references/canvas.md` before writing your first fence in a session — it covers the message
-protocol and its mandatory ordering, the validation step, component selection, and the failure
-patterns that produce a surface stuck on skeletons. The component catalog it works from is
-`references/canvas-catalog.json`, which documents every component's props.
+Two things bite before you get there:
 
-Two things worth knowing before you get there, because they are the ones that bite:
+- **Data before component.** A component pointing at a path with nothing behind it shows a
+  skeleton forever.
+- **Validate every fence** with `maestro-server validate-canvas` before emitting it. You never see
+  the rendered result, so this is your only signal that what you emitted is a working surface
+  rather than a broken one the user is now staring at.
 
-- Every fence must be validated with `maestro-server validate-canvas` before you emit it. A fence
-  with a schema error renders as a broken surface the user has to look at, and you will not see
-  the error yourself — validation is the only feedback loop you have.
-- Data goes in its own message _before_ the component that references it. A component pointing at
-  a path with nothing behind it shows a skeleton forever.
+Keep that validation loop out of your reply: never paste the fence JSON, the command, or its
+output; never announce that you are about to validate or that it passed; never narrate a retry.
+The user sees a rendered surface, not the machinery. If a fence cannot be made to validate, drop
+the canvas and answer in plain markdown rather than explaining the failure.
 
 ## The other formats
 
 These need no validation and no protocol — write the fence and Maestro renders it.
 
 - **Mermaid** — ` ```mermaid `, all the usual diagram types (flowchart, sequence, class, state, ER, gantt).
-- **LaTeX** — `$...$` inline and `$$...$$` block, KaTeX syntax.
-- **SVG** — ` ```svg `, for spatial or geometric figures Mermaid cannot express.
+- **LaTeX** — `$...$` inline and `$$...$$` block, KaTeX syntax. `mhchem` is loaded, so `\ce{H2O}`
+  and reaction arrows work inside the same delimiters.
+- **SVG** — ` ```svg `, for spatial or geometric figures Mermaid cannot express. A raw `<svg>`
+  element written straight into the markdown renders too. Either way it gets click-to-zoom.
 - **SMILES** — ` ```smiles `, for chemical structures.
 - **Tables and code** — GFM tables render with sortable columns; fenced code blocks are syntax
   highlighted from their language tag, so always tag them.
 
-If the project has a `.maestro/canvas-skills.md`, read it before building a canvas — it holds
-patterns specific to that codebase and overrides the general guidance here.
+### Smaller things the renderer does
+
+- **Task lists and strikethrough** — `- [ ]`, `- [x]`, `~~text~~`. Better than a bulleted list
+  with the word "done" in it.
+- **`==highlight==`** renders as `<mark>` — point at the one cell or line that matters.
+- **Headings are anchored** — `[jump](#the-heading)` scrolls the panel. Useful in a long report.
+- **`file://` links open in Maestro**, not a browser. Prefer one to a bare quoted path.
+- **Images render inline** — `![alt](path)`, project-relative, `file://` or `data:`; proxied and
+  zoomable, so a screenshot or generated PNG can go straight in.
+- **A ` ```markdown ` fence renders as markdown**, nested fences and all. Use a language-tagged
+  fence when you mean "show the source".

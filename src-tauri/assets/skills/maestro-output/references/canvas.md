@@ -124,7 +124,7 @@ empty cells, because the renderer reads `row[j]` for column `j`. Nothing warns y
 | Part-of-whole hierarchy   | `Chart` type treemap — data `[{name, size, children?}]`             |
 | Mixed line + bar + area   | `Chart` type composed — add `seriesType` per series item            |
 | Hierarchical radial       | `Chart` type sunburst — single root `{name, value, children:[...]}` |
-| Tabular data, many rows   | `DataTable`                                                         |
+| Filterable or paged rows  | `DataTable` — or when paired with a `Chart`                         |
 | Prose, formatted text     | `Markdown`                                                          |
 | Stat callout (KPI)        | `Row` of `Card` each containing `Text` variant subheading           |
 | Multi-section layout      | `Tabs` with one child per tab, or `Column` of `Card`                |
