@@ -6,6 +6,7 @@ import {
   FileArchive,
   FileIcon,
   XIcon,
+  AlertCircleIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
@@ -98,18 +99,25 @@ function ImageCard({
   onRemove: () => void;
 }) {
   const mime = imageMime(attachment.displayName);
-  const { data: dataUrl } = useLocalImageDataUrl(attachment.localAbsPath, mime);
+  const { data: dataUrl } = useLocalImageDataUrl(
+    attachment.error ? "" : attachment.localAbsPath,
+    mime,
+  );
   const meta =
     attachment.sizeBytes !== undefined ? formatFileSize(attachment.sizeBytes) : undefined;
 
   return (
-    <Attachment size="sm">
+    <Attachment size="sm" state={attachment.error ? "error" : "done"}>
       <AttachmentMedia variant="image">
-        {dataUrl && <img src={dataUrl} alt={attachment.displayName} />}
+        {attachment.error ? (
+          <AlertCircleIcon className="w-4 h-4" />
+        ) : (
+          dataUrl && <img src={dataUrl} alt={attachment.displayName} />
+        )}
       </AttachmentMedia>
       <AttachmentContent>
         <AttachmentTitle>{attachment.displayName}</AttachmentTitle>
-        {meta && <AttachmentDescription>{meta}</AttachmentDescription>}
+        <AttachmentDescription>{attachment.error ?? meta}</AttachmentDescription>
       </AttachmentContent>
       <AttachmentActions>
         <AttachmentAction aria-label={`Remove ${attachment.displayName}`} onClick={onRemove}>
@@ -132,13 +140,13 @@ function DocCard({
     attachment.sizeBytes !== undefined ? formatFileSize(attachment.sizeBytes) : undefined;
 
   return (
-    <Attachment size="sm">
+    <Attachment size="sm" state={attachment.error ? "error" : "done"}>
       <AttachmentMedia>
-        <DynamicIcon icon={icon} />
+        {attachment.error ? <AlertCircleIcon className="w-4 h-4" /> : <DynamicIcon icon={icon} />}
       </AttachmentMedia>
       <AttachmentContent>
         <AttachmentTitle>{attachment.displayName}</AttachmentTitle>
-        {meta && <AttachmentDescription>{meta}</AttachmentDescription>}
+        <AttachmentDescription>{attachment.error ?? meta}</AttachmentDescription>
       </AttachmentContent>
       <AttachmentActions>
         <AttachmentAction aria-label={`Remove ${attachment.displayName}`} onClick={onRemove}>

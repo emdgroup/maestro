@@ -1759,6 +1759,25 @@ export const commands = {
       else return { status: "error", error: e as any };
     }
   },
+  /**
+   * Check a file against the limits `prepareExternalAttachments` enforces, reading only its
+   * metadata. Lets the compose bar reject a file the moment it is picked instead of on send, without
+   * the limits having to be restated on the TypeScript side.
+   */
+  async validateAttachment(
+    path: string,
+    isImage: boolean,
+  ): Promise<Result<AttachmentValidation, string>> {
+    try {
+      return {
+        status: "ok",
+        data: await TAURI_INVOKE("validate_attachment", { path, isImage }),
+      };
+    } catch (e) {
+      if (e instanceof Error) throw e;
+      else return { status: "error", error: e as any };
+    }
+  },
   async saveClipboardImage(base64Data: string, mimeType: string): Promise<Result<string, string>> {
     try {
       return {
@@ -2718,6 +2737,14 @@ export type AppSettings = {
    * OS toast when an agent's turn ends in an error, a refusal, or a limit.
    */
   notify_on_failure?: boolean;
+};
+export type AttachmentValidation = {
+  size_bytes: number;
+  /**
+   * `None` when the file can be attached. Otherwise the reason to show the user, phrased for
+   * them rather than for a log.
+   */
+  rejection: string | null;
 };
 /**
  * Single authentication method exposed to the frontend.

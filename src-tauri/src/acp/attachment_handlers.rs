@@ -14,8 +14,9 @@ fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     let size = bytes.len() as u64;
     if size > MAX_IMAGE_BYTES {
         return Err(format!(
-            "Image too large ({} MB, max 10 MB)",
-            size / 1_048_576
+            "Image too large ({} MB, max {} MB)",
+            size / 1_048_576,
+            MAX_IMAGE_BYTES / 1_048_576
         ));
     }
     if size <= SCALE_THRESHOLD_BYTES {
@@ -102,6 +103,42 @@ fn is_pdf_extension(path: &str) -> bool {
 pub struct ExternalFileRequest {
     pub path: String,
     pub is_image: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct AttachmentValidation {
+    pub size_bytes: u64,
+    /// `None` when the file can be attached. Otherwise the reason to show the user, phrased for
+    /// them rather than for a log.
+    pub rejection: Option<String>,
+}
+
+/// Check a file against the limits [`prepare_external_attachments`] enforces, reading only its
+/// metadata. Lets the compose bar reject a file the moment it is picked instead of on send, without
+/// the limits having to be restated on the TypeScript side.
+#[tauri::command]
+#[specta::specta]
+pub async fn validate_attachment(
+    path: String,
+    is_image: bool,
+) -> Result<AttachmentValidation, String> {
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("Cannot read '{path}': {e}"))?;
+    let size_bytes = metadata.len();
+
+    let rejection = if (is_image || is_image_extension(&path)) && size_bytes > MAX_IMAGE_BYTES {
+        Some(format!(
+            "Image too large ({} MB, max {} MB)",
+            size_bytes / 1_048_576,
+            MAX_IMAGE_BYTES / 1_048_576
+        ))
+    } else {
+        None
+    };
+
+    Ok(AttachmentValidation { size_bytes, rejection })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
