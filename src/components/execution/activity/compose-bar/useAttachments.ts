@@ -28,14 +28,17 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
       if (isImage && !promptCapabilities?.image) continue;
       const displayName = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
       let sizeBytes: number | undefined;
+      let error: string | undefined;
       try {
-        sizeBytes = await api.getFileSize(path);
-      } catch {
-        // leave undefined
+        const validation = await api.validateAttachment(path, isImage);
+        sizeBytes = validation.size_bytes;
+        error = validation.rejection ?? undefined;
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
       }
       setAttachments((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), displayName, localAbsPath: path, isImage, sizeBytes },
+        { id: crypto.randomUUID(), displayName, localAbsPath: path, isImage, sizeBytes, error },
       ]);
     }
   }, [promptCapabilities]);
@@ -74,6 +77,12 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
         const displayName =
           pastedCount === 0 ? `Pasted image.${ext}` : `Pasted image (${pastedCount + 1}).${ext}`;
         pastedCount += 1;
+        let pasteError: string | undefined;
+        try {
+          pasteError = (await api.validateAttachment(tempPath, true)).rejection ?? undefined;
+        } catch (e) {
+          pasteError = e instanceof Error ? e.message : String(e);
+        }
         setAttachments((prev) => [
           ...prev,
           {
@@ -82,6 +91,7 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
             localAbsPath: tempPath,
             isImage: true,
             sizeBytes: file.size,
+            error: pasteError,
           },
         ]);
       }

@@ -142,6 +142,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::load_acp_session,
             crate::ipc::drain_acp_replay,
             crate::ipc::prepare_external_attachments,
+            crate::ipc::validate_attachment,
             crate::ipc::save_clipboard_image,
             crate::ipc::close_acp_session,
             crate::ipc::recover_task_session,
