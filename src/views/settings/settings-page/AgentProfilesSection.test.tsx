@@ -160,8 +160,12 @@ describe("AgentProfilesSection", () => {
 
   /// The model was a free-text box, which is why this became a list at all. The list comes from
   /// asking the agent, so it is only as good as the machine doing the asking.
-  it("offers the models the agent reported", () => {
-    stored.current = oneCoder(null);
+  ///
+  /// Asserted through the trigger's label rather than an `<option>` list: this is a base-ui Select,
+  /// which renders a button and portals its items only while open, so the visible label is both the
+  /// only thing present when closed and the thing the user actually reads.
+  it("names the chosen model on the trigger", () => {
+    stored.current = oneCoder("opus");
     probe.current = {
       data: [
         { model_id: "sonnet", name: "Sonnet" },
@@ -173,12 +177,7 @@ describe("AgentProfilesSection", () => {
 
     renderSection();
 
-    const select = screen.getByRole("combobox", { name: "Model for Coder" });
-    expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual([
-      "agent default",
-      "Sonnet",
-      "Opus",
-    ]);
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("Opus");
   });
 
   /// The failure that turning a text box into a list invites: the stored value silently vanishing
@@ -195,9 +194,9 @@ describe("AgentProfilesSection", () => {
 
     renderSection();
 
-    const select = screen.getByRole("combobox", { name: "Model for Coder" }) as HTMLSelectElement;
-    expect(select.value).toBe("gpt-5-codex");
-    expect(screen.getByRole("option", { name: "gpt-5-codex (not offered)" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
+      "gpt-5-codex (not offered)",
+    );
   });
 
   /// A probe that failed and an agent that genuinely has one model both come back empty, and the
@@ -208,8 +207,8 @@ describe("AgentProfilesSection", () => {
 
     renderSection();
 
-    expect(
-      screen.getByRole("option", { name: "agent default (could not ask)" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
+      "agent default (could not ask)",
+    );
   });
 });

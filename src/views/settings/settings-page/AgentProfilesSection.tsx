@@ -3,6 +3,7 @@ import { Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
 import { useAgentModelsQuery } from "@/services/execution.service";
 import { useSelectedProject } from "@/store/projectStore";
@@ -96,6 +97,22 @@ function ProfileCard({
   // team's choice because this machine could not confirm it would be worse than showing it.
   const unlisted = profile.model && !available.some((m) => m.model_id === profile.model);
 
+  const agentMissing = !!profile.agent_id && !agents.some((a) => a.id === profile.agent_id);
+  const agentLabel = agentMissing
+    ? `${profile.agent_id} (not found)`
+    : (agents.find((a) => a.id === profile.agent_id)?.name ?? "Select an agent");
+
+  const defaultModelLabel = modelsLoading
+    ? "asking the agent…"
+    : modelsFailed
+      ? "agent default (could not ask)"
+      : "agent default";
+  const modelLabel = !profile.model
+    ? defaultModelLabel
+    : unlisted
+      ? `${profile.model} (not offered)`
+      : (available.find((m) => m.model_id === profile.model)?.name ?? profile.model);
+
   return (
     <div
       className={cn(
@@ -133,50 +150,63 @@ function ProfileCard({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-muted-foreground space-y-1">
-          Agent
-          <select
-            value={profile.agent_id}
-            onChange={(e) => onChange({ agent_id: e.target.value })}
-            className="w-full h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-          >
-            {/* Kept even when discovery has not found it: a profile naming an agent this machine
-                lacks is still the team's choice, and silently re-pointing it at another agent
-                would be worse than showing it. */}
-            {!agents.some((a) => a.id === profile.agent_id) && profile.agent_id && (
-              <option value={profile.agent_id}>{profile.agent_id} (not found)</option>
-            )}
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-[11px] text-muted-foreground space-y-1">
-          Model
-          <select
+        <div className="space-y-1">
+          <span className="text-[11px] text-muted-foreground">Agent</span>
+          {/* `?? ""` because base-ui hands back null when a selection is cleared, which a native
+              select could not do. An empty agent id is "not chosen yet", which the resolver
+              already treats as falling back to the project default. */}
+          <Select value={profile.agent_id} onValueChange={(v) => onChange({ agent_id: v ?? "" })}>
+            <SelectTrigger size="sm" className="w-full text-xs" aria-label={agentLabel}>
+              <span className="truncate flex-1 text-left">{agentLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              {/* Kept even when discovery has not found it: a profile naming an agent this machine
+                  lacks is still the team's choice, and silently re-pointing it at another agent
+                  would be worse than showing it. */}
+              {agentMissing && (
+                <SelectItem value={profile.agent_id} className="text-xs">
+                  {profile.agent_id} (not found)
+                </SelectItem>
+              )}
+              {agents.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id} className="text-xs">
+                  {agent.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <span className="text-[11px] text-muted-foreground">Model</span>
+          <Select
             value={profile.model ?? ""}
             disabled={modelsLoading}
-            onChange={(e) => onChange({ model: e.target.value || null })}
-            className="w-full h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground disabled:opacity-50"
-            aria-label={`Model for ${profile.name}`}
+            onValueChange={(v) => onChange({ model: v || null })}
           >
-            <option value="">
-              {modelsLoading
-                ? "asking the agent…"
-                : modelsFailed
-                  ? "agent default (could not ask)"
-                  : "agent default"}
-            </option>
-            {unlisted && <option value={profile.model!}>{profile.model} (not offered)</option>}
-            {available.map((model) => (
-              <option key={model.model_id} value={model.model_id}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger
+              size="sm"
+              className="w-full text-xs"
+              aria-label={`Model for ${profile.name}`}
+            >
+              <span className="truncate flex-1 text-left">{modelLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" className="text-xs">
+                {defaultModelLabel}
+              </SelectItem>
+              {unlisted && (
+                <SelectItem value={profile.model!} className="text-xs">
+                  {profile.model} (not offered)
+                </SelectItem>
+              )}
+              {available.map((model) => (
+                <SelectItem key={model.model_id} value={model.model_id} className="text-xs">
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Free text because mode ids differ per harness and the set is not known until the agent is

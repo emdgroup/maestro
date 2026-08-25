@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from "@/ui/dialog";
 import { Button, buttonVariants } from "@/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useAgentProfilesQuery } from "@/services/project.service";
 import { useSetTaskProfileOverridesMutation } from "@/services/task.service";
 import type { AgentRole, Task } from "@/types/bindings";
@@ -92,28 +93,39 @@ export function TaskProfilesDialog({
             const forRole = profiles.filter((p) => p.role === role);
             const defaultName =
               forRole.find((p) => p.id === defaults[role])?.name ?? forRole[0]?.name;
+            const chosen = choices[role] ?? USE_PROJECT_DEFAULT;
+            const fallbackLabel =
+              forRole.length === 0
+                ? "No profile — stage skipped"
+                : `Project default${defaultName ? ` (${defaultName})` : ""}`;
 
             return (
-              <label key={role} className="block text-xs space-y-1">
+              <div key={role} className="text-xs space-y-1">
                 <span className="font-medium">{label}</span>
-                <select
-                  value={choices[role] ?? USE_PROJECT_DEFAULT}
+                <Select
+                  value={chosen}
                   disabled={forRole.length === 0}
-                  onChange={(e) => setChoices((prev) => ({ ...prev, [role]: e.target.value }))}
-                  className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground disabled:opacity-50"
+                  // `?? ""` because base-ui hands back null when a selection is cleared, and ""
+                  // is already this dialog's word for "use the project default".
+                  onValueChange={(v) => setChoices((prev) => ({ ...prev, [role]: v ?? "" }))}
                 >
-                  <option value={USE_PROJECT_DEFAULT}>
-                    {forRole.length === 0
-                      ? "No profile — stage skipped"
-                      : `Project default${defaultName ? ` (${defaultName})` : ""}`}
-                  </option>
-                  {forRole.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <SelectTrigger size="sm" className="w-full text-xs" aria-label={label}>
+                    <span className="truncate flex-1 text-left">
+                      {forRole.find((p) => p.id === chosen)?.name ?? fallbackLabel}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={USE_PROJECT_DEFAULT} className="text-xs">
+                      {fallbackLabel}
+                    </SelectItem>
+                    {forRole.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                        {profile.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             );
           })}
         </div>
