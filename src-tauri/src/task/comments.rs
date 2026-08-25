@@ -114,12 +114,35 @@ pub fn latest_of_kind(
 /// Best-effort by design: this runs from the turn-ended handler, where failing to write a note
 /// must not stop the task moving. The caller logs rather than propagating.
 pub fn record_outcome(conn: &Connection, task_id: i32, phase: Option<&str>, message: &str) {
+    record_as(conn, task_id, kind_for_phase(phase), phase, message)
+}
+
+/// Record what an agent said when its turn ended without producing anything.
+///
+/// A deliverable exists only when the phase completed. A turn that failed or stalled still leaves
+/// text worth keeping — the error, the question — but it is not a verdict, a plan or a proposal,
+/// and filing it as one is not cosmetic: the gates read the thread by kind. A reviewer killed by a
+/// session limit had `You've hit your session limit` stored as its verdict, which is what
+/// `latest_of_kind(task, "verdict")` then returns; a planner dying the same way would offer its
+/// error to the plan gate as the plan to implement.
+///
+/// The phase is still recorded — it is where this happened, and useful — only the kind changes.
+pub fn record_unfinished(conn: &Connection, task_id: i32, phase: Option<&str>, message: &str) {
+    record_as(conn, task_id, "outcome", phase, message)
+}
+
+fn record_as(
+    conn: &Connection,
+    task_id: i32,
+    kind: &str,
+    phase: Option<&str>,
+    message: &str,
+) {
     let trimmed = message.trim();
     if trimmed.is_empty() {
         return;
     }
 
-    let kind = kind_for_phase(phase);
     if let Err(e) = append(conn, task_id, kind, "agent", Some(trimmed), None, phase) {
         log::warn!("[task] could not record the outcome of task {task_id}: {e}");
     }
@@ -253,6 +276,39 @@ mod tests {
             .query_row("SELECT body FROM task_comments WHERE task_id = ?", [task_id], |r| r.get(0))
             .unwrap();
         assert_eq!(body, "finished", "surrounding whitespace should not be stored");
+    }
+
+    /// `kind_for_phase` answers "what does this role deliver", which is the wrong question for a
+    /// turn that produced nothing. Observed live: a reviewer killed by a session limit had
+    /// "You've hit your session limit" filed as its verdict, so that is what
+    /// `latest_of_kind(task, "verdict")` returned. A planner dying the same way would have offered
+    /// its error to the plan gate as the plan to implement.
+    #[test]
+    fn a_phase_that_produced_nothing_files_no_deliverable() {
+        for phase in ["SelfReview", "Drafting", "Refining"] {
+            let (conn, task_id) = db_with_task();
+
+            record_unfinished(&conn, task_id, Some(phase), "You've hit your session limit");
+
+            assert_eq!(
+                kinds(&conn, task_id),
+                vec!["outcome".to_string()],
+                "{phase} must not file an error as its deliverable"
+            );
+            assert_ne!(
+                kind_for_phase(Some(phase)),
+                "outcome",
+                "{phase} needs a deliverable kind of its own for this test to mean anything"
+            );
+
+            // Where it happened is still worth keeping; only what it counts as changes.
+            let stored: Option<String> = conn
+                .query_row("SELECT phase FROM task_comments WHERE task_id = ?", [task_id], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(stored.as_deref(), Some(phase));
+        }
     }
 
     /// The thread is a history, so entries accumulate rather than replacing one another — this is

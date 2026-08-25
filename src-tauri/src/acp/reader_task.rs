@@ -329,13 +329,18 @@ async fn resolve_turn_end(
 
         // Only when the transition applied. A turn resolved against a task the user already moved
         // has no claim on its record either.
+        //
+        // Filed by whether the phase produced anything, not by which phase it was: `kind_for_phase`
+        // answers "what does this role deliver", which is the wrong question for a turn that failed
+        // or stopped to ask something. It put a session-limit error in the thread as a reviewer's
+        // verdict.
         if changed {
-            crate::task::comments::record_outcome(
-                &conn,
-                task_id,
-                phase.as_deref(),
-                &closing_message,
-            );
+            let phase = phase.as_deref();
+            if outcome == TurnOutcome::Complete {
+                crate::task::comments::record_outcome(&conn, task_id, phase, &closing_message);
+            } else {
+                crate::task::comments::record_unfinished(&conn, task_id, phase, &closing_message);
+            }
         }
 
         changed
