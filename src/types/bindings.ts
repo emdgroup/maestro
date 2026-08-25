@@ -1369,6 +1369,14 @@ async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], em
     else return { status: "error", error: e  as any };
 }
 },
+async validateAttachment(path: string, isImage: boolean) : Promise<Result<AttachmentValidation, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("validate_attachment", { path, isImage }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async saveClipboardImage(base64Data: string, mimeType: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_clipboard_image", { base64Data, mimeType }) };
@@ -2307,6 +2315,12 @@ notify_on_failure?: boolean }
 /**
  * Single authentication method exposed to the frontend.
  */
+export type AttachmentValidation = { size_bytes: number; 
+/**
+ * `None` when the file can be attached. Otherwise the reason to show the user, phrased for
+ * them rather than for a log.
+ */
+rejection: string | null }
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
  * An Azure DevOps project option for combobox display.

@@ -5,4 +5,5 @@ export interface ExternalAttachment {
   isImage: boolean;
   mimeType?: string;
   sizeBytes?: number;
+  error?: string;
 }

@@ -110,7 +110,7 @@ export function AppHeader({
       {/* Left section: Logo + divider + Project Dropdown */}
       <div className="flex items-center gap-3 min-w-0">
         <Select value={currentProject} onValueChange={handleValueChange}>
-          <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted text-xs">
+          <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted/30 text-xs">
             <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Select project">{currentProject.name}</SelectValue>
           </SelectTrigger>

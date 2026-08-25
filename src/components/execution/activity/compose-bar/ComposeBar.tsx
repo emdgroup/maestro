@@ -63,6 +63,7 @@ export function ComposeBar({
   const [value, setValue] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sizerRef = useRef<HTMLSpanElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -107,6 +108,7 @@ export function ComposeBar({
     mentionAC.reset();
     commandAC.reset();
     attach.reset();
+    setSendError(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [mentionAC, commandAC, attach]);
 
@@ -176,6 +178,7 @@ export function ComposeBar({
       return;
     }
 
+    setSendError(null);
     setIsSending(true);
     try {
       const attachmentBlocks: JsonValue[] = [];
@@ -243,6 +246,8 @@ export function ComposeBar({
 
       onSend(trimmed, [...attachmentBlocks, ...mentionBlocks] as JsonValue);
       resetForm();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSending(false);
     }
@@ -298,6 +303,7 @@ export function ComposeBar({
     const newValue = e.target.value;
     const cursor = e.target.selectionStart ?? newValue.length;
     setValue(newValue);
+    if (sendError) setSendError(null);
     mentionAC.setMentions((prev) => prev.filter((m) => newValue.includes(`@${m.displayName}`)));
     const commandDetected = commandAC.onInputChange(newValue, cursor);
     if (commandDetected) mentionAC.closeMentions();
@@ -307,7 +313,8 @@ export function ComposeBar({
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
-  const sendDisabled = isProcessing || isSending || !value.trim();
+  const hasAttachmentErrors = attach.attachments.some((a) => !!a.error);
+  const sendDisabled = isProcessing || isSending || !value.trim() || hasAttachmentErrors;
 
   return (
     <>
@@ -389,6 +396,7 @@ export function ComposeBar({
               className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed custom-scrollbar"
             />
           </div>
+          {sendError && <p className="px-3.5 pb-1 text-xs text-destructive">{sendError}</p>}
           <div className="flex items-center gap-2 pl-2 pr-2 pb-2">
             <div className="w-8 h-8 flex items-center justify-center shrink-0">
               <LiquidContextIndicator
