@@ -134,6 +134,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 ref={agentProfilesSectionRef}
                 projectId={projectId}
                 agents={agents}
+                connection={connection}
               />
               <AppearanceSection />
               <ConcurrencySection />
