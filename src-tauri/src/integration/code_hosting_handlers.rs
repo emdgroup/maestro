@@ -30,7 +30,9 @@ pub enum CodeHostingRung {
     ForgeUnknown,
     /// The forge is known but no credential answered for it right now.
     NotConnected,
-    /// Push and pull requests are both available.
+    /// A credential answered for the forge. Whether a pull request can be opened on it is a
+    /// separate question — the ladder is about credentials, not about what the forge supports.
+    /// See `CodeHostingStatus::forge_supports_pull_requests`.
     Ready,
 }
 
@@ -46,6 +48,14 @@ pub struct CodeHostingStatus {
     pub remote: Option<String>,
     /// Forge coordinates. `None` until the forge is identified.
     pub config: Option<ProjectCodeHostingConfig>,
+    /// Whether Maestro can open a pull request on this forge at all.
+    ///
+    /// Deliberately not a rung: the ladder is a total order over credential state, and capability
+    /// is orthogonal to it — a forge can be connected and still unsupported. Folding the two
+    /// together would force a precedence choice and lose the distinction the UI needs, because
+    /// "connect it in Settings" is the right prompt for an unconnected GitHub and a misleading one
+    /// for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
+    pub forge_supports_pull_requests: bool,
     /// Whether this call wrote `code_hosting` into `.maestro/settings.json`.
     pub applied: bool,
 }
@@ -148,6 +158,7 @@ pub async fn code_hosting_status(
         landing_mode,
         remote: None,
         config: None,
+        forge_supports_pull_requests: false,
         applied: false,
     };
 
@@ -175,6 +186,7 @@ pub async fn code_hosting_status(
             landing_mode,
             remote: Some(remote_name),
             config: None,
+            forge_supports_pull_requests: false,
             applied: false,
         });
     };
@@ -200,6 +212,9 @@ pub async fn code_hosting_status(
         rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },
         landing_mode,
         remote: Some(remote_name),
+        forge_supports_pull_requests: crate::integration::pull_request::supports_pull_requests(
+            &config,
+        ),
         config: Some(config),
         applied,
     })

@@ -127,6 +127,12 @@ interface ApproveModalProps {
   pullRequestProvider?: string | null;
   /** Set when that forge is known but no credential answered for it. */
   pullRequestNeedsConnecting?: boolean;
+  /**
+   * Whether Maestro can open a pull request on this forge at all — a different question from
+   * whether it is connected. Required rather than optional so a new call site has to answer it;
+   * defaulting it would quietly restore the offer-then-fail this prop exists to prevent.
+   */
+  forgeSupportsPullRequests: boolean;
   onConfirm: (data: {
     mergeStrategy: string;
     includeUntracked: boolean;
@@ -145,6 +151,7 @@ export function ApproveModal({
   pushRemote,
   pullRequestProvider,
   pullRequestNeedsConnecting,
+  forgeSupportsPullRequests,
   onConfirm,
   isPending,
 }: ApproveModalProps) {
@@ -163,7 +170,11 @@ export function ApproveModal({
   const canPush = hasWorktree && !!pushRemote;
   // Knowing the forge is not the same as being able to post to it, and the two props must not be
   // able to disagree: an unconnected forge gets the invitation below, never the option.
-  const canOpenPullRequest = canPush && !!pullRequestProvider && !pullRequestNeedsConnecting;
+  const canOpenPullRequest =
+    canPush && !!pullRequestProvider && forgeSupportsPullRequests && !pullRequestNeedsConnecting;
+  // Inviting someone to connect a forge that still could not open a pull request is worse than
+  // saying nothing: the work it asks for changes nothing.
+  const showConnectInvitation = pullRequestNeedsConnecting && forgeSupportsPullRequests;
   // Pushing is worth offering even when everything is already committed, which is why this
   // no longer keys off uncommitted changes alone.
   const showRadio = hasWorktree && (hasUncommitted || canPush);
@@ -224,7 +235,7 @@ export function ApproveModal({
             </RadioGroup>
             {/* An invitation, not an error. The forge is known but nothing has authenticated for
                 it, and every other way of approving stays available. */}
-            {pullRequestNeedsConnecting && (
+            {showConnectInvitation && (
               <p className="text-xs text-muted-foreground">
                 Connect {pullRequestProvider} in Settings to open a pull request from here.
               </p>

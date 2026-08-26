@@ -247,7 +247,7 @@ pub async fn list_azuredevops_repos(
 
 /// List repositories for a Bitbucket workspace (Cloud) or project key (Server/DC).
 ///
-/// Cloud:  GET api.bitbucket.org/2.0/repositories/{workspace} — Basic auth (email:app_password)
+/// Cloud:  GET api.bitbucket.org/2.0/repositories/{workspace} — Bearer auth (API token)
 /// Server: GET {instance_url}/rest/api/latest/projects/{project_key}/repos — Bearer token
 #[tauri::command]
 #[specta::specta]
@@ -346,12 +346,9 @@ pub async fn list_bitbucket_repos(
                 .collect())
         }
         None => {
-            // Bitbucket Cloud — follows `next` URL
-            let email = creds.email.ok_or_else(|| "Bitbucket Cloud credentials missing email".to_string())?;
-            let auth = format!(
-                "Basic {}",
-                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", email, creds.token).as_bytes()),
-            );
+            // Bitbucket Cloud — follows `next` URL. Bearer rather than Basic so the API token
+            // stands alone; Basic would need the account email in the username slot.
+            let auth = format!("Bearer {}", creds.token);
 
             #[derive(serde::Deserialize)]
             struct BbCloudCloneLink {
@@ -393,6 +390,16 @@ pub async fn list_bitbucket_repos(
                     .await
                     .map_err(|e| format!("Network error: {}", e))?;
 
+                // Same hint as `validate_credentials`: a stored app password stopped working when
+                // Atlassian deprecated them on 28 Jul 2026, and nothing on disk marks which kind
+                // of credential this is, so the 401 is the only place to say so.
+                if response.status().as_u16() == 401 {
+                    return Err(
+                        "Bitbucket rejected the credentials. If this is an app password, it no \
+                         longer works — reconnect Bitbucket with an Atlassian API token."
+                            .to_string(),
+                    );
+                }
                 if !response.status().is_success() {
                     return Err(format!("Bitbucket API error {}", response.status().as_u16()));
                 }

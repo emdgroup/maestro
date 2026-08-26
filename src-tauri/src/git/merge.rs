@@ -427,7 +427,9 @@ async fn open_pull_request_for_task(
 ) -> Result<String, String> {
     use crate::integration::code_hosting_handlers::{code_hosting_status, CodeHostingRung};
     use crate::integration::issue_tracking_handlers::find_integration;
-    use crate::integration::pull_request::{create_pull_request, PullRequestTarget};
+    use crate::integration::pull_request::{
+        create_pull_request, supports_pull_requests, PullRequestTarget,
+    };
 
     let status = code_hosting_status(app_state, project_id).await?;
     let (Some(remote), Some(config)) = (status.remote, status.config) else {
@@ -453,6 +455,18 @@ async fn open_pull_request_for_task(
                 config.provider, config.provider
             )
         })?;
+
+    // Asked before the push rather than left to `create_pull_request` below. Both refuse the same
+    // forges, but by the time that one answers the branch is already on the remote with nothing
+    // going to open a pull request for it. The UI gate cannot stand in for this: a stale query
+    // cache is enough to reach here with an option that was never valid.
+    if !supports_pull_requests(&config) {
+        return Err(format!(
+            "Maestro cannot open pull requests on `{}` yet. Push the branch and open it yourself, \
+             or merge locally.",
+            config.provider
+        ));
+    }
 
     // The branch has to exist on the remote before the forge will accept a PR for it.
     crate::git::push_branch(git_conn, worktree_path, &remote, branch_name).await?;
