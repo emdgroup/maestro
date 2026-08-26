@@ -101,9 +101,18 @@ pub(crate) struct MatchedIntegration {
 /// Find credentials usable for `provider`, preferring an account whose instance URL is
 /// the host we detected. Mirrors the CLI fallbacks `list_remote_issues` already applies,
 /// so "connected" here means the same thing as "issues will actually load".
+///
+/// `preferred_base` is a whole base URL to match ahead of the host, and exists because matching on
+/// the host alone decides nothing for Azure DevOps: every cloud credential's instance URL host is
+/// `dev.azure.com`, so the first stored organization would answer for every project, and an SSH
+/// remote's host is `ssh.dev.azure.com`, which no credential's host ever equals. Since a
+/// `pullRequestId` is unique per organization rather than per repository, the wrong account there
+/// does not fail — it returns an unrelated organization's real pull request. Callers that do not
+/// care pass `None` and get the previous behaviour.
 pub(crate) async fn find_integration(
     provider: &str,
     host: &str,
+    preferred_base: Option<&str>,
     app_state: &AppState,
 ) -> Option<MatchedIntegration> {
     let accounts: Vec<IntegrationCredentials> = stored_integrations(app_state)
@@ -112,9 +121,20 @@ pub(crate) async fn find_integration(
         .map(|(_, creds)| creds)
         .collect();
 
-    let matched = accounts
-        .iter()
-        .find(|creds| creds.instance_url.as_deref().and_then(url_host).as_deref() == Some(host))
+    let matched = preferred_base
+        .and_then(|base| {
+            accounts.iter().find(|creds| {
+                creds.instance_url.as_deref().is_some_and(|url| {
+                    crate::integration::azure_devops::normalize_azdo_org_url(url)
+                        .eq_ignore_ascii_case(base)
+                })
+            })
+        })
+        .or_else(|| {
+            accounts
+                .iter()
+                .find(|creds| creds.instance_url.as_deref().and_then(url_host).as_deref() == Some(host))
+        })
         .or_else(|| accounts.first());
 
     if let Some(creds) = matched {
@@ -222,7 +242,7 @@ pub async fn detect_project_issue_tracking(
         return Ok(None);
     };
 
-    let integration = find_integration(&provider, &remote.host, &app_state).await;
+    let integration = find_integration(&provider, &remote.host, None, &app_state).await;
     if let Some(integration) = &integration {
         config.integration_id = Some(integration.id.clone());
 

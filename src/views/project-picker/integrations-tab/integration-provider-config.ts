@@ -115,7 +115,10 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
           text: "Sign in to dev.azure.com → click user settings, left of user avatar → Personal access tokens",
         },
         { text: "Click New Token → select your Organization" },
-        { text: "Under Scopes, select Work Items (Read)" },
+        // Code (Read & Write) is what opening a pull request needs. A token with only Work Items
+        // still validates against `_apis/connectionData`, so getting this wrong is not discovered
+        // until a task is approved and its branch has already been pushed.
+        { text: "Under Scopes, select Work Items (Read) and Code (Read & Write)" },
         { text: "Click Create and copy the token immediately" },
       ];
     case "gitea":
