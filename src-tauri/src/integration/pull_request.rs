@@ -67,6 +67,23 @@ struct GitLabMergeRequest {
     web_url: String,
 }
 
+/// Whether Maestro can open a pull request on this project's forge.
+///
+/// Lives beside the match statements it describes so the two cannot drift: an arm added below
+/// without a change here stays hidden from the user, and a name added here without an arm puts an
+/// option in front of them that ends in a pushed branch and an error.
+///
+/// This is a different question from [`crate::integration::code_hosting_handlers::CodeHostingRung`]
+/// `::Ready`, which only says a credential answered. A forge can be connected and still have no arm.
+///
+/// Takes the whole config rather than the provider name because `host` is the only thing that
+/// separates Bitbucket Cloud from Bitbucket Server, which are two forges behind one provider
+/// string — if support ever covered one and not the other, this is the only place with enough
+/// information to say so.
+pub fn supports_pull_requests(config: &ProjectCodeHostingConfig) -> bool {
+    matches!(config.provider.as_str(), "github" | "gitlab" | "gitea" | "forgejo")
+}
+
 /// Open a pull request from `head` into `base`.
 ///
 /// Returns a plain error naming the provider for forges without support yet, rather than a
@@ -465,6 +482,52 @@ mod tests {
 
     fn details(body: &str) -> PullRequestDetails {
         github_style_details(serde_json::from_str(body).expect("body should parse"))
+    }
+
+    fn config(provider: &str, host: &str) -> ProjectCodeHostingConfig {
+        ProjectCodeHostingConfig {
+            provider: provider.to_string(),
+            host: host.to_string(),
+            owner: Some("owner".to_string()),
+            repo: Some("repo".to_string()),
+            project_path: "owner/repo".to_string(),
+        }
+    }
+
+    /// This list and the match in `create_pull_request` are the same fact written twice, and the
+    /// cost of them disagreeing is asymmetric: the approve path pushes the branch before it calls
+    /// `create_pull_request`, so a forge offered here but missing an arm there leaves the user with
+    /// a branch on the remote, no pull request, and a task stuck in Review.
+    ///
+    /// Every provider string `provider_for_host` can produce is listed, so adding a forge to
+    /// detection without deciding this question fails here rather than in front of a user.
+    #[test]
+    fn a_forge_with_no_arm_is_not_offered_a_pull_request() {
+        for (provider, host) in [
+            ("github", "github.com"),
+            ("gitlab", "gitlab.com"),
+            ("gitea", "gitea.example.com"),
+            ("forgejo", "codeberg.org"),
+        ] {
+            assert!(
+                supports_pull_requests(&config(provider, host)),
+                "{} has an arm in create_pull_request and must be offered",
+                provider
+            );
+        }
+
+        for (provider, host) in [
+            ("bitbucket", "bitbucket.org"),
+            ("bitbucket", "bitbucket.corp.example"),
+            ("azuredevops", "dev.azure.com"),
+            ("something-we-have-never-seen", "git.example.com"),
+        ] {
+            assert!(
+                !supports_pull_requests(&config(provider, host)),
+                "{} has no arm in create_pull_request and must not be offered",
+                provider
+            );
+        }
     }
 
     /// GitHub reports a merged PR as `state: "closed"`. Reading the state alone would land every

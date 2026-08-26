@@ -130,12 +130,16 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
   }
 }
 
+// App passwords were fully deprecated on 28 Jul 2026 and no longer authenticate, so these steps
+// describe API tokens instead. Anyone still holding an app password has to create a new
+// credential — there is no migration.
 export const BITBUCKET_INSTRUCTIONS: Record<"cloud" | "server", InstructionLine[]> = {
   cloud: [
-    { text: "Go to Bitbucket → Personal settings → App passwords" },
-    { text: "Click Create app password → enter a label" },
-    { text: "Select Repositories (Read) permissions" },
-    { text: "Click Create — copy the password immediately" },
+    { text: "Go to: https://id.atlassian.com/manage-profile/security/api-tokens", code: true },
+    { text: "Click Create API token with scopes → select Bitbucket → enter a label" },
+    { text: "Select scopes:", code: false },
+    { text: "read:repository:bitbucket, write:repository:bitbucket, read:account", code: true },
+    { text: "Click Create — copy the token immediately, it won't be shown again" },
   ],
   server: [
     { text: "Log into your Bitbucket Server or Data Center instance" },

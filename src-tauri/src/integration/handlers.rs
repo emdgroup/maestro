@@ -497,28 +497,40 @@ async fn validate_credentials(
         "bitbucket" => {
             match instance_url {
                 None => {
-                    // Cloud: email + app password, Basic auth
+                    // Cloud: API token alone. Bearer is used rather than Basic because it
+                    // "removes the need to provide the Atlassian email tied to the API token" —
+                    // Basic would put the account email in the username slot and make the user
+                    // hunt for a value that authenticates nothing on its own.
                     #[derive(serde::Deserialize)]
                     struct BitbucketCloudUser {
                         display_name: String,
                     }
 
-                    let email_str =
-                        email.ok_or_else(|| "bitbucket: email required".to_string())?;
-                    let credentials = format!("{}:{}", email_str, token);
-                    let auth = format!(
-                        "Basic {}",
-                        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
-                    );
                     let response = client
                         .get("https://api.bitbucket.org/2.0/user")
-                        .header("Authorization", auth)
+                        .header("Authorization", format!("Bearer {}", token))
                         .send()
                         .await
                         .map_err(|e| format!("Network error: {}", e))?;
 
+                    // Nothing on disk distinguishes an app password from an API token, so a 401 is
+                    // the only place a user holding the former can be told why it stopped working:
+                    // Atlassian deprecated app passwords entirely on 28 Jul 2026.
                     if response.status().as_u16() == 401 {
-                        return Err("bitbucket: bad credentials".to_string());
+                        return Err(
+                            "bitbucket: bad credentials. If this is an app password, it no longer \
+                             works — Bitbucket Cloud now requires an Atlassian API token."
+                                .to_string(),
+                        );
+                    }
+                    // A token scoped only for repositories authenticates but cannot read the
+                    // account, which would otherwise fail here with a bare status code.
+                    if response.status().as_u16() == 403 {
+                        return Err(
+                            "bitbucket: token is valid but missing the required 'read:account' \
+                             scope. Recreate the token with 'read:account' enabled."
+                                .to_string(),
+                        );
                     }
                     if !response.status().is_success() {
                         let status = response.status();

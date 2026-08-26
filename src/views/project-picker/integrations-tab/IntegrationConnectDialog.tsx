@@ -75,6 +75,8 @@ export function IntegrationConnectDialog({
   const isBitbucket = provider === "bitbucket";
 
   const instanceUrlRequired = !isBitbucket && fields.showInstanceUrl;
+  // Bitbucket asks for no email at all: both deployments authenticate with a bearer token, which
+  // carries the identity on its own.
   const emailRequired = !isBitbucket && fields.showEmail;
   const isSubmitDisabled =
     isPending ||
@@ -141,11 +143,7 @@ export function IntegrationConnectDialog({
             ? instanceUrl.trim() || null
             : null
           : instanceUrl.trim() || null,
-        email: isBitbucket
-          ? bitbucketMode === "cloud"
-            ? email.trim() || null
-            : null
-          : email.trim() || null,
+        email: isBitbucket ? null : email.trim() || null,
       });
       handleOpenChange(false);
       onSuccess?.(id);
@@ -185,28 +183,15 @@ export function IntegrationConnectDialog({
                   />
                 </div>
               )}
-              {bitbucketMode === "cloud" && (
-                <div className="space-y-2">
-                  <Label htmlFor="integration-email">Email</Label>
-                  <Input
-                    id="integration-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isPending}
-                  />
-                </div>
-              )}
               <div className="space-y-2">
                 <Label htmlFor="integration-token" required>
-                  {bitbucketMode === "cloud" ? "App Password" : "HTTP Access Token"}
+                  {bitbucketMode === "cloud" ? "API Token" : "HTTP Access Token"}
                 </Label>
                 <Input
                   id="integration-token"
                   type="password"
                   placeholder={
-                    bitbucketMode === "cloud" ? "Enter app password" : "Enter HTTP access token"
+                    bitbucketMode === "cloud" ? "Enter API token" : "Enter HTTP access token"
                   }
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
@@ -216,7 +201,7 @@ export function IntegrationConnectDialog({
                 />
                 {attempted && !token.trim() && (
                   <p className="text-xs text-destructive">
-                    {bitbucketMode === "cloud" ? "App password" : "Access token"} is required
+                    {bitbucketMode === "cloud" ? "API token" : "Access token"} is required
                   </p>
                 )}
               </div>

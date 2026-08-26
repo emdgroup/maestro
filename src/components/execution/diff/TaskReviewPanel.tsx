@@ -664,6 +664,7 @@ export function TaskReviewPanel({
         pushRemote={codeHostingQuery.data?.remote}
         pullRequestProvider={codeHostingQuery.data?.config?.provider}
         pullRequestNeedsConnecting={codeHostingQuery.data?.rung === "NotConnected"}
+        forgeSupportsPullRequests={codeHostingQuery.data?.forge_supports_pull_requests ?? false}
         onConfirm={handleApproveConfirm}
         isPending={isSaving || isApproving}
       />

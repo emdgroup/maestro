@@ -1936,7 +1936,7 @@ async listAzuredevopsRepos(project: string) : Promise<Result<AzureDevOpsRepoOpti
 /**
  * List repositories for a Bitbucket workspace (Cloud) or project key (Server/DC).
  * 
- * Cloud:  GET api.bitbucket.org/2.0/repositories/{workspace} — Basic auth (email:app_password)
+ * Cloud:  GET api.bitbucket.org/2.0/repositories/{workspace} — Bearer auth (API token)
  * Server: GET {instance_url}/rest/api/latest/projects/{project_key}/repos — Bearer token
  */
 async listBitbucketRepos(workspace: string) : Promise<Result<BitbucketRepoOption[], string>> {
@@ -2365,7 +2365,9 @@ export type CodeHostingRung =
  */
 "NotConnected" | 
 /**
- * Push and pull requests are both available.
+ * A credential answered for the forge. Whether a pull request can be opened on it is a
+ * separate question — the ladder is about credentials, not about what the forge supports.
+ * See `CodeHostingStatus::forge_supports_pull_requests`.
  */
 "Ready"
 /**
@@ -2385,6 +2387,16 @@ remote: string | null;
  * Forge coordinates. `None` until the forge is identified.
  */
 config: ProjectCodeHostingConfig | null; 
+/**
+ * Whether Maestro can open a pull request on this forge at all.
+ * 
+ * Deliberately not a rung: the ladder is a total order over credential state, and capability
+ * is orthogonal to it — a forge can be connected and still unsupported. Folding the two
+ * together would force a precedence choice and lose the distinction the UI needs, because
+ * "connect it in Settings" is the right prompt for an unconnected GitHub and a misleading one
+ * for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
+ */
+forge_supports_pull_requests: boolean; 
 /**
  * Whether this call wrote `code_hosting` into `.maestro/settings.json`.
  */

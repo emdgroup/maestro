@@ -24,4 +24,3 @@ pub use providers::gitea;
 pub use providers::linear;
 pub use providers::jira_cloud;
 pub use providers::azure_devops;
-pub use providers::bitbucket;

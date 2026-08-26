@@ -116,10 +116,13 @@ async fn build_provider_auth_header(
             let creds = crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
             match creds.instance_url {
                 Some(_) => format!("Authorization: Bearer {}", creds.token),
+                // `x-bitbucket-api-token-auth` is Atlassian's documented static username for git
+                // over HTTPS, and it is what lets an API token clone without the account email —
+                // the same shape as the `x-access-token` GitHub uses above. Bearer is documented
+                // for the REST API rather than for git, so it is not used here.
                 None => {
-                    let email = creds.email.ok_or("Bitbucket Cloud credentials missing email")?;
                     let basic = base64::engine::general_purpose::STANDARD
-                        .encode(format!("{}:{}", email, creds.token).as_bytes());
+                        .encode(format!("x-bitbucket-api-token-auth:{}", creds.token).as_bytes());
                     format!("Authorization: Basic {}", basic)
                 }
             }
