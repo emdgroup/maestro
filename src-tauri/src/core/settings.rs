@@ -50,6 +50,11 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(3);
 
+    let concurrency_mode = settings_map
+        .get("concurrency_mode")
+        .and_then(|v| v.parse::<crate::execution::capacity::ConcurrencyMode>().ok())
+        .unwrap_or_default();
+
     let thinking_visibility = settings_map
         .get("thinking_visibility")
         .and_then(|v| v.parse::<ActivityVisibility>().ok())
@@ -110,6 +115,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         theme_preference,
         auto_mode,
         max_concurrent_agents,
+        concurrency_mode,
         thinking_visibility,
         tool_call_visibility,
         accent_color,
@@ -137,6 +143,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     // Build key-value pairs for simple string fields
     let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
     let max_concurrent_str = settings.max_concurrent_agents.to_string();
+    let concurrency_mode_str = settings.concurrency_mode.as_str();
     let thinking_vis = settings.thinking_visibility.to_string();
     let tool_call_vis = settings.tool_call_visibility.to_string();
     let accent_color_str = settings.accent_color.as_deref().unwrap_or("").to_string();
@@ -155,6 +162,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
         ("max_concurrent_agents", max_concurrent_str.as_str()),
+        ("concurrency_mode", concurrency_mode_str),
         ("thinking_visibility", thinking_vis.as_str()),
         ("tool_call_visibility", tool_call_vis.as_str()),
         ("accent_color", accent_color_str.as_str()),
@@ -212,6 +220,7 @@ mod tests {
             theme_preference: Some("dark".to_string()),
             auto_mode: false,
             max_concurrent_agents: 3,
+            concurrency_mode: crate::execution::capacity::ConcurrencyMode::Auto,
             thinking_visibility: crate::models::ActivityVisibility::Auto,
             tool_call_visibility: crate::models::ActivityVisibility::Auto,
             accent_color: None,
@@ -238,6 +247,8 @@ mod tests {
         assert!(!loaded.notify_on_done);
         assert!(loaded.notify_on_input_needed);
         assert!(!loaded.notify_on_failure);
+        // Not the default, so a round trip that silently dropped it would look like a pass.
+        assert_eq!(loaded.concurrency_mode, crate::execution::capacity::ConcurrencyMode::Auto);
     }
 
     /// An unparseable stored value must fall back to the default rather than erroring, matching

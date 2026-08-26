@@ -2,8 +2,8 @@
 //! and dispatch them to per-session handlers or connection-level pending channels.
 
 use crate::acp::canvas::{
-    emit_or_buffer_payload, extract_canvas_fences_from_payload, filter_preamble_from_payload,
-    push_config_init_to_buffer, CanvasFenceExtractor, PreambleFilterState,
+    emit_or_buffer_payload, extract_canvas_fences_from_payload, push_config_init_to_buffer,
+    CanvasFenceExtractor,
 };
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::session_types::{
@@ -54,8 +54,10 @@ pub(crate) fn spawn_reader_task(
         acp_session_id_cache,
         replay_buffer,
         initialized,
-        preamble_filter,
         canvas_extractor,
+        completion_filter,
+        declared_complete,
+        closing_message,
         session_name,
         agent_id,
         project_id,
@@ -101,26 +103,38 @@ pub(crate) fn spawn_reader_task(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if try_auto_approve_permission(&app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(&app_state, tid, log_id, perm_req).await {
                         continue;
                     }
                 }
             }
 
-            // Moving the task to Review touches the DB and, for remote projects, runs
-            // `git rev-parse` over SSH with no timeout. Run it off the reader loop so it
-            // can never delay — or with a wedged connection, indefinitely withhold — the
+            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
+                if let Some(tid) = task_id {
+                    mark_task_blocked(&app_state, tid);
+                }
+            }
+
+            // Resolving the turn touches the DB and, for remote projects, runs `git rev-parse`
+            // and `git diff` over SSH with no timeout. Run it off the reader loop so it can
+            // never delay — or with a wedged connection, indefinitely withhold — the
             // `acp://turn-ended` emit below that takes the UI out of "thinking".
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if turn_ended.stop_reason == "end_turn" {
-                    if let Some(tid) = task_id {
-                        let state = Arc::clone(&app_state);
-                        tokio::spawn(async move {
-                            if try_complete_task(&state, tid).await {
-                                state.app_handle.emit("tasks-changed", ()).ok();
-                            }
-                        });
-                    }
+                if let Some(tid) = task_id {
+                    let state = Arc::clone(&app_state);
+                    let stop_reason = turn_ended.stop_reason.clone();
+                    // Read and reset: a declaration applies only to the turn it appeared in.
+                    let declared =
+                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    // Drained here rather than in the spawned task, so the accumulator is empty
+                    // before the next turn starts writing into it.
+                    let closing = closing_message
+                        .lock()
+                        .map(|mut m| m.take())
+                        .unwrap_or_default();
+                    tokio::spawn(async move {
+                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
+                    });
                 }
             }
 
@@ -135,8 +149,10 @@ pub(crate) fn spawn_reader_task(
                 &acp_session_id_cache,
                 &replay_buffer,
                 &initialized,
-                &preamble_filter,
                 &canvas_extractor,
+                &completion_filter,
+                &declared_complete,
+                &closing_message,
             ) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
@@ -156,6 +172,7 @@ pub(crate) fn spawn_reader_task(
         }
 
         app_state.acp.sessions.lock().await.remove(&log_id);
+        fail_task_if_still_running(&app_state, task_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
             log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
@@ -163,28 +180,322 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-async fn try_complete_task(app_state: &crate::core::AppState, task_id: i32) -> bool {
+/// Record that the agent is stopped waiting on the user, so the card says so after a reload.
+///
+/// `apply_if_changed` matters here rather than being a nicety: with auto-approve off a session
+/// raises permission requests constantly, and every write emits `tasks-changed`, which refetches
+/// the whole board.
+fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        match crate::task::transition::apply_if_changed(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::AwaitingUserInput,
+        ) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not mark task {task_id} blocked: {e}");
+                false
+            }
+        }
+    };
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+}
+
+/// A session's reader has ended. If the pipeline still believes an agent is working the task,
+/// record the failure.
+///
+/// Without this a session that dies mid-phase leaves the card looking healthy, and a session that
+/// dies while blocked leaves it pulsing for an answer nothing will ever consume. Tasks that moved
+/// on under their own power — merged, stopped, parked at a review gate — are left untouched.
+fn fail_task_if_still_running(app_state: &crate::core::AppState, task_id: Option<i32>) {
+    let Some(task_id) = task_id else {
+        return;
+    };
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        match crate::task::transition::fail_if_agent_running(&conn, task_id) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not record phase failure for task {task_id}: {e}");
+                false
+            }
+        }
+    };
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
+}
+
+/// Decide what a turn ending means for the task, and record it.
+///
+/// A turn ending is not the same as the work being finished: an agent that stops to ask a
+/// question ends its turn exactly like one that finished the job. `classify_turn` weighs the stop
+/// reason, whether the agent declared completion, and whether the repository actually changed.
+async fn resolve_turn_end(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+    stop_reason: &str,
+    declared_complete: bool,
+    closing_message: String,
+) {
+    use crate::acp::completion::{classify_turn, TurnOutcome};
+    use crate::task::transition::{self, TaskTransition};
+
     let is_git_repo = is_task_project_git_repo(app_state, task_id).await;
-    let Ok(conn) = app_state.db.lock() else {
+
+    // The phase the agent was in, read before the transition rewrites it — the outcome belongs to
+    // the phase that produced it, not the one the task lands in.
+    let phase: Option<String> = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap_or(None)
+    };
+
+    // Three of the four roles write nothing, so asking whether the repository changed cannot say
+    // anything about whether they finished — and asking anyway is actively wrong: a clean tree
+    // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
+    // proposal.
+    let writes =
+        matches!(phase.as_deref(), Some("Implementing") | Some("Rework") | Some("AwaitingMerge"));
+
+    // A declared completion used to skip this call, on the grounds that the agent was believed
+    // either way. It no longer is: an agent that declares itself done having changed nothing goes
+    // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
+    // the answer is needed for.
+    let has_changes = if writes && is_git_repo && stop_reason == "end_turn" {
+        task_has_changes(app_state, task_id).await
+    } else {
+        None
+    };
+
+    let outcome = classify_turn(stop_reason, declared_complete, has_changes);
+
+    // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
+    // so it routes past `TurnCompleted` entirely.
+    // An agent fixing a red build is already on an open pull request, so its turn ending means
+    // "push what you changed", not "advance the task". Nothing else moves: the PR stays open and
+    // the branch stays its head, which is the point of fixing rather than re-approving.
+    if phase.as_deref() == Some("AwaitingMerge") && outcome == TurnOutcome::Complete {
+        if let Err(e) = crate::git::merge::push_ci_fix(app_state, task_id).await {
+            log::error!("Could not push the CI fix for task {}: {}", task_id, e);
+            let Ok(conn) = app_state.db.lock() else { return };
+            let _ = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed);
+        }
+        return;
+    }
+
+    let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
+        let Ok(conn) = app_state.db.lock() else { return };
+        review_verdict_event(&conn, task_id, &closing_message)
+    } else {
+        match outcome {
+            TurnOutcome::Complete => TaskTransition::TurnCompleted {
+                is_git_repo,
+                has_changes,
+                reviewer_pending: writes && reviewer_should_run(app_state, task_id).await,
+            },
+            TurnOutcome::Stalled => TaskTransition::AwaitingUserInput,
+            TurnOutcome::Failed => TaskTransition::PhaseFailed,
+            TurnOutcome::Ignore => return,
+        }
+    };
+
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+
+        // Guarded on the task still having a live phase, because this runs detached: by the time
+        // it lands the user may have stopped the session or moved the card, and every one of those
+        // parks the task. The column cannot express it — each role works in a different one, and
+        // Planning is both where a refiner runs and where a stopped task ends up.
+        let changed = match transition::apply_if_active(&conn, task_id, event) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not resolve turn end for task {task_id}: {e}");
+                false
+            }
+        };
+
+        // Only when the transition applied. A turn resolved against a task the user already moved
+        // has no claim on its record either.
+        //
+        // Filed by whether the phase produced anything, not by which phase it was: `kind_for_phase`
+        // answers "what does this role deliver", which is the wrong question for a turn that failed
+        // or stopped to ask something. It put a session-limit error in the thread as a reviewer's
+        // verdict.
+        if changed {
+            let phase = phase.as_deref();
+            if outcome == TurnOutcome::Complete {
+                crate::task::comments::record_outcome(&conn, task_id, phase, &closing_message);
+            } else {
+                crate::task::comments::record_unfinished(&conn, task_id, phase, &closing_message);
+            }
+        }
+
+        changed
+    };
+
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+        app_state.app_handle.emit("task-comments-changed", task_id).ok();
+    }
+}
+
+/// Whether a review agent should look at this task before the user does.
+///
+/// Two conditions, both necessary. The project must define a `Reviewer` profile, which is how a
+/// team opts in — a project without one keeps the pipeline it had. And the loop must have rounds
+/// left, or a reviewer would be started only to have its verdict escalated anyway.
+///
+/// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
+/// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
+pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_id: i32) -> bool {
+    use crate::acp::completion::review_rounds_remain;
+
+    let Ok(Some((project_id, rounds))) = ({
+        app_state.db.lock().map(|conn| {
+            conn.query_row(
+                "SELECT project_id, review_rounds FROM tasks WHERE id = ?",
+                [task_id],
+                |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i32>(1)?)),
+            )
+            .ok()
+        })
+    }) else {
         return false;
     };
-    let now = chrono::Utc::now().to_rfc3339();
-    let target_status = if is_git_repo { "Review" } else { "Done" };
-    conn.execute(
-        &format!(
-            "UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ? AND status = 'InProgress'",
-            target_status
-        ),
-        rusqlite::params![&now, task_id],
+
+    if !review_rounds_remain(rounds) {
+        return false;
+    }
+
+    crate::project::profiles::has_profile_for_role(
+        app_state,
+        project_id,
+        crate::project::profiles::AgentRole::Reviewer,
     )
-    .unwrap_or(0)
-        > 0
+    .await
+}
+
+/// Turn the review agent's reply into the transition it implies, counting the round if the loop
+/// is going round again.
+///
+/// The count is incremented here rather than when the coder starts, because this is the moment the
+/// decision to spend another round is taken. Counting at the start would let a rejected task that
+/// never got a coder — the app closed, the host was full — be rejected again for free.
+fn review_verdict_event(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    reply: &str,
+) -> crate::task::transition::TaskTransition {
+    use crate::acp::completion::{
+        classify_verdict, review_rounds_remain, ReviewVerdict, REVIEW_ROUND_CAP,
+    };
+    use crate::task::transition::TaskTransition;
+
+    if classify_verdict(reply) == ReviewVerdict::Approved {
+        return TaskTransition::ReviewFinished;
+    }
+
+    let rounds: i32 = conn
+        .query_row("SELECT review_rounds FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+        .unwrap_or(REVIEW_ROUND_CAP);
+
+    // The backstop rather than the primary guard: `reviewer_should_run` already refuses to start a
+    // reviewer with no rounds left, so reaching this means one was started another way.
+    if !review_rounds_remain(rounds) {
+        log::info!(
+            "Task {} hit the review round cap ({}); escalating to the user",
+            task_id,
+            REVIEW_ROUND_CAP
+        );
+        return TaskTransition::ReviewFinished;
+    }
+
+    if let Err(e) = conn.execute(
+        "UPDATE tasks SET review_rounds = review_rounds + 1 WHERE id = ?",
+        [task_id],
+    ) {
+        // Failing to count would make the loop unbounded, which is the one thing it must not be.
+        log::error!("Could not count a review round for task {}: {}", task_id, e);
+        return TaskTransition::ReviewFinished;
+    }
+
+    TaskTransition::ReviewRejected
+}
+
+/// Whether the agent has changed anything since it started, measured against
+/// `execution_start_sha` — the baseline captured at spawn and preserved across resumes, so this
+/// covers the whole task rather than the turn.
+///
+/// Returns `None` when the answer cannot be established, which `classify_turn` reads as "no
+/// evidence" and treats the same as a non-git project.
+pub(crate) async fn task_has_changes(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+) -> Option<bool> {
+    let (project_id, start_sha, isolated, worktree_path) = {
+        let conn = app_state.db.lock().ok()?;
+        let row: (i32, Option<String>, bool, Option<String>) = conn
+            .query_row(
+                "SELECT t.project_id, t.execution_start_sha, t.isolated_worktree, \
+                    (SELECT path FROM worktrees WHERE task_id = t.id LIMIT 1) \
+                 FROM tasks t WHERE t.id = ?",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .ok()?;
+        row
+    };
+
+    // An isolated task whose worktree row has gone missing must report no evidence rather than
+    // fall through to the project root: the root is a different tree, and any unrelated dirt in
+    // it — an untracked `.maestro/`, a half-finished edit — reads as work this agent did and
+    // sends the task to review with a diff it had nothing to do with.
+    if isolated && worktree_path.is_none() {
+        log::warn!("[acp] task {task_id} is isolated but has no worktree row; skipping diff gate");
+        return None;
+    }
+
+    let start_sha = start_sha.filter(|sha| !sha.is_empty())?;
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id)
+        .await
+        .ok()?;
+
+    // Worktree paths are stored relative to the repo; a task without one runs in the project root.
+    let cwd = match worktree_path {
+        Some(path) => format!("{}/{}", git_conn.path(), path),
+        None => git_conn.path().to_string(),
+    };
+
+    crate::git::worktree_query::diff_stats_in(
+        &git_conn,
+        &cwd,
+        &crate::models::DiffTarget::Commit { sha: start_sha },
+    )
+    .await
+    .ok()
+    .map(|stats| stats.has_changes())
 }
 
 /// `(project_id, path, connection_id, wsl_connection_id, docker_connection_id)`
 type ProjectLocationRow = (i32, String, Option<i32>, Option<i32>, Option<i32>);
 
-async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i32) -> bool {
+pub(crate) async fn is_task_project_git_repo(
+    app_state: &crate::core::AppState,
+    task_id: i32,
+) -> bool {
     let result: Option<ProjectLocationRow> =
         app_state.db.lock().ok().and_then(|conn| {
         conn.query_row(
@@ -216,27 +527,80 @@ async fn is_task_project_git_repo(app_state: &crate::core::AppState, task_id: i3
     }
 }
 
+/// Decide what the board does with a permission request, and report whether it answered.
+///
+/// `true` means the request is settled and must not reach the UI. `false` leaves it for the user,
+/// having first marked the task blocked so the card says the agent is stopped.
+///
+/// Both readers go through here, and that is the point. They did not before: the shared reader —
+/// which is the *ordinary local path*, since a connection server serves every session on a
+/// connection and only a directly-spawned session gets its own loop — called auto-approve alone.
+/// So the plan interception was written, tested, and never once ran outside SSH. Two call sites
+/// that must agree on which of three answers a request gets will not stay agreeing, so there is
+/// now one.
+async fn handle_permission_request(
+    app_state: &Arc<crate::core::AppState>,
+    task_id: i32,
+    log_id: i32,
+    perm_req: &crate::acp::transport::PermissionRequest,
+) -> bool {
+    if try_auto_approve_permission(app_state, task_id, log_id, perm_req).await {
+        return true;
+    }
+    if try_conclude_plan_mode_phase(app_state, task_id, log_id, perm_req).await {
+        return true;
+    }
+    // Nobody answered for it: the agent is stopped until the user does.
+    mark_task_blocked(app_state, task_id);
+    false
+}
+
 async fn try_auto_approve_permission(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
     log_id: i32,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
-    let auto_approve = app_state
-        .db
-        .lock()
-        .ok()
-        .and_then(|conn| {
-            conn.query_row(
-            "SELECT auto_approve FROM tasks WHERE id = ?",
-            [task_id],
-            |row| row.get::<_, bool>(0),
-            )
-            .ok()
+    let phase = app_state.db.lock().ok().and_then(|conn| {
+        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
+            row.get::<_, Option<String>>(0)
         })
-        .unwrap_or(false);
+        .ok()
+    });
 
-    if !auto_approve {
+    let Some(phase) = phase else { return false };
+
+    // There used to be a per-task `auto_approve` flag in front of this, and a checkbox on the card
+    // driving it. It said the same thing twice: a role's permission mode already decides whether
+    // the agent stops to ask, and a task carrying "Tasks" through this pipeline wants the workflow
+    // to run. Two switches that can disagree about one question is how a task ended up in a mode
+    // that prompts with nothing allowed to answer.
+    //
+    // The phase is the whole gate now, and it is the right one: it already encodes whether the role
+    // running may write.
+    //
+    // Auto-approve is a coder's affordance: it exists so a task that has been told to get on with
+    // it is not stopped by a prompt for an edit it was always going to be allowed to make. It must
+    // not answer for a role that exists *because* it cannot write.
+    //
+    // The request that matters is `ExitPlanMode`. In plan mode an agent's writes are refused
+    // outright rather than prompted, so it is close to the only permission a read-only role ever
+    // asks for — and the `allow_always` option this function prefers means "leave plan mode and
+    // stop asking". Approving it handed the read-only guarantee back: a live run had the *planner*
+    // implement its own task, tests and all, and then stop at the plan gate to ask whether the plan
+    // was any good.
+    //
+    // Refusing sends it to the user as a blocked task, which is the decision the gates are built
+    // on being human in the first place.
+    let read_only = phase
+        .as_deref()
+        .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
+        .is_some_and(|p| p.is_read_only());
+    if read_only {
+        log::debug!(
+            "[acp] not auto-approving a permission request for task {task_id}: \
+             {phase:?} is a read-only phase"
+        );
         return false;
     }
 
@@ -296,6 +660,170 @@ async fn try_auto_approve_permission(
     true
 }
 
+/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
+///
+/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
+/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
+/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
+/// read-only role write access — a live run had the *planner* implement its own task, tests and
+/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
+/// reread its plan, polish it and ask again, so the gate never opens.
+///
+/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
+/// the session that produced it has no further part to play: a project can put a different agent
+/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
+/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
+/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
+/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
+///
+/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
+/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
+/// many days pass before someone looks at the gate — and still able to be prompted into
+/// implementing the work it was supposed to only describe.
+///
+/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
+/// asked whether the session was currently held in `plan`, which is a question the host cannot
+/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
+/// `current_mode_update` the agent chose to send. The plan in the payload is the better
+/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
+/// reviewer running in `default` asking for permission to write still reaches the user as the real
+/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
+/// vocabulary.
+/// File a read-only role's deliverable and move the task on from it.
+///
+/// Split out from `try_conclude_plan_mode_phase` for the ordinary reason: everything above it in
+/// that function is a session and a payload, and none of this needed either. Which is how the bug
+/// below survived — the decision could not be tested without spawning an agent.
+///
+/// The three read-only phases are not interchangeable here. `is_read_only` admits `SelfReview`, so
+/// a plan-mode reviewer reaches this path, but `ArtifactDelivered` has arms only for `Drafting` and
+/// `Refining` and falls through to "change nothing". The caller then closes the session, leaving a
+/// task marked `Running` with no agent behind it and a reply that — though already filed as a
+/// verdict by `kind_for_phase` — never reached `classify_verdict`. The loop could not reject.
+///
+/// That is not an exotic configuration: with no `permission_mode` on the profile a read-only role
+/// takes the first of `READ_ONLY_MODES` its agent offers, so plan mode is the *default* a reviewer
+/// runs in.
+///
+/// The verdict is read off the plan payload because that is what the request carries. The reviewer's
+/// prose would be the better source, but the `tool_call` announcing `ExitPlanMode` resets the
+/// closing message before the permission request arrives. A plan that does not open with the verdict
+/// line classifies as `Approved`, which is the documented safe direction — the human gate, not
+/// another coder round on a guess.
+fn conclude_read_only_phase(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    phase: Option<&str>,
+    text: &str,
+) -> Result<Option<crate::models::Task>, String> {
+    // Order matters: the thread entry is what the gate reads, so a transition that lands without
+    // it would open a gate with nothing in it — the defect this whole path exists to close.
+    crate::task::comments::record_outcome(conn, task_id, phase, text);
+
+    let event = if phase == Some("SelfReview") {
+        review_verdict_event(conn, task_id, text)
+    } else {
+        crate::task::transition::TaskTransition::ArtifactDelivered
+    };
+    crate::task::transition::apply_if_active(conn, task_id, event)
+}
+
+async fn try_conclude_plan_mode_phase(
+    app_state: &Arc<crate::core::AppState>,
+    task_id: i32,
+    log_id: i32,
+    perm_req: &crate::acp::transport::PermissionRequest,
+) -> bool {
+    let Some(plan) = perm_req
+        .payload
+        .get("toolCall")
+        .and_then(|call| call.get("rawInput"))
+        .and_then(|input| input.get("plan"))
+        .and_then(|plan| plan.as_str())
+        .map(str::trim)
+        .filter(|plan| !plan.is_empty())
+    else {
+        log::debug!(
+            "[acp] task {task_id}: permission request carries no plan, leaving it to the user"
+        );
+        return false;
+    };
+
+    let recorded = {
+        let Ok(conn) = app_state.db.lock() else { return false };
+        let phase: Option<String> = conn
+            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap_or(None);
+
+        let read_only_phase = phase
+            .as_deref()
+            .and_then(|p| p.parse::<crate::models::TaskPhase>().ok())
+            .is_some_and(|p| p.is_read_only());
+        if !read_only_phase {
+            log::debug!("[acp] task {task_id}: {phase:?} may write, so its plan is not a gate");
+            return false;
+        }
+
+        conclude_read_only_phase(&conn, task_id, phase.as_deref(), plan)
+    };
+
+    match recorded {
+        // Told to the board before the session is closed below. Both halves are needed and the
+        // order is not cosmetic: closing the session emits `sessions-changed` on its own, so a
+        // board that has been told the session is gone but not that the task reached its gate
+        // renders the phase it still believes is running with no agent behind it — which is
+        // exactly the shape of a crashed session. The card said "Session lost" and offered
+        // Recover, with the finished plan sitting unreachable behind it.
+        Ok(Some(_)) => {
+            app_state.app_handle.emit("tasks-changed", ()).ok();
+            app_state.app_handle.emit("task-comments-changed", task_id).ok();
+        }
+        Ok(None) => return false,
+        Err(e) => {
+            log::warn!("[acp] could not close the read-only phase of task {task_id}: {e}");
+            return false;
+        }
+    }
+
+    let session_id = format!("session-{}", log_id);
+    let refusal = perm_req
+        .payload
+        .get("options")
+        .and_then(|v| v.as_array())
+        .and_then(|options| {
+            options.iter().find_map(|option| {
+                let kind = option.get("kind").and_then(|v| v.as_str())?;
+                kind.contains("reject")
+                    .then(|| option.get("optionId").and_then(|v| v.as_str()))
+                    .flatten()
+                    .map(str::to_string)
+            })
+        });
+
+    // An agent that offers no refusal is left unanswered rather than granted: the session is closed
+    // below either way, and the one thing that must not happen is the mode changing.
+    if let Some(option_id) = refusal {
+        let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
+            crate::acp::transport::PermissionResponse {
+                session_id,
+                request_id: perm_req.request_id.clone(),
+                option_id: Some(option_id),
+            },
+        ));
+        if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &response).await {
+            log::warn!("[acp] could not refuse the mode change for task {task_id}: {e}");
+        }
+    }
+
+    // After the transition, not before: ending a session runs `fail_if_agent_running`, which would
+    // turn the card red if the task were still `Running`. It is a no-op against the `Waiting` the
+    // gate above just wrote, which is the ordering this depends on.
+    crate::acp::session_handlers::end_acp_session(app_state, log_id).await;
+    log::info!("[acp] took the plan for task {task_id} and closed its planning session");
+
+    true
+}
+
 fn emit_session_init_events(
     models: Option<&SessionModelState>,
     modes: Option<&SessionModeState>,
@@ -344,8 +872,10 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
     canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
+    completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
+    declared_complete: &Arc<std::sync::atomic::AtomicBool>,
+    closing_message: &Arc<std::sync::Mutex<crate::acp::completion::ClosingMessage>>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
@@ -364,24 +894,34 @@ fn handle_server_message(
                     }
                 }
             }
-            // Strip the rendering preamble from user messages before forwarding to the frontend.
-            let payload =
-                filter_preamble_from_payload(upd.payload, preamble_filter);
+            // Extract canvas fences from agent_message_chunk text. Each complete
+            // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
+            // update; the remaining text (fences stripped) is forwarded normally.
+            let (payload_opt, canvas_messages) =
+                extract_canvas_fences_from_payload(upd.payload, canvas_extractor);
 
-            if let Some(payload) = payload {
-                // Extract canvas fences from agent_message_chunk text. Each complete
-                // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
-                // update; the remaining text (fences stripped) is forwarded normally.
-                let (payload_opt, canvas_messages) =
-                    extract_canvas_fences_from_payload(payload, canvas_extractor);
+            for canvas_msg in canvas_messages {
+                emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
+            }
 
-                for canvas_msg in canvas_messages {
-                    emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
-                }
+            // Strip the completion marker last, so it is removed from what the user sees
+            // while recording that the agent declared the task done.
+            let payload_opt = payload_opt.and_then(|payload| {
+                crate::acp::completion::strip_completion_marker_from_payload(
+                    payload,
+                    completion_filter,
+                    declared_complete,
+                )
+            });
 
-                if let Some(payload) = payload_opt {
-                    emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
-                }
+            if let Some(payload) = payload_opt {
+                // After stripping, so the marker never reaches the outcome thread either.
+                crate::acp::completion::track_closing_message(
+                    &payload,
+                    payload.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()),
+                    closing_message,
+                );
+                emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
@@ -731,8 +1271,10 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.acp_session_id),
                 Arc::clone(&s.replay_buffer),
                 Arc::clone(&s.initialized),
-                Arc::clone(&s.preamble_filter),
                 Arc::clone(&s.canvas_extractor),
+                Arc::clone(&s.completion_filter),
+                Arc::clone(&s.declared_complete),
+                Arc::clone(&s.closing_message),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
                 s.project_id,
@@ -748,8 +1290,10 @@ async fn handle_shared_server_message(
             acp_sid,
             replay,
             initialized,
-            preamble_filter,
             canvas_extractor,
+            completion_filter,
+            declared_complete,
+            closing_message,
             session_name,
             agent_id,
             pid,
@@ -760,9 +1304,15 @@ async fn handle_shared_server_message(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if try_auto_approve_permission(app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(app_state, tid, log_id, perm_req).await {
                         return;
                     }
+                }
+            }
+
+            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
+                if let Some(tid) = task_id {
+                    mark_task_blocked(app_state, tid);
                 }
             }
 
@@ -770,15 +1320,20 @@ async fn handle_shared_server_message(
             // path is worse: the shared reader serves every session on the connection, so
             // one task's hung `git rev-parse` would stall turn-ended for all of them.
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if turn_ended.stop_reason == "end_turn" {
-                    if let Some(tid) = task_id {
-                        let state = Arc::clone(app_state);
-                        tokio::spawn(async move {
-                            if try_complete_task(&state, tid).await {
-                                state.app_handle.emit("tasks-changed", ()).ok();
-                            }
-                        });
-                    }
+                if let Some(tid) = task_id {
+                    let state = Arc::clone(app_state);
+                    let stop_reason = turn_ended.stop_reason.clone();
+                    let declared =
+                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    // Drained here rather than in the spawned task, so the accumulator is empty
+                    // before the next turn starts writing into it.
+                    let closing = closing_message
+                        .lock()
+                        .map(|mut m| m.take())
+                        .unwrap_or_default();
+                    tokio::spawn(async move {
+                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
+                    });
                 }
             }
 
@@ -832,8 +1387,10 @@ async fn handle_shared_server_message(
                 &acp_sid,
                 &replay,
                 &initialized,
-                &preamble_filter,
                 &canvas_extractor,
+                &completion_filter,
+                &declared_complete,
+                &closing_message,
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
@@ -867,6 +1424,7 @@ async fn handle_shared_server_message(
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
                 app_state.acp.sessions.lock().await.remove(&log_id);
+                fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
                 }
@@ -1071,7 +1629,9 @@ async fn handle_shared_server_message(
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {
-                    app_state.acp.sessions.lock().await.remove(&log_id);
+                    // The removed entry is the only place the task id is still available.
+                    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
+                    fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
                     if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ())
                     {
                         log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
@@ -1517,5 +2077,160 @@ fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
         crate::acp::ConnectionKey::Ssh { id } => format!("ssh-{id}"),
         crate::acp::ConnectionKey::Wsl { id } => format!("wsl-{id}"),
         crate::acp::ConnectionKey::Docker { id } => format!("docker-{id}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::transition::TaskTransition;
+
+    /// A task with a reviewer running on it, in the state both routes to a verdict find it.
+    fn under_review(rounds: i32) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        crate::core::schema::initialize_schema(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .expect("insert project");
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, phase, phase_status, \
+             ball, review_rounds, created_at, updated_at) \
+             VALUES (1, 1, 'demo task', 'Review', 'main', 'SelfReview', 'Running', 'Agent', ?, \
+             '2026-01-01', '2026-01-01')",
+            [rounds],
+        )
+        .expect("insert task");
+        conn
+    }
+
+    fn rounds_on(conn: &rusqlite::Connection) -> i32 {
+        conn.query_row("SELECT review_rounds FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .expect("read rounds")
+    }
+
+    /// Both routes a reviewer can finish by — its turn ending, and the plan-mode exit request it
+    /// has instead — land here, and this is the only place the round is counted. It had no test
+    /// until the arithmetic in it turned out to be wrong.
+    #[test]
+    fn asking_for_changes_spends_a_round_and_sends_the_task_back() {
+        let conn = under_review(0);
+
+        let event = review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nThe null check is gone.");
+
+        assert_eq!(event, TaskTransition::ReviewRejected);
+        assert_eq!(rounds_on(&conn), 1, "the decision to spend a round is taken here");
+    }
+
+    /// Approval is free: it ends the loop rather than going round again, so counting it would
+    /// charge a task for the round that did not happen.
+    #[test]
+    fn approval_costs_nothing_and_ends_the_loop() {
+        let conn = under_review(1);
+
+        let event = review_verdict_event(&conn, 1, "APPROVED\n\nReads well.");
+
+        assert_eq!(event, TaskTransition::ReviewFinished);
+        assert_eq!(rounds_on(&conn), 1);
+    }
+
+    /// The last round the cap allows is still spent; the one after it goes to the user with the
+    /// verdict intact rather than starting a coder nobody bounded.
+    #[test]
+    fn the_round_after_the_cap_goes_to_the_user() {
+        use crate::acp::completion::REVIEW_ROUND_CAP;
+
+        let conn = under_review(REVIEW_ROUND_CAP - 1);
+        assert_eq!(
+            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
+            TaskTransition::ReviewRejected,
+            "the last round the cap allows must still be spent"
+        );
+        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP);
+
+        assert_eq!(
+            review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nstill wrong"),
+            TaskTransition::ReviewFinished,
+            "and the next one escalates instead"
+        );
+        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP, "an escalation is not a round");
+    }
+
+    /// A reviewer in plan mode delivers through `ExitPlanMode`, and its payload is a plan rather
+    /// than the verdict line. Unparseable is `Approved` by design — the human gate, not another
+    /// coder round on a guess.
+    #[test]
+    fn a_plan_that_is_not_a_verdict_reaches_the_user_rather_than_a_coder() {
+        let conn = under_review(0);
+
+        let event = review_verdict_event(&conn, 1, "1. Fix the null check\n2. Add a test");
+
+        assert_eq!(event, TaskTransition::ReviewFinished);
+        assert_eq!(rounds_on(&conn), 0);
+    }
+
+    fn state_of(conn: &rusqlite::Connection) -> (String, Option<String>, Option<String>, String) {
+        conn.query_row(
+            "SELECT status, phase, phase_status, ball FROM tasks WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("read state")
+    }
+
+    /// The join `try_conclude_plan_mode_phase` makes, and the one that was wrong. Testing
+    /// `review_verdict_event` and the transition table separately said nothing about it: both were
+    /// correct on their own while the path between them sent a reviewer to the wrong one.
+    #[test]
+    fn a_plan_mode_reviewer_asking_for_changes_goes_back_to_a_coder() {
+        let conn = under_review(0);
+
+        let moved = conclude_read_only_phase(
+            &conn,
+            1,
+            Some("SelfReview"),
+            "CHANGES REQUESTED\n\nThe null check is gone.",
+        )
+        .expect("apply");
+
+        assert!(moved.is_some(), "the task must move; the caller closes the session either way");
+        let (status, phase, phase_status, ball) = state_of(&conn);
+        assert_eq!(
+            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            ("InProgress", Some("Rework"), Some("Waiting"), "Agent"),
+            "a rejected review is a handoff back to a coder, not a gate"
+        );
+        assert_eq!(rounds_on(&conn), 1);
+
+        let filed: String = conn
+            .query_row(
+                "SELECT kind FROM task_comments WHERE task_id = 1 ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read comment");
+        assert_eq!(filed, "verdict", "and it is filed as what it is");
+    }
+
+    /// The other two read-only phases still take the artifact route — the point is that the phase
+    /// decides, not that everything now goes through the verdict path.
+    #[test]
+    fn a_planner_still_delivers_its_plan_to_the_gate() {
+        let conn = under_review(0);
+        conn.execute("UPDATE tasks SET status = 'InProgress', phase = 'Drafting' WHERE id = 1", [])
+            .expect("move to drafting");
+
+        conclude_read_only_phase(&conn, 1, Some("Drafting"), "1. Fix it\n2. Test it")
+            .expect("apply")
+            .expect("the task must move");
+
+        let (status, phase, phase_status, ball) = state_of(&conn);
+        assert_eq!(
+            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            ("InProgress", Some("PlanReview"), Some("Waiting"), "User")
+        );
+        assert_eq!(rounds_on(&conn), 0, "a plan is not a review round");
     }
 }

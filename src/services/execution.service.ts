@@ -18,7 +18,126 @@ export const executionQueryKeys = {
   sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
   sessionFile: (sessionKey: number, relativePath: string, binary: boolean) =>
     ["sessionFile", sessionKey, relativePath, binary] as const,
+  agentModels: (agentId: string, cwd: string, connection: ConnectionKey) =>
+    ["agentModels", agentId, cwd, connection] as const,
 };
+
+export interface AgentModel {
+  model_id: string;
+  name: string;
+}
+
+/**
+ * The models an agent offers, found by opening a session and closing it again.
+ *
+ * An agent only declares its models once a session exists — they arrive on the answer to
+ * `session/new`, and nothing before that knows them. A settings page has no session by definition,
+ * which is why the model was a free-text box you could typo into a spawn failure. So it makes one:
+ * spawn, take the list off the event the reader already emits, close.
+ *
+ * `taskId` is null deliberately. `occupied_slots` counts sessions carrying a task id, so a probe
+ * can never eat a capacity slot the board was holding for real work.
+ *
+ * Resolves to `[]` rather than throwing when the agent declares no models — plenty of agents have
+ * exactly one and say nothing about it, and that is an answer, not a failure. The caller keeps its
+ * stored value either way.
+ */
+async function probeAgentModels(
+  agentId: string,
+  cwd: string,
+  projectId: number,
+  connection: ConnectionKey,
+): Promise<AgentModel[]> {
+  const { log_id: logId } = await api.spawnAcpSession(
+    agentId,
+    cwd,
+    null,
+    projectId,
+    connection,
+    null,
+    null,
+    null,
+  );
+
+  try {
+    return await new Promise<AgentModel[]>((resolve, reject) => {
+      let models: AgentModel[] = [];
+      let unlistenModels = () => {};
+      let unlistenSpawnOk = () => {};
+      let unlistenError = () => {};
+
+      const finish = (run: () => void) => {
+        clearTimeout(timer);
+        unlistenModels();
+        unlistenSpawnOk();
+        unlistenError();
+        run();
+      };
+
+      // An agent that never answers must not leave the panel spinning for ever. The session is
+      // closed in `finally` regardless of which way this settles.
+      const timer = setTimeout(() => finish(() => resolve(models)), 30_000);
+
+      void listen<{ available_models: AgentModel[] }>(`acp://session-models/${logId}`, (event) => {
+        models = event.payload.available_models;
+      }).then((fn) => {
+        unlistenModels = fn;
+      });
+
+      // Settled on spawn-ok, not on the models event: the reader emits the model state first and
+      // spawn-ok after, so by here the list has arrived if the agent sends one at all. Waiting on
+      // the models event alone would hang for every agent that declares none.
+      void listen<null>(`acp://spawn-ok/${logId}`, () => finish(() => resolve(models))).then(
+        (fn) => {
+          unlistenSpawnOk = fn;
+        },
+      );
+
+      void listen<string>(`acp://session-error/${logId}`, (event) =>
+        finish(() => reject(new Error(event.payload))),
+      ).then((fn) => {
+        unlistenError = fn;
+      });
+    });
+  } finally {
+    await api.cancelAcpSession(logId).catch((err: unknown) => {
+      console.warn("Failed to close model probe session:", err);
+    });
+  }
+}
+
+/**
+ * Cached for the life of the project, not on a timer.
+ *
+ * A probe is not a read — it spawns an agent subprocess and kills it again — and the answer is a
+ * property of the installed agent, which does not change while the app is open. A five-minute
+ * window meant closing settings and reopening it later paid for the whole thing again, for a list
+ * that had not moved. The key carries `cwd`, so opening another project probes afresh.
+ *
+ * `gcTime` matters as much as `staleTime` here: the probe's only observers are the profile cards,
+ * so leaving settings unmounts all of them and a collected entry is re-probed on the way back in.
+ *
+ * The cost is that an agent updated underneath a running app keeps reporting its old models until
+ * restart. That is the same bargain `useAgentDiscoveryQuery` already makes, and the wrong side of
+ * it is a stale list rather than a lost setting — an unlisted model is kept and labelled, never
+ * silently dropped.
+ */
+export function useAgentModelsQuery(
+  agentId: string | null,
+  cwd: string | null,
+  projectId: number | null,
+  connection: ConnectionKey,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: executionQueryKeys.agentModels(agentId ?? "", cwd ?? "", connection),
+    queryFn: () => probeAgentModels(agentId!, cwd!, projectId!, connection),
+    enabled: enabled && !!agentId && !!cwd && projectId != null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
+}
 
 /**
  * Active session list. Refreshes on the "sessions-changed" Tauri event, plus a slow poll: a

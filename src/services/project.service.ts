@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ConnectionKey, ProjectConfigRequest } from "@/types/bindings";
+import type { ConnectionKey, ProjectConfigRequest, ProfilesDocument } from "@/types/bindings";
 import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
@@ -23,6 +23,7 @@ export const projectQueryKeys = {
   settings: () => [...projectQueryKeys.base, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
   locks: (ids: number[]) => [...projectQueryKeys.base, "locks", ids] as const,
+  profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
 };
 
 /**
@@ -134,6 +135,41 @@ export function useDeleteProject(connectionId: number | string | null | undefine
 /**
  * Mutation hook for updating project settings
  */
+/**
+ * Query hook for a project's agent profiles — which agent, model and permission mode each
+ * pipeline role runs with.
+ *
+ * Stored in the project's own `.maestro/profiles.json` rather than Maestro's database, so the
+ * whole team gets the same pipeline from the repository. Until now nothing in the UI read or
+ * wrote it and the file had to be edited by hand.
+ */
+export function useAgentProfilesQuery(projectId: number | null) {
+  return useQuery({
+    queryKey: projectQueryKeys.profiles(projectId!),
+    queryFn: () => api.listAgentProfiles(projectId!),
+    enabled: projectId != null,
+  });
+}
+
+/**
+ * Mutation hook for saving a project's agent profiles.
+ *
+ * Whole-document, matching the command: the Rust side validates ids are present and unique across
+ * the set, which cannot be checked one profile at a time.
+ */
+export function useSaveAgentProfilesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, document }: { projectId: number; document: ProfilesDocument }) =>
+      api.saveAgentProfiles(projectId, document),
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.profiles(projectId) });
+    },
+    onError: createErrorToastHandler("Failed to save agent profiles"),
+  });
+}
+
 export function useUpdateProjectSettings() {
   const queryClient = useQueryClient();
 

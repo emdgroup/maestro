@@ -69,6 +69,16 @@ pub struct ProjectConfig {
     /// `detect_project_issue_tracking` doesn't put it straight back on next open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub issue_tracking_auto_detect: Option<bool>,
+    /// Which forge hosts this project's remote, detected from `git remote -v`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_hosting: Option<ProjectCodeHostingConfig>,
+    /// Same opt-out as `issue_tracking_auto_detect`, for `code_hosting`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_hosting_auto_detect: Option<bool>,
+    /// How approved work leaves Review. Absent means `Merge`, which is what Maestro did
+    /// before this field existed — a project is never switched to the PR path by detection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub landing_mode: Option<LandingMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_tab: Option<String>,
     /// Accent hue in degrees, as a string, matching `AppSettings::accent_color`.
@@ -109,6 +119,43 @@ pub struct ProjectIssueTrackingConfig {
     pub project_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_name: Option<String>,
+}
+
+/// Where this project's remote is hosted, and enough of the remote's path to address it
+/// through the forge's API.
+///
+/// Everything here is the same for every member of the team, which is what makes it safe
+/// to keep in a committed file. Whether *you* hold a credential for `provider` is resolved
+/// at approve time and deliberately not stored — a connected teammate must not be able to
+/// commit a file telling an unconnected one that a PR is available.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[specta(export)]
+pub struct ProjectCodeHostingConfig {
+    pub provider: String,
+    /// Host of the remote URL, so a self-hosted instance stays distinguishable.
+    pub host: String,
+    /// Set only for the two-segment `owner/repo` shape every forge but GitLab and
+    /// Azure DevOps uses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// The whole remote path, so a namespace that nests deeper than `owner/repo` survives.
+    pub project_path: String,
+}
+
+/// How approved work leaves Review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "PascalCase")]
+#[specta(export)]
+pub enum LandingMode {
+    /// Merge into the target branch locally. The default, and what shipped before PRs existed.
+    #[default]
+    Merge,
+    /// Push the branch and open a pull request.
+    PullRequest,
+    /// Push the branch and stop there — someone else lands it.
+    PushOnly,
 }
 
 /// Convenience: build an updated_at timestamp

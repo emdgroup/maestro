@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::models::AppSettings;
 use crate::settings::models::LogLocation;
@@ -37,12 +37,19 @@ pub fn save_settings(
     app_state: State<Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    crate::core::settings::save_settings(&mut conn, &settings).map_err(|e| e.to_string())?;
+    {
+        let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::core::settings::save_settings(&mut conn, &settings).map_err(|e| e.to_string())?;
+    }
 
     // The level is a global gate, so it takes effect without a restart. The directory cannot —
     // fern's targets are fixed once built — which is why the UI says so.
     logging::apply_stored_level(settings.log_level.as_deref());
+
+    // Switching auto-mode on, or raising the concurrency limit, has to be able to start work
+    // immediately. Without this the change would sit inert until a task happened to move, which
+    // is what made the auto-mode switch look broken.
+    app_state.app_handle.emit("settings-changed", ()).ok();
     Ok(())
 }
 

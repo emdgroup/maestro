@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
-import { Trash2, X } from "lucide-react";
-import type { TaskStatus, TaskPriority } from "@/types/bindings";
+import { Ban, Trash2, X } from "lucide-react";
+import type { Task, TaskStatus, TaskPriority } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -19,15 +19,14 @@ import {
   useTasksQuery,
   useUpdateTask,
   useArchiveTaskMutation,
+  useCancelTaskMutation,
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
 } from "@/services/task.service";
-import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
-import { useDefaultAgent } from "@/store/configStore";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useIsTaskEditable } from "@/hooks/useIsTaskEditable";
+import { useTaskHold } from "@/hooks/useTaskHold";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { EditableField } from "./EditableField";
@@ -38,17 +37,42 @@ import {
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
 import { BranchSection } from "@/components/kanban/shared/BranchSection";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
+import { OutcomeThread } from "./OutcomeThread";
 
-const ALL_STATUSES: TaskStatus[] = ["Planning", "Queue", "InProgress", "Review", "Done"];
+// Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
+// picker showing nothing at all for it reads as a bug.
+const ALL_STATUSES: TaskStatus[] = [
+  "Planning",
+  "Queue",
+  "InProgress",
+  "Review",
+  "Done",
+  "Cancelled",
+];
+
+/// Everywhere the user may send a task by hand.
+///
+/// Only the two columns a task sits in before it runs. Everything past that point is reached by
+/// an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
+/// Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
+/// no action had made true — most visibly, re-selecting Review on a task already in Review
+/// applies `ManualMove`, which parks it and strips the phase and ball off a live review.
+///
+/// This does still let a cancelled task be re-filed to Planning, which is how restoring from the
+/// archive works.
 const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
+
+/// Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
+/// working in is locked for the same reason the card cannot be dragged — re-filing applies
+/// `ManualMove`, which parks the task and orphans the session still running against it.
+const STATUS_IS_LOCKED = (task: Task) =>
+  task.status === "Done" || task.phase_status === "Running" || task.phase_status === "Blocked";
 
 interface TaskDraft {
   title: string;
   description: string;
   priority: TaskPriority;
-  agentId: string | null;
   isolatedWorktree: boolean;
-  autoApprove: boolean;
   baseBranch: string;
   labels: string[];
 }
@@ -61,35 +85,31 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
   const projectId = selectedProject?.id ?? null;
-  const defaultAgent = useDefaultAgent();
 
   const { data: tasks } = useTasksQuery(projectId);
   const task = (tasks ?? []).find((t) => t.id === taskId) ?? null;
 
   const updateTask = useUpdateTask();
   const archiveTask = useArchiveTaskMutation();
+  const cancelTask = useCancelTaskMutation();
   const deleteTask = useDeleteTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
   const addAttachmentRef = useRef(addAttachment);
   addAttachmentRef.current = addAttachment;
 
-  const connection = selectedProject
-    ? connectionKeyFromProject(selectedProject)
-    : { type: "local" as const };
-  const { data: discovery } = useAgentDiscoveryQuery(connection);
-  const agents = discovery?.agents ?? [];
-
   const { setActiveTaskId } = useNavigationActions();
 
   const isEditable = useIsTaskEditable(taskId);
+
+  // Held while the modal is open, so auto-mode cannot start the task the user is halfway through
+  // rewriting — the agent would be given a prompt the user had already moved on from.
+  useTaskHold(taskId, taskId !== null);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",
     description: "",
     priority: "None",
-    agentId: null,
     isolatedWorktree: true,
-    autoApprove: false,
     baseBranch: "",
     labels: [],
   });
@@ -108,9 +128,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         title: task.title,
         description: task.description ?? "",
         priority: task.priority,
-        agentId: task.agent_id ?? null,
         isolatedWorktree: task.isolated_worktree,
-        autoApprove: task.auto_approve,
         baseBranch: task.base_branch ?? "",
         labels: task.labels ?? [],
       });
@@ -134,8 +152,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     },
   );
 
-  const [agentError, setAgentError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
   function handleRequestClose() {
@@ -162,11 +180,13 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   function handleStatusChange(newStatus: string | null) {
     if (!newStatus || !task) return;
-    if (newStatus === "Queue" && !task.agent_id && !defaultAgent) {
-      setAgentError("Assign an agent to this task, or set a project default in Settings.");
-      return;
-    }
-    setAgentError(null);
+    // Re-picking the status a task is already in still applies `ManualMove`, which parks it —
+    // clearing phase, phase_status and ball. On anything with live pipeline state that silently
+    // throws it away, so a no-op selection has to stay a no-op.
+    if (newStatus === task.status) return;
+    // No agent check here any more. Which agent runs is decided per role by the project's profiles
+    // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
+    // now refuse every move to Queue rather than the ones it was written for.
     updateTask.mutate({ taskId: task.id, updates: { status: newStatus as TaskStatus } });
   }
 
@@ -179,10 +199,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           title: draft.title.trim(),
           description: draft.description || null,
           priority: draft.priority,
-          agent_id: draft.agentId,
           // A non-git project has no worktree toggle in the UI, so never persist it as on.
           isolated_worktree: isGitRepo ? draft.isolatedWorktree : false,
-          auto_approve: draft.autoApprove,
           base_branch: draft.baseBranch || undefined,
           labels: draft.labels,
         },
@@ -225,7 +243,11 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 {isEditable ? "EDIT TASK" : "TASK DETAIL"}
               </DialogTitle>
               <div className="flex-1" />
-              <Select value={task.status} onValueChange={handleStatusChange}>
+              <Select
+                value={task.status}
+                onValueChange={handleStatusChange}
+                disabled={STATUS_IS_LOCKED(task)}
+              >
                 <SelectTrigger size="sm" className="w-32">
                   <SelectValue />
                 </SelectTrigger>
@@ -316,30 +338,19 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
                       : undefined
                   }
-                  agentId={draft.agentId}
-                  agents={agents}
-                  onAgentChange={
-                    isEditable
-                      ? (id) => markDirtySetDraft((d) => ({ ...d, agentId: id }))
-                      : undefined
-                  }
                   isolatedWorktree={draft.isolatedWorktree}
                   onIsolatedWorktreeChange={
                     isEditable
                       ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
                       : undefined
                   }
-                  autoApprove={draft.autoApprove}
-                  onAutoApproveChange={
-                    isEditable
-                      ? (v) => markDirtySetDraft((d) => ({ ...d, autoApprove: v }))
-                      : undefined
-                  }
                   isGitRepo={isGitRepo ?? false}
                 />
-
-                {agentError && <p className="text-xs text-destructive">{agentError}</p>}
               </div>
+
+              {/* The only record a Done or archived task has: once the session closes, its
+                  transcript is gone and this is what remains. */}
+              <OutcomeThread taskId={task.id} />
             </div>
 
             {/* Footer */}
@@ -376,6 +387,49 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           }}
                         >
                           Delete Task
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              )}
+
+              {/* The way off the board that keeps the record. Delete destroys the task and is
+                  hidden once it is Done; without this a task that should never have been started
+                  had no exit at all from Review or Done. */}
+              {task.status !== "Cancelled" && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancelTask.isPending}
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    <Ban className="size-4" />
+                    Cancel task
+                  </Button>
+                  <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          It leaves the board and moves to the archive. Nothing on disk is touched —
+                          any worktree and branch stay where they are.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setCancelOpen(false)}>
+                          Keep task
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            setCancelOpen(false);
+                            cancelTask.mutate(task.id, {
+                              onSuccess: () => setActiveTaskId(null),
+                            });
+                          }}
+                        >
+                          Cancel task
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

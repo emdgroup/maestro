@@ -1,21 +1,8 @@
-//! Canvas fence extraction and preamble filtering for ACP session message streams.
+//! Canvas fence extraction for ACP session message streams.
 
 use std::sync::Arc;
 use tauri::Emitter;
 use crate::acp::transport::{SessionModelState, SessionModeState};
-
-/// State machine for stripping a `<maestro-preamble>...</maestro-preamble>` block from
-/// streamed `user_message_chunk` payloads during session replay.
-///
-/// Maestro no longer injects a preamble — the `maestro-output` skill replaced it. This filter
-/// stays for sessions created before that change, which have the preamble stored in their history
-/// and would otherwise show it verbatim when the agent replays them.
-pub enum PreambleFilterState {
-    /// Watching for the opening tag. Chunks pass through unchanged until it is found.
-    Watching,
-    /// Inside a `<maestro-preamble>` block; discard chunks until the closing tag is found.
-    Stripping,
-}
 
 const CANVAS_FENCE_OPEN: &str = "```maestro-canvas\n";
 
@@ -227,119 +214,6 @@ pub(crate) fn push_config_init_to_buffer(
         })) {
             vec.push(raw);
         }
-    }
-}
-
-/// Filter the rendering preamble tags from a `user_message` payload (complete content).
-/// Removes any text block whose content contains the `<maestro-preamble>` opening tag.
-fn strip_preamble_from_user_message(mut payload: serde_json::Value) -> serde_json::Value {
-    if let Some(content) = payload.get_mut("content") {
-        match content {
-            serde_json::Value::Array(blocks) => {
-                blocks.retain(|block| {
-                    block.get("text")
-                        .and_then(|t| t.as_str())
-                        .map(|t| !t.contains("<maestro-preamble>"))
-                        .unwrap_or(true)
-                });
-            }
-            serde_json::Value::String(text) => {
-                *content = serde_json::Value::String(strip_preamble_tags_from_str(text));
-            }
-            _ => {}
-        }
-    }
-    payload
-}
-
-/// Strip `<maestro-preamble>...</maestro-preamble>` from a plain string.
-fn strip_preamble_tags_from_str(text: &str) -> String {
-    if let Some(start) = text.find("<maestro-preamble>") {
-        if let Some(end_offset) = text[start..].find("</maestro-preamble>") {
-            let end = start + end_offset + "</maestro-preamble>".len();
-            return format!("{}{}", &text[..start], &text[end..]);
-        }
-        // Opening tag found but no closing tag — remove from opening tag onward.
-        text[..start].to_string()
-    } else {
-        text.to_string()
-    }
-}
-
-/// Filter preamble content from a `user_message_chunk` using the streaming state machine.
-/// Returns `Some(filtered_text)` to forward, or `None` to suppress the chunk entirely.
-///
-/// The preamble was always injected as a complete text block, so its opening tag always
-/// appears whole within a single chunk — no carry buffer across chunk boundaries is needed.
-fn filter_chunk_text(
-    chunk_text: &str,
-    filter: &mut PreambleFilterState,
-) -> Option<String> {
-    match filter {
-        PreambleFilterState::Watching => {
-            if let Some(open_pos) = chunk_text.find("<maestro-preamble>") {
-                let prefix = &chunk_text[..open_pos];
-                let rest = &chunk_text[open_pos + "<maestro-preamble>".len()..];
-
-                if let Some(close_offset) = rest.find("</maestro-preamble>") {
-                    let suffix = &rest[close_offset + "</maestro-preamble>".len()..];
-                    *filter = PreambleFilterState::Watching;
-                    let output = format!("{}{}", prefix, suffix);
-                    return if output.is_empty() { None } else { Some(output) };
-                }
-
-                *filter = PreambleFilterState::Stripping;
-                return if prefix.is_empty() { None } else { Some(prefix.to_string()) };
-            }
-
-            Some(chunk_text.to_string())
-        }
-        PreambleFilterState::Stripping => {
-            if let Some(close_pos) = chunk_text.find("</maestro-preamble>") {
-                let suffix = &chunk_text[close_pos + "</maestro-preamble>".len()..];
-                *filter = PreambleFilterState::Watching;
-                return if suffix.is_empty() { None } else { Some(suffix.to_string()) };
-            }
-            None
-        }
-    }
-}
-
-/// Entry point for preamble filtering on incoming `SessionUpdate` payloads.
-/// Returns `None` if the payload should be suppressed (entire chunk was preamble).
-pub(crate) fn filter_preamble_from_payload(
-    payload: serde_json::Value,
-    preamble_filter: &Arc<std::sync::Mutex<PreambleFilterState>>,
-) -> Option<serde_json::Value> {
-    let session_update = payload.get("sessionUpdate").and_then(|v| v.as_str());
-
-    match session_update {
-        Some("user_message") => Some(strip_preamble_from_user_message(payload)),
-        Some("user_message_chunk") => {
-            let chunk_text = payload
-                .get("content")
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let filtered = if let Ok(mut filter) = preamble_filter.lock() {
-                filter_chunk_text(&chunk_text, &mut filter)
-            } else {
-                Some(chunk_text)
-            };
-
-            filtered.map(|text| {
-                let mut out = payload;
-                if let Some(content) = out.get_mut("content") {
-                    if let Some(t) = content.get_mut("text") {
-                        *t = serde_json::Value::String(text);
-                    }
-                }
-                out
-            })
-        }
-        _ => Some(payload),
     }
 }
 

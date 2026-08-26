@@ -125,11 +125,27 @@ pub async fn spawn_interactive_execution(
 
     if let Some(tid) = task_id {
         let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let changed = conn.execute(
-            "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ? AND status = 'Queue'",
-            rusqlite::params![&now, tid],
-        ).map_err(|e| format!("Failed to update task status: {}", e))?;
-        if changed > 0 {
+        // Only claim a task that is still queued — the user may have moved it since.
+        //
+        // A PTY has no separate readiness signal the way ACP does: by the time the process is
+        // spawned below there is nothing further to wait for. So the claim and the start are
+        // applied together rather than leaving the task parked at `Spawning` with no event
+        // that would ever move it on.
+        let claimed = crate::task::transition::claim_for_execution(
+            &conn,
+            tid,
+            &[crate::models::TaskStatus::Queue],
+        )?;
+        if claimed.is_some() {
+            crate::task::transition::apply_if_spawning(
+                &conn,
+                tid,
+                // A PTY session is a terminal the user drives, which is the coder's seat whoever
+                // is sitting in it — there is no role to pick from.
+                crate::task::transition::TaskTransition::SessionReady(
+                    crate::project::profiles::AgentRole::Coder,
+                ),
+            )?;
             app_state.app_handle.emit("tasks-changed", ()).ok();
         }
     }

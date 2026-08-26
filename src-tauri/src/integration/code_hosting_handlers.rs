@@ -1,0 +1,239 @@
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri::State;
+
+use crate::core::AppState;
+use crate::core::connection::get_project_with_git_conn;
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+use crate::git::remote::{pick_remote, parse_remote_url, ParsedRemote};
+use crate::git::run_git_in_dir_lossy;
+use crate::integration::issue_tracking_handlers::{find_integration, provider_for_host};
+use crate::models::project::{
+    now_rfc3339, LandingMode, ProjectCodeHostingConfig, ProjectConfig,
+};
+use crate::project::settings::SETTINGS_FILE;
+
+/// How far up the capability ladder this project reaches.
+///
+/// Each rung removes one option from Approve and never blocks it; the bottom of the ladder
+/// — merge locally — is always available and is not represented here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "PascalCase")]
+#[specta(export)]
+pub enum CodeHostingRung {
+    /// No remote at all. Nothing to push to.
+    NoRemote,
+    /// A remote we can push to, on a host we cannot name. Plain git server, or a
+    /// self-hosted forge nobody has connected an integration for yet.
+    ForgeUnknown,
+    /// The forge is known but no credential answered for it right now.
+    NotConnected,
+    /// Push and pull requests are both available.
+    Ready,
+}
+
+/// The answer to "what can this project do with its remote", as of this moment.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct CodeHostingStatus {
+    pub rung: CodeHostingRung,
+    /// What the user has chosen, not what is possible — `Merge` unless they said otherwise.
+    pub landing_mode: LandingMode,
+    /// Name of the remote to push to. Present at every rung above `NoRemote`, including
+    /// the one where the forge is unknown, because push does not need a forge.
+    pub remote: Option<String>,
+    /// Forge coordinates. `None` until the forge is identified.
+    pub config: Option<ProjectCodeHostingConfig>,
+    /// Whether this call wrote `code_hosting` into `.maestro/settings.json`.
+    pub applied: bool,
+}
+
+/// Read the code-hosting field from `.maestro/settings.json`.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_project_code_hosting_config(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<Option<ProjectCodeHostingConfig>, String> {
+    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
+    let config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
+    Ok(config.code_hosting)
+}
+
+/// Write the code-hosting field into `.maestro/settings.json`.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_project_code_hosting_config(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    code_hosting: Option<ProjectCodeHostingConfig>,
+) -> Result<(), String> {
+    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
+    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
+    // Clearing is an explicit "not here", so it also opts out of detection — otherwise the
+    // next status call would put it straight back.
+    config.code_hosting_auto_detect = if code_hosting.is_none() { Some(false) } else { None };
+    config.code_hosting = code_hosting;
+    config.updated_at = now_rfc3339();
+    write_maestro_json(&conn, SETTINGS_FILE, &config).await
+}
+
+/// Choose how approved work leaves Review for this project.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_project_landing_mode(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    landing_mode: LandingMode,
+) -> Result<(), String> {
+    let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
+    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
+    config.landing_mode = Some(landing_mode);
+    config.updated_at = now_rfc3339();
+    write_maestro_json(&conn, SETTINGS_FILE, &config).await
+}
+
+/// Everything recoverable from the remote path without knowing what the forge's API will
+/// want. Kept provider-agnostic on purpose: which of these fields an API call needs is
+/// G2's problem, and guessing early would mean re-parsing when a provider is added.
+fn hosting_from_remote(provider: &str, remote: &ParsedRemote) -> ProjectCodeHostingConfig {
+    let segments: Vec<&str> = remote.path.split('/').collect();
+    let (owner, repo) = match segments.as_slice() {
+        [owner, repo] => (Some((*owner).to_string()), Some((*repo).to_string())),
+        _ => (None, None),
+    };
+
+    ProjectCodeHostingConfig {
+        provider: provider.to_string(),
+        host: remote.host.clone(),
+        owner,
+        repo,
+        project_path: remote.path.clone(),
+    }
+}
+
+/// Work out what this project can do with its remote, and record the parts of the answer
+/// that are the same for the whole team.
+///
+/// Deliberately re-run rather than cached: the top rung asks whether a credential answers
+/// *right now*, which `gh auth token` can satisfy without any integration being stored, and
+/// which stops being true when a token expires. Persisting it would let one teammate commit
+/// a file promising another a PR path they do not have.
+///
+/// Idempotent on the write: a project that already has `code_hosting`, or that opted out, is
+/// left alone and reports `applied: false`.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_project_code_hosting_status(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<CodeHostingStatus, String> {
+    code_hosting_status(app_state.inner(), project_id).await
+}
+
+/// Non-IPC form of [`get_project_code_hosting_status`], for callers that already hold an
+/// `AppState` — the approve path needs the remote name before it can push.
+pub async fn code_hosting_status(
+    app_state: &AppState,
+    project_id: i32,
+) -> Result<CodeHostingStatus, String> {
+    let (project, git_conn) = get_project_with_git_conn(app_state, project_id).await?;
+    let mut existing: ProjectConfig = read_maestro_json(&git_conn, SETTINGS_FILE).await;
+    let landing_mode = existing.landing_mode.unwrap_or_default();
+
+    let nothing = CodeHostingStatus {
+        rung: CodeHostingRung::NoRemote,
+        landing_mode,
+        remote: None,
+        config: None,
+        applied: false,
+    };
+
+    // A non-repository fails here too, which is correct: it has no remote either. Whether
+    // Review exists at all is decided by `is_git_repo` long before this is asked.
+    let remotes = match run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"]).await {
+        Ok(output) => output,
+        Err(e) => {
+            log::debug!("Code hosting detection: `git remote -v` failed: {}", e);
+            return Ok(nothing);
+        }
+    };
+    let Some((remote_name, url)) = pick_remote(&remotes) else {
+        return Ok(nothing);
+    };
+    let Some(remote) = parse_remote_url(&url) else {
+        log::debug!("Code hosting detection: unrecognised remote URL {}", url);
+        return Ok(nothing);
+    };
+
+    let Some(provider) = provider_for_host(&remote.host, app_state) else {
+        // Pushable, but there is no forge to open anything against.
+        return Ok(CodeHostingStatus {
+            rung: CodeHostingRung::ForgeUnknown,
+            landing_mode,
+            remote: Some(remote_name),
+            config: None,
+            applied: false,
+        });
+    };
+
+    let config = hosting_from_remote(&provider, &remote);
+
+    let applied = existing.code_hosting.is_none() && existing.code_hosting_auto_detect != Some(false);
+    if applied {
+        log::info!(
+            "Detected {} code hosting for project {} from remote `{}`",
+            provider,
+            project_id,
+            remote_name
+        );
+        existing.code_hosting = Some(config.clone());
+        existing.updated_at = now_rfc3339();
+        write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
+    }
+
+    let connected = find_integration(&provider, &remote.host, app_state).await.is_some();
+
+    Ok(CodeHostingStatus {
+        rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },
+        landing_mode,
+        remote: Some(remote_name),
+        config: Some(config),
+        applied,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn remote(host: &str, path: &str) -> ParsedRemote {
+        ParsedRemote { host: host.to_string(), path: path.to_string() }
+    }
+
+    #[test]
+    fn two_segment_paths_yield_owner_and_repo() {
+        let config = hosting_from_remote("github", &remote("github.com", "owner/repo"));
+        assert_eq!(config.owner.as_deref(), Some("owner"));
+        assert_eq!(config.repo.as_deref(), Some("repo"));
+        assert_eq!(config.project_path, "owner/repo");
+        assert_eq!(config.host, "github.com");
+    }
+
+    #[test]
+    fn deeper_paths_keep_the_whole_namespace_and_claim_no_owner() {
+        let config = hosting_from_remote("gitlab", &remote("gitlab.com", "group/subgroup/repo"));
+        assert_eq!(config.owner, None);
+        assert_eq!(config.repo, None);
+        assert_eq!(config.project_path, "group/subgroup/repo");
+    }
+
+    #[test]
+    fn landing_mode_defaults_to_merge() {
+        assert_eq!(LandingMode::default(), LandingMode::Merge);
+        let config = ProjectConfig::default();
+        assert_eq!(config.landing_mode.unwrap_or_default(), LandingMode::Merge);
+    }
+}

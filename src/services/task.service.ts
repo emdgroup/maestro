@@ -15,6 +15,8 @@ import type {
   TaskAttachment,
   CreateTaskRequest,
   UpdateTaskRequest,
+  AgentRole,
+  MergeResult,
 } from "@/types/bindings";
 
 /**
@@ -33,6 +35,7 @@ export const taskQueryKeys = {
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
   relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
   instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
+  comments: (taskId: number) => [...taskQueryKeys.base, "comments", taskId] as const,
   attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
   commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
   proxyImage: (projectId: number, filePath: string) =>
@@ -68,18 +71,6 @@ export function useTasksQuery(projectId: number | null) {
     enabled: projectId !== null,
     staleTime: 30000,
     refetchOnWindowFocus: true,
-  });
-}
-
-/**
- * Query hook for fetching diff for review (always fresh, no cache)
- */
-export function useDiffForReviewQuery(taskId: number | null) {
-  return useQuery({
-    queryKey: taskQueryKeys.detail(taskId!),
-    queryFn: () => api.getDiffForReview(taskId!),
-    enabled: taskId !== null,
-    staleTime: 0, // Always fetch fresh—diffs should reflect current state
   });
 }
 
@@ -131,6 +122,26 @@ export function useUpdateTask() {
 /**
  * Mutation hook for updating task settings
  */
+/**
+ * Mutation hook for choosing which agent profile a task uses for each role.
+ *
+ * Separate from `useUpdateTaskSettingsMutation` for the same reason the command is separate from
+ * `update_task_settings`: that one rewrites every override column it names, so a caller wanting to
+ * change one field has to resend the others correctly or silently clear them.
+ */
+export function useSetTaskProfileOverridesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, overrides }: { taskId: number; overrides: Record<string, string> }) =>
+      api.setTaskProfileOverrides(taskId, overrides),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to save the agents for this task"),
+  });
+}
+
 export function useUpdateTaskSettingsMutation() {
   const queryClient = useQueryClient();
 
@@ -197,9 +208,17 @@ export function useApproveTaskAndMergeMutation() {
       commitMessage: string;
     }) => api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
     onSuccess: (result: unknown) => {
-      const data = result as { success: boolean; task_status: string; conflicts?: string[] };
+      const data = result as MergeResult;
       if (data.success) {
-        toast.success("Merge complete. Task moved to Done.");
+        // "Merge complete" was told to every approve path, including the three that do not
+        // merge — commit-only, push, and the pull request that leaves the task in Review.
+        if (data.pull_request_url) {
+          toast.success("Pull request opened. The task stays in Review until it merges.");
+        } else if (data.task_status === "Done") {
+          toast.success("Task moved to Done.");
+        } else {
+          toast.success("Task approved.");
+        }
       } else {
         toast.error(
           `Merge conflict detected. Task returned to In Progress. Conflicts: ${(data.conflicts ?? []).join(", ")}`,
@@ -212,22 +231,15 @@ export function useApproveTaskAndMergeMutation() {
 }
 
 /**
- * Mutation hook for rejecting a review with one of three actions:
- * SendToBacklog, ResumeWithInstructions, CancelTask
+ * Mutation hook for rejecting a review, either sending the task back to Planning
+ * ("SendToBacklog") or cancelling it outright ("CancelTask")
  */
 export function useRejectReviewMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      taskId,
-      action,
-      instruction,
-    }: {
-      taskId: number;
-      action: string;
-      instruction?: string;
-    }) => api.rejectReview(taskId, action, instruction ?? null),
+    mutationFn: ({ taskId, action }: { taskId: number; action: string }) =>
+      api.rejectReview(taskId, action),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -534,6 +546,147 @@ export function useInterruptTaskMutation() {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to interrupt task"),
+  });
+}
+
+/**
+ * Mutation hook for moving a task to review by hand.
+ *
+ * The escape hatch for when neither completion signal fires — the agent ignored the marker and
+ * changed nothing, so the automatic rules left it in progress.
+ *
+ * Resolves to `null` when the task changed nothing and `force` was not set; the caller is expected
+ * to confirm and retry with `force`, rather than silently opening a review with an empty diff.
+ */
+export function useSendTaskToReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, force = false }: { taskId: number; force?: boolean }) =>
+      api.sendTaskToReview(taskId, force),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to send task to review"),
+  });
+}
+
+/**
+ * The task's outcome thread, oldest entry first.
+ *
+ * Refetches on `task-comments-changed`, which the backend emits when a phase records its closing
+ * message — otherwise a thread left open while an agent finishes would stay blank.
+ */
+export function useTaskCommentsQuery(taskId: number | undefined) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (taskId === undefined) return;
+    const unlisten = listen<number>("task-comments-changed", (event) => {
+      if (event.payload === taskId) {
+        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
+      }
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [taskId, queryClient]);
+
+  return useQuery({
+    queryKey: taskQueryKeys.comments(taskId ?? -1),
+    queryFn: () => api.listTaskComments(taskId!),
+    enabled: taskId !== undefined,
+  });
+}
+
+/**
+ * Mutation hook for adding a note of the user's own to a task's thread.
+ *
+ * Only notes are writable from the UI — the typed kinds are the pipeline's record of what an agent
+ * concluded, and a hand-written one would make a gate's evidence forgeable.
+ */
+export function useAddTaskNoteMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, body }: { taskId: number; body: string }) =>
+      api.addTaskNote(taskId, body),
+    onSuccess: (_data, { taskId }) => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
+    },
+    onError: createErrorToastHandler("Failed to add the note"),
+  });
+}
+
+/**
+ * Mutation hook for claiming a task before its session is spawned.
+ *
+ * Not `updateTask({ status: "InProgress" })` — that is a manual move, which parks the task with
+ * no phase and the ball on nobody, so the card looks idle for the whole run.
+ *
+ * Resolves to null when the task cannot be claimed, which the caller must treat as a refusal to
+ * start rather than an error.
+ */
+export function useMarkTaskExecutionStartedMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.markTaskExecutionStarted(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to mark task as started"),
+  });
+}
+
+/**
+ * Mutation hook for moving a claimed task to In Progress once its session is live.
+ *
+ * Resolves to null when the task is no longer the one that was claimed.
+ */
+export function useMarkTaskSessionReadyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, role }: { taskId: number; role: AgentRole }) =>
+      api.markTaskSessionReady(taskId, role),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to mark the session as ready"),
+  });
+}
+
+/**
+ * Mutation hook for handing back a claim whose spawn never produced a session.
+ *
+ * `failed` decides what the user sees: true leaves the card red so a spawn error is visible and
+ * retryable, false simply parks the task again because cancelling is not a failure.
+ */
+export function useReleaseTaskExecutionClaimMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, failed }: { taskId: number; failed: boolean }) =>
+      api.releaseTaskExecutionClaim(taskId, failed),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to release the execution claim"),
+  });
+}
+
+/**
+ * Answers the refiner's proposal gate.
+ *
+ * Accepting is the first and only moment the description changes — the refiner writes nothing
+ * itself — so rejecting needs no undo.
+ */
+export function useCloseRefinementMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, accept }: { taskId: number; accept: boolean }) =>
+      api.closeRefinement(taskId, accept),
+    onSuccess: (_task, { accept }) => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      toast.success(accept ? "Description updated" : "Proposal discarded");
+    },
+    onError: createErrorToastHandler("Failed to close the refinement"),
   });
 }
 

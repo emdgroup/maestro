@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
-pub const SCHEMA_V24_FULL: &str = r#"
+pub const SCHEMA_V25_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -66,6 +66,43 @@ CREATE TABLE IF NOT EXISTS tasks (
     execution_start_sha TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    -- Pipeline activity, orthogonal to status. `status` is which board column the task is in;
+    -- these three are what is happening inside it. phase NULL means no pipeline activity, in
+    -- which case phase_status is NULL and ball is 'None'. Written only via task::transition.
+    phase TEXT,
+    phase_status TEXT,
+    ball TEXT NOT NULL DEFAULT 'None',
+    -- How a Done task got there: Merged / MergedViaPR / LocalOnly / NoChanges. NULL on anything
+    -- that is not Done, and on Done tasks in a non-git project where none of those mean anything.
+    completion TEXT,
+    -- When the user pressed Execute on a task the host had no free slot for. The scheduler takes
+    -- these before its own picks, so the deferral message is a promise it can keep. Cleared by
+    -- task::transition the moment the task stops being a queue candidate.
+    execute_requested_at TEXT,
+    -- The pull request this task's branch was opened as, set when approve chooses the PR path.
+    -- Columns rather than an outcome-thread entry because the poller has to find the tasks with
+    -- an open PR by query, and the card links straight to it.
+    pull_request_url TEXT,
+    pull_request_number INTEGER,
+    -- How many times the review agent has sent this task back. Bounded, because the rework loop
+    -- is the one place agents hand work to each other with no human in between.
+    review_rounds INTEGER NOT NULL DEFAULT 0,
+    -- How many times an agent has been sent to fix this task's CI. Counted separately from
+    -- review_rounds: a task that spent its review rounds must still be able to fix a red build,
+    -- and a shared counter would make both cap messages wrong.
+    fix_rounds INTEGER NOT NULL DEFAULT 0,
+    -- What the forge's CI last said about the open pull request: Passing / Failing / Pending.
+    -- A display cache, not a lifecycle field — the sweep runs every three minutes and this is what
+    -- lets the card answer "can this land" in between. NULL whenever there is nothing to say.
+    pull_request_ci TEXT,
+    -- Which agent profile this task wants for a given role, as a JSON object keyed by role name:
+    -- {"Reviewer": "strict-reviewer"}. A role absent from it uses the project's default, so NULL
+    -- and "{}" both mean "the project decides everything", which is what almost every task wants.
+    --
+    -- Profile ids rather than inlined settings, so a task cannot describe an agent the project
+    -- never defined: `ProfilesDocument::resolve` already takes an override id and falls back when
+    -- it names nothing, which is also what makes a deleted profile harmless here.
+    profile_overrides TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -89,6 +126,26 @@ CREATE TABLE IF NOT EXISTS task_instructions (
     created_at TEXT NOT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+
+-- The task's outcome thread: the closing message of each phase, artifacts, and user notes.
+-- Append-only and client-side, so it survives archiving and the death of the session that
+-- produced it. `kind` is what the gates point at — a plan gate gates on the latest 'plan' entry.
+--
+-- Content is inline-or-reference by design: `body` holds the text, `external_ref` a pointer to
+-- bytes stored elsewhere. Exactly one is set. Artifacts are small enough to inline today, and the
+-- column is what keeps moving them out later from being a migration of stored data.
+CREATE TABLE IF NOT EXISTS task_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    author TEXT NOT NULL,
+    body TEXT,
+    external_ref TEXT,
+    phase TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
 
 -- Task attachments table: stores file attachment metadata for tasks
 CREATE TABLE IF NOT EXISTS task_attachments (
@@ -264,7 +321,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V24_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -285,7 +342,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V24_FULL)?;
+        conn.execute_batch(SCHEMA_V25_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -314,6 +371,90 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 24 {
         migrate_to_v24(conn)?;
     }
+    if from < 25 {
+        migrate_to_v25(conn)?;
+    }
+    Ok(())
+}
+
+/// Everything the pipeline rework added to a v24 database.
+///
+/// This was built as three separate steps and collapsed into one, because none of them was ever
+/// released: v24 is what shipped in v0.11.0 through v0.16.0, and no database outside this
+/// repository has ever held v25 or later. Keeping three migrations for a state nothing was in
+/// would be three code paths maintained to serve nobody.
+///
+/// Two things it deliberately does *not* backfill:
+///
+/// `completion` stays NULL on existing Done tasks. The board cannot tell a merged task from an
+/// approved-and-abandoned one after the fact, and a wrong qualifier is worse than an absent one:
+/// `LocalOnly` is the variant that says the work is still sitting in a worktree, so inventing it
+/// would send a user looking for something that is not there, and omitting it would hide work that
+/// is.
+///
+/// `execute_requested_at` stays NULL everywhere. It records a promise the user was given, and no
+/// existing task was ever given one.
+fn migrate_to_v25(conn: &Connection) -> SqlResult<()> {
+    for (name, definition) in [
+        ("phase", "phase TEXT"),
+        ("phase_status", "phase_status TEXT"),
+        ("ball", "ball TEXT NOT NULL DEFAULT 'None'"),
+        ("completion", "completion TEXT"),
+        ("execute_requested_at", "execute_requested_at TEXT"),
+        ("pull_request_url", "pull_request_url TEXT"),
+        ("pull_request_number", "pull_request_number INTEGER"),
+        ("review_rounds", "review_rounds INTEGER NOT NULL DEFAULT 0"),
+        ("fix_rounds", "fix_rounds INTEGER NOT NULL DEFAULT 0"),
+        ("pull_request_ci", "pull_request_ci TEXT"),
+        ("profile_overrides", "profile_overrides TEXT"),
+    ] {
+        let col_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = ?",
+                [name],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !col_exists {
+            conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {};", definition))?;
+        }
+    }
+
+    // `migrate_to_v24` already retired these two legacy values, but `reject_review` has kept
+    // writing 'Backlog' ever since. Repeat the cleanup so rows written in between are not left
+    // with a status no `TaskStatus` variant matches — `FromStr` maps them to Planning on read,
+    // which hides the problem from the UI while keeping them invisible to status-filtered SQL.
+    conn.execute_batch(
+        "UPDATE tasks SET status = 'Planning' WHERE status = 'Backlog';
+         UPDATE tasks SET status = 'Queue' WHERE status = 'Ready';",
+    )?;
+
+    conn.execute_batch(
+        "UPDATE tasks SET phase = 'Implementing', phase_status = 'Running', ball = 'Agent' \
+           WHERE status = 'InProgress';
+         UPDATE tasks SET phase = 'Approval', phase_status = 'Waiting', ball = 'User' \
+           WHERE status = 'Review';
+         UPDATE tasks SET phase = NULL, phase_status = NULL, ball = 'None' \
+           WHERE status IN ('Planning', 'Queue', 'Done', 'Cancelled');",
+    )?;
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            author TEXT NOT NULL,
+            body TEXT,
+            external_ref TEXT,
+            phase TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);",
+    )?;
+
     Ok(())
 }
 
@@ -401,7 +542,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -437,6 +578,9 @@ mod tests {
         assert!(task_columns.contains(&"auto_approve".to_string()));
         assert!(task_columns.contains(&"isolated_worktree".to_string()));
         assert!(task_columns.contains(&"agent_id".to_string()));
+        assert!(task_columns.contains(&"phase".to_string()));
+        assert!(task_columns.contains(&"phase_status".to_string()));
+        assert!(task_columns.contains(&"ball".to_string()));
     }
 
     /// Foreign keys are per-connection, so the early return for an already-current database must
@@ -536,6 +680,86 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
         assert_eq!(statuses, vec!["Planning".to_string(), "Queue".to_string()]);
+    }
+
+    /// v24 → v25 is the only upgrade the pipeline rework has to survive, because v24 is what
+    /// shipped and nothing else was ever released. It has to backfill the pipeline triple from
+    /// `status`, repeat the 'Backlog' cleanup (`reject_review` kept writing it after v24), add the
+    /// two nullable columns without inventing values for them, and create the outcome thread.
+    #[test]
+    fn test_migration_from_the_last_released_schema() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'running', 'InProgress', 'main', '2026-01-01', '2026-01-01'), \
+                    (2, 1, 'in review', 'Review', 'main', '2026-01-01', '2026-01-01'), \
+                    (3, 1, 'parked', 'Planning', 'main', '2026-01-01', '2026-01-01'), \
+                    (4, 1, 'post-v24 backlog', 'Backlog', 'main', '2026-01-01', '2026-01-01'), \
+                    (5, 1, 'finished long ago', 'Done', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        // A real v24 database has no outcome thread.
+        conn.execute_batch("DROP TABLE task_comments;").unwrap();
+
+        conn.execute("PRAGMA user_version = 24", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let row = |id: i32| -> (String, Option<String>, Option<String>, String) {
+            conn.query_row(
+                "SELECT status, phase, phase_status, ball FROM tasks WHERE id = ?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(
+            row(1),
+            ("InProgress".into(), Some("Implementing".into()), Some("Running".into()), "Agent".into())
+        );
+        assert_eq!(
+            row(2),
+            ("Review".into(), Some("Approval".into()), Some("Waiting".into()), "User".into())
+        );
+        assert_eq!(row(3), ("Planning".into(), None, None, "None".into()));
+        // Rewritten to Planning by the repeated cleanup, then backfilled as a parked task.
+        assert_eq!(row(4), ("Planning".into(), None, None, "None".into()));
+
+        let (completion, requested): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT completion, execute_requested_at FROM tasks WHERE id = 5",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("both columns must exist after migrating");
+        assert_eq!(
+            completion, None,
+            "a pre-existing Done task must not be given a completion the board cannot know"
+        );
+        assert_eq!(requested, None, "no existing task was ever promised a slot");
+
+        conn.execute(
+            "INSERT INTO task_comments (task_id, kind, author, body, created_at) \
+             VALUES (5, 'note', 'user', 'still here', '2026-01-02')",
+            [],
+        )
+        .expect("the outcome thread must exist after migrating");
+
+        // The thread is part of the task, so deleting the task takes it.
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        conn.execute("DELETE FROM tasks WHERE id = 5", []).unwrap();
+        let orphans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_comments", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphans, 0, "comments must cascade with their task");
     }
 
     #[test]

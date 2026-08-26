@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { Plus, Archive, Search } from "lucide-react";
+import { Plus, Archive, Search, BellDot } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
@@ -19,6 +19,11 @@ import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
+import { useKanban } from "@/contexts/KanbanContext";
+import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
+import { usePullRequestPoll } from "@/utils/hooks/usePullRequestPoll";
+import { useAgentPipeline } from "@/utils/hooks/useAgentPipeline";
+import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 
 const EMPTY_TASKS: Task[] = [];
 
@@ -32,10 +37,19 @@ export const KanbanView: React.FC = () => {
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
   const reviewPanelTaskId = useReviewPanelTaskId();
   const { closeReview } = useBoardActions();
+  const { connection } = useKanban();
+
+  // Mounted here rather than in `BoardView` because this view stays mounted while the user is on
+  // another tab — auto-mode has to keep filling slots when nobody is watching the board, which is
+  // most of the time it matters.
+  useQueueDrain(projectId, projectPath, taskList, connection);
+  usePullRequestPoll(projectId);
+  useAgentPipeline(projectId, projectPath, taskList, connection);
 
   const [query, setQuery] = useState("");
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [needsMeOnly, setNeedsMeOnly] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -53,13 +67,18 @@ export const KanbanView: React.FC = () => {
     [taskList],
   );
 
+  // `ball` is "who is the pipeline blocked on", not "who owns this", so a Planning backlog and
+  // queued tasks are excluded by design — otherwise the count would be the size of the board.
+  const needsMeCount = useMemo(() => taskList.filter((t) => t.ball === "User").length, [taskList]);
+
   const filteredTasks = taskList.filter((t) => {
     const matchesQuery = query === "" || t.title.toLowerCase().includes(query.toLowerCase());
     const matchesPriority =
       selectedPriorities.length === 0 || selectedPriorities.includes(t.priority);
     const matchesLabel =
       selectedLabels.length === 0 || selectedLabels.some((l) => t.labels.includes(l));
-    return matchesQuery && matchesPriority && matchesLabel;
+    const matchesNeedsMe = !needsMeOnly || t.ball === "User";
+    return matchesQuery && matchesPriority && matchesLabel && matchesNeedsMe;
   });
 
   const reviewTask =
@@ -73,6 +92,12 @@ export const KanbanView: React.FC = () => {
     return (
       <TaskReviewPanel
         task={reviewTask}
+        // A task with isolation off never gets a worktree row — its agent worked in the project
+        // itself — so the diff has to be taken there. Kept separate from `worktreePath`, which
+        // still means "there is a worktree", because Discard offers to delete whatever that names.
+        reviewPath={
+          reviewWorktree?.path ?? (reviewTask.isolated_worktree ? null : projectPath || null)
+        }
         worktreePath={reviewWorktree?.path ?? null}
         baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
         branchName={reviewWorktree?.branch_name ?? null}
@@ -177,6 +202,20 @@ export const KanbanView: React.FC = () => {
             </div>
           </PopoverContent>
         </Popover>
+
+        <QueueCapacityBadge projectId={projectId} />
+
+        <Button
+          size="sm"
+          variant={needsMeOnly ? "accent" : "outline"}
+          onClick={() => setNeedsMeOnly((v) => !v)}
+          disabled={needsMeCount === 0 && !needsMeOnly}
+          title="Show only tasks the pipeline is waiting on you for"
+        >
+          <BellDot className="size-4" />
+          Needs me
+          {needsMeCount > 0 && <Badge variant="secondary">{needsMeCount}</Badge>}
+        </Button>
 
         <Button size="sm" variant="outline" onClick={() => setIsArchiveModalOpen(true)}>
           <Archive className="size-4" />

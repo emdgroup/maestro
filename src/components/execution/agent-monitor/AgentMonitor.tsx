@@ -14,9 +14,11 @@ import {
   type SessionActivityStatus,
   type SessionActivityInfo,
 } from "@/store/sessionActivityStore";
-import { useRenameAcpSessionMutation } from "@/services/execution.service";
+import {
+  useRenameAcpSessionMutation,
+  useCancelActiveSessionMutation,
+} from "@/services/execution.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
-import { api } from "@/lib/tauri-utils";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
   spawning: "Starting",
@@ -218,7 +220,6 @@ const SessionRow = memo(function SessionRow({
               e.stopPropagation();
               onClose(session);
             }}
-            disabled={session.task_prevents_close}
           >
             <X className="size-4" />
           </Button>
@@ -266,6 +267,7 @@ export function AgentMonitor({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
+  const cancelSession = useCancelActiveSessionMutation();
 
   const commitRename = useCallback(
     (session: ActiveSessionInfo) => {
@@ -369,8 +371,14 @@ export function AgentMonitor({
                   Connection lost — agent may be stuck
                 </span>
                 <button
-                  onClick={() => api.cancelAcpSession(session.session_key).catch(() => {})}
-                  className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 text-destructive hover:bg-destructive/20 transition-colors"
+                  onClick={() =>
+                    cancelSession.mutate({
+                      sessionKey: session.session_key,
+                      executionMode: session.execution_mode,
+                    })
+                  }
+                  disabled={cancelSession.isPending}
+                  className="shrink-0 rounded px-2 py-0.5 text-xs font-medium border border-destructive/40 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
                 >
                   Force end session
                 </button>
@@ -408,24 +416,14 @@ export function AgentMonitor({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {onClose && (
-            <Tooltip>
-              <TooltipTrigger render={<span />}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  disabled={session.task_prevents_close}
-                  onClick={() => onClose(session)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              {session.task_prevents_close && (
-                <TooltipContent>
-                  Task sessions can only be stopped from the task card
-                </TooltipContent>
-              )}
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => onClose(session)}
+            >
+              <X className="w-4 h-4" />
+            </Button>
           )}
         </div>
       </div>

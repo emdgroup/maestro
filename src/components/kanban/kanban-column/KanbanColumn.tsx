@@ -50,25 +50,27 @@ const COLUMN_EMPTY_STATE: Partial<
     title: "No tasks planned",
     sub: "Add a task to get started",
   },
+  // Each line has to describe what this board actually does. They used to promise a parallel
+  // limit and an AI reviewer, neither of which exists.
   Queue: {
     icon: <Clock className="size-5" />,
     title: "Queue is empty",
-    sub: "Tasks wait here when the parallel limit is reached",
+    sub: "Drag a task here once it is ready to run",
   },
   InProgress: {
     icon: <RefreshCw className="size-5" />,
     title: "Nothing running",
-    sub: "Start a task from Planning",
+    sub: "Execute a task to put an agent on it",
   },
   Review: {
     icon: <Eye className="size-5" />,
     title: "No tasks in review",
-    sub: "AI will review completed tasks",
+    sub: "Tasks arrive here when an agent finishes",
   },
   Done: {
     icon: <CheckCircle2 className="size-5" />,
     title: "Nothing done yet",
-    sub: "Completed tasks appear here",
+    sub: "Approved tasks land here",
   },
 };
 

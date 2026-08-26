@@ -46,9 +46,26 @@ bun run tauri:gen     # Regenerate TypeScript bindings from Rust models
 ```bash
 cd src-tauri
 cargo build           # Build Rust backend
-cargo test            # Run Rust tests
+cargo test            # Run Rust tests (see below on Windows)
 cargo check           # Check compilation without building
 ```
+
+**On Windows, `cargo test` does not work — use this instead:**
+
+```bash
+MAESTRO_TEST_MANIFEST=1 cargo test --lib
+```
+
+Both halves are required. Without the environment variable every test binary dies at load with
+`STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139) before a single test runs, because `tauri_build` links
+the Common-Controls v6 manifest into bin targets only and the dialog plugin's
+`TaskDialogIndirect` does not exist in the ComCtl32 5.82 the loader falls back to. Without `--lib`
+the bin's own harness is built too, gets the resource twice, and the link fails with LNK1123. The
+full reasoning, and why this cannot simply be always-on, is in `src-tauri/build.rs`.
+
+The same failure takes out `bun run tauri:gen`, which goes through
+`cargo test generate_typescript_bindings` — so on Windows regenerate bindings with
+`MAESTRO_TEST_MANIFEST=1 cargo test --lib generate_typescript_bindings` rather than the script.
 
 ## Architecture
 
@@ -104,7 +121,7 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V24. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V25. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -112,7 +129,7 @@ SQLite with foreign key constraints enabled. Schema V24. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V24_FULL`                              |
+| `0` (fresh install) | create the full schema from `SCHEMA_V25_FULL`                              |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -121,7 +138,14 @@ extend `run_migrations()` with a matching `if from < N` guard; use `CREATE TABLE
 and check `pragma_table_info` before `ALTER TABLE` so the step is safe to re-run. Only databases
 predating v22 still take the drop path.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
+**An unreleased version may be rewritten rather than superseded.** The pipeline rework was built
+as v25, v26 and v27 and collapsed back into a single v25, because none of them ever shipped —
+v24 is what released builds carry. Three migrations for a state no database outside this
+repository was ever in is three code paths maintained to serve nobody. This is only safe while
+the versions in question are absent from `main` and from every tag; check both before doing it,
+and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
+
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`
 
 ### IPC Communication
 
@@ -289,10 +313,10 @@ When modifying Rust models:
 2. TS types appear in `src/types/bindings.ts`
 3. Import in React components
 
-Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro --lib`, so any
-Rust test run rewrites `src/types/bindings.ts` — as unformatted output, which then differs from the
-oxfmt-formatted committed copy. A diff there after running tests is usually formatting churn, not a
-stale-bindings signal; compare the exported command/type names before assuming it is out of date.
+Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro --lib`, so any Rust
+test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under `ignorePatterns`, so
+the committed copy is the generator's own output and a test run leaves it alone unless the bindings
+genuinely changed — a diff there means a model changed and should be committed.
 
 ### Bundled ACP agent registry
 
@@ -379,7 +403,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
-- Schema version: 24 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
+- Schema version: 25 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)

@@ -13,10 +13,7 @@ import {
   useListRemoteIssuesQuery,
 } from "@/services/task.service";
 import { useProjectIssueTrackingConfig } from "@/services/integration.service";
-import { useAgentDiscoveryQuery } from "@/services/execution.service";
-import { useProjectSettings } from "@/services/project.service";
-import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
-import { connectionKeyFromProject } from "@/lib/connection-utils";
+import { useIsGitRepo } from "@/store/projectStore";
 import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";
 import {
   useDraggableFileInput,
@@ -31,9 +28,7 @@ import { IssueSearchCombobox } from "./IssueSearchCombobox";
 interface FormData {
   baseBranch: string;
   priority: TaskPriority;
-  agentId: string;
   isolatedWorktree: boolean;
-  autoApprove: boolean;
 }
 
 interface PendingFile {
@@ -48,7 +43,6 @@ interface CreateTaskModalProps {
 }
 
 export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalProps) {
-  const selectedProject = useSelectedProject();
   const isGitRepo = useIsGitRepo();
 
   const { data: issueConfig } = useProjectIssueTrackingConfig(projectId);
@@ -57,14 +51,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   // Keep for currentBranch initialization only — BranchPicker fetches the full list internally
   const { data: branchData } = useProjectBranchesQuery(isOpen ? projectId : null);
   const currentBranch: string = branchData?.[1] ?? "";
-
-  const connection = selectedProject
-    ? connectionKeyFromProject(selectedProject)
-    : { type: "local" as const };
-  const { data: discovery } = useAgentDiscoveryQuery(connection);
-  const agents = discovery?.agents ?? [];
-
-  const { data: projectSettings } = useProjectSettings(projectId);
 
   const { mutate: createTask, isPending } = useCreateTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
@@ -107,9 +93,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     defaultValues: {
       baseBranch: "",
       priority: "None",
-      agentId: "",
       isolatedWorktree: true,
-      autoApprove: false,
     },
   });
 
@@ -117,9 +101,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   // render, which the compiler cannot track. Both re-render on change and both start
   // from the `defaultValues` above, so the values seen here are the same.
   const priority = useWatch({ control, name: "priority" });
-  const agentId = useWatch({ control, name: "agentId" });
   const isolatedWorktree = useWatch({ control, name: "isolatedWorktree" });
-  const autoApprove = useWatch({ control, name: "autoApprove" });
 
   // Opening or closing the modal re-seeds the whole form. This component's own state is
   // adjusted during render so a reopened dialog never paints the previous task's fields;
@@ -143,9 +125,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       reset({
         baseBranch: currentBranch ?? "",
         priority: "None",
-        agentId: projectSettings?.default_agent ?? "",
         isolatedWorktree: true,
-        autoApprove: false,
       });
     } else {
       reset();
@@ -182,9 +162,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         skills: [],
         labels,
         base_branch: data.baseBranch,
-        agent_id: data.agentId || null,
+        // The project's agent profiles name the agent per role, so a task no longer carries one.
+        agent_id: null,
         priority: data.priority,
-        auto_approve: data.autoApprove,
+        auto_approve: false,
         // A non-git project has no worktree toggle in the UI, so never persist it as on.
         isolated_worktree: isGitRepo ? data.isolatedWorktree : false,
         model_override: null,
@@ -323,13 +304,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               <TaskMetadataPills
                 priority={priority}
                 onPriorityChange={(p) => setValue("priority", p)}
-                agentId={agentId || null}
-                agents={agents}
-                onAgentChange={(id) => setValue("agentId", id ?? "")}
                 isolatedWorktree={isolatedWorktree}
                 onIsolatedWorktreeChange={(v) => setValue("isolatedWorktree", v)}
-                autoApprove={autoApprove}
-                onAutoApproveChange={(v) => setValue("autoApprove", v)}
                 isGitRepo={isGitRepo ?? false}
               />
             </div>

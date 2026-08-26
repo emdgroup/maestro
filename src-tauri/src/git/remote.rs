@@ -55,19 +55,26 @@ pub fn parse_remote_url(url: &str) -> Option<ParsedRemote> {
 /// Pick the URL of the most likely "upstream" remote out of `git remote -v` output,
 /// preferring `origin`, then `upstream`, then whatever comes first.
 pub fn pick_remote_url(remote_v_output: &str) -> Option<String> {
-    let mut first: Option<String> = None;
-    let mut upstream: Option<String> = None;
+    pick_remote(remote_v_output).map(|(_name, url)| url)
+}
+
+/// As `pick_remote_url`, but also returns the remote's name — which is what `git push`
+/// takes, and which is not recoverable from the URL.
+pub fn pick_remote(remote_v_output: &str) -> Option<(String, String)> {
+    let mut first: Option<(String, String)> = None;
+    let mut upstream: Option<(String, String)> = None;
 
     for line in remote_v_output.lines() {
         let mut parts = line.split_whitespace();
         let (Some(name), Some(url)) = (parts.next(), parts.next()) else { continue };
+        let entry = (name.to_string(), url.to_string());
         match name {
-            "origin" => return Some(url.to_string()),
-            "upstream" if upstream.is_none() => upstream = Some(url.to_string()),
+            "origin" => return Some(entry),
+            "upstream" if upstream.is_none() => upstream = Some(entry.clone()),
             _ => {}
         }
         if first.is_none() {
-            first = Some(url.to_string());
+            first = Some(entry);
         }
     }
 
@@ -156,5 +163,17 @@ fork\thttps://github.com/fork/repo.git (fetch)
         assert_eq!(pick_remote_url(neither).as_deref(), Some("https://github.com/fork/repo.git"));
 
         assert_eq!(pick_remote_url(""), None);
+    }
+
+    #[test]
+    fn pick_remote_reports_the_name_alongside_the_url() {
+        let output = "\
+upstream\thttps://github.com/upstream/repo.git (fetch)
+fork\thttps://github.com/fork/repo.git (fetch)
+";
+        assert_eq!(
+            pick_remote(output),
+            Some(("upstream".into(), "https://github.com/upstream/repo.git".into()))
+        );
     }
 }

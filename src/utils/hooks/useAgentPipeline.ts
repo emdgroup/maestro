@@ -1,0 +1,88 @@
+import { useEffect, useRef } from "react";
+import type { AgentRole, Task } from "@/types/bindings";
+import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
+
+/// Collapses the burst of events one transition produces — a turn ending emits `tasks-changed`
+/// more than once — so a handoff is started from the settled state rather than a partial one.
+const DEBOUNCE_MS = 400;
+
+/**
+ * Starts the agent the board is asking for when one role hands work to another.
+ *
+ * The signal is `phase_status: "Waiting"` with the ball on `Agent`, which is a combination nothing
+ * else produces: a gate waiting on a person has the ball on `User`, and a running agent is
+ * `Running`. Rust decides *whether* a role should run — it is the side that knows the project's
+ * profiles and the round count — and this hook does the starting, because starting means a
+ * worktree, a session and a prompt, which all live in `useExecuteTask`.
+ *
+ * Only two handoffs exist, and both have a human at the end of them: a coder finishing hands to
+ * the reviewer, and a reviewer asking for changes hands back to the coder. The loop is bounded in
+ * `reader_task.rs` at `REVIEW_ROUND_CAP` rounds, after which the task goes to the human gate with
+ * the findings intact — this hook has no cap of its own and must not be the thing that stops it.
+ */
+export function useAgentPipeline(
+  projectId: number | null,
+  projectPath: string,
+  tasks: Task[],
+  connection: Parameters<typeof useExecuteTask>[2],
+) {
+  const { execute } = useExecuteTask(projectId, projectPath, connection);
+
+  // Mirrored from an effect rather than assigned during render — only the debounced timer below
+  // reads it, and that fires long after the commit this effect runs in.
+  const executeRef = useRef(execute);
+  useEffect(() => {
+    executeRef.current = execute;
+  });
+
+  /// Ids already handed to `execute` this session. The task's state does not change until the
+  /// session is up, so without this the debounce window would start the same agent twice.
+  const startedRef = useRef(new Set<number>());
+
+  // `tasks` is a dependency here and deliberately a ref in `useQueueDrain`, which looks like an
+  // oversight and is not. That hook is driven by Tauri events and only consults the list to turn an
+  // id into a task, so re-subscribing on every task update would tear its listeners down in the
+  // middle of the work they triggered. Here the list *is* the signal — a role becomes due because a
+  // row's `phase_status` changed — so re-running on it is the mechanism rather than a cost.
+  //
+  // What that relies on is TanStack's structural sharing: a refetch that returns the same content
+  // returns the same array identity, so an unrelated poll does not restart the debounce below. If
+  // the query ever stops sharing structure, the symptom is a handoff that keeps being deferred
+  // rather than one that never fires.
+  useEffect(() => {
+    if (!projectId) return;
+
+    const pending: Array<[Task, AgentRole]> = tasks.flatMap((task) => {
+      if (task.phase_status !== "Waiting" || task.ball !== "Agent") return [];
+      if (task.phase === "SelfReview") return [[task, "Reviewer" as AgentRole]];
+      // Rework is a review round; AwaitingMerge is a red build on an open pull request. Both are
+      // a coder — the difference is only which findings the prompt carries.
+      if (task.phase === "Rework" || task.phase === "AwaitingMerge") {
+        return [[task, "Coder" as AgentRole]];
+      }
+      return [];
+    });
+
+    // Anything no longer pending has moved on, so its guard can be dropped — that is what lets a
+    // second review round start after the first one finished.
+    for (const id of startedRef.current) {
+      if (!pending.some(([task]) => task.id === id)) startedRef.current.delete(id);
+    }
+
+    const due = pending.filter(([task]) => !startedRef.current.has(task.id));
+    if (due.length === 0) return;
+
+    const timer = setTimeout(() => {
+      for (const [task, role] of due) {
+        startedRef.current.add(task.id);
+        // `unattended` because this hook takes `execute` and none of the dialog state beside it,
+        // so anything `execute` stops to ask has nothing here that could answer. A CI fix round
+        // deadlocked on exactly that: the dirty-worktree prompt awaited a promise no rendered
+        // dialog could resolve, and the task sat at `Spawning` with its claim never released.
+        void executeRef.current(task, { role, unattended: true });
+      }
+    }, DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [projectId, tasks]);
+}

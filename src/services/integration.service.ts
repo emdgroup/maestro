@@ -37,6 +37,8 @@ export const integrationQueryKeys = {
     [...integrationQueryKeys.base, "issue_tracking", projectId] as const,
   detectIssueTracking: (projectId: number) =>
     [...integrationQueryKeys.base, "issue_tracking_detect", projectId] as const,
+  codeHostingStatus: (projectId: number) =>
+    [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
 };
 
 export function useListIntegrations() {
@@ -100,6 +102,26 @@ export function useDetectIssueTracking(projectId: number) {
     queryFn: () => api.detectProjectIssueTracking(projectId),
     enabled: projectId > 0,
     staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/**
+ * How far this project reaches up the code-hosting capability ladder: no remote, a remote
+ * on an unrecognised host, a known forge nobody is connected to, or a forge we can open a
+ * pull request against.
+ *
+ * Not cached across mounts on purpose. The top rung asks whether a credential answers
+ * *right now* — `gh auth token` can supply one with no integration stored, and it stops
+ * answering when the token expires — so a stale "Ready" would offer a PR that cannot be
+ * opened. The detection half of the command is idempotent, so re-running it is free.
+ */
+export function useCodeHostingStatus(projectId: number) {
+  return useQuery({
+    queryKey: integrationQueryKeys.codeHostingStatus(projectId),
+    queryFn: () => api.getProjectCodeHostingStatus(projectId),
+    enabled: projectId > 0,
+    staleTime: 60_000,
     retry: false,
   });
 }

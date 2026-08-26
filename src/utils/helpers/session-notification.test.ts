@@ -23,7 +23,6 @@ function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo 
     supports_session_close: false,
     supports_session_delete: false,
     project_id: null,
-    task_prevents_close: false,
     ...overrides,
   } as ActiveSessionInfo;
 }

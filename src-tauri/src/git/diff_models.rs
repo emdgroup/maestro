@@ -13,8 +13,15 @@ use specta::Type;
 #[specta(export)]
 pub enum DiffTarget {
     Head,
-    Branch { branch: String },
     Commit { sha: String },
+    /// Everything this worktree has done since it diverged from `branch`.
+    ///
+    /// Resolved through `git merge-base`, and compared against the **working tree** rather than
+    /// HEAD, so the result is the same whether or not the agent committed — which is the point.
+    /// There was a second variant here (`Branch`) that used `origin/<branch>..HEAD`: it named the
+    /// remote rather than the local branch, used two-dot semantics so commits the base gained
+    /// after we branched showed up as reversed changes, and being a commit range could not see
+    /// uncommitted work at all. Nothing ever constructed it.
     BranchAll { branch: String },
     CommitRange { from: String, to: String },
 }

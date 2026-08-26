@@ -1,5 +1,6 @@
 // Re-export all handlers for use in lib.rs collect_commands!
 pub use crate::project::handlers::*;
+pub use crate::project::profiles::*;
 pub use crate::task::handlers::*;
 pub use crate::connectivity::ssh_handlers::*;
 pub use crate::connectivity::sftp_handlers::*;
@@ -13,6 +14,7 @@ pub use crate::execution::handlers::*;
 pub use crate::integration::handlers::*;
 pub use crate::integration::lookup_handlers::*;
 pub use crate::integration::issue_tracking_handlers::*;
+pub use crate::integration::code_hosting_handlers::*;
 pub use crate::settings::handlers::*;
 pub use crate::acp::session_handlers::*;
 pub use crate::acp::prompt_handlers::*;

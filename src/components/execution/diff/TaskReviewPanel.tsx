@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
 import { useWorktreeDiffQuery, useWorktreeCommitsQuery } from "@/services/worktree.service";
+import { useCancelActiveSessionMutation } from "@/services/execution.service";
 import { DiffStateProvider } from "./DiffStateContext";
 import {
   useRequestChangesMutation,
@@ -33,12 +34,28 @@ import {
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { useKanban } from "@/contexts/KanbanContext";
+import { useCodeHostingStatus } from "@/services/integration.service";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
-import type { DiffTarget, Task } from "@/types/bindings";
+import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
+
+/** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
+const MERGE_STRATEGIES: Record<string, string> = {
+  "commit-only": "CommitOnly",
+  "commit-push": "CommitAndPush",
+  "pull-request": "CreatePullRequest",
+  "merge-delete": "CommitAndMerge",
+};
 
 interface TaskReviewPanelProps {
   task: Task;
+  /// Where to run git for this review — the worktree, or the project itself when the task runs
+  /// without one. Everything that reads the code uses this.
+  reviewPath: string | null;
+  /// The worktree, if the task has one. Only things that act on the worktree as an object — the
+  /// approve strategy, the discard warning — may use this.
   worktreePath: string | null;
   baseBranch: string | null;
   branchName: string | null;
@@ -47,6 +64,7 @@ interface TaskReviewPanelProps {
 
 export function TaskReviewPanel({
   task,
+  reviewPath,
   worktreePath,
   baseBranch,
   branchName,
@@ -103,6 +121,8 @@ export function TaskReviewPanel({
     onDirtyCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
+  const codeHostingQuery = useCodeHostingStatus(projectId);
+  const cancelSession = useCancelActiveSessionMutation();
 
   // Map scope to DiffTarget
   // "All changes" uses execution_start_sha to show only task-specific changes,
@@ -128,10 +148,10 @@ export function TaskReviewPanel({
   const isViewActive = useActiveTab() === "kanban";
   const diffPolling = { refetchInterval: isViewActive ? 10000 : (false as const) };
 
-  const diffQuery = useWorktreeDiffQuery(projectId, worktreePath, diffTarget, diffPolling);
+  const diffQuery = useWorktreeDiffQuery(projectId, reviewPath, diffTarget, diffPolling);
   const uncommittedDiffQuery = useWorktreeDiffQuery(
     projectId,
-    worktreePath,
+    reviewPath,
     { type: "Head" },
     diffPolling,
   );
@@ -146,7 +166,7 @@ export function TaskReviewPanel({
     }
     wasViewActiveRef.current = isViewActive;
   }, [isViewActive, refetchDiff, refetchUncommittedDiff]);
-  const commitsQuery = useWorktreeCommitsQuery(projectId, worktreePath, baseBranch);
+  const commitsQuery = useWorktreeCommitsQuery(projectId, reviewPath, baseBranch);
   const commits = commitsQuery.data || [];
 
   // Parse diff to get structured file list. Read out of the optional chain first:
@@ -311,7 +331,7 @@ export function TaskReviewPanel({
         { taskId: task.id, decision: "Approve", generalFeedback: null, perFileComments: null },
         {
           onSuccess: () => {
-            const strategy = data.mergeStrategy === "commit-only" ? "CommitOnly" : "CommitAndMerge";
+            const strategy = MERGE_STRATEGIES[data.mergeStrategy] ?? "CommitAndMerge";
             approveAndMerge(
               {
                 taskId: task.id,
@@ -320,9 +340,21 @@ export function TaskReviewPanel({
                 commitMessage: data.commitMessage,
               },
               {
-                onSuccess: () => {
+                onSuccess: (raw) => {
+                  const result = raw as MergeResult;
+                  // The session closes on every approve path, including the pull-request one:
+                  // a PR sitting over a weekend would pin a host slot the whole time.
                   if (activeSession) {
-                    void api.cancelAcpSession(activeSession.session_key).catch(() => {});
+                    cancelSession.mutate({
+                      sessionKey: activeSession.session_key,
+                      executionMode: activeSession.execution_mode,
+                    });
+                  }
+                  if (result?.pull_request_url) {
+                    const url = result.pull_request_url;
+                    toast.success("Pull request opened", {
+                      action: { label: "Open", onClick: () => void openUrl(url) },
+                    });
                   }
                   setApproveModalOpen(false);
                   reviewStore.clearTask(task.id);
@@ -334,7 +366,7 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession],
+    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession, cancelSession],
   );
 
   const handleDiscardConfirm = useCallback(
@@ -419,6 +451,24 @@ export function TaskReviewPanel({
                   <DropdownMenuItem onClick={() => handleActionSelect("rework")}>
                     Rework
                   </DropdownMenuItem>
+                )}
+                {/* A task keeps its agent session into Review. Ending it leaves the task here —
+                    the work is done and under review, the session is just a process still held. */}
+                {activeSession && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={cancelSession.isPending}
+                      onClick={() =>
+                        cancelSession.mutate({
+                          sessionKey: activeSession.session_key,
+                          executionMode: activeSession.execution_mode,
+                        })
+                      }
+                    >
+                      End session
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -522,7 +572,7 @@ export function TaskReviewPanel({
                 />
                 <UntrackedFileDiffViewer
                   projectId={projectId}
-                  worktreePath={worktreePath}
+                  worktreePath={reviewPath}
                   filePath={selectedUntrackedPath}
                   showHeader={false}
                   reviewMode={true}
@@ -611,6 +661,9 @@ export function TaskReviewPanel({
         hasUncommitted={hasUncommitted}
         untrackedCount={untrackedFiles.length}
         commitMessage={commitMessageQuery.data ?? ""}
+        pushRemote={codeHostingQuery.data?.remote}
+        pullRequestProvider={codeHostingQuery.data?.config?.provider}
+        pullRequestNeedsConnecting={codeHostingQuery.data?.rung === "NotConnected"}
         onConfirm={handleApproveConfirm}
         isPending={isSaving || isApproving}
       />

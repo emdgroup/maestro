@@ -18,7 +18,6 @@ import {
 } from "@/ui/select";
 import type { Project } from "@/types/bindings";
 import { useRecentProjects } from "@/services/project.service";
-import { invoke } from "@tauri-apps/api/core";
 import type { ViewType } from "@/store/navigationStore";
 
 interface AppHeaderProps {
@@ -31,8 +30,10 @@ interface AppHeaderProps {
   /// The connection stopped answering but is still open — reported here rather than as a
   /// blocking overlay, because nothing has necessarily failed.
   connectionQuiet?: boolean;
-  autoMode?: boolean;
-  onAutoModeChange?: (enabled: boolean) => void;
+  /// Persisted `auto_mode` setting. Required — a local fallback here would silently decouple the
+  /// switch from the flag `drain_ready_queue` reads.
+  autoMode: boolean;
+  onAutoModeChange: (enabled: boolean) => void | Promise<void>;
 }
 
 const VIEWS: Array<{
@@ -53,7 +54,7 @@ export function AppHeader({
   onProjectChange,
   onBackToPicker,
   agentCount = 0,
-  autoMode: autoModeProp,
+  autoMode,
   onAutoModeChange,
   connectionQuiet = false,
 }: AppHeaderProps) {
@@ -66,27 +67,14 @@ export function AppHeader({
         : { type: "local" as const };
   const { data: recentProjects = [] } = useRecentProjects(headerConnection);
 
-  // Internal auto mode state (used when no external state is provided)
-  const [internalAutoMode, setInternalAutoMode] = useState(false);
-  const autoMode = autoModeProp !== undefined ? autoModeProp : internalAutoMode;
-
+  // Persisting is the whole job. Saving the setting emits `settings-changed`, which `useQueueDrain`
+  // listens for — the header used to drain here itself and throw the answer away, which is what
+  // made the switch look like it did nothing.
   const handleAutoModeToggle = async () => {
-    const next = !autoMode;
-    if (onAutoModeChange) {
-      onAutoModeChange(next);
-    } else {
-      setInternalAutoMode(next);
-    }
-    // Trigger queue drain when enabling auto mode
-    if (next && currentProject) {
-      try {
-        await invoke<number[]>("drain_ready_queue", {
-          projectId: currentProject.id,
-          projectPath: currentProject.path,
-        });
-      } catch (err) {
-        console.error("[auto-mode] drain_ready_queue failed:", err);
-      }
+    try {
+      await onAutoModeChange(!autoMode);
+    } catch (err) {
+      console.error("[auto-mode] failed to persist auto_mode:", err);
     }
   };
 

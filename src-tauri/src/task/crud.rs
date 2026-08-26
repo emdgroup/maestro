@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use chrono::Utc;
-use crate::models::{Task, TASK_SELECT};
+use crate::models::{Task, TaskStatus, TASK_SELECT};
 use crate::core::AppState;
+use crate::task::transition::{self, TaskTransition};
 
 /// Get list of all tasks for a project
 #[tauri::command]
@@ -124,7 +125,7 @@ pub fn create_task(
 /// Fields that can be updated on a task. All fields are optional — only non-None fields
 /// are included in the SQL UPDATE. Grouped into a struct to work around the specta
 /// 10-argument limit on #[tauri::command] functions.
-#[derive(serde::Deserialize, specta::Type)]
+#[derive(Default, serde::Deserialize, specta::Type)]
 pub struct UpdateTaskRequest {
     pub status: Option<String>,
     pub description: Option<String>,
@@ -146,7 +147,19 @@ pub fn update_task(
     task_id: i32,
     updates: UpdateTaskRequest,
 ) -> Result<Task, String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let task = {
+        let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        update_task_impl(&mut conn, task_id, updates)?
+    };
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(task)
+}
+
+fn update_task_impl(
+    conn: &mut rusqlite::Connection,
+    task_id: i32,
+    updates: UpdateTaskRequest,
+) -> Result<Task, String> {
     let now = Utc::now().to_rfc3339();
 
     // Build SET clause dynamically from non-None fields, wrapped in a transaction
@@ -155,10 +168,6 @@ pub fn update_task(
     let mut set_parts: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(ref v) = updates.status {
-        set_parts.push("status = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
     if let Some(ref v) = updates.description {
         set_parts.push("description = ?".to_string());
         params.push(Box::new(v.clone()));
@@ -212,6 +221,29 @@ pub fn update_task(
     tx.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
 
+    // Status is deliberately not part of the dynamic SET above: moving a task also resets its
+    // pipeline activity, and that correlation belongs in one place.
+    if let Some(ref status) = updates.status {
+        // `TaskStatus::from_str` falls back to Planning rather than failing, so a typo arriving
+        // over IPC would quietly move the task instead of being rejected. Round-trip to catch it.
+        let parsed = status.parse::<TaskStatus>().unwrap_or(TaskStatus::Planning);
+        if parsed.as_str() != status {
+            return Err(format!("Unknown task status '{}'", status));
+        }
+        // Sending a task back to a board column un-archives it. Otherwise a task restored from the
+        // archive would sit in a column and in the archive list at once, and — for Done, the only
+        // column filtered on `archived_at` — would be invisible in the place it was just moved to.
+        if !matches!(parsed, TaskStatus::Cancelled) {
+            tx.execute(
+                "UPDATE tasks SET archived_at = NULL WHERE id = ?",
+                [task_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        transition::apply(&tx, task_id, TaskTransition::ManualMove(parsed))?;
+    }
+
     // Read back inside the same transaction before committing — avoids re-locking the mutex
     let query = format!("{} WHERE id = ?", TASK_SELECT);
     let task = tx.query_row(&query, [task_id], Task::from_row)
@@ -219,7 +251,6 @@ pub fn update_task(
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
 
-    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
 
@@ -233,15 +264,14 @@ pub fn cancel_task(
     let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
+    // Archive first so the transition's read-back returns the finished row.
     conn.execute(
-        "UPDATE tasks SET status = 'Cancelled', archived_at = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, &now, task_id],
+        "UPDATE tasks SET archived_at = ? WHERE id = ?",
+        rusqlite::params![&now, task_id],
     )
     .map_err(|e| e.to_string())?;
 
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())?;
+    let task = transition::apply(&conn, task_id, TaskTransition::Cancelled)?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
 }
@@ -277,6 +307,55 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
     conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])
         .map_err(|e| e.to_string())?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(())
+}
+
+/// Choose which agent profile this task uses for each role.
+///
+/// Its own command rather than a field on `TaskConfigRequest`, for the reason
+/// `set_project_accent_color` is separate from the project settings form: that request rewrites
+/// every column it names, so a caller that only wanted to change one has to resend the rest
+/// correctly or silently clear them. The override dialog knows about roles and nothing else.
+///
+/// An empty map stores `NULL`, so "no overrides" has one representation rather than two.
+/// Ids are not checked against the project's profiles: a profile deleted after a task named it
+/// falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
+/// want anyway, and validating here would only move the same outcome earlier.
+#[tauri::command]
+#[specta::specta]
+pub fn set_task_profile_overrides(
+    app_state: State<Arc<AppState>>,
+    task_id: i32,
+    overrides: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        store_profile_overrides(&conn, task_id, &overrides)?;
+    }
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(())
+}
+
+/// The write, split from the command so it can be tested without an `AppState`.
+fn store_profile_overrides(
+    conn: &rusqlite::Connection,
+    task_id: i32,
+    overrides: &std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let stored = if overrides.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::to_string(overrides)
+                .map_err(|e| format!("Failed to serialize profile overrides: {}", e))?,
+        )
+    };
+
+    conn.execute(
+        "UPDATE tasks SET profile_overrides = ?, updated_at = ? WHERE id = ?",
+        rusqlite::params![&stored, &Utc::now().to_rfc3339(), task_id],
+    )
+    .map_err(|e| format!("Failed to update task profile overrides: {}", e))?;
     Ok(())
 }
 
@@ -334,6 +413,42 @@ mod tests {
         )
         .unwrap();
         conn.last_insert_rowid() as i32
+    }
+
+    /// Read back through `TASK_SELECT`/`from_row` rather than by querying the column directly,
+    /// because the positional index is the part that can be wrong: `from_row` reads by number, and
+    /// a column appended to the SELECT without a matching index reads its neighbour instead.
+    #[test]
+    fn profile_overrides_round_trip_through_the_task_row() {
+        use std::collections::HashMap;
+
+        let conn = test_db();
+        let project_id = insert_project(&conn);
+        let task = create_task_impl(
+            &conn, project_id, "Valid Task Name".to_string(),
+            None,
+            vec![], vec![], "main".to_string(),
+            None, None, false, true, None,
+        )
+        .unwrap();
+        assert!(task.profile_overrides.is_none(), "a new task defers to the project");
+
+        let overrides = HashMap::from([("Reviewer".to_string(), "strict-reviewer".to_string())]);
+        store_profile_overrides(&conn, task.id, &overrides).unwrap();
+
+        let query = format!("{} WHERE id = ?", crate::models::TASK_SELECT);
+        let stored: crate::models::Task =
+            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        let parsed: HashMap<String, String> =
+            serde_json::from_str(stored.profile_overrides.as_deref().unwrap()).unwrap();
+        assert_eq!(parsed, overrides);
+
+        // Clearing the last override returns the task to "the project decides", which has to be
+        // NULL rather than "{}" or two values would mean the same thing.
+        store_profile_overrides(&conn, task.id, &HashMap::new()).unwrap();
+        let cleared: crate::models::Task =
+            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        assert_eq!(cleared.profile_overrides, None);
     }
 
     #[test]
@@ -401,5 +516,67 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?", [task.id], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn archived_task(conn: &Connection) -> i32 {
+        let project_id = insert_project(conn);
+        let task = create_task_impl(
+            conn, project_id, "Archived task".to_string(), None,
+            vec![], vec![], "main".to_string(),
+            None, None, false, true, None,
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tasks SET status = 'Done', archived_at = '2024-01-02T00:00:00Z' WHERE id = ?",
+            [task.id],
+        )
+        .unwrap();
+        task.id
+    }
+
+    fn archived_at(conn: &Connection, task_id: i32) -> Option<String> {
+        conn.query_row("SELECT archived_at FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn move_to(status: &str) -> UpdateTaskRequest {
+        UpdateTaskRequest { status: Some(status.to_string()), ..Default::default() }
+    }
+
+    /// Done is the only column filtered on `archived_at`, so an archived task moved back onto the
+    /// board would otherwise be listed in the archive and invisible in the column it was sent to.
+    #[test]
+    fn moving_a_task_back_onto_the_board_un_archives_it() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        update_task_impl(&mut conn, task_id, move_to("Planning")).unwrap();
+
+        assert_eq!(archived_at(&conn, task_id), None);
+    }
+
+    /// Only a status change may un-archive: editing an archived task's title must leave it filed.
+    #[test]
+    fn editing_an_archived_task_leaves_it_archived() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        let updates = UpdateTaskRequest {
+            title: Some("Renamed while archived".to_string()),
+            ..Default::default()
+        };
+        update_task_impl(&mut conn, task_id, updates).unwrap();
+
+        assert!(archived_at(&conn, task_id).is_some());
+    }
+
+    #[test]
+    fn update_task_rejects_an_unknown_status() {
+        let mut conn = test_db();
+        let task_id = archived_task(&conn);
+
+        let err = update_task_impl(&mut conn, task_id, move_to("Backlog")).unwrap_err();
+
+        assert!(err.contains("Unknown task status 'Backlog'"), "got: {err}");
     }
 }

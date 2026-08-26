@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "MAESTRO_DATA_DIR=$PWD/.maestro/dev-data tauri dev",
-    "tauri:gen": "cd src-tauri && cargo test generate_typescript_bindings",
+    "tauri:gen": "cd src-tauri && MAESTRO_TEST_MANIFEST=1 cargo test --lib generate_typescript_bindings",
     "test": "vitest",
     "test:e2e": "bun run test:e2e:build && bun run test:e2e:run",
     "test:e2e:build": "tauri build --no-bundle -- --features wdio",

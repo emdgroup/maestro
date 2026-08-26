@@ -103,36 +103,25 @@ pub async fn prune_remote_refs(conn: &GitConnection) {
     }
 }
 
-const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024; // 2 MB
-
-fn floor_char_boundary(s: &str, mut index: usize) -> usize {
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
-/// Diff `branch` against `base_branch`, truncated so a runaway diff cannot be held in memory
-/// twice on its way to the UI.
-pub async fn git_diff(
+/// Push `branch` to `remote`, setting it as the branch's upstream.
+///
+/// Runs down the same exec channel as every other git command, which means it executes on the
+/// machine that owns the repository and uses *that* machine's git configuration — its SSH agent,
+/// its credential helper, its `~/.gitconfig`. Maestro holds no credential of its own, which is
+/// why this needs no per-connection branch: the host the user already pushes from by hand is the
+/// host doing the pushing.
+///
+/// A missing or wrong credential therefore surfaces as git's own message rather than as
+/// something we invent. It cannot hang waiting for one either — the exec channel gives git a
+/// null stdin, so git has no terminal to prompt on and fails instead.
+pub async fn push_branch(
     conn: &GitConnection,
+    repo_path: &str,
+    remote: &str,
     branch: &str,
-    base_branch: &str,
-) -> Result<String, String> {
-    let range = format!("{}...{}", base_branch, branch);
-    let raw = run_git_in_dir(conn, conn.path(), &["diff", "--unified=6", &range])
-        .await
-        .inspect_err(|e| log::warn!("[git] diff {range} in {} FAILED: {e}", conn.path()))?;
-
-    if raw.len() <= MAX_DIFF_BYTES {
-        return Ok(raw);
-    }
-    let cut = floor_char_boundary(&raw, MAX_DIFF_BYTES);
-    Ok(format!(
-        "{}\n// [diff truncated: {} MB total]\n",
-        &raw[..cut],
-        raw.len() / 1_048_576
-    ))
+) -> Result<(), String> {
+    run_git_in_dir(conn, repo_path, &["push", "--set-upstream", remote, branch]).await?;
+    Ok(())
 }
 
 pub async fn git_status(conn: &GitConnection) -> Result<String, String> {

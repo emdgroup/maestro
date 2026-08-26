@@ -1,3 +1,4 @@
+pub mod capacity;
 pub mod handlers;
 pub mod process;
 pub mod pty;

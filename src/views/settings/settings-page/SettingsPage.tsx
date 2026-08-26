@@ -11,7 +11,10 @@ import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
 import type { ProjectSettingsFormData } from "./ProjectDefaultsSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { NotificationsSection } from "./NotificationsSection";
+import { ConcurrencySection } from "./ConcurrencySection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
+import { AgentProfilesSection } from "./AgentProfilesSection";
+import type { AgentProfilesSectionHandle } from "./AgentProfilesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IssueTrackingSectionHandle } from "./IssueTrackingSection";
 
@@ -37,6 +40,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     const { data: integrations } = useListIntegrations();
     const [isIssueTrackingValid, setIsIssueTrackingValid] = useState(true);
     const issueTrackingSectionRef = useRef<IssueTrackingSectionHandle>(null);
+    const agentProfilesSectionRef = useRef<AgentProfilesSectionHandle>(null);
     const saveHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -59,6 +63,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             default_existing_worktree: data.default_existing_worktree,
           },
         });
+        await agentProfilesSectionRef.current?.save();
         await issueTrackingSectionRef.current?.save();
         showSuccessToast("Settings saved");
       } catch (err) {
@@ -125,7 +130,14 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 agentsLoading={agentsLoading}
                 connection={connection}
               />
+              <AgentProfilesSection
+                ref={agentProfilesSectionRef}
+                projectId={projectId}
+                agents={agents}
+                connection={connection}
+              />
               <AppearanceSection />
+              <ConcurrencySection />
               <NotificationsSection />
               <IssueTrackingSection
                 ref={issueTrackingSectionRef}

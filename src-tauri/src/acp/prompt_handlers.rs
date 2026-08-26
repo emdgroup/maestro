@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -26,6 +26,15 @@ async fn send_prompt_impl(
     log_id: i32,
     content: serde_json::Value,
 ) -> Result<(), String> {
+    // Any reply puts the agent back to work, including a plain message answering a question the
+    // agent asked by ending its turn. Without this only permission and elicitation responses
+    // would clear the block, and an ordinary reply would leave the card pulsing.
+    let task_id = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).and_then(|s| s.task_id)
+    };
+    clear_task_blocked(app_state, task_id);
+
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id_for(log_id),
         content,
@@ -61,12 +70,16 @@ pub async fn respond_acp_permission(
     request_id: String,
     option_id: Option<String>,
 ) -> Result<(), String> {
-    {
+    let task_id = {
         let sessions = app_state.acp.sessions.lock().await;
-        if let Some(session) = sessions.get(&log_id) {
+        let session = sessions.get(&log_id);
+        if let Some(session) = session {
             session.has_pending_permission.store(false, std::sync::atomic::Ordering::Release);
         }
-    }
+        session.and_then(|s| s.task_id)
+    };
+    clear_task_blocked(&app_state, task_id);
+
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id,
@@ -74,6 +87,32 @@ pub async fn respond_acp_permission(
         option_id,
     }));
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+}
+
+/// The user answered, so the agent is running again.
+///
+/// Paired with `mark_task_blocked` in `reader_task`. Missing this leaves the card pulsing for an
+/// answer that has already been given — the cost of persisting the blocked state rather than
+/// deriving it from live session events, which used to self-heal on reload.
+fn clear_task_blocked(app_state: &Arc<AppState>, task_id: Option<i32>) {
+    let Some(task_id) = task_id else {
+        return;
+    };
+    let changed = {
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        match crate::task::transition::clear_blocked(&conn, task_id) {
+            Ok(result) => result.is_some(),
+            Err(e) => {
+                log::warn!("[acp] could not clear blocked state for task {task_id}: {e}");
+                false
+            }
+        }
+    };
+    if changed {
+        app_state.app_handle.emit("tasks-changed", ()).ok();
+    }
 }
 
 #[tauri::command]
@@ -84,6 +123,12 @@ pub async fn respond_acp_elicitation(
     request_id: String,
     response: serde_json::Value,
 ) -> Result<(), String> {
+    let task_id = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).and_then(|s| s.task_id)
+    };
+    clear_task_blocked(&app_state, task_id);
+
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id,
@@ -115,6 +160,12 @@ pub async fn set_acp_mode(
     log_id: i32,
     mode_id: String,
 ) -> Result<(), String> {
+    // At `info` because which mode a role ended up in is not otherwise knowable: the request itself
+    // is only traced, and the fallback list in `useExecuteTask` is a guess about names that differ
+    // per harness. Tuning it needs evidence, and a mode nobody can observe is a mode nobody can
+    // correct — during the live pass this was the reason a blocked reviewer could not be explained.
+    log::info!("[acp] session-{log_id} permission mode set to {mode_id}");
+
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::SetMode(SetModeRequest {
         session_id,

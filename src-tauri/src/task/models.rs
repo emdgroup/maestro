@@ -9,14 +9,18 @@ use std::str::FromStr;
 /// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
 /// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
-/// execution_start_sha(24)
+/// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
+/// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
+/// fix_rounds(33), pull_request_ci(34), profile_overrides(35)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
      auto_approve, isolated_worktree, agent_id, permission_mode_override, \
-     execution_start_sha FROM tasks";
+     execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
+     pull_request_url, pull_request_number, review_rounds, fix_rounds, \
+     pull_request_ci, profile_overrides FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -59,6 +63,43 @@ pub struct Task {
     pub permission_mode_override: Option<String>,
     #[specta(optional)]
     pub execution_start_sha: Option<String>,
+    /// Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
+    /// what is happening inside it. `None` means no pipeline activity, in which case
+    /// `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
+    /// `task::transition`, never by ad-hoc SQL.
+    #[specta(optional)]
+    pub phase: Option<TaskPhase>,
+    #[specta(optional)]
+    pub phase_status: Option<PhaseStatus>,
+    pub ball: TaskBall,
+    /// How a Done task got there. `None` on every task that is not Done, and on Done tasks in a
+    /// non-git project, where none of the variants mean anything.
+    #[specta(optional)]
+    pub completion: Option<TaskCompletion>,
+    /// When the user pressed Execute on a task the host had no free slot for. The scheduler takes
+    /// these before its own picks, which is what makes the deferral a promise rather than a hope.
+    #[specta(optional)]
+    pub execute_requested_at: Option<String>,
+    /// The pull request this task's branch was opened as. Set together with the `AwaitingMerge`
+    /// phase and never cleared — a landed task keeps the link to how it landed.
+    #[specta(optional)]
+    pub pull_request_url: Option<String>,
+    #[specta(optional)]
+    pub pull_request_number: Option<i64>,
+    /// How many times the review agent has sent this task back, bounded by `REVIEW_ROUND_CAP`.
+    pub review_rounds: i32,
+    /// How many times an agent has been sent to fix this task's CI, bounded by `FIX_ROUND_CAP`.
+    pub fix_rounds: i32,
+    /// What the forge's CI last said about the open pull request. Refreshed by the reconcile
+    /// sweep; `None` while there is nothing to say.
+    #[specta(optional)]
+    pub pull_request_ci: Option<PullRequestCi>,
+    /// Which profile this task wants for a given role, as JSON keyed by role name. Carried as the
+    /// raw string rather than a parsed map because nothing in Rust reads it: it is written by the
+    /// card's override dialog and handed straight back to `resolve_agent_profile`, which already
+    /// takes an override id and falls back when it names nothing.
+    #[specta(optional)]
+    pub profile_overrides: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -78,6 +119,31 @@ pub struct TaskInstruction {
     pub task_id: i32,
     pub content: String,
     pub source: String,
+    pub created_at: String,
+}
+
+/// One entry in a task's outcome thread.
+///
+/// `kind` is what a gate points at — `proposal`, `plan`, `verdict`, `outcome`, `note`. Kept as a
+/// string rather than an enum because the pipeline adds kinds as roles land, and an unknown one
+/// arriving from an older or newer build should render as itself, not fail to deserialise the
+/// whole thread.
+///
+/// `body` and `external_ref` are the inline-or-reference pair: exactly one carries the content.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct TaskComment {
+    pub id: i32,
+    pub task_id: i32,
+    pub kind: String,
+    pub author: String,
+    #[specta(optional)]
+    pub body: Option<String>,
+    #[specta(optional)]
+    pub external_ref: Option<String>,
+    /// The phase that produced it, so a thread can be read back against the pipeline.
+    #[specta(optional)]
+    pub phase: Option<String>,
     pub created_at: String,
 }
 
@@ -162,6 +228,21 @@ impl Task {
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
             execution_start_sha: row.get(24)?,
+            phase: row.get::<_, Option<String>>(25)?.and_then(|s| s.parse().ok()),
+            phase_status: row.get::<_, Option<String>>(26)?.and_then(|s| s.parse().ok()),
+            ball: row
+                .get::<_, String>(27)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(TaskBall::None),
+            completion: row.get::<_, Option<String>>(28)?.and_then(|s| s.parse().ok()),
+            execute_requested_at: row.get(29)?,
+            pull_request_url: row.get(30)?,
+            pull_request_number: row.get(31)?,
+            review_rounds: row.get(32)?,
+            fix_rounds: row.get(33)?,
+            pull_request_ci: row.get::<_, Option<String>>(34)?.and_then(|s| s.parse().ok()),
+            profile_overrides: row.get(35)?,
         })
     }
 }
@@ -176,7 +257,8 @@ pub struct CreateTaskRequest {
     pub skills: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+// Copy/PartialEq so the transition table can compare and pass statuses by value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[specta(export)]
 #[serde(rename_all = "PascalCase")]
 pub enum TaskStatus {
@@ -186,6 +268,264 @@ pub enum TaskStatus {
     Review,
     Done,
     Cancelled,
+}
+
+/// What the pipeline is doing to a task right now, independent of which column it sits in.
+///
+/// `Refining`, `Drafting`, `PlanReview`, `SelfReview` and `AwaitingMerge` are defined but inert:
+/// no transition produces them until the refiner, planner, reviewer and PR roles land. They exist
+/// now so adding those roles does not need a second migration.
+///
+/// A phase says nothing about which column the task is in. `Spawning` sits in Queue, which is what
+/// lets a failed spawn be an ordinary active row rather than an exception to the phase invariant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskPhase {
+    Spawning,
+    Refining,
+    Drafting,
+    PlanReview,
+    Implementing,
+    Rework,
+    SelfReview,
+    Approval,
+    AwaitingMerge,
+}
+
+impl TaskPhase {
+    /// Whether the phase belongs to a role that writes nothing.
+    ///
+    /// The phase is how the backend recognises the role at all: `AgentRole` is an argument the
+    /// frontend passes to Execute and is never persisted, so anything downstream of the spawn —
+    /// the permission path in particular — has only this to go on. Mirrors
+    /// `AgentRole::is_read_only`, and the two must agree.
+    pub fn is_read_only(self) -> bool {
+        matches!(self, TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview)
+    }
+}
+
+/// How the current phase is going.
+///
+/// `Blocked` and `Waiting` both mean the user has to act, and are deliberately distinct: `Blocked`
+/// is an agent stopped mid-phase that cannot continue without an answer, and drives the animated
+/// card treatment. `Waiting` is a gate with nothing running, and is static. Collapsing the two
+/// would make every waiting card pulse and turn the animation into wallpaper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum PhaseStatus {
+    Running,
+    Blocked,
+    Waiting,
+    Failed,
+}
+
+/// Who the pipeline is blocked on — not who owns the ticket.
+///
+/// A Planning backlog and a queued task are `None`, because nothing is waiting on anyone. That is
+/// what keeps the "Needs me" filter showing genuine gates rather than the whole board.
+///
+/// `External` is a task waiting on something outside Maestro — a PR waiting on CI and a human
+/// reviewer on GitHub. Folding that into `User` would list tasks in "Needs me" that our user
+/// cannot act on, which is the one thing that filter has to get right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskBall {
+    Agent,
+    User,
+    External,
+    None,
+}
+
+/// How a task reached `Done`, and therefore what is left over.
+///
+/// Only meaningful on a Done task, and only in a git project — a non-git task has no merge, no
+/// worktree and no PR, so its completion is `None` rather than a variant meaning "not applicable".
+///
+/// `LocalOnly` is the one that carries unfinished business: the changes were committed and
+/// approved but never merged, and the worktree is still alive holding them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum TaskCompletion {
+    Merged,
+    MergedViaPR,
+    LocalOnly,
+    NoChanges,
+}
+
+/// What the forge's CI last said about an open pull request's head commit.
+///
+/// A display cache rather than a lifecycle field: the sweep runs every three minutes, and this is
+/// what lets the card answer "can this land" in between. Nothing branches on it — `CiState` is what
+/// the fix loop reads, freshly, from the forge.
+///
+/// `None` covers all three ways there is nothing to say: no CI configured, a forge that will not
+/// answer, and a pull request not swept yet. They are one silence on the card, so a fourth variant
+/// distinguishing them would render identically to its own absence.
+///
+/// Conflicts are deliberately not in here. `AwaitingMerge` with `Waiting` and the ball on the user
+/// is a conflict and nothing else, so storing it would be a second copy of a fact the lifecycle
+/// fields already carry — and one a sweep that learned nothing could overwrite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum PullRequestCi {
+    Passing,
+    Failing,
+    Pending,
+}
+
+// Unlike TaskStatus and TaskPriority above, these three reject unknown input rather than falling
+// back to a default. `from_row` reads phase and phase_status into an Option and discards the
+// error, so a stray value becomes "no phase" instead of silently claiming to be a real one; a
+// fallback variant would invent activity that never happened.
+impl FromStr for TaskPhase {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Spawning" => Ok(TaskPhase::Spawning),
+            "Refining" => Ok(TaskPhase::Refining),
+            "Drafting" => Ok(TaskPhase::Drafting),
+            "PlanReview" => Ok(TaskPhase::PlanReview),
+            "Implementing" => Ok(TaskPhase::Implementing),
+            "Rework" => Ok(TaskPhase::Rework),
+            "SelfReview" => Ok(TaskPhase::SelfReview),
+            "Approval" => Ok(TaskPhase::Approval),
+            "AwaitingMerge" => Ok(TaskPhase::AwaitingMerge),
+            other => Err(format!("Unknown task phase: {}", other)),
+        }
+    }
+}
+
+impl FromStr for PhaseStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Running" => Ok(PhaseStatus::Running),
+            "Blocked" => Ok(PhaseStatus::Blocked),
+            "Waiting" => Ok(PhaseStatus::Waiting),
+            "Failed" => Ok(PhaseStatus::Failed),
+            other => Err(format!("Unknown phase status: {}", other)),
+        }
+    }
+}
+
+impl FromStr for TaskBall {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Agent" => Ok(TaskBall::Agent),
+            "User" => Ok(TaskBall::User),
+            "External" => Ok(TaskBall::External),
+            "None" => Ok(TaskBall::None),
+            other => Err(format!("Unknown task ball: {}", other)),
+        }
+    }
+}
+
+impl FromStr for TaskCompletion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Merged" => Ok(TaskCompletion::Merged),
+            "MergedViaPR" => Ok(TaskCompletion::MergedViaPR),
+            "LocalOnly" => Ok(TaskCompletion::LocalOnly),
+            "NoChanges" => Ok(TaskCompletion::NoChanges),
+            other => Err(format!("Unknown task completion: {}", other)),
+        }
+    }
+}
+
+impl FromStr for PullRequestCi {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Passing" => Ok(PullRequestCi::Passing),
+            "Failing" => Ok(PullRequestCi::Failing),
+            "Pending" => Ok(PullRequestCi::Pending),
+            other => Err(format!("Unknown pull request CI state: {}", other)),
+        }
+    }
+}
+
+impl TaskPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskPhase::Spawning => "Spawning",
+            TaskPhase::Refining => "Refining",
+            TaskPhase::Drafting => "Drafting",
+            TaskPhase::PlanReview => "PlanReview",
+            TaskPhase::Implementing => "Implementing",
+            TaskPhase::Rework => "Rework",
+            TaskPhase::SelfReview => "SelfReview",
+            TaskPhase::Approval => "Approval",
+            TaskPhase::AwaitingMerge => "AwaitingMerge",
+        }
+    }
+}
+
+impl PhaseStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PhaseStatus::Running => "Running",
+            PhaseStatus::Blocked => "Blocked",
+            PhaseStatus::Waiting => "Waiting",
+            PhaseStatus::Failed => "Failed",
+        }
+    }
+}
+
+impl TaskBall {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskBall::Agent => "Agent",
+            TaskBall::User => "User",
+            TaskBall::External => "External",
+            TaskBall::None => "None",
+        }
+    }
+}
+
+impl TaskCompletion {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskCompletion::Merged => "Merged",
+            TaskCompletion::MergedViaPR => "MergedViaPR",
+            TaskCompletion::LocalOnly => "LocalOnly",
+            TaskCompletion::NoChanges => "NoChanges",
+        }
+    }
+}
+
+impl PullRequestCi {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PullRequestCi::Passing => "Passing",
+            PullRequestCi::Failing => "Failing",
+            PullRequestCi::Pending => "Pending",
+        }
+    }
+}
+
+impl TaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskStatus::Planning => "Planning",
+            TaskStatus::Queue => "Queue",
+            TaskStatus::InProgress => "InProgress",
+            TaskStatus::Review => "Review",
+            TaskStatus::Done => "Done",
+            TaskStatus::Cancelled => "Cancelled",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

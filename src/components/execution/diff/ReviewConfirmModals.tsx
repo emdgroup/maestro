@@ -121,6 +121,12 @@ interface ApproveModalProps {
   hasUncommitted: boolean;
   untrackedCount: number;
   commitMessage: string;
+  /** Name of the remote to push to, when the project has one. */
+  pushRemote?: string | null;
+  /** The forge behind the remote, whether or not anything has authenticated for it. */
+  pullRequestProvider?: string | null;
+  /** Set when that forge is known but no credential answered for it. */
+  pullRequestNeedsConnecting?: boolean;
   onConfirm: (data: {
     mergeStrategy: string;
     includeUntracked: boolean;
@@ -136,6 +142,9 @@ export function ApproveModal({
   hasUncommitted,
   untrackedCount,
   commitMessage: initialCommitMessage,
+  pushRemote,
+  pullRequestProvider,
+  pullRequestNeedsConnecting,
   onConfirm,
   isPending,
 }: ApproveModalProps) {
@@ -151,7 +160,13 @@ export function ApproveModal({
     setCommitMessage(initialCommitMessage);
   }
 
-  const showRadio = hasWorktree && hasUncommitted;
+  const canPush = hasWorktree && !!pushRemote;
+  // Knowing the forge is not the same as being able to post to it, and the two props must not be
+  // able to disagree: an unconnected forge gets the invitation below, never the option.
+  const canOpenPullRequest = canPush && !!pullRequestProvider && !pullRequestNeedsConnecting;
+  // Pushing is worth offering even when everything is already committed, which is why this
+  // no longer keys off uncommitted changes alone.
+  const showRadio = hasWorktree && (hasUncommitted || canPush);
 
   function getDescription(): string {
     if (hasWorktree && !hasUncommitted)
@@ -184,16 +199,48 @@ export function ApproveModal({
         </AlertDialogHeader>
 
         {showRadio && (
-          <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <RadioGroupItem value="merge-delete" />
-              Commit + Merge + Delete worktree
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <RadioGroupItem value="commit-only" />
-              Commit only (keep worktree)
-            </label>
-          </RadioGroup>
+          <>
+            <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="merge-delete" />
+                Commit + Merge + Delete worktree
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="commit-only" />
+                Commit only (keep worktree)
+              </label>
+              {canPush && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="commit-push" />
+                  Commit + Push to {pushRemote}
+                </label>
+              )}
+              {canOpenPullRequest && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="pull-request" />
+                  Commit + Open a pull request
+                </label>
+              )}
+            </RadioGroup>
+            {/* An invitation, not an error. The forge is known but nothing has authenticated for
+                it, and every other way of approving stays available. */}
+            {pullRequestNeedsConnecting && (
+              <p className="text-xs text-muted-foreground">
+                Connect {pullRequestProvider} in Settings to open a pull request from here.
+              </p>
+            )}
+            {/* Every strategy approves the task, so all of them move it to Done. Worth saying,
+                because keeping the worktree reads like the task is still in flight. */}
+            <p className="text-xs text-muted-foreground">
+              {strategy === "commit-only" &&
+                "The task moves to Done. The branch stays unmerged and the worktree stays on disk for you to merge or push yourself."}
+              {strategy === "commit-push" &&
+                `The branch is pushed to ${pushRemote} and the task moves to Done. It stays unmerged, and the worktree stays on disk.`}
+              {strategy === "pull-request" &&
+                "The branch is pushed and a pull request opened. The task stays in Review until the pull request merges, and the worktree stays on disk until then."}
+              {strategy === "merge-delete" && "The task moves to Done and the worktree is deleted."}
+            </p>
+          </>
         )}
 
         {untrackedCount > 0 && (

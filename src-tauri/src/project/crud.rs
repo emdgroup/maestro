@@ -281,8 +281,20 @@ pub fn check_project_locks(
     app_state: State<'_, Arc<AppState>>,
     project_ids: Vec<i32>,
 ) -> Vec<i32> {
+    // The project this instance already holds is skipped rather than probed. `is_project_locked`
+    // asks the OS by opening a second handle and trying to lock it, which our own lock blocks just
+    // as another process's would — so the probe cannot tell "someone else has it" from "I have it".
+    // The frontend returning to the picker while the lock is still held, as a webview reload does,
+    // would otherwise report the user's own open project as taken by another instance.
+    let own_project = app_state
+        .active_project_lock
+        .lock()
+        .ok()
+        .and_then(|held| held.as_ref().map(|(id, _)| *id));
+
     project_ids
         .into_iter()
+        .filter(|&id| Some(id) != own_project)
         .filter(|&id| crate::project::lock::is_project_locked(&app_state.app_data_dir, id))
         .collect()
 }

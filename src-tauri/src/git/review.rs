@@ -3,8 +3,9 @@ use tauri::{Emitter, State};
 use chrono::Utc;
 
 use crate::models::{Task, TASK_SELECT, ReviewResult, TaskReviewWithComments, ReviewCommentEntry};
-use crate::core::{AppState, get_project_with_git_conn};
+use crate::core::AppState;
 use crate::git;
+use crate::task::transition::{self, TaskTransition};
 
 /// Insert (or replace) a review record with optional per-file comments.
 /// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
@@ -35,38 +36,6 @@ fn insert_review_with_comments(
     }
 
     Ok(review_id)
-}
-
-/// Get diff for review: generates unified diff between task branch and its base branch.
-///
-/// Dispatches through GitConnection so it works for local, SSH, and WSL projects.
-///
-/// Returns the unified diff as a string with 6 context lines.
-#[tauri::command]
-#[specta::specta]
-pub async fn get_diff_for_review(
-    app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
-) -> Result<String, String> {
-    let (project_id, branch_name, base_branch) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT t.project_id, w.branch_name, t.base_branch
-             FROM tasks t
-             JOIN worktrees w ON w.task_id = t.id
-             WHERE t.id = ?",
-            rusqlite::params![task_id],
-            |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
-        )
-        .map_err(|e| format!("Task/worktree not found: {}", e))?
-    };
-
-    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
-        .map_err(|e| format!("Failed to get git connection: {}", e))?;
-
-    git::git_diff(&git_conn, &branch_name, &base_branch)
-        .await
-        .map_err(|e| format!("Failed to get diff: {}", e))
 }
 
 /// Save task review with feedback and per-file comments
@@ -115,10 +84,7 @@ pub async fn request_changes(
     let review_id = insert_review_with_comments(
         &conn, task_id, "RequestChanges", general_feedback.as_deref(), comments_ref, &now,
     )?;
-    conn.execute(
-        "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, task_id],
-    ).map_err(|e| format!("Update task status failed: {}", e))?;
+    transition::apply(&conn, task_id, TaskTransition::ReworkRequested)?;
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
@@ -172,11 +138,10 @@ pub async fn clear_task_review(
     Ok(())
 }
 
-/// Reject a task in review with one of three actions
+/// Reject a task in review, discarding its work either way
 ///
-/// Handles the three rejection paths from the review panel:
-/// - "SendToBacklog": moves task back to Backlog, deletes worktree, resets agent commits
-/// - "ResumeWithInstructions": moves task to InProgress and saves instruction for the agent
+/// Handles the two rejection paths from the review panel:
+/// - "SendToBacklog": moves task back to Planning, deletes worktree, resets agent commits
 /// - "CancelTask": moves task to Cancelled, deletes worktree, resets agent commits
 ///
 /// Returns the updated Task.
@@ -186,114 +151,28 @@ pub async fn reject_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     action: String,
-    instruction: Option<String>,
 ) -> Result<Task, String> {
-    let now = Utc::now().to_rfc3339();
-
     match action.as_str() {
         "SendToBacklog" | "CancelTask" => {
-            let new_status = if action == "SendToBacklog" { "Backlog" } else { "Cancelled" };
-
-            // Gather worktree and task info while holding the lock briefly
-            let (worktree_info, execution_start_sha, project_id) = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-                // Update task status
-                conn.execute(
-                    &format!("UPDATE tasks SET status = '{}', updated_at = ? WHERE id = ?", new_status),
-                    rusqlite::params![&now, task_id],
-                )
-                .map_err(|e| format!("Failed to update task status: {}", e))?;
-
-                // Query associated worktree
-                let wt: Option<(i32, String, String)> = conn.query_row(
-                    "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
-                    rusqlite::params![task_id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                ).ok();
-
-                // Get execution_start_sha and project_id from task
-                let (sha, pid): (Option<String>, i32) = conn.query_row(
-                    "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
-                    rusqlite::params![task_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                ).map_err(|e| format!("Failed to read task: {}", e))?;
-
-                (wt, sha, pid)
+            // "SendToBacklog" is a legacy name: there is no Backlog column, and this used to
+            // write the literal status 'Backlog', which v24 had already retired. Discarding
+            // returns the task to Planning.
+            let event = if action == "SendToBacklog" {
+                TaskTransition::Discarded
+            } else {
+                TaskTransition::Cancelled
             };
 
-            // Perform async git cleanup outside the DB lock
-            if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
-                // Delete the worktree (same logic as delete_worktree_for_task)
-                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-
-                // Remove worktree from disk (best effort)
-                let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
-
-                // Delete branch (best effort)
-                let _ = git::run_git_in_dir_lossy(
-                    &git_conn,
-                    git_conn.path(),
-                    &["branch", "-D", &branch_name],
-                )
-                .await;
-
-                // Delete worktree DB row
-                {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.execute(
-                        "DELETE FROM worktrees WHERE id = ?",
-                        rusqlite::params![worktree_id],
-                    )
-                    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
-                }
-
-                app_state.app_handle.emit("worktrees-changed", ()).ok();
-            } else if let Some(start_sha) = execution_start_sha {
-                // No worktree but have a start SHA — reset agent commits on the project path
-                let (_project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-                let project_path = git_conn.path().to_string();
-
-                // Reset to the start SHA
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["reset", "--hard", &start_sha]).await;
-                // Clean uncommitted changes
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["checkout", "--", "."]).await;
-                let _ = git::run_git_in_dir(&git_conn, &project_path, &["clean", "-fd"]).await;
-            }
-
-            // Clear execution_start_sha now that cleanup is done
             {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
-                    rusqlite::params![task_id],
-                ).ok();
+                transition::apply(&conn, task_id, event)?;
             }
-        }
-        "ResumeWithInstructions" => {
-            let instr = instruction.ok_or_else(|| {
-                "instruction is required for ResumeWithInstructions action".to_string()
-            })?;
 
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-
-            // Move task back to InProgress
-            conn.execute(
-                "UPDATE tasks SET status = 'InProgress', updated_at = ? WHERE id = ?",
-                rusqlite::params![&now, task_id],
-            )
-            .map_err(|e| format!("Failed to update task status: {}", e))?;
-
-            // Save the instruction so the agent can pick it up
-            conn.execute(
-                "INSERT INTO task_instructions (task_id, content, source, created_at) VALUES (?, ?, 'review', ?)",
-                rusqlite::params![task_id, &instr, &now],
-            )
-            .map_err(|e| format!("Failed to insert task instruction: {}", e))?;
+            git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
         }
         _ => {
             return Err(format!(
-                "Unknown reject action '{}'. Expected SendToBacklog, ResumeWithInstructions, or CancelTask",
+                "Unknown reject action '{}'. Expected SendToBacklog or CancelTask",
                 action
             ));
         }
