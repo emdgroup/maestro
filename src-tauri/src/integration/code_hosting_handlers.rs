@@ -206,7 +206,10 @@ pub async fn code_hosting_status(
         write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
     }
 
-    let connected = find_integration(&provider, &remote.host, app_state).await.is_some();
+    // `None` rather than the project's base: this only asks whether anything is connected, and
+    // reporting `NotConnected` for a project whose credential the approve path would go on to find
+    // would hide the pull request option over a question that was never asked here.
+    let connected = find_integration(&provider, &remote.host, None, app_state).await.is_some();
 
     Ok(CodeHostingStatus {
         rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },

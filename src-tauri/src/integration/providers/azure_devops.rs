@@ -31,7 +31,9 @@ fn html_to_markdown(html: &str) -> String {
     htmd::convert(html).unwrap_or_else(|_| html.to_string())
 }
 
-fn make_azdo_auth(token: &str) -> String {
+/// Azure DevOps takes a PAT as the password of an otherwise empty Basic credential. Bearer is for
+/// Entra tokens and is not documented for a PAT.
+pub(crate) fn make_azdo_auth(token: &str) -> String {
     let credentials = format!(":{}", token);
     format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes()))
 }

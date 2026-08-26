@@ -428,7 +428,7 @@ async fn open_pull_request_for_task(
     use crate::integration::code_hosting_handlers::{code_hosting_status, CodeHostingRung};
     use crate::integration::issue_tracking_handlers::find_integration;
     use crate::integration::pull_request::{
-        create_pull_request, supports_pull_requests, PullRequestTarget,
+        create_pull_request, preferred_credential_base, supports_pull_requests, PullRequestTarget,
     };
 
     let status = code_hosting_status(app_state, project_id).await?;
@@ -446,8 +446,13 @@ async fn open_pull_request_for_task(
 
     // Asked here rather than trusted from the config, because a credential can come from the
     // `gh` CLI with no integration stored and can expire between one approve and the next.
-    let integration = find_integration(&config.provider, &config.host, app_state)
-        .await
+    let integration = find_integration(
+        &config.provider,
+        &config.host,
+        preferred_credential_base(&config).as_deref(),
+        app_state,
+    )
+    .await
         .ok_or_else(|| {
             format!(
                 "No {} credentials are available, so the pull request cannot be opened. Connect \
@@ -534,7 +539,8 @@ pub async fn reconcile_pull_requests(
     use crate::integration::code_hosting_handlers::code_hosting_status;
     use crate::integration::issue_tracking_handlers::find_integration;
     use crate::integration::pull_request::{
-        fetch_ci_state, fetch_pull_request, CiState, PullRequestState, PullRequestTarget,
+        fetch_ci_state, fetch_pull_request, preferred_credential_base, CiState, PullRequestState,
+        PullRequestTarget,
     };
 
     let waiting: Vec<(i32, i64)> = {
@@ -564,7 +570,13 @@ pub async fn reconcile_pull_requests(
     let Some(config) = status.config else {
         return Ok(vec![]);
     };
-    let Some(integration) = find_integration(&config.provider, &config.host, app_state.inner()).await
+    let Some(integration) = find_integration(
+        &config.provider,
+        &config.host,
+        preferred_credential_base(&config).as_deref(),
+        app_state.inner(),
+    )
+    .await
     else {
         log::debug!(
             "Cannot reconcile pull requests for project {}: no {} credentials",
