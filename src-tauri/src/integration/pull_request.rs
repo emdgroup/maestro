@@ -145,129 +145,153 @@ pub async fn fetch_pull_request(
     number: i64,
 ) -> Result<PullRequestDetails, String> {
     match target.config.provider.as_str() {
-        "github" => {
-            let (owner, repo) = owner_repo(target.config)?;
-            let url = format!("{}/repos/{}/{}/pulls/{}", github_api_base(target), owner, repo, number);
-            let response = build_http_client()?
-                .get(url)
-                .header("Authorization", format!("Bearer {}", target.token))
-                .header("User-Agent", "maestro/1.0")
-                .header("Accept", "application/vnd.github+json")
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-            let pr: GitHubStyleState = read_json(response, "GitHub").await?;
-            Ok(github_style_details(pr))
-        }
-        "gitlab" => {
-            let url = format!(
-                "{}/api/v4/projects/{}/merge_requests/{}",
-                instance_base(target),
-                urlencoding::encode(&target.config.project_path),
-                number
-            );
-            let response = build_http_client()?
-                .get(url)
-                .header("PRIVATE-TOKEN", target.token)
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-            let mr: GitLabState = read_json(response, "GitLab").await?;
-            Ok(PullRequestDetails {
-                state: match mr.state.as_str() {
-                    "merged" => PullRequestState::Merged,
-                    "closed" => PullRequestState::Closed,
-                    // `opened` and `locked` are both still in play.
-                    _ => PullRequestState::Open,
-                },
-                // GitLab spells this `has_conflicts` on a different shape. Left unread rather than
-                // half-read, so a conflict is never inferred from a field nobody parsed.
-                mergeable: None,
-                head_sha: None,
-            })
-        }
-        "gitea" | "forgejo" => {
-            let (owner, repo) = owner_repo(target.config)?;
-            let url = format!(
-                "{}/api/v1/repos/{}/{}/pulls/{}",
-                instance_base(target),
-                urlencoding::encode(owner),
-                urlencoding::encode(repo),
-                number
-            );
-            let response = build_http_client()?
-                .get(url)
-                .header("Authorization", format!("token {}", target.token))
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-            let pr: GitHubStyleState = read_json(response, "Gitea").await?;
-            Ok(github_style_details(pr))
-        }
-        "bitbucket" => {
-            let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
-            let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-            let client = build_http_client()?;
-            let auth = format!("Bearer {}", target.token);
-
-            match &deployment {
-                BitbucketDeployment::Cloud => {
-                    let response = client
-                        .get(format!(
-                            "https://api.bitbucket.org/2.0/repositories/{}/{}/pullrequests/{}",
-                            project, repository, number
-                        ))
-                        .header("Authorization", &auth)
-                        .send()
-                        .await
-                        .map_err(|e| format!("Network error: {}", e))?;
-                    let pr: BitbucketCloudPullRequestState =
-                        read_json(response, "Bitbucket").await?;
-                    Ok(bitbucket_cloud_details(pr))
-                }
-                BitbucketDeployment::Server(instance) => {
-                    let response = client
-                        .get(format!(
-                            "{}/rest/api/latest/projects/{}/repos/{}/pull-requests/{}",
-                            instance, project, repository, number
-                        ))
-                        .header("Authorization", &auth)
-                        .send()
-                        .await
-                        .map_err(|e| format!("Network error: {}", e))?;
-                    let pr: BitbucketServerPullRequestState =
-                        read_json(response, "Bitbucket Server").await?;
-                    Ok(bitbucket_server_details(pr))
-                }
-            }
-        }
-        "azuredevops" => {
-            let coordinates = azure_devops_coordinates(
-                &target.config.host,
-                &target.config.project_path,
-                target.instance_url,
-            )?;
-            credential_matches_coordinates(&coordinates, target.instance_url)?;
-
-            // A pull request id is unique per organization, so this needs no repository — which is
-            // exactly why the credential has to have been checked against the organization first.
-            let response = build_http_client()?
-                .get(format!(
-                    "{}/_apis/git/pullrequests/{}?api-version={}",
-                    coordinates.base,
-                    number,
-                    super::azure_devops::AZDO_API_VERSION
-                ))
-                .header("Authorization", super::azure_devops::make_azdo_auth(target.token))
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-
-            let pr: AzureDevOpsPullRequestState = azure_devops_json(response).await?;
-            Ok(azure_devops_details(pr))
-        }
+        "github" => fetch_github(target, number).await,
+        "gitlab" => fetch_gitlab(target, number).await,
+        "gitea" | "forgejo" => fetch_gitea(target, number).await,
+        "bitbucket" => fetch_bitbucket(target, number).await,
+        "azuredevops" => fetch_azure_devops(target, number).await,
         other => Err(format!("Cannot read pull request state on `{}`.", other)),
     }
+}
+
+async fn fetch_github(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestDetails, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    let url = format!("{}/repos/{}/{}/pulls/{}", github_api_base(target), owner, repo, number);
+    let response = build_http_client()?
+        .get(url)
+        .header("Authorization", format!("Bearer {}", target.token))
+        .header("User-Agent", "maestro/1.0")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let pr: GitHubStyleState = read_json(response, "GitHub").await?;
+    Ok(github_style_details(pr))
+}
+
+async fn fetch_gitlab(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestDetails, String> {
+    let url = format!(
+        "{}/api/v4/projects/{}/merge_requests/{}",
+        instance_base(target),
+        urlencoding::encode(&target.config.project_path),
+        number
+    );
+    let response = build_http_client()?
+        .get(url)
+        .header("PRIVATE-TOKEN", target.token)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let mr: GitLabState = read_json(response, "GitLab").await?;
+    Ok(PullRequestDetails {
+        state: match mr.state.as_str() {
+            "merged" => PullRequestState::Merged,
+            "closed" => PullRequestState::Closed,
+            // `opened` and `locked` are both still in play.
+            _ => PullRequestState::Open,
+        },
+        // GitLab spells this `has_conflicts` on a different shape. Left unread rather than
+        // half-read, so a conflict is never inferred from a field nobody parsed.
+        mergeable: None,
+        head_sha: None,
+    })
+}
+
+async fn fetch_gitea(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestDetails, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    let url = format!(
+        "{}/api/v1/repos/{}/{}/pulls/{}",
+        instance_base(target),
+        urlencoding::encode(owner),
+        urlencoding::encode(repo),
+        number
+    );
+    let response = build_http_client()?
+        .get(url)
+        .header("Authorization", format!("token {}", target.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let pr: GitHubStyleState = read_json(response, "Gitea").await?;
+    Ok(github_style_details(pr))
+}
+
+async fn fetch_bitbucket(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestDetails, String> {
+    let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
+    let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
+    let client = build_http_client()?;
+    let auth = format!("Bearer {}", target.token);
+
+    match &deployment {
+        BitbucketDeployment::Cloud => {
+            let response = client
+                .get(format!(
+                    "https://api.bitbucket.org/2.0/repositories/{}/{}/pullrequests/{}",
+                    project, repository, number
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let pr: BitbucketCloudPullRequestState = read_json(response, "Bitbucket").await?;
+            Ok(bitbucket_cloud_details(pr))
+        }
+        BitbucketDeployment::Server(instance) => {
+            let response = client
+                .get(format!(
+                    "{}/rest/api/latest/projects/{}/repos/{}/pull-requests/{}",
+                    instance, project, repository, number
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let pr: BitbucketServerPullRequestState =
+                read_json(response, "Bitbucket Server").await?;
+            Ok(bitbucket_server_details(pr))
+        }
+    }
+}
+
+async fn fetch_azure_devops(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestDetails, String> {
+    let coordinates = azure_devops_coordinates(
+        &target.config.host,
+        &target.config.project_path,
+        target.instance_url,
+    )?;
+    credential_matches_coordinates(&coordinates, target.instance_url)?;
+
+    // A pull request id is unique per organization, so this needs no repository — which is
+    // exactly why the credential has to have been checked against the organization first.
+    let response = build_http_client()?
+        .get(format!(
+            "{}/_apis/git/pullrequests/{}?api-version={}",
+            coordinates.base,
+            number,
+            super::azure_devops::AZDO_API_VERSION
+        ))
+        .header("Authorization", super::azure_devops::make_azdo_auth(target.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let pr: AzureDevOpsPullRequestState = azure_devops_json(response).await?;
+    Ok(azure_devops_details(pr))
 }
 
 /// What the forge's CI says about the pull request's head commit.
@@ -298,101 +322,113 @@ pub async fn fetch_ci_state(
     head_sha: Option<&str>,
 ) -> Result<CiState, String> {
     match target.config.provider.as_str() {
-        "github" => {
-            let Some(sha) = head_sha else {
-                return Ok(CiState::Unknown);
-            };
-            let (owner, repo) = owner_repo(target.config)?;
-            let client = build_http_client()?;
-            let api = github_api_base(target);
-            let auth = format!("Bearer {}", target.token);
-
-            let runs: GitHubCheckRuns = read_json(
-                client
-                    .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, sha))
-                    .header("Authorization", &auth)
-                    .header("User-Agent", "maestro/1.0")
-                    .send()
-                    .await
-                    .map_err(|e| format!("Network error: {}", e))?,
-                "GitHub",
-            )
-            .await?;
-
-            Ok(summarise_check_runs(&runs.check_runs))
-        }
-        "gitlab" => {
-            let response = build_http_client()?
-                .get(format!(
-                    "{}/api/v4/projects/{}/merge_requests/{}",
-                    instance_base(target),
-                    urlencoding::encode(&target.config.project_path),
-                    number
-                ))
-                .header("PRIVATE-TOKEN", target.token)
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-            let mr: GitLabPipelineState = read_json(response, "GitLab").await?;
-            Ok(match mr.head_pipeline.map(|pipeline| pipeline.status) {
-                Some(status) => match status.as_str() {
-                    "success" => CiState::Passing,
-                    "failed" | "canceled" => CiState::Failing(vec![format!("pipeline {}", status)]),
-                    "running" | "pending" | "created" | "waiting_for_resource" | "preparing"
-                    | "scheduled" => CiState::Pending,
-                    _ => CiState::Unknown,
-                },
-                None => CiState::Unknown,
-            })
-        }
-        "bitbucket" => {
-            let Some(sha) = head_sha else {
-                return Ok(CiState::Unknown);
-            };
-            let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
-            let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-
-            // One page rather than a cursor loop. A pull request with more than a hundred build
-            // keys on one commit is not a case worth carrying pagination for.
-            let (url, forge) = match &deployment {
-                BitbucketDeployment::Cloud => (
-                    format!(
-                        "https://api.bitbucket.org/2.0/repositories/{}/{}/commit/{}/statuses?pagelen=100",
-                        project, repository, sha
-                    ),
-                    "Bitbucket",
-                ),
-                BitbucketDeployment::Server(instance) => (
-                    format!(
-                        "{}/rest/api/latest/projects/{}/repos/{}/commits/{}/builds?limit=100",
-                        instance, project, repository, sha
-                    ),
-                    "Bitbucket Server",
-                ),
-            };
-
-            let response = build_http_client()?
-                .get(url)
-                .header("Authorization", format!("Bearer {}", target.token))
-                .send()
-                .await
-                .map_err(|e| format!("Network error: {}", e))?;
-
-            // A commit nobody has posted a build for is a 404 on Server, and Cloud's abbreviated
-            // sha is one more way to miss. Both mean "no answer", which is already a value here —
-            // letting it through `read_json` would instead log a warning for every Bitbucket task
-            // on every sweep.
-            if response.status() == reqwest::StatusCode::NOT_FOUND {
-                return Ok(CiState::Unknown);
-            }
-
-            let statuses: BitbucketBuildStatuses = read_json(response, forge).await?;
-            Ok(summarise_bitbucket_builds(&statuses.values))
-        }
+        "github" => ci_github(target, head_sha).await,
+        "gitlab" => ci_gitlab(target, number).await,
+        "bitbucket" => ci_bitbucket(target, head_sha).await,
         // Gitea and Forgejo expose commit statuses, but the shape has moved between versions and
         // no answer at all is safer here than a wrong one.
         _ => Ok(CiState::Unknown),
     }
+}
+
+async fn ci_github(
+    target: &PullRequestTarget<'_>,
+    head_sha: Option<&str>,
+) -> Result<CiState, String> {
+    let Some(sha) = head_sha else {
+        return Ok(CiState::Unknown);
+    };
+    let (owner, repo) = owner_repo(target.config)?;
+    let client = build_http_client()?;
+    let api = github_api_base(target);
+    let auth = format!("Bearer {}", target.token);
+
+    let runs: GitHubCheckRuns = read_json(
+        client
+            .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, sha))
+            .header("Authorization", &auth)
+            .header("User-Agent", "maestro/1.0")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitHub",
+    )
+    .await?;
+
+    Ok(summarise_check_runs(&runs.check_runs))
+}
+
+async fn ci_gitlab(target: &PullRequestTarget<'_>, number: i64) -> Result<CiState, String> {
+    let response = build_http_client()?
+        .get(format!(
+            "{}/api/v4/projects/{}/merge_requests/{}",
+            instance_base(target),
+            urlencoding::encode(&target.config.project_path),
+            number
+        ))
+        .header("PRIVATE-TOKEN", target.token)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    let mr: GitLabPipelineState = read_json(response, "GitLab").await?;
+    Ok(match mr.head_pipeline.map(|pipeline| pipeline.status) {
+        Some(status) => match status.as_str() {
+            "success" => CiState::Passing,
+            "failed" | "canceled" => CiState::Failing(vec![format!("pipeline {}", status)]),
+            "running" | "pending" | "created" | "waiting_for_resource" | "preparing"
+            | "scheduled" => CiState::Pending,
+            _ => CiState::Unknown,
+        },
+        None => CiState::Unknown,
+    })
+}
+
+async fn ci_bitbucket(
+    target: &PullRequestTarget<'_>,
+    head_sha: Option<&str>,
+) -> Result<CiState, String> {
+    let Some(sha) = head_sha else {
+        return Ok(CiState::Unknown);
+    };
+    let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
+    let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
+
+    // One page rather than a cursor loop. A pull request with more than a hundred build
+    // keys on one commit is not a case worth carrying pagination for.
+    let (url, forge) = match &deployment {
+        BitbucketDeployment::Cloud => (
+            format!(
+                "https://api.bitbucket.org/2.0/repositories/{}/{}/commit/{}/statuses?pagelen=100",
+                project, repository, sha
+            ),
+            "Bitbucket",
+        ),
+        BitbucketDeployment::Server(instance) => (
+            format!(
+                "{}/rest/api/latest/projects/{}/repos/{}/commits/{}/builds?limit=100",
+                instance, project, repository, sha
+            ),
+            "Bitbucket Server",
+        ),
+    };
+
+    let response = build_http_client()?
+        .get(url)
+        .header("Authorization", format!("Bearer {}", target.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    // A commit nobody has posted a build for is a 404 on Server, and Cloud's abbreviated
+    // sha is one more way to miss. Both mean "no answer", which is already a value here —
+    // letting it through `read_json` would instead log a warning for every Bitbucket task
+    // on every sweep.
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(CiState::Unknown);
+    }
+
+    let statuses: BitbucketBuildStatuses = read_json(response, forge).await?;
+    Ok(summarise_bitbucket_builds(&statuses.values))
 }
 
 /// A check run is only a failure once it has a conclusion, and `Pending` beats `Failing` while
