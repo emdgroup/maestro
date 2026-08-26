@@ -6,6 +6,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Badge } from "@/ui/badge";
 import { api } from "@/lib/tauri-utils";
 
+/// Matches `useQueueDrain`, for the same reason and against the same events: one transition emits
+/// several of them, and answering each separately means several `get_queue_capacity` calls for one
+/// change. `tasks-changed` alone fires on every permission prompt and every answer to one.
+const DEBOUNCE_MS = 400;
+
 /**
  * How many agent slots this project's host has, and how many are taken.
  *
@@ -20,11 +25,16 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
 
   useEffect(() => {
     if (projectId === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     // The same events that trigger a drain change the answer here.
     const unlisteners = ["tasks-changed", "sessions-changed", "settings-changed"].map((event) =>
-      listen(event, () => void queryClient.invalidateQueries({ queryKey })),
+      listen(event, () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey }), DEBOUNCE_MS);
+      }),
     );
     return () => {
+      clearTimeout(timer);
       for (const unlisten of unlisteners) {
         void unlisten.then((fn) => fn());
       }

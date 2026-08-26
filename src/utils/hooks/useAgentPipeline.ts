@@ -39,6 +39,16 @@ export function useAgentPipeline(
   /// session is up, so without this the debounce window would start the same agent twice.
   const startedRef = useRef(new Set<number>());
 
+  // `tasks` is a dependency here and deliberately a ref in `useQueueDrain`, which looks like an
+  // oversight and is not. That hook is driven by Tauri events and only consults the list to turn an
+  // id into a task, so re-subscribing on every task update would tear its listeners down in the
+  // middle of the work they triggered. Here the list *is* the signal — a role becomes due because a
+  // row's `phase_status` changed — so re-running on it is the mechanism rather than a cost.
+  //
+  // What that relies on is TanStack's structural sharing: a refetch that returns the same content
+  // returns the same array identity, so an unrelated poll does not restart the debounce below. If
+  // the query ever stops sharing structure, the symptom is a handoff that keeps being deferred
+  // rather than one that never fires.
   useEffect(() => {
     if (!projectId) return;
 

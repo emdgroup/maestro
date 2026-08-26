@@ -17,6 +17,31 @@ async fn occupied_slots(app_state: &Arc<AppState>) -> i32 {
     (acp_count + pty_count) as i32
 }
 
+/// The limit in force for a project's host, measuring the host only when the measurement is used.
+///
+/// A `Hard` limit discards `available_mb` — `resolve_capacity` returns the configured number
+/// whatever the third argument is — while measuring means an exec over SSH for a remote host. Since
+/// `Hard` is the default and the badge asks this on every board event, probing first and throwing
+/// the answer away was a round trip per permission prompt.
+async fn capacity_for_project(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    mode: crate::execution::capacity::ConcurrencyMode,
+    configured: i32,
+) -> crate::execution::capacity::HostCapacity {
+    use crate::execution::capacity::{available_memory_mb, resolve_capacity, ConcurrencyMode};
+
+    if mode == ConcurrencyMode::Hard {
+        return resolve_capacity(mode, configured, None);
+    }
+
+    let available_mb = match crate::core::get_project_with_git_conn(app_state, project_id).await {
+        Ok((_, git_conn)) => available_memory_mb(&git_conn).await,
+        Err(_) => None,
+    };
+    resolve_capacity(mode, configured, available_mb)
+}
+
 /// What the board shows: how many slots this host has, how many are taken, and why.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct QueueCapacity {
@@ -40,15 +65,13 @@ pub async fn get_queue_capacity(
 
     let used = occupied_slots(&app_state).await;
 
-    let available_mb = match crate::core::get_project_with_git_conn(&app_state, project_id).await {
-        Ok((_, git_conn)) => crate::execution::capacity::available_memory_mb(&git_conn).await,
-        Err(_) => None,
-    };
-    let capacity = crate::execution::capacity::resolve_capacity(
+    let capacity = capacity_for_project(
+        &app_state,
+        project_id,
         settings.concurrency_mode,
         settings.max_concurrent_agents,
-        available_mb,
-    );
+    )
+    .await;
 
     Ok(QueueCapacity {
         slots: capacity.slots,
@@ -105,15 +128,13 @@ pub async fn request_task_execution(
 
     let used = occupied_slots(&app_state).await;
 
-    let available_mb = match crate::core::get_project_with_git_conn(&app_state, project_id).await {
-        Ok((_, git_conn)) => crate::execution::capacity::available_memory_mb(&git_conn).await,
-        Err(_) => None,
-    };
-    let capacity = crate::execution::capacity::resolve_capacity(
+    let capacity = capacity_for_project(
+        &app_state,
+        project_id,
         settings.concurrency_mode,
         settings.max_concurrent_agents,
-        available_mb,
-    );
+    )
+    .await;
 
     if used < capacity.slots {
         return Ok(ExecuteDecision { verdict: ExecuteVerdict::Start, reason: capacity.reason });
@@ -244,15 +265,13 @@ pub async fn drain_ready_queue(
 
     // Sampled here rather than on a timer: a drain is called at exactly the moments the answer
     // could have changed — a session ending, a task arriving, the app starting.
-    let available_mb = match crate::core::get_project_with_git_conn(&app_state, project_id).await {
-        Ok((_, git_conn)) => crate::execution::capacity::available_memory_mb(&git_conn).await,
-        Err(_) => None,
-    };
-    let capacity = crate::execution::capacity::resolve_capacity(
+    let capacity = capacity_for_project(
+        &app_state,
+        project_id,
         settings.concurrency_mode,
         settings.max_concurrent_agents,
-        available_mb,
-    );
+    )
+    .await;
 
     let slots_available = capacity.slots - running_count;
     if slots_available <= 0 {

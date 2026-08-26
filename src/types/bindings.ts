@@ -1369,6 +1369,11 @@ async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], em
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Check a file against the limits [`prepare_external_attachments`] enforces, reading only its
+ * metadata. Lets the compose bar reject a file the moment it is picked instead of on send, without
+ * the limits having to be restated on the TypeScript side.
+ */
 async validateAttachment(path: string, isImage: boolean) : Promise<Result<AttachmentValidation, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("validate_attachment", { path, isImage }) };
@@ -2312,15 +2317,15 @@ notify_on_input_needed?: boolean;
  * OS toast when an agent's turn ends in an error, a refusal, or a limit.
  */
 notify_on_failure?: boolean }
-/**
- * Single authentication method exposed to the frontend.
- */
 export type AttachmentValidation = { size_bytes: number; 
 /**
  * `None` when the file can be attached. Otherwise the reason to show the user, phrased for
  * them rather than for a log.
  */
 rejection: string | null }
+/**
+ * Single authentication method exposed to the frontend.
+ */
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
  * An Azure DevOps project option for combobox display.

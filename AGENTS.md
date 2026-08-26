@@ -46,9 +46,26 @@ bun run tauri:gen     # Regenerate TypeScript bindings from Rust models
 ```bash
 cd src-tauri
 cargo build           # Build Rust backend
-cargo test            # Run Rust tests
+cargo test            # Run Rust tests (see below on Windows)
 cargo check           # Check compilation without building
 ```
+
+**On Windows, `cargo test` does not work — use this instead:**
+
+```bash
+MAESTRO_TEST_MANIFEST=1 cargo test --lib
+```
+
+Both halves are required. Without the environment variable every test binary dies at load with
+`STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139) before a single test runs, because `tauri_build` links
+the Common-Controls v6 manifest into bin targets only and the dialog plugin's
+`TaskDialogIndirect` does not exist in the ComCtl32 5.82 the loader falls back to. Without `--lib`
+the bin's own harness is built too, gets the resource twice, and the link fails with LNK1123. The
+full reasoning, and why this cannot simply be always-on, is in `src-tauri/build.rs`.
+
+The same failure takes out `bun run tauri:gen`, which goes through
+`cargo test generate_typescript_bindings` — so on Windows regenerate bindings with
+`MAESTRO_TEST_MANIFEST=1 cargo test --lib generate_typescript_bindings` rather than the script.
 
 ## Architecture
 
@@ -296,10 +313,10 @@ When modifying Rust models:
 2. TS types appear in `src/types/bindings.ts`
 3. Import in React components
 
-Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro --lib`, so any
-Rust test run rewrites `src/types/bindings.ts` — as unformatted output, which then differs from the
-oxfmt-formatted committed copy. A diff there after running tests is usually formatting churn, not a
-stale-bindings signal; compare the exported command/type names before assuming it is out of date.
+Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro --lib`, so any Rust
+test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under `ignorePatterns`, so
+the committed copy is the generator's own output and a test run leaves it alone unless the bindings
+genuinely changed — a diff there means a model changed and should be committed.
 
 ### Bundled ACP agent registry
 

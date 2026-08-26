@@ -107,8 +107,20 @@ async function probeAgentModels(
 }
 
 /**
- * Cached for five minutes, matching the agent-discovery window. Opening settings should cost one
- * probe per agent, not one per profile naming it, and not another on every re-render.
+ * Cached for the life of the project, not on a timer.
+ *
+ * A probe is not a read — it spawns an agent subprocess and kills it again — and the answer is a
+ * property of the installed agent, which does not change while the app is open. A five-minute
+ * window meant closing settings and reopening it later paid for the whole thing again, for a list
+ * that had not moved. The key carries `cwd`, so opening another project probes afresh.
+ *
+ * `gcTime` matters as much as `staleTime` here: the probe's only observers are the profile cards,
+ * so leaving settings unmounts all of them and a collected entry is re-probed on the way back in.
+ *
+ * The cost is that an agent updated underneath a running app keeps reporting its old models until
+ * restart. That is the same bargain `useAgentDiscoveryQuery` already makes, and the wrong side of
+ * it is a stale list rather than a lost setting — an unlisted model is kept and labelled, never
+ * silently dropped.
  */
 export function useAgentModelsQuery(
   agentId: string | null,
@@ -121,7 +133,8 @@ export function useAgentModelsQuery(
     queryKey: executionQueryKeys.agentModels(agentId ?? "", cwd ?? "", connection),
     queryFn: () => probeAgentModels(agentId!, cwd!, projectId!, connection),
     enabled: enabled && !!agentId && !!cwd && projectId != null,
-    staleTime: 5 * 60 * 1000,
+    staleTime: Infinity,
+    gcTime: Infinity,
     retry: false,
   });
 }

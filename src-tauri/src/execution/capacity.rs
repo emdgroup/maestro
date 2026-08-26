@@ -193,11 +193,20 @@ mod tests {
         }
     }
 
+    /// `capacity_for_project` skips the memory probe entirely in this mode, so "ignores memory" has
+    /// to mean the measured and unmeasured answers are the *same value*, not merely that both name
+    /// the configured limit. Probing a remote host costs an exec, and the callers do it on every
+    /// board event.
     #[test]
     fn a_hard_limit_ignores_memory_entirely() {
         let capacity = resolve_capacity(ConcurrencyMode::Hard, 4, Some(64 * 1024));
         assert_eq!(capacity.slots, 4);
         assert_eq!(capacity.mode, ConcurrencyMode::Hard);
+        assert_eq!(
+            capacity,
+            resolve_capacity(ConcurrencyMode::Hard, 4, None),
+            "the probe may only be skipped while these agree"
+        );
     }
 
     /// The fallback that keeps a working host working. Reporting zero here would be
