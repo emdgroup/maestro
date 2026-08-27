@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/emdgroup/maestro/compare/v0.17.0...v0.18.0) (2026-08-27)
+
+### Features
+
+- give each project its own accent colour ([#248](https://github.com/emdgroup/maestro/issues/248)) ([edeb97a](https://github.com/emdgroup/maestro/commit/edeb97ac0dd5ad9fb51ef0193a0a570da9d6d712))
+
+### Bug Fixes
+
+- let the header bubbles show through the project chip in light theme ([#252](https://github.com/emdgroup/maestro/issues/252)) ([01232d9](https://github.com/emdgroup/maestro/commit/01232d900359c94ae1e4e675d9e6500935865c01))
+- limit review file open-in-tab click to the file name ([#243](https://github.com/emdgroup/maestro/issues/243)) ([c2271d5](https://github.com/emdgroup/maestro/commit/c2271d52ab4be6dabdffdf4f7597a53f86581af2))
+- render YAML frontmatter as a table ([#247](https://github.com/emdgroup/maestro/issues/247)) ([98f7cac](https://github.com/emdgroup/maestro/commit/98f7cacf4511da97c27bfd063db754d6bb774c88))
+- stop the plan rail comet stair-stepping its top edge ([#245](https://github.com/emdgroup/maestro/issues/245)) ([0e0d491](https://github.com/emdgroup/maestro/commit/0e0d491def4347e08da99d8ba614ff9f7a3fe4c6))
+- tell the user when an attachment is too large to send ([#251](https://github.com/emdgroup/maestro/issues/251)) ([833f053](https://github.com/emdgroup/maestro/commit/833f0535d0c4326a7c70826b56b3d7522bdcea93))
+
 ## [0.17.0](https://github.com/emdgroup/maestro/compare/v0.16.0...v0.17.0) (2026-08-08)
 
 ### Features
