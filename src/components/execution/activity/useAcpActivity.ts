@@ -91,7 +91,18 @@ export function useAcpActivity(
         tryRestoreCanvases();
       }),
       listen<string>(`acp://session-error/${logId}`, (event) => {
-        if (!event.payload.includes("session/load failed")) {
+        // A failed restore is not "the agent failed to start", and reopening a project whose
+        // worktrees have been pruned produces one per stale session — which is why it gets no
+        // toast. But it still ends the session, and that takes the compose bar with it, so
+        // saying nothing left a session the user could read and not type into with no clue
+        // why. It goes in the transcript they are already looking at instead.
+        if (event.payload.includes("session/load failed")) {
+          enqueue({
+            type: "append_error",
+            stopReason: "error",
+            message: `This session could not be restored and has been closed. ${event.payload}`,
+          });
+        } else {
           toast.error(`Agent failed to start: ${event.payload}`);
         }
         enqueue({ type: "session_ended" });

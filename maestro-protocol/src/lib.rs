@@ -10,6 +10,14 @@ pub const PROTOCOL_VERSION: u32 = 2;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
+/// Prefix of the error returned when `session/load` fails.
+///
+/// `ErrorResponse::session_id` marks an error as *scoped to* a session; this prefix is what marks
+/// one as *fatal* to it. The host tears the session down on a load failure and merely reports
+/// every other error, so the two cannot be told apart by the id alone. Matched by prefix in
+/// `reader_task` and by substring in `useAcpActivity.ts`, so older deployed servers — which
+/// spell the same string literally — keep working.
+pub const SESSION_LOAD_FAILED_ERROR: &str = "ACP session/load failed";
 
 // --- Top-level envelope ---
 
