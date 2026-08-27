@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle } from "react";
+import { useState } from "react";
 import { Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -68,10 +68,6 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
   },
 ];
 
-export interface AgentProfilesSectionHandle {
-  save: () => Promise<void>;
-}
-
 interface AgentProfilesSectionProps {
   projectId: number;
   agents: Array<{ id: string; name: string }>;
@@ -92,6 +88,7 @@ function ProfileCard({
   projectPath,
   connection,
   onChange,
+  onCommit,
   onMakeDefault,
   onRemove,
 }: {
@@ -102,7 +99,9 @@ function ProfileCard({
   projectId: number;
   projectPath: string | null;
   connection: ConnectionKey;
-  onChange: (patch: Partial<AgentProfile>) => void;
+  /** `commit` persists the patch straight away; the text fields leave it to `onCommit`. */
+  onChange: (patch: Partial<AgentProfile>, commit?: boolean) => void;
+  onCommit: () => void;
   onMakeDefault: () => void;
   onRemove: () => void;
 }) {
@@ -141,7 +140,10 @@ function ProfileCard({
       : (available.find((m) => m.model_id === profile.model)?.name ?? profile.model);
 
   return (
+    // React's `onBlur` is `focusout`, which bubbles — one handler here covers the name, the
+    // permission mode and the role prompt without threading a save through each of them.
     <div
+      onBlur={onCommit}
       className={cn(
         "rounded-md border p-3 space-y-2",
         isDefault ? "border-accent/60 bg-accent/5" : "border-border",
@@ -182,7 +184,10 @@ function ProfileCard({
           {/* `?? ""` because base-ui hands back null when a selection is cleared, which a native
               select could not do. An empty agent id is "not chosen yet", which the resolver
               already treats as falling back to the project default. */}
-          <Select value={profile.agent_id} onValueChange={(v) => onChange({ agent_id: v ?? "" })}>
+          <Select
+            value={profile.agent_id}
+            onValueChange={(v) => onChange({ agent_id: v ?? "" }, true)}
+          >
             <SelectTrigger size="sm" className="w-full text-xs" aria-label={agentLabel}>
               <span className="truncate flex-1 text-left">{agentLabel}</span>
             </SelectTrigger>
@@ -208,7 +213,7 @@ function ProfileCard({
           <Select
             value={profile.model ?? ""}
             disabled={modelsLoading}
-            onValueChange={(v) => onChange({ model: v || null })}
+            onValueChange={(v) => onChange({ model: v || null }, true)}
           >
             <SelectTrigger
               size="sm"
@@ -275,16 +280,21 @@ function newProfileId(role: AgentRole): string {
   return `${role.toLowerCase()}-${Date.now().toString(36)}`;
 }
 
-export const AgentProfilesSection = forwardRef<
-  AgentProfilesSectionHandle,
-  AgentProfilesSectionProps
->(({ projectId, agents, connection }, ref) => {
+/// Comparable form of the document, for skipping writes that would change nothing.
+function serialize(profiles: AgentProfile[], defaults: Record<string, string>): string {
+  return JSON.stringify({ profiles, defaults });
+}
+
+export function AgentProfilesSection({ projectId, agents, connection }: AgentProfilesSectionProps) {
   const profilesQuery = useAgentProfilesQuery(projectId);
   const saveProfiles = useSaveAgentProfilesMutation();
   const projectPath = useSelectedProject()?.path ?? null;
 
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [defaults, setDefaults] = useState<Record<string, string>>({});
+  // What is on disk. The blur handler fires on every focus change, including tabbing through
+  // fields without touching them, and a project's `profiles.json` may be an SSH round trip away.
+  const [persisted, setPersisted] = useState("");
 
   // Adopted from the query during render rather than from an effect, which would paint an empty
   // list over profiles already fetched. Latched on the object identity so the user's edits are not
@@ -295,14 +305,15 @@ export const AgentProfilesSection = forwardRef<
     setLoaded(stored);
     // Both are `#[serde(default)]` on the Rust side, so a `profiles.json` that omits either — or
     // has never been written at all — arrives with them undefined rather than empty.
-    setProfiles(stored.profiles ?? []);
-    setDefaults(
-      Object.fromEntries(
-        Object.entries(stored.defaults ?? {}).filter(
-          (entry): entry is [string, string] => entry[1] != null,
-        ),
+    const storedProfiles = stored.profiles ?? [];
+    const storedDefaults = Object.fromEntries(
+      Object.entries(stored.defaults ?? {}).filter(
+        (entry): entry is [string, string] => entry[1] != null,
       ),
     );
+    setProfiles(storedProfiles);
+    setDefaults(storedDefaults);
+    setPersisted(serialize(storedProfiles, storedDefaults));
   }
 
   // A different project starts from nothing until its own query lands, so the previous project's
@@ -315,23 +326,32 @@ export const AgentProfilesSection = forwardRef<
     setDefaults({});
   }
 
-  useImperativeHandle(ref, () => ({
-    save: async () => {
-      await saveProfiles.mutateAsync({
-        projectId,
-        document: { profiles, defaults },
-      });
-    },
-  }));
+  /// There is no Save button: every change persists as it is made.
+  ///
+  /// The next profiles and defaults are passed in rather than read from state, because a handler
+  /// that just called `setProfiles` still sees the previous render's value. Guarded on `loaded`
+  /// so the adopt-from-query render can never write an empty document over the project's file.
+  function saveNow(nextProfiles: AgentProfile[], nextDefaults: Record<string, string>) {
+    if (!loaded) return;
+    const next = serialize(nextProfiles, nextDefaults);
+    if (next === persisted) return;
+    setPersisted(next);
+    saveProfiles.mutate({
+      projectId,
+      document: { profiles: nextProfiles, defaults: nextDefaults },
+    });
+  }
 
-  function updateProfile(id: string, patch: Partial<AgentProfile>) {
-    setProfiles((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  function updateProfile(id: string, patch: Partial<AgentProfile>, commit = false) {
+    const next = profiles.map((p) => (p.id === id ? { ...p, ...patch } : p));
+    setProfiles(next);
+    if (commit) saveNow(next, defaults);
   }
 
   function addProfile(role: AgentRole) {
     const id = newProfileId(role);
-    setProfiles((prev) => [
-      ...prev,
+    const next: AgentProfile[] = [
+      ...profiles,
       {
         id,
         name: `${role} profile`,
@@ -344,23 +364,33 @@ export const AgentProfilesSection = forwardRef<
         role_prompt: ROLES.find((r) => r.role === role)?.defaultPrompt ?? null,
         fallback_behaviour: "Warn",
       },
-    ]);
+    ];
     // The first profile for a role becomes its default, because a role with profiles and no
     // default resolves to "the first one declaring the role" anyway — better to say so.
-    setDefaults((prev) => (prev[role] ? prev : { ...prev, [role]: id }));
+    const nextDefaults = defaults[role] ? defaults : { ...defaults, [role]: id };
+    setProfiles(next);
+    setDefaults(nextDefaults);
+    saveNow(next, nextDefaults);
   }
 
   function removeProfile(id: string, role: AgentRole) {
     const remaining = profiles.filter((p) => p.id !== id);
-    setProfiles(remaining);
-    setDefaults((prev) => {
-      if (prev[role] !== id) return prev;
-      const next = { ...prev };
+    let nextDefaults = defaults;
+    if (defaults[role] === id) {
+      nextDefaults = { ...defaults };
       const fallback = remaining.find((p) => p.role === role);
-      if (fallback) next[role] = fallback.id;
-      else delete next[role];
-      return next;
-    });
+      if (fallback) nextDefaults[role] = fallback.id;
+      else delete nextDefaults[role];
+    }
+    setProfiles(remaining);
+    setDefaults(nextDefaults);
+    saveNow(remaining, nextDefaults);
+  }
+
+  function makeDefault(role: AgentRole, id: string) {
+    const nextDefaults = { ...defaults, [role]: id };
+    setDefaults(nextDefaults);
+    saveNow(profiles, nextDefaults);
   }
 
   return (
@@ -414,8 +444,9 @@ export const AgentProfilesSection = forwardRef<
                   projectId={projectId}
                   projectPath={projectPath}
                   connection={connection}
-                  onChange={(patch) => updateProfile(profile.id, patch)}
-                  onMakeDefault={() => setDefaults((prev) => ({ ...prev, [role]: profile.id }))}
+                  onChange={(patch, commit) => updateProfile(profile.id, patch, commit)}
+                  onCommit={() => saveNow(profiles, defaults)}
+                  onMakeDefault={() => makeDefault(role, profile.id)}
                   onRemove={() => removeProfile(profile.id, role)}
                 />
               ))
@@ -425,6 +456,4 @@ export const AgentProfilesSection = forwardRef<
       })}
     </div>
   );
-});
-
-AgentProfilesSection.displayName = "AgentProfilesSection";
+}

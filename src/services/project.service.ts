@@ -2,7 +2,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
-import type { ConnectionKey, ProjectConfigRequest, ProfilesDocument } from "@/types/bindings";
+import type {
+  ConnectionKey,
+  ProjectConfigRequest,
+  ProjectConfigResponse,
+  ProfilesDocument,
+} from "@/types/bindings";
 import { localConnectionId } from "@/contexts/ConnectionContext";
 
 /**
@@ -170,18 +175,35 @@ export function useSaveAgentProfilesMutation() {
   });
 }
 
+/**
+ * Mutation hook for the settings page's project-level fields.
+ *
+ * Optimistic, because the settings page saves on every change rather than behind a button: the
+ * write is a file round trip — an SSH one for a remote project — and a switch that visibly
+ * snaps back for its duration reads as the click not having registered.
+ */
 export function useUpdateProjectSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ projectId, config }: { projectId: number; config: ProjectConfigRequest }) =>
       api.updateProjectSettings(projectId, config),
-    onSuccess: (_data, { projectId }) => {
+    onMutate: async ({ projectId, config }) => {
+      const queryKey = projectQueryKeys.settingsDetail(projectId);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ProjectConfigResponse>(queryKey);
+      if (previous) queryClient.setQueryData(queryKey, { ...previous, ...config });
+      return { previous, queryKey };
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(context.queryKey, context.previous);
+      createErrorToastHandler("Failed to update project settings")(error);
+    },
+    onSettled: (_data, _error, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(projectId),
       });
     },
-    onError: createErrorToastHandler("Failed to update project settings"),
   });
 }
 

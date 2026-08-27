@@ -4,11 +4,11 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::core::connection::get_project_with_git_conn;
-use crate::core::project_storage::{read_maestro_json, write_maestro_json};
-use crate::project::settings::SETTINGS_FILE;
+use crate::core::project_storage::read_maestro_json;
+use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
 use crate::git::remote::{parse_remote_url, pick_remote_url, ParsedRemote};
 use crate::git::run_git_in_dir_lossy;
-use crate::models::project::{now_rfc3339, ProjectConfig, ProjectIssueTrackingConfig};
+use crate::models::project::{ProjectConfig, ProjectIssueTrackingConfig};
 use crate::models::issue_tracking::{DetectedIssueTracking, RemoteIssue};
 use crate::models::integration::IntegrationCredentials;
 use crate::integration::keychain::{KeychainOutcome, KeychainStore};
@@ -37,13 +37,16 @@ pub async fn save_project_issue_tracking_config(
     issue_tracking: Option<ProjectIssueTrackingConfig>,
 ) -> Result<(), String> {
     let (_project, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
-    // Clearing the config is an explicit "I don't want this here", so it also opts the
-    // project out of git-remote detection — otherwise the next open would re-add it.
-    config.issue_tracking_auto_detect = if issue_tracking.is_none() { Some(false) } else { None };
-    config.issue_tracking = issue_tracking;
-    config.updated_at = now_rfc3339();
-    write_maestro_json(&conn, SETTINGS_FILE, &config).await
+    mutate_project_config(&conn, |config| {
+        // Clearing the config is an explicit "I don't want this here", so it also opts the
+        // project out of git-remote detection — otherwise the next open would re-add it.
+        config.issue_tracking_auto_detect =
+            if issue_tracking.is_none() { Some(false) } else { None };
+        config.issue_tracking = issue_tracking;
+        true
+    })
+    .await?;
+    Ok(())
 }
 
 /// Map a git remote host to a ticketing provider.
@@ -225,7 +228,6 @@ pub async fn detect_project_issue_tracking(
     project_id: i32,
 ) -> Result<Option<DetectedIssueTracking>, String> {
     let (project, git_conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    let mut existing: ProjectConfig = read_maestro_json(&git_conn, SETTINGS_FILE).await;
 
     let remotes = run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"]).await?;
     let Some(url) = pick_remote_url(&remotes) else {
@@ -267,10 +269,21 @@ pub async fn detect_project_issue_tracking(
         }
     }
 
-    let applied = integration.is_some()
-        && existing.issue_tracking.is_none()
-        && existing.issue_tracking_auto_detect != Some(false)
-        && has_required_fields(&provider, &config);
+    // Decided inside the mutation, against a config re-read there: the git and API calls above
+    // are slow enough for the settings page — or the first-open colour assignment — to have
+    // written in the meantime, and this handler would otherwise put back what it read on entry.
+    let eligible = integration.is_some() && has_required_fields(&provider, &config);
+    let applied = mutate_project_config(&git_conn, |existing| {
+        if !eligible
+            || existing.issue_tracking.is_some()
+            || existing.issue_tracking_auto_detect == Some(false)
+        {
+            return false;
+        }
+        existing.issue_tracking = Some(config.clone());
+        true
+    })
+    .await?;
 
     if applied {
         log::info!(
@@ -278,9 +291,6 @@ pub async fn detect_project_issue_tracking(
             provider,
             project_id
         );
-        existing.issue_tracking = Some(config.clone());
-        existing.updated_at = now_rfc3339();
-        write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
     }
 
     Ok(Some(DetectedIssueTracking {
