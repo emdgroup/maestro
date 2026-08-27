@@ -64,7 +64,7 @@ export function SpawnSessionDialog({
   useEffect(() => {
     if (!open) return;
     setSelectedWorktree(worktrees[0] ?? null);
-    setNewWorktree(!projectSettings?.default_existing_worktree);
+    setNewWorktree(projectSettings?.default_worktree ?? true);
     setBaseBranch(branchData?.[1] ?? "");
     setSessionName("");
     setSpawnError(null);

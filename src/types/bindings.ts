@@ -2607,7 +2607,7 @@ owner?: string | null; repo?: string | null;
  * The whole remote path, so a namespace that nests deeper than `owner/repo` survives.
  */
 project_path: string }
-export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_existing_worktree: boolean }
+export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_worktree: boolean }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; 
 /**
  * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
@@ -2618,7 +2618,7 @@ accent_color: string | null;
 /**
  * `Some(false)` once the colour has been decided; see `ProjectConfig`.
  */
-accent_color_auto_assign: boolean | null; default_existing_worktree: boolean }
+accent_color_auto_assign: boolean | null; default_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * What the forge's CI last said about an open pull request's head commit.

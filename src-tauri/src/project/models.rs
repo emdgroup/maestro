@@ -58,7 +58,7 @@ pub enum ProjectStatus {
 }
 
 /// Project-specific configuration stored in .maestro/settings.json
-#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(default)]
 #[specta(export)]
 pub struct ProjectConfig {
@@ -90,8 +90,10 @@ pub struct ProjectConfig {
     /// default" stores no hue and would otherwise look exactly like "never chosen".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent_color_auto_assign: Option<bool>,
-    /// Preselect "Existing" instead of "New" in the New Session dialog's worktree toggle.
-    pub default_existing_worktree: bool,
+    /// Whether work in this project is isolated in its own git worktree by default: new tasks
+    /// are created with worktree isolation on, and the New Session dialog opens on "New".
+    /// Only meaningful for a git project; a non-git one never offers the choice.
+    pub default_worktree: bool,
     /// Extra workspace roots handed to every agent alongside the session's own directory.
     ///
     /// Absolute paths on the machine the agent runs on, or `~`-relative; `~` is expanded there,
@@ -99,6 +101,28 @@ pub struct ProjectConfig {
     /// `ProjectConfigResponse` deliberately — this is edited in the file, not the settings UI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_directories: Option<Vec<String>>,
+}
+
+/// Hand-written rather than derived because `default_worktree` is on by default and a derived
+/// `bool` would be `false`. The container's `#[serde(default)]` fills missing keys from here, so
+/// this is also what a `settings.json` written before the key existed reads back as.
+impl Default for ProjectConfig {
+    fn default() -> Self {
+        Self {
+            default_agent: None,
+            updated_at: String::new(),
+            issue_tracking: None,
+            issue_tracking_auto_detect: None,
+            code_hosting: None,
+            code_hosting_auto_detect: None,
+            landing_mode: None,
+            startup_tab: None,
+            accent_color: None,
+            accent_color_auto_assign: None,
+            default_worktree: true,
+            additional_directories: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -297,6 +321,9 @@ mod tests {
         let config: ProjectConfig = serde_json::from_str(r#"{"updated_at": ""}"#)
             .expect("a config predating additional_directories should still load");
         assert!(config.additional_directories.is_none());
+        // Worktree isolation is on unless the project turned it off, so a file written before
+        // the key existed must not read back as opted out.
+        assert!(config.default_worktree);
     }
 
     #[test]

@@ -31,7 +31,7 @@ pub async fn get_project_settings(
         startup_tab: config.startup_tab,
         accent_color: config.accent_color,
         accent_color_auto_assign: config.accent_color_auto_assign,
-        default_existing_worktree: config.default_existing_worktree,
+        default_worktree: config.default_worktree,
     })
 }
 
@@ -73,7 +73,7 @@ pub async fn update_project_settings(
     let mut config: crate::models::ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
     config.default_agent = settings.default_agent;
     config.startup_tab = settings.startup_tab;
-    config.default_existing_worktree = settings.default_existing_worktree;
+    config.default_worktree = settings.default_worktree;
     config.updated_at = Utc::now().to_rfc3339();
 
     write_maestro_json(&conn, SETTINGS_FILE, &config).await
