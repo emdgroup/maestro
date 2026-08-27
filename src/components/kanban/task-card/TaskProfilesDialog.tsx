@@ -83,60 +83,71 @@ export function TaskProfilesDialog({
             Agents for “{task.title}”
           </DialogTitle>
           <DialogDescription>
-            Overrides this project&apos;s defaults for this task only. Set them before it starts — a
-            stage that has already run does not run again.
+            Overrides the agent each role uses, for this task only. Roles are configured in
+            Settings.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          {ROLES.map(({ role, label }) => {
-            const forRole = profiles.filter((p) => p.role === role);
-            const defaultName =
-              forRole.find((p) => p.id === defaults[role])?.name ?? forRole[0]?.name;
-            const chosen = choices[role] ?? USE_PROJECT_DEFAULT;
-            const fallbackLabel =
-              forRole.length === 0
-                ? "No profile — stage skipped"
-                : `Project default${defaultName ? ` (${defaultName})` : ""}`;
+        {/* Four disabled selects all reading "No profile (stage skipped)" is a dialog that looks
+            broken rather than one saying there is nothing to choose between yet. */}
+        {profiles.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            This project has no agent profiles yet, so there is nothing to override here. Add one
+            per role in Settings.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {ROLES.map(({ role, label }) => {
+              const forRole = profiles.filter((p) => p.role === role);
+              const defaultName =
+                forRole.find((p) => p.id === defaults[role])?.name ?? forRole[0]?.name;
+              const chosen = choices[role] ?? USE_PROJECT_DEFAULT;
+              const fallbackLabel =
+                forRole.length === 0
+                  ? "No profile (stage skipped)"
+                  : `Project default${defaultName ? ` (${defaultName})` : ""}`;
 
-            return (
-              <div key={role} className="text-xs space-y-1">
-                <span className="font-medium">{label}</span>
-                <Select
-                  value={chosen}
-                  disabled={forRole.length === 0}
-                  // `?? ""` because base-ui hands back null when a selection is cleared, and ""
-                  // is already this dialog's word for "use the project default".
-                  onValueChange={(v) => setChoices((prev) => ({ ...prev, [role]: v ?? "" }))}
-                >
-                  <SelectTrigger size="sm" className="w-full text-xs" aria-label={label}>
-                    <span className="truncate flex-1 text-left">
-                      {forRole.find((p) => p.id === chosen)?.name ?? fallbackLabel}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={USE_PROJECT_DEFAULT} className="text-xs">
-                      {fallbackLabel}
-                    </SelectItem>
-                    {forRole.map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id} className="text-xs">
-                        {profile.name}
+              return (
+                <div key={role} className="text-xs space-y-1">
+                  <span className="font-medium">{label}</span>
+                  <Select
+                    value={chosen}
+                    disabled={forRole.length === 0}
+                    // `?? ""` because base-ui hands back null when a selection is cleared, and ""
+                    // is already this dialog's word for "use the project default".
+                    onValueChange={(v) => setChoices((prev) => ({ ...prev, [role]: v ?? "" }))}
+                  >
+                    <SelectTrigger size="sm" className="w-full text-xs" aria-label={label}>
+                      <span className="truncate flex-1 text-left">
+                        {forRole.find((p) => p.id === chosen)?.name ?? fallbackLabel}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={USE_PROJECT_DEFAULT} className="text-xs">
+                        {fallbackLabel}
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })}
-        </div>
+                      {forRole.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                          {profile.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {profiles.length === 0 ? "Close" : "Cancel"}
           </Button>
-          <Button className={buttonVariants({ variant: "accent" })} onClick={save}>
-            Save
-          </Button>
+          {profiles.length > 0 && (
+            <Button className={buttonVariants({ variant: "accent" })} onClick={save}>
+              Save
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

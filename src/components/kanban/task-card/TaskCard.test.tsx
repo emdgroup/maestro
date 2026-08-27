@@ -71,9 +71,21 @@ vi.mock("@/services/execution.service", () => ({
 /// even for the cards that never open it.
 const setProfileOverrides = vi.hoisted(() => vi.fn());
 
+/// The project's roles. Swapped per test, because whether any role has a profile is what decides
+/// if the card can offer Refine at all.
+const profiles = vi.hoisted(() => ({ current: [] as Array<{ id: string; role: string }> }));
+
 vi.mock("@/services/project.service", () => ({
-  useAgentProfilesQuery: () => ({ data: { profiles: [], defaults: {} } }),
+  useAgentProfilesQuery: () => ({ data: { profiles: profiles.current, defaults: {} } }),
   useSaveAgentProfilesMutation: () => ({ mutateAsync: vi.fn() }),
+}));
+
+/// The other half of what makes Refine startable: a project default agent stands in when no
+/// profile names one.
+const defaultAgent = vi.hoisted(() => ({ current: null as string | null }));
+
+vi.mock("@/store/configStore", () => ({
+  useDefaultAgent: () => defaultAgent.current,
 }));
 
 /// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
@@ -144,6 +156,8 @@ beforeEach(() => {
   activeSession.current = null;
   worktrees.current = [];
   comments.current = [];
+  profiles.current = [{ id: "refiner-1", role: "Refiner" }];
+  defaultAgent.current = null;
   execute.mockClear();
   archive.mockClear();
   closeRefinement.mockClear();
@@ -187,6 +201,25 @@ describe("TaskCard abandon", () => {
     await userEvent.click(confirm!);
 
     expect(interrupt.mutate).toHaveBeenCalledWith(42);
+  });
+
+  /// `AlertDialogAction` is a plain button — unlike `AlertDialogCancel` it does not render through
+  /// base-ui's `Close` — so confirming left the dialog standing over a task already abandoned,
+  /// with nothing to say whether the click had registered.
+  it("closes the dialog once confirmed", async () => {
+    activeSession.current = { session_key: 1 };
+    renderCard(running);
+
+    await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
+    const confirm = screen
+      .getAllByRole("button", { name: /abandon/i })
+      .find(
+        (button) =>
+          button.textContent?.trim() === "Abandon" && button.closest("[role=alertdialog]"),
+      );
+    await userEvent.click(confirm!);
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
 
@@ -551,6 +584,31 @@ describe("TaskCard refinement", () => {
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
       role: "Refiner",
     });
+  });
+
+  /// The button used to be live on a project that had configured nothing, and pressing it produced
+  /// a toast about the default agent — an answer to a question the user had not asked, on a
+  /// project whose actual problem is that no role has a profile.
+  it("does not offer Refine when nothing can run it", async () => {
+    profiles.current = [];
+    defaultAgent.current = null;
+    renderCard({ status: "Planning" });
+
+    const refine = screen.getByRole("button", { name: /refine/i });
+    expect(refine).toBeDisabled();
+
+    await userEvent.click(refine);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  /// A project that predates profiles configures one agent and expects everything to use it, so
+  /// gating purely on the Refiner profile would take Refine away from it.
+  it("offers Refine with no Refiner profile but a project default agent", () => {
+    profiles.current = [];
+    defaultAgent.current = "claude-acp";
+    renderCard({ status: "Planning" });
+
+    expect(screen.getByRole("button", { name: /refine/i })).toBeEnabled();
   });
 
   /// Sharpening a ticket the scheduler may pick up mid-sentence is editing something already on

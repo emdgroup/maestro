@@ -15,7 +15,9 @@ import {
 } from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
 import { useWorktreesQuery, useDeleteWorktreeMutation } from "@/services/worktree.service";
+import { useAgentProfilesQuery } from "@/services/project.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
+import { useDefaultAgent } from "@/store/configStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import { api } from "@/lib/tauri-utils";
@@ -296,6 +298,7 @@ interface FooterCTAsProps {
   activeSession: { session_key: number } | undefined | null;
   isAwaiting: boolean;
   isExecuting: boolean;
+  canRefine: boolean;
   isAuthRequired: boolean;
   isRecovering: boolean;
   isStuck: boolean;
@@ -319,6 +322,7 @@ function FooterCTAs({
   activeSession,
   isAwaiting,
   isExecuting,
+  canRefine,
   isAuthRequired,
   isRecovering,
   isStuck,
@@ -427,15 +431,23 @@ function FooterCTAs({
   if (task.status === "Planning") {
     return (
       <div className="flex gap-1 mt-1.5">
+        {/* Refinement needs an agent to run it, and nothing on this card can conjure one. Left
+            enabled, the only thing pressing it produced was a toast about the default agent — an
+            answer to a question the user had not asked, on a project whose real problem is that no
+            role has a profile yet. */}
         <Button
           onClick={(e) => {
             e.stopPropagation();
             onRefine();
           }}
-          disabled={isExecuting}
+          disabled={isExecuting || !canRefine}
           variant="ghost"
           className={cn(base, "h-auto")}
-          title="Ask an agent to sharpen this task's description"
+          title={
+            canRefine
+              ? "Ask an agent to sharpen this task's description"
+              : "No agent can refine this task. Add a Refinement profile in Settings."
+          }
         >
           <Sparkles className="w-2.5 h-2.5" />
           Refine
@@ -754,6 +766,14 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
   const taskWorktree = (worktrees ?? []).find((w) => w.task_id === task.id) ?? null;
   const recoverSession = useRecoverTaskSessionMutation();
+  // Same query key the profiles dialog uses, so every card on the board shares one fetch.
+  const { data: profilesDocument } = useAgentProfilesQuery(projectId);
+  const defaultAgent = useDefaultAgent();
+  // A Refiner profile is how a project opts into refinement; a project default agent is the
+  // fallback `useExecuteTask` applies when no profile names one. With neither, there is nothing to
+  // start.
+  const canRefine =
+    (profilesDocument?.profiles ?? []).some((p) => p.role === "Refiner") || !!defaultAgent;
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
@@ -893,6 +913,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           activeSession={activeSession}
           isAwaiting={isAwaiting}
           isExecuting={isExecuting}
+          canRefine={canRefine}
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}
           isStuck={
@@ -1008,7 +1029,8 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
                 // dialog exists to protect; the working copy of them is just disk.
                 <AlertDialogAction
                   className={buttonVariants({ variant: "outline" })}
-                  onClick={() =>
+                  onClick={() => {
+                    setArchiveConfirmOpen(false);
                     deleteWorktree.mutate(
                       {
                         projectId,
@@ -1018,13 +1040,18 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
                         deleteBranch: false,
                       },
                       { onSuccess: () => archiveTask.mutate(task.id) },
-                    )
-                  }
+                    );
+                  }}
                 >
                   Archive and remove the worktree
                 </AlertDialogAction>
               )}
-            <AlertDialogAction onClick={() => archiveTask.mutate(task.id)}>
+            <AlertDialogAction
+              onClick={() => {
+                setArchiveConfirmOpen(false);
+                archiveTask.mutate(task.id);
+              }}
+            >
               Archive, keep everything
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1045,9 +1072,15 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep working</AlertDialogCancel>
+            {/* `AlertDialogAction` is a plain button — only `AlertDialogCancel` renders through
+                base-ui's `Close`, so an action that does not close the dialog itself leaves it up
+                over a task it has already abandoned. Same for the two dialogs below. */}
             <AlertDialogAction
               className={buttonVariants({ variant: "destructive" })}
-              onClick={() => interruptTask.mutate(task.id)}
+              onClick={() => {
+                setAbandonConfirmOpen(false);
+                interruptTask.mutate(task.id);
+              }}
             >
               Abandon
             </AlertDialogAction>
@@ -1070,7 +1103,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => sendToReview.mutate({ taskId: task.id, force: true })}
+              onClick={() => {
+                setEmptyReviewConfirmOpen(false);
+                sendToReview.mutate({ taskId: task.id, force: true });
+              }}
             >
               Review anyway
             </AlertDialogAction>

@@ -221,6 +221,13 @@ pub struct AcpProcess {
     /// Set when the agent emits the completion marker. Read and reset on each turn ending, so it
     /// only applies to the turn it appeared in.
     pub declared_complete: Arc<AtomicBool>,
+    /// Set when the user pressed stop on this session, and read and reset by the next turn ending.
+    ///
+    /// The stop reason cannot carry this: agents disagree about what an interrupted turn reports —
+    /// some answer `cancelled`, some `end_turn` — and an `end_turn` from a coder that had already
+    /// touched files reads as a finished phase, which hands the task straight to the next role. So
+    /// the interrupt is recorded where it is known first-hand rather than inferred from the reply.
+    pub user_interrupted: Arc<AtomicBool>,
     /// The agent's last run of prose before the turn ends, drained into the task's outcome thread.
     pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
@@ -289,6 +296,7 @@ pub struct ReaderTaskContext {
     pub canvas_extractor: Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
     pub declared_complete: Arc<AtomicBool>,
+    pub user_interrupted: Arc<AtomicBool>,
     pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     pub session_name: Option<String>,
     pub agent_id: String,
@@ -319,6 +327,7 @@ impl AcpProcess {
             super::completion::CompletionMarkerFilter::new(),
         ));
         let declared_complete = Arc::new(AtomicBool::new(false));
+        let user_interrupted = Arc::new(AtomicBool::new(false));
         let closing_message =
             Arc::new(std::sync::Mutex::new(super::completion::ClosingMessage::default()));
         let ctx = ReaderTaskContext {
@@ -335,6 +344,7 @@ impl AcpProcess {
             canvas_extractor: Arc::clone(&canvas_extractor),
             completion_filter: Arc::clone(&completion_filter),
             declared_complete: Arc::clone(&declared_complete),
+            user_interrupted: Arc::clone(&user_interrupted),
             closing_message: Arc::clone(&closing_message),
             session_name: params.session_name.clone(),
             agent_id: params.agent_id.clone(),
@@ -365,6 +375,7 @@ impl AcpProcess {
             canvas_extractor,
             completion_filter,
             declared_complete,
+            user_interrupted,
             closing_message,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),

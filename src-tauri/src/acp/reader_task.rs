@@ -57,6 +57,7 @@ pub(crate) fn spawn_reader_task(
         canvas_extractor,
         completion_filter,
         declared_complete,
+        user_interrupted,
         closing_message,
         session_name,
         agent_id,
@@ -126,6 +127,8 @@ pub(crate) fn spawn_reader_task(
                     // Read and reset: a declaration applies only to the turn it appeared in.
                     let declared =
                         declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    let interrupted =
+                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
                     // Drained here rather than in the spawned task, so the accumulator is empty
                     // before the next turn starts writing into it.
                     let closing = closing_message
@@ -133,7 +136,8 @@ pub(crate) fn spawn_reader_task(
                         .map(|mut m| m.take())
                         .unwrap_or_default();
                     tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
+                        resolve_turn_end(&state, tid, &stop_reason, declared, interrupted, closing)
+                            .await;
                     });
                 }
             }
@@ -244,6 +248,7 @@ async fn resolve_turn_end(
     task_id: i32,
     stop_reason: &str,
     declared_complete: bool,
+    user_interrupted: bool,
     closing_message: String,
 ) {
     use crate::acp::completion::{classify_turn, TurnOutcome};
@@ -272,13 +277,16 @@ async fn resolve_turn_end(
     // either way. It no longer is: an agent that declares itself done having changed nothing goes
     // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
     // the answer is needed for.
-    let has_changes = if writes && is_git_repo && stop_reason == "end_turn" {
+    //
+    // Skipped outright for an interrupted turn — `classify_turn` ignores it either way, and the
+    // answer costs a `git diff` that runs over SSH for a remote project.
+    let has_changes = if !user_interrupted && writes && is_git_repo && stop_reason == "end_turn" {
         task_has_changes(app_state, task_id).await
     } else {
         None
     };
 
-    let outcome = classify_turn(stop_reason, declared_complete, has_changes);
+    let outcome = classify_turn(stop_reason, declared_complete, has_changes, user_interrupted);
 
     // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
     // so it routes past `TurnCompleted` entirely.
@@ -1274,6 +1282,7 @@ async fn handle_shared_server_message(
                 Arc::clone(&s.canvas_extractor),
                 Arc::clone(&s.completion_filter),
                 Arc::clone(&s.declared_complete),
+                Arc::clone(&s.user_interrupted),
                 Arc::clone(&s.closing_message),
                 s.session_name.clone(),
                 s.agent_id_meta.clone(),
@@ -1293,6 +1302,7 @@ async fn handle_shared_server_message(
             canvas_extractor,
             completion_filter,
             declared_complete,
+            user_interrupted,
             closing_message,
             session_name,
             agent_id,
@@ -1325,6 +1335,8 @@ async fn handle_shared_server_message(
                     let stop_reason = turn_ended.stop_reason.clone();
                     let declared =
                         declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
+                    let interrupted =
+                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
                     // Drained here rather than in the spawned task, so the accumulator is empty
                     // before the next turn starts writing into it.
                     let closing = closing_message
@@ -1332,7 +1344,8 @@ async fn handle_shared_server_message(
                         .map(|mut m| m.take())
                         .unwrap_or_default();
                     tokio::spawn(async move {
-                        resolve_turn_end(&state, tid, &stop_reason, declared, closing).await;
+                        resolve_turn_end(&state, tid, &stop_reason, declared, interrupted, closing)
+                            .await;
                     });
                 }
             }

@@ -379,6 +379,16 @@ pub async fn interrupt_acp_turn(
 ) -> Result<(), String> {
     use crate::acp::transport::{MaestroRpcMessage, ServerRequest, InterruptTurnRequest};
 
+    // Recorded before the request goes out, so the flag is already set whenever the turn ending it
+    // provokes comes back. `resolve_turn_end` reads it to keep a stopped phase from advancing —
+    // see the field's own comment for why the stop reason cannot be trusted to say so.
+    {
+        let sessions = app_state.acp.sessions.lock().await;
+        if let Some(session) = sessions.get(&log_id) {
+            session.user_interrupted.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
     let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
         session_id,
