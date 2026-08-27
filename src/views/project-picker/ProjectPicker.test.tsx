@@ -16,6 +16,12 @@ vi.mock("@/components/common/theme-toggle/ThemeToggle", () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">ThemeToggle</div>,
 }));
 
+vi.mock("@/components/common/accent-color-picker/AccentColorPicker", () => ({
+  GlobalAccentColorPicker: () => (
+    <div data-testid="accent-color-picker">GlobalAccentColorPicker</div>
+  ),
+}));
+
 vi.mock("./integrations-tab/IntegrationsTab", () => ({
   IntegrationsTab: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
 }));
@@ -66,6 +72,11 @@ describe("ProjectPicker", () => {
     it("renders ThemeToggle component", () => {
       renderWithContext();
       expect(screen.getByTestId("theme-toggle")).toBeInTheDocument();
+    });
+
+    it("renders GlobalAccentColorPicker component", () => {
+      renderWithContext();
+      expect(screen.getByTestId("accent-color-picker")).toBeInTheDocument();
     });
 
     it("renders ConnectionList component", () => {

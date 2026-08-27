@@ -11,6 +11,7 @@ import { ConnectionList } from "./connection-list/ConnectionList";
 import { ProjectList } from "./project-list/ProjectList";
 import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
+import { GlobalAccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
@@ -85,8 +86,9 @@ export function ProjectPicker() {
       <span aria-hidden className="screen-gradient z-0" />
       <AccentBubbles variant="screen" className="z-0" />
 
-      {/* Theme Toggle - Top Right */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* Color picker + theme toggle - Top Right */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
+        <GlobalAccentColorPicker />
         <ThemeToggle />
       </div>
 

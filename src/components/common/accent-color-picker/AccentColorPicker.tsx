@@ -113,11 +113,12 @@ export function SwatchPicker({ title, ...grid }: SwatchPickerProps) {
   );
 }
 
-/** Header popover editing the *current project's* colour, not the global default. */
-export function AccentColorPicker() {
-  const { projectAccentHue, globalAccentHue, systemAccentHue, setProjectAccentColor, isDark } =
-    useTheme();
-
+/** The palette-icon popover used in the header bars, shared by both colour scopes. */
+function PalettePopover({
+  label,
+  title,
+  ...grid
+}: SwatchGridProps & { label: string; title: string }) {
   return (
     <Popover>
       <Tooltip>
@@ -125,28 +126,61 @@ export function AccentColorPicker() {
           render={
             <PopoverTrigger
               className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
-              aria-label="Project color"
+              aria-label={label}
             />
           }
         >
           <Palette />
         </TooltipTrigger>
-        <TooltipContent>Project color</TooltipContent>
+        <TooltipContent>{label}</TooltipContent>
       </Tooltip>
 
       <PopoverContent align="end" className="w-48 gap-3 p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Project Color
+          {title}
         </p>
-        <SwatchGrid
-          selectedHue={projectAccentHue}
-          fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
-          fallbackLabel="Global default"
-          fallbackDescription="Follows app setting"
-          isDark={isDark}
-          onSelect={(hue) => void setProjectAccentColor(hue)}
-        />
+        <SwatchGrid {...grid} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Header popover editing the *current project's* colour, not the global default. */
+export function AccentColorPicker() {
+  const { projectAccentHue, globalAccentHue, systemAccentHue, setProjectAccentColor, isDark } =
+    useTheme();
+
+  return (
+    <PalettePopover
+      label="Project color"
+      title="Project Color"
+      selectedHue={projectAccentHue}
+      fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
+      fallbackLabel="Global default"
+      fallbackDescription="Follows app setting"
+      isDark={isDark}
+      onSelect={(hue) => void setProjectAccentColor(hue)}
+    />
+  );
+}
+
+/**
+ * Same popover for the global default, for screens shown before a project is open — the project
+ * scope has nothing to edit there, and the global colour is what is being painted.
+ */
+export function GlobalAccentColorPicker() {
+  const { globalAccentHue, systemAccentHue, setGlobalAccentColor, isDark } = useTheme();
+
+  return (
+    <PalettePopover
+      label="Accent color"
+      title="Global Default"
+      selectedHue={globalAccentHue}
+      fallbackHue={systemAccentHue ?? 250}
+      fallbackLabel="Auto"
+      fallbackDescription="Follows OS accent"
+      isDark={isDark}
+      onSelect={(hue) => void setGlobalAccentColor(hue)}
+    />
   );
 }
