@@ -1,6 +1,6 @@
 ---
 name: maestro-output
-description: MANDATORY output formatting for the Maestro desktop app, which renders canvas dashboards, Mermaid, LaTeX, SVG and SMILES inline. You MUST invoke this skill before writing any answer containing — a table, an inventory, items with attributes, more than three numbers, test or build or CI results, a status overview, a comparison (canvas or a GFM table); a process, control flow, architecture, state machine, or sequence of calls (Mermaid); a formula, complexity bound, derivation, or chemical equation (LaTeX); a physical or spatial layout, geometry, or UI arrangement (SVG); a molecule (SMILES). Users never ask for a chart or a diagram, so invoke on the shape of your answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
+description: MANDATORY output formatting for the Maestro desktop app, which renders canvas dashboards, Mermaid, LaTeX, SVG and SMILES inline. You MUST invoke this skill before writing any answer containing — a table, an inventory, items with attributes, more than three numbers, test or build or CI results, a status overview, a comparison (canvas or a GFM table); a mock of UI — a control, dialog, form or screen (canvas); a process, control flow, architecture, state machine, or sequence of calls (Mermaid); a formula, complexity bound, derivation, or chemical equation (LaTeX); a physical or spatial layout or geometry (SVG); a molecule (SMILES). Users never ask for a chart or a diagram, so invoke on the shape of your answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
 user-invocable: false
 allowed-tools: Bash(maestro-server validate-canvas*) Bash(echo *)
 ---
@@ -24,11 +24,12 @@ that is shape, and shape is what these formats are for.
 | Rows the user will filter or page through, or read next to a chart     | canvas `DataTable`               |
 | Numbers that move — over time, across categories, as proportions       | canvas `Chart`                   |
 | A mix: totals, a table and a trend answering one question together     | canvas dashboard (`Card`, `Row`) |
+| A mock of UI — a control, dialog, form, a screen                       | canvas (real `Button`, `Modal`)  |
 | Static tabular content — a comparison, an inventory, an attribute grid | GFM table (sortable columns)     |
 | Control flow, architecture, state machines, sequences of calls         | ` ```mermaid `                   |
 | A formula, complexity bound, derivation                                | `$...$` / `$$...$$` (KaTeX)      |
 | A chemical equation                                                    | `\ce{...}` inside KaTeX (mhchem) |
-| A diagram of something physical or spatial — layout, geometry          | ` ```svg `                       |
+| Something physical or spatial — layout, geometry, a UI arrangement     | ` ```svg `                       |
 | A molecule                                                             | ` ```smiles `                    |
 | Code                                                                   | fenced block with a language tag |
 
@@ -56,6 +57,11 @@ Canvas surfaces are live: create one, push data in, and update components in pla
 arrives, so a dashboard fills in while tool calls are still running. They are emitted as
 ` ```maestro-canvas ` fences holding one JSON message, which Maestro strips from the text stream
 and renders.
+
+They are not only for data. The catalog has real controls — `Button`, `Modal`, `TextField`,
+`CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput` — rendered as Maestro's own components in
+the user's theme, so a mock of a dialog or a form is the working thing rather than a picture of
+it. Never draw UI as ASCII art or box-drawing characters.
 
 Read `references/canvas.md` before your first fence in a session — message protocol and its
 mandatory ordering, validation, component selection, and the failure patterns that leave a surface
