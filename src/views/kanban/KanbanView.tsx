@@ -25,6 +25,7 @@ import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
 import { usePullRequestPoll } from "@/utils/hooks/usePullRequestPoll";
 import { useAgentPipeline } from "@/utils/hooks/useAgentPipeline";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
+import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
 
 const EMPTY_TASKS: Task[] = [];
 
@@ -224,6 +225,8 @@ export const KanbanView: React.FC = () => {
         </Popover>
 
         <QueueCapacityBadge projectId={projectId} />
+
+        <AutoModeToggle />
 
         <Button
           size="sm"

@@ -26,14 +26,9 @@ interface AppHeaderProps {
   onViewChange: (view: ViewType) => void;
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
-  agentCount?: number;
   /// The connection stopped answering but is still open — reported here rather than as a
   /// blocking overlay, because nothing has necessarily failed.
   connectionQuiet?: boolean;
-  /// Persisted `auto_mode` setting. Required — a local fallback here would silently decouple the
-  /// switch from the flag `drain_ready_queue` reads.
-  autoMode: boolean;
-  onAutoModeChange: (enabled: boolean) => void | Promise<void>;
 }
 
 const VIEWS: Array<{
@@ -53,9 +48,6 @@ export function AppHeader({
   onViewChange,
   onProjectChange,
   onBackToPicker,
-  agentCount = 0,
-  autoMode,
-  onAutoModeChange,
   connectionQuiet = false,
 }: AppHeaderProps) {
   // Load recent projects on-demand (only when header is rendered)
@@ -66,17 +58,6 @@ export function AppHeader({
         ? { type: "ssh" as const, id: currentProject.connection_id }
         : { type: "local" as const };
   const { data: recentProjects = [] } = useRecentProjects(headerConnection);
-
-  // Persisting is the whole job. Saving the setting emits `settings-changed`, which `useQueueDrain`
-  // listens for — the header used to drain here itself and throw the answer away, which is what
-  // made the switch look like it did nothing.
-  const handleAutoModeToggle = async () => {
-    try {
-      await onAutoModeChange(!autoMode);
-    } catch (err) {
-      console.error("[auto-mode] failed to persist auto_mode:", err);
-    }
-  };
 
   const [highlightedId, setHighlightedId] = useState<number | string | null>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -220,38 +201,8 @@ export function AppHeader({
         </LayoutGroup>
       </nav>
 
-      {/* Right section: Auto/Manual toggle + Status indicator + Theme switcher */}
+      {/* Right section: Status indicator + Theme switcher */}
       <div className="flex items-center justify-end gap-2">
-        {/* Auto/Manual mode toggle */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                onClick={handleAutoModeToggle}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-2 py-1 h-auto text-xs font-medium",
-                  autoMode
-                    ? "bg-green-500/15 text-green-600 dark:text-green-400 hover:bg-green-500/25"
-                    : "bg-muted/60 text-muted-foreground hover:bg-muted/80",
-                )}
-              />
-            }
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                autoMode ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"
-              }`}
-            />
-            {autoMode ? "Auto" : "Manual"}
-          </TooltipTrigger>
-          <TooltipContent>
-            {autoMode
-              ? "Auto mode: tasks in Ready are executed automatically. Click to switch to Manual."
-              : "Manual mode: tasks must be started manually. Click to enable Auto mode."}
-          </TooltipContent>
-        </Tooltip>
-
         {connectionQuiet && (
           <Tooltip>
             <TooltipTrigger
@@ -269,11 +220,6 @@ export function AppHeader({
           </Tooltip>
         )}
 
-        {/* Running agent count */}
-        <div className="flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1">
-          <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="text-xs text-muted-foreground">{agentCount} running</span>
-        </div>
         <AccentColorPicker />
         <ThemeToggle />
       </div>
