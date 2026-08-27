@@ -36,17 +36,43 @@ None of this needs `canvas_data` — the pipeline below applies to `Chart` and `
 bind to a path. A UI mock is `canvas_create` then `canvas_update`, and that is all:
 
 ```json
-{"sessionUpdate":"canvas_create","surfaceId":"mock","catalogId":"maestro-canvas/v1","title":"Delete worktree"}
+{
+  "sessionUpdate": "canvas_create",
+  "surfaceId": "mock",
+  "catalogId": "maestro-canvas/v1",
+  "title": "Delete worktree"
+}
 ```
 
 ```json
-{"sessionUpdate":"canvas_update","surfaceId":"mock","components":[
-  {"id":"modal","component":"Modal","trigger":"Delete worktree","title":"Delete this worktree?","children":["warn","actions"]},
-  {"id":"warn","component":"Text","text":"This deletes the directory and its branch.","muted":true},
-  {"id":"actions","component":"Row","equalWidth":false,"gap":2,"children":["cancel","confirm"]},
-  {"id":"cancel","component":"Button","label":"Cancel","variant":"outline"},
-  {"id":"confirm","component":"Button","label":"Delete","variant":"destructive"}
-]}
+{
+  "sessionUpdate": "canvas_update",
+  "surfaceId": "mock",
+  "components": [
+    {
+      "id": "modal",
+      "component": "Modal",
+      "trigger": "Delete worktree",
+      "title": "Delete this worktree?",
+      "children": ["warn", "actions"]
+    },
+    {
+      "id": "warn",
+      "component": "Text",
+      "text": "This deletes the directory and its branch.",
+      "muted": true
+    },
+    {
+      "id": "actions",
+      "component": "Row",
+      "equalWidth": false,
+      "gap": 2,
+      "children": ["cancel", "confirm"]
+    },
+    { "id": "cancel", "component": "Button", "label": "Cancel", "variant": "outline" },
+    { "id": "confirm", "component": "Button", "label": "Delete", "variant": "destructive" }
+  ]
+}
 ```
 
 Two limits worth knowing before you promise something the renderer will not deliver: a `Modal`
@@ -145,27 +171,27 @@ empty cells, because the renderer reads `row[j]` for column `j`. Nothing warns y
 
 ## Component Selection
 
-| Use case                  | Component                                                           |
-| ------------------------- | ------------------------------------------------------------------- |
-| Numeric trends over time  | `Chart` type line or area                                           |
-| Category comparisons      | `Chart` type bar                                                    |
-| Proportions / breakdown   | `Chart` type pie                                                    |
-| X/Y point clouds          | `Chart` type scatter — data `[{x, y}]`, xKey="x", series key="y"    |
-| Multi-axis comparisons    | `Chart` type radar — data `[{subject, val1, val2}]`                 |
-| Progress / ranking bars   | `Chart` type radialBar — data `[{name, value}]`                     |
-| Conversion steps          | `Chart` type funnel — data `[{name, value}]`                        |
-| Part-of-whole hierarchy   | `Chart` type treemap — data `[{name, size, children?}]`             |
-| Mixed line + bar + area   | `Chart` type composed — add `seriesType` per series item            |
-| Hierarchical radial       | `Chart` type sunburst — single root `{name, value, children:[...]}` |
-| Filterable or paged rows  | `DataTable` — or when paired with a `Chart`                         |
-| Prose, formatted text     | `Markdown`                                                          |
-| Stat callout (KPI)        | `Row` of `Card` each containing `Text` variant subheading           |
-| Multi-section layout      | `Tabs` with one child per tab, or `Column` of `Card`                |
-| A control, an action      | `Button` — variants default/outline/ghost/destructive/secondary     |
-| A dialog and its trigger  | `Modal` — `trigger` is the button label, children are the body      |
-| A form field              | `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`  |
-| UI the catalog can't express | `Html` — themed iframe, fine for a mock                           |
-| Custom viz not in catalog | `Html` — last resort only                                           |
+| Use case                     | Component                                                           |
+| ---------------------------- | ------------------------------------------------------------------- |
+| Numeric trends over time     | `Chart` type line or area                                           |
+| Category comparisons         | `Chart` type bar                                                    |
+| Proportions / breakdown      | `Chart` type pie                                                    |
+| X/Y point clouds             | `Chart` type scatter — data `[{x, y}]`, xKey="x", series key="y"    |
+| Multi-axis comparisons       | `Chart` type radar — data `[{subject, val1, val2}]`                 |
+| Progress / ranking bars      | `Chart` type radialBar — data `[{name, value}]`                     |
+| Conversion steps             | `Chart` type funnel — data `[{name, value}]`                        |
+| Part-of-whole hierarchy      | `Chart` type treemap — data `[{name, size, children?}]`             |
+| Mixed line + bar + area      | `Chart` type composed — add `seriesType` per series item            |
+| Hierarchical radial          | `Chart` type sunburst — single root `{name, value, children:[...]}` |
+| Filterable or paged rows     | `DataTable` — or when paired with a `Chart`                         |
+| Prose, formatted text        | `Markdown`                                                          |
+| Stat callout (KPI)           | `Row` of `Card` each containing `Text` variant subheading           |
+| Multi-section layout         | `Tabs` with one child per tab, or `Column` of `Card`                |
+| A control, an action         | `Button` — variants default/outline/ghost/destructive/secondary     |
+| A dialog and its trigger     | `Modal` — `trigger` is the button label, children are the body      |
+| A form field                 | `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`  |
+| UI the catalog can't express | `Html` — themed iframe, fine for a mock                             |
+| Custom viz not in catalog    | `Html` — last resort only                                           |
 
 For **data visualization**, prefer catalog components over `Html` whenever they cover the use case
 — it adds boilerplate and breaks on data with special characters. For a **UI mock** the trade runs
