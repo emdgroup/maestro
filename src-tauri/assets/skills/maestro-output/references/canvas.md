@@ -21,6 +21,39 @@ Fix any `ERROR` lines and re-validate before emitting. This matters more here th
 paths: you never see the rendered result, so validation is your only signal that what you emitted
 is a working surface rather than a broken one the user is now staring at.
 
+## Interactive UI, not just data
+
+Most of this file is about dashboards, but the catalog also has real controls: `Button`,
+`TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`, and `Modal`. They render as
+Maestro's own components in the user's current theme, so a mock of a dialog, a form or a settings
+panel **is** the thing being mocked — clickable, correctly styled, light and dark. Never answer a
+"show me what this would look like" with ASCII art or box-drawing characters.
+
+`Modal` carries its own trigger: `trigger` is the button label, and the children are the dialog
+body. A button and the confirmation dialog it opens are therefore one component, not two.
+
+None of this needs `canvas_data` — the pipeline below applies to `Chart` and `DataTable`, which
+bind to a path. A UI mock is `canvas_create` then `canvas_update`, and that is all:
+
+```json
+{"sessionUpdate":"canvas_create","surfaceId":"mock","catalogId":"maestro-canvas/v1","title":"Delete worktree"}
+```
+
+```json
+{"sessionUpdate":"canvas_update","surfaceId":"mock","components":[
+  {"id":"modal","component":"Modal","trigger":"Delete worktree","title":"Delete this worktree?","children":["warn","actions"]},
+  {"id":"warn","component":"Text","text":"This deletes the directory and its branch.","muted":true},
+  {"id":"actions","component":"Row","equalWidth":false,"gap":2,"children":["cancel","confirm"]},
+  {"id":"cancel","component":"Button","label":"Cancel","variant":"outline"},
+  {"id":"confirm","component":"Button","label":"Delete","variant":"destructive"}
+]}
+```
+
+Two limits worth knowing before you promise something the renderer will not deliver: a `Modal`
+trigger is always `variant="outline"`, so a destructive-looking trigger needs a separate `Button`
+placed next to it; and nothing is wired to a handler — controls are inert, so a mock demonstrates
+appearance and arrangement, not behaviour. Say so if the distinction matters to the user.
+
 ## Data Pipeline
 
 Three message types. Order is mandatory:
@@ -128,9 +161,18 @@ empty cells, because the renderer reads `row[j]` for column `j`. Nothing warns y
 | Prose, formatted text     | `Markdown`                                                          |
 | Stat callout (KPI)        | `Row` of `Card` each containing `Text` variant subheading           |
 | Multi-section layout      | `Tabs` with one child per tab, or `Column` of `Card`                |
+| A control, an action      | `Button` — variants default/outline/ghost/destructive/secondary     |
+| A dialog and its trigger  | `Modal` — `trigger` is the button label, children are the body      |
+| A form field              | `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`  |
+| UI the catalog can't express | `Html` — themed iframe, fine for a mock                           |
 | Custom viz not in catalog | `Html` — last resort only                                           |
 
-Prefer catalog components over `Html` whenever they cover the use case. `Html` has restrictions: no double-quotes or backslashes in `srcdoc` — escape all data as single-quoted JS or use JSON.stringify carefully.
+For **data visualization**, prefer catalog components over `Html` whenever they cover the use case
+— it adds boilerplate and breaks on data with special characters. For a **UI mock** the trade runs
+the other way: once the arrangement needs placement, spacing or states the catalog components do
+not have, `Html` is the right tool, and the theme variables below keep it looking native.
+
+`Html` has restrictions: no double-quotes or backslashes in `srcdoc` — escape all data as single-quoted JS or use JSON.stringify carefully.
 
 ## Html theming
 
@@ -184,7 +226,8 @@ Pie chart slices use the internal PALETTE directly (not series color) — they w
 - **Inline large data in props** — put arrays in `canvas_data`, reference by JSON Pointer. Don't embed `value: [[...100 rows...]]` directly in a component prop.
 - **canvas_update before canvas_data** — the Chart and DataTable will show skeletons and never populate.
 - **New surfaceId per update** — reuse the same surfaceId; `canvas_update` merges by component id. Creating a new surface per tool call produces many disconnected panels.
-- **Html when Chart/DataTable covers it** — adds boilerplate and breaks on data with special characters.
+- **Html when Chart/DataTable covers it** — adds boilerplate and breaks on data with special characters. This is about charts and tables; for a UI mock `Html` is a legitimate first choice.
+- **ASCII art for a UI mock** — box-drawing characters convey no styling, no states and no spacing. Use the real `Button` and `Modal`, `Html`, or an `svg` fence, in that order.
 - **Skipping validate-canvas** — always run `maestro-server validate-canvas` before emitting a fence. Catch schema errors before the user sees a broken canvas.
 - **Tabs without `children` array** — tab content renders as roots below the widget. Always mirror `tabs[].childId` into `children`.
 - **Chart series without `color`** — all series render grey. Always pass explicit hex colors.
