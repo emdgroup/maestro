@@ -6,13 +6,11 @@ import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
-import { useSaveSettings, useSettings } from "@/services/settings.service";
+import { useSettings } from "@/services/settings.service";
 import {
   useCleanupZombieWorktreesMutation,
   usePrefetchWorktrees,
 } from "@/services/worktree.service";
-import { useActiveSessionsQuery } from "@/services/execution.service";
-import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
 import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
@@ -64,22 +62,6 @@ function App() {
 
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError, data: appSettings } = useSettings();
-  const saveSettings = useSaveSettings({ successToast: false });
-
-  // Auto mode is read from and written to the settings table rather than held in the header,
-  // because `drain_ready_queue` gates on the stored `auto_mode` flag.
-  const autoMode = appSettings?.auto_mode ?? false;
-  const handleAutoModeChange = useCallback(
-    async (enabled: boolean) => {
-      if (!appSettings) return;
-      await saveSettings.mutateAsync({
-        ...appSettings,
-        auto_mode: enabled,
-        updated_at: new Date().toISOString(),
-      });
-    },
-    [appSettings, saveSettings],
-  );
 
   // Updater — startup check fires once when settings are ready
   const { status: updateStatus, checkForUpdates } = useUpdater();
@@ -169,14 +151,6 @@ function App() {
       currentProject?.docker_connection_id,
     ],
   );
-
-  // Running agent count for header badge
-  const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
-  const activitySessions = useSessionActivityStore((s) => s.sessions);
-  const runningAgentCount = sessions.filter((s) => {
-    const activity = activitySessions[s.session_key];
-    return activity && activity.status !== "idle" && activity.status !== "awaiting_input";
-  }).length;
 
   // Health of whichever connection this project lives on — every type, not just SSH.
   const {
@@ -274,10 +248,7 @@ function App() {
             onViewChange={setActiveTab}
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
-            agentCount={runningAgentCount}
             connectionQuiet={connectionHealth === "quiet"}
-            autoMode={autoMode}
-            onAutoModeChange={handleAutoModeChange}
           />
           <main className="flex-1 overflow-hidden relative">
             {/* Agents View — always mounted, imperative animation */}
