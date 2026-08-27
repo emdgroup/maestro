@@ -48,7 +48,6 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Worktrees
   { id: "wt-new", key: "n", ctrl: true, label: "Ctrl+N", scope: "worktrees" },
   { id: "wt-refresh", key: "r", ctrl: true, label: "Ctrl+R", scope: "worktrees" },
-  { id: "wt-close-diff", key: "Escape", ctrl: false, label: "Esc", scope: "worktrees" },
 ];
 
 export function getShortcutsForScope(scope: ShortcutScope): ShortcutDef[] {

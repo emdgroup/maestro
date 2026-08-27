@@ -1,286 +1,59 @@
 import { DiffModeEnum } from "@git-diff-view/react";
-import {
-  X,
-  AlignJustify,
-  Columns2,
-  List,
-  FolderTree,
-  RotateCcw,
-  Archive,
-  CheckCheck,
-} from "lucide-react";
-import { Spinner } from "@/ui/spinner";
+import { X, AlignJustify, Columns2, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/ui/alert-dialog";
-import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-
-function getDialogContent(
-  isDeleting: boolean,
-  deleteError: string | null,
-  isDeleteMode: boolean,
-): { title: string; description: string; actionLabel: string } {
-  if (isDeleting) {
-    return {
-      title: "Deleting files…",
-      description: "Removing selected files from the worktree.",
-      actionLabel: "Deleting…",
-    };
-  }
-  if (deleteError) {
-    return { title: "Deletion failed", description: deleteError, actionLabel: "Retry" };
-  }
-  if (isDeleteMode) {
-    return {
-      title: "Delete files?",
-      description:
-        "This will permanently delete the selected untracked files. This action cannot be undone.",
-      actionLabel: "Delete",
-    };
-  }
-  return {
-    title: "Discard changes?",
-    description:
-      "This will permanently discard the selected changes. This action cannot be undone.",
-    actionLabel: "Discard",
-  };
-}
 
 interface DiffActionBarProps {
-  mode?: "worktree" | "review" | "session";
-  branchName?: string;
-  fileSearch: string;
-  onFileSearchChange: (value: string) => void;
-  fileListMode: "flat" | "tree";
-  onFileListModeChange: (mode: "flat" | "tree") => void;
+  /** Sits at the far left — the file-panel toggle and the scope selector. */
+  leadingSlot?: React.ReactNode;
   diffViewMode: DiffModeEnum;
   onDiffViewModeChange: (mode: DiffModeEnum) => void;
-  forceUnified: boolean;
-  hasAnyStaged?: boolean;
-  isDiscarding?: boolean;
-  isDeleteMode?: boolean;
-  discardDialogOpen?: boolean;
-  onDiscardDialogOpenChange?: (open: boolean) => void;
-  deleteDialogOpen?: boolean;
-  onDeleteDialogOpenChange?: (open: boolean) => void;
-  isDeleting?: boolean;
-  deleteError?: string | null;
-  isShelving?: boolean;
-  shelvePopoverOpen?: boolean;
-  onShelvePopoverOpenChange?: (open: boolean) => void;
-  shelveName?: string;
-  onShelveNameChange?: (name: string) => void;
-  onRevert?: () => void;
-  onShelve?: () => void;
   onClose: () => void;
   viewedCount?: number;
   totalFileCount?: number;
+  /** The host's own decision control — task review's Approve split button. */
   splitButtonNode?: React.ReactNode;
+  /** What is being read: a task's title, a worktree's branch. */
   centerLabel?: string;
+  /** Chrome, for a host that seats the bar on the same surface as its file panel. */
+  className?: string;
 }
 
 export function DiffActionBar({
-  mode = "worktree",
-  branchName,
-  fileSearch,
-  onFileSearchChange,
-  fileListMode,
-  onFileListModeChange,
+  leadingSlot,
   diffViewMode,
   onDiffViewModeChange,
-  forceUnified,
-  hasAnyStaged = false,
-  isDiscarding = false,
-  isDeleteMode = false,
-  discardDialogOpen,
-  onDiscardDialogOpenChange,
-  deleteDialogOpen,
-  onDeleteDialogOpenChange,
-  isDeleting = false,
-  deleteError = null,
-  isShelving = false,
-  shelvePopoverOpen = false,
-  onShelvePopoverOpenChange,
-  shelveName = "",
-  onShelveNameChange,
-  onRevert,
-  onShelve,
   onClose,
   viewedCount,
   totalFileCount,
   splitButtonNode,
   centerLabel,
+  className,
 }: DiffActionBarProps) {
-  const splitActive = !forceUnified && diffViewMode === DiffModeEnum.SplitGitHub;
-
-  const revertDisabled = !hasAnyStaged || isDiscarding;
+  const splitActive = diffViewMode === DiffModeEnum.SplitGitHub;
 
   return (
-    <div className="relative h-12 border-b border-border bg-muted/30 flex items-center px-4 shrink-0">
-      {/* Left side: file search + flat/tree toggle */}
-      <div className="flex items-center gap-2 z-10">
-        <Input
-          placeholder="Filter files..."
-          value={fileSearch}
-          onChange={(e) => onFileSearchChange(e.target.value)}
-          className="h-8 w-48 text-xs"
-        />
-        <ToggleGroup
-          value={[fileListMode]}
-          onValueChange={(values) => {
-            if (values.includes("tree")) onFileListModeChange("tree");
-            else onFileListModeChange("flat");
-          }}
-        >
-          <ToggleGroupItem value="flat" size="sm" variant="outline" className="size-8 p-0">
-            <List className="size-3.5" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="tree" size="sm" variant="outline" className="size-8 p-0">
-            <FolderTree className="size-3.5" />
-          </ToggleGroupItem>
-        </ToggleGroup>
+    <div
+      className={cn(
+        "relative h-12 border-b border-border bg-muted/30 flex items-center px-4 shrink-0",
+        className,
+      )}
+    >
+      {/* Left side: the host's own controls */}
+      <div className="flex items-center gap-2 shrink-0">{leadingSlot}</div>
 
-        {/* Worktree-only: Revert button with confirmation dialog */}
-        {mode === "worktree" && (
-          <AlertDialog
-            open={isDeleteMode ? deleteDialogOpen : discardDialogOpen}
-            onOpenChange={
-              isDeleteMode
-                ? (open) => {
-                    if (!isDeleting) onDeleteDialogOpenChange?.(open);
-                  }
-                : (open) => {
-                    if (!isDiscarding) onDiscardDialogOpenChange?.(open);
-                  }
-            }
-          >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <AlertDialogTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={revertDisabled}
-                        className="h-8 w-8 p-0"
-                      />
-                    }
-                  />
-                }
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </TooltipTrigger>
-              <TooltipContent>
-                {isDeleteMode ? "Delete selected files" : "Revert selected changes"}
-              </TooltipContent>
-            </Tooltip>
-            <AlertDialogContent>
-              {(() => {
-                const dialog = getDialogContent(isDeleting, deleteError, isDeleteMode);
-                return (
-                  <>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{dialog.title}</AlertDialogTitle>
-                      <AlertDialogDescription>{dialog.description}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel disabled={isDeleting}>
-                        {deleteError ? "Dismiss" : "Cancel"}
-                      </AlertDialogCancel>
-                      <AlertDialogAction onClick={onRevert} disabled={isDeleting}>
-                        {isDeleting ? (
-                          <>
-                            <Spinner className="h-3.5 w-3.5" />
-                            {dialog.actionLabel}
-                          </>
-                        ) : (
-                          dialog.actionLabel
-                        )}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </>
-                );
-              })()}
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-
-        {/* Worktree-only: Shelve button with name popover */}
-        {mode === "worktree" && (
-          <Popover open={shelvePopoverOpen} onOpenChange={onShelvePopoverOpenChange ?? (() => {})}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={!hasAnyStaged || isShelving}
-                        className="h-8 w-8 p-0"
-                      />
-                    }
-                  />
-                }
-              >
-                <Archive className="h-3.5 w-3.5" />
-              </TooltipTrigger>
-              <TooltipContent>Shelve selected changes</TooltipContent>
-            </Tooltip>
-            <PopoverContent className="w-64 p-3">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium">Stash name</label>
-                <Input
-                  value={shelveName}
-                  onChange={(e) => onShelveNameChange?.(e.target.value)}
-                  className="h-8 text-xs"
-                  placeholder="wip-branch-name-2026-04-02"
-                />
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={!shelveName.trim() || isShelving}
-                  onClick={onShelve}
-                >
-                  {isShelving ? "Shelving..." : "Confirm"}
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-
-      {/* Center section */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        {mode === "worktree" && branchName && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48">{branchName}</span>
-        )}
-        {mode === "review" && centerLabel && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48 text-accent">
-            {centerLabel}
-          </span>
-        )}
-        {mode === "session" && centerLabel && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48">{centerLabel}</span>
+      {/* Centred in what the two control groups leave, rather than absolutely positioned across
+          the whole bar: a title pinned to the bar's true centre has to be capped short enough to
+          clear the widest side, so it truncated names that had room to spare. */}
+      <div className="flex-1 min-w-0 flex justify-center px-3">
+        {centerLabel && (
+          <span className="font-mono text-sm font-semibold truncate">{centerLabel}</span>
         )}
       </div>
 
       {/* Right side: viewed counter + unified/split toggle + split button node + close button */}
-      <div className="ml-auto flex items-center gap-2 z-10">
+      <div className="flex items-center gap-2 shrink-0">
         {viewedCount != null && viewedCount > 0 && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <CheckCheck className="size-3.5" />
@@ -292,7 +65,6 @@ export function DiffActionBar({
         <ToggleGroup
           value={[splitActive ? "split" : "unified"]}
           onValueChange={(values) => {
-            if (forceUnified) return;
             if (values.includes("split")) {
               onDiffViewModeChange(DiffModeEnum.SplitGitHub);
             } else {
@@ -303,17 +75,11 @@ export function DiffActionBar({
           <ToggleGroupItem value="unified" size="sm" variant="outline" className="size-8 p-0">
             <AlignJustify className="size-3.5" />
           </ToggleGroupItem>
-          <ToggleGroupItem
-            value="split"
-            size="sm"
-            variant="outline"
-            disabled={forceUnified}
-            className={cn("size-8 p-0", forceUnified && "opacity-30 cursor-not-allowed")}
-          >
+          <ToggleGroupItem value="split" size="sm" variant="outline" className="size-8 p-0">
             <Columns2 className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
-        {mode === "review" && splitButtonNode}
+        {splitButtonNode}
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="size-4" />
         </Button>

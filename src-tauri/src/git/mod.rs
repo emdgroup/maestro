@@ -14,7 +14,7 @@ pub mod review;
 pub use review_models::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
 pub use diff_models::{DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 
-pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy, run_git_in_dir_with_stdin};
+pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
 pub use ops::{
     BranchList, ParsedWorktree,
     create_worktree, delete_worktree, git_status,

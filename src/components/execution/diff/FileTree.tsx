@@ -13,15 +13,7 @@ import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { DiffFileWithName } from "@/types/review";
-
-interface FileTreeNode {
-  name: string;
-  path: string;
-  isDir: boolean;
-  children?: FileTreeNode[];
-  fileStatus?: "A" | "M" | "D";
-  fileName?: string;
-}
+import { buildFileTree, getDescendantFiles, type FileTreeNode } from "./file-tree";
 
 interface FileTreeProps {
   files: DiffFileWithName[];
@@ -34,69 +26,6 @@ interface FileTreeProps {
   defaultExpanded?: boolean;
   expandedFolders?: Set<string>;
   onFolderToggle?: (path: string, expanded: boolean) => void;
-}
-
-/**
- * Build a hierarchical file tree from flat file list
- */
-function buildFileTree(files: DiffFileWithName[]): FileTreeNode[] {
-  // Use a nested map structure: path → node, children tracked by reference
-  const rootChildren: FileTreeNode[] = [];
-  const nodeByPath: Record<string, FileTreeNode> = {};
-
-  for (const file of files) {
-    const parts = file.fileName.split("/");
-
-    for (let i = 0; i < parts.length; i++) {
-      const path = parts.slice(0, i + 1).join("/");
-      if (nodeByPath[path]) continue;
-
-      const isLast = i === parts.length - 1;
-      const node: FileTreeNode = {
-        name: parts[i],
-        path,
-        isDir: !isLast,
-        children: isLast ? undefined : [],
-        fileName: isLast ? file.fileName : undefined,
-        fileStatus: isLast ? (file.status ?? "M") : undefined,
-      };
-      nodeByPath[path] = node;
-
-      if (i === 0) {
-        rootChildren.push(node);
-      } else {
-        const parentPath = parts.slice(0, i).join("/");
-        nodeByPath[parentPath].children!.push(node);
-      }
-    }
-  }
-
-  function sortNode(nodes: FileTreeNode[]): FileTreeNode[] {
-    nodes.sort((a, b) => {
-      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const node of nodes) {
-      if (node.children) sortNode(node.children);
-    }
-    return nodes;
-  }
-
-  return sortNode(rootChildren);
-}
-
-/**
- * Collect all leaf file fileName values under a node (recursively).
- */
-function getDescendantFiles(node: FileTreeNode): string[] {
-  if (!node.isDir) {
-    return node.fileName ? [node.fileName] : [];
-  }
-  const result: string[] = [];
-  for (const child of node.children ?? []) {
-    result.push(...getDescendantFiles(child));
-  }
-  return result;
 }
 
 /**

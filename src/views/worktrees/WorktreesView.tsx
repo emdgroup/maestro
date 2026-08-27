@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useGitInitProject } from "@/services/project.service";
@@ -39,7 +40,7 @@ interface WorktreesViewProps {
 /**
  * WorktreesView - Page-level orchestrator for the worktree management screen.
  * Uses a card grid layout grouped by base_branch with collapsible sections.
- * A slide container animates between the card grid and the diff panel (Plan 03).
+ * Selecting a worktree opens its diff over the grid, the way a task review opens over the board.
  */
 export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPath }) => {
   const isGitRepo = useIsGitRepo();
@@ -69,9 +70,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     "wt-new": () => setShowCreateDialog(true),
     "wt-refresh": () => {
       void refetchWorktrees();
-    },
-    "wt-close-diff": () => {
-      if (selectedWorktreePath !== null) setSelectedWorktreePath(null);
     },
     "focus-search": () => {
       searchInputRef.current?.focus();
@@ -186,16 +184,10 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
   return (
     <div className="flex flex-col h-full">
-      {/* Slide container */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        <div
-          className={cn(
-            "flex h-full w-[200%] transition-transform duration-300 ease-in-out",
-            selectedWorktreePath != null && "-translate-x-1/2",
-          )}
-        >
-          {/* Screen 1 — Card grid */}
-          <div className="w-1/2 h-full flex flex-col min-w-0">
+        <div className="flex h-full">
+          {/* Card grid — the whole view now that the diff opens over it rather than beside it */}
+          <div className="w-full h-full flex flex-col min-w-0">
             {/* Action bar */}
             <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-between px-4 gap-2 shrink-0">
               <div className="flex items-center gap-2">
@@ -306,17 +298,39 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               />
             )}
           </div>
-
-          {/* Screen 2 — Diff panel */}
-          <div className="w-1/2 h-full flex flex-col min-w-0">
-            <WorktreeDiffPanel
-              worktree={selectedWorktree}
-              projectId={projectId ?? null}
-              onClose={() => setSelectedWorktreePath(null)}
-            />
-          </div>
         </div>
       </div>
+
+      {/* Over the grid rather than beside it, the same way a task review sits over the board: the
+          worktree you opened stays visible behind, and the diff gets the whole window instead of
+          half of it.
+
+          Escape closes it, and has to be handled here rather than through the shortcut registry:
+          base-ui's dialog consumes the key itself, so a `window` listener — which is all
+          `useShortcuts` has — never sees it. Unlike a task review this panel is a pure read, with
+          no comments to lose, so there is nothing to protect the user from. A click on the margin
+          still does nothing: that is a slip, not a decision. */}
+      <Dialog
+        open={selectedWorktreePath != null && selectedWorktree != null}
+        onOpenChange={(open, details) => {
+          if (open || details.reason === "outside-press") return;
+          setSelectedWorktreePath(null);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="w-[calc(100vw-2.5rem)] h-[calc(100vh-2.5rem)] max-w-none sm:max-w-none flex flex-col p-0 gap-0 overflow-hidden"
+        >
+          <DialogTitle className="sr-only">
+            Changes in {selectedWorktree?.branch_name ?? "worktree"}
+          </DialogTitle>
+          <WorktreeDiffPanel
+            worktree={selectedWorktree}
+            projectId={projectId ?? null}
+            onClose={() => setSelectedWorktreePath(null)}
+          />
+        </DialogContent>
+      </Dialog>
 
       <DeleteWorktreeDialog
         key={worktreeToDelete?.path}

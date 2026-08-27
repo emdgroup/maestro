@@ -461,30 +461,29 @@ pub async fn get_worktree_commits(
     let log_output = crate::git::run_git_in_dir(
         &git_conn,
         &worktree_path,
-        &["log", "--oneline", "--format=%H %s", &range],
+        &["log", "--format=%H %cI %s", &range],
     ).await.unwrap_or_default();
 
-    let mut commits: Vec<CommitInfo> = Vec::new();
-    for line in log_output.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let (sha, message) = match line.split_once(' ') {
-            Some((s, m)) => (s.to_string(), m.to_string()),
-            None => (line.to_string(), String::new()),
-        };
+    Ok(parse_commit_log(&log_output))
+}
 
-        let file_count_output = crate::git::run_git_in_dir(
-            &git_conn,
-            &worktree_path,
-            &["diff-tree", "--no-commit-id", "--name-only", "-r", &sha],
-        ).await.unwrap_or_default();
-        let file_count = file_count_output.lines().filter(|l| !l.is_empty()).count() as u32;
-
-        commits.push(CommitInfo { sha, message, file_count });
-    }
-
-    Ok(commits)
+/// Parse `git log --format=%H %cI %s` output.
+///
+/// The subject is taken as the rest of the line rather than split further, so a message containing
+/// spaces — or something that looks like a timestamp — survives intact.
+fn parse_commit_log(log_output: &str) -> Vec<CommitInfo> {
+    log_output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let mut parts = line.splitn(3, ' ');
+            CommitInfo {
+                sha: parts.next().unwrap_or_default().to_string(),
+                committed_at: parts.next().unwrap_or_default().to_string(),
+                message: parts.next().unwrap_or_default().to_string(),
+            }
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -506,6 +505,43 @@ pub async fn get_untracked_file_content(
         &["diff", "--no-index", "/dev/null", &file_path],
     )
     .await
+}
+
+#[cfg(test)]
+mod commit_log_tests {
+    use super::parse_commit_log;
+
+    #[test]
+    fn parses_sha_date_and_subject() {
+        let commits = parse_commit_log("abc123 2026-08-26T14:15:22+00:00 Retire legacy module\n");
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].sha, "abc123");
+        assert_eq!(commits[0].committed_at, "2026-08-26T14:15:22+00:00");
+        assert_eq!(commits[0].message, "Retire legacy module");
+    }
+
+    // The subject is the rest of the line, not a third space-delimited field — otherwise every
+    // message longer than one word would be truncated.
+    #[test]
+    fn keeps_a_subject_that_looks_like_more_fields() {
+        let commits =
+            parse_commit_log("abc123 2026-08-26T14:15:22+00:00 Fix 2026-01-01T00:00:00Z parsing");
+        assert_eq!(commits[0].message, "Fix 2026-01-01T00:00:00Z parsing");
+    }
+
+    #[test]
+    fn tolerates_an_empty_subject() {
+        let commits = parse_commit_log("abc123 2026-08-26T14:15:22+00:00 ");
+        assert_eq!(commits[0].sha, "abc123");
+        assert_eq!(commits[0].message, "");
+    }
+
+    #[test]
+    fn skips_blank_lines_and_empty_output() {
+        assert!(parse_commit_log("").is_empty());
+        assert!(parse_commit_log("\n  \n").is_empty());
+        assert_eq!(parse_commit_log("a 2026-01-01T00:00:00Z m\n\n").len(), 1);
+    }
 }
 
 #[cfg(test)]

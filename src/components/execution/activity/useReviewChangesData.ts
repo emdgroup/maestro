@@ -2,11 +2,7 @@ import { useMemo, useEffect, useRef } from "react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { useWorktreeDiffQuery } from "@/services/worktree.service";
 import { useAcpSessionMeta } from "@/services/execution.service";
-import type { DiffFileWithName } from "@/types/review";
-
-export type DisplayItem =
-  | { kind: "diff"; file: DiffFileWithName }
-  | { kind: "untracked"; path: string };
+import { buildDisplayItems } from "@/components/execution/diff/useReviewItems";
 
 export function useReviewChangesData({
   sessionKey,
@@ -53,11 +49,8 @@ export function useReviewChangesData({
 
   const untrackedFiles = useMemo(() => untracked ?? [], [untracked]);
 
-  const allDisplayItems = useMemo<DisplayItem[]>(
-    () => [
-      ...diffFiles.map((file): DisplayItem => ({ kind: "diff", file })),
-      ...untrackedFiles.map((path): DisplayItem => ({ kind: "untracked", path })),
-    ],
+  const allDisplayItems = useMemo(
+    () => buildDisplayItems(diffFiles, untrackedFiles),
     [diffFiles, untrackedFiles],
   );
 

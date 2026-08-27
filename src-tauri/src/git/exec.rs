@@ -59,18 +59,6 @@ async fn run_git_on(
     Ok(output.stdout_string())
 }
 
-/// Run a git command in a directory, piping `stdin_data` to git's stdin.
-/// Used for commands like `git apply` that read patch content from stdin.
-pub async fn run_git_in_dir_with_stdin(
-    conn: &GitConnection,
-    abs_path: &str,
-    args: &[&str],
-    stdin_data: &[u8],
-) -> Result<String, String> {
-    let target = ExecTarget::of(conn);
-    run_git_on(&target, label_for(conn), abs_path, args, false, Some(stdin_data)).await
-}
-
 async fn run_git_in_dir_inner(
     conn: &GitConnection,
     abs_path: &str,
