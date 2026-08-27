@@ -9,13 +9,25 @@ import { setAutoIntersect, intersect, observedElements } from "@/test/intersecti
 // Shiki. The stub reports the per-file review props it was handed, which is the contract that
 // matters here.
 vi.mock("./DiffViewer", () => ({
-  DiffViewer: ({ comments }: { comments?: Array<{ id: string; lineNumber: number }> }) => (
+  DiffViewer: ({
+    comments,
+    onAddComment,
+    onSubmitComment,
+  }: {
+    comments?: Array<{ id: string; lineNumber: number }>;
+    onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
+    onSubmitComment?: (text: string) => void;
+  }) => (
     <div data-testid="diff-viewer">
       {(comments ?? []).map((c) => (
         <span key={c.id} data-testid="line-comment">
           {c.id}:{c.lineNumber}
         </span>
       ))}
+      {/* Stands in for a drag over the gutter followed by a click on the widget's `+`. The two
+          steps are separate because the range has to survive between them. */}
+      <button onClick={() => onAddComment?.(18, 12, "new")}>select 12-18</button>
+      <button onClick={() => onSubmitComment?.("tighten this loop")}>submit draft</button>
     </div>
   ),
 }));
@@ -84,7 +96,7 @@ describe("DiffFileStack", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add file comment" }));
     await userEvent.type(screen.getByPlaceholderText("Add a comment..."), "rename this");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(onSubmitComment).toHaveBeenCalledWith("a.ts", 0, "new", "rename this");
+    expect(onSubmitComment).toHaveBeenCalledWith("a.ts", 0, 0, "new", "rename this");
   });
 
   // Line 0 is the file's own note and is rendered by the card; anything else belongs in the diff.
@@ -200,17 +212,21 @@ describe("DiffReviewApi against a real store", () => {
     const diffs = useAnnotationStore.getState().getAnnotations(SESSION, "diff") as DiffAnnotation[];
     return {
       comments: diffs,
-      onSubmitComment: (filePath, lineNumber, side, text) => {
+      onSubmitComment: (filePath, lineNumber, fromLineNumber, side, text) => {
         const existing = diffs.find(
           (a) => a.filePath === filePath && a.lineNumber === lineNumber && a.side === side,
         );
-        if (existing) useAnnotationStore.getState().updateAnnotation(SESSION, existing.id, text);
+        if (existing)
+          useAnnotationStore
+            .getState()
+            .updateAnnotation(SESSION, existing.id, text, fromLineNumber);
         else
           useAnnotationStore.getState().addAnnotation(SESSION, {
             id: crypto.randomUUID(),
             kind: "diff",
             filePath,
             lineNumber,
+            fromLineNumber,
             side,
             text,
           });
@@ -238,6 +254,29 @@ describe("DiffReviewApi against a real store", () => {
       lineNumber: 0,
       side: "new",
       text: "split this up",
+    });
+  });
+
+  // The click that opens the composer and the submit that closes it are separate events, so the
+  // selected range only survives if the stack holds on to both line numbers in between.
+  it("carries a selected range from the widget click through to the store", async () => {
+    renderStack([diffItem("src/git/merge.rs")], annotationReview());
+    // The diff body is what carries the widget, and it only mounts once its card is on screen.
+    act(() => intersect(observedElements()));
+
+    await userEvent.click(screen.getByRole("button", { name: "select 12-18" }));
+    await userEvent.click(screen.getByRole("button", { name: "submit draft" }));
+
+    const stored = useAnnotationStore
+      .getState()
+      .getAnnotations(SESSION, "diff") as DiffAnnotation[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      filePath: "src/git/merge.rs",
+      lineNumber: 18,
+      fromLineNumber: 12,
+      side: "new",
+      text: "tighten this loop",
     });
   });
 });

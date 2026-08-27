@@ -1,25 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { DiffView, DiffModeEnum, SplitSide } from "@git-diff-view/react";
+import {
+  DiffViewWithMultiSelect,
+  DiffModeEnum,
+  SplitSide,
+  type DiffViewWithMultiSelectRef,
+  type LineRange,
+  type MultiSelectResult,
+  type MultiSelectState,
+} from "@git-diff-view/react";
 import {
   getDiffHighlighter,
   type DiffHighlighterInstance,
 } from "@/utils/helpers/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
-import "./diff-viewer-overrides.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
-import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { buildExtendData } from "./extend-data";
+import { scopeRangeToHunk } from "./scope-selection";
 
 export interface PendingComment {
   id: string;
   filePath: string;
-  lineNumber: number; // 0 = file-level
+  /**
+   * The last line the comment covers — 0 = file-level. The end rather than the start because that
+   * is the row the comment renders under, and `extendData` can only key one comment per line.
+   */
+  lineNumber: number;
+  /** First line of a multi-line range. Absent, or equal to `lineNumber`, means a single line. */
+  fromLineNumber?: number;
   side: "old" | "new";
   text: string;
 }
@@ -29,14 +40,12 @@ interface DiffViewerProps {
   loading: boolean;
   error?: string;
   diffViewMode?: DiffModeEnum;
-  // Hunk selection support
-  hunkSelection?: Set<number>;
-  onHunkToggle?: (hunkIndex: number) => void;
   // Review mode (inline comment gutters)
   reviewMode?: boolean;
   comments?: PendingComment[];
   activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
-  onAddComment?: (lineNumber: number, side: "old" | "new") => void;
+  /** `fromLineNumber` is the first line of a drag-selected range, or `lineNumber` for one line. */
+  onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
   onRemoveComment?: (commentId: string) => void;
   onEditComment?: (commentId: string, newText: string) => void;
   onCancelComment?: () => void;
@@ -60,53 +69,14 @@ function splitSideToSide(side: SplitSide): "old" | "new" {
   return side === SplitSide.old ? "old" : "new";
 }
 
-function HunkCheckboxOverlay({
-  wrapperRef,
-  hunkSelection,
-  onHunkToggle,
-}: {
-  wrapperRef: React.RefObject<HTMLDivElement | null>;
-  hunkSelection?: Set<number>;
-  onHunkToggle: (idx: number) => void;
-}) {
-  const [hunkCells, setHunkCells] = useState<HTMLElement[]>([]);
-
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-
-    const syncCells = () => {
-      const cells = Array.from(wrapper.querySelectorAll<HTMLElement>("td.diff-line-hunk-action"));
-      setHunkCells(cells);
-    };
-
-    syncCells();
-
-    const observer = new MutationObserver(syncCells);
-    observer.observe(wrapper, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [wrapperRef]);
-
-  return (
-    <>
-      {hunkCells.map((cell, idx) =>
-        createPortal(
-          <CheckboxPrimitive.Root
-            checked={hunkSelection?.has(idx) ?? false}
-            onCheckedChange={() => onHunkToggle(idx)}
-            onClick={(e) => e.stopPropagation()}
-            className="hunk-checkbox border-border dark:bg-input/30 data-checked:bg-accent dark:data-checked:bg-accent data-checked:text-accent-foreground data-checked:border-accent flex size-4.5 items-center justify-center rounded-[4px] border shadow-xs shrink-0 outline-none"
-            tabIndex={-1}
-          >
-            <CheckboxPrimitive.Indicator className="[&>svg]:size-3.5 grid place-content-center text-accent-foreground">
-              <Check className="size-3.5" />
-            </CheckboxPrimitive.Indicator>
-          </CheckboxPrimitive.Root>,
-          cell,
-        ),
-      )}
-    </>
-  );
+/**
+ * A range comment renders under its last line exactly like a single-line one, so without this the
+ * two are indistinguishable once the drag highlight is gone.
+ */
+function rangeLabel(comment: PendingComment): string | undefined {
+  const { fromLineNumber, lineNumber } = comment;
+  if (!fromLineNumber || fromLineNumber === lineNumber) return undefined;
+  return `Lines ${Math.min(fromLineNumber, lineNumber)}–${Math.max(fromLineNumber, lineNumber)}`;
 }
 
 const DiffPlaceholder = ({
@@ -128,8 +98,6 @@ export function DiffViewer({
   loading,
   error,
   diffViewMode,
-  hunkSelection,
-  onHunkToggle,
   reviewMode,
   comments,
   onAddComment,
@@ -143,7 +111,7 @@ export function DiffViewer({
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const multiSelectRef = useRef<DiffViewWithMultiSelectRef>(null);
   const { theme, systemTheme } = useTheme();
   const diffTheme = (theme === "system" ? systemTheme : theme) === "dark" ? "dark" : "light";
 
@@ -164,12 +132,103 @@ export function DiffViewer({
     loadHighlighter();
   }, []);
 
+  /**
+   * The range a drag actually selected, kept because pressing the `+` discards it.
+   *
+   * The multi-select manager starts a fresh selection from any mousedown landing inside the line
+   * number cell, and the add-widget button sits in exactly that cell. Its handler calls
+   * `stopPropagation`, but it is a React `onMouseDown` dispatched from the root container, so it
+   * runs after the manager's own native listener further down the tree has already discarded the
+   * remembered range. The widget then reports `fromLineNumber === lineNumber` and a five-line
+   * selection is recorded as a comment on one line. Verified in both diff modes, and against the
+   * library's own demo page — the highlight staying painted there is `clearSelection` leaving
+   * preselected lines alone, not the range surviving.
+   *
+   * Swallowing the press instead is not an option: that same handler is what opens the composer.
+   * So the range is remembered as the drag completes and re-applied when the widget is pressed on
+   * its last line.
+   */
+  const selectionRef = useRef<{ side: "old" | "new"; from: number; to: number } | null>(null);
+  /** Whether the mousedown now being processed landed on the `+` rather than on the gutter. */
+  const pressedWidgetRef = useRef(false);
+
+  /**
+   * A ref callback rather than an effect: this wrapper is not rendered until the highlighter has
+   * loaded, so an effect keyed on `reviewMode` alone would run once against nothing and never
+   * again. Capture phase, so the flag is set before the manager reacts to the same press.
+   */
+  const bindWidgetPressFlag = useCallback(
+    (wrapper: HTMLDivElement | null) => {
+      if (!wrapper || !reviewMode) return;
+      const notePress = (event: MouseEvent) => {
+        const target = event.target;
+        pressedWidgetRef.current =
+          target instanceof Element && target.closest(".diff-add-widget-wrapper") !== null;
+      };
+      wrapper.addEventListener("mousedown", notePress, true);
+      return () => wrapper.removeEventListener("mousedown", notePress, true);
+    },
+    [reviewMode],
+  );
+
+  const handleMultiSelectChange = useCallback(
+    (_range: LineRange | null, state: MultiSelectState) => {
+      // A drag beginning anywhere but the widget supersedes whatever was selected before it.
+      if (state.isSelecting && !pressedWidgetRef.current) selectionRef.current = null;
+    },
+    [],
+  );
+
+  const handleMultiSelectComplete = useCallback((result: MultiSelectResult) => {
+    // The press on the `+` completes a one-line "selection" of its own; that is the event this
+    // whole mechanism exists to ignore.
+    if (pressedWidgetRef.current) return;
+    const { side, startLineNumber, endLineNumber } = result.range;
+    selectionRef.current = {
+      side,
+      from: Math.min(startLineNumber, endLineNumber),
+      to: Math.max(startLineNumber, endLineNumber),
+    };
+  }, []);
+
   const extendData = useMemo(() => buildExtendData(reviewMode, comments), [reviewMode, comments]);
+
+  const mode = diffViewMode ?? DiffModeEnum.Unified;
+  // The same test the multi-select wrapper applies to pick its unified/split line lookups.
+  const isUnified = !(mode & DiffModeEnum.Split);
+
+  const scopeToHunk = useCallback(
+    (range: LineRange) => {
+      const instance = multiSelectRef.current?.getDiffFileInstance();
+      return instance ? scopeRangeToHunk(instance, range, isUnified) : null;
+    },
+    [isUnified],
+  );
 
   // Native widget callbacks
   const handleAddWidgetClick = useCallback(
-    (lineNumber: number, side: SplitSide) => {
-      onAddComment?.(lineNumber, splitSideToSide(side));
+    ({
+      lineNumber,
+      fromLineNumber,
+      side,
+    }: {
+      lineNumber: number;
+      fromLineNumber?: number;
+      side: SplitSide;
+    }) => {
+      const commentSide = splitSideToSide(side);
+      const remembered = selectionRef.current;
+      const range =
+        remembered && remembered.side === commentSide && remembered.to === lineNumber
+          ? remembered
+          : { from: fromLineNumber ?? lineNumber, to: lineNumber };
+      // Put the highlight back under the composer that is about to open, since the press just
+      // discarded it.
+      multiSelectRef.current?.setPreselectedLines({
+        old: commentSide === "old" ? [range.from, range.to] : [],
+        new: commentSide === "new" ? [range.from, range.to] : [],
+      });
+      onAddComment?.(range.to, range.from, commentSide);
     },
     [onAddComment],
   );
@@ -211,6 +270,7 @@ export function DiffViewer({
         <div data-comment-id={data.id}>
           <PendingCommentBlock
             text={data.text}
+            rangeLabel={rangeLabel(data)}
             onRemove={() => onRemoveComment(data.id)}
             onEdit={onEditComment ? (newText) => onEditComment(data.id, newText) : undefined}
             onSend={onSendComment ? () => onSendComment(data.id) : undefined}
@@ -238,33 +298,29 @@ export function DiffViewer({
   return (
     <div className="min-h-0 flex flex-col h-full">
       <div
-        ref={wrapperRef}
-        className={cn(
-          "flex-1 min-h-0",
-          onHunkToggle && "hunk-selection-active",
-          reviewMode && "review-mode-active",
-        )}
+        ref={bindWidgetPressFlag}
+        className={cn("flex-1 min-h-0", reviewMode && "review-mode-active")}
       >
-        <DiffView
+        {/* Multi-select is review-only: a read-only diff has nothing to do with a selection, and
+            leaving it on there would highlight lines the user cannot act on. */}
+        <DiffViewWithMultiSelect
+          ref={multiSelectRef}
           data={diffFile}
-          diffViewMode={diffViewMode ?? DiffModeEnum.Unified}
+          diffViewMode={mode}
           diffViewTheme={diffTheme}
           diffViewHighlight
           diffViewWrap
           registerHighlighter={highlighter as any}
+          enableMultiSelect={!!reviewMode}
+          scopeMultiSelectToHunk={scopeToHunk}
+          onMultiSelectChange={handleMultiSelectChange}
+          onMultiSelectComplete={handleMultiSelectComplete}
           diffViewAddWidget={reviewMode}
           onAddWidgetClick={reviewMode ? handleAddWidgetClick : undefined}
           renderWidgetLine={reviewMode ? renderWidgetLine : undefined}
           extendData={extendData}
           renderExtendLine={reviewMode ? renderExtendLine : undefined}
         />
-        {onHunkToggle && (
-          <HunkCheckboxOverlay
-            wrapperRef={wrapperRef}
-            hunkSelection={hunkSelection}
-            onHunkToggle={onHunkToggle}
-          />
-        )}
       </div>
     </div>
   );

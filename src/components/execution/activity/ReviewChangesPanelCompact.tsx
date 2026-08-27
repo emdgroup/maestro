@@ -103,17 +103,20 @@ export function ReviewChangesPanelCompact({
   const review = useMemo<DiffReviewApi>(
     () => ({
       comments: diffAnnotations,
-      onSubmitComment: (filePath, lineNumber, side, text) => {
+      onSubmitComment: (filePath, lineNumber, fromLineNumber, side, text) => {
+        // Keyed on the end line and deliberately not on the range: `extendData` holds one comment
+        // per line and side, so a second one ending here would have nowhere to render.
         const existing = diffAnnotations.find(
           (a) => a.filePath === filePath && a.lineNumber === lineNumber && a.side === side,
         );
-        if (existing) updateAnnotation(sessionKey, existing.id, text);
+        if (existing) updateAnnotation(sessionKey, existing.id, text, fromLineNumber);
         else
           addAnnotation(sessionKey, {
             id: crypto.randomUUID(),
             kind: "diff",
             filePath,
             lineNumber,
+            fromLineNumber,
             side,
             text,
           });

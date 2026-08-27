@@ -215,17 +215,28 @@ export function TaskReviewPanel({
   }, []);
 
   const handleSubmitComment = useCallback(
-    (filePath: string, lineNumber: number, side: "old" | "new", text: string) => {
+    (
+      filePath: string,
+      lineNumber: number,
+      fromLineNumber: number,
+      side: "old" | "new",
+      text: string,
+    ) => {
       setComments((prev) => {
+        // Keyed on the end line and deliberately not on the range: `extendData` holds one comment
+        // per line and side, so a second one ending here would have nowhere to render.
         const at = prev.findIndex(
           (c) => c.filePath === filePath && c.lineNumber === lineNumber && c.side === side,
         );
         if (at >= 0) {
           const next = [...prev];
-          next[at] = { ...next[at], text };
+          next[at] = { ...next[at], fromLineNumber, text };
           return next;
         }
-        return [...prev, { id: crypto.randomUUID(), filePath, lineNumber, side, text }];
+        return [
+          ...prev,
+          { id: crypto.randomUUID(), filePath, lineNumber, fromLineNumber, side, text },
+        ];
       });
     },
     [],

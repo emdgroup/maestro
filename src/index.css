@@ -307,17 +307,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Hunk checkbox injection — active when hunk selection enabled in DiffViewer */
-.hunk-selection-active .diff-line-hunk-action {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-}
-
-.hunk-selection-active .diff-line-hunk {
-  cursor: pointer;
-}
-
 .zoom-slider [data-slot="slider-track"] {
   height: 2px;
 }
