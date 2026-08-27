@@ -31,7 +31,13 @@ async fn send_prompt_impl(
     // would clear the block, and an ordinary reply would leave the card pulsing.
     let task_id = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).and_then(|s| s.task_id)
+        let session = sessions.get(&log_id);
+        if let Some(session) = session {
+            // A new turn starts clean. Without this, an interrupt whose turn ending arrived before
+            // the flag was set would leave it standing and swallow the *next* turn's completion.
+            session.user_interrupted.store(false, std::sync::atomic::Ordering::Release);
+        }
+        session.and_then(|s| s.task_id)
     };
     clear_task_blocked(app_state, task_id);
 

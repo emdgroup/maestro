@@ -85,6 +85,15 @@ const REVIEWER_PROTOCOL =
 const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissions"];
 const READ_ONLY_MODES = ["readonly", "plan"];
 
+/// The stage a role runs, as the board names it. Roles are an internal noun; the user picked
+/// "Refine" off a card and configured "Refinement" in Settings.
+const ROLE_STAGE_LABELS: Record<AgentRole, string> = {
+  Refiner: "Refinement",
+  Planner: "Planning",
+  Coder: "Implementation",
+  Reviewer: "Review",
+};
+
 export function useExecuteTask(
   projectId: number | null,
   projectPath: string,
@@ -200,8 +209,14 @@ export function useExecuteTask(
     // pinned to one agent would otherwise have its refiner and reviewer silently pinned too.
     const agentId =
       (role === "Coder" ? task.agent_id : null) ?? roleProfile?.agent_id ?? defaultAgent;
+    // Named by role, because "no default agent" was an answer to a question the user had not
+    // asked: a project that configures its pipeline through profiles never sets a default agent,
+    // and the missing thing is the profile for *this* stage.
     if (!agentId) {
-      toast.error("No agent configured. Set a default agent in Settings.");
+      toast.error(`No agent to run the ${ROLE_STAGE_LABELS[role]} stage of "${task.title}"`, {
+        description:
+          "Give this role an agent profile in Settings, or set a default agent for the project.",
+      });
       return;
     }
 

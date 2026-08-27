@@ -136,13 +136,22 @@ pub enum TurnOutcome {
 /// evidence either way and the agent is taken at its word that the turn ending finished the work
 /// — the behaviour before any of this existed.
 ///
+/// `user_interrupted` outranks everything, including the stop reason. The reason cannot be relied
+/// on to report a stop the user asked for: agents disagree about what an interrupted turn answers,
+/// and a coder that had already touched files answering `end_turn` is indistinguishable from one
+/// that finished — which handed the task to the next role moments after the user stopped it.
+///
 /// Unrecognised stop reasons are treated as failures rather than ignored: a new one appearing
 /// should surface on the board, not leave a task running forever with nothing happening.
 pub fn classify_turn(
     stop_reason: &str,
     declared_complete: bool,
     has_changes: Option<bool>,
+    user_interrupted: bool,
 ) -> TurnOutcome {
+    if user_interrupted {
+        return TurnOutcome::Ignore;
+    }
     match stop_reason {
         "end_turn" => {
             if declared_complete {
@@ -451,33 +460,33 @@ mod tests {
 
         #[test]
         fn an_agent_that_says_it_is_done_is_believed() {
-            assert_eq!(classify_turn("end_turn", true, Some(false)), TurnOutcome::Complete);
-            assert_eq!(classify_turn("end_turn", true, Some(true)), TurnOutcome::Complete);
-            assert_eq!(classify_turn("end_turn", true, None), TurnOutcome::Complete);
+            assert_eq!(classify_turn("end_turn", true, Some(false), false), TurnOutcome::Complete);
+            assert_eq!(classify_turn("end_turn", true, Some(true), false), TurnOutcome::Complete);
+            assert_eq!(classify_turn("end_turn", true, None, false), TurnOutcome::Complete);
         }
 
         /// The bug this whole module exists for: a turn that ended with a question, not work.
         #[test]
         fn a_turn_that_changed_nothing_is_a_stall_not_a_completion() {
-            assert_eq!(classify_turn("end_turn", false, Some(false)), TurnOutcome::Stalled);
+            assert_eq!(classify_turn("end_turn", false, Some(false), false), TurnOutcome::Stalled);
         }
 
         #[test]
         fn a_turn_that_changed_something_still_completes() {
-            assert_eq!(classify_turn("end_turn", false, Some(true)), TurnOutcome::Complete);
+            assert_eq!(classify_turn("end_turn", false, Some(true), false), TurnOutcome::Complete);
         }
 
         /// No repository means no evidence, so behave as the code did before the diff check.
         #[test]
         fn without_a_repository_a_turn_ending_completes() {
-            assert_eq!(classify_turn("end_turn", false, None), TurnOutcome::Complete);
+            assert_eq!(classify_turn("end_turn", false, None, false), TurnOutcome::Complete);
         }
 
         #[test]
         fn bad_stop_reasons_fail_the_phase() {
             for reason in ["refusal", "max_tokens", "max_turn_requests", "error", "unknown"] {
                 assert_eq!(
-                    classify_turn(reason, false, Some(true)),
+                    classify_turn(reason, false, Some(true), false),
                     TurnOutcome::Failed,
                     "for {reason}"
                 );
@@ -487,19 +496,43 @@ mod tests {
         /// A stop reason we have never seen must surface, not vanish.
         #[test]
         fn an_unrecognised_stop_reason_fails_rather_than_being_ignored() {
-            assert_eq!(classify_turn("something_new", false, Some(true)), TurnOutcome::Failed);
+            assert_eq!(classify_turn("something_new", false, Some(true), false), TurnOutcome::Failed);
         }
 
         #[test]
         fn stop_reasons_owned_elsewhere_are_left_alone() {
-            assert_eq!(classify_turn("cancelled", false, Some(true)), TurnOutcome::Ignore);
-            assert_eq!(classify_turn("auth_required", false, Some(true)), TurnOutcome::Ignore);
+            assert_eq!(classify_turn("cancelled", false, Some(true), false), TurnOutcome::Ignore);
+            assert_eq!(classify_turn("auth_required", false, Some(true), false), TurnOutcome::Ignore);
         }
 
         /// A declared completion must not override a refusal — the turn still failed.
         #[test]
         fn the_marker_does_not_rescue_a_failed_turn() {
-            assert_eq!(classify_turn("refusal", true, Some(true)), TurnOutcome::Failed);
+            assert_eq!(classify_turn("refusal", true, Some(true), false), TurnOutcome::Failed);
+        }
+
+        /// The bug: a user who joined a session and pressed stop watched the board start the next
+        /// role anyway. `cancelled` was already ignored, but only some agents report it — a coder
+        /// that answered `end_turn` having touched files was indistinguishable from one that had
+        /// finished, so the phase completed and the pipeline handed the task on. The interrupt is
+        /// known first-hand, so it decides on its own.
+        #[test]
+        fn a_turn_the_user_stopped_is_ignored_whatever_the_agent_reports() {
+            for reason in ["end_turn", "cancelled", "refusal", "error", "something_new"] {
+                assert_eq!(
+                    classify_turn(reason, false, Some(true), true),
+                    TurnOutcome::Ignore,
+                    "for {reason}"
+                );
+            }
+        }
+
+        /// Not even the completion marker: an agent that declared itself done and was then stopped
+        /// mid-turn still did not finish, and believing it would advance the task the stop was
+        /// meant to hold.
+        #[test]
+        fn an_interrupt_outranks_a_declared_completion() {
+            assert_eq!(classify_turn("end_turn", true, Some(true), true), TurnOutcome::Ignore);
         }
     }
 
