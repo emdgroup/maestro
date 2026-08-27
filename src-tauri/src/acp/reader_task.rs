@@ -1388,7 +1388,7 @@ async fn handle_shared_server_message(
                 msg,
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_))
             );
-            let is_session_load_error = matches!(&msg, MaestroRpcMessage::Response(ServerResponse::Error(e)) if e.session_id.is_some());
+            let is_session_load_error = is_fatal_session_error(&msg);
             let native_id = handle_server_message(
                 msg,
                 log_id,
@@ -2093,10 +2093,71 @@ fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
     }
 }
 
+/// Whether an error response means the session it names is gone, rather than merely that
+/// something went wrong inside it.
+///
+/// `ErrorResponse::session_id` says only that the error is *scoped to* a session. Treating that
+/// alone as fatal — which is what this used to do — made the caller drop the session from the map
+/// and fail its task for any session-scoped error, so a single new error carrying an id would
+/// silently take a live session's compose bar with it. A load failure is the one fatal case, and
+/// it announces itself in the message.
+///
+/// Matched by prefix rather than equality: the message carries the agent's own reason after it,
+/// and servers deployed into `.maestro/bin/` predate the constant while spelling it identically.
+fn is_fatal_session_error(msg: &MaestroRpcMessage) -> bool {
+    matches!(
+        msg,
+        MaestroRpcMessage::Response(ServerResponse::Error(e))
+            if e.session_id.is_some()
+                && e.message.starts_with(maestro_protocol::SESSION_LOAD_FAILED_ERROR)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::task::transition::TaskTransition;
+
+    mod fatal_session_errors {
+        use super::*;
+        use crate::acp::transport::ErrorResponse;
+
+        fn error(message: &str, session_id: Option<&str>) -> MaestroRpcMessage {
+            MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: message.to_string(),
+                session_id: session_id.map(str::to_string),
+            }))
+        }
+
+        #[test]
+        fn a_load_failure_ends_the_session() {
+            assert!(is_fatal_session_error(&error(
+                "ACP session/load failed: Resource not found: 558e4705",
+                Some("session-3"),
+            )));
+        }
+
+        /// The bug: every error naming a session was read as "this session is gone", so the first
+        /// session-scoped error that was not a load failure would tear down a working session and
+        /// leave the user reading a transcript they could not reply to.
+        #[test]
+        fn another_error_scoped_to_a_session_leaves_it_alone() {
+            assert!(!is_fatal_session_error(&error(
+                "session file read failed: permission denied",
+                Some("session-3"),
+            )));
+        }
+
+        /// Connection-level failures carry no id and are handled elsewhere; claiming them here
+        /// would end whichever session the message happened to be routed to.
+        #[test]
+        fn an_error_naming_no_session_is_not_fatal_to_one() {
+            assert!(!is_fatal_session_error(&error(
+                "ACP session/load failed: Resource not found: 558e4705",
+                None,
+            )));
+        }
+    }
 
     /// A task with a reviewer running on it, in the state both routes to a verdict find it.
     fn under_review(rounds: i32) -> rusqlite::Connection {

@@ -15,7 +15,8 @@ use acp::schema::v1::{
 use agent_client_protocol_schema::v1::{AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities};
 use maestro_protocol::{
     AUTH_REQUIRED_ERROR, AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo,
-    ServerResponse, SessionListEntry, SessionModeState as ProtocolSessionModeState,
+    SESSION_LOAD_FAILED_ERROR, ServerResponse, SessionListEntry,
+    SessionModeState as ProtocolSessionModeState,
     SessionModelState as ProtocolSessionModelState,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
@@ -316,7 +317,7 @@ pub(crate) async fn load_session_on_connection(
             let _ = send_response(
                 &stdout,
                 &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: format!("ACP session/load failed: {}", e),
+                    message: format!("{}: {}", SESSION_LOAD_FAILED_ERROR, e),
                     session_id: Some(maestro_session_id.clone()),
                 })),
             )
