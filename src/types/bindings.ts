@@ -400,6 +400,38 @@ async cleanupZombieWorktrees(projectId: number, repoPath: string) : Promise<Resu
 }
 },
 /**
+ * Session branches this project could prune right now.
+ * 
+ * Deliberately does no network call. `git remote prune origin` would be an `ls-remote` round
+ * trip on a query that refetches every time the Worktrees tab is opened, and a remote-tracking
+ * ref left stale only ever causes a branch to be *kept* — the safe direction. The
+ * `prune_remote_refs` calls that already follow every worktree deletion clear those refs at the
+ * point a Maestro branch actually becomes orphaned.
+ */
+async listPrunableBranches(projectId: number) : Promise<Result<PrunableBranch[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_prunable_branches", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete the Maestro branches the user selected, with `-D` when they opted into losing
+ * unmerged work and `-d` otherwise.
+ * 
+ * Every name is re-checked here rather than trusted: the caller sends a selection, not an
+ * authorisation, and `-D` on an arbitrary branch name would be unrecoverable.
+ */
+async pruneBranches(projectId: number, branches: string[], force: boolean) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prune_branches", { projectId, branches, force }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Spawn a user-controlled interactive shell on a specific branch.
  * 
  * This creates an execution log with NULL task_id, resolves an existing worktree for the
@@ -2620,6 +2652,19 @@ accent_color: string | null;
  */
 accent_color_auto_assign: boolean | null; default_worktree: boolean }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
+/**
+ * A Maestro branch with no worktree and nothing on origin holding it — the only kind this
+ * offers to delete.
+ * 
+ * `commits` and `diff_stat` are filled for unmerged branches only. For a merged branch they
+ * would describe an empty range, and it is on the unmerged ones that the user needs to see
+ * what deleting would throw away.
+ */
+export type PrunableBranch = { name: string; 
+/**
+ * False when `git branch -d` would refuse it, i.e. its commits live on no other ref.
+ */
+merged: boolean; last_commit_at: string; commits: number; diff_stat: string | null }
 /**
  * What the forge's CI last said about an open pull request's head commit.
  * 

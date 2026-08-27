@@ -210,3 +210,20 @@ export function slugifyName(name: string): string {
     .slice(0, 50)
     .replace(/^-+|-+$/g, "");
 }
+
+/**
+ * The namespace every branch Maestro creates for itself lives under.
+ *
+ * Load-bearing rather than cosmetic: `list_prunable_branches` decides what it may offer to delete
+ * purely from this prefix, so a branch created outside it can never be cleaned up and a branch
+ * created inside it can. Both naming sites read the constant so the two cannot drift apart.
+ */
+export const MAESTRO_BRANCH_PREFIX = "maestro/";
+
+/**
+ * Branch name for a task's worktree. The id leads so the branch sorts and greps by task, and the
+ * slug is only there to make it readable.
+ */
+export function taskBranchName(taskId: number, title: string): string {
+  return `${MAESTRO_BRANCH_PREFIX}${taskId}-${slugifyName(title)}`;
+}

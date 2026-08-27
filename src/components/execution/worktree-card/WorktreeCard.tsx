@@ -3,22 +3,8 @@ import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
+import { parseDiffStat } from "@/lib/diff-utils";
 import type { WorktreeWithStatus } from "@/types/bindings";
-
-function parseDiffStat(
-  raw: string | null,
-): { files: number; insertions: number; deletions: number } | null {
-  if (!raw) return null;
-  const filesMatch = raw.match(/(\d+) files? changed/);
-  const insMatch = raw.match(/(\d+) insertions?\(\+\)/);
-  const delMatch = raw.match(/(\d+) deletions?\(-\)/);
-  if (!filesMatch && !insMatch && !delMatch) return null;
-  return {
-    files: filesMatch ? parseInt(filesMatch[1], 10) : 0,
-    insertions: insMatch ? parseInt(insMatch[1], 10) : 0,
-    deletions: delMatch ? parseInt(delMatch[1], 10) : 0,
-  };
-}
 
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
+import { taskQueryKeys } from "@/services/task.service";
 import type { DiffTarget } from "@/types/bindings";
 
 export const worktreeQueryKeys = {
@@ -11,6 +12,8 @@ export const worktreeQueryKeys = {
   list: (projectId: number) => [...worktreeQueryKeys.base, "list", projectId] as const,
   diff: (worktreePath: string, diffTarget: DiffTarget) =>
     [...worktreeQueryKeys.base, "diff", worktreePath, diffTarget] as const,
+  prunableBranches: (projectId: number) =>
+    [...worktreeQueryKeys.base, "prunable-branches", projectId] as const,
 };
 
 /**
@@ -159,6 +162,58 @@ export function useCleanupZombieWorktreesMutation() {
     onError: () => {
       // Silent: no toast — zombie cleanup is background housekeeping
     },
+  });
+}
+
+/**
+ * Session branches with no worktree and nothing on origin holding them.
+ *
+ * Keyed under `worktreeQueryKeys.base`, so removing a worktree — which is what frees its branch
+ * — already refreshes this through the invalidations those mutations and the "worktrees-changed"
+ * listener perform.
+ */
+export function usePrunableBranchesQuery(projectId: number | undefined) {
+  return useQuery({
+    queryKey: worktreeQueryKeys.prunableBranches(projectId ?? 0),
+    queryFn: () => api.listPrunableBranches(projectId!),
+    enabled: projectId != null,
+  });
+}
+
+/**
+ * Mutation hook for deleting the selected stale branches.
+ *
+ * `force` switches the backend from `git branch -d` to `-D`, and the caller sets it from whether
+ * the selection includes an unmerged branch — the row the user ticked is the opt-in.
+ */
+export function usePruneBranchesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      branches,
+      force,
+    }: {
+      projectId: number;
+      branches: string[];
+      force: boolean;
+    }) => {
+      return await api.pruneBranches(projectId, branches, force);
+    },
+    onSuccess: (deleted, { projectId, branches }) => {
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+      // The base-branch picker reads its own list; without this it keeps offering deleted branches.
+      void queryClient.invalidateQueries({
+        queryKey: [...taskQueryKeys.base, "branches", projectId],
+      });
+      const plural = deleted.length === 1 ? "branch" : "branches";
+      toast.success(
+        deleted.length === branches.length
+          ? `Pruned ${deleted.length} ${plural}`
+          : `Pruned ${deleted.length} of ${branches.length} branches — see the log for the rest`,
+      );
+    },
+    onError: createErrorToastHandler("Failed to prune branches"),
   });
 }
 

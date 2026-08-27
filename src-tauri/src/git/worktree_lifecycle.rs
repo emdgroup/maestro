@@ -160,56 +160,6 @@ pub async fn create_worktree(
     })
 }
 
-/// Internal helper for on-demand worktree creation during agent execution.
-/// Called from execution_handlers.rs — NOT an IPC command.
-pub async fn create_worktree_for_task(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-    task_id: i32,
-    repo_path: &str,
-) -> Result<(i32, String), String> {
-    // Resolve project and git connection (local vs remote SSH)
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
-    // Canonicalize only a path on this machine — see `GitConnection::is_on_this_machine`.
-    let repo_path = if git_conn.is_on_this_machine() {
-        canonicalize_repo_path(repo_path)?
-    } else {
-        repo_path.to_string()
-    };
-    let repo_path = repo_path.as_str();
-
-    let relative_path = crate::models::worktree_path_for_task(task_id);
-    let abs_path = format!("{}/{}", repo_path, relative_path);
-
-    // Only for a path on this machine — see the same guard in `create_worktree`.
-    if git_conn.is_on_this_machine() {
-        tokio::fs::create_dir_all(format!("{}/{}", repo_path, WORKTREE_DIR))
-            .await
-            .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
-    }
-
-    // Create branch name for this task
-    let branch_name = format!("task-{}", task_id);
-
-    // Create git worktree via SSH-aware dispatcher — create new branch from HEAD
-    crate::git::create_worktree(&git_conn, "HEAD", &relative_path, Some(&branch_name)).await?;
-
-    // Insert DB row
-    let worktree_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let now = Utc::now().to_rfc3339();
-        conn.execute(
-            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![project_id, task_id, &branch_name, rusqlite::types::Null, &relative_path, &now],
-        )
-        .map_err(|e| format!("Failed to insert worktree: {}", e))?;
-        conn.last_insert_rowid() as i32
-    };
-
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
-    Ok((worktree_id, abs_path))
-}
-
 // ============================================================================
 // delete_worktree — REQ-09
 // ============================================================================
@@ -464,44 +414,6 @@ pub async fn cleanup_zombie_worktrees(
     Ok(deleted)
 }
 
-/// Internal helper for worktree deletion during finalization.
-/// Called from execution_handlers.rs — NOT an IPC command.
-pub async fn delete_worktree_for_task(
-    app_state: &Arc<AppState>,
-    worktree_id: i32,
-    worktree_path: &str,
-) -> Result<(), String> {
-    // Fetch the owning project in one query via JOIN; if either row is gone, skip git cleanup.
-    let project: Option<crate::models::Project> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT p.id, p.name, p.path, p.created_at, p.updated_at, p.last_opened, p.connection_id, p.wsl_connection_id, p.docker_connection_id \
-             FROM projects p JOIN worktrees w ON p.id = w.project_id WHERE w.id = ?",
-            rusqlite::params![worktree_id],
-            crate::models::Project::from_row,
-        ).ok()
-    };
-
-    if let Some(project) = project {
-        // Best-effort: if SSH session is gone, fall back to local path for cleanup
-        let git_conn = crate::core::get_git_connection(&project, app_state).await
-            .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
-        let _ = crate::git::delete_worktree(&git_conn, worktree_path).await;
-    }
-    // If project/worktree rows are already gone, skip git cleanup — nothing to remove.
-
-    // Delete DB row
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute(
-        "DELETE FROM worktrees WHERE id = ?",
-        rusqlite::params![worktree_id],
-    )
-    .map_err(|e| format!("Failed to delete worktree: {}", e))?;
-
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
-    Ok(())
-}
-
 /// Throw away everything a task's run produced: its worktree, its branch, and the commits it
 /// left on the project path when it ran without one.
 ///
@@ -539,7 +451,6 @@ pub async fn discard_task_workspace(
 
     // Perform async git cleanup outside the DB lock
     if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
-        // Delete the worktree (same logic as delete_worktree_for_task)
         let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
 
         // Remove worktree from disk (best effort)
@@ -592,9 +503,249 @@ pub async fn discard_task_workspace(
     Ok(())
 }
 
+// ============================================================================
+// Stale branch pruning
+// ============================================================================
+
+/// Namespace every branch Maestro creates for itself lives under — sessions from
+/// `SpawnSessionDialog` and tasks from `useExecuteTask`, both through `MAESTRO_BRANCH_PREFIX`
+/// in `generateSessionName.ts`.
+///
+/// This prefix is the entire basis on which a branch may be deleted here. A branch outside it
+/// is indistinguishable from one the user made by hand, so it is never a candidate; anything a
+/// future feature creates inside it becomes prunable the moment it does.
+const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
+const LOCAL_MAESTRO_REF_PREFIX: &str = "refs/heads/maestro/";
+const REMOTE_MAESTRO_REF_PREFIX: &str = "refs/remotes/origin/maestro/";
+
+/// A Maestro branch with no worktree and nothing on origin holding it — the only kind this
+/// offers to delete.
+///
+/// `commits` and `diff_stat` are filled for unmerged branches only. For a merged branch they
+/// would describe an empty range, and it is on the unmerged ones that the user needs to see
+/// what deleting would throw away.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct PrunableBranch {
+    pub name: String,
+    /// False when `git branch -d` would refuse it, i.e. its commits live on no other ref.
+    pub merged: bool,
+    pub last_commit_at: String,
+    pub commits: u32,
+    pub diff_stat: Option<String>,
+}
+
+/// Maestro branches safe to offer for deletion, from raw git output.
+///
+/// `all_refs` is `for-each-ref --format=%(refname)%09%(committerdate:iso-strict)` over both the
+/// local and the origin namespaces; `merged_refs` the same restricted to `--merged HEAD`;
+/// `checked_out` the branch names git reports against a worktree.
+///
+/// Full refnames rather than `%(refname:short)` because a local `maestro/x` and a remote
+/// `origin/maestro/x` shorten into two names that no longer say which namespace they came from.
+fn prunable_maestro_branches(
+    all_refs: &str,
+    merged_refs: &str,
+    checked_out: &HashSet<String>,
+) -> Vec<PrunableBranch> {
+    let merged: HashSet<&str> = merged_refs
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(LOCAL_MAESTRO_REF_PREFIX))
+        .filter(|name| !name.is_empty())
+        .collect();
+
+    let mut remotes: HashSet<&str> = HashSet::new();
+    let mut locals: Vec<(&str, &str)> = Vec::new();
+    for line in all_refs.lines() {
+        let (refname, committed_at) = match line.trim_end().split_once('\t') {
+            Some(pair) => pair,
+            None => (line.trim_end(), ""),
+        };
+        // The trailing slash is load-bearing: `for-each-ref refs/heads/maestro` also matches a
+        // branch named exactly `maestro`, which is somebody's own branch and not one of ours.
+        if let Some(name) = refname.strip_prefix(LOCAL_MAESTRO_REF_PREFIX) {
+            if !name.is_empty() {
+                locals.push((name, committed_at));
+            }
+        } else if let Some(name) = refname.strip_prefix(REMOTE_MAESTRO_REF_PREFIX) {
+            if !name.is_empty() {
+                remotes.insert(name);
+            }
+        }
+    }
+
+    let mut candidates: Vec<PrunableBranch> = locals
+        .into_iter()
+        .filter(|(name, _)| !remotes.contains(name))
+        .filter_map(|(name, committed_at)| {
+            let full_name = format!("{}{}", MAESTRO_BRANCH_PREFIX, name);
+            if checked_out.contains(&full_name) {
+                return None;
+            }
+            Some(PrunableBranch {
+                name: full_name,
+                merged: merged.contains(name),
+                last_commit_at: committed_at.to_string(),
+                commits: 0,
+                diff_stat: None,
+            })
+        })
+        .collect();
+    candidates.sort_by(|a, b| a.name.cmp(&b.name));
+    candidates
+}
+
+/// Fill `commits` and `diff_stat` on the unmerged candidates.
+///
+/// One batch for the whole set rather than two calls per branch: on WSL, SSH and Docker every
+/// git invocation costs a full interop spawn, and this runs whenever the Worktrees tab opens.
+/// Best-effort throughout — a branch whose stats cannot be read still lists, just without them.
+async fn fill_unmerged_branch_stats(
+    git_conn: &crate::models::GitConnection,
+    candidates: &mut [PrunableBranch],
+) {
+    let unmerged: Vec<usize> = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| !candidate.merged)
+        .map(|(index, _)| index)
+        .collect();
+    if unmerged.is_empty() {
+        return;
+    }
+
+    // Three dots for the diff so it reads from the merge base — what the branch adds, not what
+    // HEAD has moved on to since.
+    let ranges: Vec<(String, String)> = unmerged
+        .iter()
+        .map(|&index| {
+            let name = &candidates[index].name;
+            (format!("HEAD..{}", name), format!("HEAD...{}", name))
+        })
+        .collect();
+    let commands: Vec<Vec<&str>> = ranges
+        .iter()
+        .flat_map(|(commit_range, diff_range)| {
+            [
+                vec!["rev-list", "--count", commit_range.as_str()],
+                vec!["diff", "--shortstat", diff_range.as_str()],
+            ]
+        })
+        .collect();
+    let command_refs: Vec<&[&str]> = commands.iter().map(|args| args.as_slice()).collect();
+
+    let outputs = crate::git::run_git_commands_lossy(git_conn, git_conn.path(), &command_refs).await;
+
+    for (position, &index) in unmerged.iter().enumerate() {
+        candidates[index].commits = outputs
+            .get(position * 2)
+            .and_then(|raw| raw.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        candidates[index].diff_stat = outputs
+            .get(position * 2 + 1)
+            .map(|raw| raw.trim())
+            .filter(|raw| !raw.is_empty())
+            .map(str::to_string);
+    }
+}
+
+/// Session branches this project could prune right now.
+///
+/// Deliberately does no network call. `git remote prune origin` would be an `ls-remote` round
+/// trip on a query that refetches every time the Worktrees tab is opened, and a remote-tracking
+/// ref left stale only ever causes a branch to be *kept* — the safe direction. The
+/// `prune_remote_refs` calls that already follow every worktree deletion clear those refs at the
+/// point a Maestro branch actually becomes orphaned.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_prunable_branches(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<Vec<PrunableBranch>, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let mut outputs = crate::git::run_git_commands_lossy(
+        &git_conn,
+        git_conn.path(),
+        &[
+            &[
+                "for-each-ref",
+                "--format=%(refname)%09%(committerdate:iso-strict)",
+                "refs/heads/maestro",
+                "refs/remotes/origin/maestro",
+            ],
+            // The predicate `git branch -d` itself applies: with no upstream on any of these
+            // branches, it falls back to asking whether HEAD contains them.
+            &["for-each-ref", "--format=%(refname)", "--merged", "HEAD", "refs/heads/maestro"],
+            &["worktree", "list", "--porcelain"],
+        ],
+    )
+    .await
+    .into_iter();
+
+    let all_refs = outputs.next().unwrap_or_default();
+    let merged_refs = outputs.next().unwrap_or_default();
+    let worktree_list = outputs.next().unwrap_or_default();
+
+    let checked_out: HashSet<String> = crate::git::parse_worktree_list(&worktree_list)
+        .into_iter()
+        .filter_map(|worktree| worktree.branch)
+        .collect();
+
+    let mut candidates = prunable_maestro_branches(&all_refs, &merged_refs, &checked_out);
+    fill_unmerged_branch_stats(&git_conn, &mut candidates).await;
+    Ok(candidates)
+}
+
+/// Delete the Maestro branches the user selected, with `-D` when they opted into losing
+/// unmerged work and `-d` otherwise.
+///
+/// Every name is re-checked here rather than trusted: the caller sends a selection, not an
+/// authorisation, and `-D` on an arbitrary branch name would be unrecoverable.
+#[tauri::command]
+#[specta::specta]
+pub async fn prune_branches(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    branches: Vec<String>,
+    force: bool,
+) -> Result<Vec<String>, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let checked_out: HashSet<String> = crate::git::list_worktrees(&git_conn)
+        .await?
+        .into_iter()
+        .filter_map(|worktree| worktree.branch)
+        .collect();
+
+    let delete_flag = if force { "-D" } else { "-d" };
+    let mut deleted: Vec<String> = Vec::new();
+    for branch in &branches {
+        match branch.strip_prefix(MAESTRO_BRANCH_PREFIX) {
+            Some(rest) if !rest.is_empty() => {}
+            _ => {
+                log::warn!("[git] refusing to prune '{branch}': not a Maestro branch");
+                continue;
+            }
+        }
+        // A session may have been spawned onto this branch since the dialog was opened.
+        if checked_out.contains(branch) {
+            log::debug!("[git] keeping {branch}: checked out in a worktree");
+            continue;
+        }
+        match crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", delete_flag, branch]).await {
+            Ok(_) => deleted.push(branch.clone()),
+            Err(e) => log::warn!("[git] could not delete {branch}: {e}"),
+        }
+    }
+
+    Ok(deleted)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{branch_has_no_own_commits, canonicalize_repo_path, path_is_within};
+    use std::collections::HashSet;
+
+    use super::{branch_has_no_own_commits, canonicalize_repo_path, path_is_within, prunable_maestro_branches};
     use crate::models::{is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task};
 
     #[test]
@@ -625,6 +776,64 @@ mod tests {
         // Only the branch itself contains the tip — it holds work.
         assert!(!branch_has_no_own_commits("maestro/foo\n", "maestro/foo"));
         assert!(!branch_has_no_own_commits("", "maestro/foo"));
+    }
+
+    /// Every reason a Maestro branch must not be offered for deletion, against the real shape of
+    /// `for-each-ref` output.
+    ///
+    /// Task branches (`maestro/<id>-<slug>`) and session branches (`maestro/<slug>-<id>`) are
+    /// treated alike on purpose: the namespace is the whole contract, and nothing here knows or
+    /// needs to know which kind it is looking at.
+    #[test]
+    fn only_orphaned_maestro_branches_are_prunable() {
+        let all_refs = concat!(
+            // Matched by the `refs/heads/maestro` refspec, but somebody's own branch.
+            "refs/heads/maestro\t2026-08-01T10:00:00+02:00\n",
+            "refs/heads/maestro/kind-heath-19\t2026-08-20T09:30:00+02:00\n",
+            // A session is sitting in its worktree.
+            "refs/heads/maestro/true-sky-22\t2026-08-26T11:00:00+02:00\n",
+            // Pushed — origin still holds it.
+            "refs/heads/maestro/rapid-hollow-17\t2026-08-10T08:00:00+02:00\n",
+            "refs/remotes/origin/maestro/rapid-hollow-17\t2026-08-10T08:00:00+02:00\n",
+            // A task branch whose worktree is gone, and one still checked out.
+            "refs/heads/maestro/41-prune-stale-branches\t2026-08-27T07:15:00+02:00\n",
+            "refs/heads/maestro/42-fix-the-thing\t2026-08-27T09:00:00+02:00\n",
+            // Outside the namespace: a task branch from before the prefix existed.
+            "refs/heads/12-legacy-task\t2026-07-01T09:00:00+02:00\n",
+        );
+        let merged_refs = "refs/heads/maestro/kind-heath-19\nrefs/heads/maestro/true-sky-22\n";
+        let checked_out = HashSet::from([
+            "main".to_string(),
+            "maestro/true-sky-22".to_string(),
+            "maestro/42-fix-the-thing".to_string(),
+        ]);
+
+        let names: Vec<String> = prunable_maestro_branches(all_refs, merged_refs, &checked_out)
+            .into_iter()
+            .map(|branch| branch.name)
+            .collect();
+        assert_eq!(
+            names,
+            vec!["maestro/41-prune-stale-branches", "maestro/kind-heath-19"]
+        );
+    }
+
+    #[test]
+    fn merge_state_and_commit_date_come_from_git() {
+        let all_refs = concat!(
+            "refs/heads/maestro/kind-heath-19\t2026-08-20T09:30:00+02:00\n",
+            "refs/heads/maestro/scratch-test\t2026-08-27T07:15:00+02:00\n",
+        );
+        let merged_refs = "refs/heads/maestro/kind-heath-19\n";
+
+        let candidates = prunable_maestro_branches(all_refs, merged_refs, &HashSet::new());
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].merged);
+        assert_eq!(candidates[0].last_commit_at, "2026-08-20T09:30:00+02:00");
+        // Stats stay empty until `fill_unmerged_branch_stats` fills them from a second batch.
+        assert!(!candidates[1].merged);
+        assert_eq!(candidates[1].commits, 0);
+        assert_eq!(candidates[1].diff_stat, None);
     }
 
     /// Worktree paths are built as `{repo}/{relative}` strings; an extended-length `\?\` repo
