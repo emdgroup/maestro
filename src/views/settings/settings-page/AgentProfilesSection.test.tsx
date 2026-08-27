@@ -122,6 +122,23 @@ describe("AgentProfilesSection", () => {
     expect(document.defaults!.Refiner).toBe(document.profiles![0]!.id);
   });
 
+  /// The prompt is the field that makes a profile worth having, and a blank box is why most
+  /// profiles never get one. Asserted as "non-empty and different per role" rather than against
+  /// the shipped wording, which is meant to be rewritten without breaking a test.
+  it("prefills a new profile's instructions with its role's template", async () => {
+    const ref = renderSection();
+
+    await userEvent.click(screen.getByRole("button", { name: "Add a Review profile" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add a Implementation profile" }));
+    await ref.current!.save();
+
+    const document = save.mock.calls[0]![0].document as ProfilesDocument;
+    const [reviewer, coder] = document.profiles!;
+    expect(reviewer!.role_prompt).toBeTruthy();
+    expect(coder!.role_prompt).toBeTruthy();
+    expect(coder!.role_prompt).not.toBe(reviewer!.role_prompt);
+  });
+
   /// Removing the default has to hand the role to another profile rather than leaving `defaults`
   /// pointing at something that no longer exists.
   it("moves a role's default off a profile that is deleted", async () => {
