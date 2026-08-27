@@ -5,7 +5,6 @@ import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
 import { useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
-import type { SettingsPageHandle } from "@/views/settings/settings-page/SettingsPage";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSaveSettings, useSettings } from "@/services/settings.service";
 import {
@@ -62,7 +61,6 @@ function App() {
   // Subscribe to project store for project selection
   const currentProject = useSelectedProject();
   const { clearSelectedProject, setSelectedProject } = useSelectedProjectActions();
-  const settingsPageRef = useRef<SettingsPageHandle>(null);
 
   // Query hooks for settings
   const { isLoading: settingsLoading, error: settingsError, data: appSettings } = useSettings();
@@ -345,11 +343,7 @@ function App() {
             >
               <div className="h-full overflow-auto custom-scrollbar">
                 <Suspense fallback={fallback}>
-                  <SettingsView
-                    ref={settingsPageRef}
-                    projectId={currentProject.id}
-                    connection={connection}
-                  />
+                  <SettingsView projectId={currentProject.id} connection={connection} />
                 </Suspense>
               </div>
             </motion.div>

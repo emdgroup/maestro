@@ -1,23 +1,18 @@
-import { useController } from "react-hook-form";
-import type { Control } from "react-hook-form";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
 import { Bot, LogOut, Loader2, Check, GitBranch } from "lucide-react";
 import { Switch } from "@/ui/switch";
-import type { ConnectionKey, DiscoveredAgent } from "@/types/bindings";
+import type { ConnectionKey, DiscoveredAgent, ProjectConfigRequest } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { cn } from "@/lib/utils";
 
-export interface ProjectSettingsFormData {
-  default_agent: string;
-  startup_tab: string;
-  default_worktree: boolean;
-}
-
 interface ProjectDefaultsSectionProps {
-  control: Control<ProjectSettingsFormData>;
+  defaultAgent: string | null;
+  defaultWorktree: boolean;
+  /** Persists immediately — this section has no Save button behind it. */
+  onChange: (patch: Partial<ProjectConfigRequest>) => void;
   agents: DiscoveredAgent[];
   agentsLoading: boolean;
   connection: ConnectionKey;
@@ -101,13 +96,13 @@ function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthR
 }
 
 export function ProjectDefaultsSection({
-  control,
+  defaultAgent,
+  defaultWorktree,
+  onChange,
   agents,
   agentsLoading,
   connection,
 }: ProjectDefaultsSectionProps) {
-  const { field: defaultAgentField } = useController({ control, name: "default_agent" });
-  const { field: defaultWorktreeField } = useController({ control, name: "default_worktree" });
   const isGitRepo = useIsGitRepo();
 
   return (
@@ -130,8 +125,8 @@ export function ProjectDefaultsSection({
               <AgentAuthRow
                 key={agent.id}
                 agent={agent}
-                isDefault={defaultAgentField.value === agent.id}
-                onSetDefault={() => defaultAgentField.onChange(agent.id)}
+                isDefault={defaultAgent === agent.id}
+                onSetDefault={() => onChange({ default_agent: agent.id })}
                 connection={connection}
               />
             ))}
@@ -141,8 +136,8 @@ export function ProjectDefaultsSection({
         <div className="space-y-1">
           <Label className="text-sm font-medium">Default Agent</Label>
           <p className="text-xs text-muted-foreground">
-            {defaultAgentField.value
-              ? `${agents.find((a) => a.id === defaultAgentField.value)?.name ?? defaultAgentField.value} is used for new sessions and auto-assigned tasks`
+            {defaultAgent
+              ? `${agents.find((a) => a.id === defaultAgent)?.name ?? defaultAgent} is used for new sessions and auto-assigned tasks`
               : "No default set — tasks use the session's own agent"}
           </p>
         </div>
@@ -168,8 +163,8 @@ export function ProjectDefaultsSection({
               </div>
             </div>
             <Switch
-              checked={defaultWorktreeField.value}
-              onCheckedChange={defaultWorktreeField.onChange}
+              checked={defaultWorktree}
+              onCheckedChange={(checked) => onChange({ default_worktree: checked })}
               className="data-unchecked:bg-muted data-unchecked:border-border/50"
             />
           </div>

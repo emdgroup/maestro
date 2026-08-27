@@ -6,14 +6,12 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::core::connection::get_project_with_git_conn;
-use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+use crate::core::project_storage::read_maestro_json;
 use crate::git::remote::{pick_remote, parse_remote_url, ParsedRemote};
 use crate::git::run_git_in_dir_lossy;
 use crate::integration::issue_tracking_handlers::{find_integration, provider_for_host};
-use crate::models::project::{
-    now_rfc3339, LandingMode, ProjectCodeHostingConfig, ProjectConfig,
-};
-use crate::project::settings::SETTINGS_FILE;
+use crate::models::project::{LandingMode, ProjectCodeHostingConfig, ProjectConfig};
+use crate::project::settings::{mutate_project_config, SETTINGS_FILE};
 
 /// How far up the capability ladder this project reaches.
 ///
@@ -81,13 +79,15 @@ pub async fn save_project_code_hosting_config(
     code_hosting: Option<ProjectCodeHostingConfig>,
 ) -> Result<(), String> {
     let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
-    // Clearing is an explicit "not here", so it also opts out of detection — otherwise the
-    // next status call would put it straight back.
-    config.code_hosting_auto_detect = if code_hosting.is_none() { Some(false) } else { None };
-    config.code_hosting = code_hosting;
-    config.updated_at = now_rfc3339();
-    write_maestro_json(&conn, SETTINGS_FILE, &config).await
+    mutate_project_config(&conn, |config| {
+        // Clearing is an explicit "not here", so it also opts out of detection — otherwise the
+        // next status call would put it straight back.
+        config.code_hosting_auto_detect = if code_hosting.is_none() { Some(false) } else { None };
+        config.code_hosting = code_hosting;
+        true
+    })
+    .await?;
+    Ok(())
 }
 
 /// Choose how approved work leaves Review for this project.
@@ -99,10 +99,12 @@ pub async fn save_project_landing_mode(
     landing_mode: LandingMode,
 ) -> Result<(), String> {
     let (_project, conn) = get_project_with_git_conn(&app_state, project_id).await?;
-    let mut config: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
-    config.landing_mode = Some(landing_mode);
-    config.updated_at = now_rfc3339();
-    write_maestro_json(&conn, SETTINGS_FILE, &config).await
+    mutate_project_config(&conn, |config| {
+        config.landing_mode = Some(landing_mode);
+        true
+    })
+    .await?;
+    Ok(())
 }
 
 /// Everything recoverable from the remote path without knowing what the forge's API will
@@ -150,7 +152,10 @@ pub async fn code_hosting_status(
     project_id: i32,
 ) -> Result<CodeHostingStatus, String> {
     let (project, git_conn) = get_project_with_git_conn(app_state, project_id).await?;
-    let mut existing: ProjectConfig = read_maestro_json(&git_conn, SETTINGS_FILE).await;
+    // Read for reporting only. Nothing derived from this snapshot may reach the write below —
+    // `git remote -v` runs in between, and this handler used to put the whole struct back
+    // afterwards, undoing anything written during that window.
+    let existing: ProjectConfig = read_maestro_json(&git_conn, SETTINGS_FILE).await;
     let landing_mode = existing.landing_mode.unwrap_or_default();
 
     let nothing = CodeHostingStatus {
@@ -193,7 +198,15 @@ pub async fn code_hosting_status(
 
     let config = hosting_from_remote(&provider, &remote);
 
-    let applied = existing.code_hosting.is_none() && existing.code_hosting_auto_detect != Some(false);
+    let applied = mutate_project_config(&git_conn, |fresh| {
+        if fresh.code_hosting.is_some() || fresh.code_hosting_auto_detect == Some(false) {
+            return false;
+        }
+        fresh.code_hosting = Some(config.clone());
+        true
+    })
+    .await?;
+
     if applied {
         log::info!(
             "Detected {} code hosting for project {} from remote `{}`",
@@ -201,9 +214,6 @@ pub async fn code_hosting_status(
             project_id,
             remote_name
         );
-        existing.code_hosting = Some(config.clone());
-        existing.updated_at = now_rfc3339();
-        write_maestro_json(&git_conn, SETTINGS_FILE, &existing).await?;
     }
 
     // `None` rather than the project's base: this only asks whether anything is connected, and

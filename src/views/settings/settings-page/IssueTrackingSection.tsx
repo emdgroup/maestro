@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState } from "react";
 import { CircleDot, Plus } from "lucide-react";
 import { Button } from "@/ui/button";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
@@ -56,27 +56,22 @@ function describeTarget(config: ProjectIssueTrackingConfig): string | null {
   return config.project_path ?? config.project_name ?? null;
 }
 
-export interface IssueTrackingSectionHandle {
-  save: () => Promise<void>;
-  isValid: () => boolean;
-  setAttempted: (v: boolean) => void;
-}
-
 interface IssueTrackingSectionProps {
   projectId: number;
   issueTrackingIntegrations: IntegrationStatus[];
-  onValidityChange: (valid: boolean) => void;
 }
 
-export const IssueTrackingSection = forwardRef<
-  IssueTrackingSectionHandle,
-  IssueTrackingSectionProps
->(({ projectId, issueTrackingIntegrations, onValidityChange }, ref) => {
+export function IssueTrackingSection({
+  projectId,
+  issueTrackingIntegrations,
+}: IssueTrackingSectionProps) {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string | null>(null);
   const [issueTrackingFields, setIssueTrackingFields] = useState<Record<string, string>>({});
-  const [issueTrackingAttempted, setIssueTrackingAttempted] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [connectProvider, setConnectProvider] = useState<string | null>(null);
+  // What is on disk. The blur handler below fires on every focus change inside the provider
+  // form, including tabbing through fields without editing them.
+  const [persisted, setPersisted] = useState("");
 
   const projectIssueTrackingQuery = useProjectIssueTrackingConfig(projectId);
   const saveIssueTrackingMutation = useSaveProjectIssueTrackingConfig();
@@ -90,16 +85,6 @@ export const IssueTrackingSection = forwardRef<
   const selectedIntegration =
     issueTrackingIntegrations.find((i) => i.id === selectedIntegrationId) ?? null;
 
-  const isIssueTrackingValid =
-    !selectedIntegration ||
-    getRequiredIntegrationFields(selectedIntegration.provider).every((f) =>
-      issueTrackingFields[f]?.trim(),
-    );
-
-  useEffect(() => {
-    onValidityChange(isIssueTrackingValid);
-  }, [isIssueTrackingValid, onValidityChange]);
-
   // A different project starts from a blank form; the query effect below then fills it
   // from that project's stored config. Adjusted during render rather than from an effect
   // so the new project never paints the previous one's selection.
@@ -108,6 +93,7 @@ export const IssueTrackingSection = forwardRef<
     setPrevProjectId(projectId);
     setSelectedIntegrationId(null);
     setIssueTrackingFields({});
+    setPersisted("");
   }
 
   // Populate the form from the project's stored config once the query resolves. Adjusted
@@ -128,29 +114,38 @@ export const IssueTrackingSection = forwardRef<
     if (storedConfig) {
       if (matchedIntegrationId) setSelectedIntegrationId(matchedIntegrationId);
       setIssueTrackingFields(fieldsFromConfig(storedConfig));
+      setPersisted(JSON.stringify(storedConfig));
     }
   }
 
-  useImperativeHandle(ref, () => ({
-    save: async () => {
-      if (selectedIntegration) {
-        const config: ProjectIssueTrackingConfig = {
-          provider: selectedIntegration.provider,
-          integration_id: selectedIntegrationId,
-          owner: issueTrackingFields.owner || null,
-          repo: issueTrackingFields.repo || null,
-          project_path: issueTrackingFields.project_path || null,
-          team_id: issueTrackingFields.team_id || null,
-          project_key: issueTrackingFields.project_key || null,
-          project_name: issueTrackingFields.project_name || null,
-        };
-        await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: config });
-      }
-      setIssueTrackingAttempted(false);
-    },
-    isValid: () => isIssueTrackingValid,
-    setAttempted: (v: boolean) => setIssueTrackingAttempted(v),
-  }));
+  /// There is no Save button: the config persists as it is filled in.
+  ///
+  /// Only once every field the provider needs is present — a half-filled config would be stored
+  /// and then fail at the first `list_remote_issues`, which is worse than not storing it yet.
+  /// The integration and fields are passed in because a handler that just called `setState` still
+  /// sees the previous render's values.
+  function saveNow(
+    integration: { id: string; provider: string } | null,
+    fields: Record<string, string>,
+  ) {
+    if (!integration) return;
+    if (!getRequiredIntegrationFields(integration.provider).every((f) => fields[f]?.trim())) return;
+
+    const config: ProjectIssueTrackingConfig = {
+      provider: integration.provider,
+      integration_id: integration.id,
+      owner: fields.owner || null,
+      repo: fields.repo || null,
+      project_path: fields.project_path || null,
+      team_id: fields.team_id || null,
+      project_key: fields.project_key || null,
+      project_name: fields.project_name || null,
+    };
+    const next = JSON.stringify(config);
+    if (next === persisted) return;
+    setPersisted(next);
+    saveIssueTrackingMutation.mutate({ projectId, issueTracking: config });
+  }
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-4">
@@ -212,7 +207,9 @@ export const IssueTrackingSection = forwardRef<
                 onClick={() => {
                   setSelectedIntegrationId(integration.id);
                   setPickerOpen(false);
-                  setIssueTrackingAttempted(false);
+                  // Persists straight away for a provider that needs no extra fields (Linear);
+                  // for the rest `saveNow` waits until the form below is complete.
+                  saveNow(integration, issueTrackingFields);
                 }}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card hover:bg-muted/50 transition-colors"
               >
@@ -230,10 +227,7 @@ export const IssueTrackingSection = forwardRef<
 
             <button
               type="button"
-              onClick={() => {
-                setPickerOpen((open) => !open);
-                setIssueTrackingAttempted(false);
-              }}
+              onClick={() => setPickerOpen((open) => !open)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
                 pickerOpen
                   ? "border-primary bg-primary/5"
@@ -271,22 +265,26 @@ export const IssueTrackingSection = forwardRef<
       {/* Provider form when chip is selected */}
       {selectedIntegration && (
         <div className="space-y-3">
-          <IssueTrackingProviderForm
-            provider={selectedIntegration.provider}
-            integration={selectedIntegration}
-            fields={issueTrackingFields}
-            onFieldsChange={(f) => {
-              setIssueTrackingFields(f);
-              setIssueTrackingAttempted(false);
-            }}
-            showValidation={issueTrackingAttempted}
-          />
+          {/* React's `onBlur` is `focusout`, which bubbles — one handler covers every field the
+              provider form renders without each of them having to know how to save. */}
+          <div onBlur={() => saveNow(selectedIntegration, issueTrackingFields)}>
+            <IssueTrackingProviderForm
+              provider={selectedIntegration.provider}
+              integration={selectedIntegration}
+              fields={issueTrackingFields}
+              onFieldsChange={setIssueTrackingFields}
+              // Shown from the moment a provider is picked: with no Save button to press, an
+              // unmarked empty field is the only thing between the user and silent non-persistence.
+              showValidation
+            />
+          </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={async () => {
               await saveIssueTrackingMutation.mutateAsync({ projectId, issueTracking: null });
+              setPersisted("");
               setSelectedIntegrationId(null);
               setIssueTrackingFields({});
             }}
@@ -305,15 +303,19 @@ export const IssueTrackingSection = forwardRef<
         }}
         onSuccess={(id) => {
           setSelectedIntegrationId(id);
+          let fields = issueTrackingFields;
           if (detected && detected.provider === connectProvider) {
-            setIssueTrackingFields(fieldsFromConfig(detected.config));
+            fields = fieldsFromConfig(detected.config);
+            setIssueTrackingFields(fields);
           }
+          // Saved from the id and provider to hand rather than waiting for the integrations list
+          // to refetch — the newly connected account is not in it yet, so `selectedIntegration`
+          // is still null on this render.
+          if (connectProvider) saveNow({ id, provider: connectProvider }, fields);
           setConnectProvider(null);
           setPickerOpen(false);
         }}
       />
     </div>
   );
-});
-
-IssueTrackingSection.displayName = "IssueTrackingSection";
+}
