@@ -1,4 +1,5 @@
 import type { PendingComment } from "./DiffViewer";
+import { commentAnchor } from "./comment-anchor";
 import type { JsonValue } from "@/types/bindings";
 
 export function buildReviewFeedbackBlocks(data: {
@@ -11,7 +12,8 @@ export function buildReviewFeedbackBlocks(data: {
     const grouped = new Map<string, string[]>();
     for (const c of data.comments) {
       const list = grouped.get(c.filePath) ?? [];
-      list.push(c.lineNumber > 0 ? `line:${c.lineNumber} — ${c.text}` : c.text);
+      const anchor = commentAnchor(c);
+      list.push(anchor ? `${anchor} — ${c.text}` : c.text);
       grouped.set(c.filePath, list);
     }
     for (const [filePath, fileComments] of grouped) {

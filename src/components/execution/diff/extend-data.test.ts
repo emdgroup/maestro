@@ -18,6 +18,13 @@ describe("buildExtendData", () => {
     expect(buildExtendData(false, [comment("a", 4)])).toBeUndefined();
   });
 
+  it("keys a range comment by its last line, where DiffView puts the widget", () => {
+    const range: PendingComment = { ...comment("a", 18), fromLineNumber: 12 };
+    const data = buildExtendData(true, [range]);
+    expect(Object.keys(data!.newFile)).toEqual(["18"]);
+    expect(data!.newFile["18"].data.fromLineNumber).toBe(12);
+  });
+
   it("keys comments by line within their side and skips file-level ones", () => {
     const data = buildExtendData(true, [comment("a", 4), comment("b", 9, "old"), comment("c", 0)]);
     expect(Object.keys(data!.newFile)).toEqual(["4"]);

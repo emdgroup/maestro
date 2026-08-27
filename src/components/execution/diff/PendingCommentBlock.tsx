@@ -8,6 +8,8 @@ import { CaptureChip } from "@/components/execution/side-panel/annotations/Captu
 
 interface PendingCommentBlockProps {
   text: string;
+  /** Which lines this covers, e.g. `Lines 12–18`. Omitted for a comment on a single line. */
+  rangeLabel?: string;
   onRemove: () => void;
   onEdit?: (newText: string) => void;
   /** Send this one comment to the session now. Omitted where comments only leave in a batch. */
@@ -32,6 +34,7 @@ interface PendingCommentBlockProps {
 
 export function PendingCommentBlock({
   text,
+  rangeLabel,
   onRemove,
   onEdit,
   onSend,
@@ -45,6 +48,12 @@ export function PendingCommentBlock({
 }: PendingCommentBlockProps) {
   const [editing, setEditing] = useState(false);
   const frame = bare ? "p-3" : "mx-4 my-2 rounded-md border border-accent/40 bg-accent/8 p-3";
+
+  const range = rangeLabel ? (
+    <div className="mb-1 text-[10px] font-mono text-muted-foreground tabular-nums">
+      {rangeLabel}
+    </div>
+  ) : null;
 
   // Read-only, the capture is something to look at rather than an attachment to manage, so it is
   // shown full width instead of as the chip the editor uses.
@@ -156,6 +165,7 @@ export function PendingCommentBlock({
           <div className="flex items-center gap-0.5 ml-auto">{actions}</div>
         </div>
         <div className="px-3 py-2.5 text-sm">
+          {range}
           {capture}
           <MarkdownBlock text={text} />
         </div>
@@ -166,6 +176,7 @@ export function PendingCommentBlock({
   return (
     <div className={cn(frame, "flex items-start gap-2")}>
       <div className="text-sm flex-1 min-w-0">
+        {range}
         {capture}
         <MarkdownBlock text={text} />
       </div>

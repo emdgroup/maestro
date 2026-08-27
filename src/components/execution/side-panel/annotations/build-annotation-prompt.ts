@@ -1,4 +1,5 @@
 import { api } from "@/lib/tauri-utils";
+import { commentAnchor } from "@/components/execution/diff/comment-anchor";
 import type { Annotation } from "@/store/annotationStore";
 import type { CanvasComponent, CanvasSurface } from "@/components/execution/activity/types";
 import type { JsonValue } from "@/types/bindings";
@@ -38,7 +39,8 @@ export async function buildAnnotationBlocks(
   for (const a of annotations) {
     if (a.kind !== "diff") continue;
     const list = diffByFile.get(a.filePath) ?? [];
-    list.push(a.lineNumber > 0 ? `line:${a.lineNumber} — ${a.text}` : a.text);
+    const anchor = commentAnchor(a);
+    list.push(anchor ? `${anchor} — ${a.text}` : a.text);
     diffByFile.set(a.filePath, list);
   }
 

@@ -18,7 +18,10 @@ export type Annotation =
       id: string;
       kind: "diff";
       filePath: string;
+      /** The last line covered — see `PendingComment`, whose shape this mirrors. */
       lineNumber: number;
+      /** First line of a drag-selected range. Absent, or equal to `lineNumber`, means one line. */
+      fromLineNumber?: number;
       side: "old" | "new";
       text: string;
     }
@@ -53,7 +56,11 @@ interface AnnotationState {
 interface AnnotationActions {
   getAnnotations: (sessionKey: number, kind?: Annotation["kind"]) => Annotation[];
   addAnnotation: (sessionKey: number, annotation: Annotation) => void;
-  updateAnnotation: (sessionKey: number, id: string, text: string) => void;
+  /**
+   * `fromLineNumber` re-anchors a diff note whose range changed — commenting again on a range
+   * ending at the same line replaces the note, and its label has to follow the new selection.
+   */
+  updateAnnotation: (sessionKey: number, id: string, text: string, fromLineNumber?: number) => void;
   /** Drop a canvas annotation's capture, keeping the note and its component anchor. */
   clearAnnotationCapture: (sessionKey: number, id: string) => void;
   removeAnnotations: (sessionKey: number, ids: string[]) => void;
@@ -76,10 +83,14 @@ export const useAnnotationStore = create<AnnotationState & AnnotationActions>()(
         state.bySession[sessionKey] = list;
       }),
 
-    updateAnnotation: (sessionKey, id, text) =>
+    updateAnnotation: (sessionKey, id, text, fromLineNumber) =>
       set((state) => {
         const target = state.bySession[sessionKey]?.find((a) => a.id === id);
-        if (target) target.text = text;
+        if (!target) return;
+        target.text = text;
+        if (fromLineNumber !== undefined && target.kind === "diff") {
+          target.fromLineNumber = fromLineNumber;
+        }
       }),
 
     clearAnnotationCapture: (sessionKey, id) =>

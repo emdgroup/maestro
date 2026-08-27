@@ -18,10 +18,14 @@ import { displayItemPath, type DisplayItem } from "@/types/review";
 export interface DiffReviewApi {
   /** Every pending comment in the review, across all files. */
   comments: PendingComment[];
-  /** Create or replace. `lineNumber` 0 is the file's own note. */
+  /**
+   * Create or replace. `lineNumber` 0 is the file's own note; otherwise it is the *last* line
+   * covered, with `fromLineNumber` the first — equal to it for a comment on a single line.
+   */
   onSubmitComment: (
     filePath: string,
     lineNumber: number,
+    fromLineNumber: number,
     side: "old" | "new",
     text: string,
   ) => void;
@@ -101,6 +105,7 @@ export function DiffFileStack({
   const [activeCommentLine, setActiveCommentLine] = useState<{
     filePath: string;
     lineNumber: number;
+    fromLineNumber: number;
     side: "old" | "new";
   } | null>(null);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -255,13 +260,13 @@ export function DiffFileStack({
       return {
         reviewMode: true,
         comments: comments.filter((c) => c.filePath === filePath && c.lineNumber !== 0),
-        onAddComment: (lineNumber: number, side: "old" | "new") =>
-          setActiveCommentLine({ filePath, lineNumber, side }),
+        onAddComment: (lineNumber: number, fromLineNumber: number, side: "old" | "new") =>
+          setActiveCommentLine({ filePath, lineNumber, fromLineNumber, side }),
         onCancelComment: () => setActiveCommentLine(null),
         onSubmitComment: (text: string) => {
           const line = activeCommentLine;
           if (!line || line.filePath !== filePath) return;
-          onSubmitComment(filePath, line.lineNumber, line.side, text);
+          onSubmitComment(filePath, line.lineNumber, line.fromLineNumber, line.side, text);
           setActiveCommentLine(null);
         },
         onRemoveComment,
@@ -289,7 +294,7 @@ export function DiffFileStack({
       const comment = comments.find((c) => c.filePath === filePath && c.lineNumber === 0) ?? null;
       return {
         comment: comment ? { id: comment.id, text: comment.text } : null,
-        onSubmit: (text: string) => onSubmitComment(filePath, 0, "new", text),
+        onSubmit: (text: string) => onSubmitComment(filePath, 0, 0, "new", text),
         onRemove: () => comment && onRemoveComment(comment.id),
         onSend: onSendComment && comment ? () => onSendComment(comment.id) : undefined,
         sendDisabled,

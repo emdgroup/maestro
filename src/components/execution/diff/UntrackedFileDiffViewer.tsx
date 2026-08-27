@@ -14,7 +14,7 @@ interface UntrackedFileDiffViewerProps {
   reviewMode?: boolean;
   comments?: PendingComment[];
   activeCommentLine?: { lineNumber: number; side: "old" | "new" } | null;
-  onAddComment?: (lineNumber: number, side: "old" | "new") => void;
+  onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
   onRemoveComment?: (commentId: string) => void;
   onEditComment?: (commentId: string, newText: string) => void;
   onCancelComment?: () => void;
