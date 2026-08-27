@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon, Folder } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { generateSessionName, slugifyName } from "@/lib/generateSessionName";
+import { generateSessionName, slugifyName, MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
 import { cn } from "@/lib/utils.ts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -107,7 +107,7 @@ export function SpawnSessionDialog({
           repoPath,
           taskId: null,
           baseBranch,
-          newBranchName: `maestro/${slugifyName(resolvedName) || generateSessionName()}`,
+          newBranchName: `${MAESTRO_BRANCH_PREFIX}${slugifyName(resolvedName) || generateSessionName()}`,
         });
         created = resolved.created;
         worktree = {
@@ -426,7 +426,7 @@ export function SpawnSessionDialog({
               />
               <p className="text-[10px] text-muted-foreground/40">
                 {creatingWorktree
-                  ? `Also names the branch: maestro/${slugifyName(sessionName) || "<generated>"}`
+                  ? `Also names the branch: ${MAESTRO_BRANCH_PREFIX}${slugifyName(sessionName) || "<generated>"}`
                   : "Leave blank to auto-generate a name."}
               </p>
             </div>

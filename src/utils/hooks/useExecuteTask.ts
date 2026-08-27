@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
-import { slugifyName } from "@/lib/generateSessionName";
+import { taskBranchName } from "@/lib/generateSessionName";
 import type { Task, JsonValue, ConnectionKey, AgentRole } from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
@@ -246,7 +246,7 @@ export function useExecuteTask(
             repoPath: projectPath,
             taskId: task.id,
             baseBranch: task.base_branch,
-            newBranchName: `${task.id}-${slugifyName(task.title)}`,
+            newBranchName: taskBranchName(task.id, task.title),
           })
         : { cwd: projectPath, branchName: null };
 

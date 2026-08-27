@@ -14,7 +14,7 @@ pub mod task;
 pub use core::{
     get_git_connection, get_project_with_git_conn, init_db, AcpState, AppState, PtyState, SshState,
 };
-pub use execution::{spawn_agent_cli_pty, ProcessOutput, PtySession};
+pub use execution::{spawn_agent_cli_pty, PtySession};
 pub use models::{
     worktree_path_for_task, ActiveSessionInfo, AppSettings, CredentialSource, GitConnection,
     IntegrationStatus, IssueTrackingConfig, Project, ProjectConfig, ProjectConfigRequest,
@@ -65,6 +65,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::delete_worktree,
             crate::ipc::cleanup_worktree_if_clean,
             crate::ipc::cleanup_zombie_worktrees,
+            crate::ipc::list_prunable_branches,
+            crate::ipc::prune_branches,
             crate::ipc::spawn_interactive_execution,
             crate::ipc::drain_ready_queue,
             crate::ipc::get_queue_capacity,

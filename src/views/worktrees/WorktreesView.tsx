@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   Plus,
   RefreshCw,
+  Scissors,
   SearchIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
@@ -18,13 +19,14 @@ import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
-import { useWorktreesQuery } from "@/services/worktree.service";
+import { useWorktreesQuery, usePrunableBranchesQuery } from "@/services/worktree.service";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
 import { WorktreeDiffPanel } from "@/components/execution/diff/WorktreeDiffPanel";
 import { DeleteWorktreeDialog } from "@/components/execution/worktree-dialog/DeleteWorktreeDialog";
 import { CreateWorktreeDialog } from "@/components/execution/worktree-dialog/CreateWorktreeDialog";
+import { PruneBranchesDialog } from "@/components/execution/worktree-dialog/PruneBranchesDialog";
 import type { WorktreeWithStatus } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { toast } from "sonner";
@@ -53,6 +55,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     isLoading,
     isFetching,
   } = useWorktreesQuery(isGitRepo ? projectId : undefined, isGitRepo ? repoPath : undefined);
+  const { data: prunableBranches = [], refetch: refetchPrunableBranches } =
+    usePrunableBranchesQuery(isGitRepo ? projectId : undefined);
   const activeTab = useActiveTab();
   const pendingWorktreeId = usePendingWorktreeId();
   const { clearPendingWorktree } = useNavigationActions();
@@ -64,12 +68,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
   const [worktreeToDelete, setWorktreeToDelete] = useState<WorktreeWithStatus | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showPruneDialog, setShowPruneDialog] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useShortcuts("worktrees", {
     "wt-new": () => setShowCreateDialog(true),
     "wt-refresh": () => {
       void refetchWorktrees();
+      void refetchPrunableBranches();
     },
     "focus-search": () => {
       searchInputRef.current?.focus();
@@ -82,8 +88,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   useEffect(() => {
     if (activeTab === "worktrees") {
       void refetchWorktrees();
+      void refetchPrunableBranches();
     }
-  }, [activeTab, refetchWorktrees]);
+  }, [activeTab, refetchWorktrees, refetchPrunableBranches]);
 
   // Deep-link: pendingWorktreeId overrides selection once the worktree list resolves.
   // The local selection is adjusted during render so the view opens on the right worktree
@@ -239,6 +246,17 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                     <TooltipContent>Refresh worktrees</TooltipContent>
                   </Tooltip>
                 </ShortcutHint>
+                {prunableBranches.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => setShowPruneDialog(true)}
+                  >
+                    <Scissors className="w-3.5 h-3.5 mr-1" />
+                    <span className="text-xs">Prune branches ({prunableBranches.length})</span>
+                  </Button>
+                )}
                 {viewMode === "grouped" && (
                   <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
                     <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
@@ -345,6 +363,16 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
         projectId={projectId ?? 0}
         repoPath={repoPath ?? ""}
       />
+      {/* Remounted per open so the selection is seeded from a fresh candidate list rather than
+          carrying over ticks made against branches that may since have gone. */}
+      {showPruneDialog && (
+        <PruneBranchesDialog
+          open
+          onOpenChange={setShowPruneDialog}
+          projectId={projectId ?? 0}
+          branches={prunableBranches}
+        />
+      )}
     </div>
   );
 };
