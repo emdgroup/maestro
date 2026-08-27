@@ -109,6 +109,21 @@ function parseGitHeaderPath(rest: string): string {
   return rest.trim();
 }
 
+/**
+ * The pre-image path from a `--- ` header line, or null when the base has no such file.
+ *
+ * Git writes `--- /dev/null` for an addition and quotes non-ASCII paths the same way the
+ * `diff --git` line does. This is read rather than derived from the file's own name because a
+ * rename gives the two different values, and it is the old one that `git show <base>:<path>`
+ * needs.
+ */
+function parseOldHeaderPath(rest: string): string | null {
+  const trimmed = rest.trim();
+  if (trimmed === "/dev/null") return null;
+  const unquoted = unquoteGitPath(trimmed);
+  return unquoted.startsWith("a/") ? unquoted.slice(2) : unquoted;
+}
+
 export function parseDiffString(diffString: string): DiffFileWithName[] {
   const files: DiffFileWithName[] = [];
   const lines = diffString.split("\n");
@@ -122,6 +137,9 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   // Set when the header describes a change that carries no hunks (rename, binary,
   // mode bits). Without it those files never reach the UI at all.
   let currentNote: string | null = null;
+  // The file's path at the diff's base, taken from the `---` header rather than assumed equal to
+  // `currentFile`, which is the post-image name.
+  let currentOldPath: string | null = null;
 
   const flushFile = () => {
     if (!currentFile) return;
@@ -139,6 +157,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       hunks: currentHunkLines.length > 0 ? [currentHunkLines.join("\n")] : [],
       status: currentStatus,
       ...(currentNote ? { note: currentNote } : {}),
+      ...(currentOldPath ? { oldPath: currentOldPath } : {}),
     });
   };
 
@@ -154,6 +173,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       inHunk = false;
       currentStatus = "M";
       currentNote = null;
+      currentOldPath = null;
     }
     // Detect new/deleted file mode before the first hunk
     else if (!inHunk && line.includes("new file mode")) {
@@ -175,6 +195,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     }
     // Capture the --- / +++ header lines that the library parser requires
     else if (!inHunk && (line.startsWith("--- ") || line.startsWith("+++ "))) {
+      if (line.startsWith("--- ")) currentOldPath = parseOldHeaderPath(line.slice(4));
       currentHunkLines.push(line);
     }
     // Hunk header line

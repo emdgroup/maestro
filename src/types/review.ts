@@ -49,6 +49,11 @@ export interface DiffFileWithName extends DiffFile {
   status?: "A" | "M" | "D";
   /** Set for changes git describes without hunks (rename, binary, mode bits). */
   note?: string;
+  /**
+   * The path this file had at the diff's base, which is where its pre-image has to be looked up.
+   * Differs from `fileName` for a rename, and is absent for a file the base does not have at all.
+   */
+  oldPath?: string;
 }
 
 /**

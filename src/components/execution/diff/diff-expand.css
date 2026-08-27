@@ -1,0 +1,61 @@
+/**
+ * The "load surrounding context" affordance on a chunk header.
+ *
+ * @git-diff-view only renders its expand arrows once the DiffFile holds a full copy of one side
+ * of the file, and Maestro fetches that lazily — so until it arrives the library draws a blank
+ * spacer in the action cell and there is nowhere to mount a React button. This paints the cell
+ * instead, and `bindHunkHeaderPress` supplies the click.
+ *
+ * Scoped under .diff-context-request, which the viewer drops the moment content is attached, so
+ * this cannot end up layered over the real arrows.
+ */
+
+.diff-context-request td.diff-line-hunk-action {
+  cursor: pointer;
+  position: relative;
+}
+
+.diff-context-request td.diff-line-hunk-action::after {
+  content: "⋯";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.45;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease;
+}
+
+.diff-context-request td.diff-line-hunk-action:hover::after {
+  opacity: 1;
+  background-color: color-mix(in oklch, currentColor 12%, transparent);
+}
+
+/**
+ * Expanded context has to read as ordinary context.
+ *
+ * The library paints lines revealed by an expansion from `--diff-expand-content--` rather than
+ * `--diff-plain-content--`, to hint that they were not part of the change. In the stock themes
+ * that hint is a full step away from the in-diff colour — #161b22 against #0d1117 in dark, which
+ * reads as a rendering fault rather than as a hint. In light it is #fafafa against #ffffff and
+ * nearly invisible, which is why the seam only shows in dark.
+ *
+ * Retargeting the cell rather than redefining the variable, because the unified view also paints
+ * its *gutter* from `--diff-expand-content--` (the split view uses `--diff-expand-lineNumber--`
+ * for the same cell). Those gutters already match their in-diff neighbours, and overriding the
+ * variable would break them to fix the content. The line-number text colour needs nothing —
+ * `--diff-expand-lineNumber-color--` and its plain counterpart are already the same value.
+ *
+ * `!important` because the library sets these backgrounds as inline styles, which nothing else
+ * can outrank. `data-state="plain"` is the library's own marker for a row carrying no diff line,
+ * which is exactly the set of rows an expansion reveals.
+ */
+.diff-tailwindcss-wrapper tr[data-state="plain"] > td.diff-line-content,
+.diff-tailwindcss-wrapper tr[data-state="plain"] > td.diff-line-old-content,
+.diff-tailwindcss-wrapper tr[data-state="plain"] > td.diff-line-new-content {
+  background-color: var(--diff-plain-content--) !important;
+}

@@ -87,6 +87,9 @@ export function useReviewChangesData({
   return {
     projectId,
     cwd,
+    // Handed back because expanding a hunk reads the file's pre-image, which only exists at this
+    // target's base revision — the diff string alone does not say what that revision was.
+    diffTarget,
     allDisplayItems,
     loading,
     totalFileCount,

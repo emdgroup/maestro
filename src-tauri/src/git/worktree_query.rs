@@ -256,6 +256,28 @@ async fn resolve_divergence_point(
     ))
 }
 
+/// The revision a `DiffTarget` compares *from* — the "old" side of every hunk it produces.
+///
+/// This is what `git show <rev>:<path>` has to be given to recover the pre-image of a file, so it
+/// must stay in step with the commands `get_worktree_diff` below actually runs. A mismatch does
+/// not fail loudly: the blob would simply not match the diff, and the diff view would expand to
+/// lines that were never in the file being reviewed.
+async fn base_rev_for(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+) -> Result<String, String> {
+    match diff_target {
+        DiffTarget::Head => Ok("HEAD".to_string()),
+        DiffTarget::Commit { sha } => Ok(sha.clone()),
+        DiffTarget::BranchAll { branch } => {
+            resolve_divergence_point(git_conn, worktree_path, branch).await
+        }
+        // `from` is the range's base, so it is the pre-image even though `to` is what moved.
+        DiffTarget::CommitRange { from, .. } => Ok(from.clone()),
+    }
+}
+
 // ============================================================================
 // get_worktree_diff — REQ-07
 // ============================================================================
@@ -507,6 +529,55 @@ pub async fn get_untracked_file_content(
     .await
 }
 
+// ============================================================================
+// get_file_content_at_base — the pre-image of one file, for diff hunk expansion
+// ============================================================================
+
+/// Beyond this a blob is not worth shipping: the diff view skips syntax highlighting past 2000
+/// lines anyway, and the whole point of fetching it is to render it.
+const MAX_BLOB_BYTES: usize = 2 * 1024 * 1024;
+
+/// One file's contents at the revision a diff was taken from.
+///
+/// `@git-diff-view` can only offer its hunk-expansion controls when it holds a full copy of one
+/// side of the file; given the old side it reconstructs the new one from the hunks. This is
+/// fetched per file, when the user asks to expand, because attaching it to every file in a review
+/// costs a whole-file syntax highlight per card and that is what makes scrolling a large review
+/// stutter.
+///
+/// `Ok(None)` rather than an error for anything unusable — a path absent at the base (an added
+/// file, or a rename whose pre-image is under its old name), or a blob past the size cap. The
+/// caller renders exactly what it renders today when there is no content, so a miss costs the
+/// expansion controls rather than the diff.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_file_content_at_base(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    diff_target: DiffTarget,
+    file_path: String,
+) -> Result<Option<String>, String> {
+    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let base = base_rev_for(&git_conn, &worktree_path, &diff_target).await?;
+    Ok(file_content_at(&git_conn, &worktree_path, &base, &file_path).await)
+}
+
+async fn file_content_at(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    base: &str,
+    file_path: &str,
+) -> Option<String> {
+    // `git show` exits non-zero for a path the revision does not have, which is an expected answer
+    // here rather than a failure, so the error becomes None instead of propagating.
+    let object = format!("{}:{}", base, file_path);
+    let content = crate::git::run_git_in_dir(git_conn, worktree_path, &["show", &object])
+        .await
+        .ok()?;
+    (content.len() <= MAX_BLOB_BYTES).then_some(content)
+}
+
 #[cfg(test)]
 mod commit_log_tests {
     use super::parse_commit_log;
@@ -633,5 +704,91 @@ mod tests {
             .expect_err("an unknown branch must not silently resolve");
 
         assert!(error.contains("no-such-branch"), "error should name the branch: {}", error);
+    }
+
+    /// A repository with one commit on `main` and one on `task`, so every `DiffTarget` variant has
+    /// a distinct correct answer and a variant returning the wrong one cannot pass by coincidence.
+    fn repo_with_two_commits(repo: &Path) -> (String, String) {
+        git(repo, &["init", "-b", "main"]);
+        git(repo, &["config", "user.name", "Maestro Test"]);
+        git(repo, &["config", "user.email", "maestro@example.test"]);
+        git(repo, &["config", "commit.gpgsign", "false"]);
+        git(repo, &["config", "core.hooksPath", ""]);
+
+        std::fs::write(repo.join("a.txt"), "one\ntwo\nthree\n").expect("write base file");
+        git(repo, &["add", "a.txt"]);
+        git(repo, &["commit", "-m", "base"]);
+        let base = git(repo, &["rev-parse", "HEAD"]);
+
+        git(repo, &["checkout", "-b", "task"]);
+        std::fs::write(repo.join("a.txt"), "one\ntwo CHANGED\nthree\n").expect("write task file");
+        std::fs::write(repo.join("added.txt"), "new\n").expect("write added file");
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "task change"]);
+        let tip = git(repo, &["rev-parse", "HEAD"]);
+
+        (base, tip)
+    }
+
+    #[tokio::test]
+    async fn base_rev_matches_what_each_diff_target_diffs_from() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        let (base, tip) = repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        let resolve = |target: DiffTarget| {
+            let connection = connection.clone();
+            let path = path.clone();
+            async move { base_rev_for(&connection, &path, &target).await }
+        };
+
+        assert_eq!(resolve(DiffTarget::Head).await.expect("HEAD resolves"), "HEAD");
+        assert_eq!(
+            resolve(DiffTarget::Commit { sha: base.clone() }).await.expect("a sha resolves"),
+            base
+        );
+        assert_eq!(
+            resolve(DiffTarget::BranchAll { branch: "main".to_string() })
+                .await
+                .expect("a branch resolves through its merge base"),
+            base
+        );
+        // The range's pre-image is `from`, not `to` — reversing them would expand to the wrong side.
+        assert_eq!(
+            resolve(DiffTarget::CommitRange { from: base.clone(), to: tip })
+                .await
+                .expect("a range resolves"),
+            base
+        );
+    }
+
+    #[tokio::test]
+    async fn file_content_at_reads_the_pre_image_not_the_working_tree() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        let (base, _tip) = repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        let content = file_content_at(&connection, &path, &base, "a.txt")
+            .await
+            .expect("the file exists at the base commit");
+        assert_eq!(content, "one\ntwo\nthree\n", "must be the blob at the base, not HEAD's");
+    }
+
+    /// A file added on the branch has no pre-image, and neither does a rename's post-image path.
+    /// Both must degrade to "no expansion available" rather than failing the whole request.
+    #[tokio::test]
+    async fn file_content_at_returns_none_for_a_path_absent_at_the_base() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        let (base, _tip) = repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        assert!(file_content_at(&connection, &path, &base, "added.txt").await.is_none());
+        assert!(file_content_at(&connection, &path, &base, "never-existed.txt").await.is_none());
     }
 }

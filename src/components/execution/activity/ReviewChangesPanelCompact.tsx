@@ -17,6 +17,7 @@ import {
   type DiffReviewApi,
 } from "@/components/execution/diff/DiffFileStack";
 import { displayItemPath, type DisplayItem } from "@/types/review";
+import type { DiffTarget } from "@/types/bindings";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AnnotationBar } from "@/components/execution/side-panel/annotations/AnnotationBar";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
@@ -39,6 +40,8 @@ interface ReviewChangesPanelCompactProps {
   diffError: unknown;
   projectId: number | null;
   cwd: string | null;
+  /** What the diff compares against — the base revision a hunk expansion reads its context from. */
+  diffTarget: DiffTarget;
   truncationInfo?: TruncationInfo | null;
   scope: "session" | "uncommitted";
   diffViewMode: DiffModeEnum;
@@ -64,6 +67,7 @@ export function ReviewChangesPanelCompact({
   diffError,
   projectId,
   cwd,
+  diffTarget,
   truncationInfo,
   scope,
   diffViewMode,
@@ -260,6 +264,7 @@ export function ReviewChangesPanelCompact({
           items={allDisplayItems}
           projectId={projectId}
           cwd={cwd}
+          diffTarget={diffTarget}
           diffViewMode={diffViewMode}
           selectedIndex={selectedFileIndex}
           onSelectedIndexChange={setSelectedFileIndex}

@@ -68,6 +68,25 @@ describe("scopeRangeToHunk", () => {
     });
   });
 
+  /**
+   * The reason the walk stops on `isHide` rather than on a hunk index: expanding a chunk header
+   * un-hides the lines under it, and a drag through them has to keep going. Anything scoping by
+   * hunk membership would clamp at 6 here and silently drop the lines the user just revealed.
+   */
+  it("follows a drag through lines a hunk expansion revealed", () => {
+    const file = build(true);
+    const hunkIndexes = [...Array(file.unifiedLineLength).keys()].filter((i) =>
+      file.getUnifiedHunkLine(i),
+    );
+    expect(hunkIndexes.length, "the diff must render chunk headers to expand from").toBeGreaterThan(
+      0,
+    );
+    for (const index of hunkIndexes) file.onUnifiedHunkExpand("all", index);
+
+    // The gap between the two hunks is now real content, so nothing stops the walk before 51.
+    expect(scope(file, 4, 51)).toEqual({ side: "new", startLineNumber: 4, endLineNumber: 51 });
+  });
+
   it("declines to scope a drag that has not moved yet", () => {
     expect(scope(build(false), 4, 4)).toBeNull();
   });

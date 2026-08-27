@@ -203,6 +203,105 @@ describe("parseDiffString", () => {
   });
 });
 
+/**
+ * `oldPath` is what `git show <base>:<path>` is given to fetch a file's pre-image, which is what
+ * enables the diff view's hunk-expansion controls. Getting it wrong is silent — the fetch misses
+ * and the controls simply never appear — so each shape git can emit is pinned here.
+ */
+describe("parseDiffString old path", () => {
+  it("reads the pre-image path from the --- header", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    expect(parseDiffString(diff)[0].oldPath).toBe("src/a.ts");
+  });
+
+  it("keeps the old name for a rename that also changed content", () => {
+    const diff = [
+      "diff --git a/src/old.ts b/src/new.ts",
+      "similarity index 90%",
+      "rename from src/old.ts",
+      "rename to src/new.ts",
+      "--- a/src/old.ts",
+      "+++ b/src/new.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    const [file] = parseDiffString(diff);
+    expect(file.fileName).toBe("src/new.ts");
+    expect(file.oldPath).toBe("src/old.ts");
+  });
+
+  it("leaves it unset for an added file", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/src/a.ts",
+      "@@ -0,0 +1 @@",
+      "+added",
+    ].join("\n");
+
+    expect(parseDiffString(diff)[0].oldPath).toBeUndefined();
+  });
+
+  it("unquotes a non-ASCII pre-image path", () => {
+    const diff = [
+      'diff --git "a/src/caf\\303\\251.ts" "b/src/caf\\303\\251.ts"',
+      '--- "a/src/caf\\303\\251.ts"',
+      '+++ "b/src/caf\\303\\251.ts"',
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    expect(parseDiffString(diff)[0].oldPath).toBe("src/café.ts");
+  });
+
+  it("keeps a pre-image path containing spaces intact", () => {
+    const diff = [
+      "diff --git a/docs/my notes.md b/docs/my notes.md",
+      "--- a/docs/my notes.md",
+      "+++ b/docs/my notes.md",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+
+    expect(parseDiffString(diff)[0].oldPath).toBe("docs/my notes.md");
+  });
+
+  it("does not carry one file's pre-image path onto the next", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/src/b.ts",
+      "@@ -0,0 +1 @@",
+      "+added",
+    ].join("\n");
+
+    const files = parseDiffString(diff);
+    expect(files).toHaveLength(2);
+    expect(files[0].oldPath).toBe("src/a.ts");
+    expect(files[1].oldPath).toBeUndefined();
+  });
+});
+
 describe("parseDiffString status detection", () => {
   it("returns status 'A' for new file mode", () => {
     const diff = [

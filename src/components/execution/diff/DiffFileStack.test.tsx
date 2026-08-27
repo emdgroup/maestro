@@ -6,10 +6,10 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { setAutoIntersect, intersect, observedElements } from "@/test/intersection-observer";
 
 // The stack's own wiring is what is under test, not the diff renderer — and the real one pulls in
-// Shiki. The stub reports the per-file review props it was handed, which is the contract that
-// matters here.
-vi.mock("./DiffViewer", () => ({
-  DiffViewer: ({
+// Shiki, plus a query for the file's pre-image that would need a QueryClient. The stub reports the
+// per-file review props it was handed, which is the contract that matters here.
+vi.mock("./ExpandableDiffViewer", () => ({
+  ExpandableDiffViewer: ({
     comments,
     onAddComment,
     onSubmitComment,
@@ -68,6 +68,7 @@ function renderStack(
       items={items}
       projectId={1}
       cwd="/tmp/wt"
+      diffTarget={{ type: "Head" }}
       diffViewMode={DiffModeEnum.Unified}
       selectedIndex={0}
       onSelectedIndexChange={() => {}}

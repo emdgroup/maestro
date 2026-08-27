@@ -509,6 +509,7 @@ export function TaskReviewPanel({
           items={items}
           projectId={projectId}
           cwd={reviewPath}
+          diffTarget={diffTarget}
           diffViewMode={diffViewMode}
           selectedIndex={selectedFileIndex}
           onSelectedIndexChange={setSelectedFileIndex}

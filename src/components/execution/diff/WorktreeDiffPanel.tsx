@@ -162,6 +162,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           items={items}
           projectId={projectId}
           cwd={worktreePath}
+          diffTarget={diffTarget}
           diffViewMode={diffViewMode}
           selectedIndex={selectedFileIndex}
           onSelectedIndexChange={setSelectedFileIndex}
