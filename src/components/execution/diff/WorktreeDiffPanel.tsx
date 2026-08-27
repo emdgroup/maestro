@@ -120,8 +120,7 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
           rather than sitting high in its own band. */}
       <div className={cn("shrink-0 bg-card", panel.inset && "pt-2")}>
         <DiffActionBar
-          mode="worktree"
-          branchName={worktree.branch_name}
+          centerLabel={worktree.branch_name}
           className="bg-card border-b-0"
           leadingSlot={
             <>

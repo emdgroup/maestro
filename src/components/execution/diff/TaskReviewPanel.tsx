@@ -378,9 +378,7 @@ export function TaskReviewPanel({
           above rather than sitting high in its own band. */}
       <div className={cn("shrink-0 bg-card", panel.inset && "pt-2")}>
         <DiffActionBar
-          mode="review"
-          branchName=""
-          centerLabel={`Review: ${task.title}`}
+          centerLabel={task.title}
           className="bg-card border-b-0"
           leadingSlot={
             <>

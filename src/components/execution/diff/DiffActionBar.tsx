@@ -5,8 +5,6 @@ import { Button } from "@/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 
 interface DiffActionBarProps {
-  mode?: "worktree" | "review" | "session";
-  branchName?: string;
   /** Sits at the far left — the file-panel toggle and the scope selector. */
   leadingSlot?: React.ReactNode;
   diffViewMode: DiffModeEnum;
@@ -14,15 +12,15 @@ interface DiffActionBarProps {
   onClose: () => void;
   viewedCount?: number;
   totalFileCount?: number;
+  /** The host's own decision control — task review's Approve split button. */
   splitButtonNode?: React.ReactNode;
+  /** What is being read: a task's title, a worktree's branch. */
   centerLabel?: string;
   /** Chrome, for a host that seats the bar on the same surface as its file panel. */
   className?: string;
 }
 
 export function DiffActionBar({
-  mode = "worktree",
-  branchName,
   leadingSlot,
   diffViewMode,
   onDiffViewModeChange,
@@ -43,25 +41,19 @@ export function DiffActionBar({
       )}
     >
       {/* Left side: the host's own controls */}
-      <div className="flex items-center gap-2 z-10">{leadingSlot}</div>
+      <div className="flex items-center gap-2 shrink-0">{leadingSlot}</div>
 
-      {/* Center section */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        {mode === "worktree" && branchName && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48">{branchName}</span>
-        )}
-        {mode === "review" && centerLabel && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48 text-accent">
-            {centerLabel}
-          </span>
-        )}
-        {mode === "session" && centerLabel && (
-          <span className="font-mono text-sm font-semibold truncate max-w-48">{centerLabel}</span>
+      {/* Centred in what the two control groups leave, rather than absolutely positioned across
+          the whole bar: a title pinned to the bar's true centre has to be capped short enough to
+          clear the widest side, so it truncated names that had room to spare. */}
+      <div className="flex-1 min-w-0 flex justify-center px-3">
+        {centerLabel && (
+          <span className="font-mono text-sm font-semibold truncate">{centerLabel}</span>
         )}
       </div>
 
       {/* Right side: viewed counter + unified/split toggle + split button node + close button */}
-      <div className="ml-auto flex items-center gap-2 z-10">
+      <div className="flex items-center gap-2 shrink-0">
         {viewedCount != null && viewedCount > 0 && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <CheckCheck className="size-3.5" />
@@ -87,7 +79,7 @@ export function DiffActionBar({
             <Columns2 className="size-3.5" />
           </ToggleGroupItem>
         </ToggleGroup>
-        {mode === "review" && splitButtonNode}
+        {splitButtonNode}
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="size-4" />
         </Button>
