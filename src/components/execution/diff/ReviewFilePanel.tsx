@@ -87,7 +87,11 @@ export function ReviewFilePanel({
  * The same panel floating over the diff, for a container too narrow to seat it alongside.
  *
  * It covers the container rather than sitting in a rail, so there is no "outside" left to click:
- * picking a file dismisses it, as does Escape or the host's toggle.
+ * picking a file dismisses it, as does the host's toggle.
+ *
+ * Escape does too, but only where the review is not inside a dialog — base-ui consumes the key
+ * before a `window` listener can see it, so in task review and the worktree view the dialog is
+ * what Escape reaches. That is why it is not the only way out.
  */
 export function ReviewFilePanelOverlay({
   onDismiss,

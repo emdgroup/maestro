@@ -71,9 +71,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     "wt-refresh": () => {
       void refetchWorktrees();
     },
-    "wt-close-diff": () => {
-      if (selectedWorktreePath !== null) setSelectedWorktreePath(null);
-    },
     "focus-search": () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
@@ -306,13 +303,17 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
 
       {/* Over the grid rather than beside it, the same way a task review sits over the board: the
           worktree you opened stays visible behind, and the diff gets the whole window instead of
-          half of it. Dismissal is the bar's own close, not Escape or the margin — the panel holds
-          a scope and a scroll position the user set up. */}
+          half of it.
+
+          Escape closes it, and has to be handled here rather than through the shortcut registry:
+          base-ui's dialog consumes the key itself, so a `window` listener — which is all
+          `useShortcuts` has — never sees it. Unlike a task review this panel is a pure read, with
+          no comments to lose, so there is nothing to protect the user from. A click on the margin
+          still does nothing: that is a slip, not a decision. */}
       <Dialog
         open={selectedWorktreePath != null && selectedWorktree != null}
         onOpenChange={(open, details) => {
-          if (open) return;
-          if (details.reason === "escape-key" || details.reason === "outside-press") return;
+          if (open || details.reason === "outside-press") return;
           setSelectedWorktreePath(null);
         }}
       >
