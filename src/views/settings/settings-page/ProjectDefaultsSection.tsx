@@ -7,12 +7,13 @@ import { Bot, LogOut, Loader2, Check, GitBranch } from "lucide-react";
 import { Switch } from "@/ui/switch";
 import type { ConnectionKey, DiscoveredAgent } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
+import { useIsGitRepo } from "@/store/projectStore";
 import { cn } from "@/lib/utils";
 
 export interface ProjectSettingsFormData {
   default_agent: string;
   startup_tab: string;
-  default_existing_worktree: boolean;
+  default_worktree: boolean;
 }
 
 interface ProjectDefaultsSectionProps {
@@ -106,10 +107,8 @@ export function ProjectDefaultsSection({
   connection,
 }: ProjectDefaultsSectionProps) {
   const { field: defaultAgentField } = useController({ control, name: "default_agent" });
-  const { field: existingWorktreeField } = useController({
-    control,
-    name: "default_existing_worktree",
-  });
+  const { field: defaultWorktreeField } = useController({ control, name: "default_worktree" });
+  const isGitRepo = useIsGitRepo();
 
   return (
     <>
@@ -149,26 +148,33 @@ export function ProjectDefaultsSection({
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-muted-foreground" />
-          Sessions
-        </h3>
+      {/* A non-git project cannot have worktrees at all, so the choice does not exist there. */}
+      {isGitRepo && (
+        <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-muted-foreground" />
+            Worktree
+          </h3>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">Reuse an existing worktree</div>
-            <div className="text-xs text-muted-foreground">
-              New sessions start on "Existing" instead of creating their own worktree
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">
+                Always use a worktree by default
+              </div>
+              <div className="text-xs text-muted-foreground">
+                New tasks are created with worktree isolation on, and new sessions start on "New"
+                rather than reusing an existing worktree. Either can still be changed per task or
+                per session.
+              </div>
             </div>
+            <Switch
+              checked={defaultWorktreeField.value}
+              onCheckedChange={defaultWorktreeField.onChange}
+              className="data-unchecked:bg-muted data-unchecked:border-border/50"
+            />
           </div>
-          <Switch
-            checked={existingWorktreeField.value}
-            onCheckedChange={existingWorktreeField.onChange}
-            className="data-unchecked:bg-muted data-unchecked:border-border/50"
-          />
         </div>
-      </div>
+      )}
     </>
   );
 }

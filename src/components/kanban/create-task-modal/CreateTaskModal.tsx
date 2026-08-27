@@ -13,6 +13,7 @@ import {
   useListRemoteIssuesQuery,
 } from "@/services/task.service";
 import { useProjectIssueTrackingConfig } from "@/services/integration.service";
+import { useProjectSettings } from "@/services/project.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";
 import {
@@ -47,6 +48,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
 
   const { data: issueConfig } = useProjectIssueTrackingConfig(projectId);
   const hasProvider = issueConfig != null;
+
+  const { data: projectSettings } = useProjectSettings(projectId);
+  const defaultIsolatedWorktree = projectSettings?.default_worktree ?? true;
 
   // Keep for currentBranch initialization only — BranchPicker fetches the full list internally
   const { data: branchData } = useProjectBranchesQuery(isOpen ? projectId : null);
@@ -93,7 +97,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     defaultValues: {
       baseBranch: "",
       priority: "None",
-      isolatedWorktree: true,
+      isolatedWorktree: defaultIsolatedWorktree,
     },
   });
 
@@ -125,7 +129,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       reset({
         baseBranch: currentBranch ?? "",
         priority: "None",
-        isolatedWorktree: true,
+        isolatedWorktree: defaultIsolatedWorktree,
       });
     } else {
       reset();

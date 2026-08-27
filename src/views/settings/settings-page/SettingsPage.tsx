@@ -31,7 +31,7 @@ export interface SettingsPageHandle {
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
   ({ projectId, connection }, ref) => {
     const { control, handleSubmit, reset } = useForm<ProjectSettingsFormData>({
-      defaultValues: { default_agent: "", startup_tab: "", default_existing_worktree: false },
+      defaultValues: { default_agent: "", startup_tab: "", default_worktree: true },
     });
 
     const projectSettingsQuery = useProjectSettings(projectId);
@@ -45,11 +45,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
     useEffect(() => {
       if (!projectSettingsQuery.data) return;
-      const { default_agent, startup_tab, default_existing_worktree } = projectSettingsQuery.data;
+      const { default_agent, startup_tab, default_worktree } = projectSettingsQuery.data;
       reset({
         default_agent: default_agent ?? "",
         startup_tab: startup_tab ?? "",
-        default_existing_worktree,
+        default_worktree,
       });
     }, [projectSettingsQuery.data, reset]);
 
@@ -60,7 +60,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
           config: {
             default_agent: data.default_agent || null,
             startup_tab: data.startup_tab || null,
-            default_existing_worktree: data.default_existing_worktree,
+            default_worktree: data.default_worktree,
           },
         });
         await agentProfilesSectionRef.current?.save();
@@ -91,7 +91,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         await handleSubmit(onSubmit)();
       },
       resetToDefaults: () => {
-        reset({ default_agent: "", startup_tab: "", default_existing_worktree: false });
+        reset({ default_agent: "", startup_tab: "", default_worktree: true });
       },
     }));
 

@@ -539,7 +539,7 @@ pub struct ProjectConfigResponse {
     pub accent_color: Option<String>,
     /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
     pub accent_color_auto_assign: Option<bool>,
-    pub default_existing_worktree: bool,
+    pub default_worktree: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -547,7 +547,7 @@ pub struct ProjectConfigResponse {
 pub struct ProjectConfigRequest {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
-    pub default_existing_worktree: bool,
+    pub default_worktree: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
