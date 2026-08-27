@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDiffString, computeFileStats, extractHunkPatch, countHunks } from "./diff-utils";
+import { parseDiffString, computeFileStats } from "./diff-utils";
 
 describe("parseDiffString", () => {
   it("returns empty array for empty string", () => {
@@ -133,7 +133,7 @@ describe("parseDiffString", () => {
     const result = parseDiffString(diff);
     expect(result).toHaveLength(1);
     expect(result[0].fileName).toBe("logo.png");
-    expect(result[0].note).toBe("Binary file");
+    expect(result[0].note).toBe("Binary file. There is no line-by-line diff to show.");
   });
 
   it("emits an entry for a mode-only change", () => {
@@ -288,48 +288,5 @@ describe("computeFileStats", () => {
   it("counts only deletions", () => {
     const hunks = ["@@ -1,2 +0,0 @@", "-line1", "-line2"];
     expect(computeFileStats(hunks)).toEqual({ insertions: 0, deletions: 2 });
-  });
-});
-
-describe("extractHunkPatch", () => {
-  const twoHunkInput =
-    "--- a/f.ts\n+++ b/f.ts\n@@ -1,3 +1,4 @@\n ctx\n-old\n+new\n@@ -10,2 +11,3 @@\n ctx2\n+add";
-
-  it("extracts first hunk (index 0)", () => {
-    expect(extractHunkPatch(twoHunkInput, 0)).toBe(
-      "--- a/f.ts\n+++ b/f.ts\n@@ -1,3 +1,4 @@\n ctx\n-old\n+new\n",
-    );
-  });
-
-  it("extracts second hunk (index 1)", () => {
-    expect(extractHunkPatch(twoHunkInput, 1)).toBe(
-      "--- a/f.ts\n+++ b/f.ts\n@@ -10,2 +11,3 @@\n ctx2\n+add\n",
-    );
-  });
-
-  it("returns empty string for out-of-range index", () => {
-    expect(extractHunkPatch(twoHunkInput, 99)).toBe("");
-  });
-
-  it("returns empty string for empty input", () => {
-    expect(extractHunkPatch("", 0)).toBe("");
-  });
-});
-
-describe("countHunks", () => {
-  it("counts two hunk headers", () => {
-    expect(countHunks("@@ -1 +1 @@\n+a\n@@ -5 +5 @@\n+b")).toBe(2);
-  });
-
-  it("returns 0 for string with no hunks", () => {
-    expect(countHunks("no hunks here")).toBe(0);
-  });
-
-  it("returns 0 for empty string", () => {
-    expect(countHunks("")).toBe(0);
-  });
-
-  it("returns 1 for single hunk", () => {
-    expect(countHunks("@@ -1 +1 @@\n+single")).toBe(1);
   });
 });

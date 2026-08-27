@@ -1077,46 +1077,6 @@ async renameSshConnection(connectionId: number, displayName: string) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
-async stageWorktreeFiles(projectId: number, worktreePath: string, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("stage_worktree_files", { projectId, worktreePath, filePaths, patch }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async commitWorktree(projectId: number, worktreePath: string, message: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("commit_worktree", { projectId, worktreePath, message }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async discardWorktreeChanges(projectId: number, worktreePath: string, filePaths: string[], patch: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("discard_worktree_changes", { projectId, worktreePath, filePaths, patch }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async shelveWorktreeChanges(projectId: number, worktreePath: string, stashName: string, filePaths: string[]) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("shelve_worktree_changes", { projectId, worktreePath, stashName, filePaths }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deleteUntrackedFiles(projectId: number, worktreePath: string, filePaths: string[]) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_untracked_files", { projectId, worktreePath, filePaths }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getUntrackedFileContent(projectId: number, worktreePath: string, filePath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_untracked_file_content", { projectId, worktreePath, filePath }) };
@@ -2389,7 +2349,12 @@ config: ProjectCodeHostingConfig | null;
  * Whether this call wrote `code_hosting` into `.maestro/settings.json`.
  */
 applied: boolean }
-export type CommitInfo = { sha: string; message: string; file_count: number }
+export type CommitInfo = { sha: string; message: string; 
+/**
+ * RFC 3339, from `%cI`. Committer rather than author date: rebase and cherry-pick preserve
+ * the author date, so an agent's rebased commit would otherwise read as days old.
+ */
+committed_at: string }
 export type ConcurrencyMode = 
 /**
  * The number the user set, regardless of what the host is doing.

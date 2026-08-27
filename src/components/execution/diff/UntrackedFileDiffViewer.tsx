@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { DiffViewer, type PendingComment } from "./DiffViewer";
+import { fileNote } from "./ReviewFileCard";
 import { useUntrackedFileContentQuery } from "@/services/worktree.service";
 
 interface UntrackedFileDiffViewerProps {
@@ -47,6 +48,21 @@ export function UntrackedFileDiffViewer({
     return parseDiffString(data)[0] ?? null;
   }, [data]);
 
+  /**
+   * What to say instead of a diff.
+   *
+   * A new file reaches this component as `git diff --no-index /dev/null <path>`, and for a binary
+   * one git answers with a header line and no hunks at all. Handed that, the diff view renders an
+   * empty frame under the file's header — which reads as a broken card rather than as "there is
+   * nothing here to read line by line". Tracked files already take this path through
+   * `ReviewFileCard`; only the untracked ones went without it.
+   */
+  const note = isLoading
+    ? undefined
+    : diffFile
+      ? fileNote(diffFile)
+      : "There is no line-by-line diff to show for this file.";
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {showHeader && diffFile && (
@@ -59,22 +75,26 @@ export function UntrackedFileDiffViewer({
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-        <DiffViewer
-          diffFile={diffFile}
-          loading={isLoading}
-          diffViewMode={DiffModeEnum.Unified}
-          reviewMode={reviewMode}
-          comments={comments}
-          activeCommentLine={activeCommentLine}
-          onAddComment={onAddComment}
-          onRemoveComment={onRemoveComment}
-          onEditComment={onEditComment}
-          onCancelComment={onCancelComment}
-          onSubmitComment={onSubmitComment}
-          onSendComment={onSendComment}
-          commentNav={commentNav}
-          sendDisabled={sendDisabled}
-        />
+        {note ? (
+          <div className="px-3 py-6 text-xs text-center text-muted-foreground">{note}</div>
+        ) : (
+          <DiffViewer
+            diffFile={diffFile}
+            loading={isLoading}
+            diffViewMode={DiffModeEnum.Unified}
+            reviewMode={reviewMode}
+            comments={comments}
+            activeCommentLine={activeCommentLine}
+            onAddComment={onAddComment}
+            onRemoveComment={onRemoveComment}
+            onEditComment={onEditComment}
+            onCancelComment={onCancelComment}
+            onSubmitComment={onSubmitComment}
+            onSendComment={onSendComment}
+            commentNav={commentNav}
+            sendDisabled={sendDisabled}
+          />
+        )}
       </div>
     </div>
   );

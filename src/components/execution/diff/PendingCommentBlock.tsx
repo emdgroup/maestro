@@ -124,7 +124,11 @@ export function PendingCommentBlock({
   // comment's text leaves neither legible.
   if (onPrev && onNext) {
     return (
-      <div className={cn(bare ? undefined : "mx-4 my-2 rounded-md border border-accent/40")}>
+      <div
+        className={cn(
+          bare ? undefined : "mx-4 my-2 rounded-md border border-accent/40 bg-accent/8",
+        )}
+      >
         <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border">
           <Button
             variant="ghost"

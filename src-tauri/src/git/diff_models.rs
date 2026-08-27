@@ -65,5 +65,7 @@ pub struct DirtyStatus {
 pub struct CommitInfo {
     pub sha: String,
     pub message: String,
-    pub file_count: u32,
+    /// RFC 3339, from `%cI`. Committer rather than author date: rebase and cherry-pick preserve
+    /// the author date, so an agent's rebased commit would otherwise read as days old.
+    pub committed_at: String,
 }

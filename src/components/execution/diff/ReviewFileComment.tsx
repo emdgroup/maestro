@@ -1,63 +1,67 @@
-import type { Dispatch, SetStateAction } from "react";
-import type { PendingComment } from "./DiffViewer";
-import type { DiffFileWithName } from "@/types/review";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { InlineCommentInput } from "./InlineCommentInput";
+import type { CommentNav } from "./useCommentNavigation";
+
+/**
+ * A file's own note — the one anchored to the file rather than to a line.
+ *
+ * Shaped as intents rather than as a setter so both comment stores can drive it: task review
+ * writes a `PendingComment` into `reviewStore`, the session panel an annotation into
+ * `annotationStore`. `onSubmit` covers creating and editing alike, which is what keeps the two
+ * paths from drifting — they used to reach the same outcome by two different routes.
+ */
+export interface FileCommentApi {
+  comment: { id: string; text: string } | null;
+  onSubmit: (text: string) => void;
+  onRemove: () => void;
+  /** Send this one note now. Omitted where notes only leave in a batch — task review's Rework. */
+  onSend?: () => void;
+  sendDisabled?: boolean;
+  /** Its place in the review's whole set, from `useCommentNavigation`. */
+  nav?: CommentNav | null;
+}
 
 interface ReviewFileCommentProps {
-  selectedFile: DiffFileWithName;
-  comments: PendingComment[];
-  activeFileComment: boolean;
-  setActiveFileComment: (open: boolean) => void;
-  onRemoveComment: (id: string) => void;
-  onEditComment: (id: string, newText: string) => void;
-  setComments: Dispatch<SetStateAction<PendingComment[]>>;
+  fileComment: FileCommentApi;
+  /** Whether the editor is open. Owned by the card, so the button and the input stay together. */
+  editing: boolean;
+  onEditingChange: (open: boolean) => void;
 }
 
 export function ReviewFileComment({
-  selectedFile,
-  comments,
-  activeFileComment,
-  setActiveFileComment,
-  onRemoveComment,
-  onEditComment,
-  setComments,
+  fileComment,
+  editing,
+  onEditingChange,
 }: ReviewFileCommentProps) {
-  const fileComment = comments.find(
-    (c) => c.filePath === selectedFile.fileName && c.lineNumber === 0,
-  );
+  const { comment, onSubmit, onRemove, onSend, sendDisabled, nav } = fileComment;
+  if (!comment && !editing) return null;
+
   return (
     <div className="shrink-0 border-b border-border">
-      {fileComment && !activeFileComment && (
-        <PendingCommentBlock
-          text={fileComment.text}
-          onRemove={() => onRemoveComment(fileComment.id)}
-          onEdit={(newText) => onEditComment(fileComment.id, newText)}
-        />
-      )}
-      {activeFileComment && (
+      {comment &&
+        !editing && (
+          // Tagged so comment navigation can find it: `buildExtendData` skips line 0, so unlike a
+          // line comment this one has no anchor inside the diff itself.
+          <div data-comment-id={comment.id}>
+            <PendingCommentBlock
+              text={comment.text}
+              onRemove={onRemove}
+              onEdit={onSubmit}
+              onSend={onSend}
+              sendDisabled={sendDisabled}
+              {...(nav ?? {})}
+            />
+          </div>
+        )}
+      {editing && (
         <div className="p-2">
           <InlineCommentInput
-            initialText={fileComment?.text}
+            initialText={comment?.text}
             onSubmit={(text) => {
-              setComments((prev) => {
-                if (fileComment) {
-                  return prev.map((c) => (c.id === fileComment.id ? { ...c, text } : c));
-                }
-                return [
-                  ...prev,
-                  {
-                    id: crypto.randomUUID(),
-                    filePath: selectedFile.fileName,
-                    lineNumber: 0,
-                    side: "new" as const,
-                    text,
-                  },
-                ];
-              });
-              setActiveFileComment(false);
+              onSubmit(text);
+              onEditingChange(false);
             }}
-            onCancel={() => setActiveFileComment(false)}
+            onCancel={() => onEditingChange(false)}
           />
         </div>
       )}

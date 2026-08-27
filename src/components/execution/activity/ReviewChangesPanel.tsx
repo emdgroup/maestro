@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { useReviewChangesData } from "./useReviewChangesData";
 import { ReviewChangesPanelCompact } from "./ReviewChangesPanelCompact";
+import { toPanelFiles } from "@/components/execution/diff/useReviewItems";
+import { displayItemPath } from "@/types/review";
 import type { Annotation } from "@/store/annotationStore";
 
 interface ReviewChangesPanelProps {
@@ -30,7 +32,6 @@ export function ReviewChangesPanel({
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
-  const [listOpen, setListOpen] = useState(false);
 
   const toggleViewed = useCallback((fileName: string) => {
     setViewedFiles((prev) => {
@@ -68,21 +69,10 @@ export function ReviewChangesPanel({
     setSelectedFileIndex(initialFileIndex);
   }
 
-  const fileSelectorFiles = useMemo(
-    () =>
-      allDisplayItems.map((item) => ({
-        fileName: item.kind === "diff" ? item.file.fileName : item.path,
-        status: item.kind === "diff" ? (item.file.status ?? ("M" as const)) : ("A" as const),
-      })),
-    [allDisplayItems],
-  );
+  const fileSelectorFiles = useMemo(() => toPanelFiles(allDisplayItems), [allDisplayItems]);
 
   const focusedItem = allDisplayItems[selectedFileIndex] ?? null;
-  const focusedKey = focusedItem
-    ? focusedItem.kind === "diff"
-      ? focusedItem.file.fileName
-      : focusedItem.path
-    : null;
+  const focusedKey = focusedItem ? displayItemPath(focusedItem) : null;
   const focusedBasename = focusedKey ? (focusedKey.split("/").pop() ?? focusedKey) : null;
 
   if (compact) {
@@ -105,8 +95,6 @@ export function ReviewChangesPanel({
         setSelectedFileIndex={setSelectedFileIndex}
         viewedFiles={viewedFiles}
         toggleViewed={toggleViewed}
-        listOpen={listOpen}
-        setListOpen={setListOpen}
         fileSelectorFiles={fileSelectorFiles}
         focusedKey={focusedKey}
         focusedBasename={focusedBasename}

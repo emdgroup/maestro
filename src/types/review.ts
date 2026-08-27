@@ -50,3 +50,16 @@ export interface DiffFileWithName extends DiffFile {
   /** Set for changes git describes without hunks (rename, binary, mode bits). */
   note?: string;
 }
+
+/**
+ * One row of a review's file list. Modified and untracked files sit in the same sequence — an
+ * untracked file has no diff to parse, so it carries its path and its content is fetched per file.
+ */
+export type DisplayItem =
+  | { kind: "diff"; file: DiffFileWithName }
+  | { kind: "untracked"; path: string };
+
+/** The path a display item is keyed and labelled by. */
+export function displayItemPath(item: DisplayItem): string {
+  return item.kind === "diff" ? item.file.fileName : item.path;
+}

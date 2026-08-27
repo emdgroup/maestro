@@ -13,6 +13,7 @@ import { useWorktreesQuery } from "@/services/worktree.service";
 import { InputGroup, InputGroupInput, InputGroupAddon } from "@/ui/input-group";
 import { Badge } from "@/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
 import type { Task, TaskPriority } from "@/types/bindings";
@@ -88,26 +89,45 @@ export const KanbanView: React.FC = () => {
       ? (worktrees ?? []).find((w) => w.task_id === reviewPanelTaskId)
       : null;
 
-  if (reviewPanelTaskId != null && reviewTask) {
-    return (
-      <TaskReviewPanel
-        task={reviewTask}
-        // A task with isolation off never gets a worktree row — its agent worked in the project
-        // itself — so the diff has to be taken there. Kept separate from `worktreePath`, which
-        // still means "there is a worktree", because Discard offers to delete whatever that names.
-        reviewPath={
-          reviewWorktree?.path ?? (reviewTask.isolated_worktree ? null : projectPath || null)
-        }
-        worktreePath={reviewWorktree?.path ?? null}
-        baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
-        branchName={reviewWorktree?.branch_name ?? null}
-        onClose={closeReview}
-      />
-    );
-  }
-
   return (
     <div className="flex flex-col h-full">
+      {/* Over the board rather than in place of it. A review is a pass across a task's changes,
+          not a destination — leaving the board visible behind it says so, and says which board
+          you come back to. Neither Escape nor a click on the margin closes it: the sheet holds
+          unsent comments and a scope you set up, and the ways out are the ones that decide
+          something — Approve, Rework, Discard, or the bar's own close. */}
+      <Dialog
+        open={reviewPanelTaskId != null && reviewTask != null}
+        onOpenChange={(open, details) => {
+          if (open) return;
+          if (details.reason === "escape-key" || details.reason === "outside-press") return;
+          closeReview();
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="w-[calc(100vw-2.5rem)] h-[calc(100vh-2.5rem)] max-w-none sm:max-w-none flex flex-col p-0 gap-0 overflow-hidden"
+        >
+          <DialogTitle className="sr-only">Review {reviewTask?.title ?? "task"}</DialogTitle>
+          {reviewTask && (
+            <TaskReviewPanel
+              task={reviewTask}
+              // A task with isolation off never gets a worktree row — its agent worked in the
+              // project itself — so the diff has to be taken there. Kept separate from
+              // `worktreePath`, which still means "there is a worktree", because Discard offers
+              // to delete whatever that names.
+              reviewPath={
+                reviewWorktree?.path ?? (reviewTask.isolated_worktree ? null : projectPath || null)
+              }
+              worktreePath={reviewWorktree?.path ?? null}
+              baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}
+              branchName={reviewWorktree?.branch_name ?? null}
+              onClose={closeReview}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="h-12 bg-card flex items-center px-4 gap-2 shrink-0">
         {/* Search */}
         <ShortcutHint shortcutId="focus-search">

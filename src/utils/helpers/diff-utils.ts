@@ -167,7 +167,9 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     } else if (!inHunk && line.startsWith("rename from ")) {
       currentNote = `Renamed from ${unquoteGitPath(line.slice("rename from ".length))}`;
     } else if (!inHunk && (line.startsWith("Binary files ") || line === "GIT binary patch")) {
-      currentNote = "Binary file";
+      // Phrased for the reader, not the parser: this is what the file's card shows in place of a
+      // diff, and "Binary file" on its own reads as a truncated heading rather than an answer.
+      currentNote = "Binary file. There is no line-by-line diff to show.";
     } else if (!inHunk && line.startsWith("old mode ")) {
       currentNote = "File mode changed";
     }
@@ -214,42 +216,4 @@ export function computeFileStats(hunks: string[]): { insertions: number; deletio
     }
   }
   return { insertions, deletions };
-}
-
-/**
- * Extract a single hunk as a valid unified diff patch string.
- * Takes the hunks[0] content from parseDiffString output and returns
- * a minimal patch for hunkIndex: "--- a/file\n+++ b/file\n@@ ... @@\nlines\n"
- */
-export function extractHunkPatch(fileHunkContent: string, hunkIndex: number): string {
-  if (!fileHunkContent) return "";
-  const lines = fileHunkContent.split("\n");
-  const headerLines: string[] = [];
-  const hunkBlocks: string[][] = [];
-  let currentBlock: string[] | null = null;
-
-  for (const line of lines) {
-    if (line.startsWith("--- ") || line.startsWith("+++ ")) {
-      headerLines.push(line);
-    } else if (line.startsWith("@@")) {
-      if (currentBlock) hunkBlocks.push(currentBlock);
-      currentBlock = [line];
-    } else if (currentBlock !== null) {
-      currentBlock.push(line);
-    }
-  }
-  if (currentBlock) hunkBlocks.push(currentBlock);
-
-  const targetBlock = hunkBlocks[hunkIndex];
-  if (!targetBlock) return "";
-  return [...headerLines, ...targetBlock].join("\n") + "\n";
-}
-
-/**
- * Count the number of @@ hunk headers in a file diff string.
- * Used to determine indeterminate checkbox state.
- */
-export function countHunks(hunkContent: string): number {
-  if (!hunkContent) return 0;
-  return (hunkContent.match(/^@@/gm) ?? []).length;
 }

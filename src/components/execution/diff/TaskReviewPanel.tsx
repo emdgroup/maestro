@@ -3,15 +3,17 @@ import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { ChevronDown, TriangleAlert } from "lucide-react";
 import { parseDiffString } from "@/lib/diff-utils";
+import { cn } from "@/lib/utils.ts";
 import { DiffActionBar } from "./DiffActionBar";
-import { DiffFilePanel } from "./DiffFilePanel";
-import { DiffViewer, type PendingComment } from "./DiffViewer";
-import { ScopeSelector, type DiffScope } from "./ScopeSelector";
-import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
+import { type PendingComment } from "./DiffViewer";
+import { DiffFileStack, type DiffFileStackHandle, type DiffReviewApi } from "./DiffFileStack";
+import { ReviewLayout, FilePanelToggle } from "./ReviewLayout";
+import { ScopeSelector } from "./ScopeSelector";
+import { scopeToDiffTarget, type DiffScope } from "./scope";
+import { useReviewItems, fileCountFrom } from "./useReviewItems";
+import { useReviewPanelLayout } from "./useReviewPanelLayout";
 import { ReworkModal, ApproveModal, DiscardModal } from "./ReviewConfirmModals";
 import { buildReviewFeedbackBlocks } from "./build-review-feedback";
-import { ReviewFileHeader } from "./ReviewFileHeader";
-import { ReviewFileComment } from "./ReviewFileComment";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
@@ -21,9 +23,12 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
-import { useWorktreeDiffQuery, useWorktreeCommitsQuery } from "@/services/worktree.service";
+import {
+  useWorktreeDiffQuery,
+  useWorktreeDiffStatsQuery,
+  useWorktreeCommitsQuery,
+} from "@/services/worktree.service";
 import { useCancelActiveSessionMutation } from "@/services/execution.service";
-import { DiffStateProvider } from "./DiffStateContext";
 import {
   useRequestChangesMutation,
   useApproveTaskAndMergeMutation,
@@ -39,6 +44,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/utils/helpers/tauri-utils";
+import { displayItemPath } from "@/types/review";
 import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
 
 /** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
@@ -76,24 +82,19 @@ export function TaskReviewPanel({
 
   // View state
   const [diffViewMode, setDiffViewMode] = useState(DiffModeEnum.Unified);
-  const [fileListMode, setFileListMode] = useState<"flat" | "tree">("flat");
   const [fileSearch, setFileSearch] = useState("");
-  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [scope, setScope] = useState<DiffScope>({ type: "all" });
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(() =>
     reviewStore.getViewedFiles(task.id),
   );
-  const [viewMode, setViewMode] = useState<"uncommitted" | "untracked">("uncommitted");
+  const stackRef = useRef<DiffFileStackHandle>(null);
+  const panel = useReviewPanelLayout();
 
   // Comment state
   const [comments, setComments] = useState<PendingComment[]>(() =>
     reviewStore.getComments(task.id),
   );
-  const [activeCommentLine, setActiveCommentLine] = useState<{
-    lineNumber: number;
-    side: "old" | "new";
-  } | null>(null);
-  const [activeFileComment, setActiveFileComment] = useState(false);
 
   // Sync comments to store
   useEffect(() => {
@@ -124,21 +125,17 @@ export function TaskReviewPanel({
   const codeHostingQuery = useCodeHostingStatus(projectId);
   const cancelSession = useCancelActiveSessionMutation();
 
-  // Map scope to DiffTarget
-  // "All changes" uses execution_start_sha to show only task-specific changes,
-  // not BranchAll which would include pre-existing differences from base branch.
-  const diffTarget: DiffTarget = useMemo(() => {
-    switch (scope.type) {
-      case "all":
-        if (startSha) return { type: "Commit", sha: startSha };
-        if (baseBranch) return { type: "BranchAll", branch: baseBranch };
-        return { type: "Head" };
-      case "uncommitted":
-        return { type: "Head" };
-      case "commit":
-        return { type: "CommitRange", from: scope.sha + "~1", to: scope.sha };
-    }
-  }, [scope, baseBranch, startSha]);
+  // "All changes" uses execution_start_sha to show only task-specific changes, not BranchAll which
+  // would include pre-existing differences from the base branch.
+  const scopeAnchors = useMemo(() => ({ startSha, baseBranch }), [startSha, baseBranch]);
+  const diffTarget: DiffTarget = useMemo(
+    () => scopeToDiffTarget(scope, scopeAnchors),
+    [scope, scopeAnchors],
+  );
+  const allChangesTarget: DiffTarget = useMemo(
+    () => scopeToDiffTarget({ type: "all" }, scopeAnchors),
+    [scopeAnchors],
+  );
 
   // Data queries.
   // App.tsx keeps every view mounted, so ungated intervals would re-fetch and re-parse both of
@@ -149,23 +146,31 @@ export function TaskReviewPanel({
   const diffPolling = { refetchInterval: isViewActive ? 10000 : (false as const) };
 
   const diffQuery = useWorktreeDiffQuery(projectId, reviewPath, diffTarget, diffPolling);
-  const uncommittedDiffQuery = useWorktreeDiffQuery(
+
+  // The scope selector's two fixed rows describe scopes other than the one on screen, so their
+  // counts come from their own queries — a count derived from the current diff changed every time
+  // the scope did, which made the options look like they meant something different each visit.
+  // `--stat` rather than a second full diff: the only thing wanted here is an integer. When the
+  // selected scope *is* "all", this resolves to the same target and TanStack shares the fetch.
+  const uncommittedStats = useWorktreeDiffStatsQuery(
     projectId,
     reviewPath,
     { type: "Head" },
     diffPolling,
   );
+  const allChangesStats = useWorktreeDiffStatsQuery(
+    projectId,
+    reviewPath,
+    allChangesTarget,
+    diffPolling,
+  );
 
   const { refetch: refetchDiff } = diffQuery;
-  const { refetch: refetchUncommittedDiff } = uncommittedDiffQuery;
   const wasViewActiveRef = useRef(isViewActive);
   useEffect(() => {
-    if (isViewActive && !wasViewActiveRef.current) {
-      void refetchDiff();
-      void refetchUncommittedDiff();
-    }
+    if (isViewActive && !wasViewActiveRef.current) void refetchDiff();
     wasViewActiveRef.current = isViewActive;
-  }, [isViewActive, refetchDiff, refetchUncommittedDiff]);
+  }, [isViewActive, refetchDiff]);
   const commitsQuery = useWorktreeCommitsQuery(projectId, reviewPath, baseBranch);
   const commits = commitsQuery.data || [];
 
@@ -175,31 +180,17 @@ export function TaskReviewPanel({
   const diffText = diffQuery.data?.diff;
   const diffFiles = useMemo(() => (diffText ? parseDiffString(diffText) : []), [diffText]);
 
-  // Uncommitted file count (stable regardless of selected scope)
-  const uncommittedFileCount = useMemo(() => {
-    const modifiedCount = uncommittedDiffQuery.data?.diff
-      ? parseDiffString(uncommittedDiffQuery.data.diff).length
-      : 0;
-    const untrackedCount = uncommittedDiffQuery.data?.untracked_files?.length || 0;
-    return modifiedCount + untrackedCount;
-  }, [uncommittedDiffQuery.data]);
-
   // Untracked files from diff result
   const untrackedFiles = useMemo(() => diffQuery.data?.untracked_files ?? [], [diffQuery.data]);
-  const totalFileCount = diffFiles.length + untrackedFiles.length;
+  const scopeFileCount = diffFiles.length + untrackedFiles.length;
 
-  // Filter files by search
-  const filteredDiffFiles = useMemo(() => {
-    if (!fileSearch.trim()) return diffFiles;
-    const q = fileSearch.toLowerCase();
-    return diffFiles.filter((f) => f.fileName.toLowerCase().includes(q));
-  }, [diffFiles, fileSearch]);
-
-  // Derive selected untracked path when in untracked tab
-  const selectedUntrackedPath =
-    viewMode === "untracked" && selectedFileIndex !== null
-      ? (untrackedFiles[selectedFileIndex] ?? null)
-      : null;
+  const { items, panelFiles, selectFile, selectedPath } = useReviewItems({
+    diffFiles,
+    untrackedFiles,
+    search: fileSearch,
+    selectedIndex: selectedFileIndex,
+    stackRef,
+  });
 
   // Viewed toggle — sync to store
   const toggleViewed = useCallback(
@@ -215,45 +206,6 @@ export function TaskReviewPanel({
     [task.id, reviewStore],
   );
 
-  // Comment handlers
-  const handleAddComment = useCallback((lineNumber: number, side: "old" | "new") => {
-    setActiveCommentLine({ lineNumber, side });
-  }, []);
-
-  const handleSubmitComment = useCallback(
-    (text: string) => {
-      if (!activeCommentLine) return;
-      const filePath =
-        viewMode === "untracked"
-          ? (selectedUntrackedPath ?? "")
-          : (filteredDiffFiles[selectedFileIndex ?? -1]?.fileName ?? "");
-      if (!filePath) return;
-      setComments((prev) => {
-        const existing = prev.findIndex(
-          (c) =>
-            c.filePath === filePath &&
-            c.lineNumber === activeCommentLine.lineNumber &&
-            c.side === activeCommentLine.side,
-        );
-        const newComment = {
-          id: existing >= 0 ? prev[existing].id : crypto.randomUUID(),
-          filePath,
-          lineNumber: activeCommentLine.lineNumber,
-          side: activeCommentLine.side,
-          text,
-        };
-        if (existing >= 0) {
-          const next = [...prev];
-          next[existing] = newComment;
-          return next;
-        }
-        return [...prev, newComment];
-      });
-      setActiveCommentLine(null);
-    },
-    [activeCommentLine, selectedFileIndex, filteredDiffFiles, viewMode, selectedUntrackedPath],
-  );
-
   const handleRemoveComment = useCallback((commentId: string) => {
     setComments((prev) => prev.filter((c) => c.id !== commentId));
   }, []);
@@ -262,17 +214,43 @@ export function TaskReviewPanel({
     setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, text: newText } : c)));
   }, []);
 
-  const handleFileComment = useCallback(
-    (fileName: string) => {
-      const fileIndex = filteredDiffFiles.findIndex((f) => f.fileName === fileName);
-      if (fileIndex >= 0) {
-        setSelectedFileIndex(fileIndex);
-        setActiveFileComment(true);
-      } else if (untrackedFiles.includes(fileName)) {
-        setActiveFileComment(true);
-      }
+  const handleSubmitComment = useCallback(
+    (filePath: string, lineNumber: number, side: "old" | "new", text: string) => {
+      setComments((prev) => {
+        const at = prev.findIndex(
+          (c) => c.filePath === filePath && c.lineNumber === lineNumber && c.side === side,
+        );
+        if (at >= 0) {
+          const next = [...prev];
+          next[at] = { ...next[at], text };
+          return next;
+        }
+        return [...prev, { id: crypto.randomUUID(), filePath, lineNumber, side, text }];
+      });
     },
-    [filteredDiffFiles, untrackedFiles],
+    [],
+  );
+
+  // Review comments leave as one Rework payload rather than one at a time, so no `onSendComment`.
+  const review: DiffReviewApi = useMemo(
+    () => ({
+      comments,
+      onSubmitComment: handleSubmitComment,
+      onRemoveComment: handleRemoveComment,
+      onEditComment: handleEditComment,
+    }),
+    [comments, handleSubmitComment, handleRemoveComment, handleEditComment],
+  );
+
+  /**
+   * A comment can sit on a file the search box is currently hiding. Stepping to it has to put the
+   * file back in the list first, or the chevron leads nowhere.
+   */
+  const handleBeforeReveal = useCallback(
+    (path: string) => {
+      if (!items.some((item) => displayItemPath(item) === path)) setFileSearch("");
+    },
+    [items],
   );
 
   // Multi-state button logic
@@ -394,95 +372,100 @@ export function TaskReviewPanel({
     (diffQuery.data?.untracked_files?.length ?? 0) > 0 ||
     diffFiles.some((f) => f.status === "M" || f.status === "A" || f.status === "D");
 
-  // Current file for DiffViewer
-  const selectedFile =
-    selectedFileIndex != null ? (filteredDiffFiles[selectedFileIndex] ?? null) : null;
-  const currentFileComments = selectedFile
-    ? comments.filter((c) => c.filePath === selectedFile.fileName)
-    : [];
-
-  const forceUnified = selectedFile?.status === "A" || selectedFile?.status === "D";
-  const effectiveDiffViewMode = forceUnified ? DiffModeEnum.Unified : diffViewMode;
-
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Action Bar */}
-      <DiffActionBar
-        mode="review"
-        branchName=""
-        centerLabel={`Review: ${task.title}`}
-        fileSearch={fileSearch}
-        onFileSearchChange={setFileSearch}
-        fileListMode={fileListMode}
-        onFileListModeChange={setFileListMode}
-        diffViewMode={diffViewMode}
-        onDiffViewModeChange={setDiffViewMode}
-        forceUnified={forceUnified}
-        viewedCount={viewedFiles.size}
-        totalFileCount={totalFileCount}
-        splitButtonNode={
-          <ButtonGroup>
-            <Button
-              variant={hasComments ? "outline" : "default"}
-              size="sm"
-              onClick={() => handleActionSelect(defaultAction)}
-            >
-              {hasComments ? "Rework" : "Approve"}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant={hasComments ? "outline" : "default"}
-                    size="sm"
-                    className="px-1.5!"
-                  >
-                    <ChevronDown className="size-3.5" />
-                  </Button>
-                }
+      {/* Action Bar. The gap below it belongs to the diff's inset, so it takes a matching one
+          above rather than sitting high in its own band. */}
+      <div className={cn("shrink-0 bg-card", panel.inset && "pt-2")}>
+        <DiffActionBar
+          mode="review"
+          branchName=""
+          centerLabel={`Review: ${task.title}`}
+          className="bg-card border-b-0"
+          leadingSlot={
+            <>
+              <FilePanelToggle
+                open={panel.panelOpen}
+                onToggle={() => panel.setPanelOpen(!panel.panelOpen)}
               />
-              <DropdownMenuContent align="end" className="w-40">
-                {defaultAction !== "approve" && (
-                  <DropdownMenuItem onClick={() => handleActionSelect("approve")}>
-                    Approve
-                  </DropdownMenuItem>
-                )}
-                {defaultAction !== "rework" && (
-                  <DropdownMenuItem onClick={() => handleActionSelect("rework")}>
-                    Rework
-                  </DropdownMenuItem>
-                )}
-                {/* A task keeps its agent session into Review. Ending it leaves the task here —
-                    the work is done and under review, the session is just a process still held. */}
-                {activeSession && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      disabled={cancelSession.isPending}
-                      onClick={() =>
-                        cancelSession.mutate({
-                          sessionKey: activeSession.session_key,
-                          executionMode: activeSession.execution_mode,
-                        })
-                      }
+              <ScopeSelector
+                selectedScope={scope}
+                onScopeChange={setScope}
+                commits={commits}
+                uncommittedFileCount={fileCountFrom(uncommittedStats.data)}
+                allChangesFileCount={fileCountFrom(allChangesStats.data)}
+                isLoading={commitsQuery.isLoading}
+              />
+            </>
+          }
+          diffViewMode={diffViewMode}
+          onDiffViewModeChange={setDiffViewMode}
+          viewedCount={viewedFiles.size}
+          totalFileCount={scopeFileCount}
+          splitButtonNode={
+            <ButtonGroup>
+              <Button
+                variant={hasComments ? "outline" : "accent"}
+                size="sm"
+                onClick={() => handleActionSelect(defaultAction)}
+              >
+                {hasComments ? "Rework" : "Approve"}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant={hasComments ? "outline" : "accent"}
+                      size="sm"
+                      className="px-1.5!"
                     >
-                      End session
+                      <ChevronDown className="size-3.5" />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end" className="w-40">
+                  {defaultAction !== "approve" && (
+                    <DropdownMenuItem onClick={() => handleActionSelect("approve")}>
+                      Approve
                     </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => handleActionSelect("discard")}
-                >
-                  Discard
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </ButtonGroup>
-        }
-        onClose={onClose}
-      />
+                  )}
+                  {defaultAction !== "rework" && (
+                    <DropdownMenuItem onClick={() => handleActionSelect("rework")}>
+                      Rework
+                    </DropdownMenuItem>
+                  )}
+                  {/* A task keeps its agent session into Review. Ending it leaves the task here —
+                    the work is done and under review, the session is just a process still held. */}
+                  {activeSession && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={cancelSession.isPending}
+                        onClick={() =>
+                          cancelSession.mutate({
+                            sessionKey: activeSession.session_key,
+                            executionMode: activeSession.execution_mode,
+                          })
+                        }
+                      >
+                        End session
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => handleActionSelect("discard")}
+                  >
+                    Discard
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
+          }
+          onClose={onClose}
+        />
+      </div>
 
       {(diffQuery.data?.diff_truncated || diffQuery.data?.untracked_truncated) && (
         <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0 text-xs">
@@ -499,152 +482,35 @@ export function TaskReviewPanel({
         </div>
       )}
 
-      {/* Main content */}
-      <DiffStateProvider
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        selectedFileIndex={selectedFileIndex}
-        setSelectedFileIndex={setSelectedFileIndex}
-        fileListMode={fileListMode}
-        setFileListMode={setFileListMode}
+      {/* Main content. The panel sits beside the stack when there is room for both and floats
+          over it when there is not — same toggle either way. */}
+      <ReviewLayout
+        panel={panel}
+        files={{
+          files: panelFiles,
+          selectedFile: selectedPath,
+          onSelectFile: selectFile,
+          viewedFiles,
+          search: fileSearch,
+          onSearchChange: setFileSearch,
+        }}
       >
-        <div className="flex flex-1 min-h-0">
-          {/* File sidebar */}
-          <DiffFilePanel
-            mode="review"
-            modifiedCount={diffFiles.length}
-            untrackedCount={untrackedFiles.length}
-            diffLoading={diffQuery.isLoading}
-            diffFiles={diffFiles}
-            filteredDiffFiles={filteredDiffFiles}
-            untrackedFiles={untrackedFiles}
-            stagedFiles={new Set()}
-            getFileCheckState={() => "unchecked"}
-            onFileToggle={() => {}}
-            onFolderToggle={() => {}}
-            onToggleUntrackedFile={() => {}}
-            hasAnyStaged={false}
-            commitMessage=""
-            onCommitMessageChange={() => {}}
-            onCommit={() => {}}
-            isCommitting={false}
-            isStaging={false}
-            onStageUntracked={async () => {}}
-            viewedFiles={viewedFiles}
-            onToggleViewed={toggleViewed}
-            scopeSelector={
-              <ScopeSelector
-                selectedScope={scope}
-                onScopeChange={setScope}
-                commits={commits}
-                uncommittedFileCount={uncommittedFileCount}
-                totalFileCount={totalFileCount}
-                isLoading={commitsQuery.isLoading}
-              />
-            }
-            onFileComment={handleFileComment}
-          />
-
-          {/* Diff viewer */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {viewMode === "untracked" && !selectedUntrackedPath && (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                Select a file to preview
-              </div>
-            )}
-
-            {viewMode === "untracked" && selectedUntrackedPath && (
-              <>
-                <ReviewFileHeader
-                  selectedFile={{ fileName: selectedUntrackedPath, hunks: [], status: "A" }}
-                  viewedFiles={viewedFiles}
-                  onToggleViewed={toggleViewed}
-                  onFileComment={handleFileComment}
-                />
-                <ReviewFileComment
-                  selectedFile={{ fileName: selectedUntrackedPath, hunks: [], status: "A" }}
-                  comments={comments}
-                  activeFileComment={activeFileComment}
-                  setActiveFileComment={setActiveFileComment}
-                  onRemoveComment={handleRemoveComment}
-                  onEditComment={handleEditComment}
-                  setComments={setComments}
-                />
-                <UntrackedFileDiffViewer
-                  projectId={projectId}
-                  worktreePath={reviewPath}
-                  filePath={selectedUntrackedPath}
-                  showHeader={false}
-                  reviewMode={true}
-                  comments={comments.filter((c) => c.filePath === selectedUntrackedPath)}
-                  activeCommentLine={activeCommentLine}
-                  onAddComment={handleAddComment}
-                  onRemoveComment={handleRemoveComment}
-                  onEditComment={handleEditComment}
-                  onCancelComment={() => setActiveCommentLine(null)}
-                  onSubmitComment={handleSubmitComment}
-                />
-              </>
-            )}
-
-            {viewMode === "uncommitted" && (
-              <>
-                {/* File content header */}
-                {selectedFile && (
-                  <ReviewFileHeader
-                    selectedFile={selectedFile}
-                    viewedFiles={viewedFiles}
-                    onToggleViewed={toggleViewed}
-                    onFileComment={handleFileComment}
-                  />
-                )}
-
-                {/* File-level comment (single per file, editable) */}
-                {selectedFile && (
-                  <ReviewFileComment
-                    selectedFile={selectedFile}
-                    comments={comments}
-                    activeFileComment={activeFileComment}
-                    setActiveFileComment={setActiveFileComment}
-                    onRemoveComment={handleRemoveComment}
-                    onEditComment={handleEditComment}
-                    setComments={setComments}
-                  />
-                )}
-
-                <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-                  {diffQuery.isLoading ? (
-                    <DiffViewer
-                      diffFile={null}
-                      loading={true}
-                      diffViewMode={effectiveDiffViewMode}
-                    />
-                  ) : selectedFile ? (
-                    <DiffViewer
-                      diffFile={selectedFile}
-                      loading={false}
-                      diffViewMode={effectiveDiffViewMode}
-                      reviewMode={true}
-                      comments={currentFileComments}
-                      onAddComment={handleAddComment}
-                      onRemoveComment={handleRemoveComment}
-                      onEditComment={handleEditComment}
-                      onCancelComment={() => setActiveCommentLine(null)}
-                      onSubmitComment={handleSubmitComment}
-                    />
-                  ) : (
-                    <DiffViewer
-                      diffFile={null}
-                      loading={false}
-                      diffViewMode={effectiveDiffViewMode}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </DiffStateProvider>
+        <DiffFileStack
+          ref={stackRef}
+          items={items}
+          projectId={projectId}
+          cwd={reviewPath}
+          diffViewMode={diffViewMode}
+          selectedIndex={selectedFileIndex}
+          onSelectedIndexChange={setSelectedFileIndex}
+          viewedFiles={viewedFiles}
+          onToggleViewed={toggleViewed}
+          review={review}
+          onBeforeReveal={handleBeforeReveal}
+          loading={diffQuery.isLoading}
+          emptyMessage={fileSearch.trim() ? "No files match" : "No changes to review"}
+        />
+      </ReviewLayout>
 
       {/* Confirmation Modals */}
       <ReworkModal
