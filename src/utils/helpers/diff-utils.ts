@@ -126,7 +126,11 @@ function parseOldHeaderPath(rest: string): string | null {
 
 export function parseDiffString(diffString: string): DiffFileWithName[] {
   const files: DiffFileWithName[] = [];
-  const lines = diffString.split("\n");
+  // Git terminates its output with a newline, so splitting yields a final empty element that is
+  // an artifact rather than a line. Left in, it is pushed into the last file's hunk as a blank
+  // context line — occupying a line number that belongs to real code and shifting everything
+  // after it. A blank line *inside* a hunk is genuine content and is still preserved below.
+  const lines = (diffString.endsWith("\n") ? diffString.slice(0, -1) : diffString).split("\n");
 
   let currentFile: string | null = null;
   // Accumulates the raw hunk lines (from --- header through last content line)
@@ -154,7 +158,13 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       },
       // The library parses each element of hunks[] as a full diff string.
       // A single joined string per file (containing --- / +++ / @@ blocks) is correct.
-      hunks: currentHunkLines.length > 0 ? [currentHunkLines.join("\n")] : [],
+      //
+      // The trailing newline is load-bearing. Without it the file's last diff line is parsed as
+      // having no line terminator, and reconstructing the opposite side — which the library does
+      // by concatenating `diffLine.text` — glues the following line onto it. That costs the
+      // reconstructed side a line, so every expanded line below a file's last hunk renders
+      // shifted by one. Git's own output ends with a newline; `split("\n")` above drops it.
+      hunks: currentHunkLines.length > 0 ? [currentHunkLines.join("\n") + "\n"] : [],
       status: currentStatus,
       ...(currentNote ? { note: currentNote } : {}),
       ...(currentOldPath ? { oldPath: currentOldPath } : {}),
