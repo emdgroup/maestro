@@ -45,6 +45,7 @@ export function ReviewChangesPanel({
   const {
     projectId,
     cwd,
+    diffTarget,
     allDisplayItems,
     loading,
     totalFileCount,
@@ -87,6 +88,7 @@ export function ReviewChangesPanel({
         diffError={diffError}
         projectId={projectId}
         cwd={cwd}
+        diffTarget={diffTarget}
         truncationInfo={truncationInfo}
         scope={scope}
         diffViewMode={diffViewMode}

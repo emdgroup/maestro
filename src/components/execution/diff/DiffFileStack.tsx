@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { DiffViewer, type PendingComment } from "./DiffViewer";
+import { type PendingComment } from "./DiffViewer";
+import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { estimateDiffHeight } from "./estimate-diff-height";
 import { useCommentNavigation } from "./useCommentNavigation";
 import { displayItemPath, type DisplayItem } from "@/types/review";
+import type { DiffTarget } from "@/types/bindings";
 
 /**
  * Where a stack's comments live, as intents.
@@ -49,6 +51,11 @@ interface DiffFileStackProps {
   projectId: number | null;
   /** The worktree the diff was taken in — where untracked file contents are read from. */
   cwd: string | null;
+  /**
+   * What the diff compares against. Needed beyond fetching the diff itself because expanding a
+   * hunk reads the file's pre-image, which only exists at this target's base revision.
+   */
+  diffTarget: DiffTarget;
   diffViewMode: DiffModeEnum;
   selectedIndex: number;
   onSelectedIndexChange: (index: number) => void;
@@ -84,6 +91,7 @@ export function DiffFileStack({
   items,
   projectId,
   cwd,
+  diffTarget,
   diffViewMode,
   selectedIndex,
   onSelectedIndexChange,
@@ -340,9 +348,11 @@ export function DiffFileStack({
             >
               {isMounted ? (
                 item.kind === "diff" ? (
-                  <DiffViewer
-                    diffFile={item.file}
-                    loading={false}
+                  <ExpandableDiffViewer
+                    file={item.file}
+                    projectId={projectId}
+                    cwd={cwd}
+                    diffTarget={diffTarget}
                     diffViewMode={diffViewMode}
                     {...reviewProps(key)}
                   />

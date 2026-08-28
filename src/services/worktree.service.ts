@@ -68,6 +68,35 @@ export function useUntrackedFileContentQuery(
 }
 
 /**
+ * One file's contents at the revision its diff was taken from.
+ *
+ * Fetched only when `enabled`, because it exists to turn on the diff view's hunk-expansion
+ * controls and doing that for every file in a review costs a whole-file syntax highlight per
+ * card. The result is immutable for a given (base, path) pair — a commit's blob cannot change —
+ * so it never goes stale.
+ */
+export function useFileContentAtBaseQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  diffTarget: DiffTarget,
+  filePath: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [
+      ...worktreeQueryKeys.base,
+      "content-at-base",
+      worktreePath ?? "",
+      diffTarget,
+      filePath,
+    ] as const,
+    queryFn: () => api.getFileContentAtBase(projectId!, worktreePath!, diffTarget, filePath!),
+    enabled: enabled && projectId != null && worktreePath != null && filePath != null,
+    staleTime: Infinity,
+  });
+}
+
+/**
  * Query hook for fetching worktree diff (unified diff string).
  * Uses project_id + absolute worktree path — no DB lookup needed.
  */

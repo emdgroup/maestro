@@ -1117,6 +1117,28 @@ async getUntrackedFileContent(projectId: number, worktreePath: string, filePath:
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * One file's contents at the revision a diff was taken from.
+ * 
+ * `@git-diff-view` can only offer its hunk-expansion controls when it holds a full copy of one
+ * side of the file; given the old side it reconstructs the new one from the hunks. This is
+ * fetched per file, when the user asks to expand, because attaching it to every file in a review
+ * costs a whole-file syntax highlight per card and that is what makes scrolling a large review
+ * stutter.
+ * 
+ * `Ok(None)` rather than an error for anything unusable — a path absent at the base (an added
+ * file, or a rename whose pre-image is under its old name), or a blob past the size cap. The
+ * caller renders exactly what it renders today when there is no content, so a miss costs the
+ * expansion controls rather than the diff.
+ */
+async getFileContentAtBase(projectId: number, worktreePath: string, diffTarget: DiffTarget, filePath: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_file_content_at_base", { projectId, worktreePath, diffTarget, filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async checkWorktreeDirty(projectId: number, worktreePath: string) : Promise<Result<DirtyStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_worktree_dirty", { projectId, worktreePath }) };

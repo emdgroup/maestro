@@ -13,6 +13,7 @@ import {
   type DiffHighlighterInstance,
 } from "@/utils/helpers/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
+import "./diff-expand.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
 import { cn } from "@/lib/utils.ts";
@@ -20,6 +21,7 @@ import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { buildExtendData } from "./extend-data";
 import { scopeRangeToHunk } from "./scope-selection";
+import { bindHunkHeaderPress, CONTEXT_REQUEST_CLASS } from "./hunk-header-press";
 
 export interface PendingComment {
   id: string;
@@ -63,6 +65,14 @@ interface DiffViewerProps {
     position: [number, number];
   } | null;
   sendDisabled?: boolean;
+  /**
+   * Called when the user presses a hunk header while the file's surrounding context is not
+   * loaded. Omit to leave hunk headers inert, which is what a diff whose pre-image cannot be
+   * fetched — an untracked file, a rename with no old blob — should do.
+   *
+   * See `useHunkHeaderPress` for why this is a request rather than the expansion itself.
+   */
+  onRequestContext?: () => void;
 }
 
 function splitSideToSide(side: SplitSide): "old" | "new" {
@@ -108,6 +118,7 @@ export function DiffViewer({
   onSendComment,
   commentNav,
   sendDisabled,
+  onRequestContext,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
@@ -169,6 +180,22 @@ export function DiffViewer({
       return () => wrapper.removeEventListener("mousedown", notePress, true);
     },
     [reviewMode],
+  );
+
+  /**
+   * Both wrapper listeners in one ref callback, since an element takes a single ref. Each binder
+   * returns its own cleanup and no-ops when its feature is off.
+   */
+  const bindWrapper = useCallback(
+    (wrapper: HTMLDivElement | null) => {
+      const unbindWidgetPress = bindWidgetPressFlag(wrapper);
+      const unbindHunkPress = bindHunkHeaderPress(wrapper, onRequestContext);
+      return () => {
+        unbindWidgetPress?.();
+        unbindHunkPress?.();
+      };
+    },
+    [bindWidgetPressFlag, onRequestContext],
   );
 
   const handleMultiSelectChange = useCallback(
@@ -298,8 +325,12 @@ export function DiffViewer({
   return (
     <div className="min-h-0 flex flex-col h-full">
       <div
-        ref={bindWidgetPressFlag}
-        className={cn("flex-1 min-h-0", reviewMode && "review-mode-active")}
+        ref={bindWrapper}
+        className={cn(
+          "flex-1 min-h-0",
+          reviewMode && "review-mode-active",
+          onRequestContext && CONTEXT_REQUEST_CLASS,
+        )}
       >
         {/* Multi-select is review-only: a read-only diff has nothing to do with a selection, and
             leaving it on there would highlight lines the user cannot act on. */}
