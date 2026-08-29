@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, act, fireEvent } from "@testing-library/react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { setAutoIntersect, intersect } from "@/test/intersection-observer";
 
 vi.mock("./ExpandableDiffViewer", () => ({
   ExpandableDiffViewer: () => <div data-testid="diff-viewer" />,
@@ -30,7 +29,7 @@ function diffItems(count: number): DisplayItem[] {
  * Give the stack a layout happy-dom does not compute: cards stacked `CARD_HEIGHT` apart inside a
  * scroller whose top edge sits at `CONTAINER_TOP`, with a `scrollTop` that actually moves them.
  */
-function fakeLayout(root: HTMLElement, heightOf?: (card: HTMLElement) => number) {
+function fakeLayout(root: HTMLElement) {
   const scroller = root.querySelector<HTMLDivElement>(".custom-scrollbar");
   if (!scroller) throw new Error("scroll container not found");
   const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-file-card]"));
@@ -44,22 +43,13 @@ function fakeLayout(root: HTMLElement, heightOf?: (card: HTMLElement) => number)
     },
   });
   scroller.getBoundingClientRect = () => ({ top: CONTAINER_TOP }) as DOMRect;
-  // Read at call time, not baked in, so a card that grows really does move the ones below it.
-  const contentTop = (index: number) => {
-    let cursor = 0;
-    for (let before = 0; before < index; before++) {
-      cursor += heightOf ? heightOf(cards[before]) : CARD_HEIGHT;
-    }
-    return cursor;
-  };
   cards.forEach((card, index) => {
     card.getBoundingClientRect = () =>
-      ({ top: CONTAINER_TOP + contentTop(index) - scrollTop }) as DOMRect;
+      ({ top: CONTAINER_TOP + index * CARD_HEIGHT - scrollTop }) as DOMRect;
   });
 
   return {
     scroller,
-    contentTop,
     scrollTo(next: number) {
       scrollTop = next;
       fireEvent.scroll(scroller);
@@ -67,11 +57,7 @@ function fakeLayout(root: HTMLElement, heightOf?: (card: HTMLElement) => number)
   };
 }
 
-function renderStack(
-  count: number,
-  onSelectedIndexChange: (index: number) => void,
-  heightOf?: (card: HTMLElement) => number,
-) {
+function renderStack(count: number, onSelectedIndexChange: (index: number) => void) {
   const ref = createRef<DiffFileStackHandle>();
   const view = render(
     <DiffFileStack
@@ -87,7 +73,7 @@ function renderStack(
       onToggleViewed={() => {}}
     />,
   );
-  return { ref, ...fakeLayout(view.container, heightOf) };
+  return { ref, ...fakeLayout(view.container) };
 }
 
 describe("DiffFileStack scroll spy", () => {
@@ -165,55 +151,5 @@ describe("DiffFileStack scroll spy", () => {
     });
 
     expect(scroller.scrollTop).toBe(4 * CARD_HEIGHT + 50);
-  });
-});
-
-describe("DiffFileStack body loading", () => {
-  const HEADER = 40;
-  const BODY = 360;
-  const heightOf = (card: HTMLElement) =>
-    card.querySelector("[data-testid='diff-viewer']") ? HEADER + BODY : HEADER;
-
-  /**
-   * The property that makes windowed loading safe at all.
-   *
-   * Building a body below the reader is free — nothing on screen moves. Building one *above* them
-   * pushes the whole page down, and scrolling up into files never visited does exactly that. The
-   * stack records where the topmost on-screen card sits before the change and puts it back after,
-   * inside the same layout pass, so the reader sees nothing move.
-   */
-  it("keeps the reader in place when a body is built above them", () => {
-    setAutoIntersect(false);
-    const { scroller, contentTop, scrollTo } = renderStack(6, vi.fn(), heightOf);
-
-    // All headers, so card 3 sits at 3 × 40. Put it at the top of the scroller.
-    scrollTo(contentTop(3));
-    const before = document
-      .querySelectorAll<HTMLElement>("[data-file-card]")[3]
-      .getBoundingClientRect().top;
-
-    // A card the reader has scrolled past comes back into range and builds.
-    act(() => intersect(document.querySelectorAll("[data-file-card]")[0]));
-
-    const after = document
-      .querySelectorAll<HTMLElement>("[data-file-card]")[3]
-      .getBoundingClientRect().top;
-    expect(after).toBe(before);
-    // Which it can only be by having absorbed the growth into the scroll position.
-    expect(scroller.scrollTop).toBe(contentTop(3));
-  });
-
-  // Below the reader there is nothing to absorb, and touching the scroll position there would be
-  // a jump they did not ask for.
-  it("leaves the scroll position alone when a body is built below them", () => {
-    setAutoIntersect(false);
-    const { scroller, scrollTo, contentTop } = renderStack(6, vi.fn(), heightOf);
-
-    scrollTo(contentTop(1));
-    const position = scroller.scrollTop;
-
-    act(() => intersect(document.querySelectorAll("[data-file-card]")[5]));
-
-    expect(scroller.scrollTop).toBe(position);
   });
 });

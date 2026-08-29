@@ -6,20 +6,6 @@
  */
 export const SNAP_TOLERANCE = 2;
 
-/**
- * How far beyond the scroller, in pixels, a card's body is built.
- *
- * Bodies are what a review costs. Measured in Chromium on a production build over a 151-file
- * diff of this repo, rendering every body took 5.4s, 200k DOM nodes and ~340MB of heap — and the
- * cost is close to linear, around 35ms and 1,300 nodes a file. Five files is 283ms. So the only
- * way a large review opens quickly is to not build most of it.
- *
- * A margin rather than a file count on purpose: "twenty files" is 300ms of one review and several
- * seconds of another, because one generated file can be longer than the other twenty put together.
- * Pixels are the unit the cost actually scales with.
- */
-export const BODY_MARGIN_PX = 1200;
-
 /** A drift smaller than this counts as arrived, in pixels. */
 export const SETTLE_TOLERANCE = 1;
 

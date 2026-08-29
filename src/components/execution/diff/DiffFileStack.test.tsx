@@ -132,56 +132,42 @@ describe("DiffFileStack", () => {
     );
   });
 
-  /**
-   * No file-count rule. Thirty files arrive with every card open, exactly as three would — the old
-   * `>20` rule folded a large review shut and made the reviewer click through each file.
-   *
-   * Open is not the same as built. Which bodies exist is decided by where the reader is, and a card
-   * whose body has not been built yet is still an open card: the header carries `rounded-t-lg`,
-   * meeting the body below it, rather than the `rounded-lg` of one the user has folded.
-   */
-  it("leaves every card open however many files there are", () => {
+  // Every card opens expanded regardless of how many there are — the old >20 rule collapsed a
+  // large review and made the reviewer click through each file.
+  it("opens every file expanded regardless of count", async () => {
     renderStack(
       Array.from({ length: 30 }, (_, i) => diffItem(`f${i}.ts`)),
       emptyReview(),
     );
-
-    const headers = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-file-card] > div > div"),
-    );
-    expect(headers).toHaveLength(30);
-    expect(headers.filter((header) => header.className.includes("rounded-t-lg"))).toHaveLength(30);
+    await waitFor(() => expect(screen.getAllByTestId("diff-viewer")).toHaveLength(30));
   });
 
   /**
-   * Headers always, bodies only near the viewport.
+   * The reversal the whole design turns on. Building a diff's structure is under a millisecond a
+   * file, so every one of them is in the document from the first frame and the stack reaches its
+   * true height immediately. What waits is Shiki — 25–150ms a file — and colour changes no layout,
+   * so it can arrive whenever without moving anything.
    *
-   * Bodies are what a review costs — measured at ~35ms and ~1,300 DOM nodes a file, so rendering
-   * all of a 151-file diff took 5.4s and 200k nodes. Headers are a few nodes each, and having all
-   * of them is what keeps the stack an honestly measurable document: every card has a real
-   * position, including files nobody has scrolled to.
+   * Deferring the *body* is what the two previous attempts did, and it cannot be made to work: an
+   * unbuilt card has no height, so every scroll target is computed against a document that is
+   * about to change underneath it.
    */
-  it("renders a header for every file and a body only for what is near the viewport", () => {
+  it("renders every diff immediately, in plain text", () => {
     setAutoIntersect(false);
     renderStack([diffItem("a.ts"), diffItem("b.ts")], emptyReview());
 
-    expect(screen.getByText("a.ts")).toBeTruthy();
-    expect(screen.getByText("b.ts")).toBeTruthy();
-    expect(screen.queryAllByTestId("diff-viewer")).toHaveLength(0);
+    const viewers = screen.getAllByTestId("diff-viewer");
+    expect(viewers).toHaveLength(2);
+    expect(viewers.map((v) => v.dataset.highlight)).toEqual(["off", "off"]);
   });
 
-  /**
-   * Two tiers off one margin: arriving builds the body, and queues the colour behind it. Plain
-   * first is not a cosmetic choice — it is the half of the cost that can be deferred without
-   * changing the layout, so it lands a frame later than the body it belongs to.
-   */
-  it("builds a body and then colours it once the card comes near the viewport", async () => {
+  it("highlights a card once it comes near the viewport", async () => {
     setAutoIntersect(false);
     renderStack([diffItem("a.ts")], emptyReview());
+    expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("off");
 
     act(() => intersect(observedElements()));
 
-    await waitFor(() => expect(screen.getByTestId("diff-viewer")).toBeTruthy());
     await waitFor(() => expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("on"));
   });
 
@@ -204,7 +190,7 @@ describe("DiffFileStack", () => {
    * effects one component at a time without yielding, so a commit that starts five cards blocks
    * for the sum of all five and paints nothing until the last finishes.
    */
-  it("builds one card a frame rather than all at once", async () => {
+  it("colours cards one frame at a time rather than all at once", async () => {
     // Hand-driven frames. `act()` drains happy-dom's timer queue in one go, so against the real
     // `requestAnimationFrame` five cards light up together and the test would pass either way.
     const pending: FrameRequestCallback[] = [];
@@ -220,33 +206,26 @@ describe("DiffFileStack", () => {
         Array.from({ length: 5 }, (_, i) => diffItem(`f${i}.ts`)),
         emptyReview(),
       );
-      const built = () => screen.queryAllByTestId("diff-viewer").length;
       const lit = () =>
-        screen.queryAllByTestId("diff-viewer").filter((v) => v.dataset.highlight === "on").length;
+        screen.getAllByTestId("diff-viewer").filter((v) => v.dataset.highlight === "on").length;
 
       act(() => intersect(observedElements()));
-      // The observer callback queues; it builds nothing itself.
-      expect(built()).toBe(0);
+      // The observer callback books a frame; it does not colour anything itself.
+      expect(lit()).toBe(0);
 
       await nextFrame();
-      expect(built()).toBe(1);
-
-      // The rest arrive over subsequent frames, colour trailing its own body by one.
-      for (let round = 0; round < 20; round++) await nextFrame();
-      expect(built()).toBe(5);
-      expect(lit()).toBe(5);
+      expect(lit()).toBe(1);
+      await nextFrame();
+      expect(lit()).toBe(2);
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  /**
-   * Both tiers at once for a navigation target, ahead of anything queued. Comment navigation waits
-   * on a MutationObserver for the comment's node and gives up after a couple of seconds, so a
-   * target whose body has not been built has nothing for it to find; and a file the user asked for
-   * should be readable on arrival rather than a frame later.
-   */
-  it("builds and colours a navigation target ahead of the queue", () => {
+  // Comment navigation waits on a MutationObserver for the comment's node and gives up after a
+  // couple of seconds. The node is always there now — every diff is rendered — so what navigation
+  // has to force is only the colour, ahead of whatever the queue was working through.
+  it("highlights a navigation target ahead of the queue", () => {
     setAutoIntersect(false);
     const ref = createRef<DiffFileStackHandle>();
     renderStack(
@@ -254,13 +233,13 @@ describe("DiffFileStack", () => {
       emptyReview(),
       ref,
     );
-    expect(screen.queryAllByTestId("diff-viewer")).toHaveLength(0);
+    const lit = () =>
+      screen.getAllByTestId("diff-viewer").filter((v) => v.dataset.highlight === "on");
+    expect(lit()).toHaveLength(0);
 
     act(() => ref.current?.navigateTo(20));
 
-    const built = screen.getAllByTestId("diff-viewer");
-    expect(built).toHaveLength(1);
-    expect(built[0].dataset.highlight).toBe("on");
+    expect(lit()).toHaveLength(1);
   });
 
   // The host sorts items into tree order; the stack must not reorder them, or the sidebar
@@ -335,9 +314,8 @@ describe("DiffReviewApi against a real store", () => {
   // selected range only survives if the stack holds on to both line numbers in between.
   it("carries a selected range from the widget click through to the store", async () => {
     renderStack([diffItem("src/git/merge.rs")], annotationReview());
-    // The diff body is what carries the widget, and it is built a frame after its card arrives.
+    // The diff body is what carries the widget, and it only mounts once its card is on screen.
     act(() => intersect(observedElements()));
-    await waitFor(() => expect(screen.getByRole("button", { name: "select 12-18" })).toBeTruthy());
 
     await userEvent.click(screen.getByRole("button", { name: "select 12-18" }));
     await userEvent.click(screen.getByRole("button", { name: "submit draft" }));

@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { type PendingComment } from "./DiffViewer";
 import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
@@ -14,11 +7,9 @@ import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { useCommentNavigation } from "./useCommentNavigation";
 import {
   activeIndexAt,
-  BODY_MARGIN_PX,
   SETTLE_MAX_FRAMES,
   SETTLE_STABLE_FRAMES,
   SETTLE_TOLERANCE,
-  SNAP_TOLERANCE,
 } from "./stack-scroll";
 import { displayItemPath, type DisplayItem } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
@@ -54,21 +45,6 @@ export interface DiffReviewApi {
 
 /** Module-level so a review-less stack does not hand the comment hooks a new array each render. */
 const EMPTY_COMMENTS: PendingComment[] = [];
-
-/**
- * Where an element sits in the scroller's content, in the same space as `scrollTop`.
- *
- * Not `offsetTop`, which is measured from the nearest *positioned* ancestor — `ReviewLayout`'s
- * container rather than the scroller inside it — and so carries the diff surface's inset as a
- * constant error.
- */
-function contentOffsetOf(element: HTMLElement, container: HTMLElement): number {
-  return (
-    element.getBoundingClientRect().top -
-    container.getBoundingClientRect().top +
-    container.scrollTop
-  );
-}
 
 export interface DiffFileStackHandle {
   /** Expand the file at `index`, scroll it to the top of the stack, and select it. */
@@ -151,62 +127,22 @@ export function DiffFileStack({
   const settleFrameRef = useRef<number | null>(null);
 
   /**
-   * Whose diff body is built. Every file's *header* is always rendered, which is what keeps this
-   * honest: the stack is a complete skeleton whose every offset is real, so the scroll spy and
-   * `navigateTo` work against measured positions rather than guesses about files they have never
-   * seen. A body that has not been built contributes nothing to the document — not an estimate, a
-   * fact about the page as it currently stands.
-   *
-   * So the document only ever grows, and only in front of the reader. That is the property the
-   * previous designs lacked: they reserved a guessed height and then corrected it, which is a
-   * change to a part of the page the user may be looking at.
-   */
-  const [loadedBodies, setLoadedBodies] = useState<Set<string>>(new Set());
-  /**
-   * The same set, readable synchronously.
-   *
-   * Load requests arrive from an observer callback, and several can land before React commits any
-   * of them. Deciding what is new against the rendered state would let the same file be counted as
-   * new twice — which matters because "something new is being added" is what arms the scroll
-   * correction below, and arming it for a change that never happens leaves a stale anchor to be
-   * applied against a scroll position it knows nothing about.
-   */
-  const loadedBodiesRef = useRef<Set<string>>(new Set());
-  /**
-   * Where the topmost on-screen card sat before a body was added, so the scroll position can be
-   * put back afterwards.
-   *
-   * Only bodies loading *above* the viewport need this, which happens when scrolling up into
-   * files never visited. Captured before the state change, while the DOM still shows the old
-   * layout, and applied in a layout effect after the new one — so the correction lands in the same
-   * frame and nothing is seen to move.
-   */
-  const shiftAnchorRef = useRef<{ path: string; offset: number } | null>(null);
-
-  /**
    * Which files are syntax-highlighted.
    *
-   * The second of the two costs, and the one that is free to be lazy: colour changes no layout at
-   * all (see the `highlight` prop on `DiffViewer`), so it can arrive whenever without moving
-   * anything. A body cannot — hence `loadedBodies` above, which is the same idea applied to a cost
-   * that does move the page and therefore has to be paid in front of the reader rather than behind
-   * them.
+   * Every file's diff is rendered from the first frame — that is the whole design. Building a
+   * diff's structure measured at under a millisecond a file, so the document reaches its true
+   * height immediately and never changes it. What is expensive is Shiki: 25–150ms a file,
+   * synchronous, and up to 1.8s for a large one. So colour is what arrives late, not content.
+   *
+   * This can afford to be lazy precisely because it is invisible to layout — see the `highlight`
+   * prop on `DiffViewer`. Deferring the *body* instead is what the previous two attempts did, and
+   * it cannot be made to work: a card that has not been built has no height, so every scroll
+   * target is computed against a document that is about to change underneath it.
    */
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   /** Queued for colour, oldest first — drained one a frame so a burst cannot block a scroll. */
   const pendingHighlightRef = useRef<Set<string>>(new Set());
   const highlightFrameRef = useRef<number | null>(null);
-  /**
-   * Queued to be built, and re-checked against the layout as it stands when each one comes up.
-   *
-   * A stack of nothing but headers is dense: at mount, eighty of them fit inside the margin, and
-   * taking the observer at its word built forty-two bodies — 166ms to first paint followed by a
-   * second and a half of work nobody asked for. The first few bodies push the rest out of range,
-   * so draining slowly and re-testing turns that into a handful. It does the same for a fast
-   * scroll, where most of what was reported has already gone by.
-   */
-  const pendingBodiesRef = useRef<Set<string>>(new Set());
-  const bodyFrameRef = useRef<number | null>(null);
 
   const toggleExpanded = useCallback((key: string) => {
     setCollapsedFiles((prev) => {
@@ -225,60 +161,6 @@ export function DiffFileStack({
    * until the last finishes. Spreading them lets the browser draw in between, which is the
    * difference between a stack that colours in and one that hitches.
    */
-  /**
-   * Remember where the topmost on-screen card is, before anything is added to the document.
-   *
-   * The first card at or below the scroller's top edge, because that is the one the reader is
-   * looking at and the one a body loading above it would push down. Cheap enough to do on every
-   * load: one rect per rendered header, and headers are all that exist for most of the stack.
-   */
-  const captureShiftAnchor = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container || shiftAnchorRef.current) return;
-    const containerTop = container.getBoundingClientRect().top;
-    let anchor: { path: string; offset: number } | null = null;
-    let best = Infinity;
-    for (const [path, element] of sectionRefs.current) {
-      const top = element.getBoundingClientRect().top;
-      if (top < containerTop - SNAP_TOLERANCE || top >= best) continue;
-      best = top;
-      // Content offset, not viewport position: `scrollTop` can move between capture and use —
-      // the settle loop after a jump does exactly that — and a viewport-relative anchor would
-      // then read that scroll as content having shifted and undo it.
-      anchor = { path, offset: contentOffsetOf(element, container) };
-    }
-    shiftAnchorRef.current = anchor;
-  }, []);
-
-  /** Build these bodies, keeping whatever is on screen where it is. Already-built paths are free. */
-  const loadBodies = useCallback(
-    (paths: string[]) => {
-      const fresh = paths.filter((path) => !loadedBodiesRef.current.has(path));
-      if (fresh.length === 0) return;
-      // Before the state change, while the DOM still shows the layout these are about to alter.
-      captureShiftAnchor();
-      const next = new Set(loadedBodiesRef.current);
-      for (const path of fresh) next.add(path);
-      loadedBodiesRef.current = next;
-      setLoadedBodies(next);
-    },
-    [captureShiftAnchor],
-  );
-
-  // Put it back. `overflow-anchor: none` on the scroller leaves this as the only thing adjusting
-  // the position — the browser's own scroll anchoring would otherwise correct the same shift and
-  // the two would add up.
-  useLayoutEffect(() => {
-    const anchor = shiftAnchorRef.current;
-    shiftAnchorRef.current = null;
-    const container = scrollContainerRef.current;
-    if (!anchor || !container) return;
-    const element = sectionRefs.current.get(anchor.path);
-    if (!element) return;
-    const drift = contentOffsetOf(element, container) - anchor.offset;
-    if (Math.abs(drift) > SNAP_TOLERANCE) container.scrollTop += drift;
-  }, [loadedBodies]);
-
   const scheduleHighlight = useCallback(() => {
     if (highlightFrameRef.current !== null) return;
     const step = () => {
@@ -300,50 +182,6 @@ export function DiffFileStack({
       // Cleared as well as cancelled: a handle left set reads as "a frame is already booked", and
       // StrictMode tears effects down and runs them again on the same instance.
       highlightFrameRef.current = null;
-    },
-    [],
-  );
-
-  /**
-   * Build one queued body a frame, skipping any that the layout has since carried out of range.
-   *
-   * A body is ~35ms of blocked main thread, so one per frame is the most that can be spent without
-   * the stack feeling like it stalls. Colour is queued behind its own body rather than alongside
-   * it, which keeps the two costs in separate frames.
-   */
-  const scheduleBodies = useCallback(() => {
-    if (bodyFrameRef.current !== null) return;
-    const step = () => {
-      bodyFrameRef.current = null;
-      const container = scrollContainerRef.current;
-      if (!container) return;
-      const containerTop = container.getBoundingClientRect().top;
-      const near = (element: HTMLElement) => {
-        const top = element.getBoundingClientRect().top;
-        return (
-          top > containerTop - BODY_MARGIN_PX &&
-          top < containerTop + container.clientHeight + BODY_MARGIN_PX
-        );
-      };
-
-      for (const path of pendingBodiesRef.current) {
-        pendingBodiesRef.current.delete(path);
-        const element = sectionRefs.current.get(path);
-        if (!element || !near(element)) continue;
-        loadBodies([path]);
-        pendingHighlightRef.current.add(path);
-        scheduleHighlight();
-        break;
-      }
-      if (pendingBodiesRef.current.size > 0) bodyFrameRef.current = requestAnimationFrame(step);
-    };
-    bodyFrameRef.current = requestAnimationFrame(step);
-  }, [loadBodies, scheduleHighlight]);
-
-  useEffect(
-    () => () => {
-      if (bodyFrameRef.current !== null) cancelAnimationFrame(bodyFrameRef.current);
-      bodyFrameRef.current = null;
     },
     [],
   );
@@ -412,13 +250,10 @@ export function DiffFileStack({
    * a filtered list, in which case it has no index yet but its collapsed state and its section can
    * both be addressed by path already.
    *
-   * The body is forced rather than left to the observer. Comment navigation waits on a
-   * MutationObserver for the comment's node and gives up after a couple of seconds, so a target
-   * whose body has not been built has nothing for it to find; and the jump wants the file readable
-   * on arrival, not a frame later.
-   *
-   * Building it moves nothing: a body grows below its own header, and the header is what the jump
-   * scrolls to.
+   * Un-collapsing is the only thing this has to force. A file's diff is already in the document
+   * whether or not anyone has scrolled near it, so comment navigation — which waits on a
+   * MutationObserver for the comment's node and gives up after a couple of seconds — finds its
+   * target without the stack having to build anything first.
    */
   const revealFile = useCallback(
     (path: string) => {
@@ -429,14 +264,13 @@ export function DiffFileStack({
         next.delete(path);
         return next;
       });
-      loadBodies([path]);
       // Ahead of the queue: this is the file the user asked for, and it is one card's worth of
       // work. Whatever was waiting can wait a frame longer.
       pendingHighlightRef.current.delete(path);
       setHighlighted((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
       scrollToTop(path);
     },
-    [onBeforeReveal, scrollToTop, loadBodies],
+    [onBeforeReveal, scrollToTop],
   );
 
   const navigateTo = useCallback(
@@ -456,15 +290,15 @@ export function DiffFileStack({
    *
    * Rooted at the scroller rather than the viewport, which also means a hidden session — the agent
    * monitor keeps them all mounted — has a zero-size root, so nothing intersects and nothing is
-   * built until it is actually looked at.
+   * highlighted until it is actually looked at.
    *
-   * It drives both tiers off one margin: a card that comes within `BODY_MARGIN_PX` gets its body
-   * built, and joins the queue for colour. Two margins would only buy a window in which a card is
-   * built but deliberately grey, and the queue already staggers the expensive half.
+   * The margin can be generous in both directions now that what it gates is colour: promoting a
+   * card changes nothing about its size, so reading ahead costs work but can never move the page.
+   * It was asymmetric when this gated mounting, because growth above the viewport was a shove and
+   * growth below was free.
    *
-   * Neither is taken back here. A file scrolled past keeps its body and its colour, so returning
-   * to it costs nothing — bounding that is a separate concern, and one that has to hold on to the
-   * height it is dropping.
+   * Colour is never taken back. A file the user has scrolled past stays highlighted, so returning
+   * to it costs nothing and no card is ever seen to lose its colour.
    */
   const observerRef = useRef<IntersectionObserver | null>(null);
   const pathByElement = useRef(new WeakMap<Element, string>());
@@ -477,13 +311,13 @@ export function DiffFileStack({
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const path = pathByElement.current.get(entry.target);
-          if (path === undefined || loadedBodiesRef.current.has(path)) continue;
-          pendingBodiesRef.current.add(path);
+          if (path === undefined) continue;
+          pendingHighlightRef.current.add(path);
           queued = true;
         }
-        if (queued) scheduleBodies();
+        if (queued) scheduleHighlight();
       },
-      { root, rootMargin: `${BODY_MARGIN_PX}px 0px ${BODY_MARGIN_PX}px 0px` },
+      { root, rootMargin: "600px 0px 600px 0px" },
     );
     observerRef.current = observer;
     for (const element of sectionRefs.current.values()) observer.observe(element);
@@ -491,7 +325,7 @@ export function DiffFileStack({
       observer.disconnect();
       observerRef.current = null;
     };
-  }, [scheduleBodies]);
+  }, [scheduleHighlight]);
 
   const registerSection = useCallback((key: string, element: HTMLElement | null) => {
     const previous = sectionRefs.current.get(key);
@@ -589,9 +423,7 @@ export function DiffFileStack({
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      // `overflow-anchor:none` because this stack corrects its own shifts. Chromium's scroll
-      // anchoring would correct the same one, and the two adjustments would add up.
-      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-3 flex flex-col [overflow-anchor:none]"
+      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-3 flex flex-col"
     >
       {loading && (
         <div className="text-xs text-muted-foreground py-8 text-center animate-pulse">
@@ -620,30 +452,26 @@ export function DiffFileStack({
               note={item.kind === "diff" ? fileNote(item.file) : undefined}
               fileComment={fileCommentFor(key)}
             >
-              {/* Nothing at all until the body is built — no reserved height, no placeholder. A
-                  card the reader has not reached contributes only its header, and the document
-                  grows in front of them as they go. */}
-              {loadedBodies.has(key) &&
-                (item.kind === "diff" ? (
-                  <ExpandableDiffViewer
-                    file={item.file}
-                    projectId={projectId}
-                    cwd={cwd}
-                    diffTarget={diffTarget}
-                    diffViewMode={diffViewMode}
-                    highlight={highlighted.has(key)}
-                    {...reviewProps(key)}
-                  />
-                ) : (
-                  <UntrackedFileDiffViewer
-                    projectId={projectId}
-                    worktreePath={cwd}
-                    filePath={item.path}
-                    showHeader={false}
-                    highlight={highlighted.has(key)}
-                    {...reviewProps(key)}
-                  />
-                ))}
+              {item.kind === "diff" ? (
+                <ExpandableDiffViewer
+                  file={item.file}
+                  projectId={projectId}
+                  cwd={cwd}
+                  diffTarget={diffTarget}
+                  diffViewMode={diffViewMode}
+                  highlight={highlighted.has(key)}
+                  {...reviewProps(key)}
+                />
+              ) : (
+                <UntrackedFileDiffViewer
+                  projectId={projectId}
+                  worktreePath={cwd}
+                  filePath={item.path}
+                  showHeader={false}
+                  highlight={highlighted.has(key)}
+                  {...reviewProps(key)}
+                />
+              )}
             </ReviewFileCard>
           );
         })}
