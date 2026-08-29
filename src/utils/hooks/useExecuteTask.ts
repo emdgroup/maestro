@@ -1,10 +1,19 @@
 import { useState, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
 import { taskBranchName } from "@/lib/generateSessionName";
-import type { Task, JsonValue, ConnectionKey, AgentRole } from "@/types/bindings";
+import type {
+  Task,
+  JsonValue,
+  ConnectionKey,
+  AgentRole,
+  WorkspaceMode,
+  WorktreeWithStatus,
+} from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
+import { useClaimWorktreeForTaskMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
 import {
   useMarkTaskExecutionStartedMutation,
@@ -100,7 +109,9 @@ export function useExecuteTask(
   connection: ConnectionKey,
 ) {
   const defaultAgent = useDefaultAgent();
+  const queryClient = useQueryClient();
   const { resolveWorktree } = useResolveWorktree();
+  const claimWorktree = useClaimWorktreeForTaskMutation();
   const spawnAcpSessionMutation = useSpawnAcpSessionMutation();
   const markExecutionStarted = useMarkTaskExecutionStartedMutation();
   const markSessionReady = useMarkTaskSessionReadyMutation();
@@ -171,8 +182,30 @@ export function useExecuteTask(
     // would cost a worktree per refinement for no benefit. The planner and the reviewer do need
     // one: the planner has to read the branch the work will land on, and the diff being reviewed
     // only exists there.
-    const needsWorktree = role !== "Refiner" && task.isolated_worktree;
+    const workspaceMode: WorkspaceMode =
+      role === "Refiner" ? "RepositoryDirectory" : task.workspace_mode;
     const readOnly = role !== "Coder";
+
+    // Resolved before the claim: a task pinned to a workspace that has since been deleted cannot
+    // run anywhere sensible, and failing here leaves the card where it was rather than parked at
+    // `Spawning` with a claim to hand back.
+    let pinnedWorkspace: WorktreeWithStatus | null = null;
+    if (workspaceMode === "ReuseWorkspace") {
+      const worktrees = await queryClient
+        .fetchQuery({
+          queryKey: worktreeQueryKeys.list(projectId),
+          queryFn: () => api.listWorktreesWithStatus(projectId, projectPath),
+        })
+        .catch(() => [] as WorktreeWithStatus[]);
+      pinnedWorkspace =
+        worktrees.find((w) => w.id != null && w.id === task.workspace_worktree_id) ?? null;
+      if (!pinnedWorkspace) {
+        toast.error(`The workspace "${task.title}" was pinned to no longer exists`, {
+          description: "Open the task and choose a workspace before running it again.",
+        });
+        return;
+      }
+    }
 
     if (respectCapacity) {
       // Advisory. The claim below is what actually decides whether the task starts; this only
@@ -239,16 +272,26 @@ export function useExecuteTask(
     let spawnFailed = false;
 
     try {
-      // Resolve cwd and branch
-      const { cwd, branchName } = needsWorktree
-        ? await resolveWorktree({
-            projectId,
-            repoPath: projectPath,
-            taskId: task.id,
-            baseBranch: task.base_branch,
-            newBranchName: taskBranchName(task.id, task.title),
-          })
-        : { cwd: projectPath, branchName: null };
+      // Resolve cwd and branch. A reused workspace is claimed rather than merely used: everything
+      // that later asks where this task worked — the review panel, approve, the archive prompt —
+      // finds it through `worktrees.task_id`.
+      const { cwd, branchName } =
+        workspaceMode === "RepositoryDirectory"
+          ? { cwd: projectPath, branchName: null }
+          : workspaceMode === "ReuseWorkspace"
+            ? await claimWorktree
+                .mutateAsync({ taskId: task.id, worktreeId: pinnedWorkspace!.id! })
+                .then(() => ({
+                  cwd: pinnedWorkspace!.path,
+                  branchName: pinnedWorkspace!.branch_name,
+                }))
+            : await resolveWorktree({
+                projectId,
+                repoPath: projectPath,
+                taskId: task.id,
+                baseBranch: task.base_branch,
+                newBranchName: taskBranchName(task.id, task.title),
+              });
 
       // Only for an agent that will write, and only when somebody is there to answer. The prompt
       // exists to stop a coder building on top of someone else's uncommitted work; offering to

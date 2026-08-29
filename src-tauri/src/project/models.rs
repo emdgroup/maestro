@@ -2,6 +2,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::task::models::WorkspaceMode;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct Project {
@@ -90,10 +92,19 @@ pub struct ProjectConfig {
     /// default" stores no hue and would otherwise look exactly like "never chosen".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent_color_auto_assign: Option<bool>,
-    /// Whether work in this project is isolated in its own git worktree by default: new tasks
-    /// are created with worktree isolation on, and the New Session dialog opens on "New".
-    /// Only meaningful for a git project; a non-git one never offers the choice.
-    pub default_worktree: bool,
+    /// Where work in this project happens by default: new tasks are created with this mode, and
+    /// the New Session dialog opens on it. Only meaningful for a git project; a non-git one never
+    /// offers the choice.
+    ///
+    /// `None` means the file predates the setting, in which case the legacy `default_worktree`
+    /// below answers for it. Read through `default_workspace_mode()`, never directly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_workspace_mode: Option<WorkspaceMode>,
+    /// The boolean this setting used to be. Read-only: kept so a project that turned worktrees off
+    /// before the modes existed is not silently turned back on. Cleared the first time the setting
+    /// is written, so it disappears from the file rather than lingering as a second answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_worktree: Option<bool>,
     /// Extra workspace roots handed to every agent alongside the session's own directory.
     ///
     /// Absolute paths on the machine the agent runs on, or `~`-relative; `~` is expanded there,
@@ -103,9 +114,9 @@ pub struct ProjectConfig {
     pub additional_directories: Option<Vec<String>>,
 }
 
-/// Hand-written rather than derived because `default_worktree` is on by default and a derived
-/// `bool` would be `false`. The container's `#[serde(default)]` fills missing keys from here, so
-/// this is also what a `settings.json` written before the key existed reads back as.
+/// Hand-written rather than derived so the container's `#[serde(default)]` has something to fill
+/// missing keys from; this is also what a `settings.json` written before any of these keys existed
+/// reads back as.
 impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
@@ -119,9 +130,29 @@ impl Default for ProjectConfig {
             startup_tab: None,
             accent_color: None,
             accent_color_auto_assign: None,
-            default_worktree: true,
+            default_workspace_mode: None,
+            default_worktree: None,
             additional_directories: None,
         }
+    }
+}
+
+impl ProjectConfig {
+    /// The project's default, answering for the two shapes the setting has had.
+    ///
+    /// A worktree of its own is what Maestro did before either key existed, so an absent setting
+    /// and an explicit `default_worktree: true` both land there.
+    pub fn default_workspace_mode(&self) -> WorkspaceMode {
+        self.default_workspace_mode.unwrap_or(match self.default_worktree {
+            Some(false) => WorkspaceMode::RepositoryDirectory,
+            _ => WorkspaceMode::NewWorktree,
+        })
+    }
+
+    /// Records a new default and retires the legacy key, so the file never carries both.
+    pub fn set_default_workspace_mode(&mut self, mode: WorkspaceMode) {
+        self.default_workspace_mode = Some(mode);
+        self.default_worktree = None;
     }
 }
 
@@ -321,9 +352,39 @@ mod tests {
         let config: ProjectConfig = serde_json::from_str(r#"{"updated_at": ""}"#)
             .expect("a config predating additional_directories should still load");
         assert!(config.additional_directories.is_none());
-        // Worktree isolation is on unless the project turned it off, so a file written before
-        // the key existed must not read back as opted out.
-        assert!(config.default_worktree);
+        // A worktree of its own is what Maestro did before the setting existed, so a file written
+        // before the key must not read back as opted out.
+        assert_eq!(config.default_workspace_mode(), WorkspaceMode::NewWorktree);
+    }
+
+    /// The setting used to be a boolean. A project that turned it off said something, and reading
+    /// its file after the upgrade must not quietly hand its agents a worktree again.
+    #[test]
+    fn the_legacy_worktree_boolean_still_answers_for_the_mode() {
+        let opted_out: ProjectConfig =
+            serde_json::from_str(r#"{"updated_at": "", "default_worktree": false}"#)
+                .expect("a v0.18 settings file should still load");
+        assert_eq!(
+            opted_out.default_workspace_mode(),
+            WorkspaceMode::RepositoryDirectory
+        );
+
+        let opted_in: ProjectConfig =
+            serde_json::from_str(r#"{"updated_at": "", "default_worktree": true}"#)
+                .expect("a v0.18 settings file should still load");
+        assert_eq!(opted_in.default_workspace_mode(), WorkspaceMode::NewWorktree);
+
+        // Writing the setting retires the legacy key rather than leaving two answers in the file.
+        let mut config = opted_out;
+        config.set_default_workspace_mode(WorkspaceMode::NewWorktree);
+        let written = serde_json::to_string(&config).expect("config should serialize");
+        assert!(
+            !written.contains("default_worktree\""),
+            "the legacy key should be gone after a write: {written}"
+        );
+        let reloaded: ProjectConfig =
+            serde_json::from_str(&written).expect("written config should parse");
+        assert_eq!(reloaded.default_workspace_mode(), WorkspaceMode::NewWorktree);
     }
 
     #[test]

@@ -118,7 +118,8 @@ export const KanbanView: React.FC = () => {
               // `worktreePath`, which still means "there is a worktree", because Discard offers
               // to delete whatever that names.
               reviewPath={
-                reviewWorktree?.path ?? (reviewTask.isolated_worktree ? null : projectPath || null)
+                reviewWorktree?.path ??
+                (reviewTask.workspace_mode === "RepositoryDirectory" ? projectPath || null : null)
               }
               worktreePath={reviewWorktree?.path ?? null}
               baseBranch={reviewWorktree?.base_branch ?? reviewTask.base_branch ?? null}

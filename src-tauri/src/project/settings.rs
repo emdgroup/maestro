@@ -60,12 +60,14 @@ pub async fn get_project_settings(
     project_id: i32,
 ) -> Result<crate::models::ProjectConfigResponse, String> {
     let config = load_project_config_for(&app_state, project_id).await?;
+    // Resolved before the fields below are moved out of `config`.
+    let default_workspace_mode = config.default_workspace_mode();
     Ok(crate::models::ProjectConfigResponse {
         default_agent: config.default_agent,
         startup_tab: config.startup_tab,
         accent_color: config.accent_color,
         accent_color_auto_assign: config.accent_color_auto_assign,
-        default_worktree: config.default_worktree,
+        default_workspace_mode,
     })
 }
 
@@ -110,7 +112,7 @@ pub async fn update_project_settings(
     mutate_project_config(&conn, |config| {
         config.default_agent = settings.default_agent;
         config.startup_tab = settings.startup_tab;
-        config.default_worktree = settings.default_worktree;
+        config.set_default_workspace_mode(settings.default_workspace_mode);
         true
     })
     .await?;
@@ -144,15 +146,20 @@ mod tests {
 
         mutate_project_config(&conn, |config| {
             assert_eq!(config.accent_color.as_deref(), Some("120"));
-            config.default_worktree = false;
+            config.set_default_workspace_mode(
+                crate::task::models::WorkspaceMode::RepositoryDirectory,
+            );
             true
         })
         .await
-        .expect("write the worktree default");
+        .expect("write the workspace default");
 
         let stored: ProjectConfig = read_maestro_json(&conn, SETTINGS_FILE).await;
         assert_eq!(stored.accent_color.as_deref(), Some("120"));
-        assert!(!stored.default_worktree);
+        assert_eq!(
+            stored.default_workspace_mode(),
+            crate::task::models::WorkspaceMode::RepositoryDirectory
+        );
     }
 
     /// A detector that declines to apply must not touch the file — including not creating one

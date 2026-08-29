@@ -8,19 +8,19 @@ use std::str::FromStr;
 /// base_branch(6), archived_at(7), external_id(8), is_imported(9), import_source(10),
 /// skills(11), model_override(12), mcp_allowlist(13), skills_override(14), labels(15),
 /// external_url(16), external_updated_at(17), created_at(18), updated_at(19),
-/// auto_approve(20), isolated_worktree(21), agent_id(22), permission_mode_override(23),
+/// auto_approve(20), workspace_mode(21), agent_id(22), permission_mode_override(23),
 /// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
 /// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
-/// fix_rounds(33), pull_request_ci(34), profile_overrides(35)
+/// fix_rounds(33), pull_request_ci(34), profile_overrides(35), workspace_worktree_id(36)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
-     auto_approve, isolated_worktree, agent_id, permission_mode_override, \
+     auto_approve, workspace_mode, agent_id, permission_mode_override, \
      execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
      pull_request_url, pull_request_number, review_rounds, fix_rounds, \
-     pull_request_ci, profile_overrides FROM tasks";
+     pull_request_ci, profile_overrides, workspace_worktree_id FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -56,7 +56,13 @@ pub struct Task {
     pub created_at: String,
     pub updated_at: String,
     pub auto_approve: bool,
-    pub isolated_worktree: bool,
+    /// Where this task's agent works.
+    pub workspace_mode: WorkspaceMode,
+    /// The workspace a `ReuseWorkspace` task was pinned to, and `None` in every other mode. Also
+    /// `None` once that worktree is gone — the column drops the reference with it — which is how
+    /// the executor tells "pinned to a workspace that no longer exists" from "never pinned".
+    #[specta(optional)]
+    pub workspace_worktree_id: Option<i32>,
     #[specta(optional)]
     pub agent_id: Option<String>,
     #[specta(optional)]
@@ -224,7 +230,12 @@ impl Task {
             created_at: row.get(18)?,
             updated_at: row.get(19)?,
             auto_approve: row.get::<_, bool>(20).unwrap_or(false),
-            isolated_worktree: row.get::<_, bool>(21).unwrap_or(true),
+            workspace_mode: row
+                .get::<_, String>(21)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(WorkspaceMode::NewWorktree),
+            workspace_worktree_id: row.get(36)?,
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
             execution_start_sha: row.get(24)?,
@@ -255,6 +266,46 @@ pub struct CreateTaskRequest {
     #[specta(optional)]
     pub description: Option<String>,
     pub skills: Vec<String>,
+}
+
+/// Where an agent works: a worktree of its own, the project directory, or a worktree that already
+/// exists. Shared by tasks and by the project default that seeds them.
+///
+/// This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
+/// needs a companion — the worktree it names — which is why a task carries
+/// `workspace_worktree_id` beside the mode rather than encoding everything here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum WorkspaceMode {
+    NewWorktree,
+    RepositoryDirectory,
+    ReuseWorkspace,
+}
+
+impl WorkspaceMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WorkspaceMode::NewWorktree => "NewWorktree",
+            WorkspaceMode::RepositoryDirectory => "RepositoryDirectory",
+            WorkspaceMode::ReuseWorkspace => "ReuseWorkspace",
+        }
+    }
+}
+
+impl FromStr for WorkspaceMode {
+    type Err = ();
+
+    /// Unknown values fall back to `NewWorktree`, matching the column default: an unreadable mode
+    /// must not be resolved to the repository directory, where an agent would write into the
+    /// user's own checkout.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "RepositoryDirectory" => Ok(WorkspaceMode::RepositoryDirectory),
+            "ReuseWorkspace" => Ok(WorkspaceMode::ReuseWorkspace),
+            _ => Ok(WorkspaceMode::NewWorktree),
+        }
+    }
 }
 
 // Copy/PartialEq so the transition table can compare and pass statuses by value.
@@ -539,7 +590,8 @@ pub struct ProjectConfigResponse {
     pub accent_color: Option<String>,
     /// `Some(false)` once the colour has been decided; see `ProjectConfig`.
     pub accent_color_auto_assign: Option<bool>,
-    pub default_worktree: bool,
+    /// Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
+    pub default_workspace_mode: WorkspaceMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -547,7 +599,10 @@ pub struct ProjectConfigResponse {
 pub struct ProjectConfigRequest {
     pub default_agent: Option<String>,
     pub startup_tab: Option<String>,
-    pub default_worktree: bool,
+    /// Only `NewWorktree` and `RepositoryDirectory` are offered in Settings — a project default
+    /// cannot name a specific workspace — but the field is the full enum so the two places that
+    /// read it do not have to translate between two types.
+    pub default_workspace_mode: WorkspaceMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

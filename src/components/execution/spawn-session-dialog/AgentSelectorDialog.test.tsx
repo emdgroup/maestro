@@ -165,8 +165,13 @@ describe("spawn flow", () => {
     renderView();
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
-    // Terminal is the default type, and the option to create a worktree is not even offered.
-    expect(screen.queryByRole("checkbox", { name: /new worktree/i })).not.toBeInTheDocument();
+    // Terminal is the default type. Creating a worktree is listed so the absence is explained,
+    // but it cannot be chosen — a terminal attaches to a checkout that already exists.
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByRole("option", { name: /create new worktree/i })).toHaveAttribute(
+      "data-disabled",
+    );
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: /start session/i }));
 
     expect(mockCreateWorktree).not.toHaveBeenCalled();
@@ -188,6 +193,12 @@ describe("spawn flow", () => {
 
     await user.click(screen.getByRole("button", { name: /new session/i }));
     await user.click(screen.getByRole("button", { name: /claude code/i }));
+    // The restriction is the terminal's, not the dialog's: an agent may create one.
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByRole("option", { name: /create new worktree/i })).not.toHaveAttribute(
+      "data-disabled",
+    );
+    await user.keyboard("{Escape}");
     await user.type(screen.getByLabelText(/session name/i), "Fix Windows Path");
     await user.click(screen.getByRole("button", { name: /start session/i }));
 

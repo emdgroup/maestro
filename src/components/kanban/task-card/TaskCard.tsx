@@ -825,7 +825,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     }
   }, [isDragging]);
 
-  const hasOptions = task.priority !== "None" || task.isolated_worktree;
+  const hasOptions = task.priority !== "None" || task.workspace_mode !== "RepositoryDirectory";
 
   return (
     <>
@@ -894,14 +894,14 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           </div>
         )}
 
-        {/* Options: priority / worktree / auto-approve */}
+        {/* Options: priority / workspace */}
         {hasOptions && (
           <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-border/50 mb-1.5">
             <PriorityOpt priority={task.priority} />
-            {task.isolated_worktree && (
+            {task.workspace_mode !== "RepositoryDirectory" && (
               <span className="flex items-center gap-0.5 text-[9.5px] text-secondary">
                 <GitBranch className="w-2.5 h-2.5" />
-                worktree
+                {task.workspace_mode === "ReuseWorkspace" ? "workspace" : "worktree"}
               </span>
             )}
           </div>

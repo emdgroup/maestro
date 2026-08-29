@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Terminal as TerminalIcon, Folder } from "lucide-react";
+import { Terminal as TerminalIcon } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { generateSessionName, slugifyName, MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
 import { cn } from "@/lib/utils.ts";
@@ -7,9 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
+import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import {
   useSpawnInteractiveExecutionMutation,
   useSpawnAcpSessionMutation,
@@ -20,7 +18,7 @@ import { useProjectBranchesQuery } from "@/services/task.service";
 import { useResolveWorktree, type CreatedWorktree } from "@/utils/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
-import type { ConnectionKey, WorktreeWithStatus } from "@/types/bindings";
+import type { ConnectionKey, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 
 export type { CreatedWorktree };
 
@@ -44,7 +42,7 @@ export function SpawnSessionDialog({
   onSuccess,
 }: SpawnSessionDialogProps) {
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
-  const [newWorktree, setNewWorktree] = useState(true);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("NewWorktree");
   const [baseBranch, setBaseBranch] = useState("");
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("terminal");
@@ -61,10 +59,16 @@ export function SpawnSessionDialog({
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
 
+  // The repo root is a mode of its own, so it is not one of the workspaces to reuse.
+  const reusableWorktrees = worktrees.filter((wt) => wt.path !== repoPath);
+  // The main worktree carries the branch the project is checked out on, which a terminal spawn
+  // needs even when the session runs in the repository directory.
+  const mainWorktree = worktrees.find((wt) => wt.path === repoPath) ?? null;
+
   useEffect(() => {
     if (!open) return;
-    setSelectedWorktree(worktrees[0] ?? null);
-    setNewWorktree(projectSettings?.default_worktree ?? true);
+    setSelectedWorktree(reusableWorktrees[0] ?? null);
+    setWorkspaceMode(projectSettings?.default_workspace_mode ?? "NewWorktree");
     setBaseBranch(branchData?.[1] ?? "");
     setSessionName("");
     setSpawnError(null);
@@ -77,10 +81,10 @@ export function SpawnSessionDialog({
 
   // Fill defaults if worktrees or branches load after the dialog was already opened
   useEffect(() => {
-    if (open && selectedWorktree === null && worktrees.length > 0) {
-      setSelectedWorktree(worktrees[0]);
+    if (open && selectedWorktree === null && reusableWorktrees.length > 0) {
+      setSelectedWorktree(reusableWorktrees[0]);
     }
-  }, [open, worktrees, selectedWorktree]);
+  }, [open, reusableWorktrees, selectedWorktree]);
 
   useEffect(() => {
     if (open && !baseBranch && branchData?.[1]) {
@@ -89,9 +93,11 @@ export function SpawnSessionDialog({
   }, [open, branchData, baseBranch]);
 
   // A terminal attaches to an existing checkout only — the backend refuses to create one for it,
-  // so the option is neither offered nor honoured here.
+  // so the option is offered disabled and never honoured here.
   const isTerminal = sessionType === "terminal";
-  const creatingWorktree = isGitRepo && newWorktree && !isTerminal;
+  const effectiveMode: WorkspaceMode =
+    isTerminal && workspaceMode === "NewWorktree" ? "RepositoryDirectory" : workspaceMode;
+  const creatingWorktree = isGitRepo && effectiveMode === "NewWorktree";
 
   async function handleSpawn() {
     setSpawnError(null);
@@ -119,11 +125,19 @@ export function SpawnSessionDialog({
         setSpawnError(String(error));
         return;
       }
-    } else {
+    } else if (effectiveMode === "ReuseWorkspace") {
       worktree = {
         id: selectedWorktree?.id ?? null,
         branchName: selectedWorktree?.branch_name ?? null,
         path: selectedWorktree?.path ?? repoPath,
+      };
+    } else {
+      // The repository directory. `mainWorktree` is absent in a non-git project, where there is no
+      // branch to name and no terminal path that needs one.
+      worktree = {
+        id: mainWorktree?.id ?? null,
+        branchName: mainWorktree?.branch_name ?? null,
+        path: repoPath,
       };
     }
 
@@ -166,11 +180,15 @@ export function SpawnSessionDialog({
     }
   }
 
-  const canSpawn = creatingWorktree
-    ? !!baseBranch
-    : isTerminal
-      ? !!selectedWorktree
-      : !isGitRepo || !!selectedWorktree;
+  const canSpawn = !isGitRepo
+    ? true
+    : creatingWorktree
+      ? !!baseBranch
+      : effectiveMode === "ReuseWorkspace"
+        ? !!selectedWorktree
+        : // The repository directory always exists; a terminal additionally needs the branch it is
+          // on, which comes from the main worktree row.
+          !isTerminal || !!mainWorktree;
 
   const isPending = spawnMutation.isPending || spawnAcpMutation.isPending || isCreatingWorktree;
 
@@ -313,96 +331,20 @@ export function SpawnSessionDialog({
               )}
             </div>
 
-            {/* Worktree — the New/Existing toggle decides whether the selector lists branches
-                or worktrees; in New mode the picker is prefixed "From" to mark it as the base. */}
+            {/* Workspace — the dropdown decides whether a branch or an existing worktree is
+                picked underneath it. */}
             {isGitRepo && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                    Worktree
-                  </p>
-                  {!isTerminal && (
-                    <div className="flex gap-0.5 rounded-full bg-muted p-0.5">
-                      {([true, false] as const).map((isNew) => (
-                        <button
-                          key={String(isNew)}
-                          type="button"
-                          onClick={() => setNewWorktree(isNew)}
-                          className={cn(
-                            "rounded-full px-2.5 py-[3px] text-[10px] font-medium transition-colors",
-                            newWorktree === isNew
-                              ? "bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
-                              : "text-muted-foreground hover:text-foreground/80",
-                          )}
-                        >
-                          {isNew ? "New" : "Existing"}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {creatingWorktree ? (
-                  <BranchPicker value={baseBranch} onChange={setBaseBranch} prefix="From" />
-                ) : (
-                  <Select
-                    value={selectedWorktree?.branch_name ?? ""}
-                    onValueChange={(v) =>
-                      setSelectedWorktree(worktrees.find((wt) => wt.branch_name === v) ?? null)
-                    }
-                  >
-                    <SelectTrigger
-                      id="spawn-worktree"
-                      className="w-full gap-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
-                    >
-                      <span className="flex items-center gap-2 min-w-0 flex-1">
-                        <Folder className="size-3.5 text-muted-foreground shrink-0" />
-                        {selectedWorktree ? (
-                          <>
-                            <span className="text-sm truncate flex-1 text-left">
-                              {selectedWorktree.branch_name}
-                            </span>
-                            {selectedWorktree.path === repoPath && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
-                                default
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">Select a worktree</span>
-                        )}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {worktrees.map((wt) => (
-                        <SelectItem
-                          key={wt.branch_name}
-                          value={wt.branch_name}
-                          className="[&>div]:overflow-hidden"
-                        >
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <span className="flex items-center gap-2 min-w-0 overflow-hidden" />
-                              }
-                            >
-                              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-                              <span className="flex-1 truncate">{wt.branch_name}</span>
-                              {wt.path === repoPath && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 font-medium shrink-0">
-                                  default
-                                </span>
-                              )}
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={8} className="max-w-none">
-                              <span className="font-mono">{wt.branch_name}</span>
-                            </TooltipContent>
-                          </Tooltip>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
+              <WorkspaceSelector
+                mode={effectiveMode}
+                onModeChange={setWorkspaceMode}
+                baseBranch={baseBranch}
+                onBaseBranchChange={setBaseBranch}
+                worktrees={worktrees}
+                repoPath={repoPath}
+                selectedWorktreeId={selectedWorktree?.id ?? null}
+                onSelectedWorktreeChange={setSelectedWorktree}
+                allowNewWorktree={!isTerminal}
+              />
             )}
 
             {/* Session name */}

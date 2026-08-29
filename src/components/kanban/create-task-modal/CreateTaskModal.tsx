@@ -21,15 +21,24 @@ import {
   appendToAttachmentsSection,
 } from "@/components/kanban/shared/useFileInput";
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
-import { BranchSection } from "@/components/kanban/shared/BranchSection";
+import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
-import type { RemoteIssue, Task, TaskPriority } from "@/types/bindings";
+import { useWorktreesQuery } from "@/services/worktree.service";
+import { useSelectedProject } from "@/store/projectStore";
+import type {
+  RemoteIssue,
+  Task,
+  TaskPriority,
+  WorkspaceMode,
+  WorktreeWithStatus,
+} from "@/types/bindings";
 import { IssueSearchCombobox } from "./IssueSearchCombobox";
 
 interface FormData {
   baseBranch: string;
   priority: TaskPriority;
-  isolatedWorktree: boolean;
+  workspaceMode: WorkspaceMode;
+  workspaceWorktreeId: number | null;
 }
 
 interface PendingFile {
@@ -50,11 +59,15 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const hasProvider = issueConfig != null;
 
   const { data: projectSettings } = useProjectSettings(projectId);
-  const defaultIsolatedWorktree = projectSettings?.default_worktree ?? true;
+  const defaultWorkspaceMode: WorkspaceMode =
+    projectSettings?.default_workspace_mode ?? "NewWorktree";
 
   // Keep for currentBranch initialization only — BranchPicker fetches the full list internally
   const { data: branchData } = useProjectBranchesQuery(isOpen ? projectId : null);
   const currentBranch: string = branchData?.[1] ?? "";
+
+  const project = useSelectedProject();
+  const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
 
   const { mutate: createTask, isPending } = useCreateTaskMutation();
   const addAttachment = useAddTaskAttachmentMutation();
@@ -97,7 +110,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
     defaultValues: {
       baseBranch: "",
       priority: "None",
-      isolatedWorktree: defaultIsolatedWorktree,
+      workspaceMode: defaultWorkspaceMode,
+      workspaceWorktreeId: null,
     },
   });
 
@@ -105,7 +119,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   // render, which the compiler cannot track. Both re-render on change and both start
   // from the `defaultValues` above, so the values seen here are the same.
   const priority = useWatch({ control, name: "priority" });
-  const isolatedWorktree = useWatch({ control, name: "isolatedWorktree" });
+  const workspaceMode = useWatch({ control, name: "workspaceMode" });
+  const workspaceWorktreeId = useWatch({ control, name: "workspaceWorktreeId" });
 
   // Opening or closing the modal re-seeds the whole form. This component's own state is
   // adjusted during render so a reopened dialog never paints the previous task's fields;
@@ -129,7 +144,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       reset({
         baseBranch: currentBranch ?? "",
         priority: "None",
-        isolatedWorktree: defaultIsolatedWorktree,
+        workspaceMode: defaultWorkspaceMode,
+        workspaceWorktreeId: null,
       });
     } else {
       reset();
@@ -158,6 +174,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       return;
     }
     const filesToAttach = [...pendingFiles];
+    // A non-git project offers no workspace choice, so it can only be the project directory.
+    const mode: WorkspaceMode = isGitRepo ? data.workspaceMode : "RepositoryDirectory";
+    const reused =
+      mode === "ReuseWorkspace"
+        ? ((worktrees ?? []).find((wt) => wt.id === data.workspaceWorktreeId) ?? null)
+        : null;
     createTask(
       {
         project_id: projectId,
@@ -165,13 +187,19 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         description: description.trim() || null,
         skills: [],
         labels,
-        base_branch: data.baseBranch,
+        // Merge and review read the base branch whatever the workspace is, so it is always
+        // recorded: the reused workspace's own base where there is one, otherwise the branch the
+        // repository is on — which is what the picker would have been showing.
+        base_branch:
+          mode === "NewWorktree"
+            ? data.baseBranch
+            : (reused?.base_branch ?? currentBranch ?? data.baseBranch),
         // The project's agent profiles name the agent per role, so a task no longer carries one.
         agent_id: null,
         priority: data.priority,
         auto_approve: false,
-        // A non-git project has no worktree toggle in the UI, so never persist it as on.
-        isolated_worktree: isGitRepo ? data.isolatedWorktree : false,
+        workspace_mode: mode,
+        workspace_worktree_id: reused?.id ?? null,
         model_override: null,
       },
       {
@@ -285,18 +313,31 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               </div>
             )}
 
-            {/* Branch */}
+            {/* Workspace: where the agent will work, and whatever that choice needs */}
             {isGitRepo && (
               <div className="shrink-0">
                 <Controller
                   name="baseBranch"
                   control={control}
-                  rules={{ required: isGitRepo ? "Base branch is required" : false }}
+                  rules={{
+                    // Only the mode that creates a branch needs one chosen.
+                    validate: (value) =>
+                      workspaceMode !== "NewWorktree" || !!value || "Base branch is required",
+                  }}
                   render={({ field: { value, onChange } }) => (
-                    <BranchSection
-                      value={value}
-                      onChange={onChange}
-                      error={errors.baseBranch?.message}
+                    <WorkspaceSelector
+                      mode={workspaceMode}
+                      onModeChange={(m) => setValue("workspaceMode", m)}
+                      baseBranch={value}
+                      onBaseBranchChange={onChange}
+                      baseBranchError={errors.baseBranch?.message}
+                      worktrees={worktrees ?? []}
+                      repoPath={project?.path ?? ""}
+                      selectedWorktreeId={workspaceWorktreeId}
+                      onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                        setValue("workspaceWorktreeId", wt?.id ?? null)
+                      }
+                      claimsOwnership
                     />
                   )}
                 />
@@ -308,9 +349,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               <TaskMetadataPills
                 priority={priority}
                 onPriorityChange={(p) => setValue("priority", p)}
-                isolatedWorktree={isolatedWorktree}
-                onIsolatedWorktreeChange={(v) => setValue("isolatedWorktree", v)}
-                isGitRepo={isGitRepo ?? false}
               />
             </div>
           </div>

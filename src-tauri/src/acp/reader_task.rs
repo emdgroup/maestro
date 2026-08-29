@@ -453,11 +453,11 @@ pub(crate) async fn task_has_changes(
     app_state: &crate::core::AppState,
     task_id: i32,
 ) -> Option<bool> {
-    let (project_id, start_sha, isolated, worktree_path) = {
+    let (project_id, start_sha, workspace_mode, worktree_path) = {
         let conn = app_state.db.lock().ok()?;
-        let row: (i32, Option<String>, bool, Option<String>) = conn
+        let row: (i32, Option<String>, String, Option<String>) = conn
             .query_row(
-                "SELECT t.project_id, t.execution_start_sha, t.isolated_worktree, \
+                "SELECT t.project_id, t.execution_start_sha, t.workspace_mode, \
                     (SELECT path FROM worktrees WHERE task_id = t.id LIMIT 1) \
                  FROM tasks t WHERE t.id = ?",
                 [task_id],
@@ -466,6 +466,10 @@ pub(crate) async fn task_has_changes(
             .ok()?;
         row
     };
+
+    // Both worktree modes leave the row here: a reused workspace is claimed by the task when it
+    // starts, exactly so that lookups like this one keep working.
+    let isolated = workspace_mode != crate::models::WorkspaceMode::RepositoryDirectory.as_str();
 
     // An isolated task whose worktree row has gone missing must report no evidence rather than
     // fall through to the project root: the root is a different tree, and any unrelated dirt in

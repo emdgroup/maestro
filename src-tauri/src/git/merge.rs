@@ -148,7 +148,7 @@ pub async fn resolve_commit_message(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<String, String> {
-    // LEFT JOIN, not JOIN: a task with `isolated_worktree` off has no worktree row, and this used
+    // LEFT JOIN, not JOIN: a task running in the repository directory has no worktree row, and this used
     // to fail outright — which left the approve dialog with an empty commit message and its
     // confirm button permanently disabled.
     let (task_name, branch_name, base_branch, external_id, description, project_path, connection_key) = {
@@ -229,7 +229,7 @@ pub async fn approve_task_and_merge(
 ) -> Result<MergeResult, String> {
 
     // 1. Single query for task, worktree and project data. The worktree side is a LEFT JOIN: a
-    // task with `isolated_worktree` off has no row there, and an inner join made approving one
+    // task running in the repository directory has no row there, and an inner join made approving one
     // fail with "Task, worktree, or project not found" — a dead end, since Review is where the
     // pipeline puts it.
     let (worktree, project_id, repo_path, base_branch) = {

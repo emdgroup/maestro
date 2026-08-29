@@ -1,6 +1,12 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
 import { Ban, Trash2, X } from "lucide-react";
-import type { Task, TaskStatus, TaskPriority } from "@/types/bindings";
+import type {
+  Task,
+  TaskStatus,
+  TaskPriority,
+  WorkspaceMode,
+  WorktreeWithStatus,
+} from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -35,8 +41,9 @@ import {
   appendToAttachmentsSection,
 } from "@/components/kanban/shared/useFileInput";
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
-import { BranchSection } from "@/components/kanban/shared/BranchSection";
+import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
+import { useWorktreesQuery } from "@/services/worktree.service";
 import { OutcomeThread } from "./OutcomeThread";
 
 // Cancelled has no board column, but a cancelled task can still be opened from the archive, and a
@@ -72,7 +79,8 @@ interface TaskDraft {
   title: string;
   description: string;
   priority: TaskPriority;
-  isolatedWorktree: boolean;
+  workspaceMode: WorkspaceMode;
+  workspaceWorktreeId: number | null;
   baseBranch: string;
   labels: string[];
 }
@@ -88,6 +96,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   const { data: tasks } = useTasksQuery(projectId);
   const task = (tasks ?? []).find((t) => t.id === taskId) ?? null;
+  const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, selectedProject?.path);
 
   const updateTask = useUpdateTask();
   const archiveTask = useArchiveTaskMutation();
@@ -109,7 +118,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     title: "",
     description: "",
     priority: "None",
-    isolatedWorktree: true,
+    workspaceMode: "NewWorktree",
+    workspaceWorktreeId: null,
     baseBranch: "",
     labels: [],
   });
@@ -128,7 +138,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         title: task.title,
         description: task.description ?? "",
         priority: task.priority,
-        isolatedWorktree: task.isolated_worktree,
+        workspaceMode: task.workspace_mode,
+        workspaceWorktreeId: task.workspace_worktree_id ?? null,
         baseBranch: task.base_branch ?? "",
         labels: task.labels ?? [],
       });
@@ -199,8 +210,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           title: draft.title.trim(),
           description: draft.description || null,
           priority: draft.priority,
-          // A non-git project has no worktree toggle in the UI, so never persist it as on.
-          isolated_worktree: isGitRepo ? draft.isolatedWorktree : false,
+          // A non-git project offers no workspace choice, so it can only be the project directory.
+          workspace_mode: isGitRepo ? draft.workspaceMode : "RepositoryDirectory",
+          workspace_worktree_id: draft.workspaceWorktreeId ?? undefined,
           base_branch: draft.baseBranch || undefined,
           labels: draft.labels,
         },
@@ -315,16 +327,23 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                 </div>
               )}
 
-              {/* Branch */}
+              {/* Workspace */}
               {isGitRepo && (
                 <div className="shrink-0">
-                  <BranchSection
-                    value={draft.baseBranch}
-                    onChange={
-                      isEditable
-                        ? (b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
-                        : undefined
+                  <WorkspaceSelector
+                    mode={draft.workspaceMode}
+                    onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
+                    baseBranch={draft.baseBranch}
+                    onBaseBranchChange={(b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))}
+                    worktrees={worktrees ?? []}
+                    repoPath={selectedProject?.path ?? ""}
+                    selectedWorktreeId={draft.workspaceWorktreeId}
+                    onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                      markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
                     }
+                    claimsOwnership
+                    ownerTaskId={task.id}
+                    readOnly={!isEditable}
                   />
                 </div>
               )}
@@ -338,13 +357,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
                       : undefined
                   }
-                  isolatedWorktree={draft.isolatedWorktree}
-                  onIsolatedWorktreeChange={
-                    isEditable
-                      ? (v) => markDirtySetDraft((d) => ({ ...d, isolatedWorktree: v }))
-                      : undefined
-                  }
-                  isGitRepo={isGitRepo ?? false}
                 />
               </div>
 

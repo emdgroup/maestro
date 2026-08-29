@@ -371,6 +371,25 @@ async createWorktree(projectId: number, taskId: number | null, baseBranch: strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
+ * 
+ * Everything that asks "where does task N work" — the review panel, the approve/merge queries,
+ * the archive prompt, the diff gate — finds the answer through `worktrees.task_id`. Rather than
+ * teach each of them about a second pin, a task that reuses a workspace takes ownership of it
+ * when it starts, and all of those keep working unchanged.
+ * 
+ * Any worktree the task owned before is released rather than left behind, so the one-worktree-
+ * per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
+ */
+async claimWorktreeForTask(taskId: number, worktreeId: number) : Promise<Result<Worktree, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("claim_worktree_for_task", { taskId, worktreeId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteWorktree(projectId: number, worktreePath: string, branchName: string, worktreeId: number | null, deleteBranch: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { projectId, worktreePath, branchName, worktreeId, deleteBranch }) };
@@ -2450,7 +2469,7 @@ export type ConnectionKey = { type: "local" } | { type: "ssh"; id: number } | { 
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
-export type CreateTaskRequest = { project_id: number; title: string; description: string | null; skills: string[]; labels: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; isolated_worktree: boolean; model_override: string | null }
+export type CreateTaskRequest = { project_id: number; title: string; description: string | null; skills: string[]; labels: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; workspace_mode: WorkspaceMode; workspace_worktree_id: number | null; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
@@ -2673,7 +2692,13 @@ owner?: string | null; repo?: string | null;
  * The whole remote path, so a namespace that nests deeper than `owner/repo` survives.
  */
 project_path: string }
-export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; default_worktree: boolean }
+export type ProjectConfigRequest = { default_agent: string | null; startup_tab: string | null; 
+/**
+ * Only `NewWorktree` and `RepositoryDirectory` are offered in Settings — a project default
+ * cannot name a specific workspace — but the field is the full enum so the two places that
+ * read it do not have to translate between two types.
+ */
+default_workspace_mode: WorkspaceMode }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; 
 /**
  * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
@@ -2684,7 +2709,11 @@ accent_color: string | null;
 /**
  * `Some(false)` once the colour has been decided; see `ProjectConfig`.
  */
-accent_color_auto_assign: boolean | null; default_worktree: boolean }
+accent_color_auto_assign: boolean | null; 
+/**
+ * Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
+ */
+default_workspace_mode: WorkspaceMode }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A Maestro branch with no worktree and nothing on origin holding it — the only kind this
@@ -2775,7 +2804,17 @@ export type SshAuthMethod =
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
 export type TAURI_CHANNEL<TSend> = null
-export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; isolated_worktree: boolean; agent_id?: string | null; permission_mode_override?: string | null; execution_start_sha?: string | null; 
+export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; 
+/**
+ * Where this task's agent works.
+ */
+workspace_mode: WorkspaceMode; 
+/**
+ * The workspace a `ReuseWorkspace` task was pinned to, and `None` in every other mode. Also
+ * `None` once that worktree is gone — the column drops the reference with it — which is how
+ * the executor tells "pinned to a workspace that no longer exists" from "never pinned".
+ */
+workspace_worktree_id?: number | null; agent_id?: string | null; permission_mode_override?: string | null; execution_start_sha?: string | null; 
 /**
  * Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
  * what is happening inside it. `None` means no pipeline activity, in which case
@@ -2882,7 +2921,21 @@ export type ToolCheckEntry = { tool: string; available: boolean; version: string
  * are included in the SQL UPDATE. Grouped into a struct to work around the specta
  * 10-argument limit on #[tauri::command] functions.
  */
-export type UpdateTaskRequest = { status: string | null; description: string | null; title: string | null; priority: string | null; base_branch: string | null; skills: string[] | null; agent_id: string | null; labels: string[] | null; auto_approve: boolean | null; isolated_worktree: boolean | null }
+export type UpdateTaskRequest = { status: string | null; description: string | null; title: string | null; priority: string | null; base_branch: string | null; skills: string[] | null; agent_id: string | null; labels: string[] | null; auto_approve: boolean | null; 
+/**
+ * Writing the mode also writes `workspace_worktree_id`, so switching away from
+ * `ReuseWorkspace` cannot leave a pin behind that nothing will ever look at again.
+ */
+workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null }
+/**
+ * Where an agent works: a worktree of its own, the project directory, or a worktree that already
+ * exists. Shared by tasks and by the project default that seeds them.
+ * 
+ * This replaced a boolean, which could only say the first two. `ReuseWorkspace` is the one that
+ * needs a companion — the worktree it names — which is why a task carries
+ * `workspace_worktree_id` beside the mode rather than encoding everything here.
+ */
+export type WorkspaceMode = "NewWorktree" | "RepositoryDirectory" | "ReuseWorkspace"
 /**
  * Worktree record from database (schema v6)
  */

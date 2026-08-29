@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 
-pub const SCHEMA_V25_FULL: &str = r#"
+pub const SCHEMA_V26_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -60,7 +60,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     external_updated_at TEXT,
     labels TEXT DEFAULT '[]',
     auto_approve INTEGER NOT NULL DEFAULT 0,
-    isolated_worktree INTEGER NOT NULL DEFAULT 1,
+    -- Where this task's agent works: NewWorktree / RepositoryDirectory / ReuseWorkspace.
+    workspace_mode TEXT NOT NULL DEFAULT 'NewWorktree',
+    -- The workspace a ReuseWorkspace task was pinned to, and NULL for every other mode. Cleared
+    -- when that worktree goes away, which is what makes "the workspace you picked is gone" a state
+    -- the executor can detect rather than a dangling id.
+    workspace_worktree_id INTEGER REFERENCES worktrees(id) ON DELETE SET NULL,
     agent_id TEXT,
     permission_mode_override TEXT,
     execution_start_sha TEXT,
@@ -321,7 +326,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V25_FULL)?;
+        conn.execute_batch(SCHEMA_V26_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -342,7 +347,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V25_FULL)?;
+        conn.execute_batch(SCHEMA_V26_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -374,6 +379,52 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 25 {
         migrate_to_v25(conn)?;
     }
+    if from < 26 {
+        migrate_to_v26(conn)?;
+    }
+    Ok(())
+}
+
+/// Replace the `isolated_worktree` boolean with the three-way `workspace_mode`.
+///
+/// The boolean could say "a worktree of its own" or "the project directory" and had no way to say
+/// "the worktree that already exists", which is the choice this adds. The backfill is exact in both
+/// directions — every existing task meant one of the two modes the boolean could express — so no
+/// task changes where it runs.
+///
+/// `isolated_worktree` is dropped rather than left in place: nothing reads it after this, and a
+/// column that disagrees with `workspace_mode` the first time a task is edited is worse than no
+/// column at all.
+fn migrate_to_v26(conn: &Connection) -> SqlResult<()> {
+    let column_exists = |name: &str| -> SqlResult<bool> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = ?",
+            [name],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|count| count > 0)
+    };
+
+    if !column_exists("workspace_mode")? {
+        conn.execute_batch(
+            "ALTER TABLE tasks ADD COLUMN workspace_mode TEXT NOT NULL DEFAULT 'NewWorktree';",
+        )?;
+    }
+    if !column_exists("workspace_worktree_id")? {
+        conn.execute_batch(
+            "ALTER TABLE tasks ADD COLUMN workspace_worktree_id INTEGER \
+             REFERENCES worktrees(id) ON DELETE SET NULL;",
+        )?;
+    }
+
+    if column_exists("isolated_worktree")? {
+        conn.execute_batch(
+            "UPDATE tasks SET workspace_mode = \
+                CASE isolated_worktree WHEN 1 THEN 'NewWorktree' ELSE 'RepositoryDirectory' END;
+             ALTER TABLE tasks DROP COLUMN isolated_worktree;",
+        )?;
+    }
+
     Ok(())
 }
 
@@ -542,7 +593,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 25);
+        assert_eq!(version, 26);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -576,7 +627,12 @@ mod tests {
         assert!(task_columns.contains(&"external_updated_at".to_string()));
         assert!(task_columns.contains(&"labels".to_string()));
         assert!(task_columns.contains(&"auto_approve".to_string()));
-        assert!(task_columns.contains(&"isolated_worktree".to_string()));
+        assert!(task_columns.contains(&"workspace_mode".to_string()));
+        assert!(task_columns.contains(&"workspace_worktree_id".to_string()));
+        assert!(
+            !task_columns.contains(&"isolated_worktree".to_string()),
+            "isolated_worktree is superseded by workspace_mode in V26"
+        );
         assert!(task_columns.contains(&"agent_id".to_string()));
         assert!(task_columns.contains(&"phase".to_string()));
         assert!(task_columns.contains(&"phase_status".to_string()));
@@ -760,6 +816,64 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM task_comments", [], |r| r.get(0))
             .unwrap();
         assert_eq!(orphans, 0, "comments must cascade with their task");
+    }
+
+    /// v25 → v26 turns a boolean into a three-way mode. Both values the boolean could hold have an
+    /// exact counterpart, so no task may come out running somewhere it was not running before.
+    #[test]
+    fn test_migration_to_v26_maps_the_worktree_boolean_onto_a_mode() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        // Put the tasks table back into its v25 shape.
+        conn.execute_batch(
+            "ALTER TABLE tasks DROP COLUMN workspace_mode;
+             ALTER TABLE tasks DROP COLUMN workspace_worktree_id;
+             ALTER TABLE tasks ADD COLUMN isolated_worktree INTEGER NOT NULL DEFAULT 1;",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, isolated_worktree, created_at, updated_at) \
+             VALUES (1, 1, 'isolated', 'Planning', 'main', 1, '2026-01-01', '2026-01-01'), \
+                    (2, 1, 'in the repo', 'Planning', 'main', 0, '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("PRAGMA user_version = 25", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let mode = |id: i32| -> String {
+            conn.query_row("SELECT workspace_mode FROM tasks WHERE id = ?", [id], |r| {
+                r.get(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(mode(1), "NewWorktree");
+        assert_eq!(mode(2), "RepositoryDirectory");
+
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(tasks)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            !columns.contains(&"isolated_worktree".to_string()),
+            "the boolean must be gone once the mode carries its meaning"
+        );
+
+        // Re-running the migration on an already-migrated database must be a no-op, not an error.
+        conn.execute("PRAGMA user_version = 25", []).unwrap();
+        initialize_schema(&conn).unwrap();
+        assert_eq!(mode(2), "RepositoryDirectory");
     }
 
     #[test]
