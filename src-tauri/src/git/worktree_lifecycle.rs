@@ -53,8 +53,8 @@ pub async fn create_worktree(
 ) -> Result<Worktree, String> {
     // Resolve project and git connection (local vs remote SSH)
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    // A task created in a non-git project still submits `isolated_worktree = true`, so this is
-    // reachable from normal use and has to fail with something a user can act on.
+    // A task created in a non-git project still submits `NewWorktree`, so this is reachable from
+    // normal use and has to fail with something a user can act on.
     if !crate::project::git_ops::is_git_repo(
         &app_state,
         repo_path.clone(),
@@ -158,6 +158,68 @@ pub async fn create_worktree(
         git_status: None,
         created_at: now,
     })
+}
+
+/// Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
+///
+/// Everything that asks "where does task N work" — the review panel, the approve/merge queries,
+/// the archive prompt, the diff gate — finds the answer through `worktrees.task_id`. Rather than
+/// teach each of them about a second pin, a task that reuses a workspace takes ownership of it
+/// when it starts, and all of those keep working unchanged.
+///
+/// Any worktree the task owned before is released rather than left behind, so the one-worktree-
+/// per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
+#[tauri::command]
+#[specta::specta]
+pub async fn claim_worktree_for_task(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+    worktree_id: i32,
+) -> Result<Worktree, String> {
+    let worktree = {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+
+        conn.execute(
+            "UPDATE worktrees SET task_id = NULL WHERE task_id = ? AND id != ?",
+            rusqlite::params![task_id, worktree_id],
+        )
+        .map_err(|e| format!("Failed to release the previous worktree: {}", e))?;
+
+        let updated = conn
+            .execute(
+                "UPDATE worktrees SET task_id = ? WHERE id = ?",
+                rusqlite::params![task_id, worktree_id],
+            )
+            .map_err(|e| format!("Failed to claim worktree: {}", e))?;
+        if updated == 0 {
+            return Err(
+                "The workspace this task was pinned to no longer exists. Pick another one."
+                    .to_string(),
+            );
+        }
+
+        conn.query_row(
+            "SELECT id, project_id, task_id, branch_name, base_branch, path, git_status, created_at \
+             FROM worktrees WHERE id = ?",
+            rusqlite::params![worktree_id],
+            |row| {
+                Ok(Worktree {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    task_id: row.get(2)?,
+                    branch_name: row.get(3)?,
+                    base_branch: row.get(4)?,
+                    path: row.get(5)?,
+                    git_status: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Failed to read the claimed worktree: {}", e))?
+    };
+
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    Ok(worktree)
 }
 
 // ============================================================================

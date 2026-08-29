@@ -107,7 +107,8 @@ export function useUpdateTask() {
         agent_id: updates.agent_id ?? null,
         labels: updates.labels ?? null,
         auto_approve: updates.auto_approve ?? null,
-        isolated_worktree: updates.isolated_worktree ?? null,
+        workspace_mode: updates.workspace_mode ?? null,
+        workspace_worktree_id: updates.workspace_worktree_id ?? null,
       };
       return api.updateTask(taskId, request);
     },

@@ -279,6 +279,23 @@ export function useCreateWorktreeMutation() {
 }
 
 /**
+ * Hands an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
+ *
+ * No toast on success: this runs inside Execute, which reports the outcome of the whole spawn.
+ * Errors are surfaced by the caller for the same reason.
+ */
+export function useClaimWorktreeForTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, worktreeId }: { taskId: number; worktreeId: number }) =>
+      api.claimWorktreeForTask(taskId, worktreeId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+    },
+  });
+}
+
+/**
  * One-shot query for checking if a worktree has dirty (uncommitted) changes.
  * Set `enabled: false` so it only runs via `refetch()`.
  */

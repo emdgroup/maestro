@@ -33,7 +33,7 @@ export function SettingsPage({ projectId, connection }: SettingsPageProps) {
       config: {
         default_agent: settings.default_agent,
         startup_tab: settings.startup_tab,
-        default_worktree: settings.default_worktree,
+        default_workspace_mode: settings.default_workspace_mode,
         ...patch,
       },
     });
@@ -65,7 +65,7 @@ export function SettingsPage({ projectId, connection }: SettingsPageProps) {
             <UpdateCard />
             <ProjectDefaultsSection
               defaultAgent={settings?.default_agent ?? null}
-              defaultWorktree={settings?.default_worktree ?? true}
+              defaultWorkspaceMode={settings?.default_workspace_mode ?? "NewWorktree"}
               onChange={updateSettings}
               agents={agents}
               agentsLoading={agentsLoading}

@@ -1,7 +1,7 @@
 import { Check, Flame, ArrowUp, Minus, ArrowDown, CircleSlash } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
-import { PILL, POPOVER_ITEM } from "./TogglePill";
+import { PILL, POPOVER_ITEM } from "./pill-styles";
 import { PRIORITIES } from "@/utils/constants/priority";
 import type { TaskPriority } from "@/types/bindings";
 

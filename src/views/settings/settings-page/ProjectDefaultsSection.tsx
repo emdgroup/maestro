@@ -2,15 +2,20 @@ import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIco
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
 import { Bot, LogOut, Loader2, Check, GitBranch } from "lucide-react";
-import { Switch } from "@/ui/switch";
-import type { ConnectionKey, DiscoveredAgent, ProjectConfigRequest } from "@/types/bindings";
+import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
+import type {
+  ConnectionKey,
+  DiscoveredAgent,
+  ProjectConfigRequest,
+  WorkspaceMode,
+} from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { cn } from "@/lib/utils";
 
 interface ProjectDefaultsSectionProps {
   defaultAgent: string | null;
-  defaultWorktree: boolean;
+  defaultWorkspaceMode: WorkspaceMode;
   /** Persists immediately — this section has no Save button behind it. */
   onChange: (patch: Partial<ProjectConfigRequest>) => void;
   agents: DiscoveredAgent[];
@@ -97,7 +102,7 @@ function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthR
 
 export function ProjectDefaultsSection({
   defaultAgent,
-  defaultWorktree,
+  defaultWorkspaceMode,
   onChange,
   agents,
   agentsLoading,
@@ -148,24 +153,22 @@ export function ProjectDefaultsSection({
         <div className="bg-card border border-border rounded-lg p-4 space-y-4">
           <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-muted-foreground" />
-            Worktree
+            Workspace
           </h3>
 
-          <div className="flex items-center justify-between gap-4">
+          <div className="space-y-2">
             <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">
-                Always use a worktree by default
-              </div>
+              <div className="text-sm font-medium text-foreground">Default workspace</div>
               <div className="text-xs text-muted-foreground">
-                New tasks are created with worktree isolation on, and new sessions start on "New"
-                rather than reusing an existing worktree. Either can still be changed per task or
+                Where new tasks and new sessions start out. Reusing an existing workspace is not
+                offered here — a default cannot name one — but it is still available per task and
                 per session.
               </div>
             </div>
-            <Switch
-              checked={defaultWorktree}
-              onCheckedChange={(checked) => onChange({ default_worktree: checked })}
-              className="data-unchecked:bg-muted data-unchecked:border-border/50"
+            <WorkspaceModeSelect
+              value={defaultWorkspaceMode}
+              onChange={(mode) => onChange({ default_workspace_mode: mode })}
+              allowReuse={false}
             />
           </div>
         </div>

@@ -1,15 +1,14 @@
-import { Bot, Clock, GitCommitVertical, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
+import { Bot, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import { parseDiffStat } from "@/lib/diff-utils";
 import { useNavigate } from "@/store/navigationStore";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import { WorktreeMetrics } from "./WorktreeMetrics";
 import {
   agentLabel,
   isInUse,
-  relativeAge,
   relativeWorktreePath,
   worktreeTitle,
   worktreeUsage,
@@ -47,50 +46,11 @@ export function WorktreeCard({
   onDelete,
 }: WorktreeCardProps) {
   const navigate = useNavigate();
-  const diffStat = parseDiffStat(worktree.diff_stat);
-  const aheadBehind = worktree.ahead_behind;
   const isMain = worktree.path === repoPath;
   const usage = worktreeUsage(worktree, sessions);
   const inUse = isInUse(usage);
-  const age = relativeAge(worktree.last_activity_at, now);
   const title = worktreeTitle(worktree);
   const location = relativeWorktreePath(worktree.path, repoPath);
-
-  // Every metric is dropped when it has nothing to say, so a quiet worktree renders a short row
-  // rather than a row of zeroes and the words that would be needed to explain them.
-  const metrics: React.ReactNode[] = [];
-  if (age) {
-    metrics.push(
-      <span key="age" className="flex items-center gap-1 text-muted-foreground">
-        <Clock className="size-3" />
-        {age}
-      </span>,
-    );
-  }
-  if (diffStat && (diffStat.insertions > 0 || diffStat.deletions > 0)) {
-    metrics.push(
-      <span key="diff" className="flex items-center gap-1.5 font-mono">
-        {diffStat.insertions > 0 && <span className="text-success">+{diffStat.insertions}</span>}
-        {diffStat.deletions > 0 && <span className="text-destructive">−{diffStat.deletions}</span>}
-      </span>,
-    );
-  }
-  if (worktree.commit_count != null && worktree.commit_count > 0) {
-    metrics.push(
-      <span key="commits" className="flex items-center gap-0.5 font-mono">
-        <GitCommitVertical className="size-3.5" />
-        {worktree.commit_count}
-      </span>,
-    );
-  }
-  if (aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0)) {
-    metrics.push(
-      <span key="remote" className="flex items-center gap-1.5 font-mono">
-        {aheadBehind.ahead > 0 && <span className="text-success">↑{aheadBehind.ahead}</span>}
-        {aheadBehind.behind > 0 && <span className="text-warning">↓{aheadBehind.behind}</span>}
-      </span>,
-    );
-  }
 
   const card = (
     <div className="relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors cursor-pointer hover:border-ring/50">
@@ -124,16 +84,7 @@ export function WorktreeCard({
           {worktree.detached_at ? `detached at ${worktree.detached_at}` : worktree.branch_name}
         </div>
 
-        {metrics.length > 0 && (
-          <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
-            {metrics.map((metric, index) => (
-              <span key={index} className="flex items-center gap-2">
-                {index > 0 && <span className="text-muted-foreground/40">·</span>}
-                {metric}
-              </span>
-            ))}
-          </div>
-        )}
+        <WorktreeMetrics worktree={worktree} now={now} className="mt-2" />
       </div>
 
       {inUse && (
