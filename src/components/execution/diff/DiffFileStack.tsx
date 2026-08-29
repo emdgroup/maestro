@@ -4,7 +4,6 @@ import { type PendingComment } from "./DiffViewer";
 import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
-import { estimateDiffHeight } from "./estimate-diff-height";
 import { useCommentNavigation } from "./useCommentNavigation";
 import {
   activeIndexAt,
@@ -127,11 +126,23 @@ export function DiffFileStack({
   const programmaticScrollRef = useRef(false);
   const settleFrameRef = useRef<number | null>(null);
 
-  // Which files' diffs have actually been built. Every card is expanded, but a diff is a Shiki
-  // highlight per line, and mounting hundreds at once exhausts WebView2 memory — so a body waits
-  // until its card comes near the viewport. See `nearby` below.
-  const [mounted, setMounted] = useState<Set<string>>(new Set());
-  const [forcedMounts, setForcedMounts] = useState<Set<string>>(new Set());
+  /**
+   * Which files are syntax-highlighted.
+   *
+   * Every file's diff is rendered from the first frame — that is the whole design. Building a
+   * diff's structure measured at under a millisecond a file, so the document reaches its true
+   * height immediately and never changes it. What is expensive is Shiki: 25–150ms a file,
+   * synchronous, and up to 1.8s for a large one. So colour is what arrives late, not content.
+   *
+   * This can afford to be lazy precisely because it is invisible to layout — see the `highlight`
+   * prop on `DiffViewer`. Deferring the *body* instead is what the previous two attempts did, and
+   * it cannot be made to work: a card that has not been built has no height, so every scroll
+   * target is computed against a document that is about to change underneath it.
+   */
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
+  /** Queued for colour, oldest first — drained one a frame so a burst cannot block a scroll. */
+  const pendingHighlightRef = useRef<Set<string>>(new Set());
+  const highlightFrameRef = useRef<number | null>(null);
 
   const toggleExpanded = useCallback((key: string) => {
     setCollapsedFiles((prev) => {
@@ -143,18 +154,51 @@ export function DiffFileStack({
   }, []);
 
   /**
+   * Colour one queued file per frame until the queue is empty.
+   *
+   * One at a time rather than one batch: the tokenising is synchronous inside `DiffView`'s
+   * effects, so a commit that starts four cards blocks for the sum of all four and paints nothing
+   * until the last finishes. Spreading them lets the browser draw in between, which is the
+   * difference between a stack that colours in and one that hitches.
+   */
+  const scheduleHighlight = useCallback(() => {
+    if (highlightFrameRef.current !== null) return;
+    const step = () => {
+      const [path] = pendingHighlightRef.current;
+      if (path === undefined) {
+        highlightFrameRef.current = null;
+        return;
+      }
+      pendingHighlightRef.current.delete(path);
+      setHighlighted((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
+      highlightFrameRef.current = requestAnimationFrame(step);
+    };
+    highlightFrameRef.current = requestAnimationFrame(step);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (highlightFrameRef.current !== null) cancelAnimationFrame(highlightFrameRef.current);
+      // Cleared as well as cancelled: a handle left set reads as "a frame is already booked", and
+      // StrictMode tears effects down and runs them again on the same instance.
+      highlightFrameRef.current = null;
+    },
+    [],
+  );
+
+  /**
    * Put `path` at the top of the scroller and hold it there while the stack settles.
    *
-   * `scrollIntoView` chooses its destination once, from the layout as it stands when it is called,
-   * and a long jump immediately invalidates that: every card the scroller passes enters the
-   * intersection observer's margin and mounts, swapping `estimateDiffHeight`'s guess for a real
-   * height and moving everything below it — including the file being scrolled to. The animation
-   * still lands on the pixel it aimed at, which is now a different file. Re-aligning for a few
-   * frames afterwards absorbs that.
+   * Now that every diff renders at once, the layout a jump is computed against is the layout it
+   * lands in, and this arrives on its first frame and stops. What it still covers is the short
+   * window after a jump in which the stack can move under it: an untracked file's body is fetched
+   * rather than derived from the diff, so those cards are the one height here that is not known up
+   * front, and one of them resolving above the target would otherwise leave the jump short.
    *
-   * The jump is instant for the same reason. An animated scroll drags the viewport across every
-   * card in between, which mounts all of them: the slowest path, and the one that moves the target
-   * furthest.
+   * It is deliberately a short window, not a guarantee — it gives up after three still frames, so
+   * a fetch that lands later than that is not caught here. What holds the position then is the
+   * browser's own scroll anchoring, which is also why nothing tries to fight it: a manual
+   * correction on top of `overflow-anchor` is two adjustments for one shift.
    *
    * The loop yields the moment the scroll position is somewhere it did not put it, so a user who
    * scrolls while it is still correcting is not fought for the next second.
@@ -206,10 +250,10 @@ export function DiffFileStack({
    * a filtered list, in which case it has no index yet but its collapsed state and its section can
    * both be addressed by path already.
    *
-   * The forced mount is what makes comment navigation work. `goToComment` waits on a
-   * MutationObserver for the comment's node and gives up after a couple of seconds; if the target
-   * file is far off screen its body would never mount, no node would appear, and the chevron would
-   * silently do nothing.
+   * Un-collapsing is the only thing this has to force. A file's diff is already in the document
+   * whether or not anyone has scrolled near it, so comment navigation — which waits on a
+   * MutationObserver for the comment's node and gives up after a couple of seconds — finds its
+   * target without the stack having to build anything first.
    */
   const revealFile = useCallback(
     (path: string) => {
@@ -220,7 +264,10 @@ export function DiffFileStack({
         next.delete(path);
         return next;
       });
-      setForcedMounts((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
+      // Ahead of the queue: this is the file the user asked for, and it is one card's worth of
+      // work. Whatever was waiting can wait a frame longer.
+      pendingHighlightRef.current.delete(path);
+      setHighlighted((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
       scrollToTop(path);
     },
     [onBeforeReveal, scrollToTop],
@@ -241,16 +288,17 @@ export function DiffFileStack({
   /**
    * One observer for the whole stack, watching the card elements `sectionRefs` already holds.
    *
-   * Rooted at the scroller rather than the viewport, which also means a hidden session — the
-   * agent monitor keeps them all mounted — has a zero-size root, so nothing intersects and nothing
-   * mounts until it is actually looked at.
+   * Rooted at the scroller rather than the viewport, which also means a hidden session — the agent
+   * monitor keeps them all mounted — has a zero-size root, so nothing intersects and nothing is
+   * highlighted until it is actually looked at.
    *
-   * A mounted body is never unmounted. Partly so an open comment draft survives scrolling away,
-   * but mainly for the scroll spy: mounting swaps an estimated height for the real one, and if
-   * everything above the scroll position is already mounted then that only ever happens *below*
-   * the viewport, where it shifts nothing the user can see and leaves `offsetTop` for the cards
-   * they have passed untouched. The margin is asymmetric for the same reason — generous below,
-   * where growth is free, and small above, where it is not.
+   * The margin can be generous in both directions now that what it gates is colour: promoting a
+   * card changes nothing about its size, so reading ahead costs work but can never move the page.
+   * It was asymmetric when this gated mounting, because growth above the viewport was a shove and
+   * growth below was free.
+   *
+   * Colour is never taken back. A file the user has scrolled past stays highlighted, so returning
+   * to it costs nothing and no card is ever seen to lose its colour.
    */
   const observerRef = useRef<IntersectionObserver | null>(null);
   const pathByElement = useRef(new WeakMap<Element, string>());
@@ -259,17 +307,17 @@ export function DiffFileStack({
     if (!root) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        const arrived = entries
-          .filter((entry) => entry.isIntersecting)
-          .map((entry) => pathByElement.current.get(entry.target))
-          .filter((path): path is string => path !== undefined);
-        if (arrived.length === 0) return;
-        setMounted((prev) => {
-          if (arrived.every((path) => prev.has(path))) return prev;
-          return new Set([...prev, ...arrived]);
-        });
+        let queued = false;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const path = pathByElement.current.get(entry.target);
+          if (path === undefined) continue;
+          pendingHighlightRef.current.add(path);
+          queued = true;
+        }
+        if (queued) scheduleHighlight();
       },
-      { root, rootMargin: "200px 0px 800px 0px" },
+      { root, rootMargin: "600px 0px 600px 0px" },
     );
     observerRef.current = observer;
     for (const element of sectionRefs.current.values()) observer.observe(element);
@@ -277,7 +325,7 @@ export function DiffFileStack({
       observer.disconnect();
       observerRef.current = null;
     };
-  }, []);
+  }, [scheduleHighlight]);
 
   const registerSection = useCallback((key: string, element: HTMLElement | null) => {
     const previous = sectionRefs.current.get(key);
@@ -389,7 +437,6 @@ export function DiffFileStack({
         items.map((item, index) => {
           const key = displayItemPath(item);
           const hunks = item.kind === "diff" ? item.file.hunks : [];
-          const isMounted = mounted.has(key) || forcedMounts.has(key);
           return (
             <ReviewFileCard
               key={key}
@@ -405,30 +452,25 @@ export function DiffFileStack({
               note={item.kind === "diff" ? fileNote(item.file) : undefined}
               fileComment={fileCommentFor(key)}
             >
-              {isMounted ? (
-                item.kind === "diff" ? (
-                  <ExpandableDiffViewer
-                    file={item.file}
-                    projectId={projectId}
-                    cwd={cwd}
-                    diffTarget={diffTarget}
-                    diffViewMode={diffViewMode}
-                    {...reviewProps(key)}
-                  />
-                ) : (
-                  <UntrackedFileDiffViewer
-                    projectId={projectId}
-                    worktreePath={cwd}
-                    filePath={item.path}
-                    showHeader={false}
-                    {...reviewProps(key)}
-                  />
-                )
+              {item.kind === "diff" ? (
+                <ExpandableDiffViewer
+                  file={item.file}
+                  projectId={projectId}
+                  cwd={cwd}
+                  diffTarget={diffTarget}
+                  diffViewMode={diffViewMode}
+                  highlight={highlighted.has(key)}
+                  {...reviewProps(key)}
+                />
               ) : (
-                // Reserves roughly the diff's height so the stack scrolls at its true length.
-                // Without it every card would sit inside the observer's margin at once and the
-                // whole point of waiting would be lost.
-                <div style={{ height: estimateDiffHeight(hunks) }} aria-hidden />
+                <UntrackedFileDiffViewer
+                  projectId={projectId}
+                  worktreePath={cwd}
+                  filePath={item.path}
+                  showHeader={false}
+                  highlight={highlighted.has(key)}
+                  {...reviewProps(key)}
+                />
               )}
             </ReviewFileCard>
           );

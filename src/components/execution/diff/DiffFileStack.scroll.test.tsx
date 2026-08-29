@@ -124,21 +124,18 @@ describe("DiffFileStack scroll spy", () => {
   });
 
   /**
-   * Lazily mounted diffs replace an estimated height with a real one, which moves every card below
-   * them — including the one just navigated to. The settle loop re-aligns rather than trusting the
-   * destination it computed before the heights changed.
+   * A jump is computed against the layout as it stands, and the stack can still move in the frames
+   * right after it: an untracked file's body is fetched rather than derived from its diff, so one
+   * resolving above the target pushes the target down. The settle loop re-aligns rather than
+   * trusting the destination it worked out beforehand.
    */
-  it("re-aligns the target after the cards above it change height", async () => {
+  it("re-aligns the target when a card above it grows during the jump", async () => {
     const onSelectedIndexChange = vi.fn();
     const { ref, scroller } = renderStack(6, onSelectedIndexChange);
 
     act(() => ref.current!.navigateTo(4));
-    await act(async () => {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    });
-    expect(scroller.scrollTop).toBe(4 * CARD_HEIGHT);
 
-    // A card above the target grows by 50px, so the target is now 50px lower than where we are.
+    // Before the loop has had a frame to settle: every card from index 2 down is 50px lower.
     const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-file-card]"));
     cards.forEach((card, index) => {
       card.getBoundingClientRect = () =>

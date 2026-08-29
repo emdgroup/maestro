@@ -22,6 +22,8 @@ interface UntrackedFileDiffViewerProps {
   onSendComment?: (commentId: string) => void;
   commentNav?: React.ComponentProps<typeof DiffViewer>["commentNav"];
   sendDisabled?: boolean;
+  /** See `DiffViewer`. A stack colours its cards as they near the viewport. */
+  highlight?: boolean;
 }
 
 export function UntrackedFileDiffViewer({
@@ -40,6 +42,7 @@ export function UntrackedFileDiffViewer({
   onSendComment,
   commentNav,
   sendDisabled,
+  highlight,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
 
@@ -93,6 +96,7 @@ export function UntrackedFileDiffViewer({
             onSendComment={onSendComment}
             commentNav={commentNav}
             sendDisabled={sendDisabled}
+            highlight={highlight}
           />
         )}
       </div>

@@ -73,6 +73,21 @@ interface DiffViewerProps {
    * See `useHunkHeaderPress` for why this is a request rather than the expansion itself.
    */
   onRequestContext?: () => void;
+  /**
+   * Whether to syntax-highlight, as opposed to rendering the same diff in plain text.
+   *
+   * The one expensive thing this component does. Building the diff's structure is under a
+   * millisecond a file; Shiki tokenising it is 25–150ms, and up to 1.8s for a large one — all of
+   * it synchronous, inside `DiffView`'s effects. `@git-diff-view` keeps the two apart
+   * (`DiffView.tsx:320` only calls `initSyntax` for a highlighted view) which is what lets a host
+   * render a whole review at once and colour it afterwards.
+   *
+   * Turning it on later costs nothing but the tokenising: `DiffContent` renders the same row, the
+   * same `pre-wrap`/`break-all` and the same characters either way, and only swaps the text for
+   * coloured spans — inline elements that cannot change how a line wraps. So a card's height is
+   * the same before and after, and a stack can promote cards without moving anything on screen.
+   */
+  highlight?: boolean;
 }
 
 function splitSideToSide(side: SplitSide): "old" | "new" {
@@ -119,6 +134,7 @@ export function DiffViewer({
   commentNav,
   sendDisabled,
   onRequestContext,
+  highlight = true,
 }: DiffViewerProps) {
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
@@ -164,9 +180,9 @@ export function DiffViewer({
   const pressedWidgetRef = useRef(false);
 
   /**
-   * A ref callback rather than an effect: this wrapper is not rendered until the highlighter has
-   * loaded, so an effect keyed on `reviewMode` alone would run once against nothing and never
-   * again. Capture phase, so the flag is set before the manager reacts to the same press.
+   * A ref callback rather than an effect: an effect keyed on `reviewMode` alone would bind against
+   * whatever the wrapper was on that render, and this one is replaced as the diff is rebuilt.
+   * Capture phase, so the flag is set before the manager reacts to the same press.
    */
   const bindWidgetPressFlag = useCallback(
     (wrapper: HTMLDivElement | null) => {
@@ -320,7 +336,6 @@ export function DiffViewer({
   if (loading) return <DiffPlaceholder message="Loading diff..." />;
   if (error) return <DiffPlaceholder message={`Error loading diff: ${error}`} variant="error" />;
   if (!diffFile) return <DiffPlaceholder message="No changes to display" />;
-  if (!highlighter) return <DiffPlaceholder message="Initializing syntax highlighter..." />;
 
   return (
     <div className="min-h-0 flex flex-col h-full">
@@ -339,7 +354,11 @@ export function DiffViewer({
           data={diffFile}
           diffViewMode={mode}
           diffViewTheme={diffTheme}
-          diffViewHighlight
+          // Also gated on the highlighter itself: it loads asynchronously, and `initSyntax` with
+          // nothing registered is not a diff without colour, it is a broken one. Waiting for it
+          // behind a placeholder — which is what this used to do — would have meant the diff
+          // appearing at one height and then jumping to another.
+          diffViewHighlight={highlight && highlighter !== null}
           diffViewWrap
           registerHighlighter={highlighter as any}
           enableMultiSelect={!!reviewMode}
