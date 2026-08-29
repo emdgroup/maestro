@@ -6,6 +6,12 @@ import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { estimateDiffHeight } from "./estimate-diff-height";
 import { useCommentNavigation } from "./useCommentNavigation";
+import {
+  activeIndexAt,
+  SETTLE_MAX_FRAMES,
+  SETTLE_STABLE_FRAMES,
+  SETTLE_TOLERANCE,
+} from "./stack-scroll";
 import { displayItemPath, type DisplayItem } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
 
@@ -119,6 +125,7 @@ export function DiffFileStack({
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const programmaticScrollRef = useRef(false);
+  const settleFrameRef = useRef<number | null>(null);
 
   // Which files' diffs have actually been built. Every card is expanded, but a diff is a Shiki
   // highlight per line, and mounting hundreds at once exhausts WebView2 memory — so a body waits
@@ -134,6 +141,65 @@ export function DiffFileStack({
       return next;
     });
   }, []);
+
+  /**
+   * Put `path` at the top of the scroller and hold it there while the stack settles.
+   *
+   * `scrollIntoView` chooses its destination once, from the layout as it stands when it is called,
+   * and a long jump immediately invalidates that: every card the scroller passes enters the
+   * intersection observer's margin and mounts, swapping `estimateDiffHeight`'s guess for a real
+   * height and moving everything below it — including the file being scrolled to. The animation
+   * still lands on the pixel it aimed at, which is now a different file. Re-aligning for a few
+   * frames afterwards absorbs that.
+   *
+   * The jump is instant for the same reason. An animated scroll drags the viewport across every
+   * card in between, which mounts all of them: the slowest path, and the one that moves the target
+   * furthest.
+   *
+   * The loop yields the moment the scroll position is somewhere it did not put it, so a user who
+   * scrolls while it is still correcting is not fought for the next second.
+   */
+  const scrollToTop = useCallback((path: string) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
+    programmaticScrollRef.current = true;
+
+    let stableFrames = 0;
+    let frames = 0;
+    let expected = container.scrollTop;
+
+    const finish = () => {
+      settleFrameRef.current = null;
+      programmaticScrollRef.current = false;
+    };
+
+    const step = () => {
+      const element = sectionRefs.current.get(path);
+      if (!element || Math.abs(container.scrollTop - expected) > SETTLE_TOLERANCE) return finish();
+
+      const drift = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+      if (Math.abs(drift) > SETTLE_TOLERANCE) {
+        container.scrollTop += drift;
+        stableFrames = 0;
+      } else {
+        stableFrames += 1;
+      }
+      expected = container.scrollTop;
+      frames += 1;
+      if (stableFrames >= SETTLE_STABLE_FRAMES || frames >= SETTLE_MAX_FRAMES) return finish();
+      settleFrameRef.current = requestAnimationFrame(step);
+    };
+
+    settleFrameRef.current = requestAnimationFrame(step);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
+    },
+    [],
+  );
 
   /**
    * Put a file on screen, by path rather than by index: the host may be about to add it back to
@@ -155,15 +221,9 @@ export function DiffFileStack({
         return next;
       });
       setForcedMounts((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
-      programmaticScrollRef.current = true;
-      setTimeout(() => {
-        sectionRefs.current.get(path)?.scrollIntoView({ block: "start", behavior: "smooth" });
-        setTimeout(() => {
-          programmaticScrollRef.current = false;
-        }, 700);
-      }, 0);
+      scrollToTop(path);
     },
-    [onBeforeReveal],
+    [onBeforeReveal, scrollToTop],
   );
 
   const navigateTo = useCallback(
@@ -235,13 +295,12 @@ export function DiffFileStack({
     if (programmaticScrollRef.current) return;
     const container = scrollContainerRef.current;
     if (!container) return;
-    const scrollTop = container.scrollTop;
-    let activeIndex = 0;
-    items.forEach((item, idx) => {
-      const el = sectionRefs.current.get(displayItemPath(item));
-      if (el && el.offsetTop <= scrollTop + 1) activeIndex = idx;
+    const containerTop = container.getBoundingClientRect().top;
+    const cardTops = items.map((item) => {
+      const element = sectionRefs.current.get(displayItemPath(item));
+      return element ? element.getBoundingClientRect().top : null;
     });
-    onSelectedIndexChange(activeIndex);
+    onSelectedIndexChange(activeIndexAt(cardTops, containerTop));
   }, [items, onSelectedIndexChange]);
 
   const comments = review?.comments ?? EMPTY_COMMENTS;

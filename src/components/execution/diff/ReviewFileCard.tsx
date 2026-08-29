@@ -104,8 +104,9 @@ export function ReviewFileCard({
     setEditingComment(true);
   }
 
+  // `data-file-card` marks the element `DiffFileStack` measures for its scroll spy.
   return (
-    <div ref={ref} className="shrink-0">
+    <div ref={ref} data-file-card={path} className="shrink-0">
       <div className="sticky top-0 z-10 pt-3 bg-background">
         <div
           onClick={onToggleExpanded}
