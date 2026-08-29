@@ -1,6 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
 import { Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { parseDiffStat } from "@/lib/diff-utils";
@@ -13,6 +12,19 @@ interface WorktreeCardProps {
   onDelete: (path: string) => void;
 }
 
+/**
+ * A worktree in the grid. Opening one shows its diff.
+ *
+ * The card used to be inert unless the working tree was dirty, gated on `changed_files_count` and
+ * `diff_stat`. Both come from `git status --porcelain` and `git diff --shortstat`, so both see
+ * only uncommitted work — and a branch whose agent finished and committed, which is the normal end
+ * state, could not be opened at all. The click was simply swallowed, with nothing on the card to
+ * say why. `ahead_behind` cannot stand in for it either: it counts against the upstream, so it
+ * reads 0/0 for any branch that has been pushed.
+ *
+ * Every card opens now. A worktree with genuinely nothing in it lands on the panel's own empty
+ * state, which says so — strictly more use than a card that ignores the click.
+ */
 export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: WorktreeCardProps) {
   const diffStat = parseDiffStat(worktree.diff_stat);
   const aheadBehind = worktree.ahead_behind;
@@ -20,16 +32,8 @@ export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: Worktre
 
   return (
     <div
-      className={cn(
-        "relative group rounded-lg border bg-card p-4 transition-colors w-56 shrink-0",
-        worktree.changed_files_count > 0 || worktree.diff_stat !== null
-          ? "cursor-pointer hover:bg-muted/10"
-          : "cursor-default",
-      )}
-      onClick={() => {
-        if (worktree.changed_files_count === 0 && worktree.diff_stat === null) return;
-        onSelect(worktree.path);
-      }}
+      className="relative group rounded-lg border bg-card p-4 transition-colors w-56 shrink-0 cursor-pointer hover:bg-muted/10"
+      onClick={() => onSelect(worktree.path)}
     >
       {/* Delete button — appears on hover, hidden for main worktree */}
       {!isMain && (

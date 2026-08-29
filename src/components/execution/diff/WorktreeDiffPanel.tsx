@@ -35,11 +35,28 @@ interface WorktreeDiffPanelProps {
  * It also passes no `review`, so the cards have no comment affordance: a task review's remarks go
  * to the agent that wrote the code, and here there is nobody on the other end.
  */
+/**
+ * Which scope to open a worktree on.
+ *
+ * "Uncommitted" is right while an agent is still working, but a finished worktree has committed
+ * everything — and opening that empty, on a branch that may hold a dozen commits, reads as "the
+ * diff is broken" rather than as "you are looking at the wrong scope". Both fields here describe
+ * the working tree only, so this asks exactly the question that matters: is there anything
+ * uncommitted to show? `scopeToDiffTarget` falls back to the uncommitted target on its own when
+ * there is no base branch to compare against, so widening can never show less.
+ */
+export function defaultScope(worktree: WorktreeWithStatus | null): DiffScope {
+  const hasUncommitted = worktree
+    ? worktree.changed_files_count > 0 || worktree.diff_stat !== null
+    : true;
+  return hasUncommitted ? { type: "uncommitted" } : { type: "all" };
+}
+
 export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiffPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [fileSearch, setFileSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
-  const [scope, setScope] = useState<DiffScope>({ type: "uncommitted" });
+  const [scope, setScope] = useState<DiffScope>(() => defaultScope(worktree));
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const stackRef = useRef<DiffFileStackHandle>(null);
   const panel = useReviewPanelLayout();
@@ -55,6 +72,19 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
 
   const worktreePath = worktree?.path ?? null;
   const baseBranch = worktree?.base_branch ?? null;
+
+  /**
+   * Re-pick the scope when a different worktree is shown, rather than relying on the panel
+   * unmounting between openings. The dialog hands this component `null` while it is closed, so a
+   * mount-time default alone would be computed against no worktree and never revisited. Adjusting
+   * state during render is the supported way to reset on a prop change, and is the same pattern
+   * `WorktreesView` uses for its deep-linked selection.
+   */
+  const [scopedPath, setScopedPath] = useState(worktreePath);
+  if (scopedPath !== worktreePath) {
+    setScopedPath(worktreePath);
+    setScope(defaultScope(worktree));
+  }
 
   const scopeAnchors = useMemo(() => ({ baseBranch }), [baseBranch]);
   const diffTarget: DiffTarget = useMemo(
