@@ -109,6 +109,17 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| "(disabled)".to_string())
     );
 
+    // A re-downloadable copy of files read over SFTP, keyed by a log_id that does not outlive the
+    // run, so nothing in it is worth keeping. Cleared here rather than when a session ends because
+    // SSH sessions — the only ones that populate it — run on a shared connection server and have no
+    // per-session reader loop to hang the delete off, and no teardown path runs after a crash.
+    let cache_dir = app_data_dir.join("working_file_cache");
+    match std::fs::remove_dir_all(&cache_dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => log::warn!("Could not clear {}: {error}", cache_dir.display()),
+    }
+
     let app_state = Arc::new(AppState::new(conn, app.handle().clone(), app_data_dir.clone()));
 
     app.manage(app_state);

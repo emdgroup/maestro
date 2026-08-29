@@ -47,18 +47,17 @@ pub async fn list_project_branches(
 /// would strand it with nothing in the UI pointing at it.
 ///
 /// Searches ACP sessions and PTY session metadata for an entry associated with the given task_id.
-/// If found, replicates the teardown logic from cancel_acp_session or close_pty_session
-/// respectively. A task with no live session is not an error: its session may have died on its
-/// own, and the worktree it left behind is exactly what still needs discarding. After all async
-/// work is done, updates the task status via the sync DB mutex (never held across an await point).
+/// An ACP session is torn down through `tear_down_session`, the same helper `end_acp_session` uses;
+/// a PTY session replicates the `close_pty_session` logic. A task with no live session is not an
+/// error: its session may have died on its own, and the worktree it left behind is exactly what
+/// still needs discarding. After all async work is done, updates the task status via the sync DB
+/// mutex (never held across an await point).
 #[tauri::command]
 #[specta::specta]
 pub async fn interrupt_task(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    use crate::acp::transport::{MaestroRpcMessage, ServerRequest, CancelRequest};
-
     // Search ACP sessions by task_id — release lock immediately in scoped block.
     let acp_log_id: Option<i32> = {
         let sessions = app_state.acp.sessions.lock().await;
@@ -77,19 +76,19 @@ pub async fn interrupt_task(
             .map(|(log_id, _)| *log_id)
     };
 
-    // Tear down ACP session if found — replicates cancel_acp_session logic.
+    // Shared with `end_acp_session` rather than copied: this is the copy its doc comment warns
+    // about, and the divergence was real — the session id was built by hand and `state.json` was
+    // never rewritten, leaving the interrupted session listed as live against a worktree that the
+    // `discard_task_workspace` below had already deleted.
     if let Some(log_id) = acp_log_id {
-        let session_id = format!("session-{}", log_id);
-        let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
-        // Best-effort — maestro-server may already be gone; error is non-fatal.
-        let _ = crate::acp::write_to_acp_session(&app_state, log_id, &cancel_msg).await;
-
-        // The shared connection server stays up — see `cancel_acp_session`.
-        let mut sessions = app_state.acp.sessions.lock().await;
-        if let Some(mut session) = sessions.remove(&log_id) {
-            if let Some(cancel_tx) = session.reader_cancel_tx.take() {
-                let _ = cancel_tx.send(());
-            }
+        let (project_id, _) = crate::acp::session_handlers::tear_down_session(&app_state, log_id).await;
+        // Before the fallible work below, not after: the entry is stale the moment the session is
+        // torn down, so an early return must not be what decides whether it gets rewritten.
+        if let Some(project_id) = project_id {
+            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
+                Arc::clone(&app_state),
+                project_id,
+            ));
         }
     }
 

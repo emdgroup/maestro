@@ -2023,10 +2023,11 @@ async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, s
  * would strand it with nothing in the UI pointing at it.
  * 
  * Searches ACP sessions and PTY session metadata for an entry associated with the given task_id.
- * If found, replicates the teardown logic from cancel_acp_session or close_pty_session
- * respectively. A task with no live session is not an error: its session may have died on its
- * own, and the worktree it left behind is exactly what still needs discarding. After all async
- * work is done, updates the task status via the sync DB mutex (never held across an await point).
+ * An ACP session is torn down through `tear_down_session`, the same helper `end_acp_session` uses;
+ * a PTY session replicates the `close_pty_session` logic. A task with no live session is not an
+ * error: its session may have died on its own, and the worktree it left behind is exactly what
+ * still needs discarding. After all async work is done, updates the task status via the sync DB
+ * mutex (never held across an await point).
  */
 async interruptTask(taskId: number) : Promise<Result<null, string>> {
     try {

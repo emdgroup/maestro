@@ -244,7 +244,10 @@ pub async fn cancel_acp_session(
 /// this, and a third copy would drift too.
 ///
 /// Returns the session's project and task ids, which the caller needs for its own bookkeeping.
-async fn tear_down_session(app_state: &Arc<AppState>, log_id: i32) -> (Option<i32>, Option<i32>) {
+pub(crate) async fn tear_down_session(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+) -> (Option<i32>, Option<i32>) {
     use crate::acp::transport::{CancelRequest, MaestroRpcMessage, ServerRequest};
 
     let session_id = session_id_for(log_id);
