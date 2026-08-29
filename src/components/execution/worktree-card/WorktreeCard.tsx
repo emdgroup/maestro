@@ -1,13 +1,27 @@
-import { formatDistanceToNow } from "date-fns";
-import { Trash2 } from "lucide-react";
+import { Bot, Clock, GitCommitVertical, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
+import { cn } from "@/lib/utils.ts";
 import { parseDiffStat } from "@/lib/diff-utils";
-import type { WorktreeWithStatus } from "@/types/bindings";
+import { useNavigate } from "@/store/navigationStore";
+import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import {
+  agentLabel,
+  folderName,
+  isInUse,
+  relativeAge,
+  worktreeTitle,
+  worktreeUsage,
+} from "./worktree-usage";
 
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;
   repoPath: string;
+  /** Every live session in the project; the card picks out the ones running in this worktree. */
+  sessions: ActiveSessionInfo[];
+  /** Passed in rather than read per card, so one ticker drives the whole grid. */
+  now: number;
   onSelect: (path: string) => void;
   onDelete: (path: string) => void;
 }
@@ -16,104 +30,183 @@ interface WorktreeCardProps {
  * A worktree in the grid. Opening one shows its diff.
  *
  * The card used to be inert unless the working tree was dirty, gated on `changed_files_count` and
- * `diff_stat`. Both come from `git status --porcelain` and `git diff --shortstat`, so both see
- * only uncommitted work — and a branch whose agent finished and committed, which is the normal end
- * state, could not be opened at all. The click was simply swallowed, with nothing on the card to
- * say why. `ahead_behind` cannot stand in for it either: it counts against the upstream, so it
- * reads 0/0 for any branch that has been pushed.
+ * `diff_stat`. Both see only uncommitted work — and a branch whose agent finished and committed,
+ * which is the normal end state, could not be opened at all. Every card opens now; a worktree with
+ * genuinely nothing in it lands on the panel's own empty state, which says so.
  *
- * Every card opens now. A worktree with genuinely nothing in it lands on the panel's own empty
- * state, which says so — strictly more use than a card that ignores the click.
+ * The footer is the "in use" indicator. There is no badge and no coloured dot: a card that is
+ * being used has a footer, one that is not does not, and the tint difference between body and
+ * footer is what makes that visible across a grid.
  */
-export function WorktreeCard({ worktree, repoPath, onSelect, onDelete }: WorktreeCardProps) {
+export function WorktreeCard({
+  worktree,
+  repoPath,
+  sessions,
+  now,
+  onSelect,
+  onDelete,
+}: WorktreeCardProps) {
+  const navigate = useNavigate();
   const diffStat = parseDiffStat(worktree.diff_stat);
   const aheadBehind = worktree.ahead_behind;
   const isMain = worktree.path === repoPath;
+  const usage = worktreeUsage(worktree, sessions);
+  const inUse = isInUse(usage);
+  const age = relativeAge(worktree.last_activity_at, now);
+  const title = worktreeTitle(worktree);
+  const folder = folderName(worktree.path);
 
-  return (
-    <div
-      className="relative group rounded-lg border bg-card p-4 transition-colors w-56 shrink-0 cursor-pointer hover:bg-muted/10"
-      onClick={() => onSelect(worktree.path)}
-    >
-      {/* Delete button — appears on hover, hidden for main worktree */}
-      {!isMain && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(worktree.path);
-          }}
-          aria-label="Delete worktree"
+  // Every metric is dropped when it has nothing to say, so a quiet worktree renders a short row
+  // rather than a row of zeroes and the words that would be needed to explain them.
+  const metrics: React.ReactNode[] = [];
+  if (age) {
+    metrics.push(
+      <span key="age" className="flex items-center gap-1 text-muted-foreground">
+        <Clock className="size-3" />
+        {age}
+      </span>,
+    );
+  }
+  if (diffStat && (diffStat.insertions > 0 || diffStat.deletions > 0)) {
+    metrics.push(
+      <span key="diff" className="flex items-center gap-1.5 font-mono">
+        {diffStat.insertions > 0 && <span className="text-success">+{diffStat.insertions}</span>}
+        {diffStat.deletions > 0 && <span className="text-destructive">−{diffStat.deletions}</span>}
+      </span>,
+    );
+  }
+  if (worktree.commit_count != null && worktree.commit_count > 0) {
+    metrics.push(
+      <span key="commits" className="flex items-center gap-0.5 font-mono">
+        <GitCommitVertical className="size-3.5" />
+        {worktree.commit_count}
+      </span>,
+    );
+  }
+  if (aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0)) {
+    metrics.push(
+      <span key="remote" className="flex items-center gap-1.5 font-mono">
+        {aheadBehind.ahead > 0 && <span className="text-success">↑{aheadBehind.ahead}</span>}
+        {aheadBehind.behind > 0 && <span className="text-warning">↓{aheadBehind.behind}</span>}
+      </span>,
+    );
+  }
+
+  const card = (
+    <div className="relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors cursor-pointer hover:border-ring/50">
+      <div className="p-3" onClick={() => onSelect(worktree.path)}>
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-sm font-medium truncate">{title}</span>
+          {!isMain && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="-mt-0.5 -mr-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(worktree.path);
+              }}
+              aria-label="Delete worktree"
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
+        </div>
+
+        {/* A detached worktree keeps the branch name in the database for branch operations, but
+              showing it here would claim a branch that is not checked out. */}
+        <div
+          className={cn(
+            "mt-0.5 font-mono text-xs truncate",
+            worktree.detached_at ? "text-warning" : "text-muted-foreground",
+          )}
         >
-          <Trash2 className="w-3.5 h-3.5" />
-        </Button>
-      )}
+          {worktree.detached_at ? `detached at ${worktree.detached_at}` : worktree.branch_name}
+        </div>
 
-      {/* Branch name */}
-      <div className="font-mono text-sm font-medium truncate pr-6">{worktree.branch_name}</div>
-
-      {/* Stats row */}
-      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-        {diffStat && (
-          <>
-            {diffStat.insertions > 0 && (
-              <span className="text-success font-mono">+{diffStat.insertions}</span>
-            )}
-            {diffStat.deletions > 0 && (
-              <span className="text-destructive font-mono">-{diffStat.deletions}</span>
-            )}
-            {diffStat.insertions === 0 && diffStat.deletions === 0 && (
-              <span className="font-mono">+0 / -0</span>
-            )}
-          </>
-        )}
-        {worktree.created_at && (
-          <span>{formatDistanceToNow(new Date(worktree.created_at), { addSuffix: true })}</span>
-        )}
-        {aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0) && (
-          <span className="font-mono">
-            {aheadBehind.ahead > 0 && <span className="text-success">↑{aheadBehind.ahead}</span>}
-            {aheadBehind.ahead > 0 && aheadBehind.behind > 0 && " "}
-            {aheadBehind.behind > 0 && <span className="text-warning">↓{aheadBehind.behind}</span>}
-          </span>
+        {metrics.length > 0 && (
+          <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
+            {metrics.map((metric, index) => (
+              <span key={index} className="flex items-center gap-2">
+                {index > 0 && <span className="text-muted-foreground/40">·</span>}
+                {metric}
+              </span>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Status badges */}
-      {(worktree.is_zombie || worktree.is_orphan) && (
-        <div className="flex items-center gap-1.5 mt-2">
-          {worktree.is_zombie && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium" />
-                }
+      {inUse && (
+        <Popover>
+          <PopoverTrigger
+            aria-label="Show what uses this worktree"
+            className="w-full flex items-center gap-3 border-t bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+          >
+            {usage.task && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <SquareCheckBig className="size-3.5" />1
+              </span>
+            )}
+            {usage.agents.length > 0 && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Bot className="size-3.5" />
+                {usage.agents.length}
+              </span>
+            )}
+            {usage.shellCount > 0 && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Terminal className="size-3.5" />
+                {usage.shellCount}
+              </span>
+            )}
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-1">
+            <div className="px-2 py-1.5 text-[10px] tracking-wide text-muted-foreground">
+              USED BY
+            </div>
+            {usage.task && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                onClick={() => navigate({ taskId: usage.task!.id })}
               >
-                Unused
-              </TooltipTrigger>
-              <TooltipContent>
-                Maestro created this worktree, but no task or session uses it any more.
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {worktree.is_orphan && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium" />
-                }
+                <SquareCheckBig className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{usage.task.name}</span>
+              </button>
+            )}
+            {usage.agents.map((session) => (
+              <button
+                key={session.session_key}
+                type="button"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                onClick={() => navigate({ sessionKey: session.session_key })}
               >
-                Untracked
-              </TooltipTrigger>
-              <TooltipContent>
-                This folder exists on disk, but Maestro has no record of it.
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
+                <Bot className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{agentLabel(session)}</span>
+              </button>
+            ))}
+            {usage.shellCount > 0 && (
+              <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                <Terminal className="size-3.5 shrink-0" />
+                <span>
+                  {usage.shellCount} shell{usage.shellCount === 1 ? "" : "s"} running here
+                </span>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
       )}
     </div>
+  );
+
+  // Only where it adds something. When there is no task the title *is* the folder name, and a
+  // tooltip repeating it would fire on every hover across the grid to say nothing.
+  if (worktree.task_name === null) return card;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={card} />
+      <TooltipContent>{folder}</TooltipContent>
+    </Tooltip>
   );
 }

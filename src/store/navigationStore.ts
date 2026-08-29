@@ -6,6 +6,7 @@ export type ViewType = "kanban" | "agents" | "worktrees" | "settings";
 export type NavigationTarget =
   | { taskId: number }
   | { agentId: string }
+  | { sessionKey: number }
   | { worktreeId: string }
   | { view: "tasks" | "agents" | "worktree" | "settings" };
 
@@ -27,12 +28,19 @@ interface NavigationState {
   slideDirection: number;
   activeTaskId: number | null;
   pendingAgentId: string | null;
+  /**
+   * A specific session to focus, where `pendingAgentId` names a *task* and lands on whichever of
+   * its sessions comes first. A worktree can hold several sessions and a session need not belong
+   * to a task at all, so neither is reachable through the task-keyed route.
+   */
+  pendingSessionKey: number | null;
   pendingWorktreeId: string | null;
 
   navigate: (target: NavigationTarget) => void;
   setActiveTab: (tab: ViewType) => void;
   setActiveTaskId: (id: number | null) => void;
   clearPendingAgent: () => void;
+  clearPendingSession: () => void;
   clearPendingWorktree: () => void;
 }
 
@@ -42,6 +50,7 @@ export const useNavigationStore = create<NavigationState>()(
     slideDirection: 1,
     activeTaskId: null,
     pendingAgentId: null,
+    pendingSessionKey: null,
     pendingWorktreeId: null,
 
     navigate: (target: NavigationTarget) =>
@@ -56,6 +65,11 @@ export const useNavigationStore = create<NavigationState>()(
           state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
           state.activeTab = newTab;
           state.pendingAgentId = target.agentId;
+        } else if ("sessionKey" in target) {
+          const newTab: ViewType = "agents";
+          state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
+          state.activeTab = newTab;
+          state.pendingSessionKey = target.sessionKey;
         } else if ("worktreeId" in target) {
           const newTab: ViewType = "worktrees";
           state.slideDirection = PAGE_ORDER[newTab] > PAGE_ORDER[state.activeTab] ? 1 : -1;
@@ -89,6 +103,11 @@ export const useNavigationStore = create<NavigationState>()(
         state.pendingAgentId = null;
       }),
 
+    clearPendingSession: () =>
+      set((state) => {
+        state.pendingSessionKey = null;
+      }),
+
     clearPendingWorktree: () =>
       set((state) => {
         state.pendingWorktreeId = null;
@@ -101,6 +120,7 @@ export const useActiveTab = () => useNavigationStore((s) => s.activeTab);
 export const useSlideDirection = () => useNavigationStore((s) => s.slideDirection);
 export const useActiveTaskId = () => useNavigationStore((s) => s.activeTaskId);
 export const usePendingAgentId = () => useNavigationStore((s) => s.pendingAgentId);
+export const usePendingSessionKey = () => useNavigationStore((s) => s.pendingSessionKey);
 export const usePendingWorktreeId = () => useNavigationStore((s) => s.pendingWorktreeId);
 export const useNavigate = () => useNavigationStore((s) => s.navigate);
 export const useNavigationActions = () =>
@@ -109,6 +129,7 @@ export const useNavigationActions = () =>
       setActiveTab: s.setActiveTab,
       setActiveTaskId: s.setActiveTaskId,
       clearPendingAgent: s.clearPendingAgent,
+      clearPendingSession: s.clearPendingSession,
       clearPendingWorktree: s.clearPendingWorktree,
     })),
   );

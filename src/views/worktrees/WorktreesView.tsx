@@ -20,6 +20,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { usePendingWorktreeId, useNavigationActions, useActiveTab } from "@/store/navigationStore";
 import { useWorktreesQuery, usePrunableBranchesQuery } from "@/services/worktree.service";
+import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useNow } from "@/utils/hooks/useNow";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
@@ -55,6 +57,10 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     isLoading,
     isFetching,
   } = useWorktreesQuery(isGitRepo ? projectId : undefined, isGitRepo ? repoPath : undefined);
+  const { data: sessions = [] } = useActiveSessionsQuery(projectId);
+  // The age labels are derived at render, so something has to re-render them; one ticker here
+  // drives every card rather than one timer per card.
+  const now = useNow();
   const { data: prunableBranches = [], refetch: refetchPrunableBranches } =
     usePrunableBranchesQuery(isGitRepo ? projectId : undefined);
   const activeTab = useActiveTab();
@@ -301,6 +307,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               <WorktreeCardGrid
                 viewMode={viewMode}
                 flatWorktrees={flatWorktrees}
+                sessions={sessions}
+                now={now}
                 groups={groupedWorktrees}
                 collapsedGroups={collapsedGroups}
                 onToggleGroup={toggleGroup}

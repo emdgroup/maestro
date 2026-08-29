@@ -21,6 +21,7 @@ const baseSession = {
   branch_name: "main",
   agent_id: null,
   acp_session_id: null,
+  cwd: "/tmp/repo",
   execution_mode: "pty",
   started_at: "2026-04-21T00:00:00Z",
   supports_session_list: false,

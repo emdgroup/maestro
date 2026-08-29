@@ -8,6 +8,7 @@ function resetStore() {
     slideDirection: 1,
     activeTaskId: null,
     pendingAgentId: null,
+    pendingSessionKey: null,
     pendingWorktreeId: null,
   });
 }
@@ -34,6 +35,26 @@ describe("navigationStore – navigate() with entity targets", () => {
     const state = useNavigationStore.getState();
     expect(state.activeTab).toBe("agents");
     expect(state.pendingAgentId).toBe("7");
+  });
+
+  /**
+   * `agentId` names a *task* and lands on whichever of its sessions comes first. A worktree can
+   * hold several sessions, and a session need not belong to a task at all, so neither is reachable
+   * through that route.
+   */
+  it("navigate({ sessionKey }) sets activeTab=agents, pendingSessionKey", () => {
+    const { navigate } = useNavigationStore.getState();
+    navigate({ sessionKey: 12 });
+    const state = useNavigationStore.getState();
+    expect(state.activeTab).toBe("agents");
+    expect(state.pendingSessionKey).toBe(12);
+    expect(state.pendingAgentId).toBeNull();
+  });
+
+  it("clearPendingSession sets pendingSessionKey to null", () => {
+    useNavigationStore.setState({ pendingSessionKey: 12 });
+    useNavigationStore.getState().clearPendingSession();
+    expect(useNavigationStore.getState().pendingSessionKey).toBeNull();
   });
 
   it("navigate({ worktreeId }) sets activeTab=worktrees, pendingWorktreeId", () => {
