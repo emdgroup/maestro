@@ -1,10 +1,14 @@
 import { WorktreeCard } from "./WorktreeCard";
 import { WorktreeCardGroup } from "./WorktreeCardGroup";
-import type { WorktreeWithStatus } from "@/types/bindings";
+import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 
 interface WorktreeCardGridProps {
   viewMode: "grouped" | "grid";
   flatWorktrees: WorktreeWithStatus[];
+  /** Every live session in the project; each card picks out the ones running in its own path. */
+  sessions: ActiveSessionInfo[];
+  /** One ticker for the whole grid, so the age labels advance together and cheaply. */
+  now: number;
   groups: Array<{ groupKey: string; items: WorktreeWithStatus[] }>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (group: string) => void;
@@ -17,6 +21,8 @@ interface WorktreeCardGridProps {
 export function WorktreeCardGrid({
   viewMode,
   flatWorktrees,
+  sessions,
+  now,
   groups,
   collapsedGroups,
   onToggleGroup,
@@ -43,6 +49,8 @@ export function WorktreeCardGrid({
               key={wt.path}
               worktree={wt}
               repoPath={repoPath}
+              sessions={sessions}
+              now={now}
               onSelect={onSelectWorktree}
               onDelete={onDeleteWorktree}
             />
@@ -75,6 +83,8 @@ export function WorktreeCardGrid({
               key={wt.path}
               worktree={wt}
               repoPath={repoPath}
+              sessions={sessions}
+              now={now}
               onSelect={onSelectWorktree}
               onDelete={onDeleteWorktree}
             />

@@ -26,7 +26,12 @@ pub fn is_maestro_created_worktree(relative_path: &str) -> bool {
         || relative_path.starts_with(WORKTREE_SESSION_PATH_PREFIX)
 }
 
-/// Ahead/behind commit counts relative to the upstream tracking branch
+/// Ahead/behind commit counts relative to the upstream tracking branch.
+///
+/// Not against the base branch: a worktree's own commits are counted separately as
+/// `WorktreeWithStatus::commit_count`, and these two answer different questions — how much work is
+/// here, versus how much of it has reached the remote. `None` means there is no upstream at all,
+/// which `DeleteWorktreeDialog` reads as "this branch exists only locally".
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct AheadBehind {
@@ -62,9 +67,19 @@ pub struct WorktreeWithStatus {
     pub task_name: Option<String>,       // from tasks table join
     pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention
     pub is_orphan: bool,                 // on-disk but not in DB
-    pub diff_stat: Option<String>,       // raw output of `git diff --shortstat`; None if clean
+    pub diff_stat: Option<String>,       // raw output of `git diff HEAD --shortstat`; None if clean
     pub base_branch: Option<String>,     // origin branch persisted at worktree creation time
     pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
+    /// Commits this worktree's branch has that its base branch does not — the work done here.
+    /// `None` when there is no base branch to count against, or it no longer resolves.
+    pub commit_count: Option<u32>,
+    /// When anything last happened here, as RFC 3339: the newest modification time among the files
+    /// git reports as changed, or the last commit's date when the working tree is clean.
+    pub last_activity_at: Option<String>,
+    /// The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
+    /// still carries the name recorded at creation, because that is what branch operations need —
+    /// but showing it would claim a branch that is not checked out.
+    pub detached_at: Option<String>,
 }
 
 /// Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
@@ -91,6 +106,10 @@ pub struct ActiveSessionInfo {
     pub task_name: Option<String>,
     pub branch_name: Option<String>,
     pub acp_session_id: Option<String>,
+    /// The directory the session runs in. Carried so a view can tell which worktree a session is
+    /// working in — `branch_name` cannot, since several worktrees may share a branch name's shape
+    /// and a detached one has none.
+    pub cwd: String,
     pub supports_session_list: bool,
     pub supports_session_load: bool,
     pub supports_session_close: bool,

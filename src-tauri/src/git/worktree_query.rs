@@ -5,6 +5,143 @@ use tauri::State;
 use crate::models::{WorktreeWithStatus, AheadBehind, is_maestro_created_worktree, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 use crate::core::AppState;
 
+/// Everything one worktree's git state contributes to its card, gathered in a single round trip.
+#[derive(Default)]
+struct WorktreeGitInfo {
+    changed_files_count: u32,
+    diff_stat: Option<String>,
+    ahead_behind: Option<AheadBehind>,
+    commit_count: Option<u32>,
+    last_activity_at: Option<String>,
+}
+
+/// How many of a worktree's changed files are stat'ed to find the most recent one.
+///
+/// Bounded because this runs per worktree on a ten-second poll. A tree with more changes than this
+/// is already well past the point where the exact minute matters.
+const MAX_MTIME_SAMPLES: usize = 200;
+
+/// The working-tree path from one `git status --porcelain` line.
+///
+/// The format is `XY <path>`, or `XY <old> -> <new>` for a rename. Git quotes paths holding
+/// unusual bytes, and those are skipped rather than unquoted: this is only used to stat a file for
+/// its modification time, so one skipped file changes nothing unless it is also the newest — a
+/// trade worth the escape decoder it saves.
+fn porcelain_path(line: &str) -> Option<&str> {
+    let rest = line.get(3..)?.trim();
+    let path = rest.rsplit(" -> ").next()?;
+    (!path.is_empty() && !path.starts_with('"')).then_some(path)
+}
+
+/// When a file in this worktree was last modified, taken over the files git reports as changed.
+///
+/// The worktree directory's own mtime cannot answer this: a directory's mtime moves only when a
+/// direct child is added, removed or renamed, and agents edit files several levels down, so it
+/// stays frozen at creation. The git index's mtime is worse — it moves when a file goes back to
+/// matching the index, which times the wrong event.
+///
+/// Local connections only. The batch runner speaks git, not shell, so there is no way to stat a
+/// remote path in the same round trip; remote worktrees fall back to their last commit's date.
+async fn newest_changed_file_at(
+    conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    status_output: &str,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    if !matches!(conn, crate::models::GitConnection::Local { .. }) {
+        return None;
+    }
+    let root = std::path::Path::new(worktree_path);
+    let mut newest: Option<std::time::SystemTime> = None;
+    for line in status_output.lines().take(MAX_MTIME_SAMPLES) {
+        let Some(relative) = porcelain_path(line) else {
+            continue;
+        };
+        // A deleted file has no mtime to read, and its `status` line is the only trace left of it.
+        let Ok(modified) = tokio::fs::metadata(root.join(relative))
+            .await
+            .and_then(|metadata| metadata.modified())
+        else {
+            continue;
+        };
+        newest = Some(newest.map_or(modified, |current: std::time::SystemTime| current.max(modified)));
+    }
+    newest.map(chrono::DateTime::<chrono::Utc>::from)
+}
+
+fn parse_rfc3339(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(raw.trim())
+        .ok()
+        .map(|parsed| parsed.with_timezone(&chrono::Utc))
+}
+
+/// One worktree's git state, as one batched round trip plus a local stat pass.
+///
+/// Batched because on WSL/SSH/Docker each git call pays a full interop spawn, and this runs per
+/// worktree on a ten-second poll.
+async fn git_info_for(
+    conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    base_branch: Option<&str>,
+) -> (String, WorktreeGitInfo) {
+    let mut commands: Vec<Vec<String>> = vec![
+        vec!["status".into(), "--porcelain".into()],
+        // `diff HEAD`, not a bare `diff`: the latter is the unstaged half only, so a worktree
+        // whose changes had all been staged reported "+0 -0" while its file count said otherwise.
+        vec!["diff".into(), "HEAD".into(), "--shortstat".into()],
+        vec!["rev-list".into(), "--left-right".into(), "--count".into(), "HEAD...@{u}".into()],
+        vec!["log".into(), "-1".into(), "--format=%cI".into()],
+    ];
+    if let Some(base) = base_branch {
+        // Local ref before `origin/`, the same order `resolve_divergence_point` uses: a worktree is
+        // created from a local ref, and a repository with no remote has no `origin/<base>` at all.
+        commands.push(vec!["rev-list".into(), "--count".into(), format!("{}..HEAD", base)]);
+        commands.push(vec!["rev-list".into(), "--count".into(), format!("origin/{}..HEAD", base)]);
+    }
+
+    let borrowed: Vec<Vec<&str>> = commands
+        .iter()
+        .map(|command| command.iter().map(String::as_str).collect())
+        .collect();
+    let as_slices: Vec<&[&str]> = borrowed.iter().map(Vec::as_slice).collect();
+    let mut outputs = crate::git::run_git_commands_lossy(conn, worktree_path, &as_slices)
+        .await
+        .into_iter();
+
+    let status_output = outputs.next().unwrap_or_default();
+    let diff_stat_raw = outputs.next().unwrap_or_default();
+    let ahead_behind_raw = outputs.next().unwrap_or_default();
+    let last_commit_raw = outputs.next().unwrap_or_default();
+    let commit_count = base_branch.and_then(|_| {
+        let local = outputs.next().unwrap_or_default();
+        let from_origin = outputs.next().unwrap_or_default();
+        local
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .or_else(|| from_origin.trim().parse::<u32>().ok())
+    });
+
+    let newest_change = newest_changed_file_at(conn, worktree_path, &status_output).await;
+    let last_activity_at = match (newest_change, parse_rfc3339(&last_commit_raw)) {
+        (Some(change), Some(commit)) => Some(change.max(commit)),
+        (change, commit) => change.or(commit),
+    }
+    .map(|when| when.to_rfc3339());
+
+    let info = WorktreeGitInfo {
+        changed_files_count: status_output.lines().filter(|line| !line.is_empty()).count() as u32,
+        diff_stat: (!diff_stat_raw.trim().is_empty()).then(|| diff_stat_raw.trim().to_string()),
+        ahead_behind: ahead_behind_raw
+            .trim()
+            .split_once('\t')
+            .and_then(|(ahead, behind)| ahead.parse::<u32>().ok().zip(behind.parse::<u32>().ok()))
+            .map(|(ahead, behind)| AheadBehind { ahead, behind }),
+        commit_count,
+        last_activity_at,
+    };
+    (worktree_path.to_string(), info)
+}
+
 // ============================================================================
 // list_worktrees_with_status — REQ-06
 // ============================================================================
@@ -84,47 +221,21 @@ pub async fn list_worktrees_with_status(
         .collect();
 
     // Step 5: Run parallel git status + diff --shortstat + rev-list per on-disk worktree (local AND remote)
-    let mut git_info: HashMap<String, (u32, Option<String>, Option<AheadBehind>)> = HashMap::new();
+    let mut git_info: HashMap<String, WorktreeGitInfo> = HashMap::new();
     {
         let handles: Vec<_> = disk_worktrees
             .iter()
             .map(|wt| {
                 let wt_path = wt.path.clone();
                 let conn = git_conn.clone();
-                tokio::spawn(async move {
-                    // One batched round-trip: on WSL/SSH/Docker each git call pays a
-                    // full interop spawn, and this runs per worktree on a 10s poll.
-                    let mut outputs = crate::git::run_git_commands_lossy(
-                        &conn,
-                        &wt_path,
-                        &[
-                            &["status", "--porcelain"],
-                            &["diff", "--shortstat"],
-                            &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
-                        ],
-                    )
-                    .await
-                    .into_iter();
-                    let status_output = outputs.next().unwrap_or_default();
-                    let diff_stat_raw = outputs.next().unwrap_or_default();
-                    let ahead_behind_raw = outputs.next().unwrap_or_default();
-                    let changed_files_count = status_output.lines().filter(|l| !l.is_empty()).count() as u32;
-                    let diff_stat = if diff_stat_raw.trim().is_empty() { None } else { Some(diff_stat_raw.trim().to_string()) };
-                    let ahead_behind: Option<AheadBehind> = ahead_behind_raw
-                        .trim()
-                        .split_once('\t')
-                        .and_then(|(a, b)| {
-                            a.parse::<u32>().ok().zip(b.parse::<u32>().ok())
-                        })
-                        .map(|(ahead, behind)| AheadBehind { ahead, behind });
-                    (wt_path, changed_files_count, diff_stat, ahead_behind)
-                })
+                let base_branch = db_map.get(&wt.path).and_then(|row| row.base_branch.clone());
+                tokio::spawn(async move { git_info_for(&conn, &wt_path, base_branch.as_deref()).await })
             })
             .collect();
 
         for handle in handles {
-            if let Ok((path, changed_files_count, diff_stat, ahead_behind)) = handle.await {
-                git_info.insert(path, (changed_files_count, diff_stat, ahead_behind));
+            if let Ok((path, info)) = handle.await {
+                git_info.insert(path, info);
             }
         }
     }
@@ -139,7 +250,19 @@ pub async fn list_worktrees_with_status(
     let live_cwds = crate::git::worktree_lifecycle::live_session_cwds(&app_state, &project).await;
 
     for wt in &disk_worktrees {
-        let (changed_files_count, diff_stat, ahead_behind) = git_info.get(&wt.path).cloned().unwrap_or_default();
+        let WorktreeGitInfo {
+            changed_files_count,
+            diff_stat,
+            ahead_behind,
+            commit_count,
+            last_activity_at,
+        } = git_info.remove(&wt.path).unwrap_or_default();
+        // A worktree with no branch is on a detached HEAD. `branch_name` keeps the recorded name
+        // because branch operations still need it, but the card must not present it as checked out.
+        let detached_at = wt
+            .branch
+            .is_none()
+            .then(|| wt.head.chars().take(7).collect::<String>());
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
             let in_use = live_cwds
@@ -163,6 +286,9 @@ pub async fn list_worktrees_with_status(
                 diff_stat,
                 base_branch: db_row.base_branch.clone(),
                 ahead_behind,
+                commit_count,
+                last_activity_at,
+                detached_at,
             });
         } else {
             // On-disk but not in DB — orphan entry
@@ -181,6 +307,9 @@ pub async fn list_worktrees_with_status(
                 diff_stat,
                 base_branch: None,
                 ahead_behind,
+                commit_count,
+                last_activity_at,
+                detached_at,
             });
         }
     }
@@ -815,6 +944,85 @@ mod tests {
         assert!(
             untracked(DiffTarget::CommitRange { from: base, to: tip }).await.is_empty(),
             "a commit range ends at a commit and cannot contain a file git has never seen"
+        );
+    }
+
+    #[test]
+    fn porcelain_paths_are_read_from_the_status_line() {
+        assert_eq!(porcelain_path(" M src/main.rs"), Some("src/main.rs"));
+        assert_eq!(porcelain_path("?? scratch.txt"), Some("scratch.txt"));
+        // A rename's path is the new name; the old one no longer exists to stat.
+        assert_eq!(porcelain_path("R  old.rs -> new.rs"), Some("new.rs"));
+        // Quoted paths are skipped rather than unquoted — see `porcelain_path`.
+        assert_eq!(porcelain_path("?? \"caf\\303\\251.ts\""), None);
+        assert_eq!(porcelain_path("XY"), None);
+    }
+
+    /// The card's `+/-` came from a bare `git diff --shortstat`, which is the *unstaged* half only.
+    /// An agent that staged its work — or anything run after `git add` — reported "+0 -0" while the
+    /// changed-file count beside it said otherwise.
+    #[tokio::test]
+    async fn diff_stat_counts_staged_changes_too() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        std::fs::write(repo.join("a.txt"), "one\ntwo CHANGED\nthree\nfour\n").expect("edit file");
+        git(repo, &["add", "a.txt"]);
+
+        let (_, info) = git_info_for(&connection, &path, None).await;
+        let stat = info.diff_stat.expect("a staged change is still a change");
+        assert!(stat.contains("insertion"), "staged insertions must be counted, got {stat:?}");
+    }
+
+    /// The commit count is what the card shows as the work done here, so it must be measured
+    /// against the base branch — and must not drift when the base branch moves on afterwards.
+    #[tokio::test]
+    async fn commit_count_is_this_branch_s_own_commits() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        let (_, info) = git_info_for(&connection, &path, Some("main")).await;
+        assert_eq!(info.commit_count, Some(1), "one commit since main");
+
+        // main gaining a commit of its own must not change how much work this branch has.
+        git(repo, &["checkout", "main"]);
+        std::fs::write(repo.join("c.txt"), "main\n").expect("write main file");
+        git(repo, &["add", "c.txt"]);
+        git(repo, &["commit", "-m", "main moves on"]);
+        git(repo, &["checkout", "task"]);
+
+        let (_, info) = git_info_for(&connection, &path, Some("main")).await;
+        assert_eq!(info.commit_count, Some(1));
+
+        let (_, info) = git_info_for(&connection, &path, None).await;
+        assert_eq!(info.commit_count, None, "nothing to count against without a base branch");
+    }
+
+    /// A clean worktree falls back to its last commit; a dirty one reports the edit, which is later.
+    #[tokio::test]
+    async fn last_activity_prefers_a_working_tree_edit_over_the_last_commit() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        let (_, clean) = git_info_for(&connection, &path, None).await;
+        let committed = clean.last_activity_at.expect("a clean worktree still has a last commit");
+
+        std::fs::write(repo.join("a.txt"), "edited after the commit\n").expect("edit file");
+        let (_, dirty) = git_info_for(&connection, &path, None).await;
+        let edited = dirty.last_activity_at.expect("a dirty worktree reports its newest edit");
+
+        assert!(
+            parse_rfc3339(&edited) >= parse_rfc3339(&committed),
+            "{edited} should not predate {committed}"
         );
     }
 

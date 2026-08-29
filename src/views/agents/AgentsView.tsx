@@ -10,7 +10,11 @@ import {
   SpawnSessionDialog,
   type CreatedWorktree,
 } from "@/components/execution/spawn-session-dialog/SpawnSessionDialog";
-import { usePendingAgentId, useNavigationActions } from "@/store/navigationStore";
+import {
+  usePendingAgentId,
+  usePendingSessionKey,
+  useNavigationActions,
+} from "@/store/navigationStore";
 import {
   useActiveSessionsQuery,
   useSpawnInteractiveExecutionMutation,
@@ -61,7 +65,8 @@ function connIdMatches(connection: ConnectionKey, connId: string): boolean {
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
   const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   const pendingAgentId = usePendingAgentId();
-  const { clearPendingAgent } = useNavigationActions();
+  const pendingSessionKey = usePendingSessionKey();
+  const { clearPendingAgent, clearPendingSession } = useNavigationActions();
   const [selectedSessionKey, setSelectedSessionKey] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -254,9 +259,16 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   // once the list loads. Both are adjusted during render so the panel opens on the right
   // session in the frame it appears. Clearing the shared navigation store stays in an
   // effect, because writing another component's state during render is not safe.
-  const deepLinkedSessionKey = pendingAgentId
-    ? (visibleSessions.find((s) => String(s.task_id) === pendingAgentId)?.session_key ?? null)
-    : null;
+  // A session key names one session exactly, so it wins over the task-keyed route, which lands on
+  // whichever of a task's sessions happens to come first.
+  const linkedByKey =
+    pendingSessionKey != null
+      ? visibleSessions.find((s) => s.session_key === pendingSessionKey)
+      : undefined;
+  const linkedByTask = pendingAgentId
+    ? visibleSessions.find((s) => String(s.task_id) === pendingAgentId)
+    : undefined;
+  const deepLinkedSessionKey = (linkedByKey ?? linkedByTask)?.session_key ?? null;
   const defaultSessionKey =
     selectedSessionKey == null && visibleSessions.length > 0
       ? visibleSessions[0].session_key
@@ -270,8 +282,10 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   }
 
   useEffect(() => {
-    if (deepLinkedSessionKey != null) clearPendingAgent();
-  }, [deepLinkedSessionKey, clearPendingAgent]);
+    if (deepLinkedSessionKey == null) return;
+    clearPendingAgent();
+    clearPendingSession();
+  }, [deepLinkedSessionKey, clearPendingAgent, clearPendingSession]);
 
   const spawnShell = useCallback(
     async (

@@ -2257,7 +2257,13 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean; supports_session_delete: boolean; project_id: number | null }
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; 
+/**
+ * The directory the session runs in. Carried so a view can tell which worktree a session is
+ * working in — `branch_name` cannot, since several worktrees may share a branch name's shape
+ * and a detached one has none.
+ */
+cwd: string; supports_session_list: boolean; supports_session_load: boolean; supports_session_close: boolean; supports_session_delete: boolean; project_id: number | null }
 export type ActivityVisibility = "auto" | "show" | "collapse" | "hide"
 /**
  * Authentication state for a pre-initialized agent connection.
@@ -2292,7 +2298,12 @@ role_prompt?: string | null; fallback_behaviour?: FallbackBehaviour }
 export type AgentRole = "Refiner" | "Planner" | "Coder" | "Reviewer"
 export type AgentStreamWidth = "full" | "compact"
 /**
- * Ahead/behind commit counts relative to the upstream tracking branch
+ * Ahead/behind commit counts relative to the upstream tracking branch.
+ * 
+ * Not against the base branch: a worktree's own commits are counted separately as
+ * `WorktreeWithStatus::commit_count`, and these two answer different questions — how much work is
+ * here, versus how much of it has reached the remote. `None` means there is no upstream at all,
+ * which `DeleteWorktreeDialog` reads as "this branch exists only locally".
  */
 export type AheadBehind = { ahead: number; behind: number }
 export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; 
@@ -2892,7 +2903,23 @@ export type WorktreeDiffStats = { file_count: number; insertions: number; deleti
 /**
  * View model for the Worktrees view — enriched with task info and derived status fields
  */
-export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; changed_files_count: number; created_at: string | null; task_name: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null }
+export type WorktreeWithStatus = { id: number | null; project_id: number | null; task_id: number | null; branch_name: string; path: string; changed_files_count: number; created_at: string | null; task_name: string | null; is_zombie: boolean; is_orphan: boolean; diff_stat: string | null; base_branch: string | null; ahead_behind: AheadBehind | null; 
+/**
+ * Commits this worktree's branch has that its base branch does not — the work done here.
+ * `None` when there is no base branch to count against, or it no longer resolves.
+ */
+commit_count: number | null; 
+/**
+ * When anything last happened here, as RFC 3339: the newest modification time among the files
+ * git reports as changed, or the last commit's date when the working tree is clean.
+ */
+last_activity_at: string | null; 
+/**
+ * The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
+ * still carries the name recorded at creation, because that is what branch operations need —
+ * but showing it would claim a branch that is not checked out.
+ */
+detached_at: string | null }
 /**
  * A WSL connection record stored in the database.
  */

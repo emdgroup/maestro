@@ -48,7 +48,11 @@ vi.mock("@/store/projectStore", async (importOriginal) => ({
 
 vi.mock("@/store/navigationStore", () => ({
   usePendingAgentId: vi.fn(() => null),
-  useNavigationActions: vi.fn(() => ({ clearPendingAgent: vi.fn() })),
+  usePendingSessionKey: vi.fn(() => null),
+  useNavigationActions: vi.fn(() => ({
+    clearPendingAgent: vi.fn(),
+    clearPendingSession: vi.fn(),
+  })),
   useActiveTab: vi.fn(() => "agents"),
   useActiveTaskId: vi.fn(() => null),
 }));
@@ -81,6 +85,9 @@ const mockWorktrees: WorktreeWithStatus[] = [
     task_name: null,
     is_zombie: false,
     is_orphan: false,
+    commit_count: null,
+    last_activity_at: null,
+    detached_at: null,
   },
 ];
 
