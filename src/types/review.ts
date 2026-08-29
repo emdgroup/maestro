@@ -43,10 +43,21 @@ export interface DiffFile {
   hunks: string[];
 }
 
+/** What a unified diff can say about a file: added, modified, deleted. */
+export type DiffStatus = "A" | "M" | "D";
+
+/**
+ * What the file panel shows, which is one state wider than a diff can express.
+ *
+ * `U` is untracked — new on disk and never `git add`-ed. It used to be flattened to `A`, which
+ * made a file the agent left behind look identical to one it deliberately added to the commit.
+ */
+export type FileStatus = DiffStatus | "U";
+
 // Helper type for accessing file name from DiffFile
 export interface DiffFileWithName extends DiffFile {
   fileName: string;
-  status?: "A" | "M" | "D";
+  status?: DiffStatus;
   /** Set for changes git describes without hunks (rename, binary, mode bits). */
   note?: string;
   /**

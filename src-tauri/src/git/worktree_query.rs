@@ -278,6 +278,39 @@ async fn base_rev_for(
     }
 }
 
+/// Whether a `DiffTarget` compares against the working tree, and so whether untracked files are
+/// part of what it shows.
+///
+/// A commit range ends at a commit: a file git has never been told about cannot be in it, and
+/// listing one there put files in front of the reviewer that the selected commit does not contain.
+/// The other three all diff *to* the working tree, where a file that is new and not yet added is
+/// as much part of the change as an edited one.
+fn includes_working_tree(diff_target: &DiffTarget) -> bool {
+    !matches!(diff_target, DiffTarget::CommitRange { .. })
+}
+
+/// The worktree's untracked files, or nothing when the target does not reach the working tree.
+async fn untracked_files_for(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+) -> Vec<String> {
+    if !includes_working_tree(diff_target) {
+        return Vec::new();
+    }
+    crate::git::run_git_in_dir(
+        git_conn,
+        worktree_path,
+        &["ls-files", "--others", "--exclude-standard"],
+    )
+    .await
+    .unwrap_or_default()
+    .lines()
+    .filter(|line| !line.is_empty())
+    .map(String::from)
+    .collect()
+}
+
 // ============================================================================
 // get_worktree_diff — REQ-07
 // ============================================================================
@@ -309,11 +342,7 @@ pub async fn get_worktree_diff(
         }
     };
 
-    let untracked_output = crate::git::run_git_in_dir(
-        &git_conn,
-        &worktree_path,
-        &["ls-files", "--others", "--exclude-standard"],
-    ).await.unwrap_or_default();
+    let all_untracked = untracked_files_for(&git_conn, &worktree_path, &diff_target).await;
 
     let total_diff_bytes = diff_output.len();
     let diff_truncated = total_diff_bytes > MAX_DIFF_BYTES;
@@ -330,10 +359,6 @@ pub async fn get_worktree_diff(
         diff_output
     };
 
-    let all_untracked: Vec<String> = untracked_output.lines()
-        .filter(|l| !l.is_empty())
-        .map(String::from)
-        .collect();
     let total_untracked = all_untracked.len();
     let untracked_truncated = total_untracked > MAX_UNTRACKED_FILES;
     let untracked_files = if untracked_truncated {
@@ -411,12 +436,8 @@ pub async fn diff_stats_in(
         }
     }
 
-    let untracked_output = crate::git::run_git_in_dir(
-        git_conn,
-        worktree_path,
-        &["ls-files", "--others", "--exclude-standard"],
-    ).await.unwrap_or_default();
-    let untracked_count = untracked_output.lines().filter(|l| !l.is_empty()).count() as u32;
+    let untracked_count =
+        untracked_files_for(git_conn, worktree_path, diff_target).await.len() as u32;
 
     Ok(WorktreeDiffStats { file_count, insertions, deletions, untracked_count })
 }
@@ -761,6 +782,39 @@ mod tests {
                 .await
                 .expect("a range resolves"),
             base
+        );
+    }
+
+    /// The scope selector's commit rows map to `CommitRange`, and those used to be handed the same
+    /// `ls-files --others` output as every other scope — so picking a commit listed files that
+    /// commit does not contain and never did. The other three targets all diff *to* the working
+    /// tree, where an untracked file genuinely is part of what changed, so they must keep it.
+    #[tokio::test]
+    async fn untracked_files_belong_only_to_targets_that_reach_the_working_tree() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        let (base, tip) = repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        std::fs::write(repo.join("scratch.txt"), "never added\n").expect("write untracked file");
+        let expected = vec!["scratch.txt".to_string()];
+
+        let untracked = |target: DiffTarget| {
+            let connection = connection.clone();
+            let path = path.clone();
+            async move { untracked_files_for(&connection, &path, &target).await }
+        };
+
+        assert_eq!(untracked(DiffTarget::Head).await, expected);
+        assert_eq!(untracked(DiffTarget::Commit { sha: base.clone() }).await, expected);
+        assert_eq!(
+            untracked(DiffTarget::BranchAll { branch: "main".to_string() }).await,
+            expected
+        );
+        assert!(
+            untracked(DiffTarget::CommitRange { from: base, to: tip }).await.is_empty(),
+            "a commit range ends at a commit and cannot contain a file git has never seen"
         );
     }
 

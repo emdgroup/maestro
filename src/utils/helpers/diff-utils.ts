@@ -3,7 +3,7 @@
  * Converts raw unified diff string to @git-diff-view/react DiffFile format
  */
 
-import { DiffFileWithName, DiffHighlighterLang } from "@/types/review";
+import { DiffFileWithName, DiffHighlighterLang, DiffStatus } from "@/types/review";
 
 /**
  * Detect file language based on file extension
@@ -137,7 +137,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   // for the current file. Will be joined into a single string.
   let currentHunkLines: string[] = [];
   let inHunk = false;
-  let currentStatus: "A" | "M" | "D" = "M";
+  let currentStatus: DiffStatus = "M";
   // Set when the header describes a change that carries no hunks (rename, binary,
   // mode bits). Without it those files never reach the UI at all.
   let currentNote: string | null = null;

@@ -1,6 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { treeFileOrder } from "./file-tree";
-import { displayItemPath, type DiffFileWithName, type DisplayItem } from "@/types/review";
+import {
+  displayItemPath,
+  type DiffFileWithName,
+  type DisplayItem,
+  type FileStatus,
+} from "@/types/review";
 import type { DiffFileStackHandle } from "./DiffFileStack";
 
 /** The two counts a `--stat` query answers with, as one number. */
@@ -34,15 +39,22 @@ export function buildDisplayItems(
   );
 }
 
-/** The same files as the file panel wants them: a path and a one-letter status. */
+/**
+ * The same files as the file panel wants them: a path and a one-letter status.
+ *
+ * Untracked files keep their own letter rather than borrowing `A`. The two look the same in a
+ * diff — every line is new — but they are not the same thing to a reviewer: an added file is part
+ * of the change being reviewed, while an untracked one is a file nobody has told git about yet,
+ * and may be a build artefact the agent never meant to leave behind.
+ */
 export function toPanelFiles(items: DisplayItem[]): Array<{
   fileName: string;
-  status: "A" | "M" | "D";
+  status: FileStatus;
 }> {
   return items.map((item) =>
     item.kind === "diff"
       ? { fileName: item.file.fileName, status: item.file.status ?? ("M" as const) }
-      : { fileName: item.path, status: "A" as const },
+      : { fileName: item.path, status: "U" as const },
   );
 }
 

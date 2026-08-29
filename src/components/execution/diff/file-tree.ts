@@ -1,11 +1,52 @@
-import type { DiffFileWithName } from "@/types/review";
+import type { FileStatus } from "@/types/review";
+
+/**
+ * Everything the file list and the tree need of a file: where it sits, and what happened to it.
+ *
+ * Narrower than `DiffFileWithName` on purpose. These functions never look at hunks or content, and
+ * typing them against the full diff shape both forced callers to invent empty `hunks` arrays and
+ * kept out untracked files, which have no diff at all but do belong in the list.
+ */
+export interface FileListEntry {
+  fileName: string;
+  status?: FileStatus;
+}
+
+/**
+ * How each status is coloured in the two file lists, and what it is called.
+ *
+ * Shared so the flat list's dot and the tree's letter cannot drift apart, and so adding a status
+ * is one edit rather than a hunt through ternaries. Untracked takes `info` because the other three
+ * are already spoken for and, unlike them, it is not a judgement about the change — it says the
+ * file is outside git's view, not that it is good or bad.
+ */
+export const STATUS_DOT: Record<FileStatus, string> = {
+  A: "bg-success",
+  M: "bg-warning",
+  D: "bg-destructive",
+  U: "bg-info",
+};
+
+export const STATUS_TEXT: Record<FileStatus, string> = {
+  A: "text-success",
+  M: "text-muted-foreground",
+  D: "text-destructive",
+  U: "text-info",
+};
+
+export const STATUS_LABEL: Record<FileStatus, string> = {
+  A: "Added",
+  M: "Modified",
+  D: "Deleted",
+  U: "Untracked",
+};
 
 export interface FileTreeNode {
   name: string;
   path: string;
   isDir: boolean;
   children?: FileTreeNode[];
-  fileStatus?: "A" | "M" | "D";
+  fileStatus?: FileStatus;
   fileName?: string;
 }
 
@@ -17,7 +58,7 @@ export interface FileTreeNode {
  * is guaranteed to walk the very same structure the sidebar renders, and can be tested without
  * mounting a component.
  */
-export function buildFileTree(files: DiffFileWithName[]): FileTreeNode[] {
+export function buildFileTree(files: FileListEntry[]): FileTreeNode[] {
   // Use a nested map structure: path → node, children tracked by reference
   const rootChildren: FileTreeNode[] = [];
   const nodeByPath: Record<string, FileTreeNode> = {};
@@ -81,7 +122,7 @@ export function getDescendantFiles(node: FileTreeNode): string[] {
  * The diff stack sorts its cards by this so scrolling the stack and reading the tree agree on
  * what comes next. Deriving it from the same builder is what keeps them from drifting apart.
  */
-export function treeFileOrder(files: DiffFileWithName[]): string[] {
+export function treeFileOrder(files: FileListEntry[]): string[] {
   const order: string[] = [];
   const walk = (nodes: FileTreeNode[]) => {
     for (const node of nodes) {
