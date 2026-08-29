@@ -8,9 +8,9 @@ import { useNavigate } from "@/store/navigationStore";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import {
   agentLabel,
-  folderName,
   isInUse,
   relativeAge,
+  relativeWorktreePath,
   worktreeTitle,
   worktreeUsage,
 } from "./worktree-usage";
@@ -54,7 +54,7 @@ export function WorktreeCard({
   const inUse = isInUse(usage);
   const age = relativeAge(worktree.last_activity_at, now);
   const title = worktreeTitle(worktree);
-  const folder = folderName(worktree.path);
+  const location = relativeWorktreePath(worktree.path, repoPath);
 
   // Every metric is dropped when it has nothing to say, so a quiet worktree renders a short row
   // rather than a row of zeroes and the words that would be needed to explain them.
@@ -199,14 +199,13 @@ export function WorktreeCard({
     </div>
   );
 
-  // Only where it adds something. When there is no task the title *is* the folder name, and a
-  // tooltip repeating it would fire on every hover across the grid to say nothing.
-  if (worktree.task_name === null) return card;
-
+  // Always, and as a path rather than a folder name: the title may be a task, and even when it is
+  // the folder name it does not say where that folder is — which is the question once a project has
+  // worktrees outside `.maestro/`.
   return (
     <Tooltip>
       <TooltipTrigger render={card} />
-      <TooltipContent>{folder}</TooltipContent>
+      <TooltipContent className="font-mono">{location}</TooltipContent>
     </Tooltip>
   );
 }

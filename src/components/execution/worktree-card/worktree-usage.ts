@@ -94,6 +94,25 @@ export function worktreeTitle(worktree: WorktreeWithStatus): string {
 }
 
 export function folderName(path: string): string {
-  const segments = path.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
+  const segments = normalizePath(path).split("/");
   return segments[segments.length - 1] || path;
+}
+
+/**
+ * Where the worktree sits, said the way the user would say it: `.maestro/worktrees/session-31`.
+ *
+ * The folder name alone is ambiguous once a project has hand-made worktrees outside `.maestro/`,
+ * and the absolute path is mostly a home directory nobody needs to read. The repository root has
+ * no relative path to give, so it answers with its own folder name; a worktree living outside the
+ * repository — which git permits — falls back to its full path rather than inventing one.
+ */
+export function relativeWorktreePath(path: string, repoPath: string): string {
+  const target = normalizePath(path);
+  const root = normalizePath(repoPath);
+  if (target === root) return folderName(target);
+  return target.startsWith(`${root}/`) ? target.slice(root.length + 1) : target;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
 }

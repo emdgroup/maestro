@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { folderName, pathIsWithin, relativeAge, worktreeUsage } from "./worktree-usage";
+import {
+  folderName,
+  pathIsWithin,
+  relativeAge,
+  relativeWorktreePath,
+  worktreeUsage,
+} from "./worktree-usage";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 
 function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStatus {
@@ -127,5 +133,35 @@ describe("folderName", () => {
     expect(folderName("/repo/.maestro/worktrees/session-3")).toBe("session-3");
     expect(folderName("C:\\repo\\wt\\")).toBe("wt");
     expect(folderName("/repo")).toBe("repo");
+  });
+});
+
+describe("relativeWorktreePath", () => {
+  it("says where the worktree sits, relative to the repository", () => {
+    expect(relativeWorktreePath("/repo/.maestro/worktrees/session-31", "/repo")).toBe(
+      ".maestro/worktrees/session-31",
+    );
+  });
+
+  it("normalises native separators", () => {
+    expect(relativeWorktreePath("C:\\repo\\.maestro\\worktrees\\session-3", "C:/repo")).toBe(
+      ".maestro/worktrees/session-3",
+    );
+  });
+
+  // The repository root has no relative path to give.
+  it("names the repository root by its folder", () => {
+    expect(relativeWorktreePath("/repo", "/repo")).toBe("repo");
+    expect(relativeWorktreePath("/repo/", "/repo")).toBe("repo");
+  });
+
+  // Git permits a worktree anywhere; inventing a relative path for one would be a lie.
+  it("keeps the full path for a worktree outside the repository", () => {
+    expect(relativeWorktreePath("/elsewhere/hotfix", "/repo")).toBe("/elsewhere/hotfix");
+  });
+
+  // A sibling directory sharing the root's prefix is not inside it.
+  it("does not treat a prefix match as containment", () => {
+    expect(relativeWorktreePath("/repo-backup/wt", "/repo")).toBe("/repo-backup/wt");
   });
 });

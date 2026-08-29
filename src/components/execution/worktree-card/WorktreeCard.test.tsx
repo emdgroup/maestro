@@ -130,14 +130,14 @@ describe("WorktreeCard identity", () => {
   });
 
   /**
-   * The tooltip exists to recover the folder name the task title displaced. With no task the title
-   * already *is* the folder name, so a tooltip would fire on every hover across the grid to repeat
-   * what is already on screen.
+   * Every card carries the tooltip, with or without a task: the folder name alone does not say
+   * where the folder is, which is the question as soon as a project has worktrees outside
+   * `.maestro/`.
    *
    * Asserted on the trigger rather than the tooltip's text because base-ui portals the popup and
-   * happy-dom does not mount it; the conditional is what this is pinning either way.
+   * happy-dom does not mount it; `relativeWorktreePath` covers the text itself.
    */
-  it("carries a tooltip only when a task displaced the folder name", () => {
+  it("always carries the location tooltip", () => {
     const withTask = render(
       <WorktreeCard
         worktree={worktree({ task_id: 7, task_name: "Fix the diff panel" })}
@@ -160,7 +160,7 @@ describe("WorktreeCard identity", () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(withoutTask.container.querySelector("[data-slot='tooltip-trigger']")).toBeNull();
+    expect(withoutTask.container.querySelector("[data-slot='tooltip-trigger']")).not.toBeNull();
   });
 
   /**
