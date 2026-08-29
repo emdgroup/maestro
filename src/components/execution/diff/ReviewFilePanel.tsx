@@ -2,10 +2,11 @@ import { useEffect, useMemo } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import type { FileStatus } from "@/types/review";
 import { FileTree } from "./FileTree";
 
 export interface ReviewFilePanelProps {
-  files: Array<{ fileName: string; status?: "A" | "M" | "D" }>;
+  files: Array<{ fileName: string; status?: FileStatus }>;
   selectedFile: string | null;
   onSelectFile: (fileName: string) => void;
   viewedFiles?: Set<string>;

@@ -12,11 +12,16 @@ import {
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
-import { DiffFileWithName } from "@/types/review";
-import { buildFileTree, getDescendantFiles, type FileTreeNode } from "./file-tree";
+import {
+  buildFileTree,
+  getDescendantFiles,
+  STATUS_TEXT,
+  type FileListEntry,
+  type FileTreeNode,
+} from "./file-tree";
 
 interface FileTreeProps {
-  files: DiffFileWithName[];
+  files: FileListEntry[];
   selectedFile: string | null;
   onSelectFile: (fileName: string) => void;
   checkedFiles?: Map<string, "checked" | "unchecked" | "indeterminate">;
@@ -200,8 +205,7 @@ const FileNode: React.FC<{
 
   const isSelected = node.fileName === selectedFile;
   const status = node.fileStatus ?? "M";
-  const statusColor =
-    status === "A" ? "text-success" : status === "D" ? "text-destructive" : "text-muted-foreground";
+  const statusColor = STATUS_TEXT[status];
   const checkState = node.fileName
     ? (checkedFiles?.get(node.fileName) ?? "unchecked")
     : "unchecked";

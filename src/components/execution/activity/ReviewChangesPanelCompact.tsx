@@ -16,7 +16,7 @@ import {
   type DiffFileStackHandle,
   type DiffReviewApi,
 } from "@/components/execution/diff/DiffFileStack";
-import { displayItemPath, type DisplayItem } from "@/types/review";
+import { displayItemPath, type DisplayItem, type FileStatus } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { AnnotationBar } from "@/components/execution/side-panel/annotations/AnnotationBar";
@@ -50,7 +50,7 @@ interface ReviewChangesPanelCompactProps {
   setSelectedFileIndex: (idx: number) => void;
   viewedFiles: Set<string>;
   toggleViewed: (fileName: string) => void;
-  fileSelectorFiles: Array<{ fileName: string; status: "M" | "A" | "D" }>;
+  fileSelectorFiles: Array<{ fileName: string; status: FileStatus }>;
   focusedKey: string | null;
   focusedBasename: string | null;
   /** Opens a path (absolute, or project-relative) in a Files tab. */

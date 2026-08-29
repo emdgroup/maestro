@@ -2,11 +2,13 @@ import { useState } from "react";
 import { List, FolderTree, CheckCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import type { FileStatus } from "@/types/review";
 import { FileTree } from "./FileTree";
+import { STATUS_DOT, STATUS_LABEL } from "./file-tree";
 
 interface FileSelectorFile {
   fileName: string;
-  status?: "A" | "M" | "D";
+  status?: FileStatus;
 }
 
 interface FileSelectorProps {
@@ -136,8 +138,7 @@ export function FileSelector({
           filteredFiles.map((file) => {
             const basename = file.fileName.split("/").pop() ?? file.fileName;
             const status = file.status ?? "M";
-            const statusColor =
-              status === "A" ? "bg-success" : status === "D" ? "bg-destructive" : "bg-warning";
+            const statusColor = STATUS_DOT[status];
             const isSelected = file.fileName === selectedFile;
             const isViewed = viewedFiles?.has(file.fileName);
             return (
@@ -152,7 +153,10 @@ export function FileSelector({
                     : "border-transparent hover:bg-muted/10",
                 )}
               >
-                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor)} />
+                <span
+                  className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor)}
+                  title={STATUS_LABEL[status]}
+                />
                 <span className="flex-1 text-xs truncate text-foreground/80">{basename}</span>
                 {isViewed && <CheckCheck className="size-3.5 shrink-0 text-success" />}
               </button>
