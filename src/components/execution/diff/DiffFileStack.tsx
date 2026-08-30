@@ -65,7 +65,11 @@ interface DiffFileStackProps {
    */
   diffTarget: DiffTarget;
   diffViewMode: DiffModeEnum;
-  selectedIndex: number;
+  /**
+   * The card the reader picked, or null for none. A stack opens unselected: nothing has been
+   * chosen yet, and highlighting the first file claims otherwise.
+   */
+  selectedIndex: number | null;
   onSelectedIndexChange: (index: number) => void;
   viewedFiles: Set<string>;
   onToggleViewed: (path: string) => void;

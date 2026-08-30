@@ -55,7 +55,7 @@ export function defaultScope(worktree: WorktreeWithStatus | null): DiffScope {
 export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiffPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [fileSearch, setFileSearch] = useState("");
-  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [scope, setScope] = useState<DiffScope>(() => defaultScope(worktree));
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const stackRef = useRef<DiffFileStackHandle>(null);
@@ -84,6 +84,9 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   if (scopedPath !== worktreePath) {
     setScopedPath(worktreePath);
     setScope(defaultScope(worktree));
+    // A selection points at a file in the worktree that is going away, so a different one opens
+    // unselected exactly as the first did.
+    setSelectedFileIndex(null);
   }
 
   const scopeAnchors = useMemo(() => ({ baseBranch }), [baseBranch]);
