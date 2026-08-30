@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { Cable, Server, CircleFadingArrowUp, LoaderCircle } from "lucide-react";
+import { Cable, Server, CircleFadingArrowUp, LoaderCircle, Settings } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useUpdater } from "@/hooks/useUpdater";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { UpdateCard } from "@/components/settings/UpdateCard";
+import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils.ts";
@@ -69,6 +72,7 @@ export function ProjectPicker() {
   const { view } = useConnectionContext();
   const [activeTab, setActiveTab] = useState<TabId>("connections");
   const [tabSlideDir, setTabSlideDir] = useState(1);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const prevTabRef = useRef<TabId>("connections");
 
   const handleTabClick = (tab: TabId) => {
@@ -95,8 +99,44 @@ export function ProjectPicker() {
       >
         <GlobalAccentColorPicker />
         <ThemeToggle />
+        {/* App-wide settings without opening a project first — log level, notifications,
+            concurrency and updates were otherwise unreachable from this screen. Styled off
+            PalettePopover's trigger rather than a Button variant, so the three icons in this
+            row share one hover treatment. */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
+                aria-label="Settings"
+              />
+            }
+          >
+            <Settings />
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={8}>
+            <p className="text-xs">Settings</p>
+          </TooltipContent>
+        </Tooltip>
         <WindowControls className="-mr-2 ml-1" />
       </div>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        {/* The close button defaults to `top-4`, which centres a 32px control against a 64px
+            header — this one sits in a 48px strip, so it needs `top-2` to line up with the
+            controls beside it. */}
+        <DialogContent className="flex h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl [&>[data-slot=dialog-close]]:top-2">
+          <DialogTitle className="sr-only">Settings</DialogTitle>
+          <div className="min-h-0 flex-1">
+            {/* No projectId or connection: only the Application group is registered.
+                `headerPadEnd` keeps the header bar clear of the dialog's close button, and the
+                dialog is already the card, so it supplies no second frame. */}
+            <SettingsPage headerPadEnd framed={false} />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <VersionBadge />
 

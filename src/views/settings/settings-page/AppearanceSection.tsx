@@ -1,10 +1,10 @@
 import { useSettings, useSaveSettings } from "@/services/settings.service";
-import { useTheme } from "@/providers/ThemeProvider";
+import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
 import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
-import { Check, Monitor } from "lucide-react";
+import { Check, Monitor, Moon, Sun, SunMoon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isMacOS } from "@/lib/platform";
 import type { EnterKeyBehavior, NewProjectColor, TerminalColorMode } from "@/types/bindings";
@@ -15,6 +15,14 @@ const UI_SCALE_PRESETS = [
   { value: "130", label: "Large", hint: "130%", fontSize: 17 },
 ] as const;
 
+/// The same three values the header's ThemeToggle cycles through, laid out so the choice can
+/// be made directly rather than by clicking until the right one comes round.
+const THEME_PRESETS: { value: ThemeValue; label: string; icon: typeof Sun }[] = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "System", icon: SunMoon },
+];
+
 export function AppearanceSection() {
   const { data: appSettings } = useSettings();
   const saveAppSettings = useSaveSettings({ successToast: false });
@@ -22,8 +30,8 @@ export function AppearanceSection() {
     uiScale,
     setUiScale,
     isDark,
-    projectAccentHue,
-    setProjectAccentColor,
+    theme,
+    setTheme,
     globalAccentHue,
     setGlobalAccentColor,
     systemAccentHue,
@@ -95,42 +103,59 @@ export function AppearanceSection() {
         </div>
       )}
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">Global Default Color</div>
-            <div className="text-xs text-muted-foreground">
-              Used by projects with no color of their own, and before a project is opened
-            </div>
-          </div>
-          <SwatchPicker
-            title="Global Default"
-            selectedHue={globalAccentHue}
-            fallbackHue={systemAccentHue ?? 250}
-            fallbackLabel="Auto"
-            fallbackDescription="Follows OS accent"
-            isDark={isDark}
-            onSelect={(hue) => void setGlobalAccentColor(hue)}
-          />
+      <div className="space-y-1.5">
+        <Label className="text-sm font-medium">Theme</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {THEME_PRESETS.map((preset) => {
+            const isActive = theme === preset.value;
+            const Icon = preset.icon;
+            return (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => void setTheme(preset.value)}
+                aria-pressed={isActive}
+                className={cn(
+                  "relative flex flex-col items-center gap-1.5 rounded-md border p-3 text-center transition-colors cursor-pointer",
+                  isActive
+                    ? "border-accent bg-accent/10 text-foreground"
+                    : "border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                )}
+              >
+                {isActive && (
+                  <div className="absolute top-1.5 right-1.5 rounded-full bg-accent p-0.5">
+                    <Check className="w-2.5 h-2.5 text-accent-foreground" />
+                  </div>
+                )}
+                <Icon className="size-4.5" />
+                <span className="text-xs font-medium leading-none">{preset.label}</span>
+              </button>
+            );
+          })}
         </div>
+        <p className="text-xs text-muted-foreground">
+          System follows your OS setting and changes with it.
+        </p>
+      </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">This Project&apos;s Color</div>
-            <div className="text-xs text-muted-foreground">
-              Colors the header so you can tell projects apart at a glance
-            </div>
+      {/* A project's own colour is not here: it is a project setting, and lives on the
+          project's Appearance page. */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">Global Default Color</div>
+          <div className="text-xs text-muted-foreground">
+            Used by projects with no color of their own, and before a project is opened
           </div>
-          <SwatchPicker
-            title="Project Color"
-            selectedHue={projectAccentHue}
-            fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
-            fallbackLabel="Global default"
-            fallbackDescription="Follows the setting above"
-            isDark={isDark}
-            onSelect={(hue) => void setProjectAccentColor(hue)}
-          />
         </div>
+        <SwatchPicker
+          title="Global Default"
+          selectedHue={globalAccentHue}
+          fallbackHue={systemAccentHue ?? 250}
+          fallbackLabel="Auto"
+          fallbackDescription="Follows OS accent"
+          isDark={isDark}
+          onSelect={(hue) => void setGlobalAccentColor(hue)}
+        />
       </div>
 
       <div className="space-y-1.5">

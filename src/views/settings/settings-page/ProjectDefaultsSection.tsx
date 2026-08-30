@@ -1,7 +1,7 @@
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
-import { Bot, LogOut, Loader2, Check, GitBranch } from "lucide-react";
+import { Bot, Check, GitBranch, Loader2, LogOut } from "lucide-react";
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
 import type {
   ConnectionKey,
@@ -112,11 +112,21 @@ export function ProjectDefaultsSection({
 
   return (
     <>
+      {/* The list is per connection and the default it sets is per project. They were split
+          apart for a while and it made both worse: picking a default meant crossing to another
+          page to read the list it comes from. The sentence below carries the distinction
+          instead. */}
       <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Bot className="w-4 h-4 text-muted-foreground" />
-          Available Agents
-        </h3>
+        <div>
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Bot className="w-4 h-4 text-muted-foreground" />
+            Agents &amp; sign-in
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Agents installed on this project&apos;s connection, and whether you are signed in to
+            each. Click one to make it this project&apos;s default.
+          </p>
+        </div>
 
         {agentsLoading ? (
           <p className="text-sm text-muted-foreground">Loading agents…</p>
@@ -158,7 +168,9 @@ export function ProjectDefaultsSection({
 
           <div className="space-y-2">
             <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Default workspace</div>
+              <Label htmlFor="default-workspace" className="text-sm font-medium text-foreground">
+                Default workspace
+              </Label>
               <div className="text-xs text-muted-foreground">
                 Where new tasks and new sessions start out. Reusing an existing workspace is not
                 offered here — a default cannot name one — but it is still available per task and
@@ -166,6 +178,7 @@ export function ProjectDefaultsSection({
               </div>
             </div>
             <WorkspaceModeSelect
+              id="default-workspace"
               value={defaultWorkspaceMode}
               onChange={(mode) => onChange({ default_workspace_mode: mode })}
               allowReuse={false}
