@@ -23,7 +23,13 @@ interface ResolveWorktreeArgs {
   /** Non-null reuses the worktree already attached to that task, if there is one. */
   taskId: number | null;
   baseBranch: string;
-  newBranchName: string;
+  /** Null checks `baseBranch` out where it is rather than branching from it. */
+  newBranchName: string | null;
+  /**
+   * Whether the backend may append its row id to keep `newBranchName` unique. True for a generated
+   * name, false for one the user typed — see `create_worktree`.
+   */
+  uniqueSuffix?: boolean;
 }
 
 /**
@@ -41,6 +47,7 @@ export function useResolveWorktree() {
     taskId,
     baseBranch,
     newBranchName,
+    uniqueSuffix = false,
   }: ResolveWorktreeArgs): Promise<ResolvedWorktree> => {
     if (taskId !== null) {
       const worktrees = await queryClient.fetchQuery({
@@ -58,6 +65,7 @@ export function useResolveWorktree() {
       taskId,
       baseBranch,
       newBranchName,
+      uniqueSuffix,
       repoPath,
     });
     const cwd = `${repoPath}/${row.path}`;

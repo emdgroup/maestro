@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, type SetStateAction } from "react";
 import { Ban, Trash2, X } from "lucide-react";
 import type {
+  BranchMode,
   Task,
   TaskStatus,
   TaskPriority,
   WorkspaceMode,
   WorktreeWithStatus,
 } from "@/types/bindings";
+import { MAESTRO_BRANCH_PREFIX, taskBranchName } from "@/lib/generateSessionName";
 import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -82,6 +84,9 @@ interface TaskDraft {
   workspaceMode: WorkspaceMode;
   workspaceWorktreeId: number | null;
   baseBranch: string;
+  branchMode: BranchMode;
+  /** The part after `maestro/`. Empty keeps the name generated from the task at spawn. */
+  branchSuffix: string;
   labels: string[];
 }
 
@@ -121,6 +126,8 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     workspaceMode: "NewWorktree",
     workspaceWorktreeId: null,
     baseBranch: "",
+    branchMode: "Create",
+    branchSuffix: "",
     labels: [],
   });
 
@@ -141,6 +148,9 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         workspaceMode: task.workspace_mode,
         workspaceWorktreeId: task.workspace_worktree_id ?? null,
         baseBranch: task.base_branch ?? "",
+        branchMode: task.workspace_branch_mode,
+        // Stored with the prefix, edited without it.
+        branchSuffix: task.workspace_branch?.replace(MAESTRO_BRANCH_PREFIX, "") ?? "",
         labels: task.labels ?? [],
       });
     }
@@ -213,6 +223,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
           // A non-git project offers no workspace choice, so it can only be the project directory.
           workspace_mode: isGitRepo ? draft.workspaceMode : "RepositoryDirectory",
           workspace_worktree_id: draft.workspaceWorktreeId ?? undefined,
+          workspace_branch_mode: draft.branchMode,
+          workspace_branch: draft.branchSuffix.trim()
+            ? `${MAESTRO_BRANCH_PREFIX}${draft.branchSuffix.trim()}`
+            : undefined,
           base_branch: draft.baseBranch || undefined,
           labels: draft.labels,
         },
@@ -335,6 +349,16 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                     onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
                     baseBranch={draft.baseBranch}
                     onBaseBranchChange={(b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))}
+                    branchMode={draft.branchMode}
+                    onBranchModeChange={(m) => markDirtySetDraft((d) => ({ ...d, branchMode: m }))}
+                    branchSuffix={draft.branchSuffix}
+                    onBranchSuffixChange={(s) =>
+                      markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
+                    }
+                    generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
+                      MAESTRO_BRANCH_PREFIX,
+                      "",
+                    )}
                     worktrees={worktrees ?? []}
                     repoPath={selectedProject?.path ?? ""}
                     selectedWorktreeId={draft.workspaceWorktreeId}

@@ -227,3 +227,34 @@ export const MAESTRO_BRANCH_PREFIX = "maestro/";
 export function taskBranchName(taskId: number, title: string): string {
   return `${MAESTRO_BRANCH_PREFIX}${taskId}-${slugifyName(title)}`;
 }
+
+/**
+ * Why the part after `maestro/` is not a usable branch name, or null when it is.
+ *
+ * Checked here rather than left to git so the user is told before they submit rather than after a
+ * worktree has already been reserved. The rules are git's own (`git check-ref-format`), narrowed to
+ * the ones reachable by typing: the prefix guarantees the ref has two components, so the
+ * single-component rule never applies, and nothing here can produce `@{`.
+ *
+ * An empty suffix is *not* an error — it means "use the generated name", which is what an untouched
+ * field submits. Callers that require a name check for emptiness themselves.
+ */
+export function validateBranchSuffix(suffix: string): string | null {
+  if (suffix === "") return null;
+
+  if (/\s/.test(suffix)) return "Branch names cannot contain spaces";
+  // eslint-disable-next-line no-control-regex
+  if (/[~^:?*[\\\x00-\x1f\x7f]/.test(suffix))
+    return "Branch names cannot contain ~ ^ : ? * [ or \\";
+  if (suffix.startsWith("/") || suffix.endsWith("/"))
+    return "Branch names cannot start or end with /";
+  if (suffix.includes("//")) return "Branch names cannot contain //";
+  if (suffix.startsWith(".") || suffix.endsWith("."))
+    return "Branch names cannot start or end with .";
+  if (suffix.includes("..")) return "Branch names cannot contain ..";
+  // Git rejects a `.lock` suffix on any path component, not just the last.
+  if (suffix.split("/").some((segment) => segment.endsWith(".lock")))
+    return "Branch names cannot end with .lock";
+
+  return null;
+}

@@ -1,10 +1,11 @@
 import { Folder } from "lucide-react";
-import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useNow } from "@/hooks/useNow";
-import type { WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
+import { MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
+import type { BranchMode, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { WorkspaceCard } from "./WorkspaceCard";
 import { WorkspaceModeSelect } from "./WorkspaceModeSelect";
+import { NewWorktreeFields } from "./NewWorktreeFields";
 
 interface WorkspaceSelectorProps {
   mode: WorkspaceMode;
@@ -13,6 +14,14 @@ interface WorkspaceSelectorProps {
   baseBranch: string;
   onBaseBranchChange: (branch: string) => void;
   baseBranchError?: string;
+  /** Whether `NewWorktree` creates a branch or checks the picked one out. */
+  branchMode: BranchMode;
+  onBranchModeChange: (mode: BranchMode) => void;
+  /** `Create` only: the part after `maestro/`. Empty means "use the generated name". */
+  branchSuffix: string;
+  onBranchSuffixChange: (suffix: string) => void;
+  /** What that name will be if the field is left alone. */
+  generatedBranchSuffix: string;
   /** Every worktree of the project, repo root included — it is filtered out below. */
   worktrees: WorktreeWithStatus[];
   repoPath: string;
@@ -39,6 +48,11 @@ export function WorkspaceSelector({
   baseBranch,
   onBaseBranchChange,
   baseBranchError,
+  branchMode,
+  onBranchModeChange,
+  branchSuffix,
+  onBranchSuffixChange,
+  generatedBranchSuffix,
   worktrees,
   repoPath,
   selectedWorktreeId,
@@ -64,7 +78,9 @@ export function WorkspaceSelector({
   if (readOnly) {
     const summary =
       mode === "NewWorktree"
-        ? `A new worktree from ${baseBranch || "the base branch"}`
+        ? branchMode === "Checkout"
+          ? `A worktree on ${baseBranch || "the branch below"}`
+          : `A new branch ${MAESTRO_BRANCH_PREFIX}${branchSuffix || generatedBranchSuffix} from ${baseBranch || "the base branch"}`
         : mode === "RepositoryDirectory"
           ? "The repository directory"
           : (selected?.branch_name ?? "A workspace that no longer exists");
@@ -95,15 +111,37 @@ export function WorkspaceSelector({
       />
 
       {mode === "NewWorktree" && (
-        <div className="flex flex-col gap-1">
-          <BranchPicker
-            value={baseBranch}
-            onChange={onBaseBranchChange}
-            error={!!baseBranchError}
-            prefix="From"
-          />
-          {baseBranchError && <span className="text-destructive text-xs">{baseBranchError}</span>}
-        </div>
+        <NewWorktreeFields
+          branchMode={branchMode}
+          onBranchModeChange={onBranchModeChange}
+          branch={baseBranch}
+          onBranchChange={onBaseBranchChange}
+          branchError={baseBranchError}
+          branchSuffix={branchSuffix}
+          onBranchSuffixChange={onBranchSuffixChange}
+          generatedSuffix={generatedBranchSuffix}
+          worktrees={worktrees}
+          repoPath={repoPath}
+          // A branch already checked out somewhere is a workspace that already exists, so the way
+          // out is the mode this component is here to offer. The repository root is its own mode
+          // rather than one of the reusable workspaces, which is why the two map differently.
+          onUseExistingWorkspace={(conflict) => {
+            if (conflict.kind === "repositoryDirectory") {
+              onModeChange("RepositoryDirectory");
+              return;
+            }
+            onSelectedWorktreeChange(conflict.worktree);
+            onModeChange("ReuseWorkspace");
+          }}
+          useExistingBlockedReason={(conflict) => {
+            if (conflict.kind === "repositoryDirectory") return null;
+            if (conflict.worktree.id == null) {
+              return "That worktree is not one Maestro tracks, so it cannot be reused here.";
+            }
+            const taken = takenBy(conflict.worktree);
+            return taken ? `That workspace belongs to the task “${taken}”.` : null;
+          }}
+        />
       )}
 
       {/* A dropdown rather than a list laid out in the dialog: a project accumulates worktrees,

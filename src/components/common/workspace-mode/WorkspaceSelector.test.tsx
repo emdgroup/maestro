@@ -46,6 +46,11 @@ function renderReuse(worktrees: WorktreeWithStatus[], props: { claimsOwnership?:
       onModeChange={vi.fn()}
       baseBranch="main"
       onBaseBranchChange={vi.fn()}
+      branchMode="Create"
+      onBranchModeChange={vi.fn()}
+      branchSuffix=""
+      onBranchSuffixChange={vi.fn()}
+      generatedBranchSuffix="1-demo"
       worktrees={worktrees}
       repoPath={REPO}
       selectedWorktreeId={null}

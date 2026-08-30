@@ -41,6 +41,14 @@ pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
 // create_worktree — REQ-08
 // ============================================================================
 
+/// `unique_suffix` says whether `new_branch_name` was generated or typed, and only the session path
+/// reads it — a task's branch already carries its id and has never been suffixed.
+///
+/// The distinction cannot live in the caller, because the suffix *is* the reserved row id and that
+/// does not exist until the INSERT below. A generated name can collide by accident (two sessions
+/// off the same title) and needs the suffix to stay unique; a name the user typed is a deliberate
+/// choice, so a collision there should fail loudly rather than come back as a name they did not
+/// ask for. `git worktree add -b` reports that itself, and the rollback below removes the row.
 #[tauri::command]
 #[specta::specta]
 pub async fn create_worktree(
@@ -49,6 +57,7 @@ pub async fn create_worktree(
     task_id: Option<i32>,
     base_branch: String,
     new_branch_name: Option<String>,
+    unique_suffix: bool,
     repo_path: String,
 ) -> Result<Worktree, String> {
     // Resolve project and git connection (local vs remote SSH)
@@ -116,10 +125,12 @@ pub async fn create_worktree(
             };
 
             let relative_path = crate::models::worktree_path_for_session(worktree_id);
-            // Suffix unconditionally rather than probing for an existing branch: a check-then-create
-            // pair races with a second spawn, an id cannot collide.
+            // Suffix rather than probing for an existing branch: a check-then-create pair races
+            // with a second spawn, an id cannot collide. Only for a generated name — see the note
+            // on `unique_suffix` above.
             let branch_name = match &new_branch_name {
-                Some(name) => format!("{}-{}", name, worktree_id),
+                Some(name) if unique_suffix => format!("{}-{}", name, worktree_id),
+                Some(name) => name.clone(),
                 None => base_branch.clone(),
             };
 

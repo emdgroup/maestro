@@ -260,15 +260,25 @@ export function useCreateWorktreeMutation() {
       taskId,
       baseBranch,
       newBranchName,
+      uniqueSuffix = false,
       repoPath,
     }: {
       projectId: number;
       taskId: number | null;
       baseBranch: string;
       newBranchName: string | null;
+      /** Only meaningful for a session worktree — see `create_worktree`. */
+      uniqueSuffix?: boolean;
       repoPath: string;
     }) => {
-      return await api.createWorktree(projectId, taskId, baseBranch, newBranchName, repoPath);
+      return await api.createWorktree(
+        projectId,
+        taskId,
+        baseBranch,
+        newBranchName,
+        uniqueSuffix,
+        repoPath,
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });

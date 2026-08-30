@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { Terminal as TerminalIcon } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { generateSessionName, slugifyName, MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
+import {
+  generateSessionName,
+  slugifyName,
+  validateBranchSuffix,
+  MAESTRO_BRANCH_PREFIX,
+} from "@/lib/generateSessionName";
+import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
 import { cn } from "@/lib/utils.ts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
@@ -18,7 +24,12 @@ import { useProjectBranchesQuery } from "@/services/task.service";
 import { useResolveWorktree, type CreatedWorktree } from "@/utils/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
-import type { ConnectionKey, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
+import type {
+  BranchMode,
+  ConnectionKey,
+  WorkspaceMode,
+  WorktreeWithStatus,
+} from "@/types/bindings";
 
 export type { CreatedWorktree };
 
@@ -44,6 +55,8 @@ export function SpawnSessionDialog({
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("NewWorktree");
   const [baseBranch, setBaseBranch] = useState("");
+  const [branchMode, setBranchMode] = useState<BranchMode>("Create");
+  const [branchSuffix, setBranchSuffix] = useState("");
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("terminal");
   const [spawnError, setSpawnError] = useState<string | null>(null);
@@ -70,6 +83,8 @@ export function SpawnSessionDialog({
     setSelectedWorktree(reusableWorktrees[0] ?? null);
     setWorkspaceMode(projectSettings?.default_workspace_mode ?? "NewWorktree");
     setBaseBranch(branchData?.[1] ?? "");
+    setBranchMode("Create");
+    setBranchSuffix("");
     setSessionName("");
     setSpawnError(null);
 
@@ -108,12 +123,19 @@ export function SpawnSessionDialog({
     let created: CreatedWorktree | null = null;
     if (creatingWorktree) {
       try {
+        // A name the user typed is used as typed; a generated one gets the backend's uniqueness
+        // suffix, because two sessions off the same title would otherwise collide.
+        const typed = branchSuffix.trim();
         const resolved = await resolveWorktree({
           projectId,
           repoPath,
           taskId: null,
           baseBranch,
-          newBranchName: `${MAESTRO_BRANCH_PREFIX}${slugifyName(resolvedName) || generateSessionName()}`,
+          newBranchName:
+            branchMode === "Checkout"
+              ? null
+              : `${MAESTRO_BRANCH_PREFIX}${typed || slugifyName(resolvedName) || generateSessionName()}`,
+          uniqueSuffix: branchMode === "Create" && !typed,
         });
         created = resolved.created;
         worktree = {
@@ -180,10 +202,17 @@ export function SpawnSessionDialog({
     }
   }
 
+  const branchConflict =
+    creatingWorktree && branchMode === "Checkout"
+      ? findBranchConflict(baseBranch, worktrees, repoPath)
+      : null;
+
   const canSpawn = !isGitRepo
     ? true
     : creatingWorktree
-      ? !!baseBranch
+      ? !!baseBranch &&
+        branchConflict === null &&
+        (branchMode === "Checkout" || validateBranchSuffix(branchSuffix.trim()) === null)
       : effectiveMode === "ReuseWorkspace"
         ? !!selectedWorktree
         : // The repository directory always exists; a terminal additionally needs the branch it is
@@ -339,6 +368,11 @@ export function SpawnSessionDialog({
                 onModeChange={setWorkspaceMode}
                 baseBranch={baseBranch}
                 onBaseBranchChange={setBaseBranch}
+                branchMode={branchMode}
+                onBranchModeChange={setBranchMode}
+                branchSuffix={branchSuffix}
+                onBranchSuffixChange={setBranchSuffix}
+                generatedBranchSuffix={slugifyName(sessionName) || "<generated>"}
                 worktrees={worktrees}
                 repoPath={repoPath}
                 selectedWorktreeId={selectedWorktree?.id ?? null}
@@ -366,10 +400,10 @@ export function SpawnSessionDialog({
                 onChange={(e) => setSessionName(e.target.value)}
                 autoFocus
               />
+              {/* No branch hint here any more: when a branch is being created the workspace
+                  section shows the name as an editable field, whose placeholder is this. */}
               <p className="text-[10px] text-muted-foreground/40">
-                {creatingWorktree
-                  ? `Also names the branch: ${MAESTRO_BRANCH_PREFIX}${slugifyName(sessionName) || "<generated>"}`
-                  : "Leave blank to auto-generate a name."}
+                Leave blank to auto-generate a name.
               </p>
             </div>
 

@@ -363,9 +363,19 @@ async getWorktreeDiffStats(projectId: number, worktreePath: string, diffTarget: 
     else return { status: "error", error: e  as any };
 }
 },
-async createWorktree(projectId: number, taskId: number | null, baseBranch: string, newBranchName: string | null, repoPath: string) : Promise<Result<Worktree, string>> {
+/**
+ * `unique_suffix` says whether `new_branch_name` was generated or typed, and only the session path
+ * reads it — a task's branch already carries its id and has never been suffixed.
+ * 
+ * The distinction cannot live in the caller, because the suffix *is* the reserved row id and that
+ * does not exist until the INSERT below. A generated name can collide by accident (two sessions
+ * off the same title) and needs the suffix to stay unique; a name the user typed is a deliberate
+ * choice, so a collision there should fail loudly rather than come back as a name they did not
+ * ask for. `git worktree add -b` reports that itself, and the rollback below removes the row.
+ */
+async createWorktree(projectId: number, taskId: number | null, baseBranch: string, newBranchName: string | null, uniqueSuffix: boolean, repoPath: string) : Promise<Result<Worktree, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, baseBranch, newBranchName, repoPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, baseBranch, newBranchName, uniqueSuffix, repoPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2395,6 +2405,15 @@ export type BitbucketProjectOption = { key: string; name: string }
 export type BitbucketRepoOption = { slug: string; name: string; description: string | null; clone_url: string | null }
 export type BranchList = { local: string[]; remote: string[] }
 /**
+ * Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
+ * exists.
+ * 
+ * Only `Create` needs a companion — the name to give the branch — which is why the task carries
+ * `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
+ * branch it checks out is the task's `base_branch`.
+ */
+export type BranchMode = "Create" | "Checkout"
+/**
  * How far up the capability ladder this project reaches.
  * 
  * Each rung removes one option from Approve and never blocks it; the bottom of the ladder
@@ -2474,7 +2493,11 @@ export type ConnectionKey = { type: "local" } | { type: "ssh"; id: number } | { 
  * Represents the status of a remote SSH connection for a project
  */
 export type ConnectionStatus = { connection_id: number; connected: boolean; disconnected_reason: string | null }
-export type CreateTaskRequest = { project_id: number; title: string; description: string | null; skills: string[]; labels: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; workspace_mode: WorkspaceMode; workspace_worktree_id: number | null; model_override: string | null }
+export type CreateTaskRequest = { project_id: number; title: string; description: string | null; skills: string[]; labels: string[]; base_branch: string; agent_id: string | null; priority: string | null; auto_approve: boolean; workspace_mode: WorkspaceMode; workspace_worktree_id: number | null; workspace_branch_mode: BranchMode; 
+/**
+ * `None` leaves the branch name to be generated from the task at spawn time.
+ */
+workspace_branch: string | null; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
@@ -2819,7 +2842,18 @@ workspace_mode: WorkspaceMode;
  * `None` once that worktree is gone — the column drops the reference with it — which is how
  * the executor tells "pinned to a workspace that no longer exists" from "never pinned".
  */
-workspace_worktree_id?: number | null; agent_id?: string | null; permission_mode_override?: string | null; execution_start_sha?: string | null; 
+workspace_worktree_id?: number | null; 
+/**
+ * For `NewWorktree`, whether the worktree gets a branch of its own or checks out one that
+ * already exists. Meaningless in the other two modes, which create no branch either way.
+ */
+workspace_branch_mode: BranchMode; 
+/**
+ * The branch name the user chose, for `BranchMode::Create` only. `None` means the name is
+ * generated from the task when the worktree is created, which is what a task that never
+ * touched the field means.
+ */
+workspace_branch?: string | null; agent_id?: string | null; permission_mode_override?: string | null; execution_start_sha?: string | null; 
 /**
  * Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
  * what is happening inside it. `None` means no pipeline activity, in which case
@@ -2931,7 +2965,12 @@ export type UpdateTaskRequest = { status: string | null; description: string | n
  * Writing the mode also writes `workspace_worktree_id`, so switching away from
  * `ReuseWorkspace` cannot leave a pin behind that nothing will ever look at again.
  */
-workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null }
+workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null; 
+/**
+ * Writing the branch mode also writes `workspace_branch`, for the same reason: switching to
+ * `Checkout` must not leave the name of a branch nobody is going to create.
+ */
+workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
 /**
  * Where an agent works: a worktree of its own, the project directory, or a worktree that already
  * exists. Shared by tasks and by the project default that seeds them.
