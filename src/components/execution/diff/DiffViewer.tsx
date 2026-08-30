@@ -17,6 +17,7 @@ import "./diff-expand.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
 import { cn } from "@/lib/utils.ts";
+import { Skeleton } from "@/ui/skeleton";
 import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";
 import { buildExtendData } from "./extend-data";
@@ -115,6 +116,24 @@ const DiffPlaceholder = ({
     className={`flex items-center justify-center h-full text-sm ${variant === "error" ? "text-destructive" : "text-muted-foreground"}`}
   >
     {message}
+  </div>
+);
+
+/**
+ * Fixed widths rather than random ones: a pattern that reshuffles on every render reads as
+ * content changing, which is the opposite of what a placeholder is for.
+ */
+const SKELETON_ROWS = [72, 46, 88, 61, 34, 79, 53, 67, 41, 84];
+
+/** The shape of a diff while it loads, instead of a sentence about loading one. */
+const DiffSkeleton = () => (
+  <div className="px-3 py-2.5 space-y-2" aria-label="Loading diff" aria-busy="true">
+    {SKELETON_ROWS.map((width, row) => (
+      <div key={row} className="flex items-center gap-3">
+        <Skeleton className="h-2.5 w-6 shrink-0" />
+        <Skeleton className="h-2.5" style={{ width: `${width}%` }} />
+      </div>
+    ))}
   </div>
 );
 
@@ -333,7 +352,7 @@ export function DiffViewer({
         variant="error"
       />
     );
-  if (loading) return <DiffPlaceholder message="Loading diff..." />;
+  if (loading) return <DiffSkeleton />;
   if (error) return <DiffPlaceholder message={`Error loading diff: ${error}`} variant="error" />;
   if (!diffFile) return <DiffPlaceholder message="No changes to display" />;
 

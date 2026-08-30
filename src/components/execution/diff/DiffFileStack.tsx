@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { type PendingComment } from "./DiffViewer";
 import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { useCommentNavigation } from "./useCommentNavigation";
+import { diffLineCount, planEagerBodies, UNKNOWN_FILE_LINES } from "./body-budget";
 import {
   activeIndexAt,
   SETTLE_MAX_FRAMES,
@@ -45,6 +46,33 @@ export interface DiffReviewApi {
 
 /** Module-level so a review-less stack does not hand the comment hooks a new array each render. */
 const EMPTY_COMMENTS: PendingComment[] = [];
+
+/**
+ * What a file over the review's budget shows instead of its diff.
+ *
+ * An explicit button rather than something triggered by scrolling. Building a diff is tens of
+ * milliseconds of blocked main thread, and doing that while the user is scrolling is what makes a
+ * stack feel bad — the work competes with the scroll every frame. A press is a moment the user
+ * already expects to wait for, so the same cost reads as an answer rather than as jank.
+ */
+function LoadDiffPrompt({ lines, onLoad }: { lines: number; onLoad: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-3 py-8">
+      {/* The size, and nothing about why. A file can end up here because it is large or simply
+          because the review ran out of budget before reaching it, and "not rendered by default"
+          next to a 125-line file reads as a judgement about that file. An untracked file has no
+          hunks to count at all — its body is fetched rather than derived from a diff. */}
+      {lines > 0 && <p className="text-xs text-muted-foreground">{lines.toLocaleString()} lines</p>}
+      <button
+        type="button"
+        onClick={onLoad}
+        className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted/40 transition-colors"
+      >
+        Load diff
+      </button>
+    </div>
+  );
+}
 
 export interface DiffFileStackHandle {
   /** Expand the file at `index`, scroll it to the top of the stack, and select it. */
@@ -127,17 +155,37 @@ export function DiffFileStack({
   const settleFrameRef = useRef<number | null>(null);
 
   /**
+   * Which files render their diff without being asked, and which the user has since asked for.
+   *
+   * Everything within the review's budget is built from the first frame — the document reaches its
+   * true height immediately and never changes it, which is what makes the scroll spy and
+   * `navigateTo` exact. Beyond the budget a card shows a button instead, and nothing about that is
+   * driven by scrolling: an attempt at building bodies as the viewport reached them made every
+   * scroll compete with tens of milliseconds of layout, and felt considerably worse than paying
+   * the whole cost up front.
+   */
+  const eagerBodies = useMemo(
+    () =>
+      planEagerBodies(
+        items.map((item) => ({
+          path: displayItemPath(item),
+          lines: item.kind === "diff" ? diffLineCount(item.file.hunks) : UNKNOWN_FILE_LINES,
+        })),
+      ),
+    [items],
+  );
+  const [requestedBodies, setRequestedBodies] = useState<Set<string>>(new Set());
+  const requestBody = useCallback((path: string) => {
+    setRequestedBodies((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
+  }, []);
+
+  /**
    * Which files are syntax-highlighted.
    *
-   * Every file's diff is rendered from the first frame — that is the whole design. Building a
-   * diff's structure measured at under a millisecond a file, so the document reaches its true
-   * height immediately and never changes it. What is expensive is Shiki: 25–150ms a file,
-   * synchronous, and up to 1.8s for a large one. So colour is what arrives late, not content.
-   *
-   * This can afford to be lazy precisely because it is invisible to layout — see the `highlight`
-   * prop on `DiffViewer`. Deferring the *body* instead is what the previous two attempts did, and
-   * it cannot be made to work: a card that has not been built has no height, so every scroll
-   * target is computed against a document that is about to change underneath it.
+   * The other half of the cost, and the half that is free to defer: colour changes no layout at
+   * all (see the `highlight` prop on `DiffViewer`), so it can arrive whenever without moving
+   * anything. A body cannot, which is why that one is decided up front by the budget rather than
+   * drip-fed as the reader arrives.
    */
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   /** Queued for colour, oldest first — drained one a frame so a burst cannot block a scroll. */
@@ -264,13 +312,17 @@ export function DiffFileStack({
         next.delete(path);
         return next;
       });
+      // Navigating to a file is asking for it. Comment navigation waits on a MutationObserver for
+      // the comment's node and gives up after a couple of seconds, so a target still showing its
+      // button would leave the chevron doing nothing at all.
+      requestBody(path);
       // Ahead of the queue: this is the file the user asked for, and it is one card's worth of
       // work. Whatever was waiting can wait a frame longer.
       pendingHighlightRef.current.delete(path);
       setHighlighted((prev) => (prev.has(path) ? prev : new Set([...prev, path])));
       scrollToTop(path);
     },
-    [onBeforeReveal, scrollToTop],
+    [onBeforeReveal, scrollToTop, requestBody],
   );
 
   const navigateTo = useCallback(
@@ -452,7 +504,9 @@ export function DiffFileStack({
               note={item.kind === "diff" ? fileNote(item.file) : undefined}
               fileComment={fileCommentFor(key)}
             >
-              {item.kind === "diff" ? (
+              {!(eagerBodies.has(key) || requestedBodies.has(key)) ? (
+                <LoadDiffPrompt lines={diffLineCount(hunks)} onLoad={() => requestBody(key)} />
+              ) : item.kind === "diff" ? (
                 <ExpandableDiffViewer
                   file={item.file}
                   projectId={projectId}

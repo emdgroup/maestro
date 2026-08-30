@@ -111,9 +111,12 @@ export function ReviewFileCard({
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border border-border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
             expanded ? "rounded-t-lg" : "rounded-lg",
-            focused ? "bg-muted/40" : "hover:bg-muted/20",
+            // The whole card outlined in the accent, rather than a tint on the header. The tint
+            // was competing with the hover state on the same element and lost — this reads at a
+            // glance, and from the body as well as the header.
+            focused ? "border-accent" : "border-border hover:bg-muted/20",
           )}
         >
           <ChevronRight
@@ -186,7 +189,12 @@ export function ReviewFileCard({
         </div>
       </div>
       {expanded && (
-        <div className="border border-border border-t-0 rounded-b-lg overflow-auto custom-scrollbar">
+        <div
+          className={cn(
+            "border border-t-0 rounded-b-lg overflow-auto custom-scrollbar transition-colors",
+            focused ? "border-accent" : "border-border",
+          )}
+        >
           {fileComment && (
             <ReviewFileComment
               fileComment={fileComment}

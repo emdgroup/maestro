@@ -45,6 +45,12 @@ function diffItem(name: string): DisplayItem {
   return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n+${name}`], status: "M" } };
 }
 
+/** A file of a given size in diff lines, for exercising the review's rendering budget. */
+function sizedDiffItem(name: string, lines: number): DisplayItem {
+  const body = Array.from({ length: lines - 1 }, (_, line) => `+line ${line}`).join("\n");
+  return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n${body}`], status: "M" } };
+}
+
 const onSubmitComment = vi.fn();
 const onRemoveComment = vi.fn();
 const onEditComment = vi.fn();
@@ -240,6 +246,54 @@ describe("DiffFileStack", () => {
     act(() => ref.current?.navigateTo(20));
 
     expect(lit()).toHaveLength(1);
+  });
+
+  /**
+   * The budget, and the one case it exists for. A generated file costs more than the rest of the
+   * review together, so it waits to be asked for — and skipping it does not spend the budget, so
+   * everything after it still renders. Nothing here is driven by scrolling: building a diff is
+   * tens of milliseconds of layout, and doing that as the viewport reaches each card made every
+   * scroll compete with it.
+   */
+  it("puts a file too large to render behind a button, and renders the rest", () => {
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview());
+
+    expect(screen.getByRole("button", { name: "Load diff" })).toBeTruthy();
+    // Tolerant of the grouping separator, which `toLocaleString` picks per environment.
+    expect(screen.getByText(/^40[^\d]?000 lines$/)).toBeTruthy();
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1);
+  });
+
+  it("renders it once asked", async () => {
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview());
+
+    await userEvent.click(screen.getByRole("button", { name: "Load diff" }));
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Load diff" })).toBeNull();
+  });
+
+  // Navigating to a file is asking for it — otherwise stepping to a comment inside a deferred file
+  // would scroll to a button, and the chevron would appear to do nothing.
+  it("renders a deferred file when navigation lands on it", () => {
+    const ref = createRef<DiffFileStackHandle>();
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview(), ref);
+
+    act(() => ref.current?.navigateTo(0));
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(2);
+  });
+
+  // The common case has to stay invisible: an agent's worktree diff is a handful of files, and
+  // none of this should be observable there.
+  it("renders an ordinary review in full, with nothing to click", () => {
+    renderStack(
+      Array.from({ length: 12 }, (_, i) => sizedDiffItem(`f${i}.ts`, 80)),
+      emptyReview(),
+    );
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: "Load diff" })).toBeNull();
   });
 
   // The host sorts items into tree order; the stack must not reorder them, or the sidebar
