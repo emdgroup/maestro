@@ -30,7 +30,7 @@ export function ReviewChangesPanel({
   onOpenFile,
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
-  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
 
   const toggleViewed = useCallback((fileName: string) => {
@@ -72,7 +72,8 @@ export function ReviewChangesPanel({
 
   const fileSelectorFiles = useMemo(() => toPanelFiles(allDisplayItems), [allDisplayItems]);
 
-  const focusedItem = allDisplayItems[selectedFileIndex] ?? null;
+  const focusedItem =
+    selectedFileIndex === null ? null : (allDisplayItems[selectedFileIndex] ?? null);
   const focusedKey = focusedItem ? displayItemPath(focusedItem) : null;
   const focusedBasename = focusedKey ? (focusedKey.split("/").pop() ?? focusedKey) : null;
 

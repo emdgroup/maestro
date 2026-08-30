@@ -66,7 +66,8 @@ interface ReviewItemsInput {
    * at a time, narrowing only the panel would leave the two disagreeing on screen.
    */
   search: string;
-  selectedIndex: number;
+  /** Null until the reader picks a file — a review opens with nothing selected. */
+  selectedIndex: number | null;
   stackRef: React.RefObject<DiffFileStackHandle | null>;
 }
 
@@ -97,7 +98,8 @@ export function useReviewItems({
     [items, stackRef],
   );
 
-  const selectedPath = items[selectedIndex] ? displayItemPath(items[selectedIndex]) : null;
+  const selected = selectedIndex === null ? undefined : items[selectedIndex];
+  const selectedPath = selected ? displayItemPath(selected) : null;
 
   return { items, panelFiles, selectFile, selectedPath };
 }

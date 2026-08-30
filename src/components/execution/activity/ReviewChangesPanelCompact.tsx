@@ -46,7 +46,8 @@ interface ReviewChangesPanelCompactProps {
   scope: "session" | "uncommitted";
   diffViewMode: DiffModeEnum;
   setDiffViewMode: (mode: DiffModeEnum) => void;
-  selectedFileIndex: number;
+  /** Null until the reader picks a file — the tab opens with nothing selected. */
+  selectedFileIndex: number | null;
   setSelectedFileIndex: (idx: number) => void;
   viewedFiles: Set<string>;
   toggleViewed: (fileName: string) => void;
@@ -96,6 +97,11 @@ export function ReviewChangesPanelCompact({
     const idx = allDisplayItems.findIndex((i) => displayItemPath(i) === fileName);
     if (idx >= 0) navigateCompact(idx);
   }
+
+  // With nothing picked yet the forward chevron enters the stack at its first file, and there is
+  // nothing behind that to step back to.
+  const prevIndex = selectedFileIndex === null ? -1 : selectedFileIndex - 1;
+  const nextIndex = selectedFileIndex === null ? 0 : selectedFileIndex + 1;
 
   const diffAnnotations = useMemo(
     () => annotations.filter((a): a is DiffAnnotation => a.kind === "diff"),
@@ -171,8 +177,8 @@ export function ReviewChangesPanelCompact({
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
           <button
             type="button"
-            onClick={() => navigateCompact(selectedFileIndex - 1)}
-            disabled={selectedFileIndex <= 0}
+            onClick={() => navigateCompact(prevIndex)}
+            disabled={prevIndex < 0}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -183,8 +189,8 @@ export function ReviewChangesPanelCompact({
           </span>
           <button
             type="button"
-            onClick={() => navigateCompact(selectedFileIndex + 1)}
-            disabled={selectedFileIndex >= allDisplayItems.length - 1}
+            onClick={() => navigateCompact(nextIndex)}
+            disabled={nextIndex > allDisplayItems.length - 1}
             className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30 disabled:pointer-events-none shrink-0"
           >
             <ChevronRight className="w-3.5 h-3.5" />

@@ -83,7 +83,7 @@ export function TaskReviewPanel({
   // View state
   const [diffViewMode, setDiffViewMode] = useState(DiffModeEnum.Unified);
   const [fileSearch, setFileSearch] = useState("");
-  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [scope, setScope] = useState<DiffScope>({ type: "all" });
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(() =>
     reviewStore.getViewedFiles(task.id),
