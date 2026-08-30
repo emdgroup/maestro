@@ -2361,7 +2361,12 @@ notify_on_input_needed?: boolean;
 /**
  * OS toast when an agent's turn ends in an error, a refusal, or a limit.
  */
-notify_on_failure?: boolean }
+notify_on_failure?: boolean; 
+/**
+ * Use the OS window frame instead of Maestro's own title bar. Off by default — the app ships
+ * frameless. Ignored on macOS, which always uses its native title bar.
+ */
+native_window_frame?: boolean }
 export type AttachmentValidation = { size_bytes: number; 
 /**
  * `None` when the file can be attached. Otherwise the reason to show the user, phrased for

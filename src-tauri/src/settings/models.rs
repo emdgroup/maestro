@@ -223,6 +223,10 @@ pub struct AppSettings {
     /// OS toast when an agent's turn ends in an error, a refusal, or a limit.
     #[serde(default)]
     pub notify_on_failure: bool,
+    /// Use the OS window frame instead of Maestro's own title bar. Off by default — the app ships
+    /// frameless. Ignored on macOS, which always uses its native title bar.
+    #[serde(default)]
+    pub native_window_frame: bool,
 }
 
 impl Default for AppSettings {
@@ -247,6 +251,7 @@ impl Default for AppSettings {
             notify_on_done: false,
             notify_on_input_needed: false,
             notify_on_failure: false,
+            native_window_frame: false,
         }
     }
 }

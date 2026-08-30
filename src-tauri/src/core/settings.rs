@@ -107,6 +107,12 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .map(|v| v == "true")
         .unwrap_or(false);
 
+    // Absent means frameless: the app ships with its own title bar, and the OS frame is opt-in.
+    let native_window_frame = settings_map
+        .get("native_window_frame")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
     let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
     let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
@@ -131,6 +137,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         notify_on_done,
         notify_on_input_needed,
         notify_on_failure,
+        native_window_frame,
     })
 }
 
@@ -158,6 +165,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let notify_on_done_str = if settings.notify_on_done { "true" } else { "false" };
     let notify_on_input_needed_str = if settings.notify_on_input_needed { "true" } else { "false" };
     let notify_on_failure_str = if settings.notify_on_failure { "true" } else { "false" };
+    let native_window_frame_str = if settings.native_window_frame { "true" } else { "false" };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -177,6 +185,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("notify_on_done", notify_on_done_str),
         ("notify_on_input_needed", notify_on_input_needed_str),
         ("notify_on_failure", notify_on_failure_str),
+        ("native_window_frame", native_window_frame_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -236,6 +245,7 @@ mod tests {
             notify_on_done: false,
             notify_on_input_needed: true,
             notify_on_failure: false,
+            native_window_frame: true,
         };
 
         save_settings(&mut conn, &settings).unwrap();
@@ -247,6 +257,8 @@ mod tests {
         assert!(!loaded.notify_on_done);
         assert!(loaded.notify_on_input_needed);
         assert!(!loaded.notify_on_failure);
+        // Not the default, so a round trip that dropped the key would still look like a pass.
+        assert!(loaded.native_window_frame);
         // Not the default, so a round trip that silently dropped it would look like a pass.
         assert_eq!(loaded.concurrency_mode, crate::execution::capacity::ConcurrencyMode::Auto);
     }

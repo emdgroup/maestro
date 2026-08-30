@@ -3,8 +3,10 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { Switch } from "@/ui/switch";
 import { Check, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isMacOS } from "@/lib/platform";
 import type { EnterKeyBehavior, NewProjectColor, TerminalColorMode } from "@/types/bindings";
 
 const UI_SCALE_PRESETS = [
@@ -49,6 +51,15 @@ export function AppearanceSection() {
     });
   }
 
+  function handleNativeWindowFrameChange(checked: boolean) {
+    if (!appSettings) return;
+    saveAppSettings.mutate({
+      ...appSettings,
+      native_window_frame: checked,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   function handleEnterKeyBehaviorChange(value: string | null) {
     if (!appSettings || !value) return;
     saveAppSettings.mutate({
@@ -64,6 +75,25 @@ export function AppearanceSection() {
         <Monitor className="w-4 h-4 text-muted-foreground" />
         Appearance
       </h3>
+
+      {/* Absent on macOS: it uses its native title bar either way, so there is no off state to
+          offer and a permanently dead switch would only mislead. */}
+      {!isMacOS && (
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">System title bar</div>
+            <div className="text-xs text-muted-foreground">
+              Use the OS window frame instead of Maestro&apos;s own. Restores Snap Layouts and the
+              window shadow on Windows.
+            </div>
+          </div>
+          <Switch
+            checked={appSettings?.native_window_frame ?? false}
+            onCheckedChange={handleNativeWindowFrameChange}
+            className="data-unchecked:bg-muted data-unchecked:border-border/50"
+          />
+        </div>
+      )}
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-4">

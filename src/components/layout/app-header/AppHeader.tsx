@@ -19,6 +19,7 @@ import {
 import type { Project } from "@/types/bindings";
 import { useRecentProjects } from "@/services/project.service";
 import type { ViewType } from "@/store/navigationStore";
+import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
 
 interface AppHeaderProps {
   currentProject: Project;
@@ -83,13 +84,19 @@ export function AppHeader({
   };
 
   return (
-    <header className="relative isolate grid grid-cols-[1fr_auto_1fr] h-12 shrink-0 items-center px-4 gap-4">
+    // The header doubles as the window's drag region — Tauri only starts a drag when the event
+    // target itself carries the attribute, so the controls nested below still receive their
+    // clicks. The three section wrappers repeat it or their empty space would be dead.
+    <header
+      data-tauri-drag-region
+      className="relative isolate grid grid-cols-[1fr_auto_1fr] h-12 shrink-0 items-center px-4 gap-4"
+    >
       {/* Project-colour dressing: bubbles behind the accent gradient, both absolutely
           positioned and -z-10, so the grid layout and the content above are untouched. */}
       <AccentBubbles variant="header" className="-z-10" />
       <span aria-hidden className="header-gradient -z-10" />
       {/* Left section: Logo + divider + Project Dropdown */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div data-tauri-drag-region className="flex items-center gap-3 min-w-0">
         <Select value={currentProject} onValueChange={handleValueChange}>
           <SelectTrigger className="h-7 gap-2 min-w-20 max-w-[20rem] border-none bg-muted/30 text-xs">
             <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -151,7 +158,7 @@ export function AppHeader({
       </div>
 
       {/* Center section: Tab Navigation */}
-      <nav className="flex items-center flex-1 justify-center">
+      <nav data-tauri-drag-region className="flex items-center flex-1 justify-center">
         <LayoutGroup id="tab-nav">
           <div className="grid grid-cols-4 rounded-lg bg-muted/60 p-1 gap-1">
             {VIEWS.map((view) => {
@@ -202,7 +209,7 @@ export function AppHeader({
       </nav>
 
       {/* Right section: Status indicator + Theme switcher */}
-      <div className="flex items-center justify-end gap-2">
+      <div data-tauri-drag-region className="flex items-center justify-end gap-2">
         {connectionQuiet && (
           <Tooltip>
             <TooltipTrigger
@@ -222,6 +229,7 @@ export function AppHeader({
 
         <AccentColorPicker />
         <ThemeToggle />
+        <WindowControls className="-mr-2 ml-1" />
       </div>
     </header>
   );

@@ -13,6 +13,7 @@ import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { GlobalAccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
+import { WindowControls } from "@/components/layout/window-chrome/WindowControls";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import {
   slideVariants,
@@ -86,10 +87,15 @@ export function ProjectPicker() {
       <span aria-hidden className="screen-gradient z-0" />
       <AccentBubbles variant="screen" className="z-0" />
 
-      {/* Color picker + theme toggle - Top Right */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
+      {/* This screen has no AppHeader, so it carries its own drag region — without one a
+          frameless window cannot be moved from the picker at all. */}
+      <div
+        data-tauri-drag-region
+        className="absolute inset-x-0 top-0 z-10 flex h-12 items-center justify-end gap-1 px-4"
+      >
         <GlobalAccentColorPicker />
         <ThemeToggle />
+        <WindowControls className="-mr-2 ml-1" />
       </div>
 
       <VersionBadge />

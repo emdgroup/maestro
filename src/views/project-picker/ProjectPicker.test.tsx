@@ -22,6 +22,11 @@ vi.mock("@/components/common/accent-color-picker/AccentColorPicker", () => ({
   ),
 }));
 
+// Reads the window-frame setting through TanStack Query, which this render has no client for.
+vi.mock("@/components/layout/window-chrome/WindowControls", () => ({
+  WindowControls: () => <div data-testid="window-controls">WindowControls</div>,
+}));
+
 vi.mock("./integrations-tab/IntegrationsTab", () => ({
   IntegrationsTab: () => <div data-testid="integrations-tab">IntegrationsTab</div>,
 }));
