@@ -1,4 +1,4 @@
-import { GitBranch, FolderOpen, Layers } from "lucide-react";
+import { GitBranchPlus, FolderRoot, FolderGit2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import type { WorkspaceMode } from "@/types/bindings";
 
@@ -8,25 +8,25 @@ const MODES: {
   value: WorkspaceMode;
   label: string;
   description: string;
-  icon: typeof GitBranch;
+  icon: typeof GitBranchPlus;
 }[] = [
   {
     value: "NewWorktree",
     label: "Create new worktree",
     description: "Create an isolated worktree on a branch",
-    icon: GitBranch,
+    icon: GitBranchPlus,
   },
   {
     value: "RepositoryDirectory",
     label: "Use the repository directory",
     description: "Work directly in the project directory (no worktree)",
-    icon: FolderOpen,
+    icon: FolderRoot,
   },
   {
     value: "ReuseWorkspace",
     label: "Reuse an existing workspace",
     description: "Work in a worktree that already exists",
-    icon: Layers,
+    icon: FolderGit2,
   },
 ];
 
@@ -62,12 +62,15 @@ export function WorkspaceModeSelect({
 
   return (
     <Select value={value} onValueChange={(next) => onChange(next as WorkspaceMode)}>
+      {/* `data-[size=default]:h-auto` rather than `h-auto`: the trigger's own height is set under
+          that variant, which outranks a plain utility, so an unqualified `h-auto` leaves the
+          two-line content overflowing a 36px box. */}
       <SelectTrigger
         id={id}
-        className="w-full h-auto py-2 px-3 items-start border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+        className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
       >
-        <span className="flex items-start gap-2 min-w-0 flex-1 text-left">
-          <SelectedIcon className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+        <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+          <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">
             <span className="block text-sm truncate">{selected.label}</span>
             <span className="block text-xs text-muted-foreground truncate">
@@ -81,14 +84,9 @@ export function WorkspaceModeSelect({
           const Icon = mode.icon;
           const allowed = isAllowed(mode.value);
           return (
-            <SelectItem
-              key={mode.value}
-              value={mode.value}
-              disabled={!allowed}
-              className="items-start py-2"
-            >
-              <span className="flex items-start gap-2 min-w-0">
-                <Icon className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            <SelectItem key={mode.value} value={mode.value} disabled={!allowed} className="py-2">
+              <span className="flex items-center gap-2 min-w-0">
+                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0">
                   <span className="block text-sm">{mode.label}</span>
                   <span className="block text-xs text-muted-foreground">
