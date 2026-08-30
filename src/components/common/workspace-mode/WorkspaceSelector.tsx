@@ -122,12 +122,13 @@ export function WorkspaceSelector({
               onSelectedWorktreeChange(reusable.find((wt) => String(wt.id) === value) ?? null)
             }
           >
+            {/* See `WorkspaceModeSelect` on why the height override carries the size variant. */}
             <SelectTrigger
               aria-label="Workspace"
-              className="w-full h-auto py-2 px-3 items-start gap-2 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+              className="w-full data-[size=default]:h-auto py-2 px-3 gap-2 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
             >
-              <span className="flex items-start gap-2 min-w-0 flex-1 text-left">
-                <Folder className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+              <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                <Folder className="size-3.5 shrink-0 text-muted-foreground" />
                 {selected ? (
                   <WorkspaceCard worktree={selected} now={now} compact />
                 ) : (
@@ -143,10 +144,10 @@ export function WorkspaceSelector({
                     key={wt.id}
                     value={String(wt.id)}
                     disabled={taken !== null}
-                    className="items-start py-2"
+                    className="py-2"
                   >
-                    <span className="flex items-start gap-2 min-w-0 overflow-hidden">
-                      <Folder className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                    <span className="flex items-center gap-2 min-w-0 overflow-hidden">
+                      <Folder className="size-3.5 shrink-0 text-muted-foreground" />
                       <WorkspaceCard worktree={wt} now={now} takenBy={taken} />
                     </span>
                   </SelectItem>

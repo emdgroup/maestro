@@ -4,7 +4,7 @@ import { motion, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import { LayoutDashboard, Bot, GitBranch, Settings, FolderOpen } from "lucide-react";
+import { LayoutDashboard, Bot, FolderGit2, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
@@ -38,7 +38,7 @@ const VIEWS: Array<{
 }> = [
   { id: "kanban", label: "Tasks", icon: LayoutDashboard },
   { id: "agents", label: "Agents", icon: Bot },
-  { id: "worktrees", label: "Worktrees", icon: GitBranch },
+  { id: "worktrees", label: "Worktrees", icon: FolderGit2 },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
