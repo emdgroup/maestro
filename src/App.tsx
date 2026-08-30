@@ -312,7 +312,9 @@ function App() {
                 activeTab !== "settings" && "pointer-events-none",
               )}
             >
-              <div className="h-full overflow-auto custom-scrollbar">
+              {/* Not scrollable: the settings surface is two panes and scrolls its own
+                  content column, so an outer scroll would drag the sidebar off screen. */}
+              <div className="h-full overflow-hidden">
                 <Suspense fallback={fallback}>
                   <SettingsView projectId={currentProject.id} connection={connection} />
                 </Suspense>

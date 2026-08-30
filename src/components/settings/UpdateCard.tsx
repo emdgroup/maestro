@@ -9,7 +9,8 @@ import { useUpdater } from "@/hooks/useUpdater";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import appIconUrl from "../../../src-tauri/icons/32x32.png?url";
 
-function formatLastChecked(date: Date | null): string {
+/** Shared with `UpdateStrip`, which shows the same relative time in its tooltip and popover. */
+export function formatLastChecked(date: Date | null): string {
   if (!date) return "Never";
   const diffMs = Date.now() - date.getTime();
   const mins = Math.floor(diffMs / 60_000);
@@ -120,13 +121,13 @@ export function UpdateCard() {
               <div className="flex items-center gap-1.5">
                 {status.phase === "error" ? (
                   <>
-                    <CircleX className="w-3 h-3 text-red-500 shrink-0" />
-                    <span className="text-[11px] font-semibold text-red-500">Error</span>
+                    <CircleX className="w-3 h-3 text-destructive shrink-0" />
+                    <span className="text-[11px] font-semibold text-destructive">Error</span>
                   </>
                 ) : (
                   <>
-                    <CircleCheck className="w-3 h-3 text-green-500 shrink-0" />
-                    <span className="text-[11px] font-semibold text-green-500">Up to date</span>
+                    <CircleCheck className="w-3 h-3 text-success shrink-0" />
+                    <span className="text-[11px] font-semibold text-success">Up to date</span>
                   </>
                 )}
               </div>

@@ -39,6 +39,8 @@ function renderSection(
   return onChange;
 }
 
+const workspaceSelect = () => screen.getByRole("combobox", { name: /default workspace/i });
+
 describe("ProjectDefaultsSection", () => {
   beforeEach(() => {
     isGitRepo.current = true;
@@ -50,7 +52,7 @@ describe("ProjectDefaultsSection", () => {
   it("persists the workspace default as soon as it is picked", async () => {
     const onChange = renderSection({ defaultWorkspaceMode: "NewWorktree" });
 
-    await userEvent.click(screen.getByRole("combobox"));
+    await userEvent.click(workspaceSelect());
     await userEvent.click(await screen.findByRole("option", { name: /repository directory/i }));
 
     expect(onChange).toHaveBeenCalledWith({ default_workspace_mode: "RepositoryDirectory" });
@@ -60,7 +62,7 @@ describe("ProjectDefaultsSection", () => {
   it("does not offer reusing a workspace as a project default", async () => {
     renderSection();
 
-    await userEvent.click(screen.getByRole("combobox"));
+    await userEvent.click(workspaceSelect());
 
     expect(screen.queryByRole("option", { name: /reuse an existing workspace/i })).toBeNull();
   });
@@ -82,12 +84,21 @@ describe("ProjectDefaultsSection", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  /// A default naming an agent that is no longer installed on this connection has no row to
+  /// mark, so the summary line underneath is the only thing still reporting what is stored —
+  /// and it is what tasks will go on using.
+  it("still names a default agent that is not installed", () => {
+    renderSection({ defaultAgent: "goose" });
+
+    expect(screen.getByText(/goose is used for new sessions/i)).toBeTruthy();
+  });
+
   /// A non-git project cannot have worktrees at all, so the choice is not offered.
   it("hides the workspace control outside a git repository", () => {
     isGitRepo.current = false;
 
     renderSection();
 
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: /default workspace/i })).toBeNull();
   });
 });
