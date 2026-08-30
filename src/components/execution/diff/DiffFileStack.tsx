@@ -5,13 +5,8 @@ import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 import { useCommentNavigation } from "./useCommentNavigation";
+import { LoadDiffPrompt } from "./LoadDiffPrompt";
 import { diffLineCount, planEagerBodies, UNKNOWN_FILE_LINES } from "./body-budget";
-import {
-  activeIndexAt,
-  SETTLE_MAX_FRAMES,
-  SETTLE_STABLE_FRAMES,
-  SETTLE_TOLERANCE,
-} from "./stack-scroll";
 import { displayItemPath, type DisplayItem } from "@/types/review";
 import type { DiffTarget } from "@/types/bindings";
 
@@ -47,32 +42,12 @@ export interface DiffReviewApi {
 /** Module-level so a review-less stack does not hand the comment hooks a new array each render. */
 const EMPTY_COMMENTS: PendingComment[] = [];
 
-/**
- * What a file over the review's budget shows instead of its diff.
- *
- * An explicit button rather than something triggered by scrolling. Building a diff is tens of
- * milliseconds of blocked main thread, and doing that while the user is scrolling is what makes a
- * stack feel bad — the work competes with the scroll every frame. A press is a moment the user
- * already expects to wait for, so the same cost reads as an answer rather than as jank.
- */
-function LoadDiffPrompt({ lines, onLoad }: { lines: number; onLoad: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-2 px-3 py-8">
-      {/* The size, and nothing about why. A file can end up here because it is large or simply
-          because the review ran out of budget before reaching it, and "not rendered by default"
-          next to a 125-line file reads as a judgement about that file. An untracked file has no
-          hunks to count at all — its body is fetched rather than derived from a diff. */}
-      {lines > 0 && <p className="text-xs text-muted-foreground">{lines.toLocaleString()} lines</p>}
-      <button
-        type="button"
-        onClick={onLoad}
-        className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted/40 transition-colors"
-      >
-        Load diff
-      </button>
-    </div>
-  );
-}
+/** A drift smaller than this counts as arrived, in pixels. */
+const SETTLE_TOLERANCE = 1;
+/** How many consecutive still frames end the settle loop. */
+const SETTLE_STABLE_FRAMES = 3;
+/** Upper bound on the settle loop, in frames — roughly a second and a half at 60fps. */
+const SETTLE_MAX_FRAMES = 90;
 
 export interface DiffFileStackHandle {
   /** Expand the file at `index`, scroll it to the top of the stack, and select it. */
@@ -116,9 +91,10 @@ interface DiffFileStackProps {
 /**
  * A review's files as a scrolling stack of cards.
  *
- * Shared by the session panel's Changes tab and task review. Scrolling selects the file under the
- * top of the viewport, and `navigateTo` scrolls to one — so a host can drive it from a sidebar, a
- * pair of chevrons, or a file picker, and get the same behaviour from each.
+ * Shared by the session panel's Changes tab and task review. `navigateTo` scrolls to a file and
+ * selects it, so a host can drive it from a sidebar, a pair of chevrons, or a file picker and get
+ * the same behaviour from each. Scrolling changes nothing: the selection is whatever was last
+ * picked, not wherever the viewport happens to be.
  */
 export function DiffFileStack({
   items,
@@ -151,18 +127,20 @@ export function DiffFileStack({
   } | null>(null);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const programmaticScrollRef = useRef(false);
   const settleFrameRef = useRef<number | null>(null);
 
   /**
    * Which files render their diff without being asked, and which the user has since asked for.
    *
    * Everything within the review's budget is built from the first frame — the document reaches its
-   * true height immediately and never changes it, which is what makes the scroll spy and
-   * `navigateTo` exact. Beyond the budget a card shows a button instead, and nothing about that is
-   * driven by scrolling: an attempt at building bodies as the viewport reached them made every
-   * scroll compete with tens of milliseconds of layout, and felt considerably worse than paying
-   * the whole cost up front.
+   * true height immediately and never changes it, which is what makes `navigateTo` land exactly.
+   * Beyond the budget a card shows a button instead, and nothing about that is driven by scrolling:
+   * an attempt at building bodies as the viewport reached them made every scroll compete with tens
+   * of milliseconds of layout, and felt considerably worse than paying the whole cost up front.
+   *
+   * An untracked file is counted at a nominal size here because its body is fetched rather than
+   * derived from the diff, so nothing knows how big it is yet. `UntrackedFileDiffViewer` applies
+   * the per-file cap itself once the content arrives.
    */
   const eagerBodies = useMemo(
     () =>
@@ -255,7 +233,6 @@ export function DiffFileStack({
     const container = scrollContainerRef.current;
     if (!container) return;
     if (settleFrameRef.current !== null) cancelAnimationFrame(settleFrameRef.current);
-    programmaticScrollRef.current = true;
 
     let stableFrames = 0;
     let frames = 0;
@@ -263,7 +240,6 @@ export function DiffFileStack({
 
     const finish = () => {
       settleFrameRef.current = null;
-      programmaticScrollRef.current = false;
     };
 
     const step = () => {
@@ -391,17 +367,14 @@ export function DiffFileStack({
     }
   }, []);
 
-  const handleScroll = useCallback(() => {
-    if (programmaticScrollRef.current) return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const containerTop = container.getBoundingClientRect().top;
-    const cardTops = items.map((item) => {
-      const element = sectionRefs.current.get(displayItemPath(item));
-      return element ? element.getBoundingClientRect().top : null;
-    });
-    onSelectedIndexChange(activeIndexAt(cardTops, containerTop));
-  }, [items, onSelectedIndexChange]);
+  /*
+   * Scrolling does not change the selection.
+   *
+   * A scroll spy used to move it to whichever card sat under the top of the viewport, which meant
+   * the sidebar highlight wandered while you read and the stack had to distinguish its own scrolls
+   * from the user's to avoid arguing with itself. Selection is now only ever what someone picked:
+   * a click in the tree, or a step between comments. It stays there until they pick something else.
+   */
 
   const comments = review?.comments ?? EMPTY_COMMENTS;
   const { commentNav } = useCommentNavigation({
@@ -474,7 +447,6 @@ export function DiffFileStack({
   return (
     <div
       ref={scrollContainerRef}
-      onScroll={handleScroll}
       className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-3 flex flex-col"
     >
       {loading && (

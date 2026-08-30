@@ -76,48 +76,22 @@ function renderStack(count: number, onSelectedIndexChange: (index: number) => vo
   return { ref, ...fakeLayout(view.container) };
 }
 
-describe("DiffFileStack scroll spy", () => {
+describe("DiffFileStack navigation", () => {
   /**
-   * The bug this file exists for. Clicking a file in the tree scrolls it exactly to the top of the
-   * scroller, and the selection then jumped back to the file above it.
+   * Selection is what someone picked, not where the viewport is.
    *
-   * The cause was a coordinate mismatch: cards were measured with `offsetTop`, which is relative to
-   * the nearest *positioned* ancestor — `ReviewLayout`'s container, not the scroller — while the
-   * boundary was `scrollTop`, which is relative to the scroller. Every card read high by the
-   * surface's inset, so a card sitting exactly at the top failed the comparison and lost.
+   * A scroll spy used to move it to whichever card sat under the top of the scroller, which meant
+   * the sidebar highlight wandered while you read, and the stack had to tell its own scrolling
+   * apart from the user's to keep from arguing with itself.
    */
-  it("selects the file scrolled exactly to the top, not the one above it", () => {
+  it("leaves the selection alone when the user scrolls", () => {
     const onSelectedIndexChange = vi.fn();
-    const { scrollTo } = renderStack(5, onSelectedIndexChange);
-
-    scrollTo(3 * CARD_HEIGHT);
-
-    expect(onSelectedIndexChange).toHaveBeenLastCalledWith(3);
-  });
-
-  it("keeps the previous file selected while the next one is still below the top", () => {
-    const onSelectedIndexChange = vi.fn();
-    const { scrollTo } = renderStack(5, onSelectedIndexChange);
-
-    scrollTo(3 * CARD_HEIGHT - 20);
-
-    expect(onSelectedIndexChange).toHaveBeenLastCalledWith(2);
-  });
-
-  /**
-   * `navigateTo` scrolls the stack itself, and the scroll events that produces must not be read
-   * back as the user choosing a different file — which is the other half of how a click on a
-   * distant file ended up somewhere else entirely.
-   */
-  it("ignores the scroll events its own navigation causes", () => {
-    const onSelectedIndexChange = vi.fn();
-    const { ref, scrollTo } = renderStack(5, onSelectedIndexChange);
+    const { ref, scrollTo } = renderStack(6, onSelectedIndexChange);
 
     act(() => ref.current!.navigateTo(4));
     expect(onSelectedIndexChange).toHaveBeenLastCalledWith(4);
-
-    // A scroll event arriving mid-flight, at a position the animation is only passing through.
     onSelectedIndexChange.mockClear();
+
     scrollTo(1 * CARD_HEIGHT);
 
     expect(onSelectedIndexChange).not.toHaveBeenCalled();
