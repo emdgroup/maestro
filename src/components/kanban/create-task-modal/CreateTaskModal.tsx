@@ -25,7 +25,14 @@ import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceS
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSelectedProject } from "@/store/projectStore";
+import {
+  MAESTRO_BRANCH_PREFIX,
+  slugifyName,
+  validateBranchSuffix,
+} from "@/lib/generateSessionName";
+import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
 import type {
+  BranchMode,
   RemoteIssue,
   Task,
   TaskPriority,
@@ -39,6 +46,9 @@ interface FormData {
   priority: TaskPriority;
   workspaceMode: WorkspaceMode;
   workspaceWorktreeId: number | null;
+  branchMode: BranchMode;
+  /** The part after `maestro/`. Empty submits null, leaving the name generated at spawn. */
+  branchSuffix: string;
 }
 
 interface PendingFile {
@@ -112,6 +122,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       priority: "None",
       workspaceMode: defaultWorkspaceMode,
       workspaceWorktreeId: null,
+      branchMode: "Create",
+      branchSuffix: "",
     },
   });
 
@@ -121,6 +133,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const priority = useWatch({ control, name: "priority" });
   const workspaceMode = useWatch({ control, name: "workspaceMode" });
   const workspaceWorktreeId = useWatch({ control, name: "workspaceWorktreeId" });
+  const branchMode = useWatch({ control, name: "branchMode" });
+  const branchSuffix = useWatch({ control, name: "branchSuffix" });
+
+  // A preview, not the value submitted: the id leading a task's branch does not exist until the
+  // task does, so an untouched field submits null and `useExecuteTask` builds the real name.
+  const generatedBranchSuffix = `<id>-${slugifyName(title) || "task"}`;
 
   // Opening or closing the modal re-seeds the whole form. This component's own state is
   // adjusted during render so a reopened dialog never paints the previous task's fields;
@@ -146,6 +164,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         priority: "None",
         workspaceMode: defaultWorkspaceMode,
         workspaceWorktreeId: null,
+        branchMode: "Create",
+        branchSuffix: "",
       });
     } else {
       reset();
@@ -173,9 +193,17 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       setError("Title must be at least 3 characters");
       return;
     }
-    const filesToAttach = [...pendingFiles];
     // A non-git project offers no workspace choice, so it can only be the project directory.
     const mode: WorkspaceMode = isGitRepo ? data.workspaceMode : "RepositoryDirectory";
+    // The field shows this inline too; repeated here because nothing else stops the submit.
+    if (mode === "NewWorktree" && data.branchMode === "Create") {
+      const invalid = validateBranchSuffix(data.branchSuffix.trim());
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
+    }
+    const filesToAttach = [...pendingFiles];
     const reused =
       mode === "ReuseWorkspace"
         ? ((worktrees ?? []).find((wt) => wt.id === data.workspaceWorktreeId) ?? null)
@@ -200,6 +228,12 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         auto_approve: false,
         workspace_mode: mode,
         workspace_worktree_id: reused?.id ?? null,
+        workspace_branch_mode: data.branchMode,
+        // Blank means "generate it from the task when the worktree is created", which is what the
+        // placeholder was previewing.
+        workspace_branch: data.branchSuffix.trim()
+          ? `${MAESTRO_BRANCH_PREFIX}${data.branchSuffix.trim()}`
+          : null,
         model_override: null,
       },
       {
@@ -320,9 +354,17 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                   name="baseBranch"
                   control={control}
                   rules={{
-                    // Only the mode that creates a branch needs one chosen.
-                    validate: (value) =>
-                      workspaceMode !== "NewWorktree" || !!value || "Base branch is required",
+                    // Only the mode that creates a worktree needs a branch chosen — and only the
+                    // one that checks a branch out can collide with a worktree already on it.
+                    validate: (value) => {
+                      if (workspaceMode !== "NewWorktree") return true;
+                      if (!value) return "Base branch is required";
+                      if (branchMode !== "Checkout") return true;
+                      return (
+                        findBranchConflict(value, worktrees ?? [], project?.path ?? "") === null ||
+                        "That branch is already checked out somewhere else"
+                      );
+                    },
                   }}
                   render={({ field: { value, onChange } }) => (
                     <WorkspaceSelector
@@ -331,6 +373,11 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       baseBranch={value}
                       onBaseBranchChange={onChange}
                       baseBranchError={errors.baseBranch?.message}
+                      branchMode={branchMode}
+                      onBranchModeChange={(m) => setValue("branchMode", m)}
+                      branchSuffix={branchSuffix}
+                      onBranchSuffixChange={(s) => setValue("branchSuffix", s)}
+                      generatedBranchSuffix={generatedBranchSuffix}
                       worktrees={worktrees ?? []}
                       repoPath={project?.path ?? ""}
                       selectedWorktreeId={workspaceWorktreeId}

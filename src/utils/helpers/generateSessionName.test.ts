@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { slugifyName, taskBranchName, MAESTRO_BRANCH_PREFIX } from "./generateSessionName";
+import {
+  slugifyName,
+  taskBranchName,
+  validateBranchSuffix,
+  MAESTRO_BRANCH_PREFIX,
+} from "./generateSessionName";
 
 describe("slugifyName", () => {
   it("lowercases and kebabs", () => {
@@ -42,5 +47,41 @@ describe("taskBranchName", () => {
   it("stays a valid ref when the title slugs to nothing", () => {
     // Git accepts a trailing dash; what it would reject is an empty final segment.
     expect(taskBranchName(9, "!!!")).toBe("maestro/9-");
+  });
+});
+
+describe("validateBranchSuffix", () => {
+  it.each(["fix-login", "42-fix-login-redirect", "feature/nested/name", "v1.2.3", "UPPER-and-123"])(
+    "accepts %s",
+    (suffix) => {
+      expect(validateBranchSuffix(suffix)).toBeNull();
+    },
+  );
+
+  /// Empty means "use the generated name" — the state an untouched field is in — so it is not an
+  /// error here. Callers that require a name check for emptiness themselves.
+  it("accepts an empty suffix", () => {
+    expect(validateBranchSuffix("")).toBeNull();
+  });
+
+  it.each([
+    ["with space", "spaces"],
+    ["tilde~here", "~"],
+    ["caret^here", "^"],
+    ["colon:here", ":"],
+    ["question?here", "?"],
+    ["star*here", "*"],
+    ["bracket[here", "["],
+    ["back\\slash", "\\"],
+    ["/leading", "start or end with /"],
+    ["trailing/", "start or end with /"],
+    ["double//slash", "//"],
+    [".leading", "start or end with ."],
+    ["trailing.", "start or end with ."],
+    ["dot..dot", ".."],
+    ["name.lock", ".lock"],
+    ["nested.lock/tail", ".lock"],
+  ])("rejects %s", (suffix, because) => {
+    expect(validateBranchSuffix(suffix)).toContain(because);
   });
 });

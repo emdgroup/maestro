@@ -9,11 +9,20 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
-import { Label } from "@/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { NewWorktreeFields } from "@/components/common/workspace-mode/NewWorktreeFields";
+import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
+import {
+  generateSessionName,
+  validateBranchSuffix,
+  MAESTRO_BRANCH_PREFIX,
+} from "@/lib/generateSessionName";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
-import { useCreateWorktreeMutation } from "@/services/worktree.service";
+import {
+  useCreateWorktreeMutation,
+  useWorktreesQuery,
+  worktreeQueryKeys,
+} from "@/services/worktree.service";
+import type { BranchMode } from "@/types/bindings";
 
 interface CreateWorktreeDialogProps {
   open: boolean;
@@ -22,6 +31,14 @@ interface CreateWorktreeDialogProps {
   repoPath: string;
 }
 
+/**
+ * Creating a workspace from the Workspaces view.
+ *
+ * Shares `NewWorktreeFields` with the task and session dialogs so the same question is asked the
+ * same way in all three. It passes no `onUseExistingWorkspace`: this dialog exists to create a
+ * workspace and has no mode select to switch, so "use the one that already exists" is not an offer
+ * it can make.
+ */
 export function CreateWorktreeDialog({
   open,
   onOpenChange,
@@ -30,12 +47,15 @@ export function CreateWorktreeDialog({
 }: CreateWorktreeDialogProps) {
   const queryClient = useQueryClient();
   const [baseBranch, setBaseBranch] = useState("");
-  const [newBranchName, setNewBranchName] = useState("");
+  const [branchMode, setBranchMode] = useState<BranchMode>("Create");
+  const [branchSuffix, setBranchSuffix] = useState("");
+  // Regenerated per open rather than per render, so the placeholder does not churn while typing.
+  const [generatedSuffix, setGeneratedSuffix] = useState(generateSessionName);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: branchData } = useProjectBranchesQuery(projectId);
-  const branches = branchData ? [...branchData[0].local, ...branchData[0].remote] : [];
   const currentBranch = branchData?.[1] ?? "main";
+  const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const createMutation = useCreateWorktreeMutation();
 
   useEffect(() => {
@@ -43,57 +63,51 @@ export function CreateWorktreeDialog({
     void queryClient.invalidateQueries({
       queryKey: [...taskQueryKeys.base, "branches", projectId],
     });
+    // The conflict check is only as fresh as this list, and a worktree may have been created since
+    // the view last loaded.
+    void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
     setBaseBranch(currentBranch);
-    setNewBranchName("");
+    setBranchMode("Create");
+    setBranchSuffix("");
+    setGeneratedSuffix(generateSessionName());
     setCreateError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const typed = branchSuffix.trim();
+  const suffixError = branchMode === "Create" ? validateBranchSuffix(typed) : null;
+  const conflict =
+    branchMode === "Checkout" ? findBranchConflict(baseBranch, worktrees, repoPath) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Worktree</DialogTitle>
+          <DialogTitle>Create Workspace</DialogTitle>
           <DialogDescription>
-            Check out a branch in a new git worktree. Optionally create a new branch from it.
+            A worktree of its own, on a new branch or on one that already exists.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="base-branch">Base branch</Label>
-            <Select value={baseBranch} onValueChange={(v) => setBaseBranch(v ?? "")}>
-              <SelectTrigger id="base-branch">
-                <SelectValue placeholder="Select a branch" />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-branch-name">New branch name (optional)</Label>
-            <Input
-              id="new-branch-name"
-              placeholder="feature/my-branch"
-              value={newBranchName}
-              onChange={(e) => setNewBranchName(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank to check out the base branch directly.
-            </p>
-          </div>
-          {createError && <p className="text-sm text-destructive">{createError}</p>}
+        <div className="py-2">
+          <NewWorktreeFields
+            branchMode={branchMode}
+            onBranchModeChange={setBranchMode}
+            branch={baseBranch}
+            onBranchChange={setBaseBranch}
+            branchSuffix={branchSuffix}
+            onBranchSuffixChange={setBranchSuffix}
+            generatedSuffix={generatedSuffix}
+            worktrees={worktrees}
+            repoPath={repoPath}
+          />
+          {createError && <p className="text-sm text-destructive mt-3">{createError}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
-            disabled={!baseBranch || createMutation.isPending}
+            disabled={!baseBranch || !!suffixError || conflict !== null || createMutation.isPending}
             onClick={() => {
               setCreateError(null);
               createMutation.mutate(
@@ -101,19 +115,17 @@ export function CreateWorktreeDialog({
                   projectId,
                   taskId: null,
                   baseBranch,
-                  newBranchName: newBranchName.trim() || null,
+                  newBranchName:
+                    branchMode === "Checkout"
+                      ? null
+                      : `${MAESTRO_BRANCH_PREFIX}${typed || generatedSuffix}`,
+                  // Only the generated name may be made unique — a typed one is used verbatim.
+                  uniqueSuffix: branchMode === "Create" && !typed,
                   repoPath,
                 },
                 {
-                  onSuccess: () => {
-                    onOpenChange(false);
-                    setBaseBranch("");
-                    setNewBranchName("");
-                    setCreateError(null);
-                  },
-                  onError: (error) => {
-                    setCreateError(String(error));
-                  },
+                  onSuccess: () => onOpenChange(false),
+                  onError: (error) => setCreateError(String(error)),
                 },
               );
             }}

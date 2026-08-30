@@ -11,7 +11,8 @@ use std::str::FromStr;
 /// auto_approve(20), workspace_mode(21), agent_id(22), permission_mode_override(23),
 /// execution_start_sha(24), phase(25), phase_status(26), ball(27), completion(28),
 /// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
-/// fix_rounds(33), pull_request_ci(34), profile_overrides(35), workspace_worktree_id(36)
+/// fix_rounds(33), pull_request_ci(34), profile_overrides(35), workspace_worktree_id(36),
+/// workspace_branch_mode(37), workspace_branch(38)
 pub const TASK_SELECT: &str =
     "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
@@ -20,7 +21,8 @@ pub const TASK_SELECT: &str =
      auto_approve, workspace_mode, agent_id, permission_mode_override, \
      execution_start_sha, phase, phase_status, ball, completion, execute_requested_at, \
      pull_request_url, pull_request_number, review_rounds, fix_rounds, \
-     pull_request_ci, profile_overrides, workspace_worktree_id FROM tasks";
+     pull_request_ci, profile_overrides, workspace_worktree_id, \
+     workspace_branch_mode, workspace_branch FROM tasks";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -63,6 +65,14 @@ pub struct Task {
     /// the executor tells "pinned to a workspace that no longer exists" from "never pinned".
     #[specta(optional)]
     pub workspace_worktree_id: Option<i32>,
+    /// For `NewWorktree`, whether the worktree gets a branch of its own or checks out one that
+    /// already exists. Meaningless in the other two modes, which create no branch either way.
+    pub workspace_branch_mode: BranchMode,
+    /// The branch name the user chose, for `BranchMode::Create` only. `None` means the name is
+    /// generated from the task when the worktree is created, which is what a task that never
+    /// touched the field means.
+    #[specta(optional)]
+    pub workspace_branch: Option<String>,
     #[specta(optional)]
     pub agent_id: Option<String>,
     #[specta(optional)]
@@ -236,6 +246,12 @@ impl Task {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(WorkspaceMode::NewWorktree),
             workspace_worktree_id: row.get(36)?,
+            workspace_branch_mode: row
+                .get::<_, String>(37)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(BranchMode::Create),
+            workspace_branch: row.get(38)?,
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
             execution_start_sha: row.get(24)?,
@@ -304,6 +320,43 @@ impl FromStr for WorkspaceMode {
             "RepositoryDirectory" => Ok(WorkspaceMode::RepositoryDirectory),
             "ReuseWorkspace" => Ok(WorkspaceMode::ReuseWorkspace),
             _ => Ok(WorkspaceMode::NewWorktree),
+        }
+    }
+}
+
+/// Which branch a `NewWorktree` workspace ends up on: one created for it, or one that already
+/// exists.
+///
+/// Only `Create` needs a companion — the name to give the branch — which is why the task carries
+/// `workspace_branch` beside this rather than encoding the name here. `Checkout` needs nothing: the
+/// branch it checks out is the task's `base_branch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum BranchMode {
+    Create,
+    Checkout,
+}
+
+impl BranchMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BranchMode::Create => "Create",
+            BranchMode::Checkout => "Checkout",
+        }
+    }
+}
+
+impl FromStr for BranchMode {
+    type Err = ();
+
+    /// Unknown values fall back to `Create`, matching the column default. Same reasoning as
+    /// `WorkspaceMode`: an unreadable value must not resolve to the option that puts an agent onto
+    /// a branch somebody else may be working on.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Checkout" => Ok(BranchMode::Checkout),
+            _ => Ok(BranchMode::Create),
         }
     }
 }

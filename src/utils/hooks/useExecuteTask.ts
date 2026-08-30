@@ -290,7 +290,13 @@ export function useExecuteTask(
                 repoPath: projectPath,
                 taskId: task.id,
                 baseBranch: task.base_branch,
-                newBranchName: taskBranchName(task.id, task.title),
+                // Null checks `base_branch` out where it is. Otherwise the name the user chose,
+                // falling back to one generated from the task — which is what every task that
+                // never touched the field carries.
+                newBranchName:
+                  task.workspace_branch_mode === "Checkout"
+                    ? null
+                    : (task.workspace_branch ?? taskBranchName(task.id, task.title)),
               });
 
       // Only for an agent that will write, and only when somebody is there to answer. The prompt

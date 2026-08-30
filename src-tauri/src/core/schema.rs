@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 26;
+pub const SCHEMA_VERSION: u32 = 27;
 
-pub const SCHEMA_V26_FULL: &str = r#"
+pub const SCHEMA_V27_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- when that worktree goes away, which is what makes "the workspace you picked is gone" a state
     -- the executor can detect rather than a dangling id.
     workspace_worktree_id INTEGER REFERENCES worktrees(id) ON DELETE SET NULL,
+    -- For NewWorktree, whether the worktree gets a branch of its own or checks out an existing one:
+    -- 'Create' or 'Checkout'. Checkout needs no branch column of its own, because the branch it
+    -- checks out is base_branch.
+    workspace_branch_mode TEXT NOT NULL DEFAULT 'Create',
+    -- The branch name the user chose, for 'Create' only. NULL means "generate it from the task at
+    -- spawn time", which is what every task predating this column meant and what an untouched
+    -- field still submits.
+    workspace_branch TEXT,
     agent_id TEXT,
     permission_mode_override TEXT,
     execution_start_sha TEXT,
@@ -326,7 +334,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V26_FULL)?;
+        conn.execute_batch(SCHEMA_V27_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -347,7 +355,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V26_FULL)?;
+        conn.execute_batch(SCHEMA_V27_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -381,6 +389,33 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     }
     if from < 26 {
         migrate_to_v26(conn)?;
+    }
+    if from < 27 {
+        migrate_to_v27(conn)?;
+    }
+    Ok(())
+}
+
+/// Let a `NewWorktree` task say *which* branch it wants, and whether that branch is one to create
+/// or one that already exists.
+///
+/// Both defaults are what every existing task already meant, so there is nothing to backfill:
+/// `Create` is the only thing the previous build could do, and a NULL `workspace_branch` keeps the
+/// name being generated from the task at spawn time exactly as before.
+fn migrate_to_v27(conn: &Connection) -> SqlResult<()> {
+    for (name, definition) in [
+        ("workspace_branch_mode", "workspace_branch_mode TEXT NOT NULL DEFAULT 'Create'"),
+        ("workspace_branch", "workspace_branch TEXT"),
+    ] {
+        let column_exists: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = ?",
+            [name],
+            |row| row.get::<_, i32>(0),
+        )? > 0;
+
+        if !column_exists {
+            conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {};", definition))?;
+        }
     }
     Ok(())
 }
@@ -593,7 +628,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
         assert!(tables.contains(&"docker_connections".to_string()));
 
         // Verify worktrees table has expected columns
@@ -874,6 +909,59 @@ mod tests {
         conn.execute("PRAGMA user_version = 25", []).unwrap();
         initialize_schema(&conn).unwrap();
         assert_eq!(mode(2), "RepositoryDirectory");
+    }
+
+    /// v26 → v27 adds the branch choice. There is nothing to backfill, so the point of the test is
+    /// that an existing task keeps its rows *and* comes out meaning what it meant before: create a
+    /// branch, named from the task at spawn time.
+    #[test]
+    fn test_migration_to_v27_defaults_existing_tasks_to_a_generated_new_branch() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        conn.execute_batch(
+            "ALTER TABLE tasks DROP COLUMN workspace_branch_mode;
+             ALTER TABLE tasks DROP COLUMN workspace_branch;",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, path, created_at, updated_at) \
+             VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, status, base_branch, created_at, updated_at) \
+             VALUES (1, 1, 'existing', 'Planning', 'main', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("PRAGMA user_version = 26", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let row: (String, Option<String>) = conn
+            .query_row(
+                "SELECT workspace_branch_mode, workspace_branch FROM tasks WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(row.0, "Create");
+        assert_eq!(row.1, None, "a NULL name is what keeps the name generated at spawn");
+
+        // Re-running the migration on an already-migrated database must be a no-op, not an error.
+        conn.execute("PRAGMA user_version = 26", []).unwrap();
+        initialize_schema(&conn).unwrap();
+        assert_eq!(
+            conn.query_row::<String, _, _>(
+                "SELECT workspace_branch_mode FROM tasks WHERE id = 1",
+                [],
+                |r| r.get(0)
+            )
+            .unwrap(),
+            "Create"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use chrono::Utc;
-use crate::models::{Task, TaskStatus, WorkspaceMode, TASK_SELECT};
+use crate::models::{BranchMode, Task, TaskStatus, WorkspaceMode, TASK_SELECT};
 use crate::core::AppState;
 use crate::task::transition::{self, TaskTransition};
 
@@ -41,6 +41,8 @@ fn create_task_impl(
     auto_approve: bool,
     workspace_mode: WorkspaceMode,
     workspace_worktree_id: Option<i32>,
+    workspace_branch_mode: BranchMode,
+    workspace_branch: Option<String>,
     model_override: Option<String>,
 ) -> Result<Task, String> {
     let trimmed_title = title.trim();
@@ -61,8 +63,9 @@ fn create_task_impl(
 
     conn.execute(
         "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
-         agent_id, priority, auto_approve, workspace_mode, workspace_worktree_id, model_override, labels, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         agent_id, priority, auto_approve, workspace_mode, workspace_worktree_id, \
+         workspace_branch_mode, workspace_branch, model_override, labels, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             project_id, &title, &description, &skills_json, "Planning", &base_branch,
             &agent_id,
@@ -72,6 +75,13 @@ fn create_task_impl(
             // A pin only means something for the mode that has one.
             match workspace_mode {
                 WorkspaceMode::ReuseWorkspace => workspace_worktree_id,
+                _ => None,
+            },
+            workspace_branch_mode.as_str(),
+            // Likewise a branch name: only the mode that creates a worktree picks a branch, and
+            // only `Create` names one.
+            match (workspace_mode, workspace_branch_mode) {
+                (WorkspaceMode::NewWorktree, BranchMode::Create) => workspace_branch.as_deref(),
                 _ => None,
             },
             &model_override,
@@ -100,6 +110,9 @@ pub struct CreateTaskRequest {
     pub auto_approve: bool,
     pub workspace_mode: WorkspaceMode,
     pub workspace_worktree_id: Option<i32>,
+    pub workspace_branch_mode: BranchMode,
+    /// `None` leaves the branch name to be generated from the task at spawn time.
+    pub workspace_branch: Option<String>,
     pub model_override: Option<String>,
 }
 
@@ -124,6 +137,8 @@ pub fn create_task(
         request.auto_approve,
         request.workspace_mode,
         request.workspace_worktree_id,
+        request.workspace_branch_mode,
+        request.workspace_branch,
         request.model_override,
     )?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -148,6 +163,10 @@ pub struct UpdateTaskRequest {
     /// `ReuseWorkspace` cannot leave a pin behind that nothing will ever look at again.
     pub workspace_mode: Option<WorkspaceMode>,
     pub workspace_worktree_id: Option<i32>,
+    /// Writing the branch mode also writes `workspace_branch`, for the same reason: switching to
+    /// `Checkout` must not leave the name of a branch nobody is going to create.
+    pub workspace_branch_mode: Option<BranchMode>,
+    pub workspace_branch: Option<String>,
 }
 
 /// Update a task's status or other fields
@@ -222,6 +241,15 @@ fn update_task_impl(
         params.push(Box::new(match mode {
             WorkspaceMode::ReuseWorkspace => updates.workspace_worktree_id,
             _ => None,
+        }));
+    }
+    if let Some(branch_mode) = updates.workspace_branch_mode {
+        set_parts.push("workspace_branch_mode = ?".to_string());
+        params.push(Box::new(branch_mode.as_str()));
+        set_parts.push("workspace_branch = ?".to_string());
+        params.push(Box::new(match branch_mode {
+            BranchMode::Create => updates.workspace_branch.clone(),
+            BranchMode::Checkout => None,
         }));
     }
 
@@ -444,7 +472,7 @@ mod tests {
             &conn, project_id, "Valid Task Name".to_string(),
             None,
             vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap();
         assert!(task.profile_overrides.is_none(), "a new task defers to the project");
@@ -475,7 +503,7 @@ mod tests {
             &conn, project_id, "ab".to_string(),
             Some("valid description here".to_string()),
             vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap_err();
         assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
@@ -489,7 +517,7 @@ mod tests {
             &conn, project_id, "Valid Task Name".to_string(),
             None,
             vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -505,7 +533,7 @@ mod tests {
             "Valid Task Name".to_string(),
             Some("This is a valid description.".to_string()),
             vec!["rust".to_string()], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -522,7 +550,7 @@ mod tests {
             "Task to Delete".to_string(),
             Some("This task will be deleted.".to_string()),
             vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap();
 
@@ -539,7 +567,7 @@ mod tests {
         let task = create_task_impl(
             conn, project_id, "Archived task".to_string(), None,
             vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, None,
+            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
         )
         .unwrap();
         conn.execute(
