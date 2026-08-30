@@ -94,6 +94,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings = load_settings(&conn).unwrap_or_default();
     setup_logging(app, &settings);
 
+    // The window is created decorated and stays hidden until the frontend calls `show()`, so
+    // dropping the frame here costs no visible flash.
+    maestro_lib::settings::handlers::apply_window_frame(app.handle(), settings.native_window_frame);
+
     // First lines of every log: the facts a bug report is useless without. The level and directory
     // are among them — they are user-settable, so a reader cannot assume the defaults.
     log::info!(

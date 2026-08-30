@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::models::AppSettings;
 use crate::settings::models::LogLocation;
@@ -21,6 +21,35 @@ pub fn get_linux_install_type() -> &'static str {
         "native"
     }
 }
+
+/// Put the main window on the OS frame or on Maestro's own title bar.
+///
+/// Called from `setup` while the window is still hidden, and again on every settings save. The
+/// `is_decorated` check is what keeps the second case cheap: a save fires for unrelated changes
+/// like the theme, and Windows repaints the whole frame on every `set_decorations` call.
+///
+/// A frame that failed to change is not worth failing a settings save over, so this reports and
+/// returns rather than propagating.
+#[cfg(not(target_os = "macos"))]
+pub fn apply_window_frame(app: &AppHandle, native_frame: bool) {
+    let Some(window) = app.get_webview_window("main") else {
+        log::warn!("No main window to apply the window frame to");
+        return;
+    };
+    match window.is_decorated() {
+        Ok(current) if current == native_frame => {}
+        Ok(_) => {
+            if let Err(e) = window.set_decorations(native_frame) {
+                log::warn!("Failed to set window decorations to {}: {}", native_frame, e);
+            }
+        }
+        Err(e) => log::warn!("Failed to read the window decoration state: {}", e),
+    }
+}
+
+/// macOS keeps its native title bar either way, so there is nothing to switch.
+#[cfg(target_os = "macos")]
+pub fn apply_window_frame(_app: &AppHandle, _native_frame: bool) {}
 
 /// Get current application settings from the database
 #[tauri::command]
@@ -45,6 +74,8 @@ pub fn save_settings(
     // The level is a global gate, so it takes effect without a restart. The directory cannot —
     // fern's targets are fixed once built — which is why the UI says so.
     logging::apply_stored_level(settings.log_level.as_deref());
+
+    apply_window_frame(&app_state.app_handle, settings.native_window_frame);
 
     // Switching auto-mode on, or raising the concurrency limit, has to be able to start work
     // immediately. Without this the change would sit inert until a task happened to move, which

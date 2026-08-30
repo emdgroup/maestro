@@ -7,6 +7,7 @@ import { ToasterRoot } from "@/components/common/error-toast/ErrorToast";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { AppErrorBoundary } from "@/components/common/AppErrorBoundary";
 import { AppContextMenu } from "@/components/common/context-menu/AppContextMenu";
+import { WindowResizeHandles } from "@/components/layout/window-chrome/WindowResizeHandles";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Detect and apply system theme synchronously before React renders
@@ -24,6 +25,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         {/* Mounted here rather than inside App so it also covers the loading and
             project-picker screens, which App returns early for. */}
         <AppContextMenu />
+        {/* Mounted alongside AppContextMenu for the same reason: the window must stay
+            resizable on the loading and project-picker screens too. */}
+        <WindowResizeHandles />
         <AppErrorBoundary>
           <App />
         </AppErrorBoundary>
