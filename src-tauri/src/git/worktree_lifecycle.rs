@@ -381,6 +381,65 @@ pub async fn live_session_cwds(
     live_cwds
 }
 
+/// Delete directories under `.maestro/worktrees/` that git no longer lists and that hold no
+/// worktree of their own.
+///
+/// This is the second half of [`crate::git::delete_worktree`]: when something outside Maestro
+/// holds the directory open at the moment a session ends — on Windows, a process the agent
+/// spawned whose working directory it still is — git unregisters the worktree and the directory
+/// survives. Nothing then refers to it, so without a sweep driven by the filesystem it is
+/// invisible and permanent.
+///
+/// The `.git` check is what makes this safe to run unattended. Every worktree has one, so a
+/// maestro-named directory without it is not a worktree by any definition, whatever bookkeeping
+/// says; with git not listing the path and no session working inside it, there is nothing left
+/// that could be losing work. Best-effort throughout — this runs behind a project open, and a
+/// directory that is still held is simply left for the next pass.
+async fn sweep_leftover_worktree_dirs(
+    repo_path: &str,
+    registered: &HashSet<String>,
+    live_cwds: &[String],
+) {
+    let root = format!("{}/{}", repo_path, WORKTREE_DIR);
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("[git] could not read {}: {}", root, e);
+            }
+            return;
+        }
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if !entry.file_type().await.map(|kind| kind.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let relative = format!("{}/{}", WORKTREE_DIR, entry.file_name().to_string_lossy());
+        if !crate::models::is_maestro_created_worktree(&relative) {
+            continue;
+        }
+
+        let abs_path = format!("{}/{}", repo_path, relative);
+        if registered.contains(&abs_path) {
+            continue;
+        }
+        if live_cwds.iter().any(|cwd| path_is_within(cwd, &abs_path)) {
+            log::debug!("keeping leftover {}: a session is running in it", abs_path);
+            continue;
+        }
+        if tokio::fs::metadata(format!("{}/.git", abs_path)).await.is_ok() {
+            log::warn!("keeping leftover {}: git does not list it but it still has a .git", abs_path);
+            continue;
+        }
+
+        match tokio::fs::remove_dir_all(&abs_path).await {
+            Ok(()) => log::info!("[git] removed leftover worktree directory {}", abs_path),
+            Err(e) => log::debug!("[git] leftover {} is still held open: {}", abs_path, e),
+        }
+    }
+}
+
 // ============================================================================
 // cleanup_zombie_worktrees — REQ-34, REQ-35, REQ-36
 // ============================================================================
@@ -415,9 +474,9 @@ pub async fn cleanup_zombie_worktrees(
     // A session worktree carries `task_id IS NULL`, so every one of them is a candidate here.
     // What separates a zombie from a live session is whether anything is using the directory,
     // which is checked below — not the row's age.
-    if candidates.is_empty() {
-        return Ok(0);
-    }
+    //
+    // No early return on an empty candidate list: the directory sweep below is driven by what is
+    // on disk, and a leftover directory has no row precisely because the row was already removed.
 
     // Resolve project and git connection (local vs remote SSH)
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
@@ -427,6 +486,10 @@ pub async fn cleanup_zombie_worktrees(
     // Get on-disk worktree paths to confirm existence before deleting
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
     let disk_paths: HashSet<String> = disk_worktrees.iter().map(|wt| wt.path.clone()).collect();
+
+    if git_conn.is_on_this_machine() {
+        sweep_leftover_worktree_dirs(&repo_path, &disk_paths, &live_cwds).await;
+    }
 
     let mut to_delete: Vec<(i32, &str, &str)> = Vec::new();
     for (id, relative_path, branch_name) in &candidates {
@@ -818,8 +881,13 @@ pub async fn prune_branches(
 mod tests {
     use std::collections::HashSet;
 
-    use super::{branch_has_no_own_commits, canonicalize_repo_path, path_is_within, prunable_maestro_branches};
-    use crate::models::{is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task};
+    use super::{
+        branch_has_no_own_commits, canonicalize_repo_path, path_is_within,
+        prunable_maestro_branches, sweep_leftover_worktree_dirs,
+    };
+    use crate::models::{
+        is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task, WORKTREE_DIR,
+    };
 
     #[test]
     fn only_maestro_conventions_count_as_auto_created() {
@@ -907,6 +975,47 @@ mod tests {
         assert!(!candidates[1].merged);
         assert_eq!(candidates[1].commits, 0);
         assert_eq!(candidates[1].diff_stat, None);
+    }
+
+    /// The sweep deletes directories outright, so every reason one might still be wanted has to
+    /// hold it back — and the one genuinely dead shape has to actually go, or the leftovers this
+    /// exists to collect stay forever.
+    #[tokio::test]
+    async fn only_unregistered_maestro_dirs_without_a_git_entry_are_swept() {
+        let temp = tempfile::tempdir().expect("temp repo");
+        let repo = temp.path().to_string_lossy().replace('\\', "/");
+        let worktrees = format!("{}/{}", repo, WORKTREE_DIR);
+
+        for name in ["session-1", "session-2", "session-3", "session-4", "task-5", "scratch"] {
+            std::fs::create_dir_all(format!("{}/{}", worktrees, name)).expect("create dir");
+        }
+        // A real worktree git has simply not been asked about yet.
+        std::fs::write(format!("{}/session-2/.git", worktrees), "gitdir: elsewhere").expect("write");
+        // Not empty, but still a leftover: git deletes the `.git` file before the tree, so a
+        // partial removal leaves content behind without one.
+        std::fs::write(format!("{}/task-5/README.md", worktrees), "left over").expect("write");
+
+        let registered = HashSet::from([format!("{}/{}/session-3", repo, WORKTREE_DIR)]);
+        let live_cwds = vec![format!("{}/{}/session-4/src", repo, WORKTREE_DIR)];
+        sweep_leftover_worktree_dirs(&repo, &registered, &live_cwds).await;
+
+        let survives = |name: &str| std::path::Path::new(&format!("{}/{}", worktrees, name)).exists();
+        assert!(!survives("session-1"), "an unregistered, unused, .git-less directory is dead");
+        assert!(!survives("task-5"), "leftover content does not make it live");
+        assert!(survives("session-2"), "a directory with a .git is a worktree");
+        assert!(survives("session-3"), "git still lists it");
+        assert!(survives("session-4"), "a session is working inside it");
+        assert!(survives("scratch"), "not a name maestro creates");
+    }
+
+    /// A repository that has never had a worktree has no directory to read, which is not a
+    /// failure and must not be logged as one.
+    #[tokio::test]
+    async fn sweeping_a_repo_without_a_worktree_dir_is_a_no_op() {
+        let temp = tempfile::tempdir().expect("temp repo");
+        let repo = temp.path().to_string_lossy().replace('\\', "/");
+        sweep_leftover_worktree_dirs(&repo, &HashSet::new(), &[]).await;
+        assert!(temp.path().exists());
     }
 
     /// Worktree paths are built as `{repo}/{relative}` strings; an extended-length `\?\` repo

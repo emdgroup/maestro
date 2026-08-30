@@ -39,6 +39,12 @@ pub async fn create_worktree(
 /// branch is left alone: callers decide whether to delete it, and `cleanup_worktree_if_clean`
 /// must be able to inspect it after the working tree is gone.
 ///
+/// `Ok` means git no longer tracks the worktree — not that the directory is necessarily gone. A
+/// directory can survive removal while a process outside Maestro holds it open, and that outcome
+/// must not be reported as failure: everything the caller does next (deleting the branch, the DB
+/// row) is still both valid and necessary, and failing here strands all of it behind an error
+/// about a directory. `cleanup_zombie_worktrees` sweeps the leftover on the next project open.
+///
 /// Pair this with [`prune_remote_refs`] once the caller is done removing worktrees.
 pub async fn delete_worktree(
     conn: &GitConnection,
@@ -60,14 +66,65 @@ pub async fn delete_worktree(
         return Err(git_error);
     };
 
-    match tokio::fs::remove_dir_all(&absolute).await {
-        Ok(()) => log::warn!("[git] worktree remove failed ({git_error}); removed {absolute} directly"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(format!("{git_error}; removing {absolute} also failed: {e}")),
+    if let Err(e) = remove_dir_with_retries(&absolute).await {
+        if still_registered(conn, &absolute).await {
+            return Err(format!("{git_error}; removing {absolute} also failed: {e}"));
+        }
+        log::warn!(
+            "[git] worktree {absolute} is unregistered but its directory could not be removed: {e}"
+        );
+    } else {
+        log::warn!("[git] worktree remove failed ({git_error}); removed {absolute} directly");
     }
     // The admin entry is normally already gone, but not on every failure path.
     run_git_in_dir_lossy(conn, conn.path(), &["worktree", "prune"]).await?;
     Ok(())
+}
+
+/// How hard [`delete_worktree`] tries to remove a directory something else is holding open.
+///
+/// On Windows an open handle — most often a process whose working directory the worktree still is
+/// — blocks the removal outright rather than deferring it. Whatever held it is usually a child of
+/// the session that just ended and exits a moment later, so a short retry turns the common case
+/// into a clean removal. Beyond about a second the holder is not going away and the user is only
+/// being made to wait for it.
+const WORKTREE_REMOVAL_ATTEMPTS: u32 = 5;
+const WORKTREE_REMOVAL_BACKOFF: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Remove a directory, retrying while something still holds it open. Already gone counts as
+/// removed.
+async fn remove_dir_with_retries(absolute: &str) -> Result<(), std::io::Error> {
+    let mut attempt = 1;
+    loop {
+        match tokio::fs::remove_dir_all(absolute).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) if attempt >= WORKTREE_REMOVAL_ATTEMPTS => return Err(e),
+            Err(_) => {
+                tokio::time::sleep(WORKTREE_REMOVAL_BACKOFF).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
+/// Whether git still lists `absolute` as a worktree of this repository.
+///
+/// This is what separates git refusing to remove a worktree at all from git having unregistered it
+/// and only the directory surviving — two failures that arrive as the same error string. A
+/// worktree list that cannot be read answers "yes", so an unknown state falls on the side of
+/// reporting the failure rather than silently continuing.
+async fn still_registered(conn: &GitConnection, absolute: &str) -> bool {
+    let target = absolute.trim_end_matches('/');
+    match list_worktrees(conn).await {
+        Ok(worktrees) => worktrees
+            .iter()
+            .any(|worktree| worktree.path.replace('\\', "/").trim_end_matches('/') == target),
+        Err(e) => {
+            log::warn!("[git] could not read the worktree list to classify a removal failure: {e}");
+            true
+        }
+    }
 }
 
 /// The absolute path of `worktree_name` when it is a worktree maestro created inside `repo_path`,
@@ -201,7 +258,7 @@ pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>) -> BranchList
 
 #[cfg(test)]
 mod tests {
-    use super::removable_worktree_dir;
+    use super::{remove_dir_with_retries, removable_worktree_dir};
 
     /// The fallback in `delete_worktree` removes a directory outright, so it must only ever fire
     /// for a worktree maestro created inside the repository.
@@ -219,5 +276,21 @@ mod tests {
         assert_eq!(removable_worktree_dir(repo, "scratch"), None);
         assert_eq!(removable_worktree_dir(repo, "C:/elsewhere/.maestro/worktrees/session-1"), None);
         assert_eq!(removable_worktree_dir(repo, "../.maestro/worktrees/session-1"), None);
+    }
+
+    /// The retry loop must still treat "already gone" as done rather than spending the full
+    /// backoff on a directory `git worktree remove` had in fact deleted.
+    #[tokio::test]
+    async fn removal_succeeds_whether_the_directory_is_there_or_not() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let target = temp.path().join("session-1");
+        std::fs::create_dir_all(target.join("src")).expect("create dir");
+
+        let path = target.to_string_lossy().to_string();
+        let started = std::time::Instant::now();
+        remove_dir_with_retries(&path).await.expect("remove existing");
+        assert!(!target.exists());
+        remove_dir_with_retries(&path).await.expect("remove missing");
+        assert!(started.elapsed() < super::WORKTREE_REMOVAL_BACKOFF, "no retry was needed");
     }
 }
