@@ -10,7 +10,6 @@ import {
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MAX_WIDTH,
 } from "./useReviewPanelLayout";
-import { estimateDiffHeight } from "./estimate-diff-height";
 
 describe("reviewPanelLayout", () => {
   it("floats the panel below 1300px and inlines it at or above", () => {
@@ -195,23 +194,5 @@ describe("useReviewPanelLayout", () => {
     await press("drag");
     await press("release");
     expect(state().width).toBe(String(SIDEBAR_MAX_WIDTH));
-  });
-});
-
-describe("estimateDiffHeight", () => {
-  it("grows with the number of diff lines", () => {
-    const short = estimateDiffHeight(["@@\n+one"]);
-    const long = estimateDiffHeight([`@@\n${"+line\n".repeat(40)}`]);
-    expect(long).toBeGreaterThan(short);
-  });
-
-  it("caps so one huge file cannot make the scrollbar meaningless", () => {
-    expect(estimateDiffHeight([`@@\n${"+line\n".repeat(100000)}`])).toBeLessThanOrEqual(4000);
-  });
-
-  // An untracked file carries no hunks — its body is fetched, so the size is a guess either way,
-  // but it must not be zero or the card falls inside the root margin immediately.
-  it("returns a usable height with no hunks", () => {
-    expect(estimateDiffHeight([])).toBeGreaterThan(100);
   });
 });

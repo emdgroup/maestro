@@ -13,12 +13,14 @@ vi.mock("./ExpandableDiffViewer", () => ({
     comments,
     onAddComment,
     onSubmitComment,
+    highlight,
   }: {
     comments?: Array<{ id: string; lineNumber: number }>;
     onAddComment?: (lineNumber: number, fromLineNumber: number, side: "old" | "new") => void;
     onSubmitComment?: (text: string) => void;
+    highlight?: boolean;
   }) => (
-    <div data-testid="diff-viewer">
+    <div data-testid="diff-viewer" data-highlight={highlight ? "on" : "off"}>
       {(comments ?? []).map((c) => (
         <span key={c.id} data-testid="line-comment">
           {c.id}:{c.lineNumber}
@@ -41,6 +43,12 @@ const SESSION = 42;
 
 function diffItem(name: string): DisplayItem {
   return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n+${name}`], status: "M" } };
+}
+
+/** A file of a given size in diff lines, for exercising the review's rendering budget. */
+function sizedDiffItem(name: string, lines: number): DisplayItem {
+  const body = Array.from({ length: lines - 1 }, (_, line) => `+line ${line}`).join("\n");
+  return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n${body}`], status: "M" } };
 }
 
 const onSubmitComment = vi.fn();
@@ -140,43 +148,90 @@ describe("DiffFileStack", () => {
     await waitFor(() => expect(screen.getAllByTestId("diff-viewer")).toHaveLength(30));
   });
 
-  // Expanded is not the same as mounted: the body waits for the card to come near the viewport,
-  // which is what keeps a large review from building hundreds of Shiki-highlighted diffs at once.
-  it("does not mount a body until its card is near the viewport", () => {
+  /**
+   * The reversal the whole design turns on. Building a diff's structure is under a millisecond a
+   * file, so every one of them is in the document from the first frame and the stack reaches its
+   * true height immediately. What waits is Shiki — 25–150ms a file — and colour changes no layout,
+   * so it can arrive whenever without moving anything.
+   *
+   * Deferring the *body* is what the two previous attempts did, and it cannot be made to work: an
+   * unbuilt card has no height, so every scroll target is computed against a document that is
+   * about to change underneath it.
+   */
+  it("renders every diff immediately, in plain text", () => {
     setAutoIntersect(false);
     renderStack([diffItem("a.ts"), diffItem("b.ts")], emptyReview());
 
-    expect(screen.queryAllByTestId("diff-viewer")).toHaveLength(0);
-    // The card and its header are there — only the diff is deferred.
-    expect(screen.getByText("a.ts")).toBeTruthy();
+    const viewers = screen.getAllByTestId("diff-viewer");
+    expect(viewers).toHaveLength(2);
+    expect(viewers.map((v) => v.dataset.highlight)).toEqual(["off", "off"]);
   });
 
-  it("mounts a body once its card arrives", async () => {
+  it("highlights a card once it comes near the viewport", async () => {
     setAutoIntersect(false);
-    const { container } = renderStack([diffItem("a.ts")], emptyReview());
+    renderStack([diffItem("a.ts")], emptyReview());
+    expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("off");
 
     act(() => intersect(observedElements()));
-    await waitFor(() => expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1));
-    expect(container).toBeTruthy();
+
+    await waitFor(() => expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("on"));
   });
 
-  // Never unmounting is what lets an open comment draft survive a scroll, and what keeps the
-  // scroll-spy honest: heights above the viewport stay fixed once they are real.
-  it("keeps a body mounted after its card scrolls away", async () => {
+  // Colour is never taken back, so returning to a file costs nothing and no card is ever seen to
+  // lose it. There is nothing to reclaim by dropping it — the DOM stays either way.
+  it("keeps a card highlighted after it scrolls away", async () => {
     setAutoIntersect(false);
     renderStack([diffItem("a.ts")], emptyReview());
 
     act(() => intersect(observedElements()));
-    await waitFor(() => expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("on"));
 
     act(() => intersect(observedElements(), false));
-    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1);
+
+    expect(screen.getByTestId("diff-viewer").dataset.highlight).toBe("on");
+  });
+
+  /**
+   * One a frame, not one batch. `DiffView` tokenises inside synchronous effects and React flushes
+   * effects one component at a time without yielding, so a commit that starts five cards blocks
+   * for the sum of all five and paints nothing until the last finishes.
+   */
+  it("colours cards one frame at a time rather than all at once", async () => {
+    // Hand-driven frames. `act()` drains happy-dom's timer queue in one go, so against the real
+    // `requestAnimationFrame` five cards light up together and the test would pass either way.
+    const pending: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => pending.push(cb));
+    const nextFrame = async () => {
+      const callback = pending.shift();
+      if (callback) await act(async () => void callback(0));
+    };
+
+    try {
+      setAutoIntersect(false);
+      renderStack(
+        Array.from({ length: 5 }, (_, i) => diffItem(`f${i}.ts`)),
+        emptyReview(),
+      );
+      const lit = () =>
+        screen.getAllByTestId("diff-viewer").filter((v) => v.dataset.highlight === "on").length;
+
+      act(() => intersect(observedElements()));
+      // The observer callback books a frame; it does not colour anything itself.
+      expect(lit()).toBe(0);
+
+      await nextFrame();
+      expect(lit()).toBe(1);
+      await nextFrame();
+      expect(lit()).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // Comment navigation waits on a MutationObserver for the comment's node and gives up after a
-  // couple of seconds. Without a forced mount, stepping to a comment in a far-off file would find
-  // nothing and the chevron would silently do nothing.
-  it("force-mounts a target the observer has not reached", () => {
+  // couple of seconds. The node is always there now — every diff is rendered — so what navigation
+  // has to force is only the colour, ahead of whatever the queue was working through.
+  it("highlights a navigation target ahead of the queue", () => {
     setAutoIntersect(false);
     const ref = createRef<DiffFileStackHandle>();
     renderStack(
@@ -184,10 +239,61 @@ describe("DiffFileStack", () => {
       emptyReview(),
       ref,
     );
-    expect(screen.queryAllByTestId("diff-viewer")).toHaveLength(0);
+    const lit = () =>
+      screen.getAllByTestId("diff-viewer").filter((v) => v.dataset.highlight === "on");
+    expect(lit()).toHaveLength(0);
 
     act(() => ref.current?.navigateTo(20));
+
+    expect(lit()).toHaveLength(1);
+  });
+
+  /**
+   * The budget, and the one case it exists for. A generated file costs more than the rest of the
+   * review together, so it waits to be asked for — and skipping it does not spend the budget, so
+   * everything after it still renders. Nothing here is driven by scrolling: building a diff is
+   * tens of milliseconds of layout, and doing that as the viewport reaches each card made every
+   * scroll compete with it.
+   */
+  it("puts a file too large to render behind a button, and renders the rest", () => {
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview());
+
+    expect(screen.getByRole("button", { name: "Load diff" })).toBeTruthy();
+    // Tolerant of the grouping separator, which `toLocaleString` picks per environment.
+    expect(screen.getByText(/^40[^\d]?000 lines$/)).toBeTruthy();
     expect(screen.getAllByTestId("diff-viewer")).toHaveLength(1);
+  });
+
+  it("renders it once asked", async () => {
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview());
+
+    await userEvent.click(screen.getByRole("button", { name: "Load diff" }));
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Load diff" })).toBeNull();
+  });
+
+  // Navigating to a file is asking for it — otherwise stepping to a comment inside a deferred file
+  // would scroll to a button, and the chevron would appear to do nothing.
+  it("renders a deferred file when navigation lands on it", () => {
+    const ref = createRef<DiffFileStackHandle>();
+    renderStack([sizedDiffItem("lock.json", 40_000), diffItem("a.ts")], emptyReview(), ref);
+
+    act(() => ref.current?.navigateTo(0));
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(2);
+  });
+
+  // The common case has to stay invisible: an agent's worktree diff is a handful of files, and
+  // none of this should be observable there.
+  it("renders an ordinary review in full, with nothing to click", () => {
+    renderStack(
+      Array.from({ length: 12 }, (_, i) => sizedDiffItem(`f${i}.ts`, 80)),
+      emptyReview(),
+    );
+
+    expect(screen.getAllByTestId("diff-viewer")).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: "Load diff" })).toBeNull();
   });
 
   // The host sorts items into tree order; the stack must not reorder them, or the sidebar

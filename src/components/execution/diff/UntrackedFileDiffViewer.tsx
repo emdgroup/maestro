@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { DiffViewer, type PendingComment } from "./DiffViewer";
 import { fileNote } from "./ReviewFileCard";
+import { LoadDiffPrompt } from "./LoadDiffPrompt";
+import { diffLineCount, MAX_EAGER_FILE_LINES } from "./body-budget";
 import { useUntrackedFileContentQuery } from "@/services/worktree.service";
 
 interface UntrackedFileDiffViewerProps {
@@ -22,6 +24,8 @@ interface UntrackedFileDiffViewerProps {
   onSendComment?: (commentId: string) => void;
   commentNav?: React.ComponentProps<typeof DiffViewer>["commentNav"];
   sendDisabled?: boolean;
+  /** See `DiffViewer`. A stack colours its cards as they near the viewport. */
+  highlight?: boolean;
 }
 
 export function UntrackedFileDiffViewer({
@@ -40,6 +44,7 @@ export function UntrackedFileDiffViewer({
   onSendComment,
   commentNav,
   sendDisabled,
+  highlight,
 }: UntrackedFileDiffViewerProps) {
   const { data, isLoading } = useUntrackedFileContentQuery(projectId, worktreePath, filePath);
 
@@ -63,6 +68,18 @@ export function UntrackedFileDiffViewer({
       ? fileNote(diffFile)
       : "There is no line-by-line diff to show for this file.";
 
+  /**
+   * The size cap, applied here rather than by the stack.
+   *
+   * An untracked file's body is fetched, not derived from the diff, so its size is unknown until
+   * it arrives — the stack has to plan the whole review before that. Left uncapped, a few thousand
+   * lines of untracked text rendered in full while ordinary tracked files sat behind a button,
+   * which is both the wrong way round and where the freeze on opening a worktree diff came from.
+   */
+  const [requested, setRequested] = useState(false);
+  const tooLarge =
+    !requested && diffFile !== null && diffLineCount(diffFile.hunks) > MAX_EAGER_FILE_LINES;
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {showHeader && diffFile && (
@@ -77,6 +94,11 @@ export function UntrackedFileDiffViewer({
       <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
         {note ? (
           <div className="px-3 py-6 text-xs text-center text-muted-foreground">{note}</div>
+        ) : tooLarge ? (
+          <LoadDiffPrompt
+            lines={diffLineCount(diffFile!.hunks)}
+            onLoad={() => setRequested(true)}
+          />
         ) : (
           <DiffViewer
             diffFile={diffFile}
@@ -93,6 +115,7 @@ export function UntrackedFileDiffViewer({
             onSendComment={onSendComment}
             commentNav={commentNav}
             sendDisabled={sendDisabled}
+            highlight={highlight}
           />
         )}
       </div>

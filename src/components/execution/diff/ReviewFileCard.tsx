@@ -104,15 +104,22 @@ export function ReviewFileCard({
     setEditingComment(true);
   }
 
+  // `data-file-card` marks the element `DiffFileStack` measures for its scroll spy.
   return (
-    <div ref={ref} className="shrink-0">
+    <div ref={ref} data-file-card={path} className="shrink-0">
       <div className="sticky top-0 z-10 pt-3 bg-background">
         <div
           onClick={onToggleExpanded}
           className={cn(
-            "border border-border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
+            "border bg-card flex items-center gap-2 px-2.5 py-2 cursor-pointer transition-colors",
             expanded ? "rounded-t-lg" : "rounded-lg",
-            focused ? "bg-muted/40" : "hover:bg-muted/20",
+            // The card outlined in the accent, rather than a tint on the header. The tint was
+            // competing with the hover state on the same element and lost — this reads at a
+            // glance, and from the body as well as the header.
+            focused ? "border-accent" : "border-border hover:bg-muted/20",
+            // Except where the header meets the body, which is a divider inside the card rather
+            // than part of its outline: in the accent it draws a line straight across the middle.
+            focused && expanded && "border-b-border",
           )}
         >
           <ChevronRight
@@ -185,7 +192,12 @@ export function ReviewFileCard({
         </div>
       </div>
       {expanded && (
-        <div className="border border-border border-t-0 rounded-b-lg overflow-auto custom-scrollbar">
+        <div
+          className={cn(
+            "border border-t-0 rounded-b-lg overflow-auto custom-scrollbar transition-colors",
+            focused ? "border-accent" : "border-border",
+          )}
+        >
           {fileComment && (
             <ReviewFileComment
               fileComment={fileComment}
