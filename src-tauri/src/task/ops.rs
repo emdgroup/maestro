@@ -29,8 +29,9 @@ pub async fn list_project_branches(
     let git_conn = crate::core::get_git_connection(&project, &app_state).await
         .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
 
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
     let (branches, current_branch) = tokio::join!(
-        crate::git::list_branches(&git_conn),
+        crate::git::list_branches(&git_conn, &remote),
         crate::git::get_current_branch(&git_conn),
     );
     let branches = branches.unwrap_or_else(|_| crate::git::BranchList { local: vec![], remote: vec![] });

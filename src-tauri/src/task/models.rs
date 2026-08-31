@@ -645,6 +645,9 @@ pub struct ProjectConfigResponse {
     pub accent_color_auto_assign: Option<bool>,
     /// Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
     pub default_workspace_mode: WorkspaceMode,
+    /// The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
+    /// picker has to be able to show that no choice has been made.
+    pub remote_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -656,6 +659,9 @@ pub struct ProjectConfigRequest {
     /// cannot name a specific workspace — but the field is the full enum so the two places that
     /// read it do not have to translate between two types.
     pub default_workspace_mode: WorkspaceMode,
+    /// `None` selects auto-detection; a name must be one the project actually has, which is why
+    /// the form offers a picker rather than a text field.
+    pub remote_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

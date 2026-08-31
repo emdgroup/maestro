@@ -29,6 +29,7 @@ export const projectQueryKeys = {
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
   locks: (ids: number[]) => [...projectQueryKeys.base, "locks", ids] as const,
   profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
+  remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
 };
 
 /**
@@ -79,6 +80,24 @@ export function useProjectSettings(projectId: number | null) {
       return api.getProjectSettings(projectId);
     },
     staleTime: Infinity,
+    enabled: projectId != null,
+  });
+}
+
+/**
+ * The project's configured git remotes, for the Settings picker.
+ *
+ * Short stale time rather than `Infinity`: a user who adds a remote to fix an empty Remote tab
+ * expects to find it here, and a `git remote -v` is cheap next to that confusion.
+ */
+export function useProjectRemotes(projectId: number | null) {
+  return useQuery({
+    queryKey: projectQueryKeys.remotes(projectId ?? -1),
+    queryFn: () => {
+      if (projectId == null) throw new Error("projectId required");
+      return api.listProjectRemotes(projectId);
+    },
+    staleTime: 30_000,
     enabled: projectId != null,
   });
 }
@@ -203,6 +222,10 @@ export function useUpdateProjectSettings() {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.settingsDetail(projectId),
       });
+      // `remote_name` decides which refs the branch lists contain, and that query caches for a
+      // minute — without this, changing the remote leaves the picker showing the old one's
+      // branches with nothing to suggest a refresh is needed.
+      void queryClient.invalidateQueries({ queryKey: ["tasks", "branches", projectId] });
     },
   });
 }

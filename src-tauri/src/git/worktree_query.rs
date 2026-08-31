@@ -82,6 +82,7 @@ async fn git_info_for(
     conn: &crate::models::GitConnection,
     worktree_path: &str,
     base_branch: Option<&str>,
+    remote: &str,
 ) -> (String, WorktreeGitInfo) {
     let mut commands: Vec<Vec<String>> = vec![
         vec!["status".into(), "--porcelain".into()],
@@ -92,10 +93,15 @@ async fn git_info_for(
         vec!["log".into(), "-1".into(), "--format=%cI".into()],
     ];
     if let Some(base) = base_branch {
-        // Local ref before `origin/`, the same order `resolve_divergence_point` uses: a worktree is
-        // created from a local ref, and a repository with no remote has no `origin/<base>` at all.
+        // Local ref before the remote one, the same order `resolve_divergence_point` uses: a
+        // worktree is created from a local ref, and a repository with no remote has no
+        // `<remote>/<base>` at all. A `base` that is already qualified resolves on the first.
         commands.push(vec!["rev-list".into(), "--count".into(), format!("{}..HEAD", base)]);
-        commands.push(vec!["rev-list".into(), "--count".into(), format!("origin/{}..HEAD", base)]);
+        commands.push(vec![
+            "rev-list".into(),
+            "--count".into(),
+            format!("{}/{}..HEAD", remote, base),
+        ]);
     }
 
     let borrowed: Vec<Vec<&str>> = commands
@@ -113,12 +119,12 @@ async fn git_info_for(
     let last_commit_raw = outputs.next().unwrap_or_default();
     let commit_count = base_branch.and_then(|_| {
         let local = outputs.next().unwrap_or_default();
-        let from_origin = outputs.next().unwrap_or_default();
+        let from_remote = outputs.next().unwrap_or_default();
         local
             .trim()
             .parse::<u32>()
             .ok()
-            .or_else(|| from_origin.trim().parse::<u32>().ok())
+            .or_else(|| from_remote.trim().parse::<u32>().ok())
     });
 
     let newest_change = newest_changed_file_at(conn, worktree_path, &status_output).await;
@@ -223,13 +229,19 @@ pub async fn list_worktrees_with_status(
     // Step 5: Run parallel git status + diff --shortstat + rev-list per on-disk worktree (local AND remote)
     let mut git_info: HashMap<String, WorktreeGitInfo> = HashMap::new();
     {
+        // Resolved once for the whole batch. This query refetches every ten seconds, and the
+        // per-worktree tasks below would otherwise each pay for the lookup.
+        let remote = crate::git::remote::project_remote(&app_state, project_id).await;
         let handles: Vec<_> = disk_worktrees
             .iter()
             .map(|wt| {
                 let wt_path = wt.path.clone();
                 let conn = git_conn.clone();
                 let base_branch = db_map.get(&wt.path).and_then(|row| row.base_branch.clone());
-                tokio::spawn(async move { git_info_for(&conn, &wt_path, base_branch.as_deref()).await })
+                let remote = remote.clone();
+                tokio::spawn(async move {
+                    git_info_for(&conn, &wt_path, base_branch.as_deref(), &remote).await
+                })
             })
             .collect();
 
@@ -355,9 +367,10 @@ fn floor_char_boundary(s: &str, mut index: usize) -> usize {
 
 /// Resolve the commit a worktree diverged from, given the branch it was created from.
 ///
-/// Tries the local branch before `origin/<branch>`: a worktree is created from a local ref, and
-/// a repository with no remote at all has no `origin/<branch>` to name — which is why the old
-/// hardcoded `origin/` prefix failed outright there rather than degrading.
+/// Tries the local branch before `<remote>/<branch>`: a worktree is created from a local ref, and
+/// a repository with no remote at all has no `<remote>/<branch>` to name — which is why the old
+/// hardcoded `origin/` prefix failed outright there rather than degrading. A `branch` that is
+/// already remote-qualified resolves on the first candidate.
 ///
 /// Returns the merge base rather than the branch tip so that commits the base branch gained
 /// *after* this worktree diverged do not appear in the diff as reversed changes.
@@ -365,8 +378,9 @@ async fn resolve_divergence_point(
     git_conn: &crate::models::GitConnection,
     worktree_path: &str,
     branch: &str,
+    remote: &str,
 ) -> Result<String, String> {
-    for candidate in [branch.to_string(), format!("origin/{}", branch)] {
+    for candidate in [branch.to_string(), format!("{}/{}", remote, branch)] {
         if let Ok(output) =
             crate::git::run_git_in_dir(git_conn, worktree_path, &["merge-base", &candidate, "HEAD"])
                 .await
@@ -379,9 +393,9 @@ async fn resolve_divergence_point(
     }
 
     Err(format!(
-        "Could not find where this worktree diverged from '{}'. Neither '{}' nor 'origin/{}' \
+        "Could not find where this worktree diverged from '{}'. Neither '{}' nor '{}/{}' \
          resolves to a commit shared with HEAD.",
-        branch, branch, branch
+        branch, branch, remote, branch
     ))
 }
 
@@ -395,12 +409,13 @@ async fn base_rev_for(
     git_conn: &crate::models::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
+    remote: &str,
 ) -> Result<String, String> {
     match diff_target {
         DiffTarget::Head => Ok("HEAD".to_string()),
         DiffTarget::Commit { sha } => Ok(sha.clone()),
         DiffTarget::BranchAll { branch } => {
-            resolve_divergence_point(git_conn, worktree_path, branch).await
+            resolve_divergence_point(git_conn, worktree_path, branch, remote).await
         }
         // `from` is the range's base, so it is the pre-image even though `to` is what moved.
         DiffTarget::CommitRange { from, .. } => Ok(from.clone()),
@@ -462,7 +477,8 @@ pub async fn get_worktree_diff(
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha]).await?
         }
         DiffTarget::BranchAll { branch } => {
-            let base = resolve_divergence_point(&git_conn, &worktree_path, branch).await?;
+            let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+            let base = resolve_divergence_point(&git_conn, &worktree_path, branch, &remote).await?;
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &base]).await?
         }
         DiffTarget::CommitRange { from, to } => {
@@ -519,7 +535,8 @@ pub async fn get_worktree_diff_stats(
     diff_target: DiffTarget,
 ) -> Result<WorktreeDiffStats, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    diff_stats_in(&git_conn, &worktree_path, &diff_target).await
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    diff_stats_in(&git_conn, &worktree_path, &diff_target, &remote).await
 }
 
 /// The body of `get_worktree_diff_stats`, callable without going through the Tauri command.
@@ -530,6 +547,7 @@ pub async fn diff_stats_in(
     git_conn: &crate::models::GitConnection,
     worktree_path: &str,
     diff_target: &DiffTarget,
+    remote: &str,
 ) -> Result<WorktreeDiffStats, String> {
     // Must resolve the same way `get_worktree_diff` does, or the stats and the diff disagree —
     // and these stats are what the turn-ended handler uses to decide whether an agent changed
@@ -538,7 +556,7 @@ pub async fn diff_stats_in(
         DiffTarget::Head => vec!["diff".into(), "--stat".into(), "HEAD".into()],
         DiffTarget::Commit { sha } => vec!["diff".into(), "--stat".into(), sha.clone()],
         DiffTarget::BranchAll { branch } => {
-            let base = resolve_divergence_point(git_conn, worktree_path, branch).await?;
+            let base = resolve_divergence_point(git_conn, worktree_path, branch, remote).await?;
             vec!["diff".into(), "--stat".into(), base]
         }
         DiffTarget::CommitRange { from, to } => vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)],
@@ -709,7 +727,8 @@ pub async fn get_file_content_at_base(
     file_path: String,
 ) -> Result<Option<String>, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let base = base_rev_for(&git_conn, &worktree_path, &diff_target).await?;
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    let base = base_rev_for(&git_conn, &worktree_path, &diff_target, &remote).await?;
     Ok(file_content_at(&git_conn, &worktree_path, &base, &file_path).await)
 }
 
@@ -825,7 +844,7 @@ mod tests {
         let connection = GitConnection::Local {
             path: repo.to_string_lossy().into_owned(),
         };
-        let resolved = resolve_divergence_point(&connection, &repo.to_string_lossy(), "main")
+        let resolved = resolve_divergence_point(&connection, &repo.to_string_lossy(), "main", "origin")
             .await
             .expect("a local branch with no remote must still resolve");
 
@@ -849,7 +868,7 @@ mod tests {
         let connection = GitConnection::Local {
             path: repo.to_string_lossy().into_owned(),
         };
-        let error = resolve_divergence_point(&connection, &repo.to_string_lossy(), "no-such-branch")
+        let error = resolve_divergence_point(&connection, &repo.to_string_lossy(), "no-such-branch", "origin")
             .await
             .expect_err("an unknown branch must not silently resolve");
 
@@ -891,7 +910,7 @@ mod tests {
         let resolve = |target: DiffTarget| {
             let connection = connection.clone();
             let path = path.clone();
-            async move { base_rev_for(&connection, &path, &target).await }
+            async move { base_rev_for(&connection, &path, &target, "origin").await }
         };
 
         assert_eq!(resolve(DiffTarget::Head).await.expect("HEAD resolves"), "HEAD");
@@ -972,7 +991,7 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "one\ntwo CHANGED\nthree\nfour\n").expect("edit file");
         git(repo, &["add", "a.txt"]);
 
-        let (_, info) = git_info_for(&connection, &path, None).await;
+        let (_, info) = git_info_for(&connection, &path, None, "origin").await;
         let stat = info.diff_stat.expect("a staged change is still a change");
         assert!(stat.contains("insertion"), "staged insertions must be counted, got {stat:?}");
     }
@@ -987,7 +1006,7 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, info) = git_info_for(&connection, &path, Some("main")).await;
+        let (_, info) = git_info_for(&connection, &path, Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1), "one commit since main");
 
         // main gaining a commit of its own must not change how much work this branch has.
@@ -997,10 +1016,10 @@ mod tests {
         git(repo, &["commit", "-m", "main moves on"]);
         git(repo, &["checkout", "task"]);
 
-        let (_, info) = git_info_for(&connection, &path, Some("main")).await;
+        let (_, info) = git_info_for(&connection, &path, Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1));
 
-        let (_, info) = git_info_for(&connection, &path, None).await;
+        let (_, info) = git_info_for(&connection, &path, None, "origin").await;
         assert_eq!(info.commit_count, None, "nothing to count against without a base branch");
     }
 
@@ -1013,11 +1032,11 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, clean) = git_info_for(&connection, &path, None).await;
+        let (_, clean) = git_info_for(&connection, &path, None, "origin").await;
         let committed = clean.last_activity_at.expect("a clean worktree still has a last commit");
 
         std::fs::write(repo.join("a.txt"), "edited after the commit\n").expect("edit file");
-        let (_, dirty) = git_info_for(&connection, &path, None).await;
+        let (_, dirty) = git_info_for(&connection, &path, None, "origin").await;
         let edited = dirty.last_activity_at.expect("a dirty worktree reports its newest edit");
 
         assert!(

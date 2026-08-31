@@ -260,6 +260,15 @@ pub async fn approve_task_and_merge(
     let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
         .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
+    // A task based on a remote ref stores `origin/main`, which is the right thing to *branch from*
+    // but never the right thing to merge into: `git checkout origin/main` detaches HEAD, and no
+    // forge has a branch by that name to open a pull request against. Both consumers below take
+    // this value, so normalising once here covers them.
+    let base_branch = match crate::git::local_branch_for(&git_conn, &base_branch).await {
+        Some(local) => local,
+        None => base_branch,
+    };
+
     // 3. The agent's work lives in its worktree, and there is no other place it can be.
     //
     // Worktrees are enforced wherever git is available and Review exists only for git projects,

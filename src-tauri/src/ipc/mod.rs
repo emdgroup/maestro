@@ -10,6 +10,9 @@ pub use crate::connectivity::filesystem_handlers::*;
 pub use crate::connectivity::files::*;
 pub use crate::git::worktree_handlers::*;
 pub use crate::git::review_handlers::*;
+// Globbed like the rest: `#[tauri::command]` emits hidden sibling items that `collect_commands!`
+// resolves through this module, and a named re-export leaves them behind.
+pub use crate::git::remote::*;
 pub use crate::execution::handlers::*;
 pub use crate::integration::handlers::*;
 pub use crate::integration::lookup_handlers::*;

@@ -1,7 +1,8 @@
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Label } from "@/ui/label";
 import { Button } from "@/ui/button";
-import { Bot, Check, GitBranch, Loader2, LogOut } from "lucide-react";
+import { Bot, Check, Cloud, GitBranch, Loader2, LogOut } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
 import type {
   ConnectionKey,
@@ -10,17 +11,78 @@ import type {
   WorkspaceMode,
 } from "@/types/bindings";
 import { useAgentAuthInfoQuery, useAcpLogoutMutation } from "@/services/acp-auth.service";
+import { useProjectRemotes } from "@/services/project.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { cn } from "@/lib/utils";
 
 interface ProjectDefaultsSectionProps {
   defaultAgent: string | null;
   defaultWorkspaceMode: WorkspaceMode;
+  /** Null means auto-detect; see `RemoteSelect`. */
+  remoteName: string | null;
+  projectId: number;
   /** Persists immediately — this section has no Save button behind it. */
   onChange: (patch: Partial<ProjectConfigRequest>) => void;
   agents: DiscoveredAgent[];
   agentsLoading: boolean;
   connection: ConnectionKey;
+}
+
+/**
+ * `Select` needs a non-empty string per option, and "auto" is the absence of a choice rather than
+ * a remote anyone can be named. This sentinel maps between the two; it is never persisted.
+ */
+const AUTO_REMOTE = "__auto__";
+
+/**
+ * Which remote this project's branches live on.
+ *
+ * A picker rather than a text field: this name decides what the branch picker's Remote tab
+ * lists and, more sharply, which branches the prune dialog considers safely pushed. A typo would
+ * quietly empty the first and endanger the second, with nothing on screen to say why.
+ */
+function RemoteSelect({
+  value,
+  remotes,
+  onChange,
+}: {
+  value: string | null;
+  remotes: string[];
+  onChange: (remote: string | null) => void;
+}) {
+  // A configured remote the project no longer has still has to be selectable, or the picker would
+  // silently show "Auto" while the stored setting says otherwise.
+  const options = value && !remotes.includes(value) ? [...remotes, value] : remotes;
+
+  return (
+    <Select
+      value={value ?? AUTO_REMOTE}
+      onValueChange={(next) => onChange(next === AUTO_REMOTE ? null : next)}
+    >
+      <SelectTrigger
+        id="git-remote"
+        className="w-full border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+      >
+        <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+          <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm">{value ?? "Auto-detect"}</span>
+        </span>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={AUTO_REMOTE}>
+          <span className="block text-sm">Auto-detect</span>
+          <span className="block text-xs text-muted-foreground">
+            origin, then upstream, then the first remote
+          </span>
+        </SelectItem>
+        {options.map((remote) => (
+          <SelectItem key={remote} value={remote}>
+            <span className="text-sm font-mono">{remote}</span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 interface AgentAuthRowProps {
@@ -103,12 +165,15 @@ function AgentAuthRow({ agent, isDefault, onSetDefault, connection }: AgentAuthR
 export function ProjectDefaultsSection({
   defaultAgent,
   defaultWorkspaceMode,
+  remoteName,
+  projectId,
   onChange,
   agents,
   agentsLoading,
   connection,
 }: ProjectDefaultsSectionProps) {
   const isGitRepo = useIsGitRepo();
+  const { data: remotes = [] } = useProjectRemotes(isGitRepo ? projectId : null);
 
   return (
     <>
@@ -182,6 +247,24 @@ export function ProjectDefaultsSection({
               value={defaultWorkspaceMode}
               onChange={(mode) => onChange({ default_workspace_mode: mode })}
               allowReuse={false}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="min-w-0">
+              <Label htmlFor="git-remote" className="text-sm font-medium text-foreground">
+                Git remote
+              </Label>
+              <div className="text-xs text-muted-foreground">
+                Which remote the branch picker lists, and which one a branch must be pushed to
+                before pruning leaves it alone. Leave on auto-detect unless this project pushes
+                somewhere other than <span className="font-mono">origin</span>.
+              </div>
+            </div>
+            <RemoteSelect
+              value={remoteName}
+              remotes={remotes}
+              onChange={(remote) => onChange({ remote_name: remote })}
             />
           </div>
         </div>
