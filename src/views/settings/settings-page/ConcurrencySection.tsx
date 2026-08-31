@@ -2,29 +2,17 @@ import { Cpu } from "lucide-react";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
-import type { AppSettings, ConcurrencyMode } from "@/types/bindings";
+import { useConnectionCapacity, useSaveConnectionCapacity } from "@/services/settings.service";
+import type { ConcurrencyMode, ConnectionCapacitySettings, ConnectionKey } from "@/types/bindings";
 
-/// Mirrors `execution::capacity`. Duplicated rather than plumbed through an IPC call because it is
-/// explanatory text, and a round trip to render a sentence is not worth the coupling — but it has
-/// to stay in step with the constants there.
-const MB_PER_AGENT = 400;
-const RESERVED_MB = 1024;
+export function ConcurrencySection({ connection }: { connection: ConnectionKey }) {
+  const { data: capacity } = useConnectionCapacity(connection);
+  const saveCapacity = useSaveConnectionCapacity();
 
-export function ConcurrencySection() {
-  const { data: appSettings } = useSettings();
-  const saveAppSettings = useSaveSettings({ successToast: false });
+  if (!capacity) return null;
 
-  if (!appSettings) return null;
-
-  const update = (patch: Partial<AppSettings>) =>
-    saveAppSettings.mutate({
-      ...appSettings,
-      ...patch,
-      updated_at: new Date().toISOString(),
-    } as AppSettings);
-
-  const mode = appSettings.concurrency_mode;
+  const update = (patch: Partial<ConnectionCapacitySettings>) =>
+    saveCapacity.mutate({ connection, settings: { ...capacity, ...patch } });
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-4">
@@ -34,16 +22,28 @@ export function ConcurrencySection() {
       </h3>
 
       <p className="text-xs text-muted-foreground">
-        How many agents auto-mode runs at once. The limit is per host, not per project — two
-        projects on the same machine share it. A session parked in Review still holds a slot, which
-        is what stops the board filling with reviews faster than you can read them.
+        How many agents auto-mode runs at once on this host. Every project on it shares the limit,
+        because they share its memory. A session parked in Review still holds a slot, which is what
+        stops the board filling with reviews faster than you can read them.
       </p>
 
       <RadioGroup
-        value={mode}
+        value={capacity.concurrency_mode}
         onValueChange={(value) => update({ concurrency_mode: value as ConcurrencyMode })}
         className="space-y-3"
       >
+        <div className="flex items-start gap-3">
+          <RadioGroupItem value="Auto" id="concurrency-auto" className="mt-1" />
+          <div className="min-w-0 flex-1">
+            <Label htmlFor="concurrency-auto" className="text-sm font-medium">
+              From free memory
+            </Label>
+            <div className="text-xs text-muted-foreground">
+              Estimate the number of agents that can run based on available memory.
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-start gap-3">
           <RadioGroupItem value="Hard" id="concurrency-hard" className="mt-1" />
           <div className="min-w-0 flex-1">
@@ -57,7 +57,7 @@ export function ConcurrencySection() {
               type="number"
               min={0}
               max={64}
-              value={appSettings.max_concurrent_agents}
+              value={capacity.max_concurrent_agents}
               onChange={(e) => {
                 const parsed = Number.parseInt(e.target.value, 10);
                 if (Number.isFinite(parsed)) {
@@ -66,20 +66,6 @@ export function ConcurrencySection() {
               }}
               className="mt-2 h-8 w-24"
             />
-          </div>
-        </div>
-
-        <div className="flex items-start gap-3">
-          <RadioGroupItem value="Auto" id="concurrency-auto" className="mt-1" />
-          <div className="min-w-0 flex-1">
-            <Label htmlFor="concurrency-auto" className="text-sm font-medium">
-              From free memory
-            </Label>
-            <div className="text-xs text-muted-foreground">
-              {MB_PER_AGENT} MB per agent, with {RESERVED_MB / 1024} GB left for the system — so 5
-              GB free runs 10. Recalculated each time the queue moves. Hosts whose memory cannot be
-              read fall back to the fixed number above.
-            </div>
           </div>
         </div>
       </RadioGroup>

@@ -105,6 +105,8 @@ export function SettingsPage({
 
               {active?.scope === "app" ? (
                 <AppScopePane pageId={active.id} />
+              ) : active?.scope === "connection" && connection ? (
+                <ConnectionScopePane pageId={active.id} connection={connection} />
               ) : active && projectId !== undefined && connection ? (
                 <ProjectScopePane
                   pageId={active.id}
@@ -125,8 +127,24 @@ function AppScopePane({ pageId }: { pageId: string }) {
     <div className="space-y-6">
       {pageId === "appearance" && <AppearanceSection />}
       {pageId === "notifications" && <NotificationsSection />}
-      {pageId === "concurrency" && <ConcurrencySection />}
       {pageId === "diagnostics" && <DiagnosticsSection />}
+    </div>
+  );
+}
+
+/// Separate from `ProjectScopePane` rather than folded into it: these pages need only the
+/// connection, and that pane blocks on the project's settings — a page with no project to load
+/// would sit on "Loading settings..." for a query it does not use.
+function ConnectionScopePane({
+  pageId,
+  connection,
+}: {
+  pageId: string;
+  connection: ConnectionKey;
+}) {
+  return (
+    <div className="space-y-6">
+      {pageId === "concurrency" && <ConcurrencySection connection={connection} />}
     </div>
   );
 }

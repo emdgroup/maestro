@@ -44,6 +44,7 @@ describe("SettingsSidebar", () => {
     renderSidebar();
 
     expect(screen.getByText("Application")).toBeTruthy();
+    expect(screen.getByText("Connection · build-box")).toBeTruthy();
     expect(screen.getByText("Project · maestro")).toBeTruthy();
   });
 
@@ -54,13 +55,13 @@ describe("SettingsSidebar", () => {
 
     const headings = [...container.querySelectorAll("nav p")].map((p) => p.textContent);
 
-    expect(headings).toEqual(["Project · maestro", "Application"]);
+    expect(headings).toEqual(["Project · maestro", "Connection · build-box", "Application"]);
   });
 
-  /// The `connection` scope is registered but currently has no pages. An empty group must not
-  /// draw a heading over nothing — that is what lets a scope exist before it has settings.
+  /// An empty group must not draw a heading over nothing — that is what lets a scope exist
+  /// before it has settings, and what keeps the welcome screen from listing hosts it has none of.
   it("draws no heading for a scope with no pages", () => {
-    renderSidebar();
+    renderSidebar(SETTINGS_PAGES.filter((p) => p.scope !== "connection"));
 
     expect(screen.queryByText(/^Connection/)).toBeNull();
   });

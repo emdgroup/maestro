@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::models::AppSettings;
+use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
 use crate::core::{logging, AppState};
 
@@ -80,6 +80,35 @@ pub fn save_settings(
     // Switching auto-mode on, or raising the concurrency limit, has to be able to start work
     // immediately. Without this the change would sit inert until a task happened to move, which
     // is what made the auto-mode switch look broken.
+    app_state.app_handle.emit("settings-changed", ()).ok();
+    Ok(())
+}
+
+/// How many agents may run at once on one connection.
+#[tauri::command]
+#[specta::specta]
+pub fn get_connection_capacity(
+    app_state: State<Arc<AppState>>,
+    connection: crate::acp::ConnectionKey,
+) -> Result<ConnectionCapacitySettings, String> {
+    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    crate::core::settings::load_connection_capacity(&conn, connection)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_connection_capacity(
+    app_state: State<Arc<AppState>>,
+    connection: crate::acp::ConnectionKey,
+    settings: ConnectionCapacitySettings,
+) -> Result<(), String> {
+    {
+        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        crate::core::settings::save_connection_capacity(&conn, connection, &settings)?;
+    }
+
+    // Same reason `save_settings` emits: raising a limit has to be able to start work immediately,
+    // or the change sits inert until a task happens to move.
     app_state.app_handle.emit("settings-changed", ()).ok();
     Ok(())
 }

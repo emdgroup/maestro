@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 27;
+pub const SCHEMA_VERSION: u32 = 28;
 
-pub const SCHEMA_V27_FULL: &str = r#"
+pub const SCHEMA_V28_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -250,6 +250,18 @@ CREATE TABLE IF NOT EXISTS session_aliases (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+-- Per-connection settings: how many agents may run on a given host.
+--
+-- No foreign key: connection_key is a polymorphic (type, id) pair across ssh_connections,
+-- wsl_connections and docker_connections, so a cascade cannot be expressed. A deleted connection
+-- leaves one row behind, which is harmless and reused if the id is.
+CREATE TABLE IF NOT EXISTS connection_settings (
+    connection_key TEXT PRIMARY KEY,
+    concurrency_mode TEXT NOT NULL,
+    max_concurrent_agents INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Indexes for performance
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
@@ -334,7 +346,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V27_FULL)?;
+        conn.execute_batch(SCHEMA_V28_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(r#"
@@ -355,7 +367,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
         "#)?;
-        conn.execute_batch(SCHEMA_V27_FULL)?;
+        conn.execute_batch(SCHEMA_V28_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -393,6 +405,36 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 27 {
         migrate_to_v27(conn)?;
     }
+    if from < 28 {
+        migrate_to_v28(conn)?;
+    }
+    Ok(())
+}
+
+/// Move the agent concurrency limit from one app-wide value to one per connection.
+///
+/// The limit is there to keep auto-mode from spawning agents a host has no memory for, and memory
+/// belongs to the host — every project pointed at the same machine draws on the same pool. A single
+/// global number could not express that.
+///
+/// Nothing is carried across. The old value was a fixed count, while the new default estimates from
+/// free memory, so seeding every connection with it would silently opt existing users out of the
+/// behaviour this change exists to give them. Each connection starts at the default instead.
+fn migrate_to_v28(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS connection_settings (
+            connection_key TEXT PRIMARY KEY,
+            concurrency_mode TEXT NOT NULL,
+            max_concurrent_agents INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );",
+    )?;
+
+    conn.execute(
+        "DELETE FROM settings WHERE key IN ('concurrency_mode', 'max_concurrent_agents')",
+        [],
+    )?;
+
     Ok(())
 }
 
@@ -628,8 +670,9 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 27);
+        assert_eq!(version, 28);
         assert!(tables.contains(&"docker_connections".to_string()));
+        assert!(tables.contains(&"connection_settings".to_string()));
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn
@@ -739,6 +782,49 @@ mod tests {
             .unwrap();
         assert_eq!(surviving, 1, "migrating from v22 must not drop project rows");
         assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
+    }
+
+    /// v28 moves the agent limit from one app-wide value to one per connection. The old keys must
+    /// go: left in place they would read as a global limit that nothing enforces, and the next
+    /// person to find them would reasonably assume they still mattered.
+    #[test]
+    fn test_migration_to_v28_drops_the_app_wide_concurrency_keys() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES \
+             ('max_concurrent_agents', '8', '2026-01-01'), \
+             ('concurrency_mode', 'Hard', '2026-01-01'), \
+             ('auto_mode', 'true', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute("DROP TABLE connection_settings", []).unwrap();
+
+        conn.execute("PRAGMA user_version = 27", []).unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let leftover: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM settings WHERE key IN ('concurrency_mode', 'max_concurrent_agents')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftover, 0, "the app-wide concurrency keys must be removed");
+
+        // Unrelated settings are not collateral.
+        let auto_mode: String = conn
+            .query_row("SELECT value FROM settings WHERE key = 'auto_mode'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(auto_mode, "true");
+
+        // Nothing is carried across: a connection starts at the default, which estimates from
+        // memory rather than inheriting the fixed 8 the user had.
+        let seeded: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connection_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(seeded, 0);
     }
 
     /// v24 renamed two task statuses; the migration must rewrite existing rows.
