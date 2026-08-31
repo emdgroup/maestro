@@ -19,7 +19,7 @@ pub use ops::{
     BranchList, ParsedWorktree,
     create_worktree, delete_worktree, git_status,
     list_branches, get_current_branch, list_worktrees, prune_remote_refs, push_branch,
-    parse_worktree_list, parse_branch_list,
+    parse_worktree_list, parse_branch_list, local_branch_for,
 };
 pub use merge::squash_merge_to_base;
 pub use worktree_lifecycle::canonicalize_repo_path;

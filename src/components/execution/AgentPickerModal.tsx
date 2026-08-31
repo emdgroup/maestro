@@ -45,6 +45,9 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
           default_agent: selected,
           startup_tab: projectSettings?.startup_tab ?? null,
           default_workspace_mode: projectSettings?.default_workspace_mode ?? "NewWorktree",
+          // Carried through for the same reason as the fields above: the command takes the whole
+          // config, so anything omitted here is written away.
+          remote_name: projectSettings?.remote_name ?? null,
         },
       });
     }

@@ -77,6 +77,13 @@ pub struct ProjectConfig {
     /// Same opt-out as `issue_tracking_auto_detect`, for `code_hosting`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_hosting_auto_detect: Option<bool>,
+    /// Which git remote this project's branches live on — the name, not a URL.
+    ///
+    /// `None` *means* auto, resolved by `git::remote::pick_remote` (origin, then upstream, then
+    /// whatever comes first). It needs no `_auto_detect` twin like the two settings above,
+    /// because nothing ever writes this one on the user's behalf.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_name: Option<String>,
     /// How approved work leaves Review. Absent means `Merge`, which is what Maestro did
     /// before this field existed — a project is never switched to the PR path by detection.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -126,6 +133,7 @@ impl Default for ProjectConfig {
             issue_tracking_auto_detect: None,
             code_hosting: None,
             code_hosting_auto_detect: None,
+            remote_name: None,
             landing_mode: None,
             startup_tab: None,
             accent_color: None,

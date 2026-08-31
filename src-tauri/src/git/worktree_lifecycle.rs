@@ -88,9 +88,11 @@ pub async fn create_worktree(
 
     let (worktree_id, branch_name, relative_path) = match task_id {
         Some(tid) => {
-            let branch_name = new_branch_name.clone().unwrap_or_else(|| base_branch.clone());
             let relative_path = crate::models::worktree_path_for_task(tid);
-            crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?;
+            // The name comes back from git rather than being guessed from `base_branch`: checking
+            // out `origin/foo` lands the worktree on a local `foo`, and a row saying `origin/foo`
+            // would match no worktree git ever reports.
+            let branch_name = crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?;
 
             let worktree_id = {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -128,23 +130,26 @@ pub async fn create_worktree(
             // Suffix rather than probing for an existing branch: a check-then-create pair races
             // with a second spawn, an id cannot collide. Only for a generated name — see the note
             // on `unique_suffix` above.
-            let branch_name = match &new_branch_name {
-                Some(name) if unique_suffix => format!("{}-{}", name, worktree_id),
-                Some(name) => name.clone(),
-                None => base_branch.clone(),
+            let requested_branch = match &new_branch_name {
+                Some(name) if unique_suffix => Some(format!("{}-{}", name, worktree_id)),
+                Some(name) => Some(name.clone()),
+                None => None,
             };
 
-            // `None` means "check out base_branch where it is", so there is no new name to suffix.
-            let branch_to_create = new_branch_name.as_ref().map(|_| branch_name.as_str());
+            // `None` means "check out base_branch where it is", so there is no new name to suffix,
+            // and git decides the name — see the note in the task arm above.
             let created =
-                crate::git::create_worktree(&git_conn, &base_branch, &relative_path, branch_to_create).await;
+                crate::git::create_worktree(&git_conn, &base_branch, &relative_path, requested_branch.as_deref()).await;
 
-            if let Err(e) = created {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id])
-                    .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
-                return Err(e);
-            }
+            let branch_name = match created {
+                Ok(name) => name,
+                Err(e) => {
+                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id])
+                        .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
+                    return Err(e);
+                }
+            };
 
             {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -256,7 +261,8 @@ pub async fn delete_worktree(
     // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
         let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await;
-        crate::git::prune_remote_refs(&git_conn).await;
+        let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+        crate::git::prune_remote_refs(&git_conn, &remote).await;
     }
 
     // Delete DB row if id provided (orphans have no DB row)
@@ -529,7 +535,8 @@ pub async fn cleanup_zombie_worktrees(
 
     // Once for the batch, not once per worktree — it goes to the network.
     if !to_delete.is_empty() {
-        crate::git::prune_remote_refs(&git_conn).await;
+        let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+        crate::git::prune_remote_refs(&git_conn, &remote).await;
     }
 
     // Batch-delete DB rows under a single lock
@@ -652,9 +659,17 @@ pub async fn discard_task_workspace(
 /// future feature creates inside it becomes prunable the moment it does.
 const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
 const LOCAL_MAESTRO_REF_PREFIX: &str = "refs/heads/maestro/";
-const REMOTE_MAESTRO_REF_PREFIX: &str = "refs/remotes/origin/maestro/";
 
-/// A Maestro branch with no worktree and nothing on origin holding it — the only kind this
+/// Where a pushed Maestro branch lives, for the project's configured remote.
+///
+/// Built per call rather than being a constant: this namespace is the entire evidence that a
+/// branch is still held somewhere, so hardcoding `origin` would offer to delete the branches of
+/// a project that pushes anywhere else.
+fn remote_maestro_ref_prefix(remote: &str) -> String {
+    format!("refs/remotes/{}/maestro/", remote)
+}
+
+/// A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
 /// offers to delete.
 ///
 /// `commits` and `diff_stat` are filled for unmerged branches only. For a merged branch they
@@ -673,8 +688,9 @@ pub struct PrunableBranch {
 /// Maestro branches safe to offer for deletion, from raw git output.
 ///
 /// `all_refs` is `for-each-ref --format=%(refname)%09%(committerdate:iso-strict)` over both the
-/// local and the origin namespaces; `merged_refs` the same restricted to `--merged HEAD`;
-/// `checked_out` the branch names git reports against a worktree.
+/// local and the remote namespaces; `merged_refs` the same restricted to `--merged HEAD`;
+/// `checked_out` the branch names git reports against a worktree; `remote` the project's
+/// configured remote, which decides what counts as "still pushed somewhere".
 ///
 /// Full refnames rather than `%(refname:short)` because a local `maestro/x` and a remote
 /// `origin/maestro/x` shorten into two names that no longer say which namespace they came from.
@@ -682,7 +698,9 @@ fn prunable_maestro_branches(
     all_refs: &str,
     merged_refs: &str,
     checked_out: &HashSet<String>,
+    remote: &str,
 ) -> Vec<PrunableBranch> {
+    let remote_prefix = remote_maestro_ref_prefix(remote);
     let merged: HashSet<&str> = merged_refs
         .lines()
         .filter_map(|line| line.trim().strip_prefix(LOCAL_MAESTRO_REF_PREFIX))
@@ -702,7 +720,7 @@ fn prunable_maestro_branches(
             if !name.is_empty() {
                 locals.push((name, committed_at));
             }
-        } else if let Some(name) = refname.strip_prefix(REMOTE_MAESTRO_REF_PREFIX) {
+        } else if let Some(name) = refname.strip_prefix(remote_prefix.as_str()) {
             if !name.is_empty() {
                 remotes.insert(name);
             }
@@ -798,6 +816,10 @@ pub async fn list_prunable_branches(
     project_id: i32,
 ) -> Result<Vec<PrunableBranch>, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    // Trailing slash omitted so `for-each-ref` treats it as a namespace, matching the two
+    // literals beside it; the strict prefix check lives in `prunable_maestro_branches`.
+    let remote_namespace = format!("refs/remotes/{}/maestro", remote);
 
     let mut outputs = crate::git::run_git_commands_lossy(
         &git_conn,
@@ -807,7 +829,7 @@ pub async fn list_prunable_branches(
                 "for-each-ref",
                 "--format=%(refname)%09%(committerdate:iso-strict)",
                 "refs/heads/maestro",
-                "refs/remotes/origin/maestro",
+                &remote_namespace,
             ],
             // The predicate `git branch -d` itself applies: with no upstream on any of these
             // branches, it falls back to asking whether HEAD contains them.
@@ -827,7 +849,7 @@ pub async fn list_prunable_branches(
         .filter_map(|worktree| worktree.branch)
         .collect();
 
-    let mut candidates = prunable_maestro_branches(&all_refs, &merged_refs, &checked_out);
+    let mut candidates = prunable_maestro_branches(&all_refs, &merged_refs, &checked_out, &remote);
     fill_unmerged_branch_stats(&git_conn, &mut candidates).await;
     Ok(candidates)
 }
@@ -949,14 +971,34 @@ mod tests {
             "maestro/42-fix-the-thing".to_string(),
         ]);
 
-        let names: Vec<String> = prunable_maestro_branches(all_refs, merged_refs, &checked_out)
-            .into_iter()
-            .map(|branch| branch.name)
-            .collect();
+        let names: Vec<String> =
+            prunable_maestro_branches(all_refs, merged_refs, &checked_out, "origin")
+                .into_iter()
+                .map(|branch| branch.name)
+                .collect();
         assert_eq!(
             names,
             vec!["maestro/41-prune-stale-branches", "maestro/kind-heath-19"]
         );
+    }
+
+    /// "Still pushed somewhere" is judged against the project's configured remote, not `origin`.
+    /// Getting this wrong offers to delete branches that are safely on the remote the user
+    /// actually pushes to.
+    #[test]
+    fn a_pushed_branch_is_protected_on_the_configured_remote() {
+        let all_refs = concat!(
+            "refs/heads/maestro/rapid-hollow-17\t2026-08-10T08:00:00+02:00\n",
+            "refs/remotes/fork/maestro/rapid-hollow-17\t2026-08-10T08:00:00+02:00\n",
+        );
+
+        let held = prunable_maestro_branches(all_refs, "", &HashSet::new(), "fork");
+        assert!(held.is_empty(), "the branch is on `fork`, so nothing is prunable");
+
+        // The same refs judged against `origin`, which holds nothing: the branch looks orphaned.
+        let orphaned = prunable_maestro_branches(all_refs, "", &HashSet::new(), "origin");
+        assert_eq!(orphaned.len(), 1);
+        assert_eq!(orphaned[0].name, "maestro/rapid-hollow-17");
     }
 
     #[test]
@@ -967,7 +1009,7 @@ mod tests {
         );
         let merged_refs = "refs/heads/maestro/kind-heath-19\n";
 
-        let candidates = prunable_maestro_branches(all_refs, merged_refs, &HashSet::new());
+        let candidates = prunable_maestro_branches(all_refs, merged_refs, &HashSet::new(), "origin");
         assert_eq!(candidates.len(), 2);
         assert!(candidates[0].merged);
         assert_eq!(candidates[0].last_commit_at, "2026-08-20T09:30:00+02:00");

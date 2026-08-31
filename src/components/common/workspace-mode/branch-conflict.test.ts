@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findBranchConflict } from "./branch-conflict";
+import { checkoutTargetBranch, findBranchConflict } from "./branch-conflict";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
 const REPO = "/repo";
@@ -79,5 +79,57 @@ describe("findBranchConflict", () => {
 
   it("reports nothing for an empty branch", () => {
     expect(findBranchConflict("", [worktree({ branch_name: "" })], REPO)).toBeNull();
+  });
+
+  /// Checking out `origin/main` lands the worktree on a local `main`, so the repository directory
+  /// sitting on `main` blocks it. Matching the qualified name against `branch_name` — which is
+  /// always local — would report no conflict and then fail inside git.
+  it("resolves a remote branch to the local one it would check out", () => {
+    const conflict = findBranchConflict(
+      "origin/main",
+      [worktree({ id: 2, path: REPO, branch_name: "main" })],
+      REPO,
+      { local: ["main"], remote: ["origin/main"] },
+    );
+    expect(conflict).toEqual({
+      kind: "repositoryDirectory",
+      worktree: expect.objectContaining({ id: 2 }),
+    });
+  });
+
+  /// A local branch really can be called `origin/foo` — it lives at `refs/heads/origin/foo`. The
+  /// Local tab offers it under that name, so it must not be stripped down to `foo`.
+  it("prefers a local branch whose own name looks remote-qualified", () => {
+    const holder = worktree({ id: 3, branch_name: "origin/main" });
+    const branches = { local: ["origin/main"], remote: ["origin/main"] };
+
+    expect(findBranchConflict("origin/main", [holder], REPO, branches)?.worktree.id).toBe(3);
+    // Without a local branch by that name it resolves to `main`, which nothing here holds.
+    expect(
+      findBranchConflict("origin/main", [holder], REPO, { local: [], remote: ["origin/main"] }),
+    ).toBeNull();
+  });
+});
+
+describe("checkoutTargetBranch", () => {
+  const branches = {
+    local: ["main", "feature/payments"],
+    remote: ["origin/main", "origin/chore/registry", "fork/experiment"],
+  };
+
+  it("strips the remote segment from a name the remote list holds", () => {
+    expect(checkoutTargetBranch("origin/main", branches)).toBe("main");
+    // Slashes past the first belong to the branch name.
+    expect(checkoutTargetBranch("origin/chore/registry", branches)).toBe("chore/registry");
+    expect(checkoutTargetBranch("fork/experiment", branches)).toBe("experiment");
+  });
+
+  /// The reason membership decides this rather than the presence of a slash: plenty of local
+  /// branches are namespaced, and stripping one would point the conflict check at the wrong branch.
+  it("leaves a slashed local branch untouched", () => {
+    expect(checkoutTargetBranch("feature/payments", branches)).toBe("feature/payments");
+    expect(checkoutTargetBranch("maestro/kind-canyon-49", branches)).toBe("maestro/kind-canyon-49");
+    expect(checkoutTargetBranch("main", branches)).toBe("main");
+    expect(checkoutTargetBranch("", branches)).toBe("");
   });
 });

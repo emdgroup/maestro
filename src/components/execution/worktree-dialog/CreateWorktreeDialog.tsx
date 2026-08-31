@@ -77,7 +77,9 @@ export function CreateWorktreeDialog({
   const typed = branchSuffix.trim();
   const suffixError = branchMode === "Create" ? validateBranchSuffix(typed) : null;
   const conflict =
-    branchMode === "Checkout" ? findBranchConflict(baseBranch, worktrees, repoPath) : null;
+    branchMode === "Checkout"
+      ? findBranchConflict(baseBranch, worktrees, repoPath, branchData?.[0])
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

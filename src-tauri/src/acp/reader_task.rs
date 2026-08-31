@@ -491,10 +491,14 @@ pub(crate) async fn task_has_changes(
         None => git_conn.path().to_string(),
     };
 
+    // `Commit` never consults the remote; passed for signature uniformity, and resolving it is a
+    // cached map lookup after the first call.
+    let remote = crate::git::remote::project_remote(app_state, project_id).await;
     crate::git::worktree_query::diff_stats_in(
         &git_conn,
         &cwd,
         &crate::models::DiffTarget::Commit { sha: start_sha },
+        &remote,
     )
     .await
     .ok()

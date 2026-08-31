@@ -1,5 +1,5 @@
 use crate::models::GitConnection;
-use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
+use super::exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
 
 #[derive(serde::Serialize, specta::Type)]
 pub struct BranchList {
@@ -15,22 +15,73 @@ pub struct ParsedWorktree {
     pub is_prunable: bool,
 }
 
-/// Create a worktree in the project repository.
+/// The local branch a checkout of `base` lands on, when `base` names a remote-tracking ref.
 ///
-/// `branch` is the base branch (e.g. origin branch) to create from or check out.
-/// `new_branch` is an optional name for a new branch to create from `branch`.
-/// When `new_branch` is None, the existing `branch` is checked out directly.
+/// `origin/foo` resolves to `foo` — the expansion `git worktree add` performs itself when no
+/// local branch by that name exists. Making it explicit is what keeps it happening once one
+/// does: git's own DWIM would then check out the local branch instead, which is not the ref the
+/// user picked and can sit at an entirely different commit.
+///
+/// Asks git rather than stripping the prefix, because a local branch may itself be named
+/// `origin/foo` — it lives at `refs/heads/origin/foo`. That one takes precedence and yields
+/// `None`, so the name the Local tab offers always means the local branch.
+pub async fn local_branch_for(conn: &GitConnection, base: &str) -> Option<String> {
+    let (_remote_name, rest) = base.split_once('/')?;
+    if rest.is_empty() {
+        return None;
+    }
+
+    // `rev-parse --verify --quiet` prints the sha on success and nothing on failure, so emptiness
+    // is the answer. `show-ref --quiet` prints nothing either way and cannot be read through the
+    // lossy helper, which reports a failed command as an empty string.
+    let head_ref = format!("refs/heads/{}", base);
+    let remote_ref = format!("refs/remotes/{}", base);
+    let probes: Vec<Vec<&str>> = vec![
+        vec!["rev-parse", "--verify", "--quiet", &head_ref],
+        vec!["rev-parse", "--verify", "--quiet", &remote_ref],
+    ];
+    let as_slices: Vec<&[&str]> = probes.iter().map(Vec::as_slice).collect();
+    let mut outputs = run_git_commands_lossy(conn, conn.path(), &as_slices).await.into_iter();
+
+    let local_exists = !outputs.next().unwrap_or_default().trim().is_empty();
+    let remote_exists = !outputs.next().unwrap_or_default().trim().is_empty();
+
+    (!local_exists && remote_exists).then(|| rest.to_string())
+}
+
+/// Create a worktree in the project repository, returning the branch it ends up on.
+///
+/// `branch` is the base to create from or check out — a local name, or a `<remote>/`-qualified
+/// one from the picker's Remote tab. `new_branch` names a branch to create from it; `None`
+/// checks `branch` out where it is.
+///
+/// The `--track -b` form for a remote base is git's own documented DWIM expansion, written out
+/// so it still applies when a local branch shadows the remote one. The returned name is what the
+/// caller must record: for a remote checkout the worktree sits on `foo`, not on `origin/foo`.
 pub async fn create_worktree(
     conn: &GitConnection,
     branch: &str,
     worktree_name: &str,
     new_branch: Option<&str>,
-) -> Result<(), String> {
-    let args: Vec<&str> = match new_branch {
-        Some(nb) => vec!["worktree", "add", worktree_name, "-b", nb, branch],
-        None => vec!["worktree", "add", worktree_name, branch],
-    };
-    run_git_in_dir(conn, conn.path(), &args).await.map(|_| ())
+) -> Result<String, String> {
+    if let Some(nb) = new_branch {
+        run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, "-b", nb, branch])
+            .await?;
+        return Ok(nb.to_string());
+    }
+
+    if let Some(local) = local_branch_for(conn, branch).await {
+        run_git_in_dir(
+            conn,
+            conn.path(),
+            &["worktree", "add", "--track", "-b", &local, worktree_name, branch],
+        )
+        .await?;
+        return Ok(local);
+    }
+
+    run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, branch]).await?;
+    Ok(branch.to_string())
 }
 
 /// Remove a worktree from the project repository.
@@ -151,12 +202,12 @@ fn removable_worktree_dir(repo_path: &str, worktree_name: &str) -> Option<String
 ///
 /// Best-effort, and deliberately *not* part of [`delete_worktree`]: this contacts the remote, so
 /// a caller removing several worktrees must call it once at the end rather than once per
-/// worktree, and an unreachable origin then costs one stalled request instead of N.
+/// worktree, and an unreachable remote then costs one stalled request instead of N.
 ///
-/// Only ever removes `origin/*` refs — never a local branch, never a commit.
-pub async fn prune_remote_refs(conn: &GitConnection) {
-    if let Err(e) = run_git_in_dir_lossy(conn, conn.path(), &["remote", "prune", "origin"]).await {
-        log::debug!("[git] pruning remote-tracking refs failed: {e}");
+/// Only ever removes `<remote>/*` refs — never a local branch, never a commit.
+pub async fn prune_remote_refs(conn: &GitConnection, remote: &str) {
+    if let Err(e) = run_git_in_dir_lossy(conn, conn.path(), &["remote", "prune", remote]).await {
+        log::debug!("[git] pruning remote-tracking refs for {remote} failed: {e}");
     }
 }
 
@@ -185,9 +236,20 @@ pub async fn git_status(conn: &GitConnection) -> Result<String, String> {
     run_git_in_dir(conn, conn.path(), &["status", "--porcelain"]).await
 }
 
-pub async fn list_branches(conn: &GitConnection) -> Result<BranchList, String> {
-    let raw = run_git_in_dir(conn, conn.path(), &["branch", "-a", "--format=%(refname:short)"]).await?;
-    Ok(parse_branch_list(raw.lines()))
+/// Every branch of the repository, split into local names and `<remote>/`-qualified remote ones.
+///
+/// Asks for full refnames rather than `branch -a --format=%(refname:short)`. Shortening is lossy
+/// in exactly the way that matters here: `refs/remotes/origin/HEAD` shortens to the bare string
+/// `origin`, which has no `origin/` prefix to strip and so used to be reported as a local branch.
+pub async fn list_branches(conn: &GitConnection, remote: &str) -> Result<BranchList, String> {
+    let remote_namespace = format!("refs/remotes/{}", remote);
+    let raw = run_git_in_dir(
+        conn,
+        conn.path(),
+        &["for-each-ref", "--format=%(refname)", "refs/heads", &remote_namespace],
+    )
+    .await?;
+    Ok(parse_branch_list(raw.lines(), remote))
 }
 
 /// The branch checked out in the project repository, or `main` when there is none to name.
@@ -235,30 +297,96 @@ pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
         .collect()
 }
 
-pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>) -> BranchList {
+/// Classify `for-each-ref --format=%(refname)` output into the two lists the picker shows.
+///
+/// Remote entries keep their `<remote>/` prefix, because that is what they are: a separate ref
+/// that can sit at a different commit from a local branch of the same name. They used to be
+/// stored bare and then deduplicated against the local list, which hid precisely the branches a
+/// user opens the Remote tab to find.
+///
+/// `<remote>/HEAD` is dropped — it is a symbolic pointer at the remote's default branch, which
+/// is already listed under its own name.
+pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>, remote_name: &str) -> BranchList {
+    let remote_prefix = format!("refs/remotes/{}/", remote_name);
     let mut local: Vec<String> = Vec::new();
     let mut remote: Vec<String> = Vec::new();
+
     for line in lines {
-        if let Some(name) = line.strip_prefix("origin/") {
-            if !name.is_empty() && name != "HEAD" {
-                remote.push(name.to_string());
+        let line = line.trim();
+        if let Some(name) = line.strip_prefix("refs/heads/") {
+            if !name.is_empty() {
+                local.push(name.to_string());
             }
-        } else if !line.is_empty() && line != "HEAD" {
-            local.push(line.to_string());
+        } else if let Some(name) = line.strip_prefix(&remote_prefix) {
+            if !name.is_empty() && name != "HEAD" {
+                remote.push(format!("{}/{}", remote_name, name));
+            }
         }
     }
+
     local.sort();
     local.dedup();
     remote.sort();
     remote.dedup();
-    // Drop remote entries that already exist as local branches (same branch, no need to show twice)
-    remote.retain(|r| local.binary_search(r).is_err());
     BranchList { local, remote }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{remove_dir_with_retries, removable_worktree_dir};
+    use super::{parse_branch_list, remove_dir_with_retries, removable_worktree_dir};
+
+    /// The two lists must be exactly `refs/heads/*` and `refs/remotes/<remote>/*`.
+    ///
+    /// Both halves of this used to be wrong. `refs/remotes/origin/HEAD` shortens to the bare word
+    /// `origin`, which has no `origin/` prefix to strip and so was reported as a local branch; and
+    /// remote entries were stored bare and then deduplicated against the local list, hiding every
+    /// remote branch whose name a local branch happened to share.
+    #[test]
+    fn branches_are_split_by_namespace_not_by_shortened_name() {
+        let refs = concat!(
+            "refs/heads/main\n",
+            "refs/heads/rebuild-worktree-card\n",
+            "refs/heads/maestro/kind-canyon-49\n",
+            "refs/remotes/origin/HEAD\n",
+            "refs/remotes/origin/main\n",
+            "refs/remotes/origin/rebuild-worktree-card\n",
+            "refs/remotes/origin/chore/agent-registry-20260810\n",
+        );
+
+        let branches = parse_branch_list(refs.lines(), "origin");
+
+        assert_eq!(branches.local, vec!["maestro/kind-canyon-49", "main", "rebuild-worktree-card"]);
+        assert_eq!(
+            branches.remote,
+            vec![
+                "origin/chore/agent-registry-20260810",
+                "origin/main",
+                "origin/rebuild-worktree-card",
+            ],
+            "a name existing locally must not hide the remote ref, which can be at another commit"
+        );
+    }
+
+    /// Only the configured remote's namespace is listed; another remote's refs are not the
+    /// project's branches and must not be offered as bases.
+    #[test]
+    fn only_the_configured_remote_is_listed() {
+        let refs = concat!(
+            "refs/heads/main\n",
+            "refs/remotes/fork/HEAD\n",
+            "refs/remotes/fork/main\n",
+            "refs/remotes/fork/experiment\n",
+        );
+
+        let branches = parse_branch_list(refs.lines(), "fork");
+        assert_eq!(branches.local, vec!["main"]);
+        assert_eq!(branches.remote, vec!["fork/experiment", "fork/main"]);
+
+        // The same refs read against a remote the project does not have.
+        let branches = parse_branch_list(refs.lines(), "origin");
+        assert_eq!(branches.local, vec!["main"]);
+        assert!(branches.remote.is_empty());
+    }
 
     /// The fallback in `delete_worktree` removes a directory outright, so it must only ever fire
     /// for a worktree maestro created inside the repository.

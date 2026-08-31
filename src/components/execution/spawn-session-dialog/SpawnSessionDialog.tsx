@@ -204,7 +204,7 @@ export function SpawnSessionDialog({
 
   const branchConflict =
     creatingWorktree && branchMode === "Checkout"
-      ? findBranchConflict(baseBranch, worktrees, repoPath)
+      ? findBranchConflict(baseBranch, worktrees, repoPath, branchData?.[0])
       : null;
 
   const canSpawn = !isGitRepo

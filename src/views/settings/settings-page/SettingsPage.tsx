@@ -178,6 +178,7 @@ function ProjectScopePane({
         default_agent: settings.default_agent,
         startup_tab: settings.startup_tab,
         default_workspace_mode: settings.default_workspace_mode,
+        remote_name: settings.remote_name,
         ...patch,
       },
     });
@@ -201,6 +202,8 @@ function ProjectScopePane({
         <ProjectDefaultsSection
           defaultAgent={settings?.default_agent ?? null}
           defaultWorkspaceMode={settings?.default_workspace_mode ?? "NewWorktree"}
+          remoteName={settings?.remote_name ?? null}
+          projectId={projectId}
           onChange={updateSettings}
           agents={discovery?.agents ?? []}
           agentsLoading={agentsLoading}

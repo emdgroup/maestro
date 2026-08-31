@@ -294,6 +294,20 @@ async listProjectBranches(projectId: number) : Promise<Result<[BranchList, strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Every remote configured for the project, for the Settings picker.
+ * 
+ * An empty list is the honest answer for a repository with no remote, and for one git could not
+ * be asked about — the picker offers only "Auto" in both cases.
+ */
+async listProjectRemotes(projectId: number) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_project_remotes", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getLinuxInstallType() : Promise<string> {
     return await TAURI_INVOKE("get_linux_install_type");
 },
@@ -2754,7 +2768,12 @@ export type ProjectConfigRequest = { default_agent: string | null; startup_tab: 
  * cannot name a specific workspace — but the field is the full enum so the two places that
  * read it do not have to translate between two types.
  */
-default_workspace_mode: WorkspaceMode }
+default_workspace_mode: WorkspaceMode; 
+/**
+ * `None` selects auto-detection; a name must be one the project actually has, which is why
+ * the form offers a picker rather than a text field.
+ */
+remote_name: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; 
 /**
  * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
@@ -2769,10 +2788,15 @@ accent_color_auto_assign: boolean | null;
 /**
  * Resolved, never `None`: the settings file may predate the key, and the UI needs an answer.
  */
-default_workspace_mode: WorkspaceMode }
+default_workspace_mode: WorkspaceMode; 
+/**
+ * The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
+ * picker has to be able to show that no choice has been made.
+ */
+remote_name: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
- * A Maestro branch with no worktree and nothing on origin holding it — the only kind this
+ * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.
  * 
  * `commits` and `diff_stat` are filled for unmerged branches only. For a merged branch they

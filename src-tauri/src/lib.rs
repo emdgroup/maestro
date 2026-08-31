@@ -53,6 +53,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::list_task_comments,
             crate::ipc::add_task_note,
             crate::ipc::list_project_branches,
+            crate::ipc::list_project_remotes,
             crate::ipc::get_linux_install_type,
             crate::ipc::get_settings,
             crate::ipc::save_settings,

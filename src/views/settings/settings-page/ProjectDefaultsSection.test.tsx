@@ -8,6 +8,9 @@ import type { DiscoveredAgent, WorkspaceMode } from "@/types/bindings";
 /// exist for a project that cannot have worktrees.
 const isGitRepo = vi.hoisted(() => ({ current: true }));
 
+/// The project's git remotes, swapped per test.
+const remotes = vi.hoisted(() => ({ current: ["origin", "fork"] as string[] }));
+
 vi.mock("@/services/acp-auth.service", () => ({
   useAgentAuthInfoQuery: () => ({ data: { authenticated: false, supportsLogout: false } }),
   useAcpLogoutMutation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -17,19 +20,29 @@ vi.mock("@/store/projectStore", () => ({
   useIsGitRepo: () => isGitRepo.current,
 }));
 
+vi.mock("@/services/project.service", () => ({
+  useProjectRemotes: () => ({ data: remotes.current }),
+}));
+
 const agents = [
   { id: "claude-acp", name: "Claude" },
   { id: "codex", name: "Codex" },
 ] as DiscoveredAgent[];
 
 function renderSection(
-  props: { defaultAgent?: string | null; defaultWorkspaceMode?: WorkspaceMode } = {},
+  props: {
+    defaultAgent?: string | null;
+    defaultWorkspaceMode?: WorkspaceMode;
+    remoteName?: string | null;
+  } = {},
 ) {
   const onChange = vi.fn();
   render(
     <ProjectDefaultsSection
       defaultAgent={props.defaultAgent ?? null}
       defaultWorkspaceMode={props.defaultWorkspaceMode ?? "NewWorktree"}
+      remoteName={props.remoteName ?? null}
+      projectId={1}
       onChange={onChange}
       agents={agents}
       agentsLoading={false}

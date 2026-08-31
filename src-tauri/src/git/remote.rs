@@ -1,3 +1,8 @@
+use std::sync::Arc;
+use tauri::State;
+
+use crate::core::AppState;
+
 /// Shell-safe quoting for paths used in SSH commands.
 /// Wraps in single quotes and escapes internal single quotes as '\'' (end quote, escaped quote, restart quote).
 pub fn shell_quote(s: &str) -> String {
@@ -58,6 +63,21 @@ pub fn pick_remote_url(remote_v_output: &str) -> Option<String> {
     pick_remote(remote_v_output).map(|(_name, url)| url)
 }
 
+/// Every remote name in `git remote -v` output, deduped, in the order git printed them.
+///
+/// `git remote -v` lists each remote twice, once for fetch and once for push, so the dedup is
+/// not defensive — it is the whole point.
+pub fn remote_names(remote_v_output: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for line in remote_v_output.lines() {
+        let Some(name) = line.split_whitespace().next() else { continue };
+        if !names.iter().any(|seen| seen == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
 /// As `pick_remote_url`, but also returns the remote's name — which is what `git push`
 /// takes, and which is not recoverable from the URL.
 pub fn pick_remote(remote_v_output: &str) -> Option<(String, String)> {
@@ -79,6 +99,85 @@ pub fn pick_remote(remote_v_output: &str) -> Option<(String, String)> {
     }
 
     upstream.or(first)
+}
+
+/// The fallback when a project has no remote at all — every caller still needs a name to build a
+/// ref from, and a ref that does not resolve is treated as absent rather than as an error.
+pub const DEFAULT_REMOTE: &str = "origin";
+
+/// The remote this project's branches live on: the configured `remote_name`, or [`pick_remote`]'s
+/// guess, or [`DEFAULT_REMOTE`].
+///
+/// Cached on `AppState`, and that is not an optimisation. `list_worktrees_with_status` refetches
+/// every ten seconds, and a miss here costs a `.maestro/settings.json` read plus a `git remote -v`
+/// — an SFTP round trip and an SSH one for a remote project. `update_project_settings` drops the
+/// entry after writing, so a changed setting applies without a restart.
+pub async fn project_remote(app_state: &AppState, project_id: i32) -> String {
+    if let Ok(cache) = app_state.project_remotes.lock() {
+        if let Some(name) = cache.get(&project_id) {
+            return name.clone();
+        }
+    }
+
+    let resolved = resolve_project_remote(app_state, project_id).await;
+    if let Ok(mut cache) = app_state.project_remotes.lock() {
+        cache.insert(project_id, resolved.clone());
+    }
+    resolved
+}
+
+/// Forget the cached remote for a project, so the next [`project_remote`] re-reads its settings.
+pub fn forget_project_remote(app_state: &AppState, project_id: i32) {
+    if let Ok(mut cache) = app_state.project_remotes.lock() {
+        cache.remove(&project_id);
+    }
+}
+
+async fn resolve_project_remote(app_state: &AppState, project_id: i32) -> String {
+    let Ok((project, git_conn)) = crate::core::get_project_with_git_conn(app_state, project_id).await
+    else {
+        return DEFAULT_REMOTE.to_string();
+    };
+
+    let config: crate::models::ProjectConfig = crate::core::project_storage::read_maestro_json(
+        &git_conn,
+        crate::project::settings::SETTINGS_FILE,
+    )
+    .await;
+    if let Some(name) = config.remote_name.filter(|name| !name.trim().is_empty()) {
+        return name;
+    }
+
+    match crate::git::run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"]).await {
+        Ok(output) => pick_remote(&output)
+            .map(|(name, _url)| name)
+            .unwrap_or_else(|| DEFAULT_REMOTE.to_string()),
+        Err(e) => {
+            log::debug!("[git] `git remote -v` failed for project {project_id}: {e}");
+            DEFAULT_REMOTE.to_string()
+        }
+    }
+}
+
+/// Every remote configured for the project, for the Settings picker.
+///
+/// An empty list is the honest answer for a repository with no remote, and for one git could not
+/// be asked about — the picker offers only "Auto" in both cases.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_project_remotes(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<Vec<String>, String> {
+    let (project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    match crate::git::run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"]).await {
+        Ok(output) => Ok(remote_names(&output)),
+        Err(e) => {
+            log::debug!("[git] listing remotes failed for project {project_id}: {e}");
+            Ok(Vec::new())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -175,5 +274,19 @@ fork\thttps://github.com/fork/repo.git (fetch)
             pick_remote(output),
             Some(("upstream".into(), "https://github.com/upstream/repo.git".into()))
         );
+    }
+
+    /// `git remote -v` prints each remote twice, once for fetch and once for push, so the picker
+    /// would otherwise offer every name as a duplicate pair.
+    #[test]
+    fn remote_names_are_listed_once_each_in_git_order() {
+        let output = "\
+origin\tgit@github.com:me/repo.git (fetch)
+origin\tgit@github.com:me/repo.git (push)
+fork\thttps://github.com/fork/repo.git (fetch)
+fork\thttps://github.com/fork/repo.git (push)
+";
+        assert_eq!(remote_names(output), vec!["origin", "fork"]);
+        assert!(remote_names("").is_empty());
     }
 }

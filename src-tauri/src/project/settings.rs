@@ -68,6 +68,7 @@ pub async fn get_project_settings(
         accent_color: config.accent_color,
         accent_color_auto_assign: config.accent_color_auto_assign,
         default_workspace_mode,
+        remote_name: config.remote_name,
     })
 }
 
@@ -113,9 +114,14 @@ pub async fn update_project_settings(
         config.default_agent = settings.default_agent;
         config.startup_tab = settings.startup_tab;
         config.set_default_workspace_mode(settings.default_workspace_mode);
+        config.remote_name = settings.remote_name.filter(|name| !name.trim().is_empty());
         true
     })
     .await?;
+
+    // The resolved remote is cached per project, so without this a change here would not reach
+    // the branch picker or the prune safety check until the next restart.
+    crate::git::remote::forget_project_remote(&app_state, project_id);
 
     Ok(())
 }

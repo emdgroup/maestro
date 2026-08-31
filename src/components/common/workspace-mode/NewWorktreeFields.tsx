@@ -10,6 +10,8 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { cn } from "@/lib/utils";
 import { MAESTRO_BRANCH_PREFIX, validateBranchSuffix } from "@/lib/generateSessionName";
+import { useProjectBranchesQuery } from "@/services/task.service";
+import { useSelectedProject } from "@/store/projectStore";
 import type { BranchMode, WorktreeWithStatus } from "@/types/bindings";
 import { findBranchConflict, type BranchConflict } from "./branch-conflict";
 
@@ -81,8 +83,15 @@ export function NewWorktreeFields({
   const creating = branchMode === "Create";
   const suffixError = creating ? validateBranchSuffix(branchSuffix) : null;
 
+  // The same cached query `BranchPicker` renders from, read again here because the conflict check
+  // has to know which of the names it offers are remote-qualified.
+  const project = useSelectedProject();
+  const { data: branchData } = useProjectBranchesQuery(project?.id ?? null);
+
   // Only checkout can collide: creating a branch makes a new ref, which no worktree can be on.
-  const conflict = creating ? null : findBranchConflict(branch, worktrees, repoPath);
+  const conflict = creating
+    ? null
+    : findBranchConflict(branch, worktrees, repoPath, branchData?.[0]);
   const blockedReason = conflict ? (useExistingBlockedReason?.(conflict) ?? null) : null;
   const canUseExisting =
     conflict !== null && onUseExistingWorkspace != null && blockedReason == null;
@@ -136,7 +145,7 @@ export function NewWorktreeFields({
             creating
               ? undefined
               : (candidate) => {
-                  const held = findBranchConflict(candidate, worktrees, repoPath);
+                  const held = findBranchConflict(candidate, worktrees, repoPath, branchData?.[0]);
                   if (!held) return null;
                   return held.kind === "repositoryDirectory"
                     ? "in use — your project directory"
