@@ -5,6 +5,7 @@ import { ReviewFileCard, fileNote } from "./ReviewFileCard";
 
 const onToggleViewed = vi.fn();
 const onToggleExpanded = vi.fn();
+const onSelect = vi.fn();
 const onSubmit = vi.fn();
 const onRemove = vi.fn();
 
@@ -20,6 +21,7 @@ function renderCard(props: Partial<Parameters<typeof ReviewFileCard>[0]> = {}) {
       onToggleViewed={onToggleViewed}
       expanded
       onToggleExpanded={onToggleExpanded}
+      onSelect={onSelect}
       fileComment={{ comment: null, onSubmit, onRemove }}
       {...props}
     >
@@ -31,6 +33,7 @@ function renderCard(props: Partial<Parameters<typeof ReviewFileCard>[0]> = {}) {
 beforeEach(() => {
   onToggleViewed.mockClear();
   onToggleExpanded.mockClear();
+  onSelect.mockClear();
   onSubmit.mockClear();
   onRemove.mockClear();
 });
@@ -92,25 +95,39 @@ describe("ReviewFileCard", () => {
     expect(onToggleExpanded).not.toHaveBeenCalled();
   });
 
-  it("toggles viewed without collapsing the card", async () => {
+  it("toggles viewed without collapsing or selecting the card", async () => {
     renderCard();
     await userEvent.click(screen.getByRole("button", { name: "Mark as viewed" }));
     expect(onToggleViewed).toHaveBeenCalledTimes(1);
     expect(onToggleExpanded).not.toHaveBeenCalled();
+    // Being told a file is viewed is not being told to look at it.
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("copies the path without collapsing the card", async () => {
+  it("copies the path without collapsing or selecting the card", async () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderCard();
     await userEvent.click(screen.getByRole("button", { name: "Copy path" }));
     expect(writeText).toHaveBeenCalledWith("src/acp/transport.rs");
     expect(onToggleExpanded).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("collapses when the header itself is clicked", async () => {
     renderCard();
     await userEvent.click(screen.getByText("src/acp/transport.rs"));
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+  });
+
+  // Reading a file is picking it, and it is read in the diff as much as at the header — so both
+  // count, and the stepper and the tree follow whatever is actually being looked at.
+  it("selects from the header and from the diff body alike", async () => {
+    renderCard();
+    await userEvent.click(screen.getByText("src/acp/transport.rs"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByTestId("diff-body"));
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
   it("writes a file comment through onSubmit", async () => {
