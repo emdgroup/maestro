@@ -2,9 +2,9 @@ import { Bell, Bot, CircleDot, Cpu, GitBranch, Monitor, Palette, ScrollText } fr
 import type { LucideIcon } from "lucide-react";
 
 /**
- * Which store a page writes to. This is the one thing the settings page was failing to say:
- * `app` is the `settings` table, `connection` is whatever host the project lives on, and
- * `project` is that project's `.maestro/`. A page belongs to exactly one.
+ * What a page's settings apply to. This is the one thing the settings page was failing to say:
+ * `app` is every project on this machine, `connection` is one host and everything pointed at it,
+ * and `project` is a single project. A page belongs to exactly one.
  */
 export type SettingsScope = "app" | "connection" | "project";
 
@@ -53,7 +53,9 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     id: "concurrency",
     label: "Running agents",
     icon: Cpu,
-    scope: "app",
+    // Per connection because the constraint is memory, and a machine's memory is shared by every
+    // project and every tool pointed at it.
+    scope: "connection",
     keywords: ["max concurrent agents", "concurrency", "auto mode", "free memory", "queue"],
   },
   {
@@ -106,10 +108,8 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
  * Nearest scope first. What a user came to Settings to change is nearly always about the
  * project in front of them; the application-wide preferences are the ones they set once.
  *
- * `connection` currently has no pages — the agent list moved back beside the default agent it
- * sets, and splitting them cost more than the scope purity bought. The scope stays because a
- * per-host setting is a real thing to have; the sidebar renders no heading for an empty group,
- * so it costs nothing until something fills it.
+ * The sidebar renders no heading for an empty group, so a scope with no pages costs nothing —
+ * which is what let `connection` sit unused until the agent limit moved into it.
  */
 export const SCOPE_ORDER: SettingsScope[] = ["project", "connection", "app"];
 

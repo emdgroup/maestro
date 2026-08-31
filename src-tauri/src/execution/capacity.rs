@@ -23,9 +23,14 @@ pub const RESERVED_MB: u64 = 1024;
 #[serde(rename_all = "PascalCase")]
 pub enum ConcurrencyMode {
     /// The number the user set, regardless of what the host is doing.
-    #[default]
     Hard,
     /// Derived from the host's free memory, recomputed whenever the queue is drained.
+    ///
+    /// The default, because the limit exists to stop auto-mode starting agents a host has no
+    /// memory for — and a fixed number chosen before anyone knew what the machine looks like
+    /// cannot do that. A host that cannot be measured falls back to the fixed number; see
+    /// `resolve_capacity`.
+    #[default]
     Auto,
 }
 
@@ -169,6 +174,13 @@ fn parse_mem_available_kb(meminfo: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The point of the whole feature: an unconfigured host sizes itself from memory rather than
+    /// sitting at a fixed number chosen before anyone knew what the machine looks like.
+    #[test]
+    fn an_unconfigured_host_estimates_from_memory() {
+        assert_eq!(ConcurrencyMode::default(), ConcurrencyMode::Auto);
+    }
 
     /// The worked example from the design: 5 GB free runs 10 agents.
     #[test]

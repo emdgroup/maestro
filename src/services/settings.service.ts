@@ -3,7 +3,9 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
 
-import type { AppSettings } from "@/types/bindings";
+import { connectionKeyStr } from "@/lib/connection-utils";
+
+import type { AppSettings, ConnectionCapacitySettings, ConnectionKey } from "@/types/bindings";
 
 /**
  * Settings service providing type-safe operations for application settings.
@@ -20,6 +22,8 @@ const settingsQueryKeys = {
   accentColor: () => [...settingsQueryKeys.base, "accentColor"] as const,
   logLevels: () => [...settingsQueryKeys.base, "logLevels"] as const,
   logDirectory: () => [...settingsQueryKeys.base, "logDirectory"] as const,
+  connectionCapacity: (connection: ConnectionKey) =>
+    [...settingsQueryKeys.base, "connectionCapacity", connectionKeyStr(connection)] as const,
 };
 
 /**
@@ -56,6 +60,40 @@ export function useLogDirectory() {
     queryKey: settingsQueryKeys.logDirectory(),
     queryFn: () => api.getLogDirectory(),
     staleTime: Infinity,
+  });
+}
+
+/**
+ * How many agents may run at once on one connection.
+ *
+ * Per connection rather than app-wide because the constraint is memory, and a machine's memory is
+ * shared by every project pointed at it.
+ */
+export function useConnectionCapacity(connection: ConnectionKey) {
+  return useQuery({
+    queryKey: settingsQueryKeys.connectionCapacity(connection),
+    queryFn: () => api.getConnectionCapacity(connection),
+    staleTime: Infinity,
+  });
+}
+
+export function useSaveConnectionCapacity() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      connection,
+      settings,
+    }: {
+      connection: ConnectionKey;
+      settings: ConnectionCapacitySettings;
+    }) => api.saveConnectionCapacity(connection, settings),
+    onSuccess: (_data, { connection }) => {
+      void queryClient.invalidateQueries({
+        queryKey: settingsQueryKeys.connectionCapacity(connection),
+      });
+    },
+    onError: createErrorToastHandler("Failed to save the agent limit"),
   });
 }
 

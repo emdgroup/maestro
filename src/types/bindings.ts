@@ -320,6 +320,25 @@ async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
 }
 },
 /**
+ * How many agents may run at once on one connection.
+ */
+async getConnectionCapacity(connection: ConnectionKey) : Promise<Result<ConnectionCapacitySettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_connection_capacity", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveConnectionCapacity(connection: ConnectionKey, settings: ConnectionCapacitySettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_connection_capacity", { connection, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The levels the UI offers, quietest first.
  */
 async getLogLevels() : Promise<string[]> {
@@ -494,9 +513,6 @@ async spawnInteractiveExecution(projectId: number, branchName: string | null, re
  * Returns ids for the frontend to run rather than starting anything itself: only Rust can decide
  * *which* tasks run, because the limit is per host and a host serves every project pointed at it,
  * but only the frontend can start one — spawning means a worktree, an ACP session and a prompt.
- * 
- * Task-associated user shells occupy a slot too, but queue draining never starts one; ACP is the
- * sole managed agent path.
  */
 async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
     try {
@@ -2335,12 +2351,7 @@ export type AgentStreamWidth = "full" | "compact"
  * which `DeleteWorktreeDialog` reads as "this branch exists only locally".
  */
 export type AheadBehind = { ahead: number; behind: number }
-export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; max_concurrent_agents?: number; 
-/**
- * Whether `max_concurrent_agents` is the limit, or a fallback for when the host's free
- * memory cannot be read. See `execution::capacity`.
- */
-concurrency_mode?: ConcurrencyMode; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
+export type AppSettings = { theme_preference: string | null; auto_mode?: boolean; thinking_visibility?: ActivityVisibility; tool_call_visibility?: ActivityVisibility; 
 /**
  * Global default accent hue in degrees, as a string. Projects without their own
  * `accent_color` follow this; `None` follows the OS accent colour.
@@ -2483,8 +2494,25 @@ export type ConcurrencyMode =
 "Hard" | 
 /**
  * Derived from the host's free memory, recomputed whenever the queue is drained.
+ * 
+ * The default, because the limit exists to stop auto-mode starting agents a host has no
+ * memory for — and a fixed number chosen before anyone knew what the machine looks like
+ * cannot do that. A host that cannot be measured falls back to the fixed number; see
+ * `resolve_capacity`.
  */
 "Auto"
+/**
+ * How many agents may run at once on one connection.
+ * 
+ * Per connection rather than per app or per project because the constraint is memory, and memory
+ * belongs to the host: every project pointed at the same machine draws on the same pool.
+ */
+export type ConnectionCapacitySettings = { concurrency_mode: ConcurrencyMode; 
+/**
+ * The cap in `Hard` mode, and in `Auto` the fallback for a host whose free memory cannot be
+ * read. One number with two uses, not two settings.
+ */
+max_concurrent_agents: number }
 /**
  * Identifies which connection server (or local instance) owns a session or cache entry.
  */

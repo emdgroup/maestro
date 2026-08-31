@@ -1,8 +1,26 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-fn default_max_concurrent_agents() -> i32 {
-    3
+/// How many agents may run at once on one connection.
+///
+/// Per connection rather than per app or per project because the constraint is memory, and memory
+/// belongs to the host: every project pointed at the same machine draws on the same pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ConnectionCapacitySettings {
+    pub concurrency_mode: crate::execution::capacity::ConcurrencyMode,
+    /// The cap in `Hard` mode, and in `Auto` the fallback for a host whose free memory cannot be
+    /// read. One number with two uses, not two settings.
+    pub max_concurrent_agents: i32,
+}
+
+impl Default for ConnectionCapacitySettings {
+    fn default() -> Self {
+        Self {
+            concurrency_mode: crate::execution::capacity::ConcurrencyMode::default(),
+            max_concurrent_agents: 3,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
@@ -178,12 +196,6 @@ pub struct AppSettings {
     pub theme_preference: Option<String>,
     #[serde(default)]
     pub auto_mode: bool,
-    #[serde(default = "default_max_concurrent_agents")]
-    pub max_concurrent_agents: i32,
-    /// Whether `max_concurrent_agents` is the limit, or a fallback for when the host's free
-    /// memory cannot be read. See `execution::capacity`.
-    #[serde(default)]
-    pub concurrency_mode: crate::execution::capacity::ConcurrencyMode,
     #[serde(default)]
     pub thinking_visibility: ActivityVisibility,
     #[serde(default)]
@@ -234,8 +246,6 @@ impl Default for AppSettings {
         Self {
             theme_preference: Some("system".to_string()),
             auto_mode: false,
-            max_concurrent_agents: 3,
-            concurrency_mode: crate::execution::capacity::ConcurrencyMode::Hard,
             thinking_visibility: ActivityVisibility::Auto,
             tool_call_visibility: ActivityVisibility::Auto,
             accent_color: None,
