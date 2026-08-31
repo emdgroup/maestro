@@ -6,14 +6,32 @@ import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem, CanvasSurface, AvailableCommand } from "../activity/types";
 import { cn } from "@/lib/utils.ts";
 import { useSettings } from "@/services/settings.service";
-import React from "react";
+import React, { useRef } from "react";
 import {
   MessageScroller,
   MessageScrollerViewport,
   MessageScrollerContent,
   MessageScrollerItem,
+  useMessageScroller,
 } from "@/ui/message-scroller";
 import { OpenFileContext, CommandsContext } from "../activity/MarkdownBlock";
+
+/* Keys the scroller itself treats as scroll input. */
+const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
+
+/* How long after a gesture a scroll still counts as that gesture's. */
+const GESTURE_WINDOW_MS = 150;
+
+/*
+  `data-scrollable` is written synchronously by the scroller's own scroll handler, which runs
+  before ours; the `useMessageScrollerScrollable()` snapshot is a render behind and would still
+  say "not at the end" here. It also reports the *content's* end, ignoring the anchor spacer,
+  which is what makes it the right test — reaching the last message counts as the bottom even
+  with dead space still reserved below it.
+*/
+function isAtEnd(viewport: HTMLElement) {
+  return !viewport.getAttribute("data-scrollable")?.includes("end");
+}
 
 interface AgentStreamContentProps {
   agentSections: AgentSectionItem[];
@@ -42,6 +60,45 @@ export function AgentStreamContent({
   const isCompact = appSettings?.agent_stream_width === "compact";
   const thinkingHidden = appSettings?.thinking_visibility === "hide";
   const toolCallsHidden = appSettings?.tool_call_visibility === "hide";
+  const { scrollToEnd } = useMessageScroller();
+
+  /*
+    Scrolling to the bottom means the same thing as pressing the scroll-to-bottom FAB: drop the
+    anchor spacer's dead space and resume following the stream. The scroller does not do this on
+    its own — it re-follows once its own state settles, but leaves the spacer until the next
+    chunk arrives, and the trailing ticks of a flick that lands on the bottom scroll nothing, so
+    no scroll event follows to settle on and the stream is left unfollowed.
+
+    Gated on a recent gesture and on *crossing* into the end zone, because the scroller's own
+    jumps — pinning a newly arrived section to the top of the viewport — also land at the end of
+    the content, and turning those into a jump to the bottom would defeat them.
+  */
+  const lastGestureRef = useRef(0);
+  const wasAtEndRef = useRef(true);
+
+  const markGesture = () => {
+    lastGestureRef.current = Date.now();
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const atEnd = isAtEnd(e.currentTarget);
+    const crossedIntoEnd = atEnd && !wasAtEndRef.current;
+    wasAtEndRef.current = atEnd;
+    if (crossedIntoEnd && Date.now() - lastGestureRef.current < GESTURE_WINDOW_MS) {
+      scrollToEnd({ behavior: "auto" });
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    markGesture();
+    // Wheeling further down at the bottom moves nothing, so no scroll event reaches
+    // handleScroll — this is the only chance to treat it as hitting the bottom.
+    if (e.deltaY > 0 && isAtEnd(e.currentTarget)) scrollToEnd({ behavior: "auto" });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (SCROLL_KEYS.has(e.key)) markGesture();
+  };
 
   return (
     <OpenFileContext.Provider value={onOpenFile}>
@@ -52,7 +109,13 @@ export function AgentStreamContent({
             centred, so a scrollbar appearing mid-stream would otherwise nudge every
             message sideways.
           */}
-          <MessageScrollerViewport className="overflow-x-hidden [scrollbar-gutter:stable]">
+          <MessageScrollerViewport
+            className="overflow-x-hidden [scrollbar-gutter:stable]"
+            onScroll={handleScroll}
+            onWheel={handleWheel}
+            onTouchMove={markGesture}
+            onKeyDown={handleKeyDown}
+          >
             <MessageScrollerContent
               className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
               style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
