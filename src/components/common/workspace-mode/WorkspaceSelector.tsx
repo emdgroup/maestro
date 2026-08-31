@@ -20,8 +20,8 @@ interface WorkspaceSelectorProps {
   /** `Create` only: the part after `maestro/`. Empty means "use the generated name". */
   branchSuffix: string;
   onBranchSuffixChange: (suffix: string) => void;
-  /** What that name will be if the field is left alone. */
-  generatedBranchSuffix: string;
+  /** What that name will be if the field is left alone, or null when it is not knowable yet. */
+  generatedBranchSuffix: string | null;
   /** Every worktree of the project, repo root included — it is filtered out below. */
   worktrees: WorktreeWithStatus[];
   repoPath: string;
@@ -75,12 +75,18 @@ export function WorkspaceSelector({
 
   const selected = reusable.find((wt) => wt.id === selectedWorktreeId) ?? null;
 
+  // The name a read-only summary can put in words: what was typed, else the preview, else nothing
+  // to name yet — a task's branch carries an id it only gets on creation.
+  const newBranchName = branchSuffix || generatedBranchSuffix;
+
   if (readOnly) {
     const summary =
       mode === "NewWorktree"
         ? branchMode === "Checkout"
           ? `A worktree on ${baseBranch || "the branch below"}`
-          : `A new branch ${MAESTRO_BRANCH_PREFIX}${branchSuffix || generatedBranchSuffix} from ${baseBranch || "the base branch"}`
+          : newBranchName
+            ? `A new branch ${MAESTRO_BRANCH_PREFIX}${newBranchName} from ${baseBranch || "the base branch"}`
+            : `A new branch from ${baseBranch || "the base branch"}`
         : mode === "RepositoryDirectory"
           ? "The repository directory"
           : (selected?.branch_name ?? "A workspace that no longer exists");

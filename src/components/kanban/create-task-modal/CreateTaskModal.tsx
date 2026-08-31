@@ -25,11 +25,7 @@ import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceS
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSelectedProject } from "@/store/projectStore";
-import {
-  MAESTRO_BRANCH_PREFIX,
-  slugifyName,
-  validateBranchSuffix,
-} from "@/lib/generateSessionName";
+import { MAESTRO_BRANCH_PREFIX, validateBranchSuffix } from "@/lib/generateSessionName";
 import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
 import type {
   BranchMode,
@@ -135,10 +131,6 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const workspaceWorktreeId = useWatch({ control, name: "workspaceWorktreeId" });
   const branchMode = useWatch({ control, name: "branchMode" });
   const branchSuffix = useWatch({ control, name: "branchSuffix" });
-
-  // A preview, not the value submitted: the id leading a task's branch does not exist until the
-  // task does, so an untouched field submits null and `useExecuteTask` builds the real name.
-  const generatedBranchSuffix = `<id>-${slugifyName(title) || "task"}`;
 
   // Opening or closing the modal re-seeds the whole form. This component's own state is
   // adjusted during render so a reopened dialog never paints the previous task's fields;
@@ -377,7 +369,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
                       onBranchModeChange={(m) => setValue("branchMode", m)}
                       branchSuffix={branchSuffix}
                       onBranchSuffixChange={(s) => setValue("branchSuffix", s)}
-                      generatedBranchSuffix={generatedBranchSuffix}
+                      generatedBranchSuffix={null}
                       worktrees={worktrees ?? []}
                       repoPath={project?.path ?? ""}
                       selectedWorktreeId={workspaceWorktreeId}
