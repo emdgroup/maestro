@@ -54,6 +54,7 @@ function sizedDiffItem(name: string, lines: number): DisplayItem {
 const onSubmitComment = vi.fn();
 const onRemoveComment = vi.fn();
 const onEditComment = vi.fn();
+const onSelectedIndexChange = vi.fn();
 
 function emptyReview(overrides: Partial<DiffReviewApi> = {}): DiffReviewApi {
   return {
@@ -79,7 +80,7 @@ function renderStack(
       diffTarget={{ type: "Head" }}
       diffViewMode={DiffModeEnum.Unified}
       selectedIndex={0}
-      onSelectedIndexChange={() => {}}
+      onSelectedIndexChange={onSelectedIndexChange}
       viewedFiles={new Set()}
       onToggleViewed={() => {}}
       review={review}
@@ -91,6 +92,7 @@ beforeEach(() => {
   onSubmitComment.mockClear();
   onRemoveComment.mockClear();
   onEditComment.mockClear();
+  onSelectedIndexChange.mockClear();
 });
 
 describe("DiffFileStack", () => {
@@ -302,6 +304,16 @@ describe("DiffFileStack", () => {
     renderStack([diffItem("z.ts"), diffItem("a.ts"), diffItem("m.ts")], emptyReview());
     const names = screen.getAllByText(/\.ts$/).map((n) => n.textContent);
     expect(names).toEqual(["z.ts", "a.ts", "m.ts"]);
+  });
+
+  // Scrolling does not move the selection, so a click on the card is the only way to pick the file
+  // you are already reading without going back out to the tree.
+  it("selects a file when its card is clicked", async () => {
+    renderStack([diffItem("a.ts"), diffItem("b.ts")], emptyReview());
+
+    await userEvent.click(screen.getByText("b.ts"));
+
+    expect(onSelectedIndexChange).toHaveBeenCalledWith(1);
   });
 });
 

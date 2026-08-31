@@ -377,7 +377,8 @@ export function DiffFileStack({
    * A scroll spy used to move it to whichever card sat under the top of the viewport, which meant
    * the sidebar highlight wandered while you read and the stack had to distinguish its own scrolls
    * from the user's to avoid arguing with itself. Selection is now only ever what someone picked:
-   * a click in the tree, or a step between comments. It stays there until they pick something else.
+   * a click on a card, a click in the tree, or a step between comments. It stays there until they
+   * pick something else.
    */
 
   const comments = review?.comments ?? EMPTY_COMMENTS;
@@ -476,6 +477,7 @@ export function DiffFileStack({
               expanded={!collapsedFiles.has(key)}
               onToggleExpanded={() => toggleExpanded(key)}
               focused={index === selectedIndex}
+              onSelect={() => onSelectedIndexChange(index)}
               onOpenFile={onOpenFile ? () => onOpenFile(key) : undefined}
               note={item.kind === "diff" ? fileNote(item.file) : undefined}
               fileComment={fileCommentFor(key)}

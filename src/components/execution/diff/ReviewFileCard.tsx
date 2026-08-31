@@ -60,6 +60,11 @@ interface ReviewFileCardProps {
   onToggleExpanded: () => void;
   /** The card the host considers current. Omitted ⇒ hover tint only. */
   focused?: boolean;
+  /**
+   * The reader picked this card. Called for a press anywhere on it — the header, or a line in the
+   * diff — since reading a file is picking it. Omitted ⇒ the card cannot be selected by clicking.
+   */
+  onSelect?: () => void;
   /** Open this file elsewhere. Omitted ⇒ the name is plain text rather than a link button. */
   onOpenFile?: () => void;
   /** Shown in place of `children`. See `fileNote`. */
@@ -88,6 +93,7 @@ export function ReviewFileCard({
   expanded,
   onToggleExpanded,
   focused,
+  onSelect,
   onOpenFile,
   note,
   fileComment,
@@ -105,8 +111,12 @@ export function ReviewFileCard({
   }
 
   // `data-file-card` marks the element `DiffFileStack` measures for its scroll spy.
+  //
+  // `onSelect` sits on the outer box rather than on the header so that a click in the diff counts
+  // too. The header controls all stop the event, which keeps them from moving the selection — being
+  // told a file is viewed is not the same as being told to look at it.
   return (
-    <div ref={ref} data-file-card={path} className="shrink-0">
+    <div ref={ref} data-file-card={path} className="shrink-0" onClick={onSelect}>
       <div className="sticky top-0 z-10 pt-3 bg-background">
         <div
           onClick={onToggleExpanded}

@@ -158,6 +158,32 @@ export function DiffViewer({
   const [highlighter, setHighlighter] = useState<DiffHighlighterInstance | null>(null);
   const [highlighterError, setHighlighterError] = useState<string | null>(null);
   const multiSelectRef = useRef<DiffViewWithMultiSelectRef>(null);
+
+  /**
+   * Counts the times the diff was replaced, and keys the multi-select wrapper so each replacement
+   * remounts it.
+   *
+   * `DiffViewWithMultiSelect` builds its selection manager in an effect whose dependencies are all
+   * stable, so the manager binds to whichever `DiffFile` instance existed when it mounted and is
+   * never re-bound. `DiffView` underneath rebuilds that instance whenever the `data` prop's
+   * *identity* changes. Once the two diverge the manager paints into a subtree it can no longer
+   * find — it filters rows by the instance's own root id — and reads its selection off the
+   * abandoned copy, so a drag highlights nothing and the `+` widget records a one-line comment.
+   *
+   * A stack hands down a fresh object every time the polled diff text changes, which is why this
+   * only ever showed on tracked files: an untracked file's body is fetched once and never
+   * replaced, so its manager stayed in step and multi-line selection went on working there alone.
+   *
+   * Remounting costs nothing extra — `DiffView` already remounts its own content on the same
+   * event, keyed on `diffFile.getId()`.
+   */
+  const [seenFile, setSeenFile] = useState(diffFile);
+  const [fileEpoch, setFileEpoch] = useState(0);
+  if (seenFile !== diffFile) {
+    setSeenFile(diffFile);
+    setFileEpoch((epoch) => epoch + 1);
+  }
+
   const { theme, systemTheme } = useTheme();
   const diffTheme = (theme === "system" ? systemTheme : theme) === "dark" ? "dark" : "light";
 
@@ -369,6 +395,7 @@ export function DiffViewer({
         {/* Multi-select is review-only: a read-only diff has nothing to do with a selection, and
             leaving it on there would highlight lines the user cannot act on. */}
         <DiffViewWithMultiSelect
+          key={fileEpoch}
           ref={multiSelectRef}
           data={diffFile}
           diffViewMode={mode}
