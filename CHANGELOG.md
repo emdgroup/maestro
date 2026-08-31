@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.0](https://github.com/emdgroup/maestro/compare/v0.18.0...v0.19.0) (2026-08-31)
+
+
+### Features
+
+* comment on a range of lines in review diffs ([#273](https://github.com/emdgroup/maestro/issues/273)) ([e0c792e](https://github.com/emdgroup/maestro/commit/e0c792e15fffce05ba028b18ed7dfd8db70ecf31))
+* prune stale Maestro branches from the Worktrees view ([#272](https://github.com/emdgroup/maestro/issues/272)) ([3a522ab](https://github.com/emdgroup/maestro/commit/3a522ab4662db43b93a983a8e07a540df2ff45c3))
+
 ## [0.18.0](https://github.com/emdgroup/maestro/compare/v0.17.0...v0.18.0) (2026-08-27)
 
 ### Features
