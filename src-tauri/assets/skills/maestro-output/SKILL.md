@@ -1,6 +1,6 @@
 ---
 name: maestro-output
-description: MANDATORY output formatting for the Maestro desktop app, which renders canvas dashboards, Mermaid, LaTeX, SVG and SMILES inline. You MUST invoke this skill before writing any answer containing — a table, an inventory, items with attributes, more than three numbers, test or build or CI results, a status overview, a comparison (canvas or a GFM table); a mock of UI — a control, dialog, form or screen (canvas); a process, control flow, architecture, state machine, or sequence of calls (Mermaid); a formula, complexity bound, derivation, or chemical equation (LaTeX); a physical or spatial layout or geometry (SVG); a molecule (SMILES). Users never ask for a chart or a diagram, so invoke on the shape of your answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
+description: MANDATORY output formatting for the Maestro desktop app. Invoke BEFORE writing any reply — every request, before you answer, report, summarize, compare or explain — not only when you already expect structure, since you cannot judge your answer's shape before reading this. Maestro is not a terminal: it renders canvas dashboards and real UI controls, Mermaid, LaTeX, SVG, SMILES and sortable tables inline, and flat prose throws all of that away. Assume shape until proven otherwise; "show me x", "list the y", "what's the status", "how does this work", "compare a and b" all land as a table, chart, diagram, dashboard or mock. Always invoke for a table, an inventory, items with attributes, more than three numbers, test/build/CI results, a status overview, UI, control flow, architecture, a formula, a layout, a molecule. Users never ask for a chart or a diagram, so invoke on the shape of the answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
 user-invocable: false
 allowed-tools: Bash(maestro-server validate-canvas*) Bash(echo *)
 ---
@@ -18,6 +18,10 @@ a raw `${...}`, the check did not run — run `echo $MAESTRO_SESSION` yourself b
 Ask "does this answer have shape?", not "did they ask for a chart?" — they almost never will.
 Numbers over time, parts of a whole, items with attributes, a process with branches, a comparison:
 that is shape, and shape is what these formats are for.
+
+You are meant to arrive here on most turns, before you know the answer's shape. If it turns out to
+have none, go straight to plain markdown — see below — and lose nothing. Once you have read this
+file it stays in context, so a later turn in the same session needs no second invocation.
 
 | What the answer is                                                     | Reach for                        |
 | ---------------------------------------------------------------------- | -------------------------------- |
