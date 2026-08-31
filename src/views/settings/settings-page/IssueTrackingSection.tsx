@@ -108,8 +108,15 @@ export function IssueTrackingSection({
         issueTrackingIntegrations.find((i) => i.provider === storedConfig.provider)
       )?.id ?? null)
     : null;
-  const [loaded, setLoaded] = useState({ config: storedConfig, matchId: matchedIntegrationId });
-  if (loaded.config !== storedConfig || loaded.matchId !== matchedIntegrationId) {
+  // Starts as `null` rather than as the current values: `App` holds this query open for the whole
+  // session with `staleTime: Infinity`, so the section mounts with the config already in cache and
+  // an initializer seeded from that first render would latch it as "already applied" without ever
+  // applying it — leaving a configured project looking unconfigured on every visit.
+  const [loaded, setLoaded] = useState<{
+    config: ProjectIssueTrackingConfig | null;
+    matchId: string | null;
+  } | null>(null);
+  if (!loaded || loaded.config !== storedConfig || loaded.matchId !== matchedIntegrationId) {
     setLoaded({ config: storedConfig, matchId: matchedIntegrationId });
     if (storedConfig) {
       if (matchedIntegrationId) setSelectedIntegrationId(matchedIntegrationId);
