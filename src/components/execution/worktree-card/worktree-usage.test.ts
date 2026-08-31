@@ -4,6 +4,7 @@ import {
   pathIsWithin,
   relativeAge,
   relativeWorktreePath,
+  sessionsByWorktree,
   worktreeUsage,
 } from "./worktree-usage";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
@@ -77,13 +78,58 @@ describe("pathIsWithin", () => {
   });
 });
 
+describe("sessionsByWorktree", () => {
+  const root = worktree({ id: 1, path: "/repo", branch_name: "main", base_branch: null });
+  const child = worktree({ id: 2, path: "/repo/.maestro/worktrees/session-3" });
+
+  /**
+   * The repository directory card used to claim every agent in the project, because Maestro's
+   * worktrees live under `.maestro/worktrees/` and so are inside the root's path by definition.
+   */
+  it("credits a session to the innermost worktree containing it, not to every ancestor", () => {
+    const byPath = sessionsByWorktree(
+      [root, child],
+      [session({ session_key: 1, cwd: "/repo/.maestro/worktrees/session-3/src" })],
+    );
+
+    expect(byPath.get("/repo/.maestro/worktrees/session-3")?.map((s) => s.session_key)).toEqual([
+      1,
+    ]);
+    expect(byPath.get("/repo")).toEqual([]);
+  });
+
+  it("still credits a session running in the repository directory itself", () => {
+    const byPath = sessionsByWorktree([root, child], [session({ session_key: 7, cwd: "/repo" })]);
+
+    expect(byPath.get("/repo")?.map((s) => s.session_key)).toEqual([7]);
+    expect(byPath.get("/repo/.maestro/worktrees/session-3")).toEqual([]);
+  });
+
+  // A sibling whose name is a prefix of this one's is not an ancestor of it.
+  it("does not let a shorter sibling name swallow a longer one", () => {
+    const sibling = worktree({ id: 3, path: "/repo/.maestro/worktrees/session-31" });
+    const byPath = sessionsByWorktree(
+      [child, sibling],
+      [session({ cwd: "/repo/.maestro/worktrees/session-31" })],
+    );
+
+    expect(byPath.get("/repo/.maestro/worktrees/session-3")).toEqual([]);
+    expect(byPath.get("/repo/.maestro/worktrees/session-31")).toHaveLength(1);
+  });
+
+  it("drops a session running outside every worktree", () => {
+    const byPath = sessionsByWorktree([root], [session({ cwd: "/elsewhere" })]);
+
+    expect(byPath.get("/repo")).toEqual([]);
+  });
+});
+
 describe("worktreeUsage", () => {
-  it("splits sessions in this worktree into linkable agents and a shell count", () => {
+  it("splits the sessions in this worktree into linkable agents and a shell count", () => {
     const usage = worktreeUsage(worktree({ task_id: 4, task_name: "Do the thing" }), [
       session({ session_key: 1 }),
       session({ session_key: 2 }),
       session({ session_key: 3, execution_mode: "pty" }),
-      session({ session_key: 4, cwd: "/repo/.maestro/worktrees/session-31" }),
     ]);
 
     expect(usage.task).toEqual({ id: 4, name: "Do the thing" });

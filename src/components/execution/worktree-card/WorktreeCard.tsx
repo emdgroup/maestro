@@ -1,4 +1,4 @@
-import { Bot, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
+import { Bot, FolderRoot, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
@@ -17,7 +17,7 @@ import {
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;
   repoPath: string;
-  /** Every live session in the project; the card picks out the ones running in this worktree. */
+  /** The live sessions running in this worktree, already scoped by `sessionsByWorktree`. */
   sessions: ActiveSessionInfo[];
   /** Passed in rather than read per card, so one ticker drives the whole grid. */
   now: number;
@@ -36,6 +36,11 @@ interface WorktreeCardProps {
  * The footer is the "in use" indicator. There is no badge and no coloured dot: a card that is
  * being used has a footer, one that is not does not, and the tint difference between body and
  * footer is what makes that visible across a grid.
+ *
+ * One card in the grid is not a worktree at all — the repository directory itself, which git lists
+ * alongside them. It reads the same as its neighbours otherwise, so it says so twice: a root-folder
+ * icon on the title and a "repository" label in the corner the delete button cannot occupy, since
+ * this is the one checkout that cannot be removed.
  */
 export function WorktreeCard({
   worktree,
@@ -56,8 +61,15 @@ export function WorktreeCard({
     <div className="relative group rounded-lg border bg-card w-72 shrink-0 overflow-hidden transition-colors cursor-pointer hover:border-ring/50">
       <div className="p-3" onClick={() => onSelect(worktree.path)}>
         <div className="flex items-start justify-between gap-2">
-          <span className="text-sm font-medium truncate">{title}</span>
-          {!isMain && (
+          <span className="flex items-center gap-1.5 min-w-0">
+            {isMain && <FolderRoot className="size-3.5 shrink-0 text-accent" />}
+            <span className="text-sm font-medium truncate">{title}</span>
+          </span>
+          {isMain ? (
+            <span className="shrink-0 rounded border border-accent/40 bg-accent/10 px-1.5 py-px text-[10px] uppercase tracking-wide text-accent">
+              Repository
+            </span>
+          ) : (
             <Button
               variant="ghost"
               size="icon-xs"
