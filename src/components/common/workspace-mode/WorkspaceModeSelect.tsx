@@ -37,8 +37,14 @@ interface WorkspaceModeSelectProps {
   allowNewWorktree?: boolean;
   /** False in Settings: a project default cannot name a specific workspace. */
   allowReuse?: boolean;
+  /**
+   * False when the project has no worktree to reuse. Distinct from `allowReuse`, which is about
+   * whether the choice makes sense here at all: this one is a project that has yet to grow a
+   * second workspace, so the option stays on screen and says so.
+   */
+  hasReusableWorkspace?: boolean;
   /** Why an unavailable option is unavailable, shown in place of its description. */
-  unavailableReason?: string;
+  unavailableReason?: Partial<Record<WorkspaceMode, string>>;
   id?: string;
 }
 
@@ -47,11 +53,13 @@ export function WorkspaceModeSelect({
   onChange,
   allowNewWorktree = true,
   allowReuse = true,
+  hasReusableWorkspace = true,
   unavailableReason,
   id,
 }: WorkspaceModeSelectProps) {
   const isAllowed = (mode: WorkspaceMode) =>
-    (mode !== "NewWorktree" || allowNewWorktree) && (mode !== "ReuseWorkspace" || allowReuse);
+    (mode !== "NewWorktree" || allowNewWorktree) &&
+    (mode !== "ReuseWorkspace" || (allowReuse && hasReusableWorkspace));
 
   // Settings drops the reuse option entirely — there is nothing to explain about a choice that
   // makes no sense as a default. Everywhere else an unavailable option stays visible and disabled,
@@ -90,7 +98,9 @@ export function WorkspaceModeSelect({
                 <span className="min-w-0">
                   <span className="block text-sm">{mode.label}</span>
                   <span className="block text-xs text-muted-foreground">
-                    {allowed ? mode.description : (unavailableReason ?? mode.description)}
+                    {allowed
+                      ? mode.description
+                      : (unavailableReason?.[mode.value] ?? mode.description)}
                   </span>
                 </span>
               </span>

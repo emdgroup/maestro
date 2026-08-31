@@ -61,6 +61,30 @@ function renderReuse(worktrees: WorktreeWithStatus[], props: { claimsOwnership?:
   return onSelectedWorktreeChange;
 }
 
+/// The mode select, in the mode that renders nothing else with a combobox — `BranchPicker` is
+/// mocked away above.
+function renderModeSelect(worktrees: WorktreeWithStatus[]) {
+  const onModeChange = vi.fn();
+  render(
+    <WorkspaceSelector
+      mode="NewWorktree"
+      onModeChange={onModeChange}
+      baseBranch="main"
+      onBaseBranchChange={vi.fn()}
+      branchMode="Create"
+      onBranchModeChange={vi.fn()}
+      branchSuffix=""
+      onBranchSuffixChange={vi.fn()}
+      generatedBranchSuffix="1-demo"
+      worktrees={worktrees}
+      repoPath={REPO}
+      selectedWorktreeId={null}
+      onSelectedWorktreeChange={vi.fn()}
+    />,
+  );
+  return onModeChange;
+}
+
 describe("WorkspaceSelector — reusing a workspace", () => {
   /// A branch name alone does not answer "which of these do I want", which is why each option is
   /// the worktree card rather than a line of text.
@@ -131,5 +155,34 @@ describe("WorkspaceSelector — reusing a workspace", () => {
 
     await userEvent.click(option);
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
+describe("WorkspaceSelector — the mode select", () => {
+  /// Picking a mode whose list is empty is a dead end, so it is refused up front rather than
+  /// after the fact.
+  it("blocks reusing a workspace when the project has none", async () => {
+    const onModeChange = renderModeSelect([worktree({ id: 2, path: REPO, branch_name: "main" })]);
+
+    await userEvent.click(screen.getByRole("combobox"));
+    const option = await screen.findByRole("option", { name: /reuse an existing workspace/i });
+
+    expect(option).toHaveAttribute("data-disabled");
+    expect(option).toHaveTextContent("This project has no other worktree yet");
+
+    await userEvent.click(option);
+    expect(onModeChange).not.toHaveBeenCalled();
+  });
+
+  it("offers it once there is a workspace to choose from", async () => {
+    const onModeChange = renderModeSelect([worktree()]);
+
+    await userEvent.click(screen.getByRole("combobox"));
+    const option = await screen.findByRole("option", { name: /reuse an existing workspace/i });
+
+    expect(option).not.toHaveAttribute("data-disabled");
+
+    await userEvent.click(option);
+    expect(onModeChange).toHaveBeenCalledWith("ReuseWorkspace");
   });
 });
