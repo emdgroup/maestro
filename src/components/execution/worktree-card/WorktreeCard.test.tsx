@@ -164,6 +164,24 @@ describe("WorktreeCard identity", () => {
   });
 
   /**
+   * The repository directory sits in the same grid as the worktrees and otherwise reads exactly
+   * like them, which is the confusion this label exists to remove.
+   */
+  it("marks the repository directory as such, and offers no way to delete it", () => {
+    renderCard(worktree({ path: "/repo", branch_name: "main" }));
+
+    expect(screen.getByText("Repository")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument();
+  });
+
+  it("leaves an ordinary worktree unlabelled", () => {
+    renderCard(worktree());
+
+    expect(screen.queryByText("Repository")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete worktree" })).toBeInTheDocument();
+  });
+
+  /**
    * `branch_name` keeps the name recorded at creation because branch operations still need it.
    * Rendering it would tell the user a branch is checked out when it is not.
    */
@@ -222,6 +240,8 @@ describe("WorktreeCard footer", () => {
     expect(screen.queryByText("USED BY")).not.toBeInTheDocument();
   });
 
+  // The card is handed the sessions running here and does no path matching of its own — see
+  // `sessionsByWorktree`, which is where a session is attributed to exactly one worktree.
   it("lists the task and each ACP session, and counts shells without listing them", async () => {
     const user = userEvent.setup();
     renderCard(worktree({ task_id: 7, task_name: "Fix the diff panel" }), {
@@ -229,8 +249,6 @@ describe("WorktreeCard footer", () => {
         session({ session_key: 11, session_name: "claude" }),
         session({ session_key: 12, session_name: "gemini" }),
         session({ session_key: 13, execution_mode: "pty" }),
-        // A session in a different worktree must not be counted here.
-        session({ session_key: 14, cwd: "/repo/.maestro/worktrees/session-2" }),
       ],
     });
 
@@ -240,8 +258,22 @@ describe("WorktreeCard footer", () => {
     expect(screen.getByRole("button", { name: "claude" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "gemini" })).toBeInTheDocument();
     expect(screen.getByText("1 shell running here")).toBeInTheDocument();
-    // The session in a sibling worktree is neither listed nor counted.
-    expect(screen.queryByText("2 shells running here")).not.toBeInTheDocument();
+  });
+
+  /**
+   * Suppressing the count on the repository directory would be the wrong fix for it being wrong:
+   * an agent whose cwd really is the repository root is working in the checkout everyone shares,
+   * which is the case most worth surfacing.
+   */
+  it("still shows a footer on the repository directory when an agent runs there", async () => {
+    const user = userEvent.setup();
+    renderCard(worktree({ path: "/repo", branch_name: "main" }), {
+      sessions: [session({ session_key: 21, session_name: "claude", cwd: "/repo" })],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Show what uses this worktree" }));
+
+    expect(screen.getByRole("button", { name: "claude" })).toBeInTheDocument();
   });
 
   it("navigates to the specific session that was clicked", async () => {

@@ -3,10 +3,8 @@ import { WorktreeCardGroup } from "./WorktreeCardGroup";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 
 interface WorktreeCardGridProps {
-  viewMode: "grouped" | "grid";
-  flatWorktrees: WorktreeWithStatus[];
-  /** Every live session in the project; each card picks out the ones running in its own path. */
-  sessions: ActiveSessionInfo[];
+  /** Live sessions keyed by the worktree they run in. See `sessionsByWorktree`. */
+  sessionsByPath: Map<string, ActiveSessionInfo[]>;
   /** One ticker for the whole grid, so the age labels advance together and cheaply. */
   now: number;
   groups: Array<{ groupKey: string; items: WorktreeWithStatus[] }>;
@@ -19,9 +17,7 @@ interface WorktreeCardGridProps {
 }
 
 export function WorktreeCardGrid({
-  viewMode,
-  flatWorktrees,
-  sessions,
+  sessionsByPath,
   now,
   groups,
   collapsedGroups,
@@ -31,35 +27,6 @@ export function WorktreeCardGrid({
   repoPath,
   emptyMessage,
 }: WorktreeCardGridProps) {
-  if (viewMode === "grid") {
-    if (flatWorktrees.length === 0) {
-      return (
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-sm text-muted-foreground">
-            {emptyMessage ?? "No worktrees yet"}
-          </span>
-        </div>
-      );
-    }
-    return (
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-        <div className="flex flex-wrap gap-3">
-          {flatWorktrees.map((wt) => (
-            <WorktreeCard
-              key={wt.path}
-              worktree={wt}
-              repoPath={repoPath}
-              sessions={sessions}
-              now={now}
-              onSelect={onSelectWorktree}
-              onDelete={onDeleteWorktree}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   if (groups.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -83,7 +50,7 @@ export function WorktreeCardGrid({
               key={wt.path}
               worktree={wt}
               repoPath={repoPath}
-              sessions={sessions}
+              sessions={sessionsByPath.get(wt.path) ?? []}
               now={now}
               onSelect={onSelectWorktree}
               onDelete={onDeleteWorktree}

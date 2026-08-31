@@ -30,24 +30,60 @@ export function pathIsWithin(cwd: string, worktreePath: string): boolean {
 }
 
 /**
- * What is using a worktree, joined by path rather than by branch.
+ * Which sessions belong to which worktree, joined by path rather than by branch.
  *
  * The branch a session recorded at spawn goes stale as soon as anyone checks out inside it, and a
  * detached worktree has no branch to match on at all — the directory is the thing that does not
  * change.
+ *
+ * Containment alone is not enough to decide ownership, because Maestro puts its worktrees under
+ * `.maestro/worktrees/` *inside* the repository: an agent working in `session-3` is, by path, also
+ * running inside the repository root's own checkout. Testing each worktree independently therefore
+ * credited the root card with every agent in the project. A session belongs to the innermost
+ * worktree containing it — the longest matching path — which is the checkout it is actually
+ * editing.
+ *
+ * Pass every worktree, not the filtered view: a session hidden by a search or status filter still
+ * belongs to its own worktree rather than to the root.
+ */
+export function sessionsByWorktree(
+  worktrees: WorktreeWithStatus[],
+  sessions: ActiveSessionInfo[],
+): Map<string, ActiveSessionInfo[]> {
+  const byPath = new Map<string, ActiveSessionInfo[]>(worktrees.map((wt) => [wt.path, []]));
+  for (const session of sessions) {
+    let bestPath: string | null = null;
+    let bestDepth = -1;
+    for (const wt of worktrees) {
+      if (!pathIsWithin(session.cwd, wt.path)) continue;
+      const depth = normalizePath(wt.path).length;
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        bestPath = wt.path;
+      }
+    }
+    if (bestPath !== null) byPath.get(bestPath)!.push(session);
+  }
+  return byPath;
+}
+
+/**
+ * What is using one worktree.
+ *
+ * `sessionsHere` must already be scoped to this worktree — see `sessionsByWorktree`, which owns the
+ * path matching so that nested worktrees are attributed once rather than to every ancestor.
  */
 export function worktreeUsage(
   worktree: WorktreeWithStatus,
-  sessions: ActiveSessionInfo[],
+  sessionsHere: ActiveSessionInfo[],
 ): WorktreeUsage {
-  const here = sessions.filter((session) => pathIsWithin(session.cwd, worktree.path));
   return {
     task:
       worktree.task_id != null
         ? { id: worktree.task_id, name: worktree.task_name ?? `Task ${worktree.task_id}` }
         : null,
-    agents: here.filter((session) => session.execution_mode === "acp"),
-    shellCount: here.filter((session) => session.execution_mode === "pty").length,
+    agents: sessionsHere.filter((session) => session.execution_mode === "acp"),
+    shellCount: sessionsHere.filter((session) => session.execution_mode === "pty").length,
   };
 }
 

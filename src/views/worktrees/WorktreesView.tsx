@@ -1,16 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useShortcuts } from "@/utils/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
-import {
-  ChevronsUpDown,
-  GitBranch,
-  Group,
-  LayoutGrid,
-  Plus,
-  RefreshCw,
-  Scissors,
-  SearchIcon,
-} from "lucide-react";
+import { ChevronsUpDown, GitBranch, Plus, RefreshCw, Scissors, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -25,6 +16,7 @@ import { useNow } from "@/utils/hooks/useNow";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
+import { sessionsByWorktree } from "@/components/execution/worktree-card/worktree-usage";
 import { WorktreeDiffPanel } from "@/components/execution/diff/WorktreeDiffPanel";
 import { DeleteWorktreeDialog } from "@/components/execution/worktree-dialog/DeleteWorktreeDialog";
 import { CreateWorktreeDialog } from "@/components/execution/worktree-dialog/CreateWorktreeDialog";
@@ -71,7 +63,6 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [viewMode, setViewMode] = useState<"grouped" | "grid">("grid");
   const [worktreeToDelete, setWorktreeToDelete] = useState<WorktreeWithStatus | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showPruneDialog, setShowPruneDialog] = useState(false);
@@ -139,13 +130,13 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
     return Array.from(groupMap.entries()).map(([groupKey, items]) => ({ groupKey, items }));
   }, [filteredWorktrees]);
 
-  const flatWorktrees = useMemo(() => {
-    return [...filteredWorktrees].sort((a, b) => {
-      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateB - dateA;
-    });
-  }, [filteredWorktrees]);
+  // Resolved against every worktree rather than the filtered list, so a card's session count does
+  // not change with the search box — and so a session in `.maestro/worktrees/…` is credited to its
+  // own worktree rather than to the repository directory that contains it.
+  const sessionsByPath = useMemo(
+    () => sessionsByWorktree(worktrees, sessions),
+    [worktrees, sessions],
+  );
 
   const toggleGroup = (group: string) =>
     setCollapsedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
@@ -263,26 +254,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                     <span className="text-xs">Prune branches ({prunableBranches.length})</span>
                   </Button>
                 )}
-                {viewMode === "grouped" && (
-                  <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
-                    <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
-                    <span className="text-xs">Collapse all</span>
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => setViewMode((prev) => (prev === "grouped" ? "grid" : "grouped"))}
-                >
-                  {viewMode === "grouped" ? (
-                    <LayoutGrid className="w-3.5 h-3.5 mr-1" />
-                  ) : (
-                    <Group className="w-3.5 h-3.5 mr-1" />
-                  )}
-                  <span className="text-xs">
-                    {viewMode === "grouped" ? "Grid view" : "Grouped view"}
-                  </span>
+                <Button variant="ghost" size="sm" className="h-8" onClick={toggleAll}>
+                  <ChevronsUpDown className="w-3.5 h-3.5 mr-1" />
+                  <span className="text-xs">Collapse all</span>
                 </Button>
                 <ShortcutHint shortcutId="wt-new">
                   <Button
@@ -305,9 +279,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
               </div>
             ) : (
               <WorktreeCardGrid
-                viewMode={viewMode}
-                flatWorktrees={flatWorktrees}
-                sessions={sessions}
+                sessionsByPath={sessionsByPath}
                 now={now}
                 groups={groupedWorktrees}
                 collapsedGroups={collapsedGroups}
