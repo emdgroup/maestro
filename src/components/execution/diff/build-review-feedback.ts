@@ -6,14 +6,14 @@ export function buildReviewFeedbackBlocks(data: {
   comments: PendingComment[];
   generalFeedback: string;
 }): JsonValue[] {
-  let feedbackText = "# Review Feedback — Changes Requested\n\n";
+  let feedbackText = "# Review Feedback: Changes Requested\n\n";
 
   if (data.comments.length > 0) {
     const grouped = new Map<string, string[]>();
     for (const c of data.comments) {
       const list = grouped.get(c.filePath) ?? [];
       const anchor = commentAnchor(c);
-      list.push(anchor ? `${anchor} — ${c.text}` : c.text);
+      list.push(anchor ? `${anchor}: ${c.text}` : c.text);
       grouped.set(c.filePath, list);
     }
     for (const [filePath, fileComments] of grouped) {

@@ -73,7 +73,7 @@ pub async fn create_worktree(
     )
     .await?
     {
-        return Err("This project is not a git repository — worktrees are unavailable.".to_string());
+        return Err("This project is not a git repository, so worktrees are unavailable.".to_string());
     }
 
     // Only for a path on this machine: everywhere else `git worktree add` creates the parents

@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useListIntegrations } from "@/services/integration.service";
-import { useSelectedProject } from "@/store/projectStore";
+import { useIsGitRepo, useSelectedProject } from "@/store/projectStore";
 import { useConnectionLabel } from "@/hooks/useConnectionLabel";
 import { cn } from "@/lib/utils";
 import { UpdateStrip } from "@/components/settings/UpdateStrip";
 import type { ConnectionKey, ProjectConfigRequest } from "@/types/bindings";
-import { ProjectDefaultsSection } from "./ProjectDefaultsSection";
+import { AgentDefaultsSection } from "./AgentDefaultsSection";
+import { GitSection } from "./GitSection";
+import { CodeHostingSection } from "./CodeHostingSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { ProjectAppearanceSection } from "./ProjectAppearanceSection";
 import { NotificationsSection } from "./NotificationsSection";
@@ -16,7 +18,7 @@ import { DiagnosticsSection } from "./DiagnosticsSection";
 import { AgentProfilesSection } from "./AgentProfilesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import { SettingsSidebar } from "./SettingsSidebar";
-import { orderedPages, SETTINGS_PAGES } from "./settings-registry";
+import { visiblePages } from "./settings-registry";
 
 interface SettingsPageProps {
   /**
@@ -42,13 +44,12 @@ export function SettingsPage({
   framed = true,
 }: SettingsPageProps) {
   const inProject = projectId !== undefined && connection !== undefined;
+  const isGitRepo = useIsGitRepo();
 
   // Ordered here rather than only in the sidebar, so "the first page" — what opens by
   // default — is the one the sidebar shows at the top: a project page in a project, and
   // Updates on the welcome screen, where there is no nearer scope.
-  const pages = orderedPages(
-    inProject ? SETTINGS_PAGES : SETTINGS_PAGES.filter((p) => p.scope === "app"),
-  );
+  const pages = visiblePages({ inProject, isGitRepo });
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -179,6 +180,7 @@ function ProjectScopePane({
         startup_tab: settings.startup_tab,
         default_workspace_mode: settings.default_workspace_mode,
         remote_name: settings.remote_name,
+        base_branch: settings.base_branch,
         ...patch,
       },
     });
@@ -198,24 +200,38 @@ function ProjectScopePane({
 
   return (
     <div className="space-y-6">
-      {pageId === "project-defaults" && (
-        <ProjectDefaultsSection
-          defaultAgent={settings?.default_agent ?? null}
-          defaultWorkspaceMode={settings?.default_workspace_mode ?? "NewWorktree"}
-          remoteName={settings?.remote_name ?? null}
-          projectId={projectId}
-          onChange={updateSettings}
-          agents={discovery?.agents ?? []}
-          agentsLoading={agentsLoading}
-          connection={connection}
-        />
+      {/* Both agent cards on one page: the list the default is picked from and the pipeline that
+          consumes it were on separate pages, which made choosing either one a navigation. */}
+      {pageId === "agents" && (
+        <>
+          <AgentDefaultsSection
+            defaultAgent={settings?.default_agent ?? null}
+            onChange={updateSettings}
+            agents={discovery?.agents ?? []}
+            agentsLoading={agentsLoading}
+            connection={connection}
+          />
+          <AgentProfilesSection
+            projectId={projectId}
+            agents={discovery?.agents ?? []}
+            connection={connection}
+          />
+        </>
       )}
-      {pageId === "agent-profiles" && (
-        <AgentProfilesSection
-          projectId={projectId}
-          agents={discovery?.agents ?? []}
-          connection={connection}
-        />
+      {pageId === "git" && (
+        <>
+          <GitSection
+            defaultWorkspaceMode={settings?.default_workspace_mode ?? "NewWorktree"}
+            baseBranch={settings?.base_branch ?? null}
+            projectId={projectId}
+            onChange={updateSettings}
+          />
+          <CodeHostingSection
+            projectId={projectId}
+            remoteName={settings?.remote_name ?? null}
+            onChange={updateSettings}
+          />
+        </>
       )}
       {pageId === "issue-tracking" && (
         <IssueTrackingSection

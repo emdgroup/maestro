@@ -606,7 +606,7 @@ export function CanvasAnnotationLayer({
                     // Said out loud rather than left blank: the note is still worth sending, and
                     // silence here reads as a screenshot that was taken and then lost.
                     <p className="text-[11px] text-muted-foreground">
-                      The region could not be captured — the note will go without it.
+                      The region could not be captured, so the note will go without it.
                     </p>
                   ) : (
                     <p className="text-[11px] text-muted-foreground">Capturing region…</p>

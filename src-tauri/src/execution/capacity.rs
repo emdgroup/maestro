@@ -101,7 +101,7 @@ pub fn resolve_capacity(
                 mode: ConcurrencyMode::Auto,
                 reason: if slots == 0 {
                     format!(
-                        "No capacity — {:.1} GB free, {:.1} GB reserved for the system",
+                        "No capacity: {:.1} GB free, {:.1} GB reserved for the system",
                         available_mb as f64 / 1024.0,
                         RESERVED_MB as f64 / 1024.0
                     )
@@ -114,7 +114,7 @@ pub fn resolve_capacity(
             slots: configured.max(0),
             mode: ConcurrencyMode::Hard,
             reason: format!(
-                "Memory could not be read on this host — using the fixed limit of {}",
+                "Memory could not be read on this host, using the fixed limit of {}",
                 configured.max(0)
             ),
         },

@@ -223,8 +223,8 @@ export function AppHeader({
               Not responding
             </TooltipTrigger>
             <TooltipContent>
-              No reply from this connection for a while. Sessions are still open — an agent that is
-              busy can look like this.
+              No reply from this connection for a while. Sessions are still open, and an agent that
+              is busy can look like this.
             </TooltipContent>
           </Tooltip>
         )}

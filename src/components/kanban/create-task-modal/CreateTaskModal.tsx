@@ -9,9 +9,9 @@ import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
   useCreateTaskMutation,
   useAddTaskAttachmentMutation,
-  useProjectBranchesQuery,
   useListRemoteIssuesQuery,
 } from "@/services/task.service";
+import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useIsGitRepo } from "@/store/projectStore";
@@ -72,9 +72,9 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const defaultWorkspaceMode: WorkspaceMode =
     projectSettings?.default_workspace_mode ?? "NewWorktree";
 
-  // Keep for currentBranch initialization only — BranchPicker fetches the full list internally
-  const { data: branchData } = useProjectBranchesQuery(isOpen ? projectId : null);
-  const currentBranch: string = branchData?.[1] ?? "";
+  // The project's configured default, or the branch the repository is on. BranchPicker fetches
+  // the full list internally; this is only what the field starts out on.
+  const defaultBaseBranch = useDefaultBaseBranch(isOpen ? projectId : null);
 
   const project = useSelectedProject();
   const { data: worktrees } = useWorktreesQuery(projectId, project?.path);
@@ -160,7 +160,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   useEffect(() => {
     if (isOpen) {
       reset({
-        baseBranch: currentBranch ?? "",
+        baseBranch: defaultBaseBranch,
         priority: "None",
         workspaceMode: defaultWorkspaceMode,
         workspaceWorktreeId: null,
@@ -171,6 +171,16 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
       reset();
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The settings and branch queries may not have answered by the time the reset above runs, which
+  // would leave the field empty on a first open. Same late fill the session dialog does, and
+  // guarded on the field still being untouched so it never overwrites a branch the user picked.
+  const baseBranch = useWatch({ control, name: "baseBranch" });
+  useEffect(() => {
+    if (isOpen && !baseBranch && defaultBaseBranch) {
+      setValue("baseBranch", defaultBaseBranch);
+    }
+  }, [isOpen, baseBranch, defaultBaseBranch, setValue]);
 
   const handleIssueSelect = (issue: RemoteIssue | null) => {
     if (!issue) {
@@ -216,12 +226,10 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
         skills: [],
         labels,
         // Merge and review read the base branch whatever the workspace is, so it is always
-        // recorded: the reused workspace's own base where there is one, otherwise the branch the
-        // repository is on — which is what the picker would have been showing.
+        // recorded: the reused workspace's own base where there is one, otherwise whatever the
+        // picker was showing, which is the project's default.
         base_branch:
-          mode === "NewWorktree"
-            ? data.baseBranch
-            : (reused?.base_branch ?? currentBranch ?? data.baseBranch),
+          mode === "NewWorktree" ? data.baseBranch : (reused?.base_branch ?? data.baseBranch),
         // The project's agent profiles name the agent per role, so a task no longer carries one.
         agent_id: null,
         priority: data.priority,

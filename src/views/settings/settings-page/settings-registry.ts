@@ -65,10 +65,13 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     scope: "app",
     keywords: ["log level", "log location", "log directory", "trace", "bug report", "debug"],
   },
+  // One page per subject rather than one page called "Defaults": the agent default and the agent
+  // pipeline were on two separate pages while the git settings hid under a generic name, so
+  // picking a default meant leaving the list it comes from.
   {
-    id: "project-defaults",
-    label: "Defaults",
-    icon: GitBranch,
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
     scope: "project",
     keywords: [
       "default agent",
@@ -76,17 +79,35 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
       "authentication",
       "sign in",
       "log out",
-      "default workspace",
-      "worktree",
-      "repository directory",
+      "profiles",
+      "roles",
+      "planner",
+      "coder",
+      "reviewer",
+      "skills",
+      "mcp servers",
     ],
   },
   {
-    id: "agent-profiles",
-    label: "Agent pipeline",
-    icon: Bot,
+    id: "git",
+    label: "Git",
+    icon: GitBranch,
     scope: "project",
-    keywords: ["profiles", "roles", "planner", "coder", "reviewer", "skills", "mcp servers"],
+    keywords: [
+      "default workspace",
+      "worktree",
+      "repository directory",
+      "base branch",
+      "default branch",
+      "git remote",
+      "origin",
+      "code hosting",
+      "pull request",
+      "connect github",
+      "when a task is approved",
+      "merge locally",
+      "push only",
+    ],
   },
   {
     id: "issue-tracking",
@@ -116,6 +137,30 @@ export const SCOPE_ORDER: SettingsScope[] = ["project", "connection", "app"];
 /** The registry in the order the sidebar shows it, so "the first page" means the same thing. */
 export function orderedPages(pages: SettingsPageDef[]): SettingsPageDef[] {
   return SCOPE_ORDER.flatMap((scope) => pages.filter((page) => page.scope === scope));
+}
+
+/** What the settings surface is being shown against, which is what decides its page list. */
+export interface SettingsHost {
+  /** False on the welcome screen, where there is no project and no connection to scope to. */
+  inProject: boolean;
+  /** False for a project that is not a git repository. */
+  isGitRepo: boolean;
+}
+
+/**
+ * The pages this host should offer, in sidebar order.
+ *
+ * A page with nothing to apply to is absent rather than disabled or empty. The welcome screen
+ * has no project and no connection, and a project that is not a git repository has no
+ * worktrees, no base branch and no remote — every control on the Git page, so the page would
+ * be a heading over nothing.
+ */
+export function visiblePages(host: SettingsHost): SettingsPageDef[] {
+  return orderedPages(
+    SETTINGS_PAGES.filter(
+      (page) => (host.inProject || page.scope === "app") && (page.id !== "git" || host.isGitRepo),
+    ),
+  );
 }
 
 export interface SettingsSearchHit {

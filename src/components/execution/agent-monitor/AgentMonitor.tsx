@@ -368,7 +368,7 @@ export function AgentMonitor({
             {selectedActivityInfo?.status === "stale" ? (
               <>
                 <span className="text-xs text-destructive truncate">
-                  Connection lost — agent may be stuck
+                  Connection lost, agent may be stuck
                 </span>
                 <button
                   onClick={() =>

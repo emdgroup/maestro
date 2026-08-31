@@ -27,7 +27,7 @@ function makeTask(): Task {
 }
 
 const notes = () =>
-  screen.getByPlaceholderText("Notes on the plan — leave empty to approve it as it stands");
+  screen.getByPlaceholderText("Notes on the plan. Leave empty to approve it as it stands");
 
 describe("PlanGate", () => {
   /// A new plan is a new decision. The reset used to run from an effect, which the React Compiler

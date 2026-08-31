@@ -395,7 +395,7 @@ export function ElicitationPrompt({
           <div className="flex items-center gap-2">
             {submitAttempted && unansweredCount > 0 && (
               <span className="text-xs text-muted-foreground">
-                {unansweredCount} unanswered — click again
+                {unansweredCount} unanswered, click again
               </span>
             )}
             <Button

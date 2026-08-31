@@ -287,7 +287,7 @@ export function TaskReviewPanel({
     (data: { comments: PendingComment[]; generalFeedback: string }) => {
       const perFileComments: Array<[string, string]> = data.comments.map((c) => [
         c.filePath,
-        c.lineNumber > 0 ? `line:${c.lineNumber} — ${c.text}` : c.text,
+        c.lineNumber > 0 ? `line:${c.lineNumber}: ${c.text}` : c.text,
       ]);
       requestChanges(
         {
@@ -480,7 +480,7 @@ export function TaskReviewPanel({
         <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0 text-xs">
           <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <span className="font-medium">Diff too large — partial view</span>
+            <span className="font-medium">Diff too large, partial view</span>
             <span className="text-amber-400/70">
               {diffQuery.data.diff_truncated &&
                 `Diff: ${Math.round(diffQuery.data.total_diff_bytes / 1_048_576)} MB total, showing first 2 MB. `}
@@ -541,6 +541,7 @@ export function TaskReviewPanel({
         pullRequestProvider={codeHostingQuery.data?.config?.provider}
         pullRequestNeedsConnecting={codeHostingQuery.data?.rung === "NotConnected"}
         forgeSupportsPullRequests={codeHostingQuery.data?.forge_supports_pull_requests ?? false}
+        landingMode={codeHostingQuery.data?.landing_mode}
         onConfirm={handleApproveConfirm}
         isPending={isSaving || isApproving}
       />

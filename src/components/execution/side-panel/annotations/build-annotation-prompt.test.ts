@@ -57,8 +57,8 @@ describe("buildAnnotationBlocks", () => {
     ]);
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain("## `src/git/merge.rs`");
-    expect(text).toContain("- line:42 — handle leaks");
-    expect(text).toContain("- line:7 — why unwrap");
+    expect(text).toContain("- line:42: handle leaks");
+    expect(text).toContain("- line:7: why unwrap");
     expect(text).toContain("## `src/lib.rs`");
     // File-level annotations carry no line prefix.
     expect(text).toContain("- file-level note");

@@ -58,6 +58,7 @@ export function NotificationsSection() {
               <div className="text-xs text-muted-foreground">{hint}</div>
             </div>
             <Switch
+              tone="accent"
               checked={appSettings?.[key] ?? false}
               onCheckedChange={(checked) => void handleToggle(key, checked)}
               className="data-unchecked:bg-muted data-unchecked:border-border/50"

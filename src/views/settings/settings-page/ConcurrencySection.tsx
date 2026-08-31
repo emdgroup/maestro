@@ -33,7 +33,7 @@ export function ConcurrencySection({ connection }: { connection: ConnectionKey }
         className="space-y-3"
       >
         <div className="flex items-start gap-3">
-          <RadioGroupItem value="Auto" id="concurrency-auto" className="mt-1" />
+          <RadioGroupItem tone="accent" value="Auto" id="concurrency-auto" className="mt-1" />
           <div className="min-w-0 flex-1">
             <Label htmlFor="concurrency-auto" className="text-sm font-medium">
               From free memory
@@ -45,7 +45,7 @@ export function ConcurrencySection({ connection }: { connection: ConnectionKey }
         </div>
 
         <div className="flex items-start gap-3">
-          <RadioGroupItem value="Hard" id="concurrency-hard" className="mt-1" />
+          <RadioGroupItem tone="accent" value="Hard" id="concurrency-hard" className="mt-1" />
           <div className="min-w-0 flex-1">
             <Label htmlFor="concurrency-hard" className="text-sm font-medium">
               A fixed number

@@ -154,7 +154,7 @@ export function WorkspaceSelector({
       {mode === "ReuseWorkspace" &&
         (reusable.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            This project has no other worktree yet — create one first, or use the repository
+            This project has no other worktree yet. Create one first, or use the repository
             directory.
           </p>
         ) : (

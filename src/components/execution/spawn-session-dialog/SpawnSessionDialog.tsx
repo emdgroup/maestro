@@ -21,6 +21,7 @@ import {
 } from "@/services/execution.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
+import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useResolveWorktree, type CreatedWorktree } from "@/utils/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
@@ -63,6 +64,7 @@ export function SpawnSessionDialog({
   const { data: projectSettings } = useProjectSettings(projectId);
   const { data: discovery, isLoading: discoveryLoading } = useAgentDiscoveryQuery(connection);
   const { data: branchData } = useProjectBranchesQuery(projectId);
+  const defaultBaseBranch = useDefaultBaseBranch(projectId);
   const spawnMutation = useSpawnInteractiveExecutionMutation();
   const spawnAcpMutation = useSpawnAcpSessionMutation();
   const { resolveWorktree, isCreatingWorktree } = useResolveWorktree();
@@ -82,7 +84,7 @@ export function SpawnSessionDialog({
     if (!open) return;
     setSelectedWorktree(reusableWorktrees[0] ?? null);
     setWorkspaceMode(projectSettings?.default_workspace_mode ?? "NewWorktree");
-    setBaseBranch(branchData?.[1] ?? "");
+    setBaseBranch(defaultBaseBranch);
     setBranchMode("Create");
     setBranchSuffix("");
     setSessionName("");
@@ -102,10 +104,10 @@ export function SpawnSessionDialog({
   }, [open, reusableWorktrees, selectedWorktree]);
 
   useEffect(() => {
-    if (open && !baseBranch && branchData?.[1]) {
-      setBaseBranch(branchData[1]);
+    if (open && !baseBranch && defaultBaseBranch) {
+      setBaseBranch(defaultBaseBranch);
     }
-  }, [open, branchData, baseBranch]);
+  }, [open, defaultBaseBranch, baseBranch]);
 
   // A terminal attaches to an existing checkout only — the backend refuses to create one for it,
   // so the option is offered disabled and never honoured here.
@@ -350,7 +352,7 @@ export function SpawnSessionDialog({
 
               {!discoveryLoading && !discovery?.maestro_server_available && (
                 <p className="text-[10px] text-muted-foreground/60">
-                  maestro-server not found — only Terminal available
+                  maestro-server not found, only Terminal available
                 </p>
               )}
               {!discoveryLoading && discovery?.error && (

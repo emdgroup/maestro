@@ -336,7 +336,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
                 if (keptBecause === null) {
                   toast.success(`Removed empty worktree ${auto.branchName}`);
                 } else {
-                  toast.info(`Kept worktree ${auto.branchName} — ${keptBecause}`);
+                  toast.info(`Kept worktree ${auto.branchName}: ${keptBecause}`);
                 }
               })
               .catch((error) =>

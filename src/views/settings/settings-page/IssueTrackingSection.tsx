@@ -166,7 +166,7 @@ export function IssueTrackingSection({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary ring-2 ring-primary bg-primary/5 cursor-default"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent ring-2 ring-accent bg-accent/5 cursor-default"
           >
             <div className="relative shrink-0">
               <BrandIcon slug={selectedIntegration.provider} className="w-4 h-4" />
@@ -191,7 +191,7 @@ export function IssueTrackingSection({
                 </p>
                 {describeTarget(detectedUnconnected.config) && (
                   <p className="text-xs text-muted-foreground truncate">
-                    {describeTarget(detectedUnconnected.config)} — connect an account to load its
+                    {describeTarget(detectedUnconnected.config)}. Connect an account to load its
                     issues
                   </p>
                 )}
@@ -237,7 +237,7 @@ export function IssueTrackingSection({
               onClick={() => setPickerOpen((open) => !open)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${
                 pickerOpen
-                  ? "border-primary bg-primary/5"
+                  ? "border-accent bg-accent/5"
                   : "border-dashed border-border/70 text-muted-foreground hover:border-accent hover:text-accent"
               }`}
             >

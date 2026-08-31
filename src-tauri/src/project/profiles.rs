@@ -182,7 +182,7 @@ pub fn apply_capabilities(
             if !capabilities.model_ids.is_empty() && !capabilities.model_ids.contains(model) =>
         {
             warnings.push(format!(
-                "'{}' does not offer the model '{}' — using its default",
+                "'{}' does not offer the model '{}', using its default",
                 profile.agent_id, model
             ));
             None
@@ -193,7 +193,7 @@ pub fn apply_capabilities(
     let effort = match &profile.effort {
         Some(effort) if !capabilities.supports_effort => {
             warnings.push(format!(
-                "'{}' does not expose an effort setting — '{}' ignored",
+                "'{}' does not expose an effort setting, so '{}' is ignored",
                 profile.agent_id, effort
             ));
             None
@@ -206,7 +206,7 @@ pub fn apply_capabilities(
             if !capabilities.mode_ids.is_empty() && !capabilities.mode_ids.contains(mode) =>
         {
             warnings.push(format!(
-                "'{}' has no '{}' permission mode — using its default",
+                "'{}' has no '{}' permission mode, using its default",
                 profile.agent_id, mode
             ));
             None

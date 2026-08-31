@@ -148,8 +148,8 @@ export function NewWorktreeFields({
                   const held = findBranchConflict(candidate, worktrees, repoPath, branchData?.[0]);
                   if (!held) return null;
                   return held.kind === "repositoryDirectory"
-                    ? "in use — your project directory"
-                    : `in use — ${folderName(held.worktree.path)}`;
+                    ? "in use: your project directory"
+                    : `in use: ${folderName(held.worktree.path)}`;
                 }
           }
         />

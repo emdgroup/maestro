@@ -154,7 +154,7 @@ export function AgentAuthModal({
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
             <TerminalSquare className="w-6 h-6" />
             <span className="text-center">
-              Authentication terminal is open — complete the sign-in in the agent panel.
+              Authentication terminal is open. Complete the sign-in in the agent panel.
             </span>
           </div>
           <DialogFooter>
@@ -216,9 +216,7 @@ export function AgentAuthModal({
         {isInProgress ? (
           <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin" />
-            <span>
-              Authentication in progress — follow any prompts in your browser or terminal.
-            </span>
+            <span>Authentication in progress. Follow any prompts in your browser or terminal.</span>
             {outputLines.length > 0 && (
               <pre className="w-full max-h-40 overflow-y-auto rounded-md bg-muted px-3 py-2 text-xs font-mono text-foreground text-left whitespace-pre-wrap break-all">
                 {outputLines.map((line, i) => (

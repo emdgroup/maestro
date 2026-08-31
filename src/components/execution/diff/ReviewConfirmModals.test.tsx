@@ -123,3 +123,89 @@ describe("ApproveModal", () => {
     );
   });
 });
+
+/// The project's landing mode decides which option the dialog opens on. It is a preference, so it
+/// only ever picks between options that are already on offer, and a preference the project cannot
+/// currently act on falls back to merging rather than to a radio that is not rendered.
+describe("ApproveModal and the project's landing mode", () => {
+  beforeEach(() => {
+    onConfirm.mockClear();
+  });
+
+  /// Confirming without touching anything is the case that matters: it is what the setting is
+  /// for, and it is the only way to observe the default the dialog opened on.
+  async function confirmWithoutChoosing() {
+    await userEvent.setup().click(screen.getByRole("button", { name: "Confirm" }));
+    return (onConfirm.mock.calls[0]?.[0] as { mergeStrategy: string } | undefined)?.mergeStrategy;
+  }
+
+  it("merges by default when the project has said nothing", async () => {
+    renderModal({ pushRemote: "origin", pullRequestProvider: "github" });
+
+    expect(await confirmWithoutChoosing()).toBe("merge-delete");
+  });
+
+  it("opens on the pull request when the project lands that way", async () => {
+    renderModal({
+      pushRemote: "origin",
+      pullRequestProvider: "github",
+      landingMode: "PullRequest",
+    });
+
+    expect(await confirmWithoutChoosing()).toBe("pull-request");
+  });
+
+  it("opens on push when the project lands that way", async () => {
+    renderModal({ pushRemote: "origin", landingMode: "PushOnly" });
+
+    expect(await confirmWithoutChoosing()).toBe("commit-push");
+  });
+
+  /// The regression this fallback exists to prevent: a project configured for pull requests whose
+  /// forge nobody has connected would otherwise open on an option the dialog does not render.
+  it("falls back to merging when the forge is not connected", async () => {
+    renderModal({
+      pushRemote: "origin",
+      pullRequestProvider: "github",
+      pullRequestNeedsConnecting: true,
+      landingMode: "PullRequest",
+    });
+
+    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
+    expect(await confirmWithoutChoosing()).toBe("merge-delete");
+  });
+
+  it("falls back to merging when there is no remote to push to", async () => {
+    renderModal({ pushRemote: null, landingMode: "PushOnly" });
+
+    expect(await confirmWithoutChoosing()).toBe("merge-delete");
+  });
+
+  /// The status query resolves after the dialog has mounted, so the preferred option appears
+  /// under it. The default has to follow, or the setting is honoured only on a warm cache.
+  it("adopts the preference once the forge answers", async () => {
+    const { rerender } = renderModal({
+      pushRemote: null,
+      landingMode: "PullRequest",
+      forgeSupportsPullRequests: false,
+    });
+
+    rerender(
+      <ApproveModal
+        open
+        onOpenChange={vi.fn()}
+        hasWorktree
+        hasUncommitted
+        untrackedCount={0}
+        commitMessage="Add the thing"
+        onConfirm={onConfirm}
+        forgeSupportsPullRequests
+        pushRemote="origin"
+        pullRequestProvider="github"
+        landingMode="PullRequest"
+      />,
+    );
+
+    expect(await confirmWithoutChoosing()).toBe("pull-request");
+  });
+});
