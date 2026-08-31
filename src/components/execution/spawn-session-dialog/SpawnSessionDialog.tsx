@@ -374,7 +374,9 @@ export function SpawnSessionDialog({
                 onBranchModeChange={setBranchMode}
                 branchSuffix={branchSuffix}
                 onBranchSuffixChange={setBranchSuffix}
-                generatedBranchSuffix={slugifyName(sessionName) || "<generated>"}
+                // Only once the session has a name is there one to preview; until then it is
+                // generated at spawn, and null gets the "auto-generated" placeholder instead.
+                generatedBranchSuffix={slugifyName(sessionName) || null}
                 worktrees={worktrees}
                 repoPath={repoPath}
                 selectedWorktreeId={selectedWorktree?.id ?? null}
