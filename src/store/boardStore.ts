@@ -1,3 +1,4 @@
+// Zustand store for terminal drawer and active task state in BoardView.
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";

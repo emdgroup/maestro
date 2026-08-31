@@ -1,3 +1,4 @@
+// Zustand store tracking the selected project; use useSelectedProject() to read it.
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";
