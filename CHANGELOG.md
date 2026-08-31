@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.20.0](https://github.com/emdgroup/maestro/compare/v0.19.0...v0.20.0) (2026-08-31)
+
+
+### Features
+
+* **settings:** reorganise the project pages and surface code hosting ([#304](https://github.com/emdgroup/maestro/issues/304)) ([6801b66](https://github.com/emdgroup/maestro/commit/6801b664e7ca7cd0c7d633cc5e6c97e076f0f2c3))
+
+
+### Bug Fixes
+
+* treat scrolling to the bottom as pressing the scroll-to-bottom button ([#300](https://github.com/emdgroup/maestro/issues/300)) ([e8a8ea2](https://github.com/emdgroup/maestro/commit/e8a8ea297abc3edd56a5ca67df33e6b00bc62fc3))
+
 ## [0.19.0](https://github.com/emdgroup/maestro/compare/v0.18.0...v0.19.0) (2026-08-31)
 
 ### Features
