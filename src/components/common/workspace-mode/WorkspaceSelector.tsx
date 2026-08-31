@@ -107,7 +107,11 @@ export function WorkspaceSelector({
         value={mode}
         onChange={onModeChange}
         allowNewWorktree={allowNewWorktree}
-        unavailableReason="A terminal attaches to a checkout that already exists"
+        hasReusableWorkspace={reusable.length > 0}
+        unavailableReason={{
+          NewWorktree: "A terminal attaches to a checkout that already exists",
+          ReuseWorkspace: "This project has no other worktree yet",
+        }}
       />
 
       {mode === "NewWorktree" && (
