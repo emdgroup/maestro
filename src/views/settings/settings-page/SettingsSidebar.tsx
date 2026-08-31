@@ -89,7 +89,11 @@ export function SettingsSidebar({
                             : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                         )}
                       >
-                        <Icon className="mt-0.5 size-3.5 shrink-0" />
+                        {/* The tint alone is easy to miss at this size, so the icon carries the
+                            accent too and the row agrees with the controls it leads to. */}
+                        <Icon
+                          className={cn("mt-0.5 size-3.5 shrink-0", isActive && "text-accent")}
+                        />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-xs font-medium">{page.label}</span>
                           {/* Why this page is in the results — without it a search for a control

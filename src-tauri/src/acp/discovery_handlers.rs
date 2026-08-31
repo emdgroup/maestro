@@ -52,10 +52,10 @@ pub struct PreflightResult {
 /// Phrased as what the user loses rather than what Maestro wants: "installing agent skills" is
 /// our vocabulary and means nothing to someone deciding whether to skip a warning.
 const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
-    ("git", "Maestro — for worktrees, diffs and review"),
+    ("git", "Maestro: for worktrees, diffs and review"),
     (
         "npx",
-        "Maestro — to automatically display rich data visualizations",
+        "Maestro: to automatically display rich data visualizations",
     ),
 ];
 
@@ -940,7 +940,7 @@ pub async fn discover_agents(
         .map(|e| e.result.clone())
         .ok_or_else(|| match connection_key {
             ConnectionKey::Local => {
-                "Local agent discovery failed — is maestro-server installed?".to_string()
+                "Local agent discovery failed. Is maestro-server installed?".to_string()
             }
             ConnectionKey::Ssh { id } => format!(
                 "No active SSH session for connection_id {}. Connect first.",

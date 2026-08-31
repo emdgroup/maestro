@@ -99,13 +99,13 @@ export function getProviderInstructions(provider: string): InstructionLine[] | n
       return [
         { text: "Open Linear → Settings → API → Personal API Keys" },
         { text: "Click Create key → enter a label" },
-        { text: "Copy the key immediately — it won't be shown again" },
+        { text: "Copy the key immediately, it won't be shown again" },
       ];
     case "jira_cloud":
       return [
         { text: "Go to: https://id.atlassian.com/manage-profile/security/api-tokens", code: true },
         { text: "Click Create API token → enter a label → Create" },
-        { text: "Copy the token immediately — it won't be shown again" },
+        { text: "Copy the token immediately, it won't be shown again" },
         { text: "Site URL: your *.atlassian.net domain (e.g. yourorg.atlassian.net)" },
         { text: "Email: your Atlassian account email address" },
       ];
@@ -142,12 +142,12 @@ export const BITBUCKET_INSTRUCTIONS: Record<"cloud" | "server", InstructionLine[
     { text: "Click Create API token with scopes → select Bitbucket → enter a label" },
     { text: "Select scopes:", code: false },
     { text: "read:repository:bitbucket, write:repository:bitbucket, read:account", code: true },
-    { text: "Click Create — copy the token immediately, it won't be shown again" },
+    { text: "Click Create, then copy the token immediately, it won't be shown again" },
   ],
   server: [
     { text: "Log into your Bitbucket Server or Data Center instance" },
     { text: "Click your avatar → Manage account → HTTP access tokens" },
     { text: "Click Create token → enter a name, select Repositories (Read)" },
-    { text: "Click Create — copy the token immediately" },
+    { text: "Click Create, then copy the token immediately" },
   ],
 };

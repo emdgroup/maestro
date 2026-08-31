@@ -63,6 +63,35 @@ pub fn pick_remote_url(remote_v_output: &str) -> Option<String> {
     pick_remote(remote_v_output).map(|(_name, url)| url)
 }
 
+/// A remote URL with any embedded credential removed, safe to show a user.
+///
+/// An HTTPS remote may carry one — `https://x-access-token:ghp_…@github.com/owner/repo` is what
+/// `gh` writes — and anything shown in Settings ends up in screenshots attached to bug reports.
+/// Only the `user[:password]@` segment of the authority goes; the scheme, host, port and path are
+/// left exactly as git has them, so what the user sees still matches `git remote -v`.
+///
+/// scp-style `git@host:owner/repo` is untouched: its `git@` is the SSH login, not a secret, and
+/// removing it would print a URL that does not work if copied.
+pub fn redact_remote_url(url: &str) -> String {
+    let url = url.trim();
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    // The credential is in the authority, which ends at the first `/`. Splitting on the last `@`
+    // before that boundary keeps a password containing `@` from leaving part of itself behind.
+    let (authority, path) = match rest.split_once('/') {
+        Some((authority, path)) => (authority, Some(path)),
+        None => (rest, None),
+    };
+    let Some((_credential, host)) = authority.rsplit_once('@') else {
+        return url.to_string();
+    };
+    match path {
+        Some(path) => format!("{}://{}/{}", scheme, host, path),
+        None => format!("{}://{}", scheme, host),
+    }
+}
+
 /// Every remote name in `git remote -v` output, deduped, in the order git printed them.
 ///
 /// `git remote -v` lists each remote twice, once for fetch and once for push, so the dedup is
@@ -76,6 +105,21 @@ pub fn remote_names(remote_v_output: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// The URL of one named remote in `git remote -v` output, or `None` if the repository has no
+/// remote by that name.
+///
+/// Needed because the remote a project pushes to is a setting, not a guess: [`pick_remote`]
+/// answers "which one would we choose", and this answers "where does the chosen one point".
+pub fn url_for_remote(remote_v_output: &str, name: &str) -> Option<String> {
+    remote_v_output.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        match (parts.next(), parts.next()) {
+            (Some(found), Some(url)) if found == name => Some(url.to_string()),
+            _ => None,
+        }
+    })
 }
 
 /// As `pick_remote_url`, but also returns the remote's name — which is what `git push`
@@ -227,6 +271,67 @@ mod tests {
             parsed("git@ssh.dev.azure.com:v3/org/project/repo"),
             ("ssh.dev.azure.com".into(), "v3/org/project/repo".into())
         );
+    }
+
+    /// The settings page shows this URL, and a screenshot of it ends up on bug reports, so an
+    /// embedded token must not survive the trip.
+    /// The remote a project pushes to is a setting, so the lookup has to answer for the name it
+    /// is given rather than for the one `pick_remote` would have preferred.
+    #[test]
+    fn url_for_remote_answers_for_the_name_it_is_given() {
+        let output = "\
+origin\thttps://github.com/me/repo.git (fetch)
+origin\thttps://github.com/me/repo.git (push)
+fork\tgit@github.com:someone/repo.git (fetch)
+fork\tgit@github.com:someone/repo.git (push)
+";
+        assert_eq!(
+            url_for_remote(output, "fork").as_deref(),
+            Some("git@github.com:someone/repo.git")
+        );
+        assert_eq!(
+            url_for_remote(output, "origin").as_deref(),
+            Some("https://github.com/me/repo.git")
+        );
+        // A remote the repository does not have, which is what a stale setting looks like.
+        assert_eq!(url_for_remote(output, "upstream"), None);
+        assert_eq!(url_for_remote("", "origin"), None);
+    }
+
+    #[test]
+    fn redaction_removes_an_embedded_credential() {
+        assert_eq!(
+            redact_remote_url("https://x-access-token:ghp_secret@github.com/owner/repo.git"),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            redact_remote_url("https://user@github.com/owner/repo"),
+            "https://github.com/owner/repo"
+        );
+        // A password containing `@` must not leave its tail behind.
+        assert_eq!(
+            redact_remote_url("https://user:p@ss@gitlab.com/group/repo.git"),
+            "https://gitlab.com/group/repo.git"
+        );
+        assert_eq!(redact_remote_url("ssh://git@git.example.com:2222/owner/repo.git"), "ssh://git.example.com:2222/owner/repo.git");
+    }
+
+    /// A URL with nothing to hide has to come back byte for byte, or what Settings shows stops
+    /// matching what `git remote -v` prints.
+    #[test]
+    fn redaction_leaves_everything_else_alone() {
+        for url in [
+            "https://github.com/owner/repo.git",
+            // scp-style: the `git@` is the SSH login, and dropping it would print a URL that
+            // does not work if copied.
+            "git@github.com:owner/repo.git",
+            "git@ssh.dev.azure.com:v3/org/project/repo",
+            "git://github.com/owner/repo.git",
+            "/srv/git/repo.git",
+            "",
+        ] {
+            assert_eq!(redact_remote_url(url), url);
+        }
     }
 
     #[test]

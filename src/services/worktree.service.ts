@@ -239,7 +239,7 @@ export function usePruneBranchesMutation() {
       toast.success(
         deleted.length === branches.length
           ? `Pruned ${deleted.length} ${plural}`
-          : `Pruned ${deleted.length} of ${branches.length} branches — see the log for the rest`,
+          : `Pruned ${deleted.length} of ${branches.length} branches, see the log for the rest`,
       );
     },
     onError: createErrorToastHandler("Failed to prune branches"),

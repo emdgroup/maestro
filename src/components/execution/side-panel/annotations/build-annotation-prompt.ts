@@ -30,7 +30,7 @@ export async function buildAnnotationBlocks(
 ): Promise<JsonValue[]> {
   if (annotations.length === 0) return [];
 
-  let text = "# Annotations — please answer\n\n";
+  let text = "# Annotations: please answer\n\n";
   text +=
     "I left the notes below on your work. Answer each one. " +
     "Ask before changing anything you are unsure about.\n\n";
@@ -40,7 +40,7 @@ export async function buildAnnotationBlocks(
     if (a.kind !== "diff") continue;
     const list = diffByFile.get(a.filePath) ?? [];
     const anchor = commentAnchor(a);
-    list.push(anchor ? `${anchor} — ${a.text}` : a.text);
+    list.push(anchor ? `${anchor}: ${a.text}` : a.text);
     diffByFile.set(a.filePath, list);
   }
 

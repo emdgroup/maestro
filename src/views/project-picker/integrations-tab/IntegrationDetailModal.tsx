@@ -162,7 +162,7 @@ export function IntegrationDetailModal({ integration, open, onOpenChange, onDisc
                 <Input
                   id="detail-token"
                   type="password"
-                  placeholder={`Required — enter new ${fields.tokenLabel.toLowerCase()}`}
+                  placeholder={`Required: enter new ${fields.tokenLabel.toLowerCase()}`}
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={isPending}

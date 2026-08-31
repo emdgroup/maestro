@@ -74,7 +74,7 @@ export function useAcpActivity(
             stopReason,
             message:
               stopReason === "auth_required"
-                ? "Authentication required — log in to continue."
+                ? "Authentication required. Log in to continue."
                 : "Agent encountered an error and could not respond.",
           });
         }

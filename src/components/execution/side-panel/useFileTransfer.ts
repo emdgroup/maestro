@@ -117,7 +117,7 @@ export function useFileTransfer() {
 export function transferTooltip(state: TransferState, idleText: string): string {
   switch (state.status) {
     case "busy":
-      return state.progress === null ? "Copying…" : `Copying — ${state.progress}%`;
+      return state.progress === null ? "Copying…" : `Copying ${state.progress}%`;
     case "done":
     case "error":
       return state.detail;

@@ -136,7 +136,7 @@ describe("NewWorktreeFields — a branch already checked out", () => {
 
     const row = screen.getByRole("button", { name: /feature\/payments/ });
     expect(row).toBeDisabled();
-    expect(row).toHaveTextContent("in use — session-31");
+    expect(row).toHaveTextContent("in use: session-31");
   });
 
   it("leaves a free branch selectable", async () => {

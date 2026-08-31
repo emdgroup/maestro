@@ -49,7 +49,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
     }
 
     // Fall back to PATH-based resolution
-    which::which(command).map_err(|_| format!("Command '{}' not found in known locations or PATH — ensure it is installed", command))
+    which::which(command).map_err(|_| format!("Command '{}' not found in known locations or PATH, ensure it is installed", command))
 }
 
 /// Represents a PTY session with a spawned process

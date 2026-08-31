@@ -491,7 +491,7 @@ function FooterCTAs({
             task.phase_status === "Failed"
               ? "Try starting this task again"
               : task.execute_requested_at
-                ? "Waiting for a free agent — press to try now"
+                ? "Waiting for a free agent, press to try now"
                 : undefined
           }
         >
@@ -1017,7 +1017,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {taskWorktree
-                ? `The work is committed on ${taskWorktree.branch_name}, and its worktree is still at ${taskWorktree.path}. Archiving takes the task off the board either way — the question is only whether the worktree stays with it.`
+                ? `The work is committed on ${taskWorktree.branch_name}, and its worktree is still at ${taskWorktree.path}. Archiving takes the task off the board either way. The question is only whether the worktree stays with it.`
                 : "The work was committed but never merged into the base branch. Archiving takes the task off the board; the branch stays where it is."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1065,7 +1065,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
               Abandon this run?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The agent stops and everything it produced is deleted — the worktree, its branch and
+              The agent stops and everything it produced is deleted: the worktree, its branch and
               any uncommitted work in it. The task itself returns to Planning with its description
               intact, as though it had never run. This cannot be undone.
             </AlertDialogDescription>

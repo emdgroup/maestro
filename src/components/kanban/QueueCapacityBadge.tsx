@@ -65,7 +65,7 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
       </TooltipTrigger>
       <TooltipContent>
         {data.reason}
-        {full && data.slots > 0 && " — the queue waits until one frees"}
+        {full && data.slots > 0 && ". The queue waits until one frees"}
       </TooltipContent>
     </Tooltip>
   );

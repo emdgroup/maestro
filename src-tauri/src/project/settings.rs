@@ -69,6 +69,7 @@ pub async fn get_project_settings(
         accent_color_auto_assign: config.accent_color_auto_assign,
         default_workspace_mode,
         remote_name: config.remote_name,
+        base_branch: config.base_branch,
     })
 }
 
@@ -115,6 +116,7 @@ pub async fn update_project_settings(
         config.startup_tab = settings.startup_tab;
         config.set_default_workspace_mode(settings.default_workspace_mode);
         config.remote_name = settings.remote_name.filter(|name| !name.trim().is_empty());
+        config.base_branch = settings.base_branch.filter(|name| !name.trim().is_empty());
         true
     })
     .await?;

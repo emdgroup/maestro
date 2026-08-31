@@ -96,6 +96,7 @@ export function AppearanceSection() {
             </div>
           </div>
           <Switch
+            tone="accent"
             checked={appSettings?.native_window_frame ?? false}
             onCheckedChange={handleNativeWindowFrameChange}
             className="data-unchecked:bg-muted data-unchecked:border-border/50"

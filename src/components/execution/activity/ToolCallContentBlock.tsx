@@ -97,7 +97,7 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
     case "terminal":
       return (
         <div className="text-[11px] text-muted-foreground font-mono bg-muted/50 rounded px-2 py-1">
-          Terminal output — see terminal tab
+          Terminal output, see terminal tab
         </div>
       );
     default:

@@ -17,6 +17,7 @@ import {
   MAESTRO_BRANCH_PREFIX,
 } from "@/lib/generateSessionName";
 import { useProjectBranchesQuery, taskQueryKeys } from "@/services/task.service";
+import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import {
   useCreateWorktreeMutation,
   useWorktreesQuery,
@@ -54,7 +55,7 @@ export function CreateWorktreeDialog({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: branchData } = useProjectBranchesQuery(projectId);
-  const currentBranch = branchData?.[1] ?? "main";
+  const defaultBaseBranch = useDefaultBaseBranch(projectId) || "main";
   const { data: worktrees = [] } = useWorktreesQuery(projectId, repoPath);
   const createMutation = useCreateWorktreeMutation();
 
@@ -66,7 +67,7 @@ export function CreateWorktreeDialog({
     // The conflict check is only as fresh as this list, and a worktree may have been created since
     // the view last loaded.
     void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
-    setBaseBranch(currentBranch);
+    setBaseBranch(defaultBaseBranch);
     setBranchMode("Create");
     setBranchSuffix("");
     setGeneratedSuffix(generateSessionName());

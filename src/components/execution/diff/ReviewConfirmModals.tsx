@@ -14,6 +14,7 @@ import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { Checkbox } from "@/ui/checkbox";
+import type { LandingMode } from "@/types/bindings";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -133,6 +134,12 @@ interface ApproveModalProps {
    * defaulting it would quietly restore the offer-then-fail this prop exists to prevent.
    */
   forgeSupportsPullRequests: boolean;
+  /**
+   * The project's choice of how approved work leaves Review, which decides the option this
+   * dialog opens on. A preference, not a constraint: every strategy the project can actually
+   * perform stays on offer, and one it cannot falls back to merging.
+   */
+  landingMode?: LandingMode | null;
   onConfirm: (data: {
     mergeStrategy: string;
     includeUntracked: boolean;
@@ -140,6 +147,14 @@ interface ApproveModalProps {
   }) => void;
   isPending?: boolean;
 }
+
+/// The strategy each landing mode asks for. `Merge` is also the fallback, so it is the value any
+/// unavailable preference resolves to.
+const STRATEGY_FOR_LANDING_MODE: Record<LandingMode, string> = {
+  Merge: "merge-delete",
+  PullRequest: "pull-request",
+  PushOnly: "commit-push",
+};
 
 export function ApproveModal({
   open,
@@ -152,10 +167,10 @@ export function ApproveModal({
   pullRequestProvider,
   pullRequestNeedsConnecting,
   forgeSupportsPullRequests,
+  landingMode,
   onConfirm,
   isPending,
 }: ApproveModalProps) {
-  const [strategy, setStrategy] = useState("merge-delete");
   const [includeUntracked, setIncludeUntracked] = useState(true);
   const [commitMessage, setCommitMessage] = useState(initialCommitMessage);
 
@@ -172,6 +187,25 @@ export function ApproveModal({
   // able to disagree: an unconnected forge gets the invitation below, never the option.
   const canOpenPullRequest =
     canPush && !!pullRequestProvider && forgeSupportsPullRequests && !pullRequestNeedsConnecting;
+
+  // The project's preference, honoured only where the option is actually on offer. A project set
+  // to `PullRequest` whose forge is unconnected must not open on a radio that is not rendered.
+  const preferred = landingMode ? STRATEGY_FOR_LANDING_MODE[landingMode] : "merge-delete";
+  const defaultStrategy =
+    (preferred === "pull-request" && !canOpenPullRequest) ||
+    (preferred === "commit-push" && !canPush)
+      ? "merge-delete"
+      : preferred;
+
+  const [strategy, setStrategy] = useState(defaultStrategy);
+  // The code-hosting status arrives after the first render, so what is on offer changes under
+  // this dialog and the default has to be re-applied when it does. Latched on the computed value
+  // rather than on the prop, so a status refresh that changes nothing leaves a user's pick alone.
+  const [prevDefaultStrategy, setPrevDefaultStrategy] = useState(defaultStrategy);
+  if (prevDefaultStrategy !== defaultStrategy) {
+    setPrevDefaultStrategy(defaultStrategy);
+    setStrategy(defaultStrategy);
+  }
   // Inviting someone to connect a forge that still could not open a pull request is worse than
   // saying nothing: the work it asks for changes nothing.
   const showConnectInvitation = pullRequestNeedsConnecting && forgeSupportsPullRequests;

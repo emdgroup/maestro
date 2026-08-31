@@ -171,7 +171,7 @@ export function ReviewChangesPanelCompact({
           >
             <PanelLeft className="w-4 h-4" />
           </TooltipTrigger>
-          <TooltipContent>File list — {scopeLabel}</TooltipContent>
+          <TooltipContent>File list: {scopeLabel}</TooltipContent>
         </Tooltip>
         <div className="w-px h-4 bg-border shrink-0 mx-1" />
         <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0 overflow-hidden">
@@ -241,7 +241,7 @@ export function ReviewChangesPanelCompact({
         <div className="flex items-start gap-2 px-3 py-2 border-b border-border bg-amber-500/5 text-amber-400 shrink-0">
           <TriangleAlert className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5 text-xs">
-            <span className="font-medium">Diff too large — partial view</span>
+            <span className="font-medium">Diff too large, partial view</span>
             <span className="text-amber-400/70">
               {truncationInfo.diffTruncated &&
                 `Diff: ${Math.round(truncationInfo.totalDiffBytes / 1_048_576)} MB total, showing first 2 MB. `}

@@ -207,7 +207,7 @@ function AnnotationListPanel({
             >
               <div className="text-[10px] font-mono text-muted-foreground truncate">
                 {annotationLabel(a)}
-                {isStale?.(a) && <span className="ml-1 italic">— gone</span>}
+                {isStale?.(a) && <span className="ml-1 italic">(gone)</span>}
               </div>
               {editingId === a.id ? (
                 <div className="flex flex-col gap-1 mt-1">

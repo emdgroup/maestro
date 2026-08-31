@@ -48,6 +48,7 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
           // Carried through for the same reason as the fields above: the command takes the whole
           // config, so anything omitted here is written away.
           remote_name: projectSettings?.remote_name ?? null,
+          base_branch: projectSettings?.base_branch ?? null,
         },
       });
     }

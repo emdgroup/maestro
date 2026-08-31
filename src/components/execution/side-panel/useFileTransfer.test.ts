@@ -107,7 +107,7 @@ describe("useFileTransfer", () => {
     });
 
     expect(result.current.state).toEqual({ status: "busy", progress: 25 });
-    expect(transferTooltip(result.current.state, "idle")).toBe("Copying — 25%");
+    expect(transferTooltip(result.current.state, "idle")).toBe("Copying 25%");
 
     await act(async () => {
       work.settle();

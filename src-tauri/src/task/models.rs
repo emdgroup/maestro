@@ -648,6 +648,9 @@ pub struct ProjectConfigResponse {
     /// The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
     /// picker has to be able to show that no choice has been made.
     pub remote_name: Option<String>,
+    /// The configured base branch for new worktrees, or `None` for "auto". Not resolved either,
+    /// and for the same reason as `remote_name` above.
+    pub base_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -662,6 +665,10 @@ pub struct ProjectConfigRequest {
     /// `None` selects auto-detection; a name must be one the project actually has, which is why
     /// the form offers a picker rather than a text field.
     pub remote_name: Option<String>,
+    /// `None` selects the branch the repository is on. Same reasoning as `remote_name` for why the
+    /// form offers a picker: a mistyped branch would only surface when a worktree failed to be
+    /// created for it.
+    pub base_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

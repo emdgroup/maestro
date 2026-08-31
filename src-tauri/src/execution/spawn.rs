@@ -158,7 +158,7 @@ pub async fn spawn_interactive_execution(
         let ssh_session = app_state
             .ssh.get_session(conn_id)
             .await
-            .ok_or("SSH session not active — connect to the remote host first")?;
+            .ok_or("SSH session not active. Connect to the remote host first")?;
 
         let pty_handle = ssh_session
             .spawn_remote_pty(80, 24, log_id)

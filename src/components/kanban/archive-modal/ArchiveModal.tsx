@@ -16,7 +16,7 @@ const STATUS_BADGE_CLASSES: Partial<Record<TaskStatus, string>> = {
 };
 
 function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
+  if (!dateStr) return "N/A";
   try {
     return new Date(dateStr).toLocaleDateString(undefined, {
       year: "numeric",
@@ -24,7 +24,7 @@ function formatDate(dateStr: string | null | undefined): string {
       day: "numeric",
     });
   } catch {
-    return "—";
+    return "N/A";
   }
 }
 

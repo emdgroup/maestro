@@ -164,7 +164,7 @@ export function ConnectionHeader({ connectionId, onDelete }: ConnectionHeaderPro
                         {t.required_by.length > 0 && (
                           <span className="text-muted-foreground">
                             {" "}
-                            — agents using this tool will be unavailable
+                            so agents using this tool will be unavailable
                           </span>
                         )}
                       </span>

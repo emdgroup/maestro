@@ -449,7 +449,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Cancel this task?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          It leaves the board and moves to the archive. Nothing on disk is touched —
+                          It leaves the board and moves to the archive. Nothing on disk is touched:
                           any worktree and branch stay where they are.
                         </AlertDialogDescription>
                       </AlertDialogHeader>

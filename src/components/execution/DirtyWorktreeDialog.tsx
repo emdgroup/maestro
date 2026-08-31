@@ -70,11 +70,11 @@ export function DirtyWorktreeDialog({
               />
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => onChoice("stash")}>
-                  Stash — Stash changes, restore after
+                  Stash: change kept, restored after
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => onChoice("discard")}>
-                  Discard — Permanently discard all changes
+                  Discard: all changes permanently lost
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

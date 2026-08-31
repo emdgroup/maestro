@@ -87,7 +87,7 @@ export function PlanGate({
         <Textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Notes on the plan — leave empty to approve it as it stands"
+          placeholder="Notes on the plan. Leave empty to approve it as it stands"
           className="min-h-20 max-h-40 text-sm"
         />
 

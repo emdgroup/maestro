@@ -68,7 +68,7 @@ function safeStringify(value: unknown): string {
 }
 
 function Empty() {
-  return <span className="text-muted-foreground/60">—</span>;
+  return <span className="text-muted-foreground/60">empty</span>;
 }
 
 /**

@@ -2478,6 +2478,12 @@ landing_mode: LandingMode;
  */
 remote: string | null; 
 /**
+ * Where that remote points, with any embedded credential stripped by
+ * [`redact_remote_url`]. Set exactly when `remote` is: the settings page shows the two
+ * together, and a name with no URL beside it says nothing about which server it reaches.
+ */
+remote_url: string | null; 
+/**
  * Forge coordinates. `None` until the forge is identified.
  */
 config: ProjectCodeHostingConfig | null; 
@@ -2773,7 +2779,13 @@ default_workspace_mode: WorkspaceMode;
  * `None` selects auto-detection; a name must be one the project actually has, which is why
  * the form offers a picker rather than a text field.
  */
-remote_name: string | null }
+remote_name: string | null; 
+/**
+ * `None` selects the branch the repository is on. Same reasoning as `remote_name` for why the
+ * form offers a picker: a mistyped branch would only surface when a worktree failed to be
+ * created for it.
+ */
+base_branch: string | null }
 export type ProjectConfigResponse = { default_agent: string | null; startup_tab: string | null; 
 /**
  * Deliberately absent from `ProjectConfigRequest`: the settings form submits the whole
@@ -2793,7 +2805,12 @@ default_workspace_mode: WorkspaceMode;
  * The configured git remote, or `None` for "auto" — deliberately *not* resolved, because the
  * picker has to be able to show that no choice has been made.
  */
-remote_name: string | null }
+remote_name: string | null; 
+/**
+ * The configured base branch for new worktrees, or `None` for "auto". Not resolved either,
+ * and for the same reason as `remote_name` above.
+ */
+base_branch: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this

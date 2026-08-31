@@ -7,7 +7,9 @@ use tauri::State;
 use crate::core::AppState;
 use crate::core::connection::get_project_with_git_conn;
 use crate::core::project_storage::read_maestro_json;
-use crate::git::remote::{pick_remote, parse_remote_url, ParsedRemote};
+use crate::git::remote::{
+    pick_remote, parse_remote_url, redact_remote_url, url_for_remote, ParsedRemote,
+};
 use crate::git::run_git_in_dir_lossy;
 use crate::integration::issue_tracking_handlers::{find_integration, provider_for_host};
 use crate::models::project::{LandingMode, ProjectCodeHostingConfig, ProjectConfig};
@@ -44,6 +46,10 @@ pub struct CodeHostingStatus {
     /// Name of the remote to push to. Present at every rung above `NoRemote`, including
     /// the one where the forge is unknown, because push does not need a forge.
     pub remote: Option<String>,
+    /// Where that remote points, with any embedded credential stripped by
+    /// [`redact_remote_url`]. Set exactly when `remote` is: the settings page shows the two
+    /// together, and a name with no URL beside it says nothing about which server it reaches.
+    pub remote_url: Option<String>,
     /// Forge coordinates. `None` until the forge is identified.
     pub config: Option<ProjectCodeHostingConfig>,
     /// Whether Maestro can open a pull request on this forge at all.
@@ -162,6 +168,7 @@ pub async fn code_hosting_status(
         rung: CodeHostingRung::NoRemote,
         landing_mode,
         remote: None,
+        remote_url: None,
         config: None,
         forge_supports_pull_requests: false,
         applied: false,
@@ -176,9 +183,22 @@ pub async fn code_hosting_status(
             return Ok(nothing);
         }
     };
-    let Some((remote_name, url)) = pick_remote(&remotes) else {
+    // The project's configured remote, not merely the one we would have guessed. Everything
+    // derived from this status pushes to it — `push_branch` and the pull request path both take
+    // their remote from here — so guessing would silently ignore the setting and send an approved
+    // branch to `origin` on a project that pushes somewhere else.
+    let configured = crate::git::remote::project_remote(app_state, project_id).await;
+    let picked = match url_for_remote(&remotes, &configured) {
+        Some(url) => Some((configured, url)),
+        // Either the configured remote has since been deleted, or there is none and
+        // `project_remote` handed back its `origin` default for a repository that has no such
+        // remote. Both are better served by what the repository actually has than by an error.
+        None => pick_remote(&remotes),
+    };
+    let Some((remote_name, url)) = picked else {
         return Ok(nothing);
     };
+    let remote_url = redact_remote_url(&url);
     let Some(remote) = parse_remote_url(&url) else {
         log::debug!("Code hosting detection: unrecognised remote URL {}", url);
         return Ok(nothing);
@@ -190,6 +210,7 @@ pub async fn code_hosting_status(
             rung: CodeHostingRung::ForgeUnknown,
             landing_mode,
             remote: Some(remote_name),
+            remote_url: Some(remote_url),
             config: None,
             forge_supports_pull_requests: false,
             applied: false,
@@ -225,6 +246,7 @@ pub async fn code_hosting_status(
         rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },
         landing_mode,
         remote: Some(remote_name),
+        remote_url: Some(remote_url),
         forge_supports_pull_requests: crate::integration::pull_request::supports_pull_requests(
             &config,
         ),

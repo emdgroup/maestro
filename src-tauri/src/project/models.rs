@@ -84,6 +84,14 @@ pub struct ProjectConfig {
     /// because nothing ever writes this one on the user's behalf.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_name: Option<String>,
+    /// Which branch a new worktree is cut from, when a task or a session creates one.
+    ///
+    /// `None` *means* auto: the branch the repository is currently on, which is what Maestro used
+    /// before this key existed. Like `remote_name` it needs no `_auto_detect` twin, because nothing
+    /// ever writes it on the user's behalf. May name a remote-qualified branch such as
+    /// `origin/main`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
     /// How approved work leaves Review. Absent means `Merge`, which is what Maestro did
     /// before this field existed — a project is never switched to the PR path by detection.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +142,7 @@ impl Default for ProjectConfig {
             code_hosting: None,
             code_hosting_auto_detect: None,
             remote_name: None,
+            base_branch: None,
             landing_mode: None,
             startup_tab: None,
             accent_color: None,

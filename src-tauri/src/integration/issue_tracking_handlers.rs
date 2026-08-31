@@ -404,7 +404,7 @@ pub async fn list_remote_issues(
             crate::integration::jira_cloud::fetch_issues(site_url, email, &creds.token, project_key).await
         }
 
-        "jira_server" => Err("Jira Server is no longer supported — migrate to Jira Cloud".to_string()),
+        "jira_server" => Err("Jira Server is no longer supported. Migrate to Jira Cloud".to_string()),
 
         "azuredevops" => {
             let creds = get_integration_creds_for_project("azuredevops", &ticketing, &app_state)?;

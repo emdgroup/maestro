@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, Check, Search, RefreshCw, ChevronDown } from "lucide-react";
+import { GitBranch, Check, Search, RefreshCw, ChevronDown, Sparkles } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -26,6 +26,14 @@ interface BranchPickerProps {
    * to find it, even when it is unavailable.
    */
   unavailable?: (branch: string) => string | null;
+  /** Shown when nothing is picked. Defaults to asking for a branch. */
+  placeholder?: string;
+  /**
+   * Offers "no branch in particular" as a row above the list, selecting the empty string. Used by
+   * the project's default base branch, where the absence of a choice is itself a valid answer;
+   * a caller that requires a branch simply leaves this off.
+   */
+  autoOption?: { label: string; hint?: string };
 }
 
 function BranchList({
@@ -80,6 +88,8 @@ export function BranchPicker({
   prefix,
   prefixControl,
   unavailable,
+  placeholder = "Select branch...",
+  autoOption,
 }: BranchPickerProps) {
   const queryClient = useQueryClient();
   const project = useSelectedProject();
@@ -118,7 +128,7 @@ export function BranchPicker({
         >
           <PopoverTrigger className="flex flex-1 items-center gap-2 px-3 min-w-0 hover:bg-muted transition-colors">
             <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex-1 text-left truncate">{value || "Select branch..."}</span>
+            <span className="flex-1 text-left truncate">{value || placeholder}</span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </PopoverTrigger>
           <PopoverContent className="w-(--anchor-width) p-1 gap-0" align="start">
@@ -133,6 +143,26 @@ export function BranchPicker({
                 />
               </div>
             </div>
+            {/* Above the tabs rather than inside a list: it is not a branch, so it belongs to
+                neither tab, and it disappears while searching because a search is a search for a
+                branch by name. */}
+            {autoOption && !search && (
+              <button
+                type="button"
+                onClick={() => onChange("")}
+                className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted"
+              >
+                <Sparkles className="size-3 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">
+                  {autoOption.label}
+                  {autoOption.hint && (
+                    <span className="text-muted-foreground"> ({autoOption.hint})</span>
+                  )}
+                </span>
+                {!value && <Check className="size-3 shrink-0" />}
+              </button>
+            )}
+
             <div className="py-1">
               <div className="flex rounded-md bg-muted p-0.5 gap-0.5">
                 {(["local", "remote"] as const).map((t) => (

@@ -447,7 +447,9 @@ export function useExecuteTask(
           if (resolvedMode) {
             await api.setAcpMode(logId, resolvedMode);
           } else if (readOnly) {
-            toast.warning(`${agentId} offers no read-only mode — it is asked not to write instead`);
+            toast.warning(
+              `${agentId} offers no read-only mode, so it is asked not to write instead`,
+            );
           }
         } catch (err) {
           console.warn("Failed to set permission mode:", err);
