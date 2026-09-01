@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils.ts";
 import { useNavigate } from "@/store/navigationStore";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import { WorktreeMetrics } from "./WorktreeMetrics";
+import { hasSyncActions, WorktreeSyncActions } from "./WorktreeSyncActions";
 import {
   agentLabel,
   isInUse,
@@ -17,6 +18,8 @@ import {
 interface WorktreeCardProps {
   worktree: WorktreeWithStatus;
   repoPath: string;
+  /** The project the card belongs to, for the push/pull controls. Null disables them. */
+  projectId: number | null;
   /** The live sessions running in this worktree, already scoped by `sessionsByWorktree`. */
   sessions: ActiveSessionInfo[];
   /** Passed in rather than read per card, so one ticker drives the whole grid. */
@@ -27,24 +30,11 @@ interface WorktreeCardProps {
 
 /**
  * A worktree in the grid. Opening one shows its diff.
- *
- * The card used to be inert unless the working tree was dirty, gated on `changed_files_count` and
- * `diff_stat`. Both see only uncommitted work — and a branch whose agent finished and committed,
- * which is the normal end state, could not be opened at all. Every card opens now; a worktree with
- * genuinely nothing in it lands on the panel's own empty state, which says so.
- *
- * The footer is the "in use" indicator. There is no badge and no coloured dot: a card that is
- * being used has a footer, one that is not does not, and the tint difference between body and
- * footer is what makes that visible across a grid.
- *
- * One card in the grid is not a worktree at all — the repository directory itself, which git lists
- * alongside them. It reads the same as its neighbours otherwise, so it says so twice: a root-folder
- * icon on the title and a "repository" label in the corner the delete button cannot occupy, since
- * this is the one checkout that cannot be removed.
  */
 export function WorktreeCard({
   worktree,
   repoPath,
+  projectId,
   sessions,
   now,
   onSelect,
@@ -62,13 +52,16 @@ export function WorktreeCard({
       <div className="p-3" onClick={() => onSelect(worktree.path)}>
         <div className="flex items-start justify-between gap-2">
           <span className="flex items-center gap-1.5 min-w-0">
-            {isMain && <FolderRoot className="size-3.5 shrink-0 text-accent" />}
             <span className="text-sm font-medium truncate">{title}</span>
           </span>
           {isMain ? (
-            <span className="shrink-0 rounded border border-accent/40 bg-accent/10 px-1.5 py-px text-[10px] uppercase tracking-wide text-accent">
-              Repository
-            </span>
+            // Labelled because this icon is the only thing distinguishing the repository checkout
+            // from the worktrees it sits beside, and it is the one card with no delete button.
+            <FolderRoot
+              role="img"
+              aria-label="Repository"
+              className="size-3.5 shrink-0 text-accent"
+            />
           ) : (
             <Button
               variant="ghost"
@@ -96,7 +89,16 @@ export function WorktreeCard({
           {worktree.detached_at ? `detached at ${worktree.detached_at}` : worktree.branch_name}
         </div>
 
-        <WorktreeMetrics worktree={worktree} now={now} className="mt-2" />
+        <WorktreeMetrics
+          worktree={worktree}
+          now={now}
+          className="mt-2"
+          sync={
+            projectId != null && hasSyncActions(worktree) ? (
+              <WorktreeSyncActions worktree={worktree} projectId={projectId} inUse={inUse} />
+            ) : undefined
+          }
+        />
       </div>
 
       {inUse && (
@@ -162,9 +164,6 @@ export function WorktreeCard({
     </div>
   );
 
-  // Always, and as a path rather than a folder name: the title may be a task, and even when it is
-  // the folder name it does not say where that folder is — which is the question once a project has
-  // worktrees outside `.maestro/`.
   return (
     <Tooltip>
       <TooltipTrigger render={card} />

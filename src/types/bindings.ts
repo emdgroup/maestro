@@ -1280,6 +1280,43 @@ async discardAllWorktreeChanges(projectId: number, worktreePath: string) : Promi
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Push one worktree's branch to the project's remote, setting it as the upstream.
+ * 
+ * Delegates to [`crate::git::push_branch`], which is also what the task-approve path uses — the
+ * push therefore runs on the machine that owns the repository and with that machine's credentials,
+ * and cannot hang waiting for one.
+ */
+async pushWorktreeBranch(projectId: number, worktreePath: string, branchName: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("push_worktree_branch", { projectId, worktreePath, branchName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fast-forward one worktree onto its upstream, fetching first.
+ * 
+ * Fast-forward only, and that is the whole design: `merge --ff-only` either moves the branch or
+ * refuses without having written anything, so a pull can never strand a worktree in a conflicted
+ * merge that Maestro has no UI to finish. A diverged branch is reported and left alone.
+ * 
+ * The fetch carries no refspec, so every `<remote>/*` tracking ref is refreshed — the behind
+ * counts on *all* the cards become accurate, not just this one's, and nothing else in the app
+ * ever fetches.
+ * 
+ * The merge targets `@{u}` rather than `<remote>/<branch>` so it moves onto exactly the ref the
+ * card's ahead/behind counts were measured against.
+ */
+async pullWorktreeBranch(projectId: number, worktreePath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pull_worktree_branch", { projectId, worktreePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<SpawnSessionResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };

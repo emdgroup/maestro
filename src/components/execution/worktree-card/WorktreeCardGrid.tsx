@@ -13,6 +13,7 @@ interface WorktreeCardGridProps {
   onSelectWorktree: (path: string) => void;
   onDeleteWorktree: (path: string) => void;
   repoPath: string;
+  projectId: number | null;
   emptyMessage?: string;
 }
 
@@ -25,6 +26,7 @@ export function WorktreeCardGrid({
   onSelectWorktree,
   onDeleteWorktree,
   repoPath,
+  projectId,
   emptyMessage,
 }: WorktreeCardGridProps) {
   if (groups.length === 0) {
@@ -50,6 +52,7 @@ export function WorktreeCardGrid({
               key={wt.path}
               worktree={wt}
               repoPath={repoPath}
+              projectId={projectId}
               sessions={sessionsByPath.get(wt.path) ?? []}
               now={now}
               onSelect={onSelectWorktree}

@@ -158,10 +158,6 @@ fn to_check(run: &GitHubCheckRun) -> PullRequestCheck {
     PullRequestCheck { name: run.name.clone(), status }
 }
 
-fn summarise_check_runs(runs: &[GitHubCheckRun]) -> CiState {
-    summarise_checks(&runs.iter().map(to_check).collect::<Vec<_>>())
-}
-
 /// The list endpoint carries `merged_at` where the single-pull-request one carries `merged`, so
 /// the same "a merged pull request reads as closed" trap needs answering from a different field.
 fn list_entry_to_branch_pull_request(entry: GitHubStyleListEntry) -> BranchPullRequest {
@@ -606,6 +602,13 @@ mod tests {
             serde_json::from_str(r#"{"number":1}"#).expect("a bare body should parse");
         assert_eq!(bare.changed_files, None);
         assert_eq!(bare.mergeable, None, "a missing flag is not a conflict");
+    }
+
+    /// Check runs on their own, summarised. Production reads them alongside commit statuses and
+    /// summarises the two together, so this exists only to test the check-run half in isolation —
+    /// which is where the `status`/`conclusion` distinction below actually lives.
+    fn summarise_check_runs(runs: &[GitHubCheckRun]) -> CiState {
+        summarise_checks(&runs.iter().map(to_check).collect::<Vec<_>>())
     }
 
     fn run(name: &str, status: &str, conclusion: Option<&str>) -> GitHubCheckRun {
