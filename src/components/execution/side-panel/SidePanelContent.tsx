@@ -109,12 +109,16 @@ export function SidePanelContent({
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
   // the user is looking at another tab, or at a collapsed panel.
   const { diffStats, changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
+  // The pull request state is gated harder than the diff stats above, because it is the one thing
+  // here that leaves the machine. Its only consumer is a card on the Overview tab and there is no
+  // unseen dot for it to raise, so nothing is lost by asking the forge only while that tab is the
+  // one on screen.
   const ship = useSessionShipState(
     sessionKey,
     taskId,
     isProcessing ?? false,
     selectedProject?.path ?? null,
-    isSessionActive,
+    isSessionActive && activeTabId === "overview",
   );
 
   const { data: wslConnections } = useWslConnections();

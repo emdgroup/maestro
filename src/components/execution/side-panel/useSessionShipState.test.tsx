@@ -12,6 +12,7 @@ const hosting = vi.hoisted(() => ({ current: null as CodeHostingStatus | null })
 const sessions = vi.hoisted(() => ({ current: [] as ActiveSessionInfo[] }));
 const pullRequest = vi.hoisted(() => ({ current: null as BranchPullRequestInfo | null }));
 const lookupEnabled = vi.hoisted(() => ({ current: false }));
+const checksEnabled = vi.hoisted(() => ({ current: false }));
 
 vi.mock("@/services/execution.service", () => ({
   useAcpSessionMeta: () => ({
@@ -32,7 +33,10 @@ vi.mock("@/services/integration.service", () => ({
   },
   // The fast checks poll. Returning nothing keeps these tests about the gates rather than about
   // which of the two queries supplied the check list.
-  useBranchPullRequestChecks: () => ({ data: undefined }),
+  useBranchPullRequestChecks: (_p: unknown, _pr: unknown, enabled: boolean) => {
+    checksEnabled.current = enabled;
+    return { data: undefined };
+  },
 }));
 
 const { useSessionShipState } = await import("./useSessionShipState");
@@ -82,9 +86,15 @@ function readyHosting(overrides: Partial<CodeHostingStatus> = {}): CodeHostingSt
   };
 }
 
-function ship(args?: { taskId?: number | null; isProcessing?: boolean }) {
+function ship(args?: { taskId?: number | null; isProcessing?: boolean; visible?: boolean }) {
   return renderHook(() =>
-    useSessionShipState(58, args?.taskId ?? null, args?.isProcessing ?? false, "C:/repo", true),
+    useSessionShipState(
+      58,
+      args?.taskId ?? null,
+      args?.isProcessing ?? false,
+      "C:/repo",
+      args?.visible ?? true,
+    ),
   ).result.current;
 }
 
@@ -95,6 +105,20 @@ describe("useSessionShipState", () => {
     sessions.current = [];
     pullRequest.current = null;
     lookupEnabled.current = false;
+    checksEnabled.current = false;
+  });
+
+  /// Every ACP session's panel stays mounted so its state survives navigation, so without a
+  /// visibility gate each open session asks the forge on its own timer for a card nobody is
+  /// looking at — and the checks half of that is a request every ten seconds.
+  it("asks the forge nothing while the card is off screen", () => {
+    ship({ visible: false });
+    expect(lookupEnabled.current).toBe(false);
+    expect(checksEnabled.current).toBe(false);
+
+    ship({ visible: true });
+    expect(lookupEnabled.current).toBe(true);
+    expect(checksEnabled.current).toBe(true);
   });
 
   /// The session's cwd and the worktree row disagree about slashes and drive-letter case on

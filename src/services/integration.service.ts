@@ -191,13 +191,14 @@ export function useBranchPullRequest(
 export function useBranchPullRequestChecks(
   projectId: number | null,
   pullRequest: BranchPullRequestInfo | null,
+  enabled: boolean,
 ) {
   const number = pullRequest?.state === "Open" ? pullRequest.number : null;
   const headSha = pullRequest?.head_sha ?? null;
   return useQuery({
     queryKey: integrationQueryKeys.pullRequestChecks(projectId ?? -1, number ?? -1, headSha ?? ""),
     queryFn: () => api.fetchBranchPullRequestChecks(projectId!, number!, headSha),
-    enabled: projectId != null && number != null,
+    enabled: enabled && projectId != null && number != null,
     refetchInterval: 10_000,
     staleTime: 0,
     retry: false,

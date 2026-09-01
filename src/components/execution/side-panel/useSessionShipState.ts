@@ -57,20 +57,25 @@ export interface SessionShipState {
  * The gates come from queries that already exist for other reasons: `WorktreeWithStatus` carries
  * both `changed_files_count` and `ahead_behind`, and the active-session list carries every
  * session's `cwd`. Only the pull request lookup is new, and it is the one that crosses the network
- * — hence the three conditions on `enabled` below rather than polling unconditionally.
+ * — hence the conditions on `enabled` below rather than polling unconditionally.
+ *
+ * `visible` is the outermost of those conditions and the one that matters most. Every ACP session's
+ * panel stays mounted so its state survives navigation, so without it this hook runs for every open
+ * session at once and each one asks the forge on its own timer, whether or not anybody is looking
+ * at it.
  */
 export function useSessionShipState(
   sessionKey: number,
   taskId: number | null,
   isProcessing: boolean,
   projectPath: string | null,
-  poll: boolean,
+  visible: boolean,
 ): SessionShipState {
   const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
   const projectId = sessionMeta?.project_id ?? null;
 
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath ?? undefined, {
-    refetchInterval: poll ? 10_000 : false,
+    refetchInterval: visible ? 10_000 : false,
   });
   const { data: hosting } = useCodeHostingStatus(projectId ?? 0);
   const { data: activeSessions } = useActiveSessionsQuery(projectId ?? undefined);
@@ -94,12 +99,14 @@ export function useSessionShipState(
   const { data: found } = useBranchPullRequest(
     projectId,
     branch,
-    canLookUp && hasUpstream && branch != null,
+    visible && canLookUp && hasUpstream && branch != null,
   );
 
   // The checks come from their own faster query. Its first result arrives after the lookup's, so
   // until then the lookup's own snapshot stands in and the card paints with checks either way.
-  const { data: liveChecks } = useBranchPullRequestChecks(projectId, found ?? null);
+  // Disabling both keeps their last answer in the cache rather than dropping it, so coming back to
+  // the tab paints the state the user left and refreshes behind it.
+  const { data: liveChecks } = useBranchPullRequestChecks(projectId, found ?? null, visible);
   const pullRequest = useMemo(
     () => (found && liveChecks ? { ...found, checks: liveChecks } : found),
     [found, liveChecks],
