@@ -30,7 +30,6 @@ function PriorityBadge({ priority }: { priority: PlanEntry["priority"] }) {
 }
 
 export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
-  const [expanded, setExpanded] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const total = entries.length;
@@ -56,86 +55,8 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
 
   const planLabel = title ?? "Plan";
 
-  if (expanded) {
-    return (
-      <div className="px-3.5 pt-2.5 pb-2">
-        <div className="flex items-center gap-2 px-2 py-1 mb-2">
-          <span className="flex-1 text-[11px] text-muted-foreground">{planLabel}</span>
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors px-1"
-            aria-label="Collapse plan"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="max-h-70 overflow-y-auto custom-scrollbar">
-          {entries.map((entry, i) => {
-            const isLast = i === entries.length - 1;
-            const nextStatus = !isLast ? entries[i + 1].status : null;
-
-            return (
-              <div key={i} className="flex items-stretch min-h-6.5">
-                <div className="flex flex-col items-center w-4.5 shrink-0 pt-0.75">
-                  <div
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      entry.status === "completed"
-                        ? "bg-success opacity-70"
-                        : entry.status === "in_progress"
-                          ? "bg-accent animate-pulse"
-                          : "border border-muted-foreground/40"
-                    }`}
-                  />
-                  {!isLast && (
-                    <div
-                      className={`flex-1 w-0.5 rounded-sm my-0.5 ${
-                        nextStatus === "completed"
-                          ? "bg-success/30"
-                          : nextStatus === "in_progress"
-                            ? "bg-accent/30"
-                            : "bg-muted/50"
-                      }`}
-                    />
-                  )}
-                </div>
-
-                <div className="flex-1 pb-1.5 pl-2 pt-0.5 min-w-0">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className={`text-[11px] leading-snug truncate flex-1 min-w-0 ${
-                        entry.status === "completed"
-                          ? "text-muted-foreground/55"
-                          : entry.status === "in_progress"
-                            ? "text-foreground font-semibold"
-                            : "text-muted-foreground"
-                      }`}
-                    >
-                      {entry.content}
-                    </span>
-                    <PriorityBadge priority={entry.priority} />
-                  </div>
-                  {entry.status === "in_progress" && (
-                    <div className="text-[9px] tabular-nums text-muted-foreground/70 mt-0.5">
-                      {formatElapsed(elapsedSeconds)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => setExpanded(true)}
-      className="w-full px-3.5 pt-2.5 pb-2 text-left hover:bg-muted/30 transition-colors"
-    >
+    <div className="w-full px-3.5 pt-2.5 pb-2">
       <div className="text-[11px] text-muted-foreground mb-2">{planLabel}</div>
 
       {inProgressEntry && (
@@ -155,22 +76,22 @@ export function ActivityPlanPanel({ entries, title }: ActivityPlanPanelProps) {
         </div>
       )}
 
+      {/* Filled by position, not by which entry holds which status: the rail reads as a
+          progress bar, so a plan completed out of order still fills left to right. */}
       <div className="flex items-center gap-0.5 px-2 py-1.5">
-        {entries.map((entry, i) =>
-          entry.status === "in_progress" ? (
+        {Array.from({ length: total }, (_, i) =>
+          i === completedCount && inProgressEntry ? (
             <div key={i} className="flex-1 h-0.75 rounded-sm relative overflow-hidden bg-accent/20">
               <div className="absolute inset-y-0 left-0 w-[60%] rounded-r-sm animate-rail-comet bg-gradient-to-r from-transparent via-accent/50 to-accent" />
             </div>
           ) : (
             <div
               key={i}
-              className={`flex-1 h-0.75 rounded-sm ${
-                entry.status === "completed" ? "bg-success" : "bg-muted"
-              }`}
+              className={`flex-1 h-0.75 rounded-sm ${i < completedCount ? "bg-accent" : "bg-muted"}`}
             />
           ),
         )}
       </div>
-    </button>
+    </div>
   );
 }
