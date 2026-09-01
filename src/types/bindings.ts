@@ -792,6 +792,36 @@ async reconcilePullRequests(projectId: number) : Promise<Result<number[], string
 }
 },
 /**
+ * The pull request whose head is `branch`, with what CI says about it.
+ * 
+ * Polled by the session panel, so every avoidable request matters: CI is only asked for a pull
+ * request that is still open, because a merged or closed one's checks change nothing the card
+ * shows and would double the request count for every landed branch still on screen.
+ */
+async findBranchPullRequest(projectId: number, branch: string) : Promise<Result<BranchPullRequestInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("find_branch_pull_request", { projectId, branch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Open a pull request from `branch` into `base`, touching no task.
+ * 
+ * The branch is not pushed here. The panel only offers this once the branch is level with its
+ * upstream, so a push would be a no-op — and pushing from a command that says it opens a pull
+ * request would be a surprise on the one path where the caller was wrong about that.
+ */
+async openPullRequestForBranch(projectId: number, branch: string, base: string, title: string, body: string) : Promise<Result<OpenedPullRequest, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_pull_request_for_branch", { projectId, branch, base, title, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reject a task in review, discarding its work either way
  * 
  * Handles the two rejection paths from the review panel:
@@ -2439,6 +2469,28 @@ export type BranchList = { local: string[]; remote: string[] }
  */
 export type BranchMode = "Create" | "Checkout"
 /**
+ * The pull request open on a session's branch, as the Overview card renders it.
+ */
+export type BranchPullRequestInfo = { number: number; url: string; title: string; state: BranchPullRequestState; 
+/**
+ * `None` on a forge that will not report CI — Gitea and Forgejo always, and anywhere the
+ * request failed. The card drops its checks block rather than showing a spinner that will
+ * never resolve.
+ */
+ci: PullRequestCi | null; 
+/**
+ * Names of the checks that failed, and empty unless `ci` is `Failing`. Carried so the panel
+ * can seed a prompt that names them rather than telling the agent to go and look.
+ */
+failing_checks: string[] }
+/**
+ * What became of a pull request, for the panel.
+ * 
+ * Mirrors [`PullRequestState`], which cannot be exported itself: it is `Copy` plumbing shared by
+ * every provider and giving it a `specta` derive would put forge internals in the bindings.
+ */
+export type BranchPullRequestState = "Open" | "Merged" | "Closed"
+/**
  * How far up the capability ladder this project reaches.
  * 
  * Each rung removes one option from Approve and never blocks it; the bottom of the ladder
@@ -2497,6 +2549,15 @@ config: ProjectCodeHostingConfig | null;
  * for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
  */
 forge_supports_pull_requests: boolean; 
+/**
+ * Whether this forge can be asked which pull request a branch belongs to.
+ * 
+ * Separate from `forge_supports_pull_requests` because the two are genuinely different sets:
+ * Bitbucket and Azure DevOps can have a pull request opened on them but cannot yet be searched
+ * by head branch. The session panel polls only when this is true, so that an unsupported forge
+ * costs no requests rather than one failing request every thirty seconds.
+ */
+forge_supports_branch_lookup: boolean; 
 /**
  * Whether this call wrote `code_hosting` into `.maestro/settings.json`.
  */
@@ -2717,6 +2778,7 @@ export type NewProjectColor =
  * Leave the project colourless so it follows the global default.
  */
 "global"
+export type OpenedPullRequest = { number: number; url: string }
 /**
  * How the current phase is going.
  * 

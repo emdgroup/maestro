@@ -6,17 +6,24 @@ import {
   ScrollText,
   Paperclip,
   ExternalLink,
+  GitCommitVertical,
+  GitPullRequestCreate,
+  GitPullRequest,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openFileWithConnection } from "@/lib/file-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
-import type { ConnectionKey } from "@/types/bindings";
+import type { BranchPullRequestInfo, ConnectionKey } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
-import { useTaskAttachmentsQuery } from "@/services/task.service";
+import { useTaskAttachmentsQuery, useTasksQuery } from "@/services/task.service";
+import type { SessionShipState } from "./useSessionShipState";
+import { BLOCKER_LABELS, commitAndPushPrompt, fixChecksPrompt } from "./shipActions";
+import { OpenPullRequestDialog } from "./OpenPullRequestDialog";
 
 interface OverviewPanelProps {
   subagentItems: ToolCallItem[];
@@ -31,6 +38,101 @@ interface OverviewPanelProps {
   diffStats?: { insertions: number; deletions: number } | null;
   connection: ConnectionKey;
   wslDistroName?: string;
+  ship: SessionShipState;
+  /** Puts text in the composer for the user to read and send. Absent when there is no live agent. */
+  onSeedPrompt?: (text: string) => void;
+}
+
+/**
+ * An action inside a card, which is itself a button that navigates.
+ *
+ * `stopPropagation` is not defensive here: without it every click would also open the Changes tab
+ * behind the dialog. The Artifacts rows below solve the same problem the same way.
+ */
+function CardAction({
+  icon: Icon,
+  label,
+  hint,
+  variant,
+  disabled,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  hint?: string;
+  /** `seed` asks the agent and is borderless; `direct` acts itself and carries a border. */
+  variant: "seed" | "direct";
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "flex items-center gap-2 w-full text-[11px] text-left rounded-md transition-colors",
+        variant === "seed"
+          ? "px-1.5 py-1 -mx-1.5 text-muted-foreground enabled:hover:bg-muted enabled:hover:text-foreground"
+          : "px-2.5 py-1.5 border border-border bg-background enabled:hover:bg-muted",
+        disabled && "opacity-40 cursor-default",
+      )}
+    >
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+      <span className="truncate">{label}</span>
+      {hint && <span className="ml-auto text-[9.5px] opacity-70 flex-shrink-0">{hint}</span>}
+    </button>
+  );
+}
+
+/**
+ * The Changes card's shipping affordance. Exactly one of the two is ever rendered — a branch with
+ * something to push cannot also be ready for a pull request — so they are alternatives rather than
+ * a pair, and the card never grows a row of buttons that contradict each other.
+ */
+function ShipAction({
+  ship,
+  onSeedPrompt,
+  onOpenDialog,
+}: {
+  ship: SessionShipState;
+  onSeedPrompt?: (text: string) => void;
+  onOpenDialog: () => void;
+}) {
+  const hint = ship.blocker ? BLOCKER_LABELS[ship.blocker] : undefined;
+
+  if (ship.action === "commit-push") {
+    // With no agent to ask there is nothing this button could do, so it is not offered at all.
+    if (!onSeedPrompt) return null;
+    return (
+      <div className="mt-2.5 pt-2 border-t border-border/50">
+        <CardAction
+          icon={GitCommitVertical}
+          label="Commit and push"
+          hint={hint ?? "asks the agent"}
+          variant="seed"
+          disabled={!!ship.blocker}
+          onClick={() => onSeedPrompt(commitAndPushPrompt(ship.branch))}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2.5 pt-2 border-t border-border/50">
+      <CardAction
+        icon={GitPullRequestCreate}
+        label="Open pull request"
+        hint={hint}
+        variant="direct"
+        disabled={!!ship.blocker}
+        onClick={onOpenDialog}
+      />
+    </div>
+  );
 }
 
 function ProgressBar({ pct, className }: { pct: number; className: string }) {
@@ -92,8 +194,11 @@ export function OverviewPanel({
   diffStats,
   connection,
   wslDistroName,
+  ship,
+  onSeedPrompt,
 }: OverviewPanelProps) {
   const [errorPaths, setErrorPaths] = useState<Set<string>>(new Set());
+  const [pullRequestDialogOpen, setPullRequestDialogOpen] = useState(false);
   const { data: attachments } = useTaskAttachmentsQuery(taskId);
 
   function handleRowOpen(path: string) {
@@ -207,13 +312,13 @@ export function OverviewPanel({
           )}
         </Card>
 
-        {/* Changed files */}
+        {/* Changes */}
         <Card
           available={changedFilesCount > 0}
           onClick={() => onNavigate("review")}
           icon={<FileDiff className="w-3.5 h-3.5 text-success" />}
           iconBg="bg-success/15"
-          label="Changed files"
+          label="Changes"
           sub={
             changedFilesCount === 0
               ? "No changes"
@@ -245,7 +350,14 @@ export function OverviewPanel({
               </div>
             </div>
           )}
+          <ShipAction
+            ship={ship}
+            onSeedPrompt={onSeedPrompt}
+            onOpenDialog={() => setPullRequestDialogOpen(true)}
+          />
         </Card>
+
+        <PullRequestCard ship={ship} taskId={taskId} onSeedPrompt={onSeedPrompt} />
 
         {/* Canvas */}
         <Card
@@ -425,7 +537,113 @@ export function OverviewPanel({
           )}
         </Card>
       </div>
+
+      {ship.projectId != null && ship.branch && (
+        <OpenPullRequestDialog
+          open={pullRequestDialogOpen}
+          onOpenChange={setPullRequestDialogOpen}
+          projectId={ship.projectId}
+          branch={ship.branch}
+          baseBranch={ship.baseBranch}
+          concurrentSessions={ship.concurrentSessions}
+          onOpened={(url) => void openUrl(url)}
+        />
+      )}
     </div>
+  );
+}
+
+const CI_LABELS: Record<NonNullable<BranchPullRequestInfo["ci"]>, string> = {
+  Passing: "checks passed",
+  Failing: "CI failing",
+  Pending: "checks running",
+};
+
+const CI_TONES: Record<NonNullable<BranchPullRequestInfo["ci"]>, string> = {
+  Passing: "text-success",
+  Failing: "text-destructive",
+  Pending: "text-muted-foreground",
+};
+
+const STATE_BADGES: Record<BranchPullRequestInfo["state"], { label: string; tone: string }> = {
+  Open: { label: "Open", tone: "bg-success/15 text-success" },
+  Merged: { label: "Merged", tone: "bg-[--purple]/15 text-[--purple]" },
+  Closed: { label: "Closed", tone: "bg-destructive/15 text-destructive" },
+};
+
+/**
+ * What the forge says about the branch this session is on.
+ *
+ * Nothing here is stored — it is a live read keyed on the branch — so the card appears for a pull
+ * request opened on the forge by hand just as readily as for one Maestro opened, and disappears
+ * when the branch stops having one. Clicking it goes to the forge rather than to a tab: the checks,
+ * the discussion and the diff are all rendered better there than they would be in this column.
+ */
+function PullRequestCard({
+  ship,
+  taskId,
+  onSeedPrompt,
+}: {
+  ship: SessionShipState;
+  taskId: number | null;
+  onSeedPrompt?: (text: string) => void;
+}) {
+  const pullRequest = ship.pullRequest;
+  // Only a task carries fix rounds — they are spent by the pipeline's CI-fix agent, which no
+  // task-less session has. The list is already in cache from the board.
+  const { data: tasks } = useTasksQuery(taskId != null ? ship.projectId : null);
+  const task = taskId != null ? tasks?.find((entry) => entry.id === taskId) : undefined;
+
+  if (!pullRequest) return null;
+
+  const badge = STATE_BADGES[pullRequest.state];
+  const ci = pullRequest.ci;
+  const isOpen = pullRequest.state === "Open";
+
+  return (
+    <Card
+      available
+      onClick={() => void openUrl(pullRequest.url)}
+      icon={<GitPullRequest className="w-3.5 h-3.5 text-success" />}
+      iconBg="bg-success/15"
+      label={`Pull request #${pullRequest.number}`}
+      sub={isOpen && ci ? CI_LABELS[ci] : pullRequest.title}
+      badge={badge.label}
+      badgeClass={badge.tone}
+    >
+      {isOpen && (
+        <div className="flex flex-col gap-1.5">
+          {ci && (
+            <span className={cn("text-[10.5px]", CI_TONES[ci])}>
+              {pullRequest.failing_checks.length > 0
+                ? pullRequest.failing_checks.join(", ")
+                : CI_LABELS[ci]}
+            </span>
+          )}
+          {task &&
+            task.fix_rounds > 0 && (
+              // The cap lives in Rust as `FIX_ROUND_CAP` and is not in the bindings, so the count is
+              // shown without it rather than duplicating the number here where it could drift. That
+              // the pipeline has given up is read from the ball instead, which is what matters.
+              <span className="text-[10.5px] text-muted-foreground tabular-nums">
+                CI fix round {task.fix_rounds}
+                {task.ball === "User" && " — auto-fix stopped, over to you"}
+              </span>
+            )}
+          {ci === "Failing" && onSeedPrompt && (
+            <div className="mt-1 pt-2 border-t border-border/50">
+              <CardAction
+                icon={GitCommitVertical}
+                label="Send failing checks to the agent"
+                hint="asks the agent"
+                variant="seed"
+                onClick={() => onSeedPrompt(fixChecksPrompt(pullRequest))}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

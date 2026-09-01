@@ -7,8 +7,8 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, PullRequestDetails, PullRequestState, PullRequestTarget,
-    instance_base, owner_repo, read_json,
+    BranchPullRequest, CiState, CreatedPullRequest, PullRequestDetails, PullRequestState,
+    PullRequestTarget, instance_base, owner_repo, read_json,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -16,6 +16,21 @@ use crate::integration::{build_http_client, normalize_instance_url};
 struct GitHubStylePullRequest {
     number: i64,
     html_url: String,
+}
+
+/// One entry of the pull request *list* endpoint, which is a different shape from the single-pull
+/// request one: there is no `merged` flag and no `mergeable`, only a `merged_at` timestamp.
+#[derive(Deserialize)]
+struct GitHubStyleListEntry {
+    number: i64,
+    html_url: String,
+    #[serde(default)]
+    title: String,
+    state: String,
+    #[serde(default)]
+    merged_at: Option<String>,
+    #[serde(default)]
+    head: Option<GitHubHeadRef>,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +47,10 @@ struct GitHubStyleState {
 #[derive(Deserialize)]
 struct GitHubHeadRef {
     sha: String,
+    /// Branch name, present on the list endpoint. Gitea has no `head` query filter, so this is
+    /// what the client-side match below compares against.
+    #[serde(rename = "ref", default)]
+    head_ref: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -94,6 +113,111 @@ fn summarise_check_runs(runs: &[GitHubCheckRun]) -> CiState {
         .collect();
 
     if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
+}
+
+/// The list endpoint carries `merged_at` where the single-pull-request one carries `merged`, so
+/// the same "a merged pull request reads as closed" trap needs answering from a different field.
+fn list_entry_to_branch_pull_request(entry: GitHubStyleListEntry) -> BranchPullRequest {
+    let state = if entry.merged_at.is_some() {
+        PullRequestState::Merged
+    } else if entry.state == "closed" {
+        PullRequestState::Closed
+    } else {
+        PullRequestState::Open
+    };
+    BranchPullRequest {
+        number: entry.number,
+        url: entry.html_url,
+        title: entry.title,
+        details: PullRequestDetails {
+            state,
+            mergeable: None,
+            head_sha: entry.head.map(|head| head.sha),
+        },
+    }
+}
+
+/// An open pull request wins over a closed or merged one whatever order the forge returned them in.
+///
+/// A branch that has been round this loop before has several, and the card is about what is
+/// happening now — "merged three weeks ago" is not it. With no open one among them the first
+/// listed is taken, which for GitHub is the newest because the query sorts descending, and for
+/// Gitea is whatever it chose to list first.
+fn pick_branch_pull_request(mut entries: Vec<GitHubStyleListEntry>) -> Option<BranchPullRequest> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index = entries.iter().position(|entry| entry.state == "open").unwrap_or(0);
+    Some(list_entry_to_branch_pull_request(entries.swap_remove(index)))
+}
+
+pub(super) async fn find_github(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    // The `head` filter is `owner:branch`, where the owner is the *head* repository's — so this
+    // finds same-repository branches only, which is what Maestro's worktrees ever create.
+    let url = format!(
+        "{}/repos/{}/{}/pulls?state=all&sort=created&direction=desc&per_page=20&head={}:{}",
+        github_api_base(target),
+        owner,
+        repo,
+        urlencoding::encode(owner),
+        urlencoding::encode(branch)
+    );
+
+    let entries: Vec<GitHubStyleListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("Authorization", format!("Bearer {}", target.token))
+            .header("User-Agent", "maestro/1.0")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitHub",
+    )
+    .await?;
+
+    Ok(pick_branch_pull_request(entries))
+}
+
+pub(super) async fn find_gitea(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    // Gitea and Forgejo have no head filter on this endpoint, so one page is fetched and matched
+    // here. A branch whose pull request has fallen off the first page is reported as having none,
+    // which is the same answer a closed repository gives and is not worth paging the whole history
+    // on every poll to improve.
+    let url = format!(
+        "{}/api/v1/repos/{}/{}/pulls?state=all&limit=50",
+        instance_base(target),
+        urlencoding::encode(owner),
+        urlencoding::encode(repo)
+    );
+
+    let entries: Vec<GitHubStyleListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("Authorization", format!("token {}", target.token))
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "Gitea",
+    )
+    .await?;
+
+    let matching: Vec<GitHubStyleListEntry> = entries
+        .into_iter()
+        .filter(|entry| {
+            entry.head.as_ref().and_then(|head| head.head_ref.as_deref()) == Some(branch)
+        })
+        .collect();
+
+    Ok(pick_branch_pull_request(matching))
 }
 
 pub(super) async fn create_github(
@@ -257,6 +381,54 @@ mod tests {
             Some("deadbeef"),
             "the sha rides along so CI needs no second request"
         );
+    }
+
+    fn entries(body: &str) -> Vec<GitHubStyleListEntry> {
+        serde_json::from_str(body).expect("list body should parse")
+    }
+
+    /// The list endpoint has no `merged` flag, only `merged_at` — reading `state` alone would
+    /// report every merged pull request as closed, which is the state the card paints red.
+    #[test]
+    fn a_merged_entry_is_recognised_from_its_timestamp() {
+        let found = pick_branch_pull_request(entries(
+            r#"[{"number":9,"html_url":"u","title":"t","state":"closed",
+                 "merged_at":"2026-08-01T00:00:00Z"}]"#,
+        ))
+        .expect("one entry should be picked");
+        assert_eq!(found.details.state, PullRequestState::Merged);
+
+        let found = pick_branch_pull_request(entries(
+            r#"[{"number":9,"html_url":"u","title":"t","state":"closed","merged_at":null}]"#,
+        ))
+        .expect("one entry should be picked");
+        assert_eq!(found.details.state, PullRequestState::Closed);
+    }
+
+    /// A branch reused after an earlier attempt has several pull requests, and the open one is the
+    /// only one the session is about. Taking the forge's first would show a merged pull request
+    /// beside a branch that is being worked on right now.
+    #[test]
+    fn an_open_pull_request_wins_over_an_older_closed_one() {
+        let found = pick_branch_pull_request(entries(
+            r#"[{"number":9,"html_url":"old","title":"t","state":"closed"},
+                {"number":12,"html_url":"live","title":"t","state":"open",
+                 "head":{"sha":"abc","ref":"feature"}}]"#,
+        ))
+        .expect("the open entry should be picked");
+        assert_eq!(found.number, 12);
+        assert_eq!(found.url, "live");
+        assert_eq!(found.details.head_sha.as_deref(), Some("abc"), "CI needs the head sha");
+
+        // With none open the first listed stands in, rather than nothing at all.
+        let found = pick_branch_pull_request(entries(
+            r#"[{"number":9,"html_url":"newest","title":"t","state":"closed"},
+                {"number":4,"html_url":"older","title":"t","state":"closed"}]"#,
+        ))
+        .expect("a closed entry should still be picked");
+        assert_eq!(found.number, 9);
+
+        assert!(pick_branch_pull_request(entries("[]")).is_none());
     }
 
     fn run(name: &str, status: &str, conclusion: Option<&str>) -> GitHubCheckRun {

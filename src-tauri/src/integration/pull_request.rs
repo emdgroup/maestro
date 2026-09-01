@@ -24,8 +24,10 @@ mod gitlab;
 
 use self::azure_devops::{create_azure_devops, fetch_azure_devops};
 use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket};
-use self::github::{ci_github, create_gitea, create_github, fetch_gitea, fetch_github};
-use self::gitlab::{ci_gitlab, create_gitlab, fetch_gitlab};
+use self::github::{
+    ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea, find_github,
+};
+use self::gitlab::{ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -67,6 +69,54 @@ pub struct PullRequestDetails {
     pub state: PullRequestState,
     pub mergeable: Option<bool>,
     pub head_sha: Option<String>,
+}
+
+/// A pull request located by the branch it was opened from, rather than by a number we stored.
+///
+/// Looking it up this way is what lets the session panel show a pull request nobody told Maestro
+/// about — one opened on the forge by hand, or by an earlier install. Nothing is persisted, so
+/// there is no stored id to go stale and no second copy of the forge's own state.
+///
+/// `mergeable` inside `details` is always `None` here: every forge's *list* endpoint omits it, and
+/// asking for it would cost a second request per poll to answer a question this card does not ask.
+pub struct BranchPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    pub details: PullRequestDetails,
+}
+
+/// The pull request whose head is `branch`, if the forge has one.
+///
+/// `Ok(None)` means the forge answered and has no pull request for that branch. An unsupported
+/// forge is an error rather than `None`, because the two are not the same thing to a user looking
+/// at a card that is not there — and silently reporting "no pull request" for a branch that has one
+/// is the one answer this must never give.
+///
+/// Only same-repository branches are found. A pull request opened from a fork lives under the
+/// fork's owner, which this does not search.
+pub async fn find_pull_request_by_head(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    match target.config.provider.as_str() {
+        "github" => find_github(target, branch).await,
+        "gitea" | "forgejo" => find_gitea(target, branch).await,
+        "gitlab" => find_gitlab(target, branch).await,
+        other => Err(format!(
+            "Maestro cannot look up a pull request by branch on `{}` yet.",
+            other
+        )),
+    }
+}
+
+/// Whether [`find_pull_request_by_head`] has an arm for this forge.
+///
+/// Beside the match it describes for the same reason as [`supports_pull_requests`]: this decides
+/// whether the frontend polls at all, and a disagreement between the two would either poll a forge
+/// that always errors or hide a card for a forge that would have answered.
+pub fn supports_branch_lookup(config: &ProjectCodeHostingConfig) -> bool {
+    matches!(config.provider.as_str(), "github" | "gitea" | "forgejo" | "gitlab")
 }
 
 /// Whether Maestro can open a pull request on this project's forge.

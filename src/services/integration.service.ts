@@ -44,6 +44,8 @@ export const integrationQueryKeys = {
   codeHostingStatusAll: () => [...integrationQueryKeys.base, "code_hosting_status"] as const,
   codeHostingStatus: (projectId: number) =>
     [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
+  branchPullRequest: (projectId: number, branch: string) =>
+    [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
 };
 
 export function useListIntegrations() {
@@ -135,6 +137,61 @@ export function useCodeHostingStatus(projectId: number) {
     enabled: projectId > 0,
     staleTime: 60_000,
     retry: false,
+  });
+}
+
+/**
+ * The pull request open on `branch`, asked of the forge rather than read from anything we stored.
+ *
+ * Nothing persists a branch's pull request, which is what lets this find one opened on the forge by
+ * hand. The cost is a network round trip per poll, so it is deliberately slower than the local git
+ * queries beside it and `enabled` carries three gates rather than one: a branch with no upstream
+ * cannot have a pull request, and a forge with no branch-lookup arm would only ever error.
+ */
+export function useBranchPullRequest(
+  projectId: number | null,
+  branch: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.branchPullRequest(projectId ?? -1, branch ?? ""),
+    queryFn: () => api.findBranchPullRequest(projectId!, branch!),
+    enabled: enabled && projectId != null && !!branch,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/**
+ * Open a pull request for a branch, touching no task.
+ *
+ * Invalidates the lookup above rather than writing its result into the cache: the forge is the only
+ * source for this card, and a hand-placed entry would be the one copy of that state that could be
+ * wrong.
+ */
+export function useOpenPullRequestForBranch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      branch,
+      base,
+      title,
+      body,
+    }: {
+      projectId: number;
+      branch: string;
+      base: string;
+      title: string;
+      body: string;
+    }) => api.openPullRequestForBranch(projectId, branch, base, title, body),
+    onSuccess: (_data, { projectId, branch }) => {
+      void queryClient.invalidateQueries({
+        queryKey: integrationQueryKeys.branchPullRequest(projectId, branch),
+      });
+    },
+    onError: createErrorToastHandler("Failed to open the pull request"),
   });
 }
 

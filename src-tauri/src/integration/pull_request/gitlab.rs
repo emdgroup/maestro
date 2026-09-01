@@ -6,8 +6,8 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, PullRequestDetails, PullRequestState, PullRequestTarget,
-    instance_base, read_json,
+    BranchPullRequest, CiState, CreatedPullRequest, PullRequestDetails, PullRequestState,
+    PullRequestTarget, instance_base, read_json,
 };
 use crate::integration::build_http_client;
 
@@ -15,6 +15,17 @@ use crate::integration::build_http_client;
 struct GitLabMergeRequest {
     iid: i64,
     web_url: String,
+}
+
+#[derive(Deserialize)]
+struct GitLabListEntry {
+    iid: i64,
+    web_url: String,
+    #[serde(default)]
+    title: String,
+    state: String,
+    #[serde(default)]
+    sha: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -79,17 +90,67 @@ pub(super) async fn fetch_gitlab(
         .map_err(|e| format!("Network error: {}", e))?;
     let mr: GitLabState = read_json(response, "GitLab").await?;
     Ok(PullRequestDetails {
-        state: match mr.state.as_str() {
-            "merged" => PullRequestState::Merged,
-            "closed" => PullRequestState::Closed,
-            // `opened` and `locked` are both still in play.
-            _ => PullRequestState::Open,
-        },
+        state: gitlab_state(&mr.state),
         // GitLab spells this `has_conflicts` on a different shape. Left unread rather than
         // half-read, so a conflict is never inferred from a field nobody parsed.
         mergeable: None,
         head_sha: None,
     })
+}
+
+/// GitLab spells "open" as `opened`, and unlike the GitHub family reports a merged merge request
+/// with its own state rather than as a closed one carrying a flag. `opened` and `locked` are both
+/// still in play, which is why anything unrecognised falls to `Open`.
+fn gitlab_state(state: &str) -> PullRequestState {
+    match state {
+        "merged" => PullRequestState::Merged,
+        "closed" => PullRequestState::Closed,
+        _ => PullRequestState::Open,
+    }
+}
+
+fn pick_gitlab_merge_request(mut entries: Vec<GitLabListEntry>) -> Option<BranchPullRequest> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index = entries.iter().position(|entry| entry.state == "opened").unwrap_or(0);
+    let entry = entries.swap_remove(index);
+    Some(BranchPullRequest {
+        number: entry.iid,
+        url: entry.web_url,
+        title: entry.title,
+        details: PullRequestDetails {
+            state: gitlab_state(&entry.state),
+            mergeable: None,
+            head_sha: entry.sha,
+        },
+    })
+}
+
+pub(super) async fn find_gitlab(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    let url = format!(
+        "{}/api/v4/projects/{}/merge_requests?state=all&order_by=created_at&sort=desc\
+         &per_page=20&source_branch={}",
+        instance_base(target),
+        urlencoding::encode(&target.config.project_path),
+        urlencoding::encode(branch)
+    );
+
+    let entries: Vec<GitLabListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("PRIVATE-TOKEN", target.token)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitLab",
+    )
+    .await?;
+
+    Ok(pick_gitlab_merge_request(entries))
 }
 
 pub(super) async fn ci_gitlab(

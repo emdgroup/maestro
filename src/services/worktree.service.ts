@@ -18,8 +18,19 @@ export const worktreeQueryKeys = {
 
 /**
  * Event-driven worktree list. Refreshes on "worktrees-changed" Tauri event.
+ *
+ * `refetchInterval` exists for the session panel, whose commit/push gate reads
+ * `changed_files_count` and `ahead_behind` from these rows: an agent committing inside its
+ * worktree emits no event, so without a poll the buttons stay wrong until something else refreshes
+ * the list. Every caller shares one query key and TanStack takes the shortest interval among them,
+ * so passing it from one place polls for all of them — which is why only the visible session's
+ * panel asks, and the rest of the app leaves it unset.
  */
-export function useWorktreesQuery(projectId: number | undefined, repoPath: string | undefined) {
+export function useWorktreesQuery(
+  projectId: number | undefined,
+  repoPath: string | undefined,
+  options?: { refetchInterval?: number | false },
+) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -38,6 +49,7 @@ export function useWorktreesQuery(projectId: number | undefined, repoPath: strin
     queryKey: worktreeQueryKeys.list(projectId ?? 0),
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),
     enabled: projectId != null && repoPath != null,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

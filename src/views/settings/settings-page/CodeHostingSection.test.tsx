@@ -46,6 +46,7 @@ function statusOf(overrides: Partial<CodeHostingStatus> = {}): CodeHostingStatus
       project_path: "emdgroup/maestro",
     },
     forge_supports_pull_requests: true,
+    forge_supports_branch_lookup: true,
     applied: false,
     ...overrides,
   };
