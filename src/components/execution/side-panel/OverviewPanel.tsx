@@ -17,7 +17,7 @@ import { openFileWithConnection } from "@/lib/file-opener";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
-import type { BranchPullRequestInfo, ConnectionKey } from "@/types/bindings";
+import type { BranchPullRequestInfo, ConnectionKey, PullRequestCheckInfo } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import { useTaskAttachmentsQuery, useTasksQuery } from "@/services/task.service";
@@ -571,6 +571,69 @@ const STATE_BADGES: Record<BranchPullRequestInfo["state"], { label: string; tone
   Closed: { label: "Closed", tone: "bg-destructive/15 text-destructive" },
 };
 
+const CHECK_DOTS: Record<PullRequestCheckInfo["status"], string> = {
+  Passed: "bg-success",
+  Failed: "bg-destructive",
+  Running: "bg-warning animate-pulse",
+};
+
+/** How many individual checks fit before the card is taller than the ones beside it. */
+const MAX_CHECK_ROWS = 4;
+
+/**
+ * A counted rollup and the checks that are not passing.
+ *
+ * Failures and still-running checks are listed by name; passing ones are collapsed into the count,
+ * because a green row is worth exactly as much as the number that includes it and eight of them
+ * would push everything else off the card. When there is nothing to name — every check green — the
+ * rollup line stands alone.
+ *
+ * Falls back to the bare verdict when the forge would not enumerate: Gitea and Forgejo return no
+ * checks at all, and an empty rows block under a "CI failing" badge reads as a bug rather than as
+ * the forge declining to answer.
+ */
+export function CheckRollup({
+  checks,
+  ci,
+}: {
+  checks: PullRequestCheckInfo[];
+  ci: NonNullable<BranchPullRequestInfo["ci"]>;
+}) {
+  if (checks.length === 0) {
+    return <span className={cn("text-[10.5px]", CI_TONES[ci])}>{CI_LABELS[ci]}</span>;
+  }
+
+  const passed = checks.filter((check) => check.status === "Passed").length;
+  const failed = checks.filter((check) => check.status === "Failed").length;
+  const running = checks.filter((check) => check.status === "Running").length;
+
+  const parts = [
+    failed > 0 ? `${failed} failing` : null,
+    running > 0 ? `${running} running` : null,
+    passed > 0 ? `${passed} passed` : null,
+  ].filter((part): part is string => part !== null);
+
+  const notable = checks.filter((check) => check.status !== "Passed").slice(0, MAX_CHECK_ROWS);
+  const hidden = checks.filter((check) => check.status !== "Passed").length - notable.length;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={cn("text-[10.5px] tabular-nums", CI_TONES[ci])}>{parts.join(" · ")}</span>
+      {notable.map((check) => (
+        <div key={check.name} className="flex items-center gap-2 min-w-0">
+          <span
+            className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", CHECK_DOTS[check.status])}
+          />
+          <span className="text-[10.5px] text-muted-foreground truncate">{check.name}</span>
+        </div>
+      ))}
+      {hidden > 0 && (
+        <span className="text-[10px] text-muted-foreground/60 pl-3.5">+{hidden} more</span>
+      )}
+    </div>
+  );
+}
+
 /**
  * What the forge says about the branch this session is on.
  *
@@ -607,19 +670,15 @@ function PullRequestCard({
       icon={<GitPullRequest className="w-3.5 h-3.5 text-success" />}
       iconBg="bg-success/15"
       label={`Pull request #${pullRequest.number}`}
-      sub={isOpen && ci ? CI_LABELS[ci] : pullRequest.title}
+      // The title, always — it is the one thing here the number does not already say. The CI
+      // verdict used to sit in this slot and then repeated itself verbatim in the body below.
+      sub={pullRequest.title}
       badge={badge.label}
       badgeClass={badge.tone}
     >
       {isOpen && (
         <div className="flex flex-col gap-1.5">
-          {ci && (
-            <span className={cn("text-[10.5px]", CI_TONES[ci])}>
-              {pullRequest.failing_checks.length > 0
-                ? pullRequest.failing_checks.join(", ")
-                : CI_LABELS[ci]}
-            </span>
-          )}
+          {ci && <CheckRollup checks={pullRequest.checks} ci={ci} />}
           {task &&
             task.fix_rounds > 0 && (
               // The cap lives in Rust as `FIX_ROUND_CAP` and is not in the bindings, so the count is

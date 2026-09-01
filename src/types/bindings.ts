@@ -2482,7 +2482,13 @@ ci: PullRequestCi | null;
  * Names of the checks that failed, and empty unless `ci` is `Failing`. Carried so the panel
  * can seed a prompt that names them rather than telling the agent to go and look.
  */
-failing_checks: string[] }
+failing_checks: string[]; 
+/**
+ * Every check the forge would name, so the card can show a rollup and the individual rows
+ * rather than repeating the one-word verdict. Empty on a forge that will not enumerate, which
+ * is what the card reads as "no checks block".
+ */
+checks: PullRequestCheckInfo[] }
 /**
  * What became of a pull request, for the panel.
  * 
@@ -2887,6 +2893,8 @@ export type PrunableBranch = { name: string;
  * False when `git branch -d` would refuse it, i.e. its commits live on no other ref.
  */
 merged: boolean; last_commit_at: string; commits: number; diff_stat: string | null }
+export type PullRequestCheckInfo = { name: string; status: PullRequestCheckStatus }
+export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
 /**
  * What the forge's CI last said about an open pull request's head commit.
  * 

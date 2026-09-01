@@ -145,18 +145,20 @@ describe("useSessionShipState", () => {
 
   /// Opening a second pull request for a branch that already has one is a forge error at best.
   it("blocks when the branch already has an open pull request", () => {
-    pullRequest.current = {
+    const open: BranchPullRequestInfo = {
       number: 164,
       url: "https://github.com/emdgroup/maestro/pull/164",
       title: "Notify when an agent finishes",
       state: "Open",
       ci: "Failing",
       failing_checks: ["build"],
+      checks: [{ name: "build", status: "Failed" }],
     };
+    pullRequest.current = open;
     expect(ship().blocker).toBe("pull-request-open");
 
     // A merged one is history, not a reason to refuse the next.
-    pullRequest.current = { ...pullRequest.current, state: "Merged" };
+    pullRequest.current = { ...open, state: "Merged" };
     expect(ship().blocker).toBeNull();
   });
 

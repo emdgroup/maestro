@@ -6,8 +6,8 @@
 use serde::Deserialize;
 
 use super::{
-    BranchPullRequest, CiState, CreatedPullRequest, PullRequestDetails, PullRequestState,
-    PullRequestTarget, instance_base, read_json,
+    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
+    PullRequestDetails, PullRequestState, PullRequestTarget, instance_base, read_json,
 };
 use crate::integration::build_http_client;
 
@@ -151,6 +151,22 @@ pub(super) async fn find_gitlab(
     .await?;
 
     Ok(pick_gitlab_merge_request(entries))
+}
+
+/// GitLab answers at the pipeline level, not the job level, so there is exactly one "check" here
+/// and it is named for the pipeline rather than invented per job. Listing the jobs would be a
+/// second request per poll to split one status the merge request already summarised.
+pub(super) async fn checks_gitlab(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<Vec<PullRequestCheck>, String> {
+    let status = match ci_gitlab(target, number).await? {
+        CiState::Passing => CheckStatus::Passed,
+        CiState::Failing(_) => CheckStatus::Failed,
+        CiState::Pending => CheckStatus::Running,
+        CiState::Unknown => return Ok(Vec::new()),
+    };
+    Ok(vec![PullRequestCheck { name: "pipeline".to_string(), status }])
 }
 
 pub(super) async fn ci_gitlab(

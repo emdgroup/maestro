@@ -7,8 +7,9 @@
 use serde::Deserialize;
 
 use super::{
-    BranchPullRequest, CiState, CreatedPullRequest, PullRequestDetails, PullRequestState,
-    PullRequestTarget, instance_base, owner_repo, read_json,
+    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
+    PullRequestDetails, PullRequestState, PullRequestTarget, instance_base, owner_repo, read_json,
+    summarise_checks,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -93,26 +94,25 @@ fn github_api_base(target: &PullRequestTarget<'_>) -> String {
     }
 }
 
-/// A check run is only a failure once it has a conclusion, and `Pending` beats `Failing` while
-/// anything is still going: acting on a half-finished matrix would start a coder on a build that
-/// might yet turn green.
+/// A check run is only a failure once it has a conclusion — anything still going is `Running`, and
+/// `summarise_checks` lets that outrank a failure so a half-finished matrix does not start a coder
+/// on a build that might yet turn green. `skipped` and `neutral` are conclusions, not failures.
+fn to_check(run: &GitHubCheckRun) -> PullRequestCheck {
+    let status = if run.status != "completed" {
+        CheckStatus::Running
+    } else if matches!(
+        run.conclusion.as_deref(),
+        Some("failure" | "timed_out" | "action_required")
+    ) {
+        CheckStatus::Failed
+    } else {
+        CheckStatus::Passed
+    };
+    PullRequestCheck { name: run.name.clone(), status }
+}
+
 fn summarise_check_runs(runs: &[GitHubCheckRun]) -> CiState {
-    if runs.is_empty() {
-        return CiState::Unknown;
-    }
-    if runs.iter().any(|run| run.status != "completed") {
-        return CiState::Pending;
-    }
-
-    let failed: Vec<String> = runs
-        .iter()
-        .filter(|run| {
-            matches!(run.conclusion.as_deref(), Some("failure" | "timed_out" | "action_required"))
-        })
-        .map(|run| run.name.clone())
-        .collect();
-
-    if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
+    summarise_checks(&runs.iter().map(to_check).collect::<Vec<_>>())
 }
 
 /// The list endpoint carries `merged_at` where the single-pull-request one carries `merged`, so
@@ -265,8 +265,15 @@ pub(super) async fn ci_github(
     target: &PullRequestTarget<'_>,
     head_sha: Option<&str>,
 ) -> Result<CiState, String> {
+    Ok(summarise_checks(&checks_github(target, head_sha).await?))
+}
+
+pub(super) async fn checks_github(
+    target: &PullRequestTarget<'_>,
+    head_sha: Option<&str>,
+) -> Result<Vec<PullRequestCheck>, String> {
     let Some(sha) = head_sha else {
-        return Ok(CiState::Unknown);
+        return Ok(Vec::new());
     };
     let (owner, repo) = owner_repo(target.config)?;
     let client = build_http_client()?;
@@ -285,7 +292,7 @@ pub(super) async fn ci_github(
     )
     .await?;
 
-    Ok(summarise_check_runs(&runs.check_runs))
+    Ok(runs.check_runs.iter().map(to_check).collect())
 }
 
 pub(super) async fn create_gitea(

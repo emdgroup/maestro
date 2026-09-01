@@ -25,9 +25,10 @@ mod gitlab;
 use self::azure_devops::{create_azure_devops, fetch_azure_devops};
 use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket};
 use self::github::{
-    ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea, find_github,
+    checks_github, ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea,
+    find_github,
 };
-use self::gitlab::{ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab};
+use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -209,6 +210,64 @@ pub enum CiState {
     Pending,
     /// No CI configured, or the forge would not say. Never acted on.
     Unknown,
+}
+
+/// One check the forge ran against a pull request's head commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestCheck {
+    pub name: String,
+    pub status: CheckStatus,
+}
+
+/// Three states rather than the forge's own vocabulary, which has a dozen words across five
+/// providers. `Passed` absorbs skipped and neutral: they are not failures, and a card that showed
+/// them separately would report a red count for a repository that simply skips a job on some paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckStatus {
+    Passed,
+    Failed,
+    Running,
+}
+
+/// The verdict [`fetch_ci_state`] reports, derived from the individual checks.
+///
+/// Shared so the detailed listing and the sweep's yes/no answer cannot disagree: the only thing
+/// done with `Failing` is to start an agent, and a card saying "1 failed" beside a sweep that
+/// decided `Pending` would be two different truths about one pull request.
+///
+/// `Running` outranks `Failed` deliberately — a matrix still going might yet turn green, and
+/// spending a fix round on it is the mistake this ordering exists to prevent.
+pub fn summarise_checks(checks: &[PullRequestCheck]) -> CiState {
+    if checks.is_empty() {
+        return CiState::Unknown;
+    }
+    if checks.iter().any(|check| check.status == CheckStatus::Running) {
+        return CiState::Pending;
+    }
+    let failed: Vec<String> = checks
+        .iter()
+        .filter(|check| check.status == CheckStatus::Failed)
+        .map(|check| check.name.clone())
+        .collect();
+    if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
+}
+
+/// Every check the forge ran, named, for the session panel's rollup.
+///
+/// Separate from [`fetch_ci_state`] because the two callers want different things: the sweep needs
+/// a verdict and nothing else, and giving it this would make it carry a list it discards on every
+/// pass for every open pull request. Returns an empty list wherever the forge will not enumerate,
+/// which [`summarise_checks`] then reads as `Unknown`.
+pub async fn fetch_ci_checks(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+    head_sha: Option<&str>,
+) -> Result<Vec<PullRequestCheck>, String> {
+    match target.config.provider.as_str() {
+        "github" => checks_github(target, head_sha).await,
+        "gitlab" => checks_gitlab(target, number).await,
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// Ask the forge whether CI is happy with the pull request's head commit.

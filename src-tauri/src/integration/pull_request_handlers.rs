@@ -16,9 +16,9 @@ use crate::core::AppState;
 use crate::integration::code_hosting_handlers::{CodeHostingRung, code_hosting_status};
 use crate::integration::issue_tracking_handlers::find_integration;
 use crate::integration::pull_request::{
-    CiState, PullRequestState, PullRequestTarget, create_pull_request, fetch_ci_state,
-    find_pull_request_by_head, preferred_credential_base, supports_branch_lookup,
-    supports_pull_requests,
+    CheckStatus, CiState, PullRequestCheck, PullRequestState, PullRequestTarget,
+    create_pull_request, fetch_ci_checks, find_pull_request_by_head, preferred_credential_base,
+    summarise_checks, supports_branch_lookup, supports_pull_requests,
 };
 use crate::task::models::PullRequestCi;
 
@@ -50,6 +50,26 @@ pub struct BranchPullRequestInfo {
     /// Names of the checks that failed, and empty unless `ci` is `Failing`. Carried so the panel
     /// can seed a prompt that names them rather than telling the agent to go and look.
     pub failing_checks: Vec<String>,
+    /// Every check the forge would name, so the card can show a rollup and the individual rows
+    /// rather than repeating the one-word verdict. Empty on a forge that will not enumerate, which
+    /// is what the card reads as "no checks block".
+    pub checks: Vec<PullRequestCheckInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PullRequestCheckInfo {
+    pub name: String,
+    pub status: PullRequestCheckStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[specta(export)]
+#[serde(rename_all = "PascalCase")]
+pub enum PullRequestCheckStatus {
+    Passed,
+    Failed,
+    Running,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -103,6 +123,7 @@ fn to_info(
     found: crate::integration::pull_request::BranchPullRequest,
     ci: Option<PullRequestCi>,
     failing_checks: Vec<String>,
+    checks: Vec<PullRequestCheck>,
 ) -> BranchPullRequestInfo {
     BranchPullRequestInfo {
         number: found.number,
@@ -115,6 +136,17 @@ fn to_info(
         },
         ci,
         failing_checks,
+        checks: checks
+            .into_iter()
+            .map(|check| PullRequestCheckInfo {
+                name: check.name,
+                status: match check.status {
+                    CheckStatus::Passed => PullRequestCheckStatus::Passed,
+                    CheckStatus::Failed => PullRequestCheckStatus::Failed,
+                    CheckStatus::Running => PullRequestCheckStatus::Running,
+                },
+            })
+            .collect(),
     }
 }
 
@@ -147,21 +179,25 @@ pub async fn find_branch_pull_request(
     };
 
     if !matches!(found.details.state, PullRequestState::Open) {
-        return Ok(Some(to_info(found, None, Vec::new())));
+        return Ok(Some(to_info(found, None, Vec::new(), Vec::new())));
     }
 
     // A CI read that fails must not take the card down with it: the pull request itself was found,
     // and "open, checks unknown" is both true and more useful than an error where the card was.
-    let (ci, failing_checks) =
-        match fetch_ci_state(&target, found.number, found.details.head_sha.as_deref()).await {
-            Ok(state) => ci_summary(&state),
+    let checks =
+        match fetch_ci_checks(&target, found.number, found.details.head_sha.as_deref()).await {
+            Ok(checks) => checks,
             Err(e) => {
                 log::debug!("Could not read CI for pull request #{}: {}", found.number, e);
-                (None, Vec::new())
+                Vec::new()
             }
         };
 
-    Ok(Some(to_info(found, ci, failing_checks)))
+    // Derived from the same list the rows come from rather than fetched separately, so the badge
+    // and the rows can never disagree about one pull request.
+    let (ci, failing_checks) = ci_summary(&summarise_checks(&checks));
+
+    Ok(Some(to_info(found, ci, failing_checks, checks)))
 }
 
 /// Open a pull request from `branch` into `base`, touching no task.
