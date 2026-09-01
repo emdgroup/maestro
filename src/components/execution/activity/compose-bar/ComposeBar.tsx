@@ -82,8 +82,17 @@ export function ComposeBar({
       textareaRef.current?.focus();
     },
     seed(text: string) {
-      setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
-      textareaRef.current?.focus();
+      // A textarea does not grow with its content, so every path that writes into this box has to
+      // resize it afterwards. Committing the value synchronously is what makes the measurement
+      // below read the seeded text rather than what was there before.
+      flushSync(() => {
+        setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
+      });
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     },
   }));
 
