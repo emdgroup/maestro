@@ -9,6 +9,7 @@ pub mod diff_models;
 pub mod worktree_query;
 pub mod worktree_lifecycle;
 pub mod worktree_staging;
+pub mod worktree_sync;
 pub mod review;
 
 pub use review_models::{ReviewFeedback, ReviewComment, ReviewDecision, SaveReviewRequest, ReviewResult, MergeResult, TaskReviewWithComments, ReviewCommentEntry};
