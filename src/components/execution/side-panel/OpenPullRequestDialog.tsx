@@ -31,6 +31,8 @@ interface Props {
   baseBranch: string | null;
   /** Names of other live sessions in this same directory, if any. */
   concurrentSessions: string[];
+  /** Newest commit's subject, offered as the title. */
+  lastCommitSubject: string | null;
   onOpened: (url: string) => void;
 }
 
@@ -54,13 +56,17 @@ export function OpenPullRequestDialog({
   branch,
   baseBranch,
   concurrentSessions,
+  lastCommitSubject,
   onOpened,
 }: Props) {
   const { data: branches } = useProjectBranchesQuery(open ? projectId : null);
   const openPullRequest = useOpenPullRequestForBranch();
 
   const [target, setTarget] = useState(() => defaultTarget(baseBranch));
-  const [title, setTitle] = useState(() => branch);
+  // The newest commit's subject, because a branch name is a slug and a commit subject is a
+  // sentence somebody already wrote about this work. Falls back to the branch only when the
+  // worktree has no commit to read — a repository with none, or one git could not be asked about.
+  const [title, setTitle] = useState(() => lastCommitSubject ?? branch);
 
   const localBranches = (branches?.[0]?.local ?? []).filter((name) => name !== branch);
   const canSubmit = target.trim().length > 0 && title.trim().length > 0;

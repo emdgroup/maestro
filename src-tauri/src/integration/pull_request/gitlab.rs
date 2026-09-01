@@ -7,7 +7,8 @@ use serde::Deserialize;
 
 use super::{
     BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
-    PullRequestDetails, PullRequestState, PullRequestTarget, instance_base, read_json,
+    PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget, instance_base,
+    read_json,
 };
 use crate::integration::build_http_client;
 
@@ -151,6 +152,52 @@ pub(super) async fn find_gitlab(
     .await?;
 
     Ok(pick_gitlab_merge_request(entries))
+}
+
+#[derive(Deserialize)]
+struct GitLabSummary {
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    source_branch: Option<String>,
+    #[serde(default)]
+    target_branch: Option<String>,
+    /// GitLab's own conflict flag. Absent on older instances, which is why the mapping below
+    /// leaves `mergeable` as `None` rather than assuming a missing field means mergeable.
+    #[serde(default)]
+    has_conflicts: Option<bool>,
+}
+
+/// GitLab reports no line counts and no commit count on the merge request itself — both need
+/// separate `/changes` and `/commits` calls, which is more requests than the two lines they would
+/// fill are worth. The card simply omits those lines for GitLab.
+pub(super) async fn summary_gitlab(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestSummary, String> {
+    let mr: GitLabSummary = read_json(
+        build_http_client()?
+            .get(format!(
+                "{}/api/v4/projects/{}/merge_requests/{}",
+                instance_base(target),
+                urlencoding::encode(&target.config.project_path),
+                number
+            ))
+            .header("PRIVATE-TOKEN", target.token)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitLab",
+    )
+    .await?;
+
+    Ok(PullRequestSummary {
+        created_at: mr.created_at,
+        base_ref: mr.target_branch,
+        head_ref: mr.source_branch,
+        mergeable: mr.has_conflicts.map(|conflicts| !conflicts),
+        ..PullRequestSummary::default()
+    })
 }
 
 /// GitLab answers at the pipeline level, not the job level, so there is exactly one "check" here

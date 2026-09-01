@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
-import { useCodeHostingStatus, useBranchPullRequest } from "@/services/integration.service";
+import {
+  useCodeHostingStatus,
+  useBranchPullRequest,
+  useBranchPullRequestChecks,
+} from "@/services/integration.service";
 import type { BranchPullRequestInfo } from "@/types/bindings";
 
 /**
@@ -41,6 +45,8 @@ export interface SessionShipState {
   pullRequest: BranchPullRequestInfo | null;
   /** Base branch to default the dialog to, and the branches to offer beside it. */
   baseBranch: string | null;
+  /** Newest commit's subject, which the dialog offers as the pull request title. */
+  lastCommitSubject: string | null;
   /** Other live sessions working in the same directory, by name. */
   concurrentSessions: string[];
 }
@@ -85,10 +91,18 @@ export function useSessionShipState(
   const needsPush = uncommitted || unpushed;
 
   const canLookUp = hosting?.rung === "Ready" && hosting.forge_supports_branch_lookup === true;
-  const { data: pullRequest } = useBranchPullRequest(
+  const { data: found } = useBranchPullRequest(
     projectId,
     branch,
     canLookUp && hasUpstream && branch != null,
+  );
+
+  // The checks come from their own faster query. Its first result arrives after the lookup's, so
+  // until then the lookup's own snapshot stands in and the card paints with checks either way.
+  const { data: liveChecks } = useBranchPullRequestChecks(projectId, found ?? null);
+  const pullRequest = useMemo(
+    () => (found && liveChecks ? { ...found, checks: liveChecks } : found),
+    [found, liveChecks],
   );
 
   const concurrentSessions = useMemo(
@@ -134,6 +148,7 @@ export function useSessionShipState(
     blocker,
     pullRequest: pullRequest ?? null,
     baseBranch: worktree?.base_branch ?? null,
+    lastCommitSubject: worktree?.last_commit_subject ?? null,
     concurrentSessions,
   };
 }

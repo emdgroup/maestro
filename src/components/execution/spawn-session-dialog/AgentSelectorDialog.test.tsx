@@ -87,6 +87,7 @@ const mockWorktrees: WorktreeWithStatus[] = [
     is_orphan: false,
     commit_count: null,
     last_activity_at: null,
+    last_commit_subject: null,
     detached_at: null,
   },
 ];

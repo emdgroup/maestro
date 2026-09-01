@@ -8,8 +8,8 @@ use serde::Deserialize;
 
 use super::{
     BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
-    PullRequestDetails, PullRequestState, PullRequestTarget, instance_base, owner_repo, read_json,
-    summarise_checks,
+    PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget, instance_base,
+    owner_repo, read_json, summarise_checks,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -57,6 +57,53 @@ struct GitHubHeadRef {
 #[derive(Deserialize)]
 struct GitHubCheckRuns {
     check_runs: Vec<GitHubCheckRun>,
+}
+
+/// The *other* half of what GitHub's merge box shows.
+///
+/// Check runs and commit statuses are two unrelated APIs — Actions posts the former, third-party
+/// apps like a CLA bot post the latter — and the pull request page merges them. Reading only
+/// check-runs silently under-reported: a pull request GitHub called "2 in progress, 1 successful"
+/// arrived here as two checks, with the third missing rather than wrong.
+#[derive(Deserialize)]
+struct GitHubCombinedStatus {
+    #[serde(default)]
+    statuses: Vec<GitHubCommitStatus>,
+}
+
+#[derive(Deserialize)]
+struct GitHubCommitStatus {
+    /// The status's name; GitHub calls it the context, e.g. `license/cla`.
+    context: String,
+    state: String,
+}
+
+/// One pull request's own numbers. Absent from the list endpoint, which is why this costs a
+/// request of its own.
+#[derive(Deserialize)]
+struct GitHubPullRequestSummary {
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    base: Option<GitHubBranchRef>,
+    #[serde(default)]
+    head: Option<GitHubBranchRef>,
+    #[serde(default)]
+    commits: Option<i64>,
+    #[serde(default)]
+    changed_files: Option<i64>,
+    #[serde(default)]
+    additions: Option<i64>,
+    #[serde(default)]
+    deletions: Option<i64>,
+    #[serde(default)]
+    mergeable: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct GitHubBranchRef {
+    #[serde(rename = "ref")]
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -280,10 +327,77 @@ pub(super) async fn checks_github(
     let api = github_api_base(target);
     let auth = format!("Bearer {}", target.token);
 
-    let runs: GitHubCheckRuns = read_json(
+    // Two unrelated endpoints that answer about the same commit, so they are asked at once. Run
+    // one after the other this used to cost two round trips on every ten-second poll.
+    let (runs_response, status_response) = tokio::join!(
         client
             .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, sha))
             .header("Authorization", &auth)
+            .header("User-Agent", "maestro/1.0")
+            .send(),
+        client
+            .get(format!("{}/repos/{}/{}/commits/{}/status", api, owner, repo, sha))
+            .header("Authorization", &auth)
+            .header("User-Agent", "maestro/1.0")
+            .send(),
+    );
+
+    let runs: GitHubCheckRuns =
+        read_json(runs_response.map_err(|e| format!("Network error: {}", e))?, "GitHub").await?;
+    let mut checks: Vec<PullRequestCheck> = runs.check_runs.iter().map(to_check).collect();
+
+    // A failure to read statuses must not lose the check runs we already have — an under-reported
+    // list is better than no card, and the alternative would take the whole rollup down whenever a
+    // repository has the statuses API disabled.
+    match status_response {
+        Ok(response) => match read_json::<GitHubCombinedStatus>(response, "GitHub").await {
+            Ok(combined) => checks.extend(combined.statuses.iter().map(to_status_check)),
+            Err(e) => log::debug!("[github] commit statuses for {} unreadable: {}", sha, e),
+        },
+        Err(e) => log::debug!("[github] commit statuses for {} unreachable: {}", sha, e),
+    }
+
+    Ok(checks)
+}
+
+/// Commit statuses have four states and no separate "has it finished" flag, unlike check runs.
+fn to_status_check(status: &GitHubCommitStatus) -> PullRequestCheck {
+    let mapped = match status.state.as_str() {
+        "success" => CheckStatus::Passed,
+        "failure" | "error" => CheckStatus::Failed,
+        _ => CheckStatus::Running,
+    };
+    PullRequestCheck { name: status.context.clone(), status: mapped }
+}
+
+pub(super) async fn summary_github(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestSummary, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    // Gitea and Forgejo serve a GitHub-shaped body from a different base, and answer a subset of
+    // these fields; the `Option`s absorb whatever they leave out.
+    let url = if target.config.provider == "github" {
+        format!("{}/repos/{}/{}/pulls/{}", github_api_base(target), owner, repo, number)
+    } else {
+        format!(
+            "{}/api/v1/repos/{}/{}/pulls/{}",
+            instance_base(target),
+            urlencoding::encode(owner),
+            urlencoding::encode(repo),
+            number
+        )
+    };
+    let auth = if target.config.provider == "github" {
+        format!("Bearer {}", target.token)
+    } else {
+        format!("token {}", target.token)
+    };
+
+    let pr: GitHubPullRequestSummary = read_json(
+        build_http_client()?
+            .get(url)
+            .header("Authorization", auth)
             .header("User-Agent", "maestro/1.0")
             .send()
             .await
@@ -292,7 +406,16 @@ pub(super) async fn checks_github(
     )
     .await?;
 
-    Ok(runs.check_runs.iter().map(to_check).collect())
+    Ok(PullRequestSummary {
+        created_at: pr.created_at,
+        base_ref: pr.base.map(|base| base.name),
+        head_ref: pr.head.map(|head| head.name),
+        commits: pr.commits,
+        changed_files: pr.changed_files,
+        additions: pr.additions,
+        deletions: pr.deletions,
+        mergeable: pr.mergeable,
+    })
 }
 
 pub(super) async fn create_gitea(
@@ -436,6 +559,53 @@ mod tests {
         assert_eq!(found.number, 9);
 
         assert!(pick_branch_pull_request(entries("[]")).is_none());
+    }
+
+    /// Check runs and commit statuses are separate GitHub APIs that its own merge box adds
+    /// together. Reading only check-runs under-reported by however many statuses a repository has:
+    /// a pull request GitHub called "2 in progress, 1 successful" arrived here as two checks, with
+    /// the CLA bot's status missing rather than wrong.
+    #[test]
+    fn a_commit_status_is_a_check_too() {
+        let status = |context: &str, state: &str| GitHubCommitStatus {
+            context: context.into(),
+            state: state.into(),
+        };
+        assert_eq!(to_status_check(&status("license/cla", "success")).status, CheckStatus::Passed);
+        assert_eq!(to_status_check(&status("deploy", "failure")).status, CheckStatus::Failed);
+        assert_eq!(to_status_check(&status("deploy", "error")).status, CheckStatus::Failed);
+        assert_eq!(to_status_check(&status("deploy", "pending")).status, CheckStatus::Running);
+        assert_eq!(to_status_check(&status("license/cla", "success")).name, "license/cla");
+    }
+
+    /// The combined-status body omits `statuses` entirely on a repository that has none, and that
+    /// has to read as "no extra checks" rather than failing the whole rollup.
+    #[test]
+    fn a_repository_with_no_statuses_still_parses() {
+        let combined: GitHubCombinedStatus =
+            serde_json::from_str(r#"{"state":"success"}"#).expect("body should parse");
+        assert!(combined.statuses.is_empty());
+    }
+
+    /// Every one of these is absent from the list endpoint, which is the whole reason the summary
+    /// costs a second request. Gitea answers a subset, so each field has to survive being missing.
+    #[test]
+    fn a_summary_survives_the_fields_gitea_leaves_out() {
+        let full: GitHubPullRequestSummary = serde_json::from_str(
+            r#"{"created_at":"2026-09-01T10:00:00Z","base":{"ref":"main"},
+                "head":{"ref":"feature"},"commits":2,"changed_files":22,
+                "additions":1487,"deletions":18,"mergeable":true}"#,
+        )
+        .expect("body should parse");
+        assert_eq!(full.base.map(|b| b.name).as_deref(), Some("main"));
+        assert_eq!(full.commits, Some(2));
+        assert_eq!(full.additions, Some(1487));
+        assert_eq!(full.mergeable, Some(true));
+
+        let bare: GitHubPullRequestSummary =
+            serde_json::from_str(r#"{"number":1}"#).expect("a bare body should parse");
+        assert_eq!(bare.changed_files, None);
+        assert_eq!(bare.mergeable, None, "a missing flag is not a conflict");
     }
 
     fn run(name: &str, status: &str, conclusion: Option<&str>) -> GitHubCheckRun {

@@ -30,6 +30,9 @@ vi.mock("@/services/integration.service", () => ({
     lookupEnabled.current = enabled;
     return { data: enabled ? pullRequest.current : null };
   },
+  // The fast checks poll. Returning nothing keeps these tests about the gates rather than about
+  // which of the two queries supplied the check list.
+  useBranchPullRequestChecks: () => ({ data: undefined }),
 }));
 
 const { useSessionShipState } = await import("./useSessionShipState");
@@ -53,6 +56,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     ahead_behind: { ahead: 0, behind: 0 },
     commit_count: 2,
     last_activity_at: null,
+    last_commit_subject: null,
     detached_at: null,
     ...overrides,
   };
@@ -153,6 +157,15 @@ describe("useSessionShipState", () => {
       ci: "Failing",
       failing_checks: ["build"],
       checks: [{ name: "build", status: "Failed" }],
+      head_sha: "deadbeef",
+      created_at: "2026-09-01T10:00:00Z",
+      base_branch: "main",
+      head_branch: "maestro/great-lynx-58",
+      commits: 2,
+      changed_files: 22,
+      additions: 1487,
+      deletions: 18,
+      mergeable: true,
     };
     pullRequest.current = open;
     expect(ship().blocker).toBe("pull-request-open");

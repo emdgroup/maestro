@@ -16,9 +16,10 @@ use crate::core::AppState;
 use crate::integration::code_hosting_handlers::{CodeHostingRung, code_hosting_status};
 use crate::integration::issue_tracking_handlers::find_integration;
 use crate::integration::pull_request::{
-    CheckStatus, CiState, PullRequestCheck, PullRequestState, PullRequestTarget,
-    create_pull_request, fetch_ci_checks, find_pull_request_by_head, preferred_credential_base,
-    summarise_checks, supports_branch_lookup, supports_pull_requests,
+    CheckStatus, CiState, PullRequestCheck, PullRequestState, PullRequestSummary,
+    PullRequestTarget, create_pull_request, fetch_ci_checks, fetch_pull_request_summary,
+    find_pull_request_by_head, preferred_credential_base, summarise_checks, supports_branch_lookup,
+    supports_pull_requests,
 };
 use crate::task::models::PullRequestCi;
 
@@ -54,6 +55,20 @@ pub struct BranchPullRequestInfo {
     /// rather than repeating the one-word verdict. Empty on a forge that will not enumerate, which
     /// is what the card reads as "no checks block".
     pub checks: Vec<PullRequestCheckInfo>,
+    /// The head commit, which the fast checks poll needs to ask about CI without re-finding the
+    /// pull request. `None` on a forge whose list endpoint does not carry it.
+    pub head_sha: Option<String>,
+    /// RFC 3339, for the "opened 12m ago" line.
+    pub created_at: Option<String>,
+    pub base_branch: Option<String>,
+    pub head_branch: Option<String>,
+    pub commits: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    /// `false` is a conflict the user has to resolve. `None` is the forge still computing the
+    /// merge commit, which the card must not paint as either answer — see `PullRequestDetails`.
+    pub mergeable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -124,8 +139,18 @@ fn to_info(
     ci: Option<PullRequestCi>,
     failing_checks: Vec<String>,
     checks: Vec<PullRequestCheck>,
+    summary: PullRequestSummary,
 ) -> BranchPullRequestInfo {
     BranchPullRequestInfo {
+        head_sha: found.details.head_sha.clone(),
+        created_at: summary.created_at,
+        base_branch: summary.base_ref,
+        head_branch: summary.head_ref,
+        commits: summary.commits,
+        changed_files: summary.changed_files,
+        additions: summary.additions,
+        deletions: summary.deletions,
+        mergeable: summary.mergeable,
         number: found.number,
         url: found.url,
         title: found.title,
@@ -136,17 +161,18 @@ fn to_info(
         },
         ci,
         failing_checks,
-        checks: checks
-            .into_iter()
-            .map(|check| PullRequestCheckInfo {
-                name: check.name,
-                status: match check.status {
-                    CheckStatus::Passed => PullRequestCheckStatus::Passed,
-                    CheckStatus::Failed => PullRequestCheckStatus::Failed,
-                    CheckStatus::Running => PullRequestCheckStatus::Running,
-                },
-            })
-            .collect(),
+        checks: checks.into_iter().map(to_check_info).collect(),
+    }
+}
+
+fn to_check_info(check: PullRequestCheck) -> PullRequestCheckInfo {
+    PullRequestCheckInfo {
+        name: check.name,
+        status: match check.status {
+            CheckStatus::Passed => PullRequestCheckStatus::Passed,
+            CheckStatus::Failed => PullRequestCheckStatus::Failed,
+            CheckStatus::Running => PullRequestCheckStatus::Running,
+        },
     }
 }
 
@@ -178,26 +204,67 @@ pub async fn find_branch_pull_request(
         return Ok(None);
     };
 
+    // A settled pull request gets neither of the two extra requests below. Its checks cannot
+    // change, and the numbers describe work that has already landed or been abandoned.
     if !matches!(found.details.state, PullRequestState::Open) {
-        return Ok(Some(to_info(found, None, Vec::new(), Vec::new())));
+        return Ok(Some(to_info(
+            found,
+            None,
+            Vec::new(),
+            Vec::new(),
+            PullRequestSummary::default(),
+        )));
     }
 
-    // A CI read that fails must not take the card down with it: the pull request itself was found,
-    // and "open, checks unknown" is both true and more useful than an error where the card was.
-    let checks =
-        match fetch_ci_checks(&target, found.number, found.details.head_sha.as_deref()).await {
-            Ok(checks) => checks,
-            Err(e) => {
-                log::debug!("Could not read CI for pull request #{}: {}", found.number, e);
-                Vec::new()
-            }
-        };
+    // Asked at once: they are independent questions about the same pull request, and this runs
+    // while the user is waiting for the card's first paint.
+    let (checks, summary) = tokio::join!(
+        fetch_ci_checks(&target, found.number, found.details.head_sha.as_deref()),
+        fetch_pull_request_summary(&target, found.number),
+    );
+
+    // Neither may take the card down with it: the pull request itself was found, and a card
+    // missing its line counts is better than an error where the card was.
+    let checks = checks.unwrap_or_else(|e| {
+        log::debug!("Could not read CI for pull request #{}: {}", found.number, e);
+        Vec::new()
+    });
+    let summary = summary.unwrap_or_else(|e| {
+        log::debug!("Could not read pull request #{} in full: {}", found.number, e);
+        PullRequestSummary::default()
+    });
 
     // Derived from the same list the rows come from rather than fetched separately, so the badge
     // and the rows can never disagree about one pull request.
     let (ci, failing_checks) = ci_summary(&summarise_checks(&checks));
 
-    Ok(Some(to_info(found, ci, failing_checks, checks)))
+    Ok(Some(to_info(found, ci, failing_checks, checks, summary)))
+}
+
+/// Just the checks for one pull request, for the panel's fast poll.
+///
+/// Split from [`find_branch_pull_request`] because the two things on that card move at very
+/// different speeds. A pull request's title, branches and line counts change when somebody pushes;
+/// its checks change while you watch. Polling both at the rate the checks need would re-ask the
+/// forge for four things to learn one, and polling the checks at the rate the rest needs makes the
+/// panel useless for the thing it is actually being watched for.
+///
+/// Takes the number the lookup already found rather than searching by branch again — one request
+/// on GitHub, against the three the full call makes.
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_branch_pull_request_checks(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    number: i64,
+    head_sha: Option<String>,
+) -> Result<Vec<PullRequestCheckInfo>, String> {
+    let (config, token, instance_url) = resolve_target(app_state.inner(), project_id).await?;
+    let target =
+        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+
+    let checks = fetch_ci_checks(&target, number, head_sha.as_deref()).await?;
+    Ok(checks.into_iter().map(to_check_info).collect())
 }
 
 /// Open a pull request from `branch` into `base`, touching no task.

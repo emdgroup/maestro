@@ -807,6 +807,26 @@ async findBranchPullRequest(projectId: number, branch: string) : Promise<Result<
 }
 },
 /**
+ * Just the checks for one pull request, for the panel's fast poll.
+ * 
+ * Split from [`find_branch_pull_request`] because the two things on that card move at very
+ * different speeds. A pull request's title, branches and line counts change when somebody pushes;
+ * its checks change while you watch. Polling both at the rate the checks need would re-ask the
+ * forge for four things to learn one, and polling the checks at the rate the rest needs makes the
+ * panel useless for the thing it is actually being watched for.
+ * 
+ * Takes the number the lookup already found rather than searching by branch again — one request
+ * on GitHub, against the three the full call makes.
+ */
+async fetchBranchPullRequestChecks(projectId: number, number: number, headSha: string | null) : Promise<Result<PullRequestCheckInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_branch_pull_request_checks", { projectId, number, headSha }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Open a pull request from `branch` into `base`, touching no task.
  * 
  * The branch is not pushed here. The panel only offers this once the branch is level with its
@@ -2488,7 +2508,21 @@ failing_checks: string[];
  * rather than repeating the one-word verdict. Empty on a forge that will not enumerate, which
  * is what the card reads as "no checks block".
  */
-checks: PullRequestCheckInfo[] }
+checks: PullRequestCheckInfo[]; 
+/**
+ * The head commit, which the fast checks poll needs to ask about CI without re-finding the
+ * pull request. `None` on a forge whose list endpoint does not carry it.
+ */
+head_sha: string | null; 
+/**
+ * RFC 3339, for the "opened 12m ago" line.
+ */
+created_at: string | null; base_branch: string | null; head_branch: string | null; commits: number | null; changed_files: number | null; additions: number | null; deletions: number | null; 
+/**
+ * `false` is a conflict the user has to resolve. `None` is the forge still computing the
+ * merge commit, which the card must not paint as either answer — see `PullRequestDetails`.
+ */
+mergeable: boolean | null }
 /**
  * What became of a pull request, for the panel.
  * 
@@ -3150,6 +3184,11 @@ commit_count: number | null;
  * git reports as changed, or the last commit's date when the working tree is clean.
  */
 last_activity_at: string | null; 
+/**
+ * Subject line of the newest commit, which the pull request dialog offers as its default
+ * title. `None` on a branch with no commits, and on a worktree git could not be asked about.
+ */
+last_commit_subject: string | null; 
 /**
  * The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
  * still carries the name recorded at creation, because that is what branch operations need —

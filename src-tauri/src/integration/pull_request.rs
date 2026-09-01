@@ -26,9 +26,11 @@ use self::azure_devops::{create_azure_devops, fetch_azure_devops};
 use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket};
 use self::github::{
     checks_github, ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea,
-    find_github,
+    find_github, summary_github,
 };
-use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab};
+use self::gitlab::{
+    checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, summary_gitlab,
+};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -210,6 +212,44 @@ pub enum CiState {
     Pending,
     /// No CI configured, or the forge would not say. Never acted on.
     Unknown,
+}
+
+/// The fuller picture of one pull request, from the forge's single-pull-request endpoint.
+///
+/// Deliberately not folded into [`PullRequestDetails`]: every field here is absent from the *list*
+/// endpoints [`find_pull_request_by_head`] uses, so filling it costs a second request — one the
+/// reconcile sweep has no use for and should not start paying per task per pass.
+///
+/// Every field is optional because the forges disagree about which of them they will answer.
+/// GitLab reports no line counts without another request; nobody but GitHub reports a commit count
+/// on this endpoint at all. A `None` renders as an absent line rather than a zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PullRequestSummary {
+    pub created_at: Option<String>,
+    pub base_ref: Option<String>,
+    pub head_ref: Option<String>,
+    pub commits: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    /// `None` while the forge is still computing the merge commit — see [`PullRequestDetails`],
+    /// where the same three-valued rule keeps a freshly pushed branch from reading as conflicted.
+    pub mergeable: Option<bool>,
+}
+
+/// Ask the forge for the numbers the branch lookup could not supply.
+///
+/// An empty summary rather than an error wherever a forge will not answer: the card is built out
+/// of whatever lines can be filled, and one missing field must not take the whole card down.
+pub async fn fetch_pull_request_summary(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestSummary, String> {
+    match target.config.provider.as_str() {
+        "github" | "gitea" | "forgejo" => summary_github(target, number).await,
+        "gitlab" => summary_gitlab(target, number).await,
+        _ => Ok(PullRequestSummary::default()),
+    }
 }
 
 /// One check the forge ran against a pull request's head commit.
