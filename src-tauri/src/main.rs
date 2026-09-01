@@ -80,6 +80,50 @@ fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))
 }
 
+/// Enrich the process PATH by querying the user's login shell.
+///
+/// When Maestro is launched from Finder, macOS provides the launchd minimal PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), which excludes Homebrew's `/opt/homebrew/bin`.
+/// This means tools like `git-lfs` are invisible to `libgit2` filter subprocess calls
+/// and any `Command::new(...)` spawns that haven't been wrapped in a login shell themselves.
+///
+/// Running once at startup before any git or subprocess work begins, this replaces the
+/// inherited PATH with the full PATH the user's login shell reports.
+#[cfg(unix)]
+fn enrich_path_from_login_shell() {
+    use std::process::{Command, Stdio};
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let result = Command::new(&shell)
+        .args(["-lc", "printf '\\n__MAESTRO_PATH__%s\\n' \"$PATH\""])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+
+    let output = match result {
+        Ok(output) => output,
+        Err(error) => {
+            log::warn!("Could not probe login shell PATH via {shell}: {error}");
+            return;
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let enriched = stdout
+        .lines()
+        .rev()
+        .find_map(|line| line.strip_prefix("__MAESTRO_PATH__"))
+        .filter(|path| !path.is_empty());
+
+    match enriched {
+        Some(path) => {
+            std::env::set_var("PATH", path);
+            log::debug!("PATH enriched from login shell {shell}");
+        }
+        None => log::warn!("Login shell {shell} did not report a PATH; keeping inherited PATH"),
+    }
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = resolve_data_dir(app)?;
@@ -93,6 +137,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Settings drive the log level and directory, so this has to come before any logging.
     let settings = load_settings(&conn).unwrap_or_default();
     setup_logging(app, &settings);
+
+    // Enrich PATH from the login shell so that tools installed via Homebrew (e.g. git-lfs) are
+    // visible when Maestro is launched from Finder rather than a terminal. Must run after logging
+    // is up (so the debug/warn lines land in the log) and before any git or subprocess work.
+    #[cfg(unix)]
+    enrich_path_from_login_shell();
 
     // The window is created decorated and stays hidden until the frontend calls `show()`, so
     // dropping the frame here costs no visible flash.

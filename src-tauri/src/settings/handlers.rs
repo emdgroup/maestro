@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
