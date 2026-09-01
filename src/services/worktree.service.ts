@@ -173,6 +173,64 @@ export function useDeleteWorktreeMutation() {
 }
 
 /**
+ * Send a worktree's branch to the project's remote, setting it as the upstream.
+ *
+ * Never force-pushes. A branch the remote has moved past fails with a message telling the user to
+ * pull first, which is the only safe order.
+ */
+export function usePushWorktreeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      worktreePath,
+      branchName,
+    }: {
+      projectId: number;
+      worktreePath: string;
+      branchName: string;
+    }) => {
+      return await api.pushWorktreeBranch(projectId, worktreePath, branchName);
+    },
+    onSuccess: (_result, { branchName }) => {
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+      toast.success(`Pushed ${branchName}`);
+    },
+    onError: createErrorToastHandler("Failed to push"),
+  });
+}
+
+/**
+ * Fetch and fast-forward a worktree onto its upstream.
+ *
+ * Fast-forward only: it either moves the branch or refuses without having touched the working
+ * tree, so it can never leave a worktree mid-merge. Invalidates on failure as well as success —
+ * the fetch runs first and moves every tracking ref, so the other cards' behind counts have
+ * changed even when this one's merge was refused.
+ */
+export function usePullWorktreeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      worktreePath,
+    }: {
+      projectId: number;
+      worktreePath: string;
+    }) => {
+      return await api.pullWorktreeBranch(projectId, worktreePath);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+    },
+    onSuccess: () => {
+      toast.success("Up to date with the remote");
+    },
+    onError: createErrorToastHandler("Failed to pull"),
+  });
+}
+
+/**
  * Mutation hook for cleaning up zombie worktrees on project open.
  * Silent on error — this is background housekeeping, not user-initiated.
  * Invalidates worktree list only when zombies were actually deleted.

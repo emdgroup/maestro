@@ -290,6 +290,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({ projectId, repoPat
                   setWorktreeToDelete(wt ?? null);
                 }}
                 repoPath={repoPath ?? ""}
+                projectId={projectId ?? null}
                 emptyMessage={
                   worktrees.length === 0 ? "No worktrees yet" : "No worktrees match your filter"
                 }

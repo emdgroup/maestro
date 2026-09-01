@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorktreeCard } from "./WorktreeCard";
 import { defaultScope } from "@/components/execution/diff/WorktreeDiffPanel";
 import { useNavigationStore } from "@/store/navigationStore";
@@ -56,19 +57,33 @@ function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo 
 
 const NOW = Date.parse("2026-08-29T12:00:00Z");
 
+/**
+ * The card carries push and pull controls, which are mutations, so it needs a client even in the
+ * tests that never fire one.
+ */
+function withClient(node: React.ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return <QueryClientProvider client={client}>{node}</QueryClientProvider>;
+}
+
 function renderCard(
   wt: WorktreeWithStatus,
   { sessions = [] as ActiveSessionInfo[], onSelect = vi.fn(), onDelete = vi.fn() } = {},
 ) {
   render(
-    <WorktreeCard
-      worktree={wt}
-      repoPath="/repo"
-      sessions={sessions}
-      now={NOW}
-      onSelect={onSelect}
-      onDelete={onDelete}
-    />,
+    withClient(
+      <WorktreeCard
+        worktree={wt}
+        repoPath="/repo"
+        projectId={1}
+        sessions={sessions}
+        now={NOW}
+        onSelect={onSelect}
+        onDelete={onDelete}
+      />,
+    ),
   );
   return { onSelect, onDelete };
 }
@@ -139,26 +154,32 @@ describe("WorktreeCard identity", () => {
    */
   it("always carries the location tooltip", () => {
     const withTask = render(
-      <WorktreeCard
-        worktree={worktree({ task_id: 7, task_name: "Fix the diff panel" })}
-        repoPath="/repo"
-        sessions={[]}
-        now={NOW}
-        onSelect={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      withClient(
+        <WorktreeCard
+          worktree={worktree({ task_id: 7, task_name: "Fix the diff panel" })}
+          repoPath="/repo"
+          projectId={1}
+          sessions={[]}
+          now={NOW}
+          onSelect={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      ),
     );
     expect(withTask.container.querySelector("[data-slot='tooltip-trigger']")).not.toBeNull();
 
     const withoutTask = render(
-      <WorktreeCard
-        worktree={worktree()}
-        repoPath="/repo"
-        sessions={[]}
-        now={NOW}
-        onSelect={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      withClient(
+        <WorktreeCard
+          worktree={worktree()}
+          repoPath="/repo"
+          projectId={1}
+          sessions={[]}
+          now={NOW}
+          onSelect={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      ),
     );
     expect(withoutTask.container.querySelector("[data-slot='tooltip-trigger']")).not.toBeNull();
   });
@@ -170,14 +191,14 @@ describe("WorktreeCard identity", () => {
   it("marks the repository directory as such, and offers no way to delete it", () => {
     renderCard(worktree({ path: "/repo", branch_name: "main" }));
 
-    expect(screen.getByText("Repository")).toBeInTheDocument();
+    expect(screen.getByLabelText("Repository")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete worktree" })).not.toBeInTheDocument();
   });
 
   it("leaves an ordinary worktree unlabelled", () => {
     renderCard(worktree());
 
-    expect(screen.queryByText("Repository")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Repository")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete worktree" })).toBeInTheDocument();
   });
 
@@ -197,17 +218,20 @@ describe("WorktreeCard metrics", () => {
   it("shows nothing at all for a worktree with no activity, changes or commits", () => {
     // A digit-free path and branch, so any digit on the card can only have come from a metric.
     const { container } = render(
-      <WorktreeCard
-        worktree={worktree({
-          path: "/repo/.maestro/worktrees/scratch",
-          branch_name: "maestro/quiet",
-        })}
-        repoPath="/repo"
-        sessions={[]}
-        now={NOW}
-        onSelect={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      withClient(
+        <WorktreeCard
+          worktree={worktree({
+            path: "/repo/.maestro/worktrees/scratch",
+            branch_name: "maestro/quiet",
+          })}
+          repoPath="/repo"
+          projectId={1}
+          sessions={[]}
+          now={NOW}
+          onSelect={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      ),
     );
 
     // No zeroes and no words explaining them — the row is simply absent.
@@ -228,7 +252,39 @@ describe("WorktreeCard metrics", () => {
     expect(screen.getByText("↑3")).toBeInTheDocument();
     expect(screen.getByText("5 min")).toBeInTheDocument();
     expect(screen.queryByText(/^−/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^↓/)).not.toBeInTheDocument();
+
+    // The drop-at-zero rule reaches the controls too: nothing to pull means no pull chip, not a
+    // chip showing zero.
+    expect(screen.queryByRole("button", { name: "Pull from remote" })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A settled worktree must read exactly as it did before push and pull existed: no controls, no
+   * dangling separator waiting for one. The refresh button is what re-reads the counts.
+   */
+  it("adds nothing to a branch that is level with its remote", () => {
+    const { container } = render(
+      withClient(
+        <WorktreeCard
+          worktree={worktree({
+            path: "/repo/.maestro/worktrees/scratch",
+            branch_name: "maestro/quiet",
+            ahead_behind: { ahead: 0, behind: 0 },
+            last_activity_at: new Date(NOW - 5 * 60_000).toISOString(),
+          })}
+          repoPath="/repo"
+          projectId={1}
+          sessions={[]}
+          now={NOW}
+          onSelect={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.queryByRole("button", { name: "Push to remote" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pull from remote" })).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/[↑↓·]/);
   });
 });
 
