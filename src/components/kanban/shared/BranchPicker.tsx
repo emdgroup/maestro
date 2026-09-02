@@ -105,7 +105,10 @@ export function BranchPicker({
   const filteredRemote = remote.filter((b) => b.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="flex items-center gap-1.5">
+    // `min-w-0` on the row and the refresh button held out of the shrink: without it the row's
+    // min-content width is the whole branch name, and a long one — `origin/release-please--…` —
+    // pushed the row past the right edge of whatever dialog it was in rather than truncating.
+    <div className="flex min-w-0 items-center gap-1.5">
       {/* The prefix is a sibling of the trigger, not a child: `prefixControl` is itself a button,
           and nesting it would be invalid markup whose clicks opened the branch list. Both halves
           share one bordered box, so the seam that used to be a divider is now a real edge. */}
@@ -200,6 +203,7 @@ export function BranchPicker({
         type="button"
         variant="ghost"
         size="icon-sm"
+        className="shrink-0"
         onClick={() =>
           void queryClient.invalidateQueries({
             queryKey: [...taskQueryKeys.base, "branches", projectId],

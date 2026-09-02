@@ -299,7 +299,11 @@ function App() {
               )}
             >
               <Suspense fallback={fallback}>
-                <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
+                <WorktreesView
+                  projectId={currentProject.id}
+                  repoPath={currentProject.path}
+                  connection={connection}
+                />
               </Suspense>
             </motion.div>
 

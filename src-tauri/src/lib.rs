@@ -89,6 +89,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::reconcile_pull_requests,
             crate::ipc::find_branch_pull_request,
             crate::ipc::fetch_branch_pull_request_checks,
+            crate::ipc::list_project_pull_requests,
+            crate::ipc::fetch_pull_request_facts,
             crate::ipc::open_pull_request_for_branch,
             crate::ipc::reject_review,
             crate::ipc::list_agent_profiles,

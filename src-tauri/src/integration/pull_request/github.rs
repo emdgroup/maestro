@@ -7,9 +7,9 @@
 use serde::Deserialize;
 
 use super::{
-    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
-    PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget, instance_base,
-    owner_repo, read_json, summarise_checks,
+    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, ListedPullRequest,
+    PullRequestCheck, PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget,
+    instance_base, owner_repo, read_json, summarise_checks,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -32,6 +32,10 @@ struct GitHubStyleListEntry {
     merged_at: Option<String>,
     #[serde(default)]
     head: Option<GitHubHeadRef>,
+    #[serde(default)]
+    base: Option<GitHubBranchRef>,
+    #[serde(default)]
+    created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -224,6 +228,71 @@ pub(super) async fn find_github(
     .await?;
 
     Ok(pick_branch_pull_request(entries))
+}
+
+/// `None` for an entry the forge listed without naming its head branch.
+///
+/// That is the field the Worktrees view matches a worktree on, so an entry missing it cannot be
+/// linked to anything and cannot be checked out — a row for it would offer an action that could not
+/// run. Gitea omits it on a pull request whose head repository has been deleted.
+fn list_entry_to_listed(entry: GitHubStyleListEntry) -> Option<ListedPullRequest> {
+    let head = entry.head?;
+    Some(ListedPullRequest {
+        number: entry.number,
+        url: entry.html_url,
+        title: entry.title,
+        head_branch: head.head_ref?,
+        base_branch: entry.base.map(|base| base.name),
+        created_at: entry.created_at,
+        head_sha: Some(head.sha),
+    })
+}
+
+/// Every open pull request, for GitHub and for the Gitea/Forgejo API modelled on it.
+///
+/// One function for all three because only the base path and the auth header differ, exactly as in
+/// [`summary_github`]. Sorted by most recently updated so that if a repository has more open pull
+/// requests than one page holds, the ones that fall off are the ones nobody has touched.
+pub(super) async fn list_github_family(
+    target: &PullRequestTarget<'_>,
+) -> Result<Vec<ListedPullRequest>, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    let (url, auth) = if target.config.provider == "github" {
+        (
+            format!(
+                "{}/repos/{}/{}/pulls?state=open&sort=updated&direction=desc&per_page=100",
+                github_api_base(target),
+                owner,
+                repo
+            ),
+            format!("Bearer {}", target.token),
+        )
+    } else {
+        (
+            format!(
+                "{}/api/v1/repos/{}/{}/pulls?state=open&sort=recentupdate&limit=50",
+                instance_base(target),
+                urlencoding::encode(owner),
+                urlencoding::encode(repo)
+            ),
+            format!("token {}", target.token),
+        )
+    };
+
+    let entries: Vec<GitHubStyleListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("Authorization", auth)
+            .header("User-Agent", "maestro/1.0")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitHub",
+    )
+    .await?;
+
+    Ok(entries.into_iter().filter_map(list_entry_to_listed).collect())
 }
 
 pub(super) async fn find_gitea(
@@ -469,6 +538,54 @@ mod tests {
 
     fn details(body: &str) -> PullRequestDetails {
         github_style_details(serde_json::from_str(body).expect("body should parse"))
+    }
+
+    fn listed(body: &str) -> Vec<ListedPullRequest> {
+        let entries: Vec<GitHubStyleListEntry> =
+            serde_json::from_str(body).expect("body should parse");
+        entries.into_iter().filter_map(list_entry_to_listed).collect()
+    }
+
+    /// The list endpoint is the only request the Worktrees view makes for the whole project, so
+    /// every field the panel and the card chips read has to survive this mapping.
+    #[test]
+    fn a_listed_pull_request_carries_both_branches_and_its_head() {
+        let listed = listed(
+            r#"[{"number":310,"html_url":"https://github.com/o/r/pull/310","title":"Ship it",
+                 "state":"open","created_at":"2026-09-02T09:00:00Z",
+                 "head":{"sha":"deadbeef","ref":"maestro/great-lynx-58"},
+                 "base":{"ref":"main"}}]"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].number, 310);
+        assert_eq!(listed[0].title, "Ship it");
+        assert_eq!(listed[0].head_branch, "maestro/great-lynx-58");
+        assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
+        assert_eq!(listed[0].head_sha.as_deref(), Some("deadbeef"));
+        assert_eq!(listed[0].created_at.as_deref(), Some("2026-09-02T09:00:00Z"));
+    }
+
+    /// The head branch is what a worktree is matched on and what a new one would be checked out
+    /// from, so an entry without one can neither be linked nor acted on. Gitea omits it when the
+    /// head repository has been deleted.
+    #[test]
+    fn an_entry_with_no_head_branch_is_dropped() {
+        assert!(listed(r#"[{"number":1,"html_url":"u","state":"open","head":{"sha":"abc"}}]"#)
+            .is_empty());
+        assert!(listed(r#"[{"number":1,"html_url":"u","state":"open"}]"#).is_empty());
+    }
+
+    /// Gitea and Forgejo answer a subset of GitHub's fields. The panel drops what is missing rather
+    /// than failing to parse the entries that are there.
+    #[test]
+    fn a_forge_that_omits_the_base_still_lists() {
+        let listed = listed(
+            r#"[{"number":7,"html_url":"u","title":"T","state":"open",
+                 "head":{"sha":"abc","ref":"feature"}}]"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].base_branch, None);
+        assert_eq!(listed[0].created_at, None);
     }
 
     /// GitHub reports a merged PR as `state: "closed"`. Reading the state alone would land every

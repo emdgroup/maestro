@@ -4,9 +4,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import { useNavigate } from "@/store/navigationStore";
-import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
 import { WorktreeMetrics } from "./WorktreeMetrics";
 import { hasSyncActions, WorktreeSyncActions } from "./WorktreeSyncActions";
+import { WorktreePullRequestChip } from "./WorktreePullRequestChip";
+import { UNKNOWN_CI, type CiStatus } from "./pullRequestCi";
 import {
   agentLabel,
   isInUse,
@@ -24,6 +26,15 @@ interface WorktreeCardProps {
   sessions: ActiveSessionInfo[];
   /** Passed in rather than read per card, so one ticker drives the whole grid. */
   now: number;
+  /**
+   * The open pull request on this worktree's branch, and its CI, both resolved once for the whole
+   * grid.
+   *
+   * Absent means there is none open — including one that has been merged, which is the state that
+   * says this worktree has done its job and can go.
+   */
+  pullRequest?: ProjectPullRequest | null;
+  ci?: CiStatus;
   onSelect: (path: string) => void;
   onDelete: (path: string) => void;
 }
@@ -37,6 +48,8 @@ export function WorktreeCard({
   projectId,
   sessions,
   now,
+  pullRequest,
+  ci,
   onSelect,
   onDelete,
 }: WorktreeCardProps) {
@@ -96,6 +109,11 @@ export function WorktreeCard({
           sync={
             projectId != null && hasSyncActions(worktree) ? (
               <WorktreeSyncActions worktree={worktree} projectId={projectId} inUse={inUse} />
+            ) : undefined
+          }
+          pullRequest={
+            pullRequest ? (
+              <WorktreePullRequestChip pullRequest={pullRequest} ci={ci ?? UNKNOWN_CI} />
             ) : undefined
           }
         />
