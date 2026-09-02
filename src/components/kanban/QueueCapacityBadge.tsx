@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Cpu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Badge } from "@/ui/badge";
+import { cn } from "@/lib/utils.ts";
 import { api } from "@/lib/tauri-utils";
 
 /// Matches `useQueueDrain`, for the same reason and against the same events: one transition emits
@@ -58,7 +59,12 @@ export function QueueCapacityBadge({ projectId }: { projectId: number | null }) 
           action is a trap for keyboard users. Full is a normal state — back-pressure working — so
           it is distinguished quietly rather than being made to look like a fault. */}
       <TooltipTrigger
-        render={<Badge variant={full ? "outline" : "secondary"} className="h-8 px-2.5" />}
+        render={
+          <Badge
+            variant={full ? "outline" : "ghost"}
+            className={cn("h-8 px-2.5", !full && "text-accent hover:bg-transparent")}
+          />
+        }
       >
         <Cpu />
         {data.used}/{data.slots}
