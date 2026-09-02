@@ -2,11 +2,10 @@
 
 ## [0.21.0](https://github.com/emdgroup/maestro/compare/v0.20.0...v0.21.0) (2026-09-02)
 
-
 ### Features
 
-* **worktrees:** push and pull from the worktree cards ([#307](https://github.com/emdgroup/maestro/issues/307)) ([4fc73aa](https://github.com/emdgroup/maestro/commit/4fc73aa432468ff5a7b081d386acc8bbf95577d5))
-* **worktrees:** show a project's open pull requests ([#311](https://github.com/emdgroup/maestro/issues/311)) ([434a336](https://github.com/emdgroup/maestro/commit/434a3361a3eda5e4cd1ec4001cfb51c9d40dfeb6))
+- **worktrees:** push and pull from the worktree cards ([#307](https://github.com/emdgroup/maestro/issues/307)) ([4fc73aa](https://github.com/emdgroup/maestro/commit/4fc73aa432468ff5a7b081d386acc8bbf95577d5))
+- **worktrees:** show a project's open pull requests ([#311](https://github.com/emdgroup/maestro/issues/311)) ([434a336](https://github.com/emdgroup/maestro/commit/434a3361a3eda5e4cd1ec4001cfb51c9d40dfeb6))
 
 ## [0.20.0](https://github.com/emdgroup/maestro/compare/v0.19.0...v0.20.0) (2026-08-31)
 
