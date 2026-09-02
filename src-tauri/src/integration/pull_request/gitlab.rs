@@ -6,9 +6,9 @@
 use serde::Deserialize;
 
 use super::{
-    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, PullRequestCheck,
-    PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget, instance_base,
-    read_json,
+    BranchPullRequest, CheckStatus, CiState, CreatedPullRequest, ListedPullRequest,
+    PullRequestCheck, PullRequestDetails, PullRequestState, PullRequestSummary, PullRequestTarget,
+    instance_base, read_json,
 };
 use crate::integration::build_http_client;
 
@@ -27,6 +27,12 @@ struct GitLabListEntry {
     state: String,
     #[serde(default)]
     sha: Option<String>,
+    #[serde(default)]
+    source_branch: Option<String>,
+    #[serde(default)]
+    target_branch: Option<String>,
+    #[serde(default)]
+    created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +160,48 @@ pub(super) async fn find_gitlab(
     Ok(pick_gitlab_merge_request(entries))
 }
 
+/// `None` for an entry with no source branch: that is the field a worktree is matched on, so an
+/// entry without one can neither be linked to a worktree nor checked out into a new one.
+fn list_entry_to_listed(entry: GitLabListEntry) -> Option<ListedPullRequest> {
+    Some(ListedPullRequest {
+        number: entry.iid,
+        url: entry.web_url,
+        title: entry.title,
+        head_branch: entry.source_branch?,
+        base_branch: entry.target_branch,
+        created_at: entry.created_at,
+        head_sha: entry.sha,
+    })
+}
+
+/// Every merge request in the `opened` state.
+///
+/// GitLab is the one forge here that names the head branch on its list entry without nesting it, so
+/// `source_branch` is read straight off.
+pub(super) async fn list_gitlab(
+    target: &PullRequestTarget<'_>,
+) -> Result<Vec<ListedPullRequest>, String> {
+    let url = format!(
+        "{}/api/v4/projects/{}/merge_requests?state=opened&order_by=updated_at&sort=desc\
+         &per_page=100",
+        instance_base(target),
+        urlencoding::encode(&target.config.project_path)
+    );
+
+    let entries: Vec<GitLabListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("PRIVATE-TOKEN", target.token)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitLab",
+    )
+    .await?;
+
+    Ok(entries.into_iter().filter_map(list_entry_to_listed).collect())
+}
+
 #[derive(Deserialize)]
 struct GitLabSummary {
     #[serde(default)]
@@ -242,4 +290,36 @@ pub(super) async fn ci_gitlab(
         },
         None => CiState::Unknown,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listed(body: &str) -> Vec<ListedPullRequest> {
+        let entries: Vec<GitLabListEntry> = serde_json::from_str(body).expect("body should parse");
+        entries.into_iter().filter_map(list_entry_to_listed).collect()
+    }
+
+    /// GitLab names the branches at the top level rather than nesting them, and calls the number
+    /// `iid` — the project-scoped one, not the instance-wide `id`, which is what every URL and
+    /// every other call here uses.
+    #[test]
+    fn a_merge_request_maps_onto_the_shared_shape() {
+        let listed = listed(
+            r#"[{"iid":42,"web_url":"https://gitlab.com/o/r/-/merge_requests/42","title":"Ship it",
+                 "state":"opened","sha":"deadbeef","source_branch":"feature","target_branch":"main",
+                 "created_at":"2026-09-02T09:00:00Z"}]"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].number, 42);
+        assert_eq!(listed[0].head_branch, "feature");
+        assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
+        assert_eq!(listed[0].head_sha.as_deref(), Some("deadbeef"));
+    }
+
+    #[test]
+    fn an_entry_with_no_source_branch_is_dropped() {
+        assert!(listed(r#"[{"iid":1,"web_url":"u","state":"opened"}]"#).is_empty());
+    }
 }

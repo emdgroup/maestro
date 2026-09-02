@@ -17,6 +17,13 @@ interface WorktreeMetricsProps {
    * remote. Left out, every metric below behaves exactly as it did before this existed.
    */
   sync?: React.ReactNode;
+  /**
+   * The worktree's open pull request, as the last segment of the row.
+   *
+   * Last because it is the only one that leaves the machine: everything to its left is a fact about
+   * the checkout, and reading rightwards goes local, then remote, then the forge.
+   */
+  pullRequest?: React.ReactNode;
 }
 
 /**
@@ -29,7 +36,13 @@ interface WorktreeMetricsProps {
  * Shared by the grid card in the Worktrees view and the workspace picker, so the same worktree
  * reads the same way wherever it is shown.
  */
-export function WorktreeMetrics({ worktree, now, className, sync }: WorktreeMetricsProps) {
+export function WorktreeMetrics({
+  worktree,
+  now,
+  className,
+  sync,
+  pullRequest,
+}: WorktreeMetricsProps) {
   const diffStat = parseDiffStat(worktree.diff_stat);
   const aheadBehind = worktree.ahead_behind;
   const age = relativeAge(worktree.last_activity_at, now);
@@ -75,6 +88,14 @@ export function WorktreeMetrics({ worktree, now, className, sync }: WorktreeMetr
       <span key="remote" className="flex items-center gap-1.5 font-mono">
         {aheadBehind.ahead > 0 && <span className="text-success">↑{aheadBehind.ahead}</span>}
         {aheadBehind.behind > 0 && <span className="text-warning">↓{aheadBehind.behind}</span>}
+      </span>,
+    );
+  }
+
+  if (pullRequest) {
+    push(
+      <span key="pull-request" className="flex items-center gap-1">
+        {pullRequest}
       </span>,
     );
   }

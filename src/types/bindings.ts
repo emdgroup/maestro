@@ -827,6 +827,41 @@ async fetchBranchPullRequestChecks(projectId: number, number: number, headSha: s
 }
 },
 /**
+ * Every pull request open on the project's forge.
+ * 
+ * One request answers the whole Worktrees view. The alternative — [`find_branch_pull_request`] per
+ * card — gets slower as a project accumulates worktrees, which is the wrong direction for a view
+ * whose whole purpose is having a lot of them.
+ * 
+ * Answers `Ok(vec![])` rather than an error when the project has no forge or no credential: a
+ * project that never connected one should show no pull requests, not an error strip over a view
+ * that works perfectly well without them.
+ */
+async listProjectPullRequests(projectId: number) : Promise<Result<ProjectPullRequest[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_project_pull_requests", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The line and file counts for one pull request.
+ * 
+ * Split from the list above because no forge's list endpoint carries them, and split from
+ * [`find_branch_pull_request`] because the caller here already has the number. These only change
+ * when the head commit does, so the frontend caches the answer against the head sha rather than
+ * re-asking on every poll — which is what makes a panel of twenty pull requests affordable.
+ */
+async fetchPullRequestFacts(projectId: number, number: number) : Promise<Result<PullRequestFacts, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_pull_request_facts", { projectId, number }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Open a pull request from `branch` into `base`, touching no task.
  * 
  * The branch is not pushed here. The panel only offers this once the branch is level with its
@@ -2952,6 +2987,18 @@ remote_name: string | null;
 base_branch: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
+ * One open pull request, as the Worktrees view's panel and card chips read it.
+ * 
+ * Deliberately thinner than [`BranchPullRequestInfo`]: no state, because every entry here is open;
+ * no checks and no line counts, because both cost a request each and are fetched against
+ * [`head_sha`](Self::head_sha) so they survive a poll that changed nothing.
+ */
+export type ProjectPullRequest = { number: number; url: string; title: string; 
+/**
+ * What the Worktrees view matches a worktree's `branch_name` against.
+ */
+head_branch: string; base_branch: string | null; created_at: string | null; head_sha: string | null }
+/**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.
  * 
@@ -2982,6 +3029,14 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  * fields already carry — and one a sweep that learned nothing could overwrite.
  */
 export type PullRequestCi = "Passing" | "Failing" | "Pending"
+/**
+ * What a pull request's diff amounts to: the fields a *list* endpoint does not carry.
+ * 
+ * Every field is optional because the forges disagree about which they answer — GitLab reports no
+ * line counts on the merge request at all — and an absent one renders as a dropped metric rather
+ * than a zero.
+ */
+export type PullRequestFacts = { commits: number | null; changed_files: number | null; additions: number | null; deletions: number | null; mergeable: boolean | null }
 /**
  * What the board shows: how many slots this host has, how many are taken, and why.
  */

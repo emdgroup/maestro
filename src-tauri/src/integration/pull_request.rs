@@ -26,10 +26,10 @@ use self::azure_devops::{create_azure_devops, fetch_azure_devops};
 use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket};
 use self::github::{
     checks_github, ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea,
-    find_github, summary_github,
+    find_github, list_github_family, summary_github,
 };
 use self::gitlab::{
-    checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, summary_gitlab,
+    checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab, summary_gitlab,
 };
 use crate::models::project::ProjectCodeHostingConfig;
 
@@ -113,11 +113,49 @@ pub async fn find_pull_request_by_head(
     }
 }
 
-/// Whether [`find_pull_request_by_head`] has an arm for this forge.
+/// One entry of the project-wide open list.
 ///
-/// Beside the match it describes for the same reason as [`supports_pull_requests`]: this decides
-/// whether the frontend polls at all, and a disagreement between the two would either poll a forge
-/// that always errors or hide a card for a forge that would have answered.
+/// Carries `head_branch` where [`BranchPullRequest`] does not: the caller there already knew the
+/// branch it asked about, and here the branch is the answer — it is what a worktree is matched on.
+///
+/// No line counts, file count or mergeable flag: every forge's *list* endpoint omits them, and they
+/// only change when the head commit does, so they are fetched separately and cached against
+/// `head_sha` rather than re-read on every poll.
+pub struct ListedPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    pub head_branch: String,
+    pub base_branch: Option<String>,
+    pub created_at: Option<String>,
+    pub head_sha: Option<String>,
+}
+
+/// Every pull request currently open on the project's forge.
+///
+/// One request answers the whole Worktrees view, however many worktrees it is showing — which is
+/// the reason this exists rather than the view calling [`find_pull_request_by_head`] per card.
+///
+/// Only open ones: a merged or closed pull request tells that view nothing it acts on, and asking
+/// for every state would page through the repository's whole history to find the few that are live.
+/// Same-repository branches only, as in [`find_pull_request_by_head`] — a fork's head branch is in
+/// another namespace, which no worktree here is on.
+pub async fn list_open_pull_requests(
+    target: &PullRequestTarget<'_>,
+) -> Result<Vec<ListedPullRequest>, String> {
+    match target.config.provider.as_str() {
+        "github" | "gitea" | "forgejo" => list_github_family(target).await,
+        "gitlab" => list_gitlab(target).await,
+        other => Err(format!("Maestro cannot list pull requests on `{}` yet.", other)),
+    }
+}
+
+/// Whether [`find_pull_request_by_head`] and [`list_open_pull_requests`] have an arm for this forge.
+///
+/// One predicate for both: they cover the same four forges and answer the same underlying question,
+/// so an arm added to one and not the other is the drift to watch for — hence this sitting between
+/// them. It decides whether the frontend polls at all, and a disagreement would either poll a forge
+/// that always errors or hide a card for one that would have answered.
 pub fn supports_branch_lookup(config: &ProjectCodeHostingConfig) -> bool {
     matches!(config.provider.as_str(), "github" | "gitea" | "forgejo" | "gitlab")
 }

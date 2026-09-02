@@ -46,7 +46,13 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      //
+      // `.maestro/` too, which matters when Maestro is run against its own repository: creating a
+      // worktree puts a whole second checkout at `.maestro/worktrees/<name>/`, and the `index.html`
+      // and `tsconfig.json` inside it made Vite clear its cache and hard-reload the app — tearing
+      // down the very IPC call that was creating the worktree. `.maestro/` is gitignored,
+      // project-local state (dev database, worktrees, bundled binaries); none of it is source.
+      ignored: ["**/src-tauri/**", "**/.maestro/**"],
     },
   },
 }));

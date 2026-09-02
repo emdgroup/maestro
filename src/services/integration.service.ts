@@ -7,6 +7,7 @@ import type {
   IntegrationStatus,
   LandingMode,
   ProjectIssueTrackingConfig,
+  PullRequestCheckInfo,
 } from "@/types/bindings";
 
 export type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig };
@@ -55,6 +56,12 @@ export const integrationQueryKeys = {
   // commit's results are not a stale version of the new ones, they are a different answer.
   pullRequestChecks: (projectId: number, number: number, headSha: string) =>
     [...integrationQueryKeys.base, "pull_request_checks", projectId, number, headSha] as const,
+  projectPullRequests: (projectId: number) =>
+    [...integrationQueryKeys.base, "project_pull_requests", projectId] as const,
+  // Same head-sha keying as the checks, for the same reason and a stronger one: line counts cannot
+  // change without a new commit, so an answer keyed this way is never stale and never refetched.
+  pullRequestFacts: (projectId: number, number: number, headSha: string) =>
+    [...integrationQueryKeys.base, "pull_request_facts", projectId, number, headSha] as const,
 };
 
 export function useListIntegrations() {
@@ -194,13 +201,89 @@ export function useBranchPullRequestChecks(
   enabled: boolean,
 ) {
   const number = pullRequest?.state === "Open" ? pullRequest.number : null;
-  const headSha = pullRequest?.head_sha ?? null;
-  return useQuery({
+  return useQuery(
+    pullRequestChecksOptions(projectId, number, pullRequest?.head_sha ?? null, enabled, {
+      // Faster, and never stopping: this is one pull request the user is actively waiting on, and a
+      // forge can still queue a check run under a head sha whose other runs have all finished.
+      intervalMs: 10_000,
+      stopWhenSettled: false,
+    }),
+  );
+}
+
+/**
+ * One pull request's checks, as options rather than a hook.
+ *
+ * The Worktrees view needs every open pull request's checks at once — its CI filter cannot count
+ * what it has not asked for — and that is a list whose length is the project's, so it has to go
+ * through `useQueries`. Sharing these options with the session panel above is what keeps a pull
+ * request shown in both places at one request rather than two.
+ *
+ * The defaults are the many-at-once case: `stopWhenSettled` ends the polling once every check has a
+ * result, which is sound because the key holds the head sha and a finished run under that sha
+ * cannot change — a new commit asks under a new key. The `staleTime` is what stops a window focus
+ * refetching twenty pull requests at once.
+ */
+export function pullRequestChecksOptions(
+  projectId: number | null,
+  number: number | null,
+  headSha: string | null,
+  enabled: boolean,
+  { intervalMs = 30_000, stopWhenSettled = true } = {},
+) {
+  return {
     queryKey: integrationQueryKeys.pullRequestChecks(projectId ?? -1, number ?? -1, headSha ?? ""),
     queryFn: () => api.fetchBranchPullRequestChecks(projectId!, number!, headSha),
     enabled: enabled && projectId != null && number != null,
-    refetchInterval: 10_000,
+    refetchInterval: (query: { state: { data?: PullRequestCheckInfo[] } }) => {
+      if (!stopWhenSettled) return intervalMs;
+      const checks = query.state.data;
+      // No answer yet is not a settled run, so keep asking.
+      if (!checks || checks.length === 0) return intervalMs;
+      return checks.some((check) => check.status === "Running") ? intervalMs : false;
+    },
+    staleTime: 30_000,
+    retry: false,
+  };
+}
+
+/**
+ * Every pull request open on the project's forge, in one request.
+ *
+ * What makes the Worktrees view affordable: a card looks its own pull request up in this list by
+ * branch rather than asking the forge, so the cost is one request for the view rather than one per
+ * worktree. The command answers an empty list rather than an error for a project with no forge, so
+ * there is nothing to gate here beyond visibility.
+ */
+export function useProjectPullRequests(projectId: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: integrationQueryKeys.projectPullRequests(projectId ?? -1),
+    queryFn: () => api.listProjectPullRequests(projectId!),
+    enabled: enabled && projectId != null,
+    refetchInterval: 60_000,
     staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * The line and file counts the list endpoint does not carry.
+ *
+ * `staleTime: Infinity` is not a guess about freshness: the key holds the head sha and these
+ * numbers describe that exact commit, so they cannot change without the key changing. A pushed
+ * commit asks a new question under a new key.
+ */
+export function usePullRequestFacts(
+  projectId: number | null,
+  number: number | null,
+  headSha: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.pullRequestFacts(projectId ?? -1, number ?? -1, headSha ?? ""),
+    queryFn: () => api.fetchPullRequestFacts(projectId!, number!),
+    enabled: enabled && projectId != null && number != null,
+    staleTime: Infinity,
     retry: false,
   });
 }

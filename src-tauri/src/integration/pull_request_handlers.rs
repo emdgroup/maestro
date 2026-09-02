@@ -18,8 +18,8 @@ use crate::integration::issue_tracking_handlers::find_integration;
 use crate::integration::pull_request::{
     CheckStatus, CiState, PullRequestCheck, PullRequestState, PullRequestSummary,
     PullRequestTarget, create_pull_request, fetch_ci_checks, fetch_pull_request_summary,
-    find_pull_request_by_head, preferred_credential_base, summarise_checks, supports_branch_lookup,
-    supports_pull_requests,
+    find_pull_request_by_head, list_open_pull_requests, preferred_credential_base, summarise_checks,
+    supports_branch_lookup, supports_pull_requests,
 };
 use crate::task::models::PullRequestCi;
 
@@ -92,6 +92,39 @@ pub enum PullRequestCheckStatus {
 pub struct OpenedPullRequest {
     pub number: i64,
     pub url: String,
+}
+
+/// One open pull request, as the Worktrees view's panel and card chips read it.
+///
+/// Deliberately thinner than [`BranchPullRequestInfo`]: no state, because every entry here is open;
+/// no checks and no line counts, because both cost a request each and are fetched against
+/// [`head_sha`](Self::head_sha) so they survive a poll that changed nothing.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct ProjectPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    /// What the Worktrees view matches a worktree's `branch_name` against.
+    pub head_branch: String,
+    pub base_branch: Option<String>,
+    pub created_at: Option<String>,
+    pub head_sha: Option<String>,
+}
+
+/// What a pull request's diff amounts to: the fields a *list* endpoint does not carry.
+///
+/// Every field is optional because the forges disagree about which they answer — GitLab reports no
+/// line counts on the merge request at all — and an absent one renders as a dropped metric rather
+/// than a zero.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PullRequestFacts {
+    pub commits: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub mergeable: Option<bool>,
 }
 
 /// Resolve the forge and a credential for it, or say which of the two is missing.
@@ -239,6 +272,75 @@ pub async fn find_branch_pull_request(
     let (ci, failing_checks) = ci_summary(&summarise_checks(&checks));
 
     Ok(Some(to_info(found, ci, failing_checks, checks, summary)))
+}
+
+/// Every pull request open on the project's forge.
+///
+/// One request answers the whole Worktrees view. The alternative — [`find_branch_pull_request`] per
+/// card — gets slower as a project accumulates worktrees, which is the wrong direction for a view
+/// whose whole purpose is having a lot of them.
+///
+/// Answers `Ok(vec![])` rather than an error when the project has no forge or no credential: a
+/// project that never connected one should show no pull requests, not an error strip over a view
+/// that works perfectly well without them.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_project_pull_requests(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<Vec<ProjectPullRequest>, String> {
+    let Ok((config, token, instance_url)) = resolve_target(app_state.inner(), project_id).await
+    else {
+        return Ok(Vec::new());
+    };
+
+    if !supports_branch_lookup(&config) {
+        return Ok(Vec::new());
+    }
+
+    let target =
+        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+
+    let listed = list_open_pull_requests(&target).await?;
+    Ok(listed
+        .into_iter()
+        .map(|entry| ProjectPullRequest {
+            number: entry.number,
+            url: entry.url,
+            title: entry.title,
+            head_branch: entry.head_branch,
+            base_branch: entry.base_branch,
+            created_at: entry.created_at,
+            head_sha: entry.head_sha,
+        })
+        .collect())
+}
+
+/// The line and file counts for one pull request.
+///
+/// Split from the list above because no forge's list endpoint carries them, and split from
+/// [`find_branch_pull_request`] because the caller here already has the number. These only change
+/// when the head commit does, so the frontend caches the answer against the head sha rather than
+/// re-asking on every poll — which is what makes a panel of twenty pull requests affordable.
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_pull_request_facts(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    number: i64,
+) -> Result<PullRequestFacts, String> {
+    let (config, token, instance_url) = resolve_target(app_state.inner(), project_id).await?;
+    let target =
+        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+
+    let summary = fetch_pull_request_summary(&target, number).await?;
+    Ok(PullRequestFacts {
+        commits: summary.commits,
+        changed_files: summary.changed_files,
+        additions: summary.additions,
+        deletions: summary.deletions,
+        mergeable: summary.mergeable,
+    })
 }
 
 /// Just the checks for one pull request, for the panel's fast poll.
