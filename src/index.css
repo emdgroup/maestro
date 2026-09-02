@@ -55,7 +55,7 @@
   --muted-foreground: oklch(45% 0.01 250);
 
   /* Accent colors (dynamically overridden by ThemeProvider for system accent) */
-  --accent: oklch(50% 0.15 250);
+  --accent: oklch(50% 0.15 295);
   --accent-foreground: oklch(100% 0 0);
 
   /* Destructive colors */
@@ -114,7 +114,7 @@
   --muted-foreground: oklch(75% 0.01 250);
 
   /* Accent colors (dynamically overridden by ThemeProvider for system accent) */
-  --accent: oklch(75% 0.15 250);
+  --accent: oklch(75% 0.15 295);
   --accent-foreground: oklch(25% 0.01 250);
 
   --destructive: oklch(70% 0.2 25);

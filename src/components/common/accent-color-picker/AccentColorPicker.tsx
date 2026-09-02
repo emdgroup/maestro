@@ -2,7 +2,7 @@ import { Palette, Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useTheme } from "@/providers/ThemeProvider";
-import { ACCENT_COLORS, swatchColor } from "@/utils/constants/accentColors";
+import { ACCENT_COLORS, swatchColor, DEFAULT_ACCENT_HUE } from "@/utils/constants/accentColors";
 
 interface SwatchGridProps {
   /** The stored hue this grid edits (project or global), null when unset. */
@@ -155,7 +155,7 @@ export function AccentColorPicker() {
       label="Project color"
       title="Project Color"
       selectedHue={projectAccentHue}
-      fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
+      fallbackHue={globalAccentHue ?? systemAccentHue ?? DEFAULT_ACCENT_HUE}
       fallbackLabel="Global default"
       fallbackDescription="Follows app setting"
       isDark={isDark}
@@ -176,7 +176,7 @@ export function GlobalAccentColorPicker() {
       label="Accent color"
       title="Global Default"
       selectedHue={globalAccentHue}
-      fallbackHue={systemAccentHue ?? 250}
+      fallbackHue={systemAccentHue ?? DEFAULT_ACCENT_HUE}
       fallbackLabel="Auto"
       fallbackDescription="Follows OS accent"
       isDark={isDark}

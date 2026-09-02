@@ -1,6 +1,7 @@
 import { Palette } from "lucide-react";
 import { useTheme } from "@/providers/ThemeProvider";
 import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
+import { DEFAULT_ACCENT_HUE } from "@/utils/constants/accentColors";
 
 export function ProjectAppearanceSection() {
   const { isDark, projectAccentHue, setProjectAccentColor, globalAccentHue, systemAccentHue } =
@@ -23,7 +24,7 @@ export function ProjectAppearanceSection() {
         <SwatchPicker
           title="Project Color"
           selectedHue={projectAccentHue}
-          fallbackHue={globalAccentHue ?? systemAccentHue ?? 250}
+          fallbackHue={globalAccentHue ?? systemAccentHue ?? DEFAULT_ACCENT_HUE}
           fallbackLabel="Global default"
           fallbackDescription="Follows the global default in Application → Appearance"
           isDark={isDark}

@@ -5,7 +5,7 @@ import { api } from "@/lib/tauri-utils";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { useProjectSettings, useSetProjectAccentColor } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
-import { randomPresetHue } from "@/utils/constants/accentColors";
+import { randomPresetHue, DEFAULT_ACCENT_HUE } from "@/utils/constants/accentColors";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export type ThemeValue = "light" | "dark" | "system";
@@ -71,7 +71,7 @@ async function loadSystemAccentHue(): Promise<number> {
   const rgb = await api.getSystemAccentColor();
   const rgbColor = { mode: "rgb" as const, r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255 };
   const oklchColor = oklch(rgbColor);
-  return oklchColor?.h ?? 250;
+  return oklchColor?.h ?? DEFAULT_ACCENT_HUE;
 }
 
 function parseHue(value: string | null | undefined): number | null {
@@ -100,7 +100,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   async function getSystemAccentHue(): Promise<number> {
     if (systemAccentHueCacheRef.current != null) return systemAccentHueCacheRef.current;
-    const hue = await loadSystemAccentHue().catch(() => 250);
+    const hue = await loadSystemAccentHue().catch(() => DEFAULT_ACCENT_HUE);
     systemAccentHueCacheRef.current = hue;
     setSystemAccentHue(hue);
     return hue;

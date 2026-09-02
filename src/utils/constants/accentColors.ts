@@ -10,6 +10,13 @@ export interface AccentColor {
   hue: number;
 }
 
+/**
+ * The hue used when nothing else answers — no project colour, no global default, and the OS
+ * accent unreadable. Every fallback in the accent chain resolves here, so this constant alone
+ * decides what "default colour" means.
+ */
+export const DEFAULT_ACCENT_HUE = 295;
+
 export const ACCENT_COLORS: AccentColor[] = [
   { name: "Red", hue: 25 },
   { name: "Orange", hue: 50 },
@@ -38,7 +45,7 @@ export function swatchColor(hue: number, isDark: boolean): string {
 export function randomPresetHue(): number {
   const index = Math.floor(Math.random() * ACCENT_COLORS.length);
   const color = ACCENT_COLORS[index];
-  return color ? color.hue : 250;
+  return color ? color.hue : DEFAULT_ACCENT_HUE;
 }
 
 /**

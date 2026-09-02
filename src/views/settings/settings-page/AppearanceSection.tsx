@@ -1,6 +1,7 @@
 import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { useTheme, type ThemeValue } from "@/providers/ThemeProvider";
 import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
+import { DEFAULT_ACCENT_HUE } from "@/utils/constants/accentColors";
 import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
@@ -151,7 +152,7 @@ export function AppearanceSection() {
         <SwatchPicker
           title="Global Default"
           selectedHue={globalAccentHue}
-          fallbackHue={systemAccentHue ?? 250}
+          fallbackHue={systemAccentHue ?? DEFAULT_ACCENT_HUE}
           fallbackLabel="Auto"
           fallbackDescription="Follows OS accent"
           isDark={isDark}
