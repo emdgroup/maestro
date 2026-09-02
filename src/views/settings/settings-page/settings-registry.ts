@@ -163,6 +163,21 @@ export function visiblePages(host: SettingsHost): SettingsPageDef[] {
   );
 }
 
+/**
+ * The page a deep link should open, or `null` to leave the current selection alone.
+ *
+ * Resolved against the pages this host actually offers rather than taken at its word: a project
+ * page requested while no project is open would select something `SettingsPage` does not render,
+ * leaving a blank pane where the fallback to the first page belongs.
+ */
+export function resolveDeepLinkedPage(
+  pages: SettingsPageDef[],
+  pendingPageId: string | null,
+): string | null {
+  if (!pendingPageId) return null;
+  return pages.some((page) => page.id === pendingPageId) ? pendingPageId : null;
+}
+
 export interface SettingsSearchHit {
   page: SettingsPageDef;
   /** Keywords that matched, so the sidebar can say *why* a page is in the results. */

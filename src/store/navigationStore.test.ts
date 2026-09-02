@@ -10,6 +10,7 @@ function resetStore() {
     pendingAgentId: null,
     pendingSessionKey: null,
     pendingWorktreeId: null,
+    pendingSettingsPage: null,
   });
 }
 
@@ -128,6 +129,23 @@ describe("navigationStore – clear actions", () => {
     useNavigationStore.setState({ pendingWorktreeId: "11" });
     useNavigationStore.getState().clearPendingWorktree();
     expect(useNavigationStore.getState().pendingWorktreeId).toBeNull();
+  });
+
+  it("clearPendingSettingsPage sets pendingSettingsPage to null", () => {
+    useNavigationStore.setState({ pendingSettingsPage: "agents" });
+    useNavigationStore.getState().clearPendingSettingsPage();
+    expect(useNavigationStore.getState().pendingSettingsPage).toBeNull();
+  });
+});
+
+/// `SettingsPage` owns which page is showing, so this field is the only way anything outside it
+/// can open one — without it, a message telling the user where to go could not take them there.
+describe("navigationStore – pendingSettingsPage", () => {
+  beforeEach(resetStore);
+
+  it("setPendingSettingsPage records the page to open", () => {
+    useNavigationStore.getState().setPendingSettingsPage("agents");
+    expect(useNavigationStore.getState().pendingSettingsPage).toBe("agents");
   });
 });
 

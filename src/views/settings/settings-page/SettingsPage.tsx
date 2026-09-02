@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useListIntegrations } from "@/services/integration.service";
 import { useIsGitRepo, useSelectedProject } from "@/store/projectStore";
+import { useNavigationActions, usePendingSettingsPage } from "@/store/navigationStore";
 import { useConnectionLabel } from "@/hooks/useConnectionLabel";
 import { cn } from "@/lib/utils";
 import { UpdateStrip } from "@/components/settings/UpdateStrip";
@@ -18,7 +19,7 @@ import { DiagnosticsSection } from "./DiagnosticsSection";
 import { AgentProfilesSection } from "./AgentProfilesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import { SettingsSidebar } from "./SettingsSidebar";
-import { visiblePages } from "./settings-registry";
+import { resolveDeepLinkedPage, visiblePages } from "./settings-registry";
 
 interface SettingsPageProps {
   /**
@@ -53,6 +54,23 @@ export function SettingsPage({
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+
+  // Deep link: the selection is adjusted during render so the surface opens on the requested page
+  // in the same frame; clearing the shared navigation store stays in an effect, because writing
+  // another component's state during render is not safe. Same shape as `WorktreesView`.
+  const pendingPage = usePendingSettingsPage();
+  const { clearPendingSettingsPage } = useNavigationActions();
+  const deepLinkedId = resolveDeepLinkedPage(pages, pendingPage);
+
+  const [consumedDeepLink, setConsumedDeepLink] = useState(deepLinkedId);
+  if (consumedDeepLink !== deepLinkedId) {
+    setConsumedDeepLink(deepLinkedId);
+    if (deepLinkedId) setActiveId(deepLinkedId);
+  }
+
+  useEffect(() => {
+    if (pendingPage) clearPendingSettingsPage();
+  }, [pendingPage, clearPendingSettingsPage]);
 
   // A page that the current host does not offer — a project page after the project closed,
   // or one filtered out of an earlier search — falls back to the first available one rather

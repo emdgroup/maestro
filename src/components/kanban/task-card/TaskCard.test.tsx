@@ -75,17 +75,14 @@ const setProfileOverrides = vi.hoisted(() => vi.fn());
 /// if the card can offer Refine at all.
 const profiles = vi.hoisted(() => ({ current: [] as Array<{ id: string; role: string }> }));
 
+/// The other half of what makes Refine startable: a project default agent stands in when no
+/// profile names one. It lives in the project's settings, which is the only place that holds it.
+const defaultAgent = vi.hoisted(() => ({ current: null as string | null }));
+
 vi.mock("@/services/project.service", () => ({
   useAgentProfilesQuery: () => ({ data: { profiles: profiles.current, defaults: {} } }),
   useSaveAgentProfilesMutation: () => ({ mutateAsync: vi.fn() }),
-}));
-
-/// The other half of what makes Refine startable: a project default agent stands in when no
-/// profile names one.
-const defaultAgent = vi.hoisted(() => ({ current: null as string | null }));
-
-vi.mock("@/store/configStore", () => ({
-  useDefaultAgent: () => defaultAgent.current,
+  useProjectSettings: () => ({ data: { default_agent: defaultAgent.current } }),
 }));
 
 /// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
@@ -440,8 +437,12 @@ describe("TaskCard deferred execution", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /execute/i }));
 
+    // `canPickAgent` pinned here rather than everywhere: this card renders `AgentPickerModal`, and
+    // the flag is the promise that it does. A start that claimed otherwise would fall back to a
+    // toast; one that claimed it falsely would await a dialog nothing shows.
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
       respectCapacity: true,
+      canPickAgent: true,
     });
   });
 });
@@ -582,9 +583,10 @@ describe("TaskCard refinement", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /refine/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
-      role: "Refiner",
-    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Refiner" }),
+    );
   });
 
   /// The button used to be live on a project that had configured nothing, and pressing it produced
@@ -781,7 +783,10 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Coder" }),
+    );
   });
 
   /// The planner's session is never handed on, even when one is somehow still open. It was, once:
@@ -796,7 +801,10 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /start implementing/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), { role: "Coder" });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Coder" }),
+    );
   });
 
   it("planning again runs the planner with no feedback", async () => {
@@ -806,10 +814,10 @@ describe("TaskCard plan gate", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /plan again/i }));
 
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
-      role: "Planner",
-      feedback: "",
-    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Planner", feedback: "" }),
+    );
   });
 
   /// Notes on the plan turn the approve button into a request for a better one. Offering to
@@ -826,10 +834,10 @@ describe("TaskCard plan gate", () => {
     await userEvent.click(screen.getByRole("button", { name: /refine plan/i }));
 
     expect(screen.queryByRole("button", { name: /start implementing/i })).not.toBeInTheDocument();
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), {
-      role: "Planner",
-      feedback: "Use the existing helper",
-    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role: "Planner", feedback: "Use the existing helper" }),
+    );
   });
 
   it("refuses to approve an empty plan", async () => {

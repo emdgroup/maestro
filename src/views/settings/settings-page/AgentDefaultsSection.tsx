@@ -143,12 +143,16 @@ export function AgentDefaultsSection({
         </div>
       )}
 
+      {/* Says what the default actually decides, which is more than its name suggests: it is the
+          agent every stage falls back to when no profile names one, so on a project with no
+          profiles at all it is the agent that runs everything. The empty case used to claim tasks
+          would "use the session's own agent" — they have none, and could not start. */}
       <div className="space-y-1">
         <Label className="text-sm font-medium">Default Agent</Label>
         <p className="text-xs text-muted-foreground">
           {defaultAgent
-            ? `${agents.find((a) => a.id === defaultAgent)?.name ?? defaultAgent} is used for new sessions and auto-assigned tasks`
-            : "No default set. Tasks use the session's own agent"}
+            ? `${agents.find((a) => a.id === defaultAgent)?.name ?? defaultAgent} runs new sessions, and any task stage with no profile of its own.`
+            : "No agent is installed on this project's connection, so no task can start here."}
         </p>
       </div>
     </div>
