@@ -14,13 +14,18 @@ import type {
 } from "@/types/bindings";
 import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
 import { useClaimWorktreeForTaskMutation, worktreeQueryKeys } from "@/services/worktree.service";
-import { useSpawnAcpSessionMutation, useActiveSessionsQuery } from "@/services/execution.service";
+import {
+  useSpawnAcpSessionMutation,
+  useActiveSessionsQuery,
+  useAgentDiscoveryQuery,
+} from "@/services/execution.service";
 import {
   useMarkTaskExecutionStartedMutation,
   useMarkTaskSessionReadyMutation,
   useReleaseTaskExecutionClaimMutation,
 } from "@/services/task.service";
-import { useDefaultAgent } from "@/store/configStore";
+import { useProjectSettings } from "@/services/project.service";
+import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
 
@@ -28,6 +33,12 @@ interface DirtyState {
   modifiedCount: number;
   untrackedCount: number;
   resolve: (choice: DirtyChoice | "cancel") => void;
+}
+
+/// The task waiting on an agent to be chosen for it, and the promise that choice settles.
+interface AgentPickerState {
+  task: Task;
+  resolve: (agentId: string | null) => void;
 }
 
 /// Tells the agent how to signal that the task is finished.
@@ -108,7 +119,10 @@ export function useExecuteTask(
   projectPath: string,
   connection: ConnectionKey,
 ) {
-  const defaultAgent = useDefaultAgent();
+  // Read from the project's own settings rather than from a store. A copy in `configStore` held
+  // this for a while and nothing ever wrote it, so the fallback below was `null` for the life of
+  // every session and a project with no agent profiles could not start a task at all.
+  const defaultAgent = useProjectSettings(projectId).data?.default_agent ?? null;
   const queryClient = useQueryClient();
   const { resolveWorktree } = useResolveWorktree();
   const claimWorktree = useClaimWorktreeForTaskMutation();
@@ -119,6 +133,12 @@ export function useExecuteTask(
   const [isExecuting, setIsExecuting] = useState(false);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
+  const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
+  const agentPickerResolveRef = useRef<((agentId: string | null) => void) | null>(null);
+  // Only to tell "nothing is installed" from "nothing resolved", which are different problems with
+  // different answers. Already cached for the session by Settings and the spawn dialog.
+  const { data: discovery } = useAgentDiscoveryQuery(connection, projectId != null);
+  const navigation = useNavigationActions();
 
   /// `respectCapacity` belongs to the button, not to this function.
   ///
@@ -138,6 +158,11 @@ export function useExecuteTask(
   /// `unattended` says nobody pressed anything and nobody is watching: the board handed one role's
   /// work to the next. Anything that would stop to ask a question has to be skipped rather than
   /// merely defaulted, because the caller renders none of the dialogs that would ask it.
+  ///
+  /// `canPickAgent` is the caller promising it renders `AgentPickerModal` from the state returned
+  /// below. Opt-in rather than inferred from `unattended`, because "a person pressed this" and "a
+  /// component is rendering the dialog it needs" are not the same claim, and only the second one
+  /// makes the promise resolvable.
   const execute = async (
     task: Task,
     {
@@ -145,6 +170,7 @@ export function useExecuteTask(
       role: requestedRole = "Coder" as AgentRole,
       feedback = "",
       unattended = false,
+      canPickAgent = false,
     } = {},
   ) => {
     if (!projectId) return;
@@ -240,17 +266,62 @@ export function useExecuteTask(
 
     // The task's own agent is the coder's, so it must not be imposed on the other three: a task
     // pinned to one agent would otherwise have its refiner and reviewer silently pinned too.
-    const agentId =
+    let agentId =
       (role === "Coder" ? task.agent_id : null) ?? roleProfile?.agent_id ?? defaultAgent;
-    // Named by role, because "no default agent" was an answer to a question the user had not
-    // asked: a project that configures its pipeline through profiles never sets a default agent,
-    // and the missing thing is the profile for *this* stage.
+
+    // Two different problems wear this shape, and they have opposite answers. Nothing installed is
+    // a machine to fix; something installed but nothing chosen — a profile naming an agent this
+    // machine lacks, a default left over from another one — is a question with four possible
+    // answers on screen. A toast reading "configure this in Settings" served neither: it named no
+    // cause, and left the user to find a page they had never seen.
+    //
+    // Resolved before the claim, so cancelling here leaves the card where it was rather than
+    // parked at `Spawning` with a claim to hand back.
     if (!agentId) {
-      toast.error(`No agent to run the ${ROLE_STAGE_LABELS[role]} stage of "${task.title}"`, {
-        description:
-          "Give this role an agent profile in Settings, or set a default agent for the project.",
-      });
-      return;
+      const installed = discovery?.agents ?? [];
+
+      // `canPickAgent` is opt-in rather than derived from `unattended`, because a caller that does
+      // not render the picker would await a promise nothing can resolve. `TaskReviewPanel` calls
+      // `execute` attended and renders no dialogs; the handoff path is the same story with the
+      // deadlock already paid for once — see the dirty-worktree note below.
+      if (installed.length > 0 && canPickAgent) {
+        const picked = await new Promise<string | null>((resolve) => {
+          agentPickerResolveRef.current = resolve;
+          setAgentPickerState({ task, resolve });
+        });
+        setAgentPickerState(null);
+        agentPickerResolveRef.current = null;
+        if (!picked) return;
+        agentId = picked;
+      } else if (installed.length === 0) {
+        toast.error(`No coding agent is installed for "${task.title}"`, {
+          description:
+            "Maestro found no agent on this project's connection. Install one — Claude Code, " +
+            "Codex, Gemini — and it appears in the agent settings.",
+          action: {
+            label: "Open agent settings",
+            onClick: () => {
+              navigation.setActiveTab("settings");
+              navigation.setPendingSettingsPage("agents");
+            },
+          },
+        });
+        return;
+      } else {
+        // Named by stage rather than by "default agent": a project that configures its pipeline
+        // through profiles has no default, and the missing thing is the profile for *this* stage.
+        toast.error(`No agent to run the ${ROLE_STAGE_LABELS[role]} stage of "${task.title}"`, {
+          description: "Give this role an agent profile, or set a default agent for the project.",
+          action: {
+            label: "Open agent settings",
+            onClick: () => {
+              navigation.setActiveTab("settings");
+              navigation.setPendingSettingsPage("agents");
+            },
+          },
+        });
+        return;
+      }
     }
 
     // Claim before anything is built. The claim marks the task `Spawning`, which is what stops a
@@ -651,6 +722,14 @@ export function useExecuteTask(
     dirtyResolveRef.current?.("cancel");
   }, []);
 
+  const onAgentPicked = useCallback((agentId: string) => {
+    agentPickerResolveRef.current?.(agentId);
+  }, []);
+
+  const onAgentPickerCancel = useCallback(() => {
+    agentPickerResolveRef.current?.(null);
+  }, []);
+
   return {
     execute,
     isExecuting,
@@ -659,6 +738,11 @@ export function useExecuteTask(
     dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
     onDirtyChoice,
     onDirtyCancel,
+    /// Only ever set for a caller that passed `canPickAgent`; everyone else gets a toast instead
+    /// and never renders the modal.
+    agentPickerTask: agentPickerState?.task ?? null,
+    onAgentPicked,
+    onAgentPickerCancel,
   };
 }
 

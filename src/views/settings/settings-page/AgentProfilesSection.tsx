@@ -48,7 +48,9 @@ const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPromp
   {
     role: "Coder",
     title: "Implementation",
-    blurb: "The only role allowed to write. Without one, nothing runs.",
+    blurb:
+      "The only role allowed to write. Runs without a profile, on the project's default agent — " +
+      "a profile is how it gets this project's instructions.",
     defaultPrompt:
       "Implement this task. Follow the conventions of the surrounding code rather than introducing " +
       "your own, and keep the change to what was asked — no speculative extras. Verify before you " +
@@ -403,7 +405,8 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
         <p className="text-xs text-muted-foreground mt-1">
           Which agent runs each stage of a task. Saved in this project&apos;s{" "}
           <code className="text-[11px]">.maestro/profiles.json</code>, so the whole team gets the
-          same pipeline. A role with no profile is skipped.
+          same pipeline. A role with no profile is skipped — except Implementation, which runs on
+          the project&apos;s default agent.
         </p>
       </div>
 
@@ -431,7 +434,9 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
 
             {forRole.length === 0 ? (
               <p className="text-[11px] text-muted-foreground italic">
-                No profile — stage skipped.
+                {role === "Coder"
+                  ? "No profile — runs on the project's default agent."
+                  : "No profile — stage skipped."}
               </p>
             ) : (
               forRole.map((profile) => (

@@ -90,7 +90,13 @@ describe("AgentProfilesSection", () => {
     stored.current = {};
 
     renderSection();
-    expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(4);
+    // Three, not four: Implementation is the one role that still runs without a profile, on the
+    // project's default agent, and saying it is skipped is what sent users looking for a profile
+    // they did not need.
+    expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(3);
+    expect(
+      screen.getByText("No profile — runs on the project's default agent."),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));
 

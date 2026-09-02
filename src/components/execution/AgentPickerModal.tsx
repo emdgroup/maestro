@@ -66,8 +66,12 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
       <DialogContent className="w-80">
         <DialogHeader>
           <DialogTitle>Choose an agent</DialogTitle>
+          {/* Deliberately does not say "no default agent set": by the time this opens, the usual
+              causes are a profile or a stored default naming an agent this machine does not have.
+              Naming the wrong cause would send the user to fix something that is not broken. */}
           <DialogDescription>
-            No default agent set. Pick one to run "{task.title}".
+            Nothing this project is configured to use is installed here. Pick an agent to run "
+            {task.title}".
           </DialogDescription>
         </DialogHeader>
 
