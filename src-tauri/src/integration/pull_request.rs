@@ -24,8 +24,13 @@ mod gitlab;
 
 use self::azure_devops::{create_azure_devops, fetch_azure_devops};
 use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket};
-use self::github::{ci_github, create_gitea, create_github, fetch_gitea, fetch_github};
-use self::gitlab::{ci_gitlab, create_gitlab, fetch_gitlab};
+use self::github::{
+    checks_github, ci_github, create_gitea, create_github, fetch_gitea, fetch_github, find_gitea,
+    find_github, summary_github,
+};
+use self::gitlab::{
+    checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, summary_gitlab,
+};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -67,6 +72,54 @@ pub struct PullRequestDetails {
     pub state: PullRequestState,
     pub mergeable: Option<bool>,
     pub head_sha: Option<String>,
+}
+
+/// A pull request located by the branch it was opened from, rather than by a number we stored.
+///
+/// Looking it up this way is what lets the session panel show a pull request nobody told Maestro
+/// about — one opened on the forge by hand, or by an earlier install. Nothing is persisted, so
+/// there is no stored id to go stale and no second copy of the forge's own state.
+///
+/// `mergeable` inside `details` is always `None` here: every forge's *list* endpoint omits it, and
+/// asking for it would cost a second request per poll to answer a question this card does not ask.
+pub struct BranchPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    pub details: PullRequestDetails,
+}
+
+/// The pull request whose head is `branch`, if the forge has one.
+///
+/// `Ok(None)` means the forge answered and has no pull request for that branch. An unsupported
+/// forge is an error rather than `None`, because the two are not the same thing to a user looking
+/// at a card that is not there — and silently reporting "no pull request" for a branch that has one
+/// is the one answer this must never give.
+///
+/// Only same-repository branches are found. A pull request opened from a fork lives under the
+/// fork's owner, which this does not search.
+pub async fn find_pull_request_by_head(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    match target.config.provider.as_str() {
+        "github" => find_github(target, branch).await,
+        "gitea" | "forgejo" => find_gitea(target, branch).await,
+        "gitlab" => find_gitlab(target, branch).await,
+        other => Err(format!(
+            "Maestro cannot look up a pull request by branch on `{}` yet.",
+            other
+        )),
+    }
+}
+
+/// Whether [`find_pull_request_by_head`] has an arm for this forge.
+///
+/// Beside the match it describes for the same reason as [`supports_pull_requests`]: this decides
+/// whether the frontend polls at all, and a disagreement between the two would either poll a forge
+/// that always errors or hide a card for a forge that would have answered.
+pub fn supports_branch_lookup(config: &ProjectCodeHostingConfig) -> bool {
+    matches!(config.provider.as_str(), "github" | "gitea" | "forgejo" | "gitlab")
 }
 
 /// Whether Maestro can open a pull request on this project's forge.
@@ -159,6 +212,102 @@ pub enum CiState {
     Pending,
     /// No CI configured, or the forge would not say. Never acted on.
     Unknown,
+}
+
+/// The fuller picture of one pull request, from the forge's single-pull-request endpoint.
+///
+/// Deliberately not folded into [`PullRequestDetails`]: every field here is absent from the *list*
+/// endpoints [`find_pull_request_by_head`] uses, so filling it costs a second request — one the
+/// reconcile sweep has no use for and should not start paying per task per pass.
+///
+/// Every field is optional because the forges disagree about which of them they will answer.
+/// GitLab reports no line counts without another request; nobody but GitHub reports a commit count
+/// on this endpoint at all. A `None` renders as an absent line rather than a zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PullRequestSummary {
+    pub created_at: Option<String>,
+    pub base_ref: Option<String>,
+    pub head_ref: Option<String>,
+    pub commits: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    /// `None` while the forge is still computing the merge commit — see [`PullRequestDetails`],
+    /// where the same three-valued rule keeps a freshly pushed branch from reading as conflicted.
+    pub mergeable: Option<bool>,
+}
+
+/// Ask the forge for the numbers the branch lookup could not supply.
+///
+/// An empty summary rather than an error wherever a forge will not answer: the card is built out
+/// of whatever lines can be filled, and one missing field must not take the whole card down.
+pub async fn fetch_pull_request_summary(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+) -> Result<PullRequestSummary, String> {
+    match target.config.provider.as_str() {
+        "github" | "gitea" | "forgejo" => summary_github(target, number).await,
+        "gitlab" => summary_gitlab(target, number).await,
+        _ => Ok(PullRequestSummary::default()),
+    }
+}
+
+/// One check the forge ran against a pull request's head commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestCheck {
+    pub name: String,
+    pub status: CheckStatus,
+}
+
+/// Three states rather than the forge's own vocabulary, which has a dozen words across five
+/// providers. `Passed` absorbs skipped and neutral: they are not failures, and a card that showed
+/// them separately would report a red count for a repository that simply skips a job on some paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckStatus {
+    Passed,
+    Failed,
+    Running,
+}
+
+/// The verdict [`fetch_ci_state`] reports, derived from the individual checks.
+///
+/// Shared so the detailed listing and the sweep's yes/no answer cannot disagree: the only thing
+/// done with `Failing` is to start an agent, and a card saying "1 failed" beside a sweep that
+/// decided `Pending` would be two different truths about one pull request.
+///
+/// `Running` outranks `Failed` deliberately — a matrix still going might yet turn green, and
+/// spending a fix round on it is the mistake this ordering exists to prevent.
+pub fn summarise_checks(checks: &[PullRequestCheck]) -> CiState {
+    if checks.is_empty() {
+        return CiState::Unknown;
+    }
+    if checks.iter().any(|check| check.status == CheckStatus::Running) {
+        return CiState::Pending;
+    }
+    let failed: Vec<String> = checks
+        .iter()
+        .filter(|check| check.status == CheckStatus::Failed)
+        .map(|check| check.name.clone())
+        .collect();
+    if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
+}
+
+/// Every check the forge ran, named, for the session panel's rollup.
+///
+/// Separate from [`fetch_ci_state`] because the two callers want different things: the sweep needs
+/// a verdict and nothing else, and giving it this would make it carry a list it discards on every
+/// pass for every open pull request. Returns an empty list wherever the forge will not enumerate,
+/// which [`summarise_checks`] then reads as `Unknown`.
+pub async fn fetch_ci_checks(
+    target: &PullRequestTarget<'_>,
+    number: i64,
+    head_sha: Option<&str>,
+) -> Result<Vec<PullRequestCheck>, String> {
+    match target.config.provider.as_str() {
+        "github" => checks_github(target, head_sha).await,
+        "gitlab" => checks_gitlab(target, number).await,
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// Ask the forge whether CI is happy with the pull request's head commit.

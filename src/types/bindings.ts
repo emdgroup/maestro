@@ -792,6 +792,56 @@ async reconcilePullRequests(projectId: number) : Promise<Result<number[], string
 }
 },
 /**
+ * The pull request whose head is `branch`, with what CI says about it.
+ * 
+ * Polled by the session panel, so every avoidable request matters: CI is only asked for a pull
+ * request that is still open, because a merged or closed one's checks change nothing the card
+ * shows and would double the request count for every landed branch still on screen.
+ */
+async findBranchPullRequest(projectId: number, branch: string) : Promise<Result<BranchPullRequestInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("find_branch_pull_request", { projectId, branch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Just the checks for one pull request, for the panel's fast poll.
+ * 
+ * Split from [`find_branch_pull_request`] because the two things on that card move at very
+ * different speeds. A pull request's title, branches and line counts change when somebody pushes;
+ * its checks change while you watch. Polling both at the rate the checks need would re-ask the
+ * forge for four things to learn one, and polling the checks at the rate the rest needs makes the
+ * panel useless for the thing it is actually being watched for.
+ * 
+ * Takes the number the lookup already found rather than searching by branch again — one request
+ * on GitHub, against the three the full call makes.
+ */
+async fetchBranchPullRequestChecks(projectId: number, number: number, headSha: string | null) : Promise<Result<PullRequestCheckInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_branch_pull_request_checks", { projectId, number, headSha }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Open a pull request from `branch` into `base`, touching no task.
+ * 
+ * The branch is not pushed here. The panel only offers this once the branch is level with its
+ * upstream, so a push would be a no-op — and pushing from a command that says it opens a pull
+ * request would be a surprise on the one path where the caller was wrong about that.
+ */
+async openPullRequestForBranch(projectId: number, branch: string, base: string, title: string, body: string) : Promise<Result<OpenedPullRequest, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_pull_request_for_branch", { projectId, branch, base, title, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reject a task in review, discarding its work either way
  * 
  * Handles the two rejection paths from the review panel:
@@ -2476,6 +2526,48 @@ export type BranchList = { local: string[]; remote: string[] }
  */
 export type BranchMode = "Create" | "Checkout"
 /**
+ * The pull request open on a session's branch, as the Overview card renders it.
+ */
+export type BranchPullRequestInfo = { number: number; url: string; title: string; state: BranchPullRequestState; 
+/**
+ * `None` on a forge that will not report CI — Gitea and Forgejo always, and anywhere the
+ * request failed. The card drops its checks block rather than showing a spinner that will
+ * never resolve.
+ */
+ci: PullRequestCi | null; 
+/**
+ * Names of the checks that failed, and empty unless `ci` is `Failing`. Carried so the panel
+ * can seed a prompt that names them rather than telling the agent to go and look.
+ */
+failing_checks: string[]; 
+/**
+ * Every check the forge would name, so the card can show a rollup and the individual rows
+ * rather than repeating the one-word verdict. Empty on a forge that will not enumerate, which
+ * is what the card reads as "no checks block".
+ */
+checks: PullRequestCheckInfo[]; 
+/**
+ * The head commit, which the fast checks poll needs to ask about CI without re-finding the
+ * pull request. `None` on a forge whose list endpoint does not carry it.
+ */
+head_sha: string | null; 
+/**
+ * RFC 3339, for the "opened 12m ago" line.
+ */
+created_at: string | null; base_branch: string | null; head_branch: string | null; commits: number | null; changed_files: number | null; additions: number | null; deletions: number | null; 
+/**
+ * `false` is a conflict the user has to resolve. `None` is the forge still computing the
+ * merge commit, which the card must not paint as either answer — see `PullRequestDetails`.
+ */
+mergeable: boolean | null }
+/**
+ * What became of a pull request, for the panel.
+ * 
+ * Mirrors [`PullRequestState`], which cannot be exported itself: it is `Copy` plumbing shared by
+ * every provider and giving it a `specta` derive would put forge internals in the bindings.
+ */
+export type BranchPullRequestState = "Open" | "Merged" | "Closed"
+/**
  * How far up the capability ladder this project reaches.
  * 
  * Each rung removes one option from Approve and never blocks it; the bottom of the ladder
@@ -2534,6 +2626,15 @@ config: ProjectCodeHostingConfig | null;
  * for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
  */
 forge_supports_pull_requests: boolean; 
+/**
+ * Whether this forge can be asked which pull request a branch belongs to.
+ * 
+ * Separate from `forge_supports_pull_requests` because the two are genuinely different sets:
+ * Bitbucket and Azure DevOps can have a pull request opened on them but cannot yet be searched
+ * by head branch. The session panel polls only when this is true, so that an unsupported forge
+ * costs no requests rather than one failing request every thirty seconds.
+ */
+forge_supports_branch_lookup: boolean; 
 /**
  * Whether this call wrote `code_hosting` into `.maestro/settings.json`.
  */
@@ -2754,6 +2855,7 @@ export type NewProjectColor =
  * Leave the project colourless so it follows the global default.
  */
 "global"
+export type OpenedPullRequest = { number: number; url: string }
 /**
  * How the current phase is going.
  * 
@@ -2862,6 +2964,8 @@ export type PrunableBranch = { name: string;
  * False when `git branch -d` would refuse it, i.e. its commits live on no other ref.
  */
 merged: boolean; last_commit_at: string; commits: number; diff_stat: string | null }
+export type PullRequestCheckInfo = { name: string; status: PullRequestCheckStatus }
+export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
 /**
  * What the forge's CI last said about an open pull request's head commit.
  * 
@@ -3117,6 +3221,11 @@ commit_count: number | null;
  * git reports as changed, or the last commit's date when the working tree is clean.
  */
 last_activity_at: string | null; 
+/**
+ * Subject line of the newest commit, which the pull request dialog offers as its default
+ * title. `None` on a branch with no commits, and on a worktree git could not be asked about.
+ */
+last_commit_subject: string | null; 
 /**
  * The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
  * still carries the name recorded at creation, because that is what branch operations need —

@@ -60,6 +60,13 @@ pub struct CodeHostingStatus {
     /// "connect it in Settings" is the right prompt for an unconnected GitHub and a misleading one
     /// for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
     pub forge_supports_pull_requests: bool,
+    /// Whether this forge can be asked which pull request a branch belongs to.
+    ///
+    /// Separate from `forge_supports_pull_requests` because the two are genuinely different sets:
+    /// Bitbucket and Azure DevOps can have a pull request opened on them but cannot yet be searched
+    /// by head branch. The session panel polls only when this is true, so that an unsupported forge
+    /// costs no requests rather than one failing request every thirty seconds.
+    pub forge_supports_branch_lookup: bool,
     /// Whether this call wrote `code_hosting` into `.maestro/settings.json`.
     pub applied: bool,
 }
@@ -171,6 +178,7 @@ pub async fn code_hosting_status(
         remote_url: None,
         config: None,
         forge_supports_pull_requests: false,
+        forge_supports_branch_lookup: false,
         applied: false,
     };
 
@@ -213,6 +221,7 @@ pub async fn code_hosting_status(
             remote_url: Some(remote_url),
             config: None,
             forge_supports_pull_requests: false,
+            forge_supports_branch_lookup: false,
             applied: false,
         });
     };
@@ -250,6 +259,8 @@ pub async fn code_hosting_status(
         forge_supports_pull_requests: crate::integration::pull_request::supports_pull_requests(
             &config,
         ),
+        forge_supports_branch_lookup:
+            crate::integration::pull_request::supports_branch_lookup(&config),
         config: Some(config),
         applied,
     })

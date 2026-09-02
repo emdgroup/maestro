@@ -13,6 +13,7 @@ struct WorktreeGitInfo {
     ahead_behind: Option<AheadBehind>,
     commit_count: Option<u32>,
     last_activity_at: Option<String>,
+    last_commit_subject: Option<String>,
 }
 
 /// How many of a worktree's changed files are stat'ed to find the most recent one.
@@ -90,7 +91,10 @@ async fn git_info_for(
         // whose changes had all been staged reported "+0 -0" while its file count said otherwise.
         vec!["diff".into(), "HEAD".into(), "--shortstat".into()],
         vec!["rev-list".into(), "--left-right".into(), "--count".into(), "HEAD...@{u}".into()],
-        vec!["log".into(), "-1".into(), "--format=%cI".into()],
+        // Date and subject from one `log`, split on the newline between them. The subject rides
+        // along because the pull request dialog defaults its title to it, and asking separately
+        // would be another interop spawn per worktree on a ten-second poll.
+        vec!["log".into(), "-1".into(), "--format=%cI%n%s".into()],
     ];
     if let Some(base) = base_branch {
         // Local ref before the remote one, the same order `resolve_divergence_point` uses: a
@@ -116,7 +120,16 @@ async fn git_info_for(
     let status_output = outputs.next().unwrap_or_default();
     let diff_stat_raw = outputs.next().unwrap_or_default();
     let ahead_behind_raw = outputs.next().unwrap_or_default();
-    let last_commit_raw = outputs.next().unwrap_or_default();
+    let log_raw = outputs.next().unwrap_or_default();
+    let (last_commit_raw, last_commit_subject) = match log_raw.split_once('\n') {
+        Some((date, subject)) => {
+            let subject = subject.trim();
+            (date.to_string(), (!subject.is_empty()).then(|| subject.to_string()))
+        }
+        // A repository with no commits at all prints nothing, and a `%s` that came back empty
+        // leaves no newline to split on.
+        None => (log_raw.clone(), None),
+    };
     let commit_count = base_branch.and_then(|_| {
         let local = outputs.next().unwrap_or_default();
         let from_remote = outputs.next().unwrap_or_default();
@@ -144,6 +157,7 @@ async fn git_info_for(
             .map(|(ahead, behind)| AheadBehind { ahead, behind }),
         commit_count,
         last_activity_at,
+        last_commit_subject,
     };
     (worktree_path.to_string(), info)
 }
@@ -268,6 +282,7 @@ pub async fn list_worktrees_with_status(
             ahead_behind,
             commit_count,
             last_activity_at,
+            last_commit_subject,
         } = git_info.remove(&wt.path).unwrap_or_default();
         // A worktree with no branch is on a detached HEAD. `branch_name` keeps the recorded name
         // because branch operations still need it, but the card must not present it as checked out.
@@ -300,6 +315,7 @@ pub async fn list_worktrees_with_status(
                 ahead_behind,
                 commit_count,
                 last_activity_at,
+                last_commit_subject: last_commit_subject.clone(),
                 detached_at,
             });
         } else {
@@ -321,6 +337,7 @@ pub async fn list_worktrees_with_status(
                 ahead_behind,
                 commit_count,
                 last_activity_at,
+                last_commit_subject: last_commit_subject.clone(),
                 detached_at,
             });
         }

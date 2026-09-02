@@ -2,7 +2,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { issueTrackingQueryKeys } from "@/services/task.service";
-import type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig } from "@/types/bindings";
+import type {
+  BranchPullRequestInfo,
+  IntegrationStatus,
+  LandingMode,
+  ProjectIssueTrackingConfig,
+} from "@/types/bindings";
 
 export type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig };
 
@@ -44,6 +49,12 @@ export const integrationQueryKeys = {
   codeHostingStatusAll: () => [...integrationQueryKeys.base, "code_hosting_status"] as const,
   codeHostingStatus: (projectId: number) =>
     [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
+  branchPullRequest: (projectId: number, branch: string) =>
+    [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
+  // Keyed on the head sha as well as the number: a push replaces the whole run, and the previous
+  // commit's results are not a stale version of the new ones, they are a different answer.
+  pullRequestChecks: (projectId: number, number: number, headSha: string) =>
+    [...integrationQueryKeys.base, "pull_request_checks", projectId, number, headSha] as const,
 };
 
 export function useListIntegrations() {
@@ -135,6 +146,94 @@ export function useCodeHostingStatus(projectId: number) {
     enabled: projectId > 0,
     staleTime: 60_000,
     retry: false,
+  });
+}
+
+/**
+ * The pull request open on `branch`, asked of the forge rather than read from anything we stored.
+ *
+ * Nothing persists a branch's pull request, which is what lets this find one opened on the forge by
+ * hand. The cost is a network round trip per poll, so it is deliberately slower than the local git
+ * queries beside it and `enabled` carries three gates rather than one: a branch with no upstream
+ * cannot have a pull request, and a forge with no branch-lookup arm would only ever error.
+ */
+export function useBranchPullRequest(
+  projectId: number | null,
+  branch: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.branchPullRequest(projectId ?? -1, branch ?? ""),
+    queryFn: () => api.findBranchPullRequest(projectId!, branch!),
+    enabled: enabled && projectId != null && !!branch,
+    // Everything on this card except the checks: title, branches, commit and line counts. It moves
+    // when somebody pushes, so a minute of lag costs nothing — and each call is three requests to
+    // the forge, against the one the checks poll below makes.
+    refetchInterval: 60_000,
+    // No stale window. This is the query the card's first paint waits on, and serving a cached
+    // answer only to refetch behind it is a slower first paint, not a faster one.
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * Just the checks, polled fast.
+ *
+ * Separate from the lookup above because the two halves of this card move at different speeds: a
+ * pull request's title and diff change when somebody pushes, its checks change while you are
+ * watching them. One request per poll on GitHub, so ten seconds is affordable where it would not be
+ * for the full lookup.
+ *
+ * Runs only for an open pull request — a merged or closed one's checks cannot change, and polling
+ * them would spend a request every ten seconds for the life of the session.
+ */
+export function useBranchPullRequestChecks(
+  projectId: number | null,
+  pullRequest: BranchPullRequestInfo | null,
+  enabled: boolean,
+) {
+  const number = pullRequest?.state === "Open" ? pullRequest.number : null;
+  const headSha = pullRequest?.head_sha ?? null;
+  return useQuery({
+    queryKey: integrationQueryKeys.pullRequestChecks(projectId ?? -1, number ?? -1, headSha ?? ""),
+    queryFn: () => api.fetchBranchPullRequestChecks(projectId!, number!, headSha),
+    enabled: enabled && projectId != null && number != null,
+    refetchInterval: 10_000,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * Open a pull request for a branch, touching no task.
+ *
+ * Invalidates the lookup above rather than writing its result into the cache: the forge is the only
+ * source for this card, and a hand-placed entry would be the one copy of that state that could be
+ * wrong.
+ */
+export function useOpenPullRequestForBranch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      branch,
+      base,
+      title,
+      body,
+    }: {
+      projectId: number;
+      branch: string;
+      base: string;
+      title: string;
+      body: string;
+    }) => api.openPullRequestForBranch(projectId, branch, base, title, body),
+    onSuccess: (_data, { projectId, branch }) => {
+      void queryClient.invalidateQueries({
+        queryKey: integrationQueryKeys.branchPullRequest(projectId, branch),
+      });
+    },
+    onError: createErrorToastHandler("Failed to open the pull request"),
   });
 }
 

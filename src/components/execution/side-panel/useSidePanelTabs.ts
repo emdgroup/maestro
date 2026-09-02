@@ -26,7 +26,9 @@ const LABELS: Record<TabKind, string> = {
   plan: "Plan",
   subagents: "Subagents",
   canvas: "Canvas",
-  review: "Review",
+  // The kind stays `review` — it is the diff surface and half the codebase names it that — but the
+  // label matches the Overview card that opens it, which is "Changes".
+  review: "Changes",
   artifacts: "Artifacts",
   files: "Files",
   terminal: "Terminal",
