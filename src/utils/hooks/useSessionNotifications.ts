@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
-import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notification";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import type { ActiveSessionInfo, AppSettings } from "@/types/bindings";
 import { extractTitle } from "@/components/execution/activity/permission-prompt-utils";
 import {
@@ -76,7 +76,6 @@ export function useSessionNotifications(
       );
 
       if (!toastEnabled(settingsRef.current, signal.kind)) return;
-      if (!(await isPermissionGranted())) return;
       sendNotification({ title: signal.title, body: notificationBody(session, signal.detail) });
     }
 
