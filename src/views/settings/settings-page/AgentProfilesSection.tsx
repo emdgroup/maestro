@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Textarea } from "@/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useAgentProfilesQuery, useSaveAgentProfilesMutation } from "@/services/project.service";
-import { useAgentModelsQuery } from "@/services/execution.service";
+import { useAgentConfigQuery } from "@/services/execution.service";
+import { isReadOnlyRole, resolveAutomaticMode } from "@/lib/permission-modes";
 import { useSelectedProject } from "@/store/projectStore";
 import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@/types/bindings";
 import { cn } from "@/lib/utils";
@@ -108,10 +109,10 @@ function ProfileCard({
   onRemove: () => void;
 }) {
   const {
-    data: models,
-    isLoading: modelsLoading,
-    isError: modelsFailed,
-  } = useAgentModelsQuery(
+    data: config,
+    isLoading: probeLoading,
+    isError: probeFailed,
+  } = useAgentConfigQuery(
     profile.agent_id || null,
     projectPath,
     projectId,
@@ -119,20 +120,25 @@ function ProfileCard({
     !!profile.agent_id,
   );
 
-  const available = models ?? [];
+  const available = config?.models ?? [];
+  const availableModes = config?.modes ?? [];
   // The stored model survives a probe that did not return it — an agent reachable from another
   // machine, a model the account lost, a list that simply arrived empty. Silently blanking the
   // team's choice because this machine could not confirm it would be worse than showing it.
   const unlisted = profile.model && !available.some((m) => m.model_id === profile.model);
+  // Same bargain for the mode, and it matters more: a mode this machine could not confirm is
+  // still what holds a read-only role read-only on the machine that wrote it.
+  const unlistedMode =
+    profile.permission_mode && !availableModes.some((m) => m.mode_id === profile.permission_mode);
 
   const agentMissing = !!profile.agent_id && !agents.some((a) => a.id === profile.agent_id);
   const agentLabel = agentMissing
     ? `${profile.agent_id} (not found)`
     : (agents.find((a) => a.id === profile.agent_id)?.name ?? "Select an agent");
 
-  const defaultModelLabel = modelsLoading
+  const defaultModelLabel = probeLoading
     ? "asking the agent…"
-    : modelsFailed
+    : probeFailed
       ? "agent default (could not ask)"
       : "agent default";
   const modelLabel = !profile.model
@@ -141,9 +147,43 @@ function ProfileCard({
       ? `${profile.model} (not offered)`
       : (available.find((m) => m.model_id === profile.model)?.name ?? profile.model);
 
+  const readOnlyRole = isReadOnlyRole(profile.role);
+  const automaticMode = resolveAutomaticMode(
+    availableModes.map((m) => m.mode_id),
+    readOnlyRole,
+  );
+
+  // A profile that names no mode is filled in with the one its role needs as soon as the agent
+  // says what it offers, rather than left for the spawn to resolve every time. A stored mode is
+  // one the user can see, change, and is what the rest of the app reads; resolving it invisibly at
+  // spawn meant the field stayed blank and the answer lived nowhere.
+  useEffect(() => {
+    if (profile.permission_mode || !automaticMode) return;
+    onChange({ permission_mode: automaticMode }, true);
+  }, [profile.permission_mode, automaticMode, onChange]);
+
+  // An agent that offers no modes has nothing to pick from, and a profile with nothing stored has
+  // nothing to show, so the dropdown would open onto an empty list.
+  const noModesToOffer = !probeLoading && availableModes.length === 0 && !profile.permission_mode;
+
+  // Only ever the name of a real mode. The unselected states are the transient ones — the probe
+  // still running, or an agent offering modes but none the role can use — and they say what is
+  // happening rather than naming a choice that was never made.
+  const modeLabel = profile.permission_mode
+    ? unlistedMode
+      ? `${profile.permission_mode} (not offered)`
+      : (availableModes.find((m) => m.mode_id === profile.permission_mode)?.name ??
+        profile.permission_mode)
+    : probeLoading
+      ? "asking the agent…"
+      : noModesToOffer
+        ? "Not available"
+        : "Select a permission mode";
+
   return (
-    // React's `onBlur` is `focusout`, which bubbles — one handler here covers the name, the
-    // permission mode and the role prompt without threading a save through each of them.
+    // React's `onBlur` is `focusout`, which bubbles — one handler here covers the name and the
+    // role prompt without threading a save through each of them. The three selects commit
+    // themselves, since a choice from a list is finished the moment it is made.
     <div
       onBlur={onCommit}
       className={cn(
@@ -214,7 +254,7 @@ function ProfileCard({
           <span className="text-[11px] text-muted-foreground">Model</span>
           <Select
             value={profile.model ?? ""}
-            disabled={modelsLoading}
+            disabled={probeLoading}
             onValueChange={(v) => onChange({ model: v || null }, true)}
           >
             <SelectTrigger
@@ -243,21 +283,43 @@ function ProfileCard({
         </div>
       </div>
 
-      {/* Free text because mode ids differ per harness and the set is not known until the agent is
-          running. Left empty, Maestro picks the first mode the agent offers from its own list —
-          read-only for the three roles that must not write, autonomous for the coder — which is
-          what makes the workflow run without a person. Naming one here overrides that. */}
-      <label className="text-[11px] text-muted-foreground space-y-1 block">
-        Permission mode
-        <Input
+      {/* Mode ids differ per harness, so the list is the agent's own — the same probe that
+          answers for the models answers for these. Every entry is a mode the agent really has:
+          the role's default is one of them, already selected, rather than a synthetic "automatic"
+          entry standing in for a choice nobody can see. */}
+      <div className="space-y-1">
+        <span className="text-[11px] text-muted-foreground">Permission mode</span>
+        <Select
           value={profile.permission_mode ?? ""}
-          onChange={(e) => onChange({ permission_mode: e.target.value || null })}
-          placeholder={
-            profile.role === "Coder" ? "chosen automatically" : "read-only, chosen automatically"
-          }
-          className="h-7 text-xs"
-        />
-      </label>
+          disabled={probeLoading || noModesToOffer}
+          onValueChange={(v) => onChange({ permission_mode: v || null }, true)}
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-full text-xs"
+            aria-label={`Permission mode for ${profile.name}`}
+          >
+            <span className="truncate flex-1 text-left">{modeLabel}</span>
+          </SelectTrigger>
+          <SelectContent>
+            {unlistedMode && (
+              <SelectItem value={profile.permission_mode!} className="text-xs">
+                {profile.permission_mode} (not offered)
+              </SelectItem>
+            )}
+            {availableModes.map((mode) => (
+              <SelectItem key={mode.mode_id} value={mode.mode_id} className="text-xs">
+                {mode.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {noModesToOffer && (
+          <p className="text-[11px] text-muted-foreground">
+            No permission mode available, the agent will use its own default.
+          </p>
+        )}
+      </div>
 
       <label className="text-[11px] text-muted-foreground space-y-1 block">
         Instructions for this role
