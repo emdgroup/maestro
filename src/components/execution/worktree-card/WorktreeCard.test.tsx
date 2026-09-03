@@ -27,6 +27,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     ahead_behind: null,
     commit_count: null,
     last_activity_at: null,
+    last_commit_subject: null,
     detached_at: null,
     is_zombie: false,
     is_orphan: false,

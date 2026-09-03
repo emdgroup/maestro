@@ -3,7 +3,6 @@ import { useConfigStore } from "./configStore";
 
 function resetStore() {
   useConfigStore.setState({
-    default_agent: null,
     isLoading: false,
     error: null,
   });
@@ -14,24 +13,8 @@ describe("configStore – initial state", () => {
 
   it("has correct default values", () => {
     const s = useConfigStore.getState();
-    expect(s.default_agent).toBeNull();
     expect(s.isLoading).toBe(false);
     expect(s.error).toBeNull();
-  });
-});
-
-describe("configStore – setDefaultAgent", () => {
-  beforeEach(resetStore);
-
-  it("sets default_agent", () => {
-    useConfigStore.getState().setDefaultAgent("claude-code");
-    expect(useConfigStore.getState().default_agent).toBe("claude-code");
-  });
-
-  it("clears default_agent with null", () => {
-    useConfigStore.getState().setDefaultAgent("claude-code");
-    useConfigStore.getState().setDefaultAgent(null);
-    expect(useConfigStore.getState().default_agent).toBeNull();
   });
 });
 
@@ -61,14 +44,16 @@ describe("configStore – setState (partial update)", () => {
   beforeEach(resetStore);
 
   it("merges partial config without affecting other fields", () => {
-    useConfigStore.getState().setState({ default_agent: "claude-code" });
+    useConfigStore.getState().setError("existing error");
+    useConfigStore.getState().setState({ isLoading: true });
     const s = useConfigStore.getState();
-    expect(s.default_agent).toBe("claude-code");
+    expect(s.isLoading).toBe(true);
+    expect(s.error).toBe("existing error");
   });
 
   it("ignores undefined keys", () => {
     useConfigStore.getState().setError("existing error");
-    useConfigStore.getState().setState({ default_agent: "claude-code" });
+    useConfigStore.getState().setState({});
     expect(useConfigStore.getState().error).toBe("existing error");
   });
 });
@@ -77,17 +62,11 @@ describe("configStore – resetConfig", () => {
   beforeEach(resetStore);
 
   it("resetConfig restores all fields to defaults", () => {
-    useConfigStore.getState().setDefaultAgent("claude-code");
+    useConfigStore.getState().setLoading(true);
     useConfigStore.getState().setError("err");
     useConfigStore.getState().resetConfig();
     const s = useConfigStore.getState();
-    expect(s.default_agent).toBeNull();
+    expect(s.isLoading).toBe(false);
     expect(s.error).toBeNull();
-  });
-
-  it("resetConfig clears default_agent", () => {
-    useConfigStore.getState().setDefaultAgent("claude-code");
-    useConfigStore.getState().resetConfig();
-    expect(useConfigStore.getState().default_agent).toBeNull();
   });
 });

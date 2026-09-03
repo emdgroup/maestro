@@ -23,6 +23,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 export interface ComposeBarHandle {
   focus(): void;
+  /**
+   * Put `text` in the box and focus it, without sending.
+   *
+   * The Overview actions that "ask the agent" go through here rather than prompting directly: the
+   * user gets to read what is about to be said, edit it, and decide — which is the whole difference
+   * between a suggestion and Maestro driving the agent behind their back. Anything already typed is
+   * kept, because losing a half-written message to a mis-click is not recoverable.
+   */
+  seed(text: string): void;
 }
 
 interface ComposeBarProps {
@@ -71,6 +80,19 @@ export function ComposeBar({
   useImperativeHandle(ref, () => ({
     focus() {
       textareaRef.current?.focus();
+    },
+    seed(text: string) {
+      // A textarea does not grow with its content, so every path that writes into this box has to
+      // resize it afterwards. Committing the value synchronously is what makes the measurement
+      // below read the seeded text rather than what was there before.
+      flushSync(() => {
+        setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
+      });
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     },
   }));
 

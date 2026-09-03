@@ -35,13 +35,22 @@ interface NavigationState {
    */
   pendingSessionKey: number | null;
   pendingWorktreeId: string | null;
+  /**
+   * A page in the settings sidebar to open on arrival, by its id in `settings-registry`.
+   *
+   * `SettingsPage` owns which page is showing, so without this nothing outside it can say "open
+   * Agents" — a message telling the user where to go could not take them there.
+   */
+  pendingSettingsPage: string | null;
 
   navigate: (target: NavigationTarget) => void;
   setActiveTab: (tab: ViewType) => void;
   setActiveTaskId: (id: number | null) => void;
+  setPendingSettingsPage: (pageId: string) => void;
   clearPendingAgent: () => void;
   clearPendingSession: () => void;
   clearPendingWorktree: () => void;
+  clearPendingSettingsPage: () => void;
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -52,6 +61,7 @@ export const useNavigationStore = create<NavigationState>()(
     pendingAgentId: null,
     pendingSessionKey: null,
     pendingWorktreeId: null,
+    pendingSettingsPage: null,
 
     navigate: (target: NavigationTarget) =>
       set((state) => {
@@ -98,6 +108,11 @@ export const useNavigationStore = create<NavigationState>()(
         state.activeTaskId = id;
       }),
 
+    setPendingSettingsPage: (pageId: string) =>
+      set((state) => {
+        state.pendingSettingsPage = pageId;
+      }),
+
     clearPendingAgent: () =>
       set((state) => {
         state.pendingAgentId = null;
@@ -112,6 +127,11 @@ export const useNavigationStore = create<NavigationState>()(
       set((state) => {
         state.pendingWorktreeId = null;
       }),
+
+    clearPendingSettingsPage: () =>
+      set((state) => {
+        state.pendingSettingsPage = null;
+      }),
   })),
 );
 
@@ -122,14 +142,17 @@ export const useActiveTaskId = () => useNavigationStore((s) => s.activeTaskId);
 export const usePendingAgentId = () => useNavigationStore((s) => s.pendingAgentId);
 export const usePendingSessionKey = () => useNavigationStore((s) => s.pendingSessionKey);
 export const usePendingWorktreeId = () => useNavigationStore((s) => s.pendingWorktreeId);
+export const usePendingSettingsPage = () => useNavigationStore((s) => s.pendingSettingsPage);
 export const useNavigate = () => useNavigationStore((s) => s.navigate);
 export const useNavigationActions = () =>
   useNavigationStore(
     useShallow((s) => ({
       setActiveTab: s.setActiveTab,
       setActiveTaskId: s.setActiveTaskId,
+      setPendingSettingsPage: s.setPendingSettingsPage,
       clearPendingAgent: s.clearPendingAgent,
       clearPendingSession: s.clearPendingSession,
       clearPendingWorktree: s.clearPendingWorktree,
+      clearPendingSettingsPage: s.clearPendingSettingsPage,
     })),
   );

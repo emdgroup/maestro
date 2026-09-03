@@ -42,6 +42,26 @@ interface SpawnSessionDialogProps {
   connection: ConnectionKey;
   worktrees: WorktreeWithStatus[];
   onSuccess: (sessionKey: number, createdWorktree: CreatedWorktree | null) => void;
+  /**
+   * Where the dialog should start when it is opened for something specific, rather than from the
+   * "New Session" button that means "anywhere".
+   *
+   * The Worktrees view opens it for a pull request, which already answers the two questions the
+   * user would otherwise be asked twice — which workspace, and which branch. Everything it does not
+   * name still falls back to the project defaults below, so the agent picker behaves as it always
+   * does.
+   */
+  seed?: SpawnSeed | null;
+}
+
+export interface SpawnSeed {
+  workspaceMode: WorkspaceMode;
+  /** For `ReuseWorkspace`: the worktree to start in. */
+  worktree?: WorktreeWithStatus | null;
+  /** For `NewWorktree` with `branchMode: "Checkout"`: the ref to check out, e.g. `origin/feature`. */
+  baseBranch?: string;
+  branchMode?: BranchMode;
+  sessionName?: string;
 }
 
 export function SpawnSessionDialog({
@@ -52,6 +72,7 @@ export function SpawnSessionDialog({
   connection,
   worktrees,
   onSuccess,
+  seed,
 }: SpawnSessionDialogProps) {
   const [selectedWorktree, setSelectedWorktree] = useState<WorktreeWithStatus | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("NewWorktree");
@@ -82,12 +103,16 @@ export function SpawnSessionDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSelectedWorktree(reusableWorktrees[0] ?? null);
-    setWorkspaceMode(projectSettings?.default_workspace_mode ?? "NewWorktree");
-    setBaseBranch(defaultBaseBranch);
-    setBranchMode("Create");
+    // The seed wins over the project defaults for the fields it names, and only those: it answers
+    // "which workspace, which branch" for a caller that already knows, and leaves the rest alone.
+    setSelectedWorktree(seed?.worktree ?? reusableWorktrees[0] ?? null);
+    setWorkspaceMode(
+      seed?.workspaceMode ?? projectSettings?.default_workspace_mode ?? "NewWorktree",
+    );
+    setBaseBranch(seed?.baseBranch ?? defaultBaseBranch);
+    setBranchMode(seed?.branchMode ?? "Create");
     setBranchSuffix("");
-    setSessionName("");
+    setSessionName(seed?.sessionName ?? "");
     setSpawnError(null);
 
     const defaultAgent = projectSettings?.default_agent;
@@ -103,11 +128,15 @@ export function SpawnSessionDialog({
     }
   }, [open, reusableWorktrees, selectedWorktree]);
 
+  // Functional update, and `baseBranch` deliberately out of the deps: on mount this effect and the
+  // reset above run in the same commit, so the `baseBranch` this closure captured is still the
+  // initial empty string even though the reset has already written the seed's branch into state.
+  // Reading it from the closure therefore saw "empty" and overwrote a seeded branch with the
+  // project default — the branch the caller had just chosen, replaced by the one it was avoiding.
   useEffect(() => {
-    if (open && !baseBranch && defaultBaseBranch) {
-      setBaseBranch(defaultBaseBranch);
-    }
-  }, [open, defaultBaseBranch, baseBranch]);
+    if (!open || !defaultBaseBranch) return;
+    setBaseBranch((current) => current || defaultBaseBranch);
+  }, [open, defaultBaseBranch]);
 
   // A terminal attaches to an existing checkout only — the backend refuses to create one for it,
   // so the option is offered disabled and never honoured here.
@@ -225,7 +254,9 @@ export function SpawnSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      {/* One step wider than the default: this dialog's branch row carries fully-qualified remote
+          refs, which are the longest single value any dialog here shows. */}
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Session</DialogTitle>
           <p className="text-xs text-muted-foreground">
@@ -235,6 +266,9 @@ export function SpawnSessionDialog({
           </p>
         </DialogHeader>
         <form
+          // A grid item's `min-width` is `auto`, so without this the form refuses to shrink below
+          // its widest content and the branch row escapes the dialog instead of truncating.
+          className="min-w-0"
           onSubmit={(e) => {
             e.preventDefault();
             if (canSpawn && !isPending) void handleSpawn();

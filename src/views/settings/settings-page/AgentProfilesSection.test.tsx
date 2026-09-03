@@ -7,11 +7,14 @@ import type { ProfilesDocument } from "@/types/bindings";
 /// What `.maestro/profiles.json` currently holds, swapped per test.
 const stored = vi.hoisted(() => ({ current: { profiles: [], defaults: {} } as ProfilesDocument }));
 const save = vi.hoisted(() => vi.fn());
-/// What the model probe came back with. Mocked rather than exercised: the real one spawns an
+/// What the agent probe came back with. Mocked rather than exercised: the real one spawns an
 /// agent subprocess, which is not something a unit test should be doing.
 const probe = vi.hoisted(() => ({
   current: {
-    data: [] as Array<{ model_id: string; name: string }>,
+    data: { models: [], modes: [] } as {
+      models: Array<{ model_id: string; name: string }>;
+      modes: Array<{ mode_id: string; name: string }>;
+    },
     isLoading: false,
     isError: false,
   },
@@ -23,7 +26,7 @@ vi.mock("@/services/project.service", () => ({
 }));
 
 vi.mock("@/services/execution.service", () => ({
-  useAgentModelsQuery: () => probe.current,
+  useAgentConfigQuery: () => probe.current,
 }));
 
 vi.mock("@/store/projectStore", () => ({
@@ -45,7 +48,10 @@ function lastSaved(): ProfilesDocument {
   return calls[calls.length - 1]![0].document as ProfilesDocument;
 }
 
-const oneCoder = (model: string | null): ProfilesDocument => ({
+const oneCoder = (
+  model: string | null,
+  permissionMode: string | null = null,
+): ProfilesDocument => ({
   profiles: [
     {
       id: "c1",
@@ -53,6 +59,7 @@ const oneCoder = (model: string | null): ProfilesDocument => ({
       role: "Coder",
       agent_id: "claude-acp",
       model,
+      permission_mode: permissionMode,
       skills: [],
       mcp_servers: [],
       fallback_behaviour: "Warn",
@@ -65,7 +72,7 @@ describe("AgentProfilesSection", () => {
   beforeEach(() => {
     save.mockReset();
     stored.current = { profiles: [], defaults: {} };
-    probe.current = { data: [], isLoading: false, isError: false };
+    probe.current = { data: { models: [], modes: [] }, isLoading: false, isError: false };
   });
 
   /// There is no Save button, so the panel writes on every change — which makes "did not change
@@ -90,7 +97,13 @@ describe("AgentProfilesSection", () => {
     stored.current = {};
 
     renderSection();
-    expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(4);
+    // Three, not four: Implementation is the one role that still runs without a profile, on the
+    // project's default agent, and saying it is skipped is what sent users looking for a profile
+    // they did not need.
+    expect(screen.getAllByText("No profile — stage skipped.")).toHaveLength(3);
+    expect(
+      screen.getByText("No profile — runs on the project's default agent."),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Add a Refinement profile" }));
 
@@ -185,10 +198,13 @@ describe("AgentProfilesSection", () => {
   it("names the chosen model on the trigger", () => {
     stored.current = oneCoder("opus");
     probe.current = {
-      data: [
-        { model_id: "sonnet", name: "Sonnet" },
-        { model_id: "opus", name: "Opus" },
-      ],
+      data: {
+        models: [
+          { model_id: "sonnet", name: "Sonnet" },
+          { model_id: "opus", name: "Opus" },
+        ],
+        modes: [],
+      },
       isLoading: false,
       isError: false,
     };
@@ -205,7 +221,7 @@ describe("AgentProfilesSection", () => {
   it("keeps a stored model the agent did not offer", () => {
     stored.current = oneCoder("gpt-5-codex");
     probe.current = {
-      data: [{ model_id: "sonnet", name: "Sonnet" }],
+      data: { models: [{ model_id: "sonnet", name: "Sonnet" }], modes: [] },
       isLoading: false,
       isError: false,
     };
@@ -228,5 +244,139 @@ describe("AgentProfilesSection", () => {
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
       "agent default (could not ask)",
     );
+  });
+
+  /// The permission mode was the last free-text box on the card, and the one a typo costs most:
+  /// an unrecognised mode is dropped with a warning, so a reviewer meant to be held read-only
+  /// runs unheld. It comes off the same probe as the models.
+  it("names the chosen permission mode on the trigger", () => {
+    stored.current = oneCoder(null, "auto");
+    probe.current = {
+      data: {
+        models: [],
+        modes: [
+          { mode_id: "plan", name: "Plan" },
+          { mode_id: "auto", name: "Auto" },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
+      "Auto",
+    );
+  });
+
+  /// Same reasoning as the model, and more load-bearing: a mode this machine could not confirm is
+  /// still what holds a read-only role read-only on the machine that wrote the profile.
+  it("keeps a stored permission mode the agent did not offer", () => {
+    stored.current = oneCoder(null, "dontAsk");
+    probe.current = {
+      data: { models: [], modes: [{ mode_id: "plan", name: "Plan" }] },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
+      "dontAsk (not offered)",
+    );
+  });
+
+  /// A profile that names no mode is filled in from what its agent offers, and the answer is
+  /// written to `profiles.json` rather than re-resolved invisibly on every spawn — a coder takes
+  /// the first writable mode, the other three the first read-only one.
+  it("fills in and stores the mode an unset role needs", () => {
+    stored.current = {
+      profiles: [
+        {
+          id: "r1",
+          name: "Reviewer",
+          role: "Reviewer",
+          agent_id: "claude-acp",
+          skills: [],
+          mcp_servers: [],
+          fallback_behaviour: "Warn",
+        },
+        {
+          id: "c1",
+          name: "Coder",
+          role: "Coder",
+          agent_id: "claude-acp",
+          skills: [],
+          mcp_servers: [],
+          fallback_behaviour: "Warn",
+        },
+      ],
+      defaults: { Reviewer: "r1", Coder: "c1" },
+    };
+    probe.current = {
+      data: {
+        models: [],
+        modes: [
+          { mode_id: "default", name: "Ask every time" },
+          { mode_id: "plan", name: "Plan" },
+          { mode_id: "auto", name: "Auto" },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(
+      screen.getByRole("combobox", { name: "Permission mode for Reviewer" }),
+    ).toHaveTextContent("Plan");
+    expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
+      "Auto",
+    );
+
+    // Both cards resolve off one shared probe, so the document that lands on disk has to carry
+    // both modes rather than whichever card wrote last.
+    const saved = lastSaved().profiles!;
+    expect(saved.find((p) => p.id === "r1")!.permission_mode).toBe("plan");
+    expect(saved.find((p) => p.id === "c1")!.permission_mode).toBe("auto");
+  });
+
+  /// Every entry has to be a mode the agent really has. A synthetic "chosen automatically" entry
+  /// reads as a selectable mode and is not one, and it hides which mode the profile actually runs
+  /// in behind a word — the point of storing the resolved mode is that the answer is on screen.
+  it("offers only modes the agent really has", async () => {
+    stored.current = oneCoder(null, "auto");
+    probe.current = {
+      data: {
+        models: [],
+        modes: [
+          { mode_id: "plan", name: "Plan" },
+          { mode_id: "auto", name: "Auto" },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+    await userEvent.click(screen.getByRole("combobox", { name: "Permission mode for Coder" }));
+
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Plan", "Auto"]);
+  });
+
+  /// Nothing to choose from is not the same as a choice not yet made. An enabled dropdown here
+  /// would open onto one dead option, and the mode is genuinely the agent's own.
+  it("disables the dropdown when the agent offers no modes", () => {
+    stored.current = oneCoder(null);
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toBeDisabled();
+    expect(
+      screen.getByText("No permission mode available, the agent will use its own default."),
+    ).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
   });
 });

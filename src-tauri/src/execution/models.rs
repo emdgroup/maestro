@@ -76,6 +76,9 @@ pub struct WorktreeWithStatus {
     /// When anything last happened here, as RFC 3339: the newest modification time among the files
     /// git reports as changed, or the last commit's date when the working tree is clean.
     pub last_activity_at: Option<String>,
+    /// Subject line of the newest commit, which the pull request dialog offers as its default
+    /// title. `None` on a branch with no commits, and on a worktree git could not be asked about.
+    pub last_commit_subject: Option<String>,
     /// The short sha HEAD points at when the worktree is not on a branch at all. `branch_name`
     /// still carries the name recorded at creation, because that is what branch operations need —
     /// but showing it would claim a branch that is not checked out.

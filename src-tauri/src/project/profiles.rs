@@ -31,7 +31,8 @@ pub const PROFILES_FILE: &str = "profiles.json";
 /// which for a read-only phase cannot be auto-answered, so it becomes the user's decision rather
 /// than the agent's. Ordered from strongest to weakest, and deliberately not a preference list —
 /// which of the three a role should use depends on what it has to deliver, not on which is
-/// strictest. See `READ_ONLY_MODES` in `useExecuteTask.ts` for the fallback preference.
+/// strictest. See `READ_ONLY_MODES` in `utils/helpers/permission-modes.ts` for the preference
+/// order a profile that names no mode is filled in from.
 const READ_ONLY_SAFE_MODES: [&str; 3] = ["readonly", "plan", "default"];
 
 /// What a profile does when the agent it names cannot honour part of it.

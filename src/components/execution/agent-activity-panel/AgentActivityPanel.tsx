@@ -352,6 +352,16 @@ export function AgentActivityPanel({
     pendingSendRef,
   });
 
+  // The Overview's "asks the agent" actions write into the composer instead of prompting, so the
+  // user reads and sends what was suggested. Withheld once the session has ended: there would be
+  // nothing to receive it, and a box the user can type into but not send is worse than no button.
+  const handleSeedPrompt = useCallback(
+    (text: string) => {
+      composeBarRef.current?.seed(text);
+    },
+    [composeBarRef],
+  );
+
   // Side-panel annotations: send them as one prompt, then drop the ones that went out.
   //
   // The notes are dropped only after the send resolves, not before it: building the blocks now
@@ -780,6 +790,7 @@ export function AgentActivityPanel({
             onSendAnnotations={handleSendAnnotations}
             isProcessing={isProcessing}
             canSendImages={promptCapabilities?.image ?? false}
+            onSeedPrompt={isSessionDead ? undefined : handleSeedPrompt}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

@@ -7,15 +7,19 @@ import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 export const AVAILABLE_MCP_SERVERS = ["filesystem", "web", "git"];
 export const AVAILABLE_SKILLS = ["javascript", "python", "react", "rust"];
 
+/// Deliberately does not hold the project's default agent.
+///
+/// It used to, and nothing ever wrote it: the value lives in `.maestro/settings.json` and is read
+/// through `useProjectSettings`, so the copy here sat at `null` for the life of every session and
+/// silently disabled the fallback that lets a task run without an agent profile. A second home for
+/// a value that belongs to a file is what produced that bug — read the query.
 export interface ConfigState {
-  default_agent: string | null;
   isLoading: boolean;
   error: string | null;
   preflightToolChecks: Record<string, ToolCheckEntry[]>;
 
   // Actions
-  setState: (config: Partial<Pick<ConfigState, "default_agent" | "isLoading" | "error">>) => void;
-  setDefaultAgent: (agent: string | null) => void;
+  setState: (config: Partial<Pick<ConfigState, "isLoading" | "error">>) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
@@ -29,28 +33,20 @@ function connectionKeyStr(connection: ConnectionKey): string {
 }
 
 function applyReset(state: ConfigState) {
-  state.default_agent = null;
   state.isLoading = false;
   state.error = null;
 }
 
 export const useConfigStore = create<ConfigState>()(
   immer((set) => ({
-    default_agent: null,
     isLoading: false,
     error: null,
     preflightToolChecks: {},
 
     setState: (config) =>
       set((state) => {
-        if (config.default_agent !== undefined) state.default_agent = config.default_agent ?? null;
         if (config.isLoading !== undefined) state.isLoading = config.isLoading;
         if (config.error !== undefined) state.error = config.error ?? null;
-      }),
-
-    setDefaultAgent: (agent) =>
-      set((state) => {
-        state.default_agent = agent;
       }),
 
     setLoading: (loading) =>
@@ -77,14 +73,12 @@ export const useConfigStore = create<ConfigState>()(
   })),
 );
 
-export const useDefaultAgent = () => useConfigStore((s) => s.default_agent);
 export const useConfigIsLoading = () => useConfigStore((s) => s.isLoading);
 export const useConfigError = () => useConfigStore((s) => s.error);
 export const useConfigActions = () =>
   useConfigStore(
     useShallow((s) => ({
       setState: s.setState,
-      setDefaultAgent: s.setDefaultAgent,
       setLoading: s.setLoading,
       setError: s.setError,
       clearError: s.clearError,

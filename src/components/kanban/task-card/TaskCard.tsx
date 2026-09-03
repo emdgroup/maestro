@@ -5,6 +5,7 @@ import { Button, buttonVariants } from "@/ui/button";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useTaskHold } from "@/hooks/useTaskHold";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
+import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { ProposalGate } from "./ProposalGate";
 import { PlanGate } from "./PlanGate";
 import { TaskProfilesDialog } from "./TaskProfilesDialog";
@@ -15,9 +16,8 @@ import {
 } from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
 import { useWorktreesQuery, useDeleteWorktreeMutation } from "@/services/worktree.service";
-import { useAgentProfilesQuery } from "@/services/project.service";
+import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
-import { useDefaultAgent } from "@/store/configStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import { api } from "@/lib/tauri-utils";
@@ -756,6 +756,9 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     dirtyUntrackedCount,
     onDirtyChoice,
     onDirtyCancel,
+    agentPickerTask,
+    onAgentPicked,
+    onAgentPickerCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
@@ -768,7 +771,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const recoverSession = useRecoverTaskSessionMutation();
   // Same query key the profiles dialog uses, so every card on the board shares one fetch.
   const { data: profilesDocument } = useAgentProfilesQuery(projectId);
-  const defaultAgent = useDefaultAgent();
+  const defaultAgent = useProjectSettings(projectId).data?.default_agent ?? null;
   // A Refiner profile is how a project opts into refinement; a project default agent is the
   // fallback `useExecuteTask` applies when no profile names one. With neither, there is nothing to
   // start.
@@ -789,7 +792,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     if (activeSession) {
       void api.discardFailedSpawn(activeSession.session_key);
     }
-    void handleExecute(task);
+    void handleExecute(task, { canPickAgent: true });
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A drag applies `ManualMove`, which parks the task — wiping the phase and orphaning the session
@@ -925,10 +928,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           // The one Execute the user presses themselves, and so the only one that asks whether
           // the host has room. The auth retries below are continuations of a start that already
           // passed that gate.
-          onExecute={() => void handleExecute(task, { respectCapacity: true })}
+          onExecute={() => void handleExecute(task, { respectCapacity: true, canPickAgent: true })}
           // Refinement runs in the project root and writes nothing, so it does not compete for a
           // slot the way an implementation does and is not deferred against the limit.
-          onRefine={() => void handleExecute(task, { role: "Refiner" })}
+          onRefine={() => void handleExecute(task, { role: "Refiner", canPickAgent: true })}
           onOpenProposal={() => setProposalOpen(true)}
           onOpenPlan={() => setPlanOpen(true)}
           onOpenProfiles={() => setProfilesOpen(true)}
@@ -973,7 +976,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
               );
               navigate({ agentId: String(task.id) });
             } else {
-              void handleExecute(task);
+              void handleExecute(task, { canPickAgent: true });
             }
           }}
           onClose={() => setIsAuthModalOpen(false)}
@@ -992,6 +995,16 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
       />
+      {/* Rendered here because this is the caller that passes `canPickAgent` — the state is only
+          ever set for a caller that promised to show this. */}
+      {agentPickerTask && (
+        <AgentPickerModal
+          open
+          task={agentPickerTask}
+          proceed={onAgentPicked}
+          onClose={onAgentPickerCancel}
+        />
+      )}
       <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
       <PlanGate
         task={task}
@@ -999,8 +1012,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
         onOpenChange={setPlanOpen}
         // Explicitly the coder: `execute` routes a standing start through the planner when the
         // project has one, and approving a plan is the one case that must not.
-        onApprove={() => void handleExecute(task, { role: "Coder" })}
-        onReplan={(feedback) => void handleExecute(task, { role: "Planner", feedback })}
+        onApprove={() => void handleExecute(task, { role: "Coder", canPickAgent: true })}
+        onReplan={(feedback) =>
+          void handleExecute(task, { role: "Planner", feedback, canPickAgent: true })
+        }
       />
       <TaskProfilesDialog
         task={task}

@@ -24,6 +24,7 @@ import type { ConnectionKey } from "@/types/bindings";
 import { Skeleton } from "@/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { useSessionDiffStats } from "./useSessionDiffStats";
+import { useSessionShipState } from "./useSessionShipState";
 import { useWslConnections } from "@/services/connection.service";
 import {
   useSaveCanvasSurfaceMutation,
@@ -69,6 +70,8 @@ interface SidePanelContentProps {
   isProcessing?: boolean;
   /** The agent takes image blocks, so a canvas region is worth capturing. */
   canSendImages?: boolean;
+  /** Puts text in the composer without sending it. Absent when there is no live agent to ask. */
+  onSeedPrompt?: (text: string) => void;
 }
 
 export function SidePanelContent({
@@ -96,6 +99,7 @@ export function SidePanelContent({
   onSendAnnotations,
   isProcessing,
   canSendImages,
+  onSeedPrompt,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
@@ -105,6 +109,17 @@ export function SidePanelContent({
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
   // the user is looking at another tab, or at a collapsed panel.
   const { diffStats, changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
+  // The pull request state is gated harder than the diff stats above, because it is the one thing
+  // here that leaves the machine. Its only consumer is a card on the Overview tab and there is no
+  // unseen dot for it to raise, so nothing is lost by asking the forge only while that tab is the
+  // one on screen.
+  const ship = useSessionShipState(
+    sessionKey,
+    taskId,
+    isProcessing ?? false,
+    selectedProject?.path ?? null,
+    isSessionActive && activeTabId === "overview",
+  );
 
   const { data: wslConnections } = useWslConnections();
   const wslDistroName =
@@ -197,6 +212,8 @@ export function SidePanelContent({
                 diffStats={diffStats}
                 connection={connection}
                 wslDistroName={wslDistroName}
+                ship={ship}
+                onSeedPrompt={onSeedPrompt}
               />
             )}
             {kind === "plan" && (

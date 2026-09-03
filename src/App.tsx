@@ -34,6 +34,8 @@ import {
 import { IntegrationMissingDialog } from "@/views/project-picker/integrations-tab/IntegrationMissingDialog";
 import { useUpdater } from "@/hooks/useUpdater";
 import { useProjectStartupTab } from "@/hooks/useProjectStartupTab";
+import { useDefaultAgentFallback } from "@/hooks/useDefaultAgentFallback";
+import { useProjectAgentIntro } from "@/hooks/useProjectAgentIntro";
 import { UpdateSplashScreen } from "@/components/execution/UpdateSplashScreen";
 import "./App.css";
 
@@ -205,8 +207,18 @@ function App() {
   }, [currentProject, cleanupZombies, prefetchWorktrees]);
 
   // Startup preferences — applied once per project open.
-  const { data: projectSettings } = useProjectSettings(currentProject?.id ?? 0);
+  const projectSettingsQuery = useProjectSettings(currentProject?.id ?? 0);
+  const projectSettings = projectSettingsQuery.data;
   useProjectStartupTab(currentProject?.id ?? null, projectSettings?.startup_tab, setActiveTab);
+
+  // A project with no default agent gets the first one installed, so its first task can run, and
+  // its first open shows the user where that came from and how to change it.
+  useDefaultAgentFallback(currentProject?.id ?? null, connection);
+  useProjectAgentIntro(
+    currentProject?.id ?? null,
+    projectSettings?.startup_tab,
+    projectSettingsQuery.isSuccess,
+  );
 
   if (settingsLoading) {
     return (
@@ -299,7 +311,11 @@ function App() {
               )}
             >
               <Suspense fallback={fallback}>
-                <WorktreesView projectId={currentProject.id} repoPath={currentProject.path} />
+                <WorktreesView
+                  projectId={currentProject.id}
+                  repoPath={currentProject.path}
+                  connection={connection}
+                />
               </Suspense>
             </motion.div>
 

@@ -2,7 +2,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { issueTrackingQueryKeys } from "@/services/task.service";
-import type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig } from "@/types/bindings";
+import type {
+  BranchPullRequestInfo,
+  IntegrationStatus,
+  LandingMode,
+  ProjectIssueTrackingConfig,
+  PullRequestCheckInfo,
+} from "@/types/bindings";
 
 export type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig };
 
@@ -44,6 +50,18 @@ export const integrationQueryKeys = {
   codeHostingStatusAll: () => [...integrationQueryKeys.base, "code_hosting_status"] as const,
   codeHostingStatus: (projectId: number) =>
     [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
+  branchPullRequest: (projectId: number, branch: string) =>
+    [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
+  // Keyed on the head sha as well as the number: a push replaces the whole run, and the previous
+  // commit's results are not a stale version of the new ones, they are a different answer.
+  pullRequestChecks: (projectId: number, number: number, headSha: string) =>
+    [...integrationQueryKeys.base, "pull_request_checks", projectId, number, headSha] as const,
+  projectPullRequests: (projectId: number) =>
+    [...integrationQueryKeys.base, "project_pull_requests", projectId] as const,
+  // Same head-sha keying as the checks, for the same reason and a stronger one: line counts cannot
+  // change without a new commit, so an answer keyed this way is never stale and never refetched.
+  pullRequestFacts: (projectId: number, number: number, headSha: string) =>
+    [...integrationQueryKeys.base, "pull_request_facts", projectId, number, headSha] as const,
 };
 
 export function useListIntegrations() {
@@ -135,6 +153,170 @@ export function useCodeHostingStatus(projectId: number) {
     enabled: projectId > 0,
     staleTime: 60_000,
     retry: false,
+  });
+}
+
+/**
+ * The pull request open on `branch`, asked of the forge rather than read from anything we stored.
+ *
+ * Nothing persists a branch's pull request, which is what lets this find one opened on the forge by
+ * hand. The cost is a network round trip per poll, so it is deliberately slower than the local git
+ * queries beside it and `enabled` carries three gates rather than one: a branch with no upstream
+ * cannot have a pull request, and a forge with no branch-lookup arm would only ever error.
+ */
+export function useBranchPullRequest(
+  projectId: number | null,
+  branch: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.branchPullRequest(projectId ?? -1, branch ?? ""),
+    queryFn: () => api.findBranchPullRequest(projectId!, branch!),
+    enabled: enabled && projectId != null && !!branch,
+    // Everything on this card except the checks: title, branches, commit and line counts. It moves
+    // when somebody pushes, so a minute of lag costs nothing — and each call is three requests to
+    // the forge, against the one the checks poll below makes.
+    refetchInterval: 60_000,
+    // No stale window. This is the query the card's first paint waits on, and serving a cached
+    // answer only to refetch behind it is a slower first paint, not a faster one.
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * Just the checks, polled fast.
+ *
+ * Separate from the lookup above because the two halves of this card move at different speeds: a
+ * pull request's title and diff change when somebody pushes, its checks change while you are
+ * watching them. One request per poll on GitHub, so ten seconds is affordable where it would not be
+ * for the full lookup.
+ *
+ * Runs only for an open pull request — a merged or closed one's checks cannot change, and polling
+ * them would spend a request every ten seconds for the life of the session.
+ */
+export function useBranchPullRequestChecks(
+  projectId: number | null,
+  pullRequest: BranchPullRequestInfo | null,
+  enabled: boolean,
+) {
+  const number = pullRequest?.state === "Open" ? pullRequest.number : null;
+  return useQuery(
+    pullRequestChecksOptions(projectId, number, pullRequest?.head_sha ?? null, enabled, {
+      // Faster, and never stopping: this is one pull request the user is actively waiting on, and a
+      // forge can still queue a check run under a head sha whose other runs have all finished.
+      intervalMs: 10_000,
+      stopWhenSettled: false,
+    }),
+  );
+}
+
+/**
+ * One pull request's checks, as options rather than a hook.
+ *
+ * The Worktrees view needs every open pull request's checks at once — its CI filter cannot count
+ * what it has not asked for — and that is a list whose length is the project's, so it has to go
+ * through `useQueries`. Sharing these options with the session panel above is what keeps a pull
+ * request shown in both places at one request rather than two.
+ *
+ * The defaults are the many-at-once case: `stopWhenSettled` ends the polling once every check has a
+ * result, which is sound because the key holds the head sha and a finished run under that sha
+ * cannot change — a new commit asks under a new key. The `staleTime` is what stops a window focus
+ * refetching twenty pull requests at once.
+ */
+export function pullRequestChecksOptions(
+  projectId: number | null,
+  number: number | null,
+  headSha: string | null,
+  enabled: boolean,
+  { intervalMs = 30_000, stopWhenSettled = true } = {},
+) {
+  return {
+    queryKey: integrationQueryKeys.pullRequestChecks(projectId ?? -1, number ?? -1, headSha ?? ""),
+    queryFn: () => api.fetchBranchPullRequestChecks(projectId!, number!, headSha),
+    enabled: enabled && projectId != null && number != null,
+    refetchInterval: (query: { state: { data?: PullRequestCheckInfo[] } }) => {
+      if (!stopWhenSettled) return intervalMs;
+      const checks = query.state.data;
+      // No answer yet is not a settled run, so keep asking.
+      if (!checks || checks.length === 0) return intervalMs;
+      return checks.some((check) => check.status === "Running") ? intervalMs : false;
+    },
+    staleTime: 30_000,
+    retry: false,
+  };
+}
+
+/**
+ * Every pull request open on the project's forge, in one request.
+ *
+ * What makes the Worktrees view affordable: a card looks its own pull request up in this list by
+ * branch rather than asking the forge, so the cost is one request for the view rather than one per
+ * worktree. The command answers an empty list rather than an error for a project with no forge, so
+ * there is nothing to gate here beyond visibility.
+ */
+export function useProjectPullRequests(projectId: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: integrationQueryKeys.projectPullRequests(projectId ?? -1),
+    queryFn: () => api.listProjectPullRequests(projectId!),
+    enabled: enabled && projectId != null,
+    refetchInterval: 60_000,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * The line and file counts the list endpoint does not carry.
+ *
+ * `staleTime: Infinity` is not a guess about freshness: the key holds the head sha and these
+ * numbers describe that exact commit, so they cannot change without the key changing. A pushed
+ * commit asks a new question under a new key.
+ */
+export function usePullRequestFacts(
+  projectId: number | null,
+  number: number | null,
+  headSha: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.pullRequestFacts(projectId ?? -1, number ?? -1, headSha ?? ""),
+    queryFn: () => api.fetchPullRequestFacts(projectId!, number!),
+    enabled: enabled && projectId != null && number != null,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/**
+ * Open a pull request for a branch, touching no task.
+ *
+ * Invalidates the lookup above rather than writing its result into the cache: the forge is the only
+ * source for this card, and a hand-placed entry would be the one copy of that state that could be
+ * wrong.
+ */
+export function useOpenPullRequestForBranch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      branch,
+      base,
+      title,
+      body,
+    }: {
+      projectId: number;
+      branch: string;
+      base: string;
+      title: string;
+      body: string;
+    }) => api.openPullRequestForBranch(projectId, branch, base, title, body),
+    onSuccess: (_data, { projectId, branch }) => {
+      void queryClient.invalidateQueries({
+        queryKey: integrationQueryKeys.branchPullRequest(projectId, branch),
+      });
+    },
+    onError: createErrorToastHandler("Failed to open the pull request"),
   });
 }
 
