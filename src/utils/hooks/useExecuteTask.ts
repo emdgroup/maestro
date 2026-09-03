@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
 import { taskBranchName } from "@/lib/generateSessionName";
+import { resolveAutomaticMode } from "@/lib/permission-modes";
 import type {
   Task,
   JsonValue,
@@ -78,21 +79,6 @@ const REVIEWER_PROTOCOL =
   "reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific " +
   "about what to fix and where, because your reply is what the coder is given. Do not modify any " +
   "files.";
-
-/// Modes that let an agent write, and the read-only ones for the three roles that must not. Used
-/// only when no profile names a mode.
-///
-/// A fallback list, not a ladder: harnesses disagree about what these are called, so this is read
-/// in order and the first one *this* agent advertises wins. Every name past the first exists
-/// because some harness uses it and no other — the list is expected to grow as harnesses are tried,
-/// which is why the resolved mode is logged.
-///
-/// `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
-/// running a command, and a task in this pipeline is meant to run without a person: stopping on
-/// every test run is the failure mode, not a safeguard. `bypassPermissions` is last for the
-/// opposite reason — it is the right answer only when a harness offers nothing better.
-const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissions"];
-const READ_ONLY_MODES = ["readonly", "plan"];
 
 /// The stage a role runs, as the board names it. Roles are an internal noun; the user picked
 /// "Refine" off a card and configured "Refinement" in Settings.
@@ -435,15 +421,9 @@ export function useExecuteTask(
         }
       } else if (capturedModeIds.length > 0) {
         try {
-          const priorities = readOnly ? READ_ONLY_MODES : WRITABLE_MODES;
-          // The read-only fallback deliberately has none: an agent that advertises modes and none
-          // of them is read-only has told us it cannot be held. Picking "the least bad writable
-          // mode" there would quietly hand write access to a role whose whole point is not having
-          // it, so it says so and lets the instruction stand alone.
-          const resolvedMode = readOnly
-            ? priorities.find((m) => capturedModeIds.includes(m))
-            : (priorities.find((m) => capturedModeIds.includes(m)) ??
-              capturedModeIds.find((m) => !READ_ONLY_MODES.includes(m)));
+          // Same helper the profile card labels its automatic option with, so what Settings
+          // promised is what runs here.
+          const resolvedMode = resolveAutomaticMode(capturedModeIds, readOnly);
           if (resolvedMode) {
             await api.setAcpMode(logId, resolvedMode);
           } else if (readOnly) {
