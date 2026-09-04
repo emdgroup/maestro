@@ -1,4 +1,11 @@
-import React, { useState, useRef, useCallback, useImperativeHandle, useLayoutEffect } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+} from "react";
 import { flushSync } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
@@ -20,6 +27,37 @@ import { AttachmentShelf } from "./AttachmentShelf";
 import { MentionSuggestionsPanel } from "./MentionSuggestionsPanel";
 import { CommandSuggestionsPanel } from "./CommandSuggestionsPanel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+
+/** Share of its bounds the input may grow to before it scrolls internally. */
+const MAX_HEIGHT_RATIO = 0.75;
+
+/**
+ * The element the composer is laid out against — marked by the panel that positions it.
+ *
+ * Measured against the container rather than the window because the composer is absolutely
+ * positioned inside a clipping box that is shorter than the viewport: a viewport-relative cap
+ * lets the box outgrow that container, and since it grows upward from `bottom-0` what gets cut
+ * off is the top — the text the user typed first, unreachable rather than merely scrolled.
+ */
+const BOUNDS_SELECTOR = "[data-compose-bounds]";
+
+/** The tallest the input may render. Falls back to the window when laid out outside any bounds. */
+function maxHeight(el: HTMLTextAreaElement) {
+  const bounds = el.closest(BOUNDS_SELECTOR);
+  return (bounds?.clientHeight ?? window.innerHeight) * MAX_HEIGHT_RATIO;
+}
+
+/**
+ * Size the input to its content, capped.
+ *
+ * A textarea does not grow with its content, so every path that writes into this one has to
+ * resize it afterwards — and each has to clamp against the same bound, or the box outgrows its
+ * container and the text being typed renders behind the send row.
+ */
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, maxHeight(el))}px`;
+}
 
 export interface ComposeBarHandle {
   focus(): void;
@@ -82,17 +120,15 @@ export function ComposeBar({
       textareaRef.current?.focus();
     },
     seed(text: string) {
-      // A textarea does not grow with its content, so every path that writes into this box has to
-      // resize it afterwards. Committing the value synchronously is what makes the measurement
-      // below read the seeded text rather than what was there before.
+      // Committing the value synchronously is what makes the measurement in `autoGrow` read the
+      // seeded text rather than what was there before.
       flushSync(() => {
         setValue((previous) => (previous.trim() ? `${previous.trimEnd()}\n\n${text}` : text));
       });
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+      autoGrow(el);
     },
   }));
 
@@ -125,6 +161,19 @@ export function ComposeBar({
     onContentChange?.(sizer.getBoundingClientRect().width);
   }, [value, onContentChange]);
 
+  // The cap is a share of the container, so it moves when the container does — the window being
+  // resized, the side panel dragged, a plan panel opening above. Without this a box grown while
+  // the panel was tall keeps that height inside a panel that is now shorter, which is the exact
+  // clipping the container bound exists to prevent.
+  useEffect(() => {
+    const el = textareaRef.current;
+    const bounds = el?.closest(BOUNDS_SELECTOR);
+    if (!el || !bounds) return;
+    const observer = new ResizeObserver(() => autoGrow(el));
+    observer.observe(bounds);
+    return () => observer.disconnect();
+  }, []);
+
   const resetForm = useCallback(() => {
     setValue("");
     mentionAC.reset();
@@ -152,8 +201,7 @@ export function ComposeBar({
         const cursorPos = before.length + insertion.length;
         textareaRef.current.selectionStart = cursorPos;
         textareaRef.current.selectionEnd = cursorPos;
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
+        autoGrow(textareaRef.current);
       }
     },
     [value, mentionAC, commandAC],
@@ -174,8 +222,7 @@ export function ComposeBar({
         const cursorPos = before.length + insertion.length;
         textareaRef.current.selectionStart = cursorPos;
         textareaRef.current.selectionEnd = cursorPos;
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
+        autoGrow(textareaRef.current);
       }
     },
     [value, commandAC],
@@ -330,9 +377,7 @@ export function ComposeBar({
     const commandDetected = commandAC.onInputChange(newValue, cursor);
     if (commandDetected) mentionAC.closeMentions();
     else mentionAC.onInputChange(newValue, cursor);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    autoGrow(e.target);
   };
 
   const hasAttachmentErrors = attach.attachments.some((a) => !!a.error);
@@ -415,7 +460,7 @@ export function ComposeBar({
                 logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"
               }
               rows={1}
-              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 max-h-40 leading-relaxed custom-scrollbar"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 leading-relaxed custom-scrollbar"
             />
           </div>
           {sendError && <p className="px-3.5 pb-1 text-xs text-destructive">{sendError}</p>}

@@ -616,7 +616,9 @@ export function AgentActivityPanel({
             markSeen={markSeen}
             lastAgentSectionId={lastAgentSectionId}
           />
-          <div className="flex-1 relative min-h-0 overflow-hidden">
+          {/* `data-compose-bounds`: this box clips, and both ComposeBar variants are positioned
+              against it, so it is what the composer sizes its growth to. */}
+          <div className="flex-1 relative min-h-0 overflow-hidden" data-compose-bounds>
             {/*
               Only the selected session's conversation is rendered. AgentMonitor keeps a panel
               mounted for every ACP session so its listeners and reducer state survive
