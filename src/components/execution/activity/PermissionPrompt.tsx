@@ -1,13 +1,18 @@
 import { Shield, Pencil, Terminal, Eye, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
+import { DynamicIcon } from "@/ui/dynamic-icon";
+import { CommandLabel } from "./CommandLabel";
 import { PlanPermissionOverlay } from "./PlanPermissionOverlay";
+import { rowIcon } from "./ToolCallTimeline";
 import {
   isAllowKind,
   extractOptions,
   extractTitle,
   extractBodyText,
+  extractCommandText,
   isPlanPermission,
   isPlanToolCallItem,
+  toolCallItemFromPayload,
 } from "./permission-prompt-utils";
 import type { PermissionOption } from "./permission-prompt-utils";
 
@@ -59,6 +64,7 @@ export function PermissionPrompt({
 }: PermissionPromptProps) {
   const title = extractTitle(payload);
   const bodyText = extractBodyText(payload);
+  const command = extractCommandText(payload);
   const options = extractOptions(payload);
 
   if (fullHeight) {
@@ -72,21 +78,29 @@ export function PermissionPrompt({
     );
   }
 
-  // Indexed inline rather than through a helper: the compiler cannot see through an
-  // opaque call returning a component, and reads it as one being created per render.
+  // Same icon the stream row for this call will carry — `rowIcon` keys off kind, the
+  // agent's tool name and the `mcp__` prefix, none of which the map below can see.
+  // That map is the fallback for a legacy payload that sends `tool` and no `toolCall`.
+  const item = toolCallItemFromPayload(payload);
   const toolName = payload.tool as string | undefined;
-  const ToolIcon = TOOL_ICON_MAP[toolName ?? ""] ?? Shield;
+  const icon = item ? rowIcon(item) : (TOOL_ICON_MAP[toolName ?? ""] ?? Shield);
 
   return (
     <div className="rounded-[10px] border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent p-3.5 flex flex-col gap-2.5 shadow-[0_2px_8px_oklch(0%_0_0/0.08)]">
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0">
-          <ToolIcon className="w-4 h-4 text-accent" />
+          <DynamicIcon icon={icon} className="w-4 h-4 text-accent" />
         </div>
         <div className="text-sm font-semibold text-foreground">{title}</div>
       </div>
 
-      {bodyText && (
+      {command && (
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 max-h-[80px] overflow-y-auto custom-scrollbar">
+          <CommandLabel command={command} />
+        </div>
+      )}
+
+      {bodyText && bodyText !== command && (
         <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[80px] overflow-y-auto">
           {bodyText}
         </div>
