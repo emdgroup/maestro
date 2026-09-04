@@ -1,5 +1,10 @@
-import type { ToolCallItem } from "@/components/execution/activity/types.ts";
-import { formatMcpToolName } from "@/components/execution/activity/ToolCallTimeline.tsx";
+import type {
+  ToolCallContent,
+  ToolCallItem,
+  ToolCallLocation,
+} from "@/components/execution/activity/types.ts";
+import { isTerminalKind, rowLabel } from "@/components/execution/activity/ToolCallTimeline.tsx";
+import { extractAgentMeta } from "@/components/execution/activity/agentMeta.ts";
 
 export interface PermissionOption {
   optionId: string;
@@ -32,10 +37,38 @@ export function extractOptions(payload: Record<string, unknown>): PermissionOpti
   return opts as PermissionOption[];
 }
 
+/**
+ * The payload's `toolCall` is an ACP ToolCallUpdate — the same object the stream
+ * renders a row from. Rebuilding a `ToolCallItem` out of it lets the card reuse
+ * `rowLabel` and `rowIcon` rather than keep a second, worse copy of that logic.
+ */
+export function toolCallItemFromPayload(payload: Record<string, unknown>): ToolCallItem | null {
+  const toolCall = payload.toolCall;
+  if (toolCall == null || typeof toolCall !== "object" || Array.isArray(toolCall)) return null;
+  const tc = toolCall as Record<string, unknown>;
+  return {
+    toolCallId: typeof tc.toolCallId === "string" ? tc.toolCallId : "",
+    title: typeof tc.title === "string" ? tc.title : "",
+    kind: typeof tc.kind === "string" ? tc.kind : "other",
+    // Nothing has run yet — this prompt is what it is waiting on.
+    status: "pending",
+    content: Array.isArray(tc.content) ? (tc.content as ToolCallContent[]) : [],
+    locations: Array.isArray(tc.locations) ? (tc.locations as ToolCallLocation[]) : [],
+    rawInput: tc.rawInput as Record<string, unknown> | undefined,
+    meta: extractAgentMeta(tc),
+  };
+}
+
+/**
+ * The heading the stream row would use for the same call: the agent's own
+ * description of a shell command, whose ACP title is the command line and is
+ * unreadable as a heading. Falls back to the title, so an agent that sends no
+ * description is no worse off than before.
+ */
 export function extractTitle(payload: Record<string, unknown>): string {
-  const toolCall = payload.toolCall as Record<string, unknown> | undefined;
-  const title = toolCall?.title as string | undefined;
-  if (title) return formatMcpToolName(title) ?? title;
+  const item = toolCallItemFromPayload(payload);
+  const label = item ? rowLabel(item) : "";
+  if (label) return label;
   const tool = payload.tool as string | undefined;
   if (!tool) return "Action";
   const map: Record<string, string> = {
@@ -77,6 +110,17 @@ export function extractBodyText(payload: Record<string, unknown>): string | null
     }
   }
   return texts.length > 0 ? texts.join("\n\n") : null;
+}
+
+/**
+ * The command a shell prompt is deciding on, for the card to show below the
+ * heading. Null when the heading *is* the command, so the card never prints the
+ * same string twice — the rule `labelBecomesCommand` applies to a stream row.
+ */
+export function extractCommandText(payload: Record<string, unknown>): string | null {
+  const item = toolCallItemFromPayload(payload);
+  if (!item || !isTerminalKind(item.kind) || !item.meta?.description) return null;
+  return item.title || null;
 }
 
 export function isPlanPermission(payload: Record<string, unknown>): boolean {
