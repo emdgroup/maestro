@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/emdgroup/maestro/compare/v0.21.0...v0.21.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* send session notifications on Windows ([#320](https://github.com/emdgroup/maestro/issues/320)) ([7672b8b](https://github.com/emdgroup/maestro/commit/7672b8b33426b57ad9fc59da5748e4d652770129))
+
 ## [0.21.0](https://github.com/emdgroup/maestro/compare/v0.20.0...v0.21.0) (2026-09-02)
 
 ### Features
