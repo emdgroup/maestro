@@ -60,13 +60,21 @@ pub struct CodeHostingStatus {
     /// "connect it in Settings" is the right prompt for an unconnected GitHub and a misleading one
     /// for a forge Maestro could not post to either way. `false` whenever the forge is unidentified.
     pub forge_supports_pull_requests: bool,
-    /// Whether this forge can be asked which pull request a branch belongs to.
+    /// Whether this forge can be asked for its open pull requests.
     ///
-    /// Separate from `forge_supports_pull_requests` because the two are genuinely different sets:
-    /// Bitbucket and Azure DevOps can have a pull request opened on them but cannot yet be searched
-    /// by head branch. The session panel polls only when this is true, so that an unsupported forge
-    /// costs no requests rather than one failing request every thirty seconds.
-    pub forge_supports_branch_lookup: bool,
+    /// Every detected card rests on this: a session finds its pull request in that list, and so
+    /// does every worktree card. Separate from `forge_supports_pull_requests` because the two are
+    /// different questions — opening one and enumerating them are different endpoints, and a forge
+    /// could gain either first. Both views poll only when this is true, so a forge without a lister
+    /// costs no requests rather than one failing request per cycle.
+    pub forge_supports_pull_request_list: bool,
+    /// Whether this forge will name its individual checks.
+    ///
+    /// Weaker than "has CI": Bitbucket reports a verdict Maestro can read without enumerating
+    /// anything, and Gitea's commit-status shape has moved between versions. The card's rollup
+    /// needs names, so it polls only when this is true — without it the checks query asks every ten
+    /// seconds for a list that is empty by construction and can never become anything else.
+    pub forge_enumerates_checks: bool,
     /// Whether this call wrote `code_hosting` into `.maestro/settings.json`.
     pub applied: bool,
 }
@@ -178,7 +186,8 @@ pub async fn code_hosting_status(
         remote_url: None,
         config: None,
         forge_supports_pull_requests: false,
-        forge_supports_branch_lookup: false,
+        forge_supports_pull_request_list: false,
+        forge_enumerates_checks: false,
         applied: false,
     };
 
@@ -221,7 +230,8 @@ pub async fn code_hosting_status(
             remote_url: Some(remote_url),
             config: None,
             forge_supports_pull_requests: false,
-            forge_supports_branch_lookup: false,
+            forge_supports_pull_request_list: false,
+            forge_enumerates_checks: false,
             applied: false,
         });
     };
@@ -259,8 +269,9 @@ pub async fn code_hosting_status(
         forge_supports_pull_requests: crate::integration::pull_request::supports_pull_requests(
             &config,
         ),
-        forge_supports_branch_lookup:
-            crate::integration::pull_request::supports_branch_lookup(&config),
+        forge_supports_pull_request_list:
+            crate::integration::pull_request::supports_pull_request_list(&config),
+        forge_enumerates_checks: crate::integration::pull_request::enumerates_checks(&config),
         config: Some(config),
         applied,
     })

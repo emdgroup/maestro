@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { BranchPullRequestInfo, PullRequestCheckInfo } from "@/types/bindings";
+import type { PullRequestCheckInfo } from "@/types/bindings";
+import type { SessionPullRequest } from "./useSessionShipState";
 
 vi.mock("@/services/task.service", () => ({
   useTaskAttachmentsQuery: () => ({ data: [] }),
@@ -11,7 +12,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
 const { CheckRollup, PullRequestFacts, branchSummary } = await import("./OverviewPanel");
 
-function pullRequest(overrides: Partial<BranchPullRequestInfo> = {}): BranchPullRequestInfo {
+function pullRequest(overrides: Partial<SessionPullRequest> = {}): SessionPullRequest {
   return {
     number: 310,
     url: "https://github.com/emdgroup/maestro/pull/310",

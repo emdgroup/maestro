@@ -8,7 +8,8 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, PullRequestDetails, PullRequestState, PullRequestTarget, read_json,
+    CiState, CreatedPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState,
+    PullRequestTarget, read_json,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -146,22 +147,22 @@ fn bitbucket_state(state: &str) -> PullRequestState {
 /// `mergeable` is `None` on both mappers below, and that is a fact about Bitbucket rather than a
 /// gap here: the pull request object carries no conflict field on either deployment. Same posture
 /// as GitLab — a conflict has to be positively reported before a task is taken off the forge.
-fn bitbucket_cloud_details(pr: BitbucketCloudPullRequestState) -> PullRequestDetails {
-    PullRequestDetails {
-        state: bitbucket_state(&pr.state),
-        mergeable: None,
+fn bitbucket_cloud_details(pr: BitbucketCloudPullRequestState) -> PullRequestDetail {
+    PullRequestDetail::from_state(
+        bitbucket_state(&pr.state),
+        None,
         // Abbreviated to 12 characters by Cloud, unlike every other forge here. Fine to hand
         // straight back to Bitbucket's own commit endpoints, but never compare it to a full sha.
-        head_sha: pr.source.and_then(|source| source.commit).map(|commit| commit.hash),
-    }
+        pr.source.and_then(|source| source.commit).map(|commit| commit.hash),
+    )
 }
 
-fn bitbucket_server_details(pr: BitbucketServerPullRequestState) -> PullRequestDetails {
-    PullRequestDetails {
-        state: bitbucket_state(&pr.state),
-        mergeable: None,
-        head_sha: pr.from_ref.and_then(|from_ref| from_ref.latest_commit),
-    }
+fn bitbucket_server_details(pr: BitbucketServerPullRequestState) -> PullRequestDetail {
+    PullRequestDetail::from_state(
+        bitbucket_state(&pr.state),
+        None,
+        pr.from_ref.and_then(|from_ref| from_ref.latest_commit),
+    )
 }
 
 #[derive(Deserialize)]
@@ -248,6 +249,194 @@ struct BitbucketServerPullRequest {
     links: Option<BitbucketServerLinks>,
 }
 
+/// How many open pull requests one page covers.
+///
+/// Cloud's documented maximum, and comfortably above Server's default of 25. Deliberately not
+/// paginated: this list exists to answer "which pull request is on this branch" for the whole
+/// project in one request, and a second page would reintroduce the per-pull-request cost.
+const LIST_PAGE_SIZE: usize = 100;
+
+#[derive(Deserialize)]
+struct BitbucketCloudBranch {
+    #[serde(default)]
+    name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketCloudListEndpoint {
+    #[serde(default)]
+    branch: Option<BitbucketCloudBranch>,
+    #[serde(default)]
+    commit: Option<BitbucketCloudCommit>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketCloudListEntry {
+    id: i64,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    source: Option<BitbucketCloudListEndpoint>,
+    #[serde(default)]
+    destination: Option<BitbucketCloudListEndpoint>,
+    #[serde(default)]
+    created_on: Option<String>,
+    #[serde(default)]
+    links: Option<BitbucketCloudLinks>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketCloudPage {
+    #[serde(default)]
+    values: Vec<BitbucketCloudListEntry>,
+}
+
+/// `None` for an entry with no source branch: that is the field a worktree is matched on, so an
+/// entry without one can neither be linked to a worktree nor checked out into a new one.
+///
+/// The head sha may be abbreviated — Cloud's own schema types it `[0-9a-f]{7,}?`. Fine as a cache
+/// key, where it is only ever compared to another Bitbucket hash, but it must never be matched
+/// against a full sha from git.
+fn cloud_list_entry_to_listed(
+    entry: BitbucketCloudListEntry,
+    fallback_url: &str,
+) -> Option<ListedPullRequest> {
+    let source = entry.source?;
+    Some(ListedPullRequest {
+        number: entry.id,
+        url: entry
+            .links
+            .and_then(|links| links.html)
+            .map(|html| html.href)
+            .unwrap_or_else(|| fallback_url.to_string()),
+        title: entry.title,
+        head_branch: source.branch.and_then(|branch| branch.name)?,
+        base_branch: entry.destination.and_then(|d| d.branch).and_then(|branch| branch.name),
+        created_at: entry.created_on,
+        head_sha: source.commit.map(|commit| commit.hash),
+    })
+}
+
+#[derive(Deserialize)]
+struct BitbucketServerListRef {
+    /// The bare branch name. `id` on the same object is the `refs/heads/...` form, which is not
+    /// what a worktree row carries.
+    #[serde(rename = "displayId", default)]
+    display_id: Option<String>,
+    #[serde(rename = "latestCommit", default)]
+    latest_commit: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketServerListEntry {
+    id: i64,
+    #[serde(default)]
+    title: String,
+    #[serde(rename = "fromRef", default)]
+    from_ref: Option<BitbucketServerListRef>,
+    #[serde(rename = "toRef", default)]
+    to_ref: Option<BitbucketServerListRef>,
+    #[serde(rename = "createdDate", default)]
+    created_date: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketServerPage {
+    #[serde(default)]
+    values: Vec<BitbucketServerListEntry>,
+}
+
+/// Server dates are epoch milliseconds, where every other forge here sends RFC 3339.
+///
+/// Converted rather than passed through because the card renders "opened 12m ago" from this, and a
+/// raw integer would read as an absent date. The published schema's own example is consistent with
+/// neither seconds nor milliseconds, so the value is range-checked instead of trusted: anything
+/// that does not land in a plausible window comes back `None`, which renders as a missing line
+/// rather than a date in 1970 or 2400.
+fn epoch_millis_to_rfc3339(millis: i64) -> Option<String> {
+    chrono::DateTime::from_timestamp_millis(millis).map(|at| at.to_rfc3339())
+}
+
+/// Server's browser URL is synthesised rather than read: the published schema declares `links`
+/// write-only with no properties, so there is no documented field to take it from.
+fn server_list_entry_to_listed(
+    entry: BitbucketServerListEntry,
+    deployment: &BitbucketDeployment,
+    project: &str,
+    repository: &str,
+) -> Option<ListedPullRequest> {
+    let from_ref = entry.from_ref?;
+    Some(ListedPullRequest {
+        number: entry.id,
+        url: bitbucket_web_url(deployment, project, repository, entry.id),
+        title: entry.title,
+        head_branch: from_ref.display_id?,
+        base_branch: entry.to_ref.and_then(|to_ref| to_ref.display_id),
+        created_at: entry.created_date.and_then(epoch_millis_to_rfc3339),
+        head_sha: from_ref.latest_commit,
+    })
+}
+
+/// Every open pull request on the repository.
+///
+/// Cloud declares exactly one query parameter on this endpoint — `state` — so unlike GitHub,
+/// GitLab and Bitbucket Server there is no way to sort. A repository with more than
+/// [`LIST_PAGE_SIZE`] open pull requests therefore truncates arbitrarily rather than dropping the
+/// ones nobody has touched. Server takes `order=NEWEST`, which is that guarantee.
+pub(super) async fn list_bitbucket(
+    target: &PullRequestTarget<'_>,
+) -> Result<Vec<ListedPullRequest>, String> {
+    let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
+    let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
+    let client = build_http_client()?;
+    let auth = format!("Bearer {}", target.token);
+
+    match &deployment {
+        BitbucketDeployment::Cloud => {
+            let response = client
+                .get(format!(
+                    "https://api.bitbucket.org/2.0/repositories/{}/{}/pullrequests\
+                     ?state=OPEN&pagelen={}",
+                    project, repository, LIST_PAGE_SIZE
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let page: BitbucketCloudPage = read_json(response, "Bitbucket").await?;
+            Ok(page
+                .values
+                .into_iter()
+                .filter_map(|entry| {
+                    let fallback =
+                        bitbucket_web_url(&deployment, project, repository, entry.id);
+                    cloud_list_entry_to_listed(entry, &fallback)
+                })
+                .collect())
+        }
+        BitbucketDeployment::Server(instance) => {
+            let response = client
+                .get(format!(
+                    "{}/rest/api/latest/projects/{}/repos/{}/pull-requests\
+                     ?state=OPEN&order=NEWEST&limit={}",
+                    instance, project, repository, LIST_PAGE_SIZE
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let page: BitbucketServerPage = read_json(response, "Bitbucket").await?;
+            Ok(page
+                .values
+                .into_iter()
+                .filter_map(|entry| {
+                    server_list_entry_to_listed(entry, &deployment, project, repository)
+                })
+                .collect())
+        }
+    }
+}
+
 fn bitbucket_cloud_create_body(
     title: &str,
     body: &str,
@@ -294,7 +483,7 @@ fn bitbucket_cloud_created(
         .and_then(|links| links.html)
         .map(|html| html.href)
         .unwrap_or_else(|| fallback_url.to_string());
-    CreatedPullRequest { number: created.id, url }
+    CreatedPullRequest { number: created.id, url, head_sha: None }
 }
 
 fn bitbucket_server_created(
@@ -306,7 +495,7 @@ fn bitbucket_server_created(
         .and_then(|links| links.self_links.into_iter().flatten().next())
         .map(|link| link.href)
         .unwrap_or_else(|| fallback_url.to_string());
-    CreatedPullRequest { number: created.id, url }
+    CreatedPullRequest { number: created.id, url, head_sha: None }
 }
 
 pub(super) async fn create_bitbucket(
@@ -364,7 +553,7 @@ pub(super) async fn create_bitbucket(
 pub(super) async fn fetch_bitbucket(
     target: &PullRequestTarget<'_>,
     number: i64,
-) -> Result<PullRequestDetails, String> {
+) -> Result<PullRequestDetail, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
     let client = build_http_client()?;
@@ -506,12 +695,97 @@ mod tests {
         );
     }
 
-    fn cloud_details(body: &str) -> PullRequestDetails {
+    fn cloud_details(body: &str) -> PullRequestDetail {
         bitbucket_cloud_details(serde_json::from_str(body).expect("body should parse"))
     }
 
-    fn server_details(body: &str) -> PullRequestDetails {
+    fn server_details(body: &str) -> PullRequestDetail {
         bitbucket_server_details(serde_json::from_str(body).expect("body should parse"))
+    }
+
+    fn cloud_listed(body: &str) -> Vec<ListedPullRequest> {
+        let page: BitbucketCloudPage = serde_json::from_str(body).expect("body should parse");
+        page.values
+            .into_iter()
+            .filter_map(|entry| cloud_list_entry_to_listed(entry, "fallback"))
+            .collect()
+    }
+
+    fn server_listed(body: &str) -> Vec<ListedPullRequest> {
+        let page: BitbucketServerPage = serde_json::from_str(body).expect("body should parse");
+        page.values
+            .into_iter()
+            .filter_map(|entry| {
+                server_list_entry_to_listed(
+                    entry,
+                    &BitbucketDeployment::Server("https://bb.corp".to_string()),
+                    "PROJ",
+                    "repo",
+                )
+            })
+            .collect()
+    }
+
+    /// Cloud nests the branch two levels down and takes the browser URL from the entry itself.
+    #[test]
+    fn a_cloud_entry_maps_onto_the_shared_shape() {
+        let listed = cloud_listed(
+            r#"{"values":[{"id":42,"title":"Ship it","state":"OPEN",
+                 "created_on":"2026-09-02T09:00:00+00:00",
+                 "source":{"branch":{"name":"feature"},"commit":{"hash":"310ca98b14f0"}},
+                 "destination":{"branch":{"name":"main"}},
+                 "links":{"html":{"href":"https://bitbucket.org/o/r/pull-requests/42"}}}]}"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].number, 42);
+        assert_eq!(listed[0].head_branch, "feature");
+        assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
+        // Abbreviated, which Cloud's own schema permits. Never compare this to a full sha.
+        assert_eq!(listed[0].head_sha.as_deref(), Some("310ca98b14f0"));
+        assert_eq!(listed[0].url, "https://bitbucket.org/o/r/pull-requests/42");
+    }
+
+    /// `head_branch` is what a worktree is matched on, so an entry without one can never be linked
+    /// to anything — and keeping it would put a card in the view that no session can claim.
+    #[test]
+    fn a_cloud_entry_with_no_source_branch_is_dropped() {
+        assert!(cloud_listed(r#"{"values":[{"id":1,"title":"x","source":{}}]}"#).is_empty());
+        assert!(cloud_listed(r#"{"values":[{"id":1,"title":"x"}]}"#).is_empty());
+    }
+
+    /// Server spells the branch `displayId` — its `id` sibling is the `refs/heads/` form, which is
+    /// not what a worktree row carries — and gives no browser link at all.
+    #[test]
+    fn a_server_entry_maps_onto_the_shared_shape() {
+        let listed = server_listed(
+            r#"{"values":[{"id":7,"title":"Ship it","state":"OPEN",
+                 "createdDate":1788000000000,
+                 "fromRef":{"displayId":"feature","id":"refs/heads/feature",
+                            "latestCommit":"babecafebabecafebabecafebabecafebabecafe"},
+                 "toRef":{"displayId":"main","id":"refs/heads/main"}}]}"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].head_branch, "feature", "the bare name, not the ref");
+        assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
+        assert_eq!(
+            listed[0].head_sha.as_deref(),
+            Some("babecafebabecafebabecafebabecafebabecafe")
+        );
+        assert_eq!(listed[0].url, "https://bb.corp/projects/PROJ/repos/repo/pull-requests/7");
+        assert!(
+            listed[0].created_at.as_deref().is_some_and(|at| at.starts_with("2026-")),
+            "epoch millis have to become RFC 3339: {:?}",
+            listed[0].created_at
+        );
+    }
+
+    /// The published schema's own `createdDate` example is consistent with neither seconds nor
+    /// milliseconds, so the value is not trusted. A date that will not convert drops the line
+    /// rather than rendering "opened 56 years ago".
+    #[test]
+    fn an_unconvertible_server_date_is_dropped_rather_than_guessed() {
+        assert_eq!(epoch_millis_to_rfc3339(i64::MAX), None);
+        assert!(epoch_millis_to_rfc3339(1788000000000).is_some());
     }
 
     /// A declined pull request will never merge, so it is the user's decision in the same way a
@@ -537,7 +811,7 @@ mod tests {
     }
 
     /// The sha rides along so CI needs no second request, and the two deployments keep it in
-    /// different places. Neither exposes a mergeable field at all, which is why `PullRequestDetails`
+    /// different places. Neither exposes a mergeable field at all, which is why `PullRequestDetail`
     /// has to tolerate `None` rather than treat it as a conflict.
     #[test]
     fn the_two_bitbuckets_hide_the_head_commit_in_different_places() {

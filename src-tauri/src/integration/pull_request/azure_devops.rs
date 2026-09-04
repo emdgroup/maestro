@@ -9,7 +9,9 @@
 
 use serde::Deserialize;
 
-use super::{CreatedPullRequest, PullRequestDetails, PullRequestState, PullRequestTarget};
+use super::{
+    CreatedPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState, PullRequestTarget,
+};
 use crate::integration::azure_devops::{AZDO_API_VERSION, make_azdo_auth, normalize_azdo_org_url};
 use crate::integration::build_http_client;
 
@@ -264,17 +266,17 @@ fn azure_devops_mergeable(merge_status: Option<&str>) -> Option<bool> {
 /// `head_sha` is the source head as of the last merge *attempt*, not necessarily the live branch
 /// tip — Azure DevOps recomputes it asynchronously. Harmless while CI is unanswered for this
 /// provider; a future CI implementation that trusts it would query a commit one rebase behind.
-fn azure_devops_details(pr: AzureDevOpsPullRequestState) -> PullRequestDetails {
+fn azure_devops_details(pr: AzureDevOpsPullRequestState) -> PullRequestDetail {
     // The only diagnosis that will ever exist for `failure` and `rejectedByPolicy`, both of which
     // this maps to `None` and therefore acts on nowhere else.
     if let Some(message) = &pr.merge_failure_message {
         log::debug!("Azure DevOps declined to merge pull request: {}", message);
     }
-    PullRequestDetails {
-        state: azure_devops_state(&pr.status),
-        mergeable: azure_devops_mergeable(pr.merge_status.as_deref()),
-        head_sha: pr.last_merge_source_commit.and_then(|commit| commit.commit_id),
-    }
+    PullRequestDetail::from_state(
+        azure_devops_state(&pr.status),
+        azure_devops_mergeable(pr.merge_status.as_deref()),
+        pr.last_merge_source_commit.and_then(|commit| commit.commit_id),
+    )
 }
 
 /// Catch the sign-in page Azure DevOps serves instead of an authentication error.
@@ -381,6 +383,92 @@ async fn azure_devops_repository_id(
     Ok(repository.id)
 }
 
+/// How many open pull requests one page covers. See `bitbucket::LIST_PAGE_SIZE` for why this is
+/// asked for in one request rather than paginated.
+const LIST_PAGE_SIZE: usize = 100;
+
+#[derive(Deserialize)]
+struct AzureDevOpsListEntry {
+    #[serde(rename = "pullRequestId")]
+    pull_request_id: i64,
+    #[serde(default)]
+    title: String,
+    #[serde(rename = "sourceRefName", default)]
+    source_ref_name: Option<String>,
+    #[serde(rename = "targetRefName", default)]
+    target_ref_name: Option<String>,
+    #[serde(rename = "creationDate", default)]
+    creation_date: Option<String>,
+    #[serde(rename = "lastMergeSourceCommit", default)]
+    last_merge_source_commit: Option<AzureDevOpsCommitRef>,
+}
+
+#[derive(Deserialize)]
+struct AzureDevOpsListPage {
+    #[serde(default)]
+    value: Vec<AzureDevOpsListEntry>,
+}
+
+/// Azure DevOps names branches by full ref where a worktree row carries the bare name.
+fn strip_refs_heads(name: String) -> String {
+    name.strip_prefix("refs/heads/").map(str::to_string).unwrap_or(name)
+}
+
+/// `None` for an entry with no source ref: that is the field a worktree is matched on.
+///
+/// `head_sha` is the source head as of the last merge *attempt* rather than the live branch tip —
+/// see [`azure_devops_details`]. Harmless while this provider answers no CI, but a future CI
+/// implementation keyed on it would ask about a commit one rebase behind.
+fn list_entry_to_listed(
+    entry: AzureDevOpsListEntry,
+    coordinates: &AzureDevOpsCoordinates,
+) -> Option<ListedPullRequest> {
+    Some(ListedPullRequest {
+        number: entry.pull_request_id,
+        // The response's own `url` is the REST resource, not a page a user can open.
+        url: azure_devops_web_url(coordinates, entry.pull_request_id),
+        title: entry.title,
+        head_branch: strip_refs_heads(entry.source_ref_name?),
+        base_branch: entry.target_ref_name.map(strip_refs_heads),
+        created_at: entry.creation_date,
+        head_sha: entry.last_merge_source_commit.and_then(|commit| commit.commit_id),
+    })
+}
+
+/// Every active pull request on the repository.
+///
+/// Addressed by repository *name* rather than the id [`create_azure_devops`] resolves first: this
+/// endpoint accepts either, and the name is already in the remote path — so the list costs one
+/// request where creating one costs two.
+pub(super) async fn list_azure_devops(
+    target: &PullRequestTarget<'_>,
+) -> Result<Vec<ListedPullRequest>, String> {
+    let coordinates = azure_devops_coordinates(
+        &target.config.host,
+        &target.config.project_path,
+        target.instance_url,
+    )?;
+    credential_matches_coordinates(&coordinates, target.instance_url)?;
+
+    let response = build_http_client()?
+        .get(format!(
+            "{}/{}/_apis/git/repositories/{}/pullrequests\
+             ?searchCriteria.status=active&$top={}&api-version={}",
+            coordinates.base,
+            coordinates.project,
+            coordinates.repository,
+            LIST_PAGE_SIZE,
+            AZDO_API_VERSION
+        ))
+        .header("Authorization", make_azdo_auth(target.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let page: AzureDevOpsListPage = azure_devops_json(response).await?;
+    Ok(page.value.into_iter().filter_map(|entry| list_entry_to_listed(entry, &coordinates)).collect())
+}
+
 pub(super) async fn create_azure_devops(
     target: &PullRequestTarget<'_>,
     head: &str,
@@ -412,13 +500,14 @@ pub(super) async fn create_azure_devops(
     Ok(CreatedPullRequest {
         number: created.pull_request_id,
         url: azure_devops_web_url(&coordinates, created.pull_request_id),
+        head_sha: None,
     })
 }
 
 pub(super) async fn fetch_azure_devops(
     target: &PullRequestTarget<'_>,
     number: i64,
-) -> Result<PullRequestDetails, String> {
+) -> Result<PullRequestDetail, String> {
     let coordinates = azure_devops_coordinates(
         &target.config.host,
         &target.config.project_path,
@@ -450,6 +539,52 @@ mod tests {
 
     fn coordinates(host: &str, project_path: &str) -> AzureDevOpsCoordinates {
         azure_devops_coordinates(host, project_path, None).expect("path should parse")
+    }
+
+    fn azdo_listed(body: &str) -> Vec<ListedPullRequest> {
+        let page: AzureDevOpsListPage = serde_json::from_str(body).expect("body should parse");
+        let coordinates = coordinates("dev.azure.com", "fabrikam/MyProject/_git/MyRepo");
+        page.value.into_iter().filter_map(|e| list_entry_to_listed(e, &coordinates)).collect()
+    }
+
+    /// Azure DevOps names branches by full ref, where a worktree row carries the bare name.
+    /// Matching `refs/heads/feature` against `feature` finds nothing, silently.
+    #[test]
+    fn an_entry_maps_onto_the_shared_shape_with_the_refs_prefix_stripped() {
+        let listed = azdo_listed(
+            r#"{"count":1,"value":[{"pullRequestId":22,"title":"A new feature","status":"active",
+                 "creationDate":"2026-09-01T16:30:31.6655471Z",
+                 "sourceRefName":"refs/heads/npaulk/my_work",
+                 "targetRefName":"refs/heads/new_feature",
+                 "lastMergeSourceCommit":{"commitId":"b60280bc6e62e2f880f1b63c1e24987664d3bda3"}}]}"#,
+        );
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].number, 22);
+        assert_eq!(listed[0].head_branch, "npaulk/my_work");
+        assert_eq!(listed[0].base_branch.as_deref(), Some("new_feature"));
+        assert_eq!(
+            listed[0].head_sha.as_deref(),
+            Some("b60280bc6e62e2f880f1b63c1e24987664d3bda3")
+        );
+        // The response's own `url` is the REST resource, so the browser link is built here.
+        assert_eq!(
+            listed[0].url,
+            "https://dev.azure.com/fabrikam/MyProject/_git/MyRepo/pullrequest/22"
+        );
+    }
+
+    /// A branch name that genuinely has no `refs/heads/` prefix must survive untouched rather than
+    /// losing its first eleven characters.
+    #[test]
+    fn a_bare_branch_name_is_left_alone() {
+        assert_eq!(strip_refs_heads("refs/heads/main".to_string()), "main");
+        assert_eq!(strip_refs_heads("main".to_string()), "main");
+        assert_eq!(strip_refs_heads("refs/tags/v1".to_string()), "refs/tags/v1");
+    }
+
+    #[test]
+    fn an_entry_with_no_source_ref_is_dropped() {
+        assert!(azdo_listed(r#"{"value":[{"pullRequestId":1,"title":"x"}]}"#).is_empty());
     }
 
     /// Four remote shapes, no two of which agree on where the organization is, and no segment count
@@ -611,7 +746,7 @@ mod tests {
         );
     }
 
-    fn azdo_details(body: &str) -> PullRequestDetails {
+    fn azdo_details(body: &str) -> PullRequestDetail {
         azure_devops_details(serde_json::from_str(body).expect("body should parse"))
     }
 

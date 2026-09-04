@@ -1,5 +1,7 @@
-import { useQueries } from "@tanstack/react-query";
-import { pullRequestChecksOptions } from "@/services/integration.service";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { integrationQueryKeys } from "@/services/integration.service";
+import { api } from "@/lib/tauri-utils";
 import type { ProjectPullRequest, PullRequestCheckInfo } from "@/types/bindings";
 
 /** What a pull request's checks add up to, as one mark. */
@@ -60,25 +62,37 @@ export function summariseChecks(checks: PullRequestCheckInfo[] | undefined): CiS
  * filter that hides a row cannot then read that row's state — and the card chips want the same
  * answer for the pull requests they happen to be showing.
  *
- * `useQueries` because the length is the project's, not the code's.
+ * One request for the whole list, not one per pull request. Asked per pull request through
+ * `useQueries` this was two GitHub requests each per cycle, so twenty open pull requests spent
+ * roughly a token's whole hourly budget on a view that was only drawing coloured icons. The backend
+ * asks the forge for all of them at once.
+ *
+ * The key carries every pull request's head sha, so a push re-asks rather than serving the previous
+ * commit's result, and the poll is unconditional rather than stopping once everything has settled:
+ * a forge can queue a check run under a head sha whose other runs have all finished, and at one
+ * request per cycle there is nothing to save by going quiet.
  */
 export function usePullRequestCi(
   projectId: number | null,
   pullRequests: ProjectPullRequest[],
   enabled: boolean,
 ): Map<number, CiStatus> {
-  return useQueries({
-    queries: pullRequests.map((pullRequest) =>
-      pullRequestChecksOptions(projectId, pullRequest.number, pullRequest.head_sha, enabled),
-    ),
-    combine: (results) =>
-      new Map(
-        results.map((result, index) => [
-          pullRequests[index].number,
-          summariseChecks(result.data as PullRequestCheckInfo[] | undefined),
-        ]),
-      ),
+  const heads = pullRequests.map((entry) => `${entry.number}:${entry.head_sha ?? ""}`).join(",");
+  const { data } = useQuery({
+    queryKey: integrationQueryKeys.projectPullRequestChecks(projectId ?? -1, heads),
+    queryFn: () => api.fetchProjectPullRequestChecks(projectId!),
+    enabled: enabled && projectId != null && pullRequests.length > 0,
+    refetchInterval: 15_000,
+    // Long enough that switching back to the tab reuses the answer rather than re-asking, short
+    // enough that it is never the reason a mark is stale — the interval above owns freshness.
+    staleTime: 10_000,
+    retry: false,
   });
+
+  return useMemo(
+    () => new Map((data ?? []).map((entry) => [entry.number, summariseChecks(entry.checks)])),
+    [data],
+  );
 }
 
 /**

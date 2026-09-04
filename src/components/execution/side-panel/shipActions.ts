@@ -1,5 +1,5 @@
-import type { ShipBlocker } from "./useSessionShipState";
-import type { BranchPullRequestInfo } from "@/types/bindings";
+import type { ShipBlocker, SessionPullRequest } from "./useSessionShipState";
+import type { PullRequestCheckInfo } from "@/types/bindings";
 
 /**
  * Why an action is unavailable, in the four or five words the card has room for.
@@ -37,10 +37,42 @@ export function commitAndPushPrompt(branch: string | null): string {
 }
 
 /**
+ * The card's verdict on a set of checks, and the names behind a `Failing` one.
+ *
+ * A mirror of Rust's `summarise_checks` + `ci_summary`, and it has to stay one: the card renders
+ * whatever the fast checks poll last returned, and deriving the verdict here is what lets that poll
+ * drive the whole block. Reading `ci` off the slower lookup instead left the header, the fix prompt
+ * and the ring describing three different moments — and hid the block entirely for a pull request
+ * whose checks had not queued yet, since that lookup answers `null` for an empty list.
+ *
+ * `Running` outranks `Failed` deliberately, matching Rust and *not*
+ * {@link import("../worktree-card/pullRequestCi").summariseChecks}, whose opposite ordering is
+ * correct for the single indicator it feeds. `Failing` here unlocks "send failing checks to the
+ * agent", and spending a fix round on a matrix that has not finished is the mistake this ordering
+ * exists to prevent.
+ *
+ * `null` for an empty list — a forge that will not enumerate, which the card reads as "no checks
+ * block" rather than drawing a ring at zero of zero.
+ */
+export function deriveCi(checks: PullRequestCheckInfo[]): {
+  ci: SessionPullRequest["ci"];
+  failingChecks: string[];
+} {
+  if (checks.length === 0) return { ci: null, failingChecks: [] };
+  if (checks.some((check) => check.status === "Running")) {
+    return { ci: "Pending", failingChecks: [] };
+  }
+  const failing = checks.filter((check) => check.status === "Failed").map((check) => check.name);
+  return failing.length > 0
+    ? { ci: "Failing", failingChecks: failing }
+    : { ci: "Passing", failingChecks: [] };
+}
+
+/**
  * Names the checks. "CI is failing, fix it" spends the agent's first turn discovering what this
  * message already knows.
  */
-export function fixChecksPrompt(pullRequest: BranchPullRequestInfo): string {
+export function fixChecksPrompt(pullRequest: SessionPullRequest): string {
   const checks = pullRequest.failing_checks;
   const named =
     checks.length > 0

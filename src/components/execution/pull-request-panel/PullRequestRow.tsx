@@ -12,7 +12,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import { usePullRequestFacts } from "@/services/integration.service";
+import { usePullRequestDetail } from "@/services/integration.service";
 import { CI_TONE, type CiRollup } from "@/components/execution/worktree-card/pullRequestCi";
 import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import type { PullRequestEntry } from "./pullRequestFilters";
@@ -80,11 +80,14 @@ interface PullRequestRowProps {
  */
 export function PullRequestRow({ entry, projectId, ci, now, poll, onAct }: PullRequestRowProps) {
   const { pullRequest } = entry;
-  const { data: facts } = usePullRequestFacts(
+  // Unpolled: this is one row of a list, and a 30-second timer per row is the per-pull-request cost
+  // the batch checks query exists to avoid. Keyed on the head commit, so a push re-reads it once.
+  const { data: facts } = usePullRequestDetail(
     projectId,
     pullRequest.number,
     pullRequest.head_sha,
     poll,
+    false,
   );
 
   const age = relativeAge(pullRequest.created_at, now);

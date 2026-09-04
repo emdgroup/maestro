@@ -90,12 +90,20 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
   const { data: hosting } = useCodeHostingStatus(projectId ?? 0);
   const { data: pullRequests = [] } = useProjectPullRequests(projectId ?? null, onWorktreesTab);
   const byBranch = useMemo(() => pullRequestsByBranch(pullRequests), [pullRequests]);
-  const ciByNumber = usePullRequestCi(projectId ?? null, pullRequests, onWorktreesTab);
+  // Not asked on a forge that names no checks: the command answers an empty list for those, and
+  // asking anyway spent a full open-list request per cycle to be told so.
+  const ciByNumber = usePullRequestCi(
+    projectId ?? null,
+    pullRequests,
+    onWorktreesTab && hosting?.forge_enumerates_checks === true,
+  );
   // Shown whenever the forge can answer, including when the answer is none — an empty panel says
   // there is nothing to pick up, which is information. A project with no forge gets no column at
   // all, because for it there is no such thing as a pull request.
   const showPullRequests =
-    projectId != null && hosting?.rung === "Ready" && hosting.forge_supports_branch_lookup === true;
+    projectId != null &&
+    hosting?.rung === "Ready" &&
+    hosting.forge_supports_pull_request_list === true;
 
   const [selectedWorktreePath, setSelectedWorktreePath] = useState<string | null>(null);
   const [search, setSearch] = useState("");

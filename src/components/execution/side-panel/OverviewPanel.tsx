@@ -22,11 +22,11 @@ import { openFileWithConnection } from "@/lib/file-opener";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
-import type { BranchPullRequestInfo, ConnectionKey, PullRequestCheckInfo } from "@/types/bindings";
+import type { ConnectionKey, PullRequestCheckInfo } from "@/types/bindings";
 import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/types";
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import { useTaskAttachmentsQuery, useTasksQuery } from "@/services/task.service";
-import type { SessionShipState } from "./useSessionShipState";
+import type { SessionShipState, SessionPullRequest } from "./useSessionShipState";
 import { BLOCKER_LABELS, commitAndPushPrompt, fixChecksPrompt } from "./shipActions";
 import { OpenPullRequestDialog } from "./OpenPullRequestDialog";
 
@@ -559,19 +559,19 @@ export function OverviewPanel({
   );
 }
 
-const CI_LABELS: Record<NonNullable<BranchPullRequestInfo["ci"]>, string> = {
+const CI_LABELS: Record<NonNullable<SessionPullRequest["ci"]>, string> = {
   Passing: "checks passed",
   Failing: "CI failing",
   Pending: "checks running",
 };
 
-const CI_TONES: Record<NonNullable<BranchPullRequestInfo["ci"]>, string> = {
+const CI_TONES: Record<NonNullable<SessionPullRequest["ci"]>, string> = {
   Passing: "text-success",
   Failing: "text-destructive",
   Pending: "text-muted-foreground",
 };
 
-const STATE_BADGES: Record<BranchPullRequestInfo["state"], { label: string; tone: string }> = {
+const STATE_BADGES: Record<SessionPullRequest["state"], { label: string; tone: string }> = {
   Open: { label: "Open", tone: "bg-success/15 text-success" },
   Merged: { label: "Merged", tone: "bg-[--purple]/15 text-[--purple]" },
   Closed: { label: "Closed", tone: "bg-destructive/15 text-destructive" },
@@ -590,7 +590,7 @@ function plural(count: number, word: string): string {
  * `null` when the forge named neither branch, which is when the caller falls back to the number —
  * a subtitle reading " → " would be worse than no subtitle at all.
  */
-export function branchSummary(pullRequest: BranchPullRequestInfo): string | null {
+export function branchSummary(pullRequest: SessionPullRequest): string | null {
   const { base_branch, head_branch, commits } = pullRequest;
   if (!base_branch || !head_branch) return null;
   const arrow = `${head_branch} → ${base_branch}`;
@@ -607,7 +607,7 @@ export function branchSummary(pullRequest: BranchPullRequestInfo): string | null
  * Every metric is dropped when it has nothing to say, so GitLab — which reports no line counts on
  * the merge request — renders a shorter row rather than "0 files +0 −0".
  */
-export function PullRequestFacts({ pullRequest }: { pullRequest: BranchPullRequestInfo }) {
+export function PullRequestFacts({ pullRequest }: { pullRequest: SessionPullRequest }) {
   const { changed_files, additions, deletions, created_at, mergeable, base_branch } = pullRequest;
   const opened = created_at ? timeAgo(Date.parse(created_at)) : null;
 
@@ -762,7 +762,7 @@ export function CheckRollup({
   ci,
 }: {
   checks: PullRequestCheckInfo[];
-  ci: NonNullable<BranchPullRequestInfo["ci"]>;
+  ci: NonNullable<SessionPullRequest["ci"]>;
 }) {
   const failedCount = checks.filter((check) => check.status === "Failed").length;
   // Open on a failure rather than waiting to be asked. Everything else is progress the ring
