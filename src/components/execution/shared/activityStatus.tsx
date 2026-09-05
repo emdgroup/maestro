@@ -20,7 +20,7 @@ export const ACTIVITY_TEXT: Record<SessionActivityStatus, string> = {
 };
 
 export function formatElapsedCompact(ms: number): string {
-  const s = Math.floor(ms / 1000);
+  const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
