@@ -3,12 +3,16 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import type { ProjectPullRequest } from "@/types/bindings";
 import { CI_TONE, type CiStatus } from "./pullRequestCi";
 
 interface WorktreePullRequestChipProps {
-  pullRequest: ProjectPullRequest;
-  /** Resolved once for the whole view. See `usePullRequestCi`. */
+  number: number;
+  url: string;
+  title: string;
+  /**
+   * Derived from the branch's own named checks, so this keeps the failing check names the panel's
+   * rows give up — the card asks about one branch and gets the whole rollup back.
+   */
   ci: CiStatus;
 }
 
@@ -23,7 +27,7 @@ interface WorktreePullRequestChipProps {
  * own tone on hover and stops the click from reaching the card, whose handler would open the diff
  * panel instead of the browser.
  */
-export function WorktreePullRequestChip({ pullRequest, ci }: WorktreePullRequestChipProps) {
+export function WorktreePullRequestChip({ number, url, title, ci }: WorktreePullRequestChipProps) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -31,10 +35,10 @@ export function WorktreePullRequestChip({ pullRequest, ci }: WorktreePullRequest
           <Button
             variant="ghost"
             size="xs"
-            aria-label={`Pull request #${pullRequest.number}`}
+            aria-label={`Pull request #${number}`}
             onClick={(e) => {
               e.stopPropagation();
-              void openUrl(pullRequest.url);
+              void openUrl(url);
             }}
             className={cn(
               "h-4 cursor-pointer gap-0.5 rounded px-1 font-mono text-xs",
@@ -48,10 +52,10 @@ export function WorktreePullRequestChip({ pullRequest, ci }: WorktreePullRequest
         }
       >
         <GitPullRequest className="size-3" />
-        {pullRequest.number}
+        {number}
       </TooltipTrigger>
       <TooltipContent>
-        <span className="block max-w-64 truncate">{pullRequest.title}</span>
+        <span className="block max-w-64 truncate">{title}</span>
         <span className="block text-muted-foreground">{ci.label}</span>
       </TooltipContent>
     </Tooltip>

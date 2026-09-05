@@ -1,7 +1,6 @@
 import { WorktreeCard } from "./WorktreeCard";
 import { WorktreeCardGroup } from "./WorktreeCardGroup";
-import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
-import type { CiStatus } from "./pullRequestCi";
+import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 
 interface WorktreeCardGridProps {
   /** Live sessions keyed by the worktree they run in. See `sessionsByWorktree`. */
@@ -15,10 +14,8 @@ interface WorktreeCardGridProps {
   onDeleteWorktree: (path: string) => void;
   repoPath: string;
   projectId: number | null;
-  /** Open pull requests keyed by head branch. See `pullRequestsByBranch`. */
-  pullRequestsByBranch?: Map<string, ProjectPullRequest>;
-  /** Their CI states keyed by number. See `usePullRequestCi`. */
-  ciByNumber?: Map<number, CiStatus>;
+  /** Whether cards should look their own branch's pull request up. See `WorktreeCard`. */
+  pullRequests?: boolean;
   emptyMessage?: string;
 }
 
@@ -32,8 +29,7 @@ export function WorktreeCardGrid({
   onDeleteWorktree,
   repoPath,
   projectId,
-  pullRequestsByBranch,
-  ciByNumber,
+  pullRequests,
   emptyMessage,
 }: WorktreeCardGridProps) {
   if (groups.length === 0) {
@@ -54,23 +50,19 @@ export function WorktreeCardGrid({
           isCollapsed={collapsedGroups[group.groupKey] ?? false}
           onToggleCollapse={() => onToggleGroup(group.groupKey)}
         >
-          {group.items.map((wt) => {
-            const pullRequest = pullRequestsByBranch?.get(wt.branch_name) ?? null;
-            return (
-              <WorktreeCard
-                key={wt.path}
-                worktree={wt}
-                repoPath={repoPath}
-                projectId={projectId}
-                sessions={sessionsByPath.get(wt.path) ?? []}
-                now={now}
-                pullRequest={pullRequest}
-                ci={pullRequest ? ciByNumber?.get(pullRequest.number) : undefined}
-                onSelect={onSelectWorktree}
-                onDelete={onDeleteWorktree}
-              />
-            );
-          })}
+          {group.items.map((wt) => (
+            <WorktreeCard
+              key={wt.path}
+              worktree={wt}
+              repoPath={repoPath}
+              projectId={projectId}
+              sessions={sessionsByPath.get(wt.path) ?? []}
+              now={now}
+              pullRequests={pullRequests}
+              onSelect={onSelectWorktree}
+              onDelete={onDeleteWorktree}
+            />
+          ))}
         </WorktreeCardGroup>
       ))}
     </div>

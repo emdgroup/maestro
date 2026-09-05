@@ -10,8 +10,8 @@
 use serde::Deserialize;
 
 use super::{
-    CreatedPullRequest, FoundPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState,
-    PullRequestTarget,
+    CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest, PullRequestDetail,
+    PullRequestPage, PullRequestState, PullRequestTarget, cursor_offset, next_offset_cursor,
 };
 use crate::integration::azure_devops::{AZDO_API_VERSION, make_azdo_auth, normalize_azdo_org_url};
 use crate::integration::build_http_client;
@@ -384,10 +384,6 @@ async fn azure_devops_repository_id(
     Ok(repository.id)
 }
 
-/// How many open pull requests one page covers. See `bitbucket::LIST_PAGE_SIZE` for why this is
-/// asked for in one request rather than paginated.
-const LIST_PAGE_SIZE: usize = 100;
-
 #[derive(Deserialize)]
 struct AzureDevOpsListEntry {
     #[serde(rename = "pullRequestId")]
@@ -437,32 +433,46 @@ fn list_entry_to_listed(
         base_branch: entry.target_ref_name.map(strip_refs_heads),
         created_at: entry.creation_date,
         head_sha: entry.last_merge_source_commit.and_then(|commit| commit.commit_id),
+        // Azure DevOps has no "last updated" on a pull request — `creationDate` and `closedDate`
+        // are the only timestamps the resource carries — so a row here is invalidated by its head
+        // commit moving and by nothing else.
+        updated_at: None,
+        // Filled in by `list_open_pull_requests` rather than here: this forge reports neither diff
+        // counts nor checks, so the answer is "asked, and there is nothing", not "unasked".
+        detail: None,
     })
 }
 
-/// Every active pull request on the repository.
+/// One page of the repository's active pull requests.
 ///
 /// Addressed by repository *name* rather than the id [`create_azure_devops`] resolves first: this
-/// endpoint accepts either, and the name is already in the remote path — so the list costs one
+/// endpoint accepts either, and the name is already in the remote path — so a page costs one
 /// request where creating one costs two.
+///
+/// No search argument: `searchCriteria` filters by status, branch, creator and reviewer and has no
+/// text field at all, which is why `searches_pull_requests` is false for this provider and the
+/// panel shows no search box on it.
 pub(super) async fn list_azure_devops(
     target: &PullRequestTarget<'_>,
-) -> Result<Vec<ListedPullRequest>, String> {
+    cursor: Option<&str>,
+) -> Result<PullRequestPage, String> {
     let coordinates = azure_devops_coordinates(
         &target.config.host,
         &target.config.project_path,
         target.instance_url,
     )?;
     credential_matches_coordinates(&coordinates, target.instance_url)?;
+    let offset = cursor_offset(cursor);
 
     let response = build_http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests\
-             ?searchCriteria.status=active&$top={}&api-version={}",
+             ?searchCriteria.status=active&$top={}&$skip={}&api-version={}",
             coordinates.base,
             coordinates.project,
             coordinates.repository,
             LIST_PAGE_SIZE,
+            offset,
             AZDO_API_VERSION
         ))
         .header("Authorization", make_azdo_auth(target.token))
@@ -471,7 +481,18 @@ pub(super) async fn list_azure_devops(
         .map_err(|e| format!("Network error: {}", e))?;
 
     let page: AzureDevOpsListPage = azure_devops_json(response).await?;
-    Ok(page.value.into_iter().filter_map(|entry| list_entry_to_listed(entry, &coordinates)).collect())
+    let returned = page.value.len();
+    Ok(PullRequestPage {
+        items: page
+            .value
+            .into_iter()
+            .filter_map(|entry| list_entry_to_listed(entry, &coordinates))
+            .collect(),
+        next_cursor: next_offset_cursor(returned, offset),
+        // The response carries a `count`, but it counts this page rather than the collection, and
+        // there is no total anywhere in the resource.
+        total: None,
+    })
 }
 
 /// How far back a branch's own pull requests are scanned. A branch reused across several is rare.

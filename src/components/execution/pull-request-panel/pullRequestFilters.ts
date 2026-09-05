@@ -1,5 +1,4 @@
 import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
-import type { CiRollup, CiStatus } from "@/components/execution/worktree-card/pullRequestCi";
 
 /** Which pull requests the panel is showing, by whether a worktree exists for them. */
 export type LinkFilter = "All" | "WithWorktree" | "Others";
@@ -83,50 +82,24 @@ export function pullRequestEntries(
 }
 
 /**
- * The panel's three filters applied together.
+ * Whether each row has a worktree, applied to the page on screen.
  *
- * `ciStates` empty means no CI filter at all rather than "show nothing" — an empty set is what the
- * header looks like before the user has touched it, and a panel that hides everything by default
- * would read as a broken query.
+ * The only filter left here, and the only one that can be. Search went to the forge, because
+ * matching thirty rows out of a project's eleven thousand finds almost nothing and reads as an empty
+ * repository. A CI filter has the same problem and no server-side answer on any of the six forges,
+ * so it went entirely.
+ *
+ * This one stays because it needs nothing from the forge at all: it is a join between the user's own
+ * worktrees and each row's head branch, so it means exactly the same thing on every provider — and
+ * "which of these do I not have a worktree for" is the question the panel exists to answer.
  */
 export function filterPullRequests(
   entries: PullRequestEntry[],
-  search: string,
   link: LinkFilter,
-  ciStates: ReadonlySet<CiRollup>,
-  ciByNumber: Map<number, CiStatus>,
 ): PullRequestEntry[] {
-  const needle = search.trim().toLowerCase();
   return entries.filter((entry) => {
     if (link === "WithWorktree" && !entry.worktree) return false;
     if (link === "Others" && entry.worktree) return false;
-
-    if (ciStates.size > 0 && !ciStates.has(rollupOf(ciByNumber, entry))) return false;
-
-    if (needle === "") return true;
-    // Number without the hash too, so typing "310" finds #310.
-    const haystack = [
-      entry.pullRequest.title,
-      entry.pullRequest.head_branch,
-      String(entry.pullRequest.number),
-    ]
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(needle);
+    return true;
   });
-}
-
-/** A pull request whose checks have not answered yet counts as `unknown` rather than as nothing. */
-function rollupOf(ciByNumber: Map<number, CiStatus>, entry: PullRequestEntry): CiRollup {
-  return ciByNumber.get(entry.pullRequest.number)?.rollup ?? "unknown";
-}
-
-/** How many pull requests are in each CI state, for the counts inside the CI filter. */
-export function countCiStates(
-  entries: PullRequestEntry[],
-  ciByNumber: Map<number, CiStatus>,
-): Record<CiRollup, number> {
-  const counts: Record<CiRollup, number> = { passing: 0, failing: 0, running: 0, unknown: 0 };
-  for (const entry of entries) counts[rollupOf(ciByNumber, entry)] += 1;
-  return counts;
 }

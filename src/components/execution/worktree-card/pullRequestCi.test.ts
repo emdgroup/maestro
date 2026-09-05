@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { ProjectPullRequest, PullRequestCheckInfo } from "@/types/bindings";
-import { pullRequestsByBranch, summariseChecks } from "./pullRequestCi";
+import type { PullRequestCheckInfo } from "@/types/bindings";
+import { rollupOfCi, summariseChecks } from "./pullRequestCi";
 
 function check(name: string, status: PullRequestCheckInfo["status"]): PullRequestCheckInfo {
   return { name, status };
@@ -43,36 +43,20 @@ describe("summariseChecks", () => {
   });
 });
 
-describe("pullRequestsByBranch", () => {
-  function pullRequest(number: number, head: string): ProjectPullRequest {
-    return {
-      number,
-      url: `https://example.com/pull/${number}`,
-      title: `Pull request ${number}`,
-      head_branch: head,
-      base_branch: "main",
-      created_at: null,
-      head_sha: null,
-    };
-  }
-
-  it("keys open pull requests by their head branch", () => {
-    const map = pullRequestsByBranch([
-      pullRequest(310, "feature-a"),
-      pullRequest(311, "feature-b"),
-    ]);
-    expect(map.get("feature-a")?.number).toBe(310);
-    expect(map.get("feature-b")?.number).toBe(311);
-    expect(map.get("nothing")).toBeUndefined();
+describe("rollupOfCi", () => {
+  /// Two spellings of one idea either side of the IPC boundary. The mapping is four lines in one
+  /// place precisely so a rename on the Rust side fails here rather than silently painting every
+  /// row grey — `CI_TONE` is keyed on the lower-case form and would just miss.
+  it("maps every verdict the backend can send", () => {
+    expect(rollupOfCi("Passing")).toBe("passing");
+    expect(rollupOfCi("Failing")).toBe("failing");
+    expect(rollupOfCi("Running")).toBe("running");
+    expect(rollupOfCi("Unknown")).toBe("unknown");
   });
 
-  /// The list arrives most-recently-updated first, so the first entry for a branch is the live one.
-  /// Letting a later duplicate overwrite it would put the staler pull request on the card.
-  it("keeps the first of two pull requests on one branch", () => {
-    const map = pullRequestsByBranch([
-      pullRequest(311, "feature-a"),
-      pullRequest(310, "feature-a"),
-    ]);
-    expect(map.get("feature-a")?.number).toBe(311);
+  /// A row whose detail has not arrived — or a forge that answers none — is "no answer", not a
+  /// green tick.
+  it("reads an absent verdict as unknown", () => {
+    expect(rollupOfCi(undefined)).toBe("unknown");
   });
 });

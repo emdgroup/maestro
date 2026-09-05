@@ -6,9 +6,9 @@
 use serde::Deserialize;
 
 use super::{
-    CheckStatus, CiState, CreatedPullRequest, ListedPullRequest, PullRequestCheck,
-    FoundPullRequest, PullRequestDetail, PullRequestState, PullRequestTarget, instance_base,
-    read_json,
+    CheckStatus, CiState, CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest,
+    PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
+    cursor_offset, header_total, instance_base, next_offset_cursor, offset_page, read_json,
 };
 use crate::integration::build_http_client;
 
@@ -36,6 +36,8 @@ struct GitLabListEntry {
     target_branch: Option<String>,
     #[serde(default)]
     created_at: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -158,35 +160,57 @@ fn list_entry_to_listed(entry: GitLabListEntry) -> Option<ListedPullRequest> {
         base_branch: entry.target_branch,
         created_at: entry.created_at,
         head_sha: entry.sha,
+        updated_at: entry.updated_at,
+        // GitLab's list endpoint carries neither the diff counts nor `head_pipeline` — that one is
+        // documented on the single-merge-request endpoint only — so both are fetched per row.
+        detail: None,
     })
 }
 
-/// Every merge request in the `opened` state.
+/// One page of merge requests in the `opened` state.
 ///
 /// GitLab is the one forge here that names the head branch on its list entry without nesting it, so
 /// `source_branch` is read straight off.
+///
+/// `search` with `in=title` rather than filtering what came back: this endpoint answers one page of
+/// a project that may have thousands open, so a client-side match would search thirty rows and
+/// report an empty project.
 pub(super) async fn list_gitlab(
     target: &PullRequestTarget<'_>,
-) -> Result<Vec<ListedPullRequest>, String> {
-    let url = format!(
+    cursor: Option<&str>,
+    search: Option<&str>,
+) -> Result<PullRequestPage, String> {
+    let offset = cursor_offset(cursor);
+    let mut url = format!(
         "{}/api/v4/projects/{}/merge_requests?state=opened&order_by=updated_at&sort=desc\
-         &per_page=100",
+         &per_page={}&page={}",
         instance_base(target),
-        urlencoding::encode(&target.config.project_path)
+        urlencoding::encode(&target.config.project_path),
+        LIST_PAGE_SIZE,
+        offset_page(offset)
     );
+    if let Some(term) = search {
+        url.push_str(&format!("&in=title&search={}", urlencoding::encode(term)));
+    }
 
-    let entries: Vec<GitLabListEntry> = read_json(
-        build_http_client()?
-            .get(url)
-            .header("PRIVATE-TOKEN", target.token)
-            .send()
-            .await
-            .map_err(|e| format!("Network error: {}", e))?,
-        "GitLab",
-    )
-    .await?;
+    let response = build_http_client()?
+        .get(url)
+        .header("PRIVATE-TOKEN", target.token)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
 
-    Ok(entries.into_iter().filter_map(list_entry_to_listed).collect())
+    // GitLab stops counting when a count would be expensive and omits the header rather than
+    // guessing, which is exactly why `total` is optional all the way up to the panel header.
+    let total = header_total(&response, "x-total");
+    let entries: Vec<GitLabListEntry> = read_json(response, "GitLab").await?;
+
+    let returned = entries.len();
+    Ok(PullRequestPage {
+        items: entries.into_iter().filter_map(list_entry_to_listed).collect(),
+        next_cursor: next_offset_cursor(returned, offset),
+        total,
+    })
 }
 
 /// The merge request on one branch. GitLab filters by source branch server-side, so this is one

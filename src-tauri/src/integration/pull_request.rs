@@ -29,8 +29,8 @@ use self::bitbucket::{
     ci_bitbucket, create_bitbucket, fetch_bitbucket, find_bitbucket, list_bitbucket,
 };
 use self::github::{
-    checks_all_github, checks_github, checks_github_rest, ci_github, create_gitea, create_github,
-    branch_status_github, fetch_gitea, fetch_github, find_github_family, list_github_family,
+    branch_status_github, checks_github, ci_github, create_gitea, create_github, fetch_gitea,
+    fetch_github, find_github_family, list_github_family,
 };
 use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab};
 use crate::models::project::ProjectCodeHostingConfig;
@@ -219,9 +219,11 @@ pub async fn fetch_branch_pull_request(
 /// `head_branch` is the field that makes this the answer to "which pull request is on this branch",
 /// for a worktree card and for a session alike — both match on it rather than asking the forge.
 ///
-/// No line counts, file count or mergeable flag: every forge's *list* endpoint omits them, and they
-/// only change when the head commit does, so they are fetched separately and cached against
-/// `head_sha` rather than re-read on every poll.
+/// `updated_at` is what lets a caller *hold* `detail` rather than re-asking for it every poll.
+/// Keyed on the head sha alone, a CI run that started or finished without a new commit would
+/// invalidate nothing and the row would sit at its first answer; this field moves for that, and for
+/// a rename, a merge and a push besides. It costs nothing — every forge's list response carries it.
+#[derive(Debug)]
 pub struct ListedPullRequest {
     pub number: i64,
     pub url: String,
@@ -230,13 +232,61 @@ pub struct ListedPullRequest {
     pub base_branch: Option<String>,
     pub created_at: Option<String>,
     pub head_sha: Option<String>,
+    pub updated_at: Option<String>,
+    /// Filled in only where the list request answers it for nothing, which is GitHub's GraphQL
+    /// query and nowhere else. `None` does not mean "no diff and no checks" — it means *unasked*,
+    /// and the caller fetches it per pull request.
+    pub detail: Option<ListedPullRequestDetail>,
 }
 
-/// Every pull request currently open on the project's forge.
+/// The line counts, the file count and the CI verdict for one row.
 ///
-/// One request answers "which pull request is on this branch" for the whole project — every
-/// worktree card and every open session at once. That is the reason this exists: asked per branch
-/// instead, it was a search per session plus two more requests to fill the card it returned.
+/// One `Option` around the group rather than four loose ones, because *asking* is what happens
+/// together: either the answer has been fetched for this row or it has not. The counts inside stay
+/// individually optional because the forges disagree about which they report — GitHub answers all
+/// three, GitLab none of them without another request — and an absent count must render as an
+/// absent line rather than as a zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListedPullRequestDetail {
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub ci: CiRollup,
+}
+
+/// One page of a project's open pull requests, and how to ask for the next one.
+#[derive(Debug)]
+pub struct PullRequestPage {
+    pub items: Vec<ListedPullRequest>,
+    /// Opaque above this module: a GraphQL cursor on GitHub, a page number on GitLab, Gitea and
+    /// Bitbucket Cloud, a row offset on Bitbucket Server and Azure DevOps. `None` is the last page.
+    ///
+    /// Opaque rather than a page number the frontend increments, because two of the six forges
+    /// cannot be paged that way and GitHub's cursor is not derivable from anything the caller holds.
+    pub next_cursor: Option<String>,
+    /// `None` where the forge will not say cheaply: Bitbucket Server and Azure DevOps have no total
+    /// in their responses at all. The header then says how many are shown rather than inventing a
+    /// denominator.
+    pub total: Option<i64>,
+}
+
+/// How many pull requests one page holds.
+///
+/// The panel shows fewer than thirty at once, so a larger page buys rows nobody looks at — and on
+/// GitHub the page size *is* the price, since `pullRequests(first: N)` is charged N nodes whatever
+/// comes back.
+pub const LIST_PAGE_SIZE: usize = 30;
+
+/// One page of the pull requests currently open on the project's forge.
+///
+/// A page rather than "all of them", because there is no such thing: `nixpkgs` has around eleven
+/// thousand open at once and `llvm-project` nine. Every answer this could give is a page, so the
+/// only choice is whether the caller is told — and a list that silently stops at a hundred is what
+/// made the panel's filters and its header quietly wrong.
+///
+/// `search` goes to the forge rather than filtering what came back, for the same reason: filtering
+/// one page of eleven thousand finds almost nothing and looks like an empty repository. Three
+/// providers cannot do it and refuse rather than pretending — see `searches_pull_requests`.
 ///
 /// Only open ones: asking for every state would page through the repository's whole history to find
 /// the few that are live. A pull request that leaves this list has merged or closed, and the caller
@@ -246,14 +296,66 @@ pub struct ListedPullRequest {
 /// here is on.
 pub async fn list_open_pull_requests(
     target: &PullRequestTarget<'_>,
-) -> Result<Vec<ListedPullRequest>, String> {
-    match target.config.provider.as_str() {
-        "github" | "gitea" | "forgejo" => list_github_family(target).await,
-        "gitlab" => list_gitlab(target).await,
-        "bitbucket" => list_bitbucket(target).await,
-        "azuredevops" => list_azure_devops(target).await,
-        other => Err(unsupported(other, "list pull requests")),
+    cursor: Option<&str>,
+    search: Option<&str>,
+) -> Result<PullRequestPage, String> {
+    let forge = capabilities(&target.config.provider);
+    if search.is_some() && !forge.searches_pull_requests {
+        return Err(unsupported(&target.config.provider, "search pull requests"));
     }
+
+    let mut page = match target.config.provider.as_str() {
+        "github" | "gitea" | "forgejo" => list_github_family(target, cursor, search).await?,
+        "gitlab" => list_gitlab(target, cursor, search).await?,
+        "bitbucket" => list_bitbucket(target, cursor).await?,
+        "azuredevops" => list_azure_devops(target, cursor).await?,
+        other => return Err(unsupported(other, "list pull requests")),
+    };
+
+    // A `None` detail means "not asked yet", and the caller answers it by asking per row. On a forge
+    // that reports neither counts nor checks there is nothing to ask *for*, so leaving it `None`
+    // would spend a request per row on every page to be told so — the exact per-row cost this page
+    // exists to remove. An empty answer is the true one: we know, and there is nothing there.
+    if !forge.enumerates_checks && !forge.reports_diff_counts {
+        let nothing = ListedPullRequestDetail {
+            additions: None,
+            deletions: None,
+            changed_files: None,
+            ci: CiRollup::Unknown,
+        };
+        for item in &mut page.items {
+            item.detail.get_or_insert(nothing);
+        }
+    }
+
+    Ok(page)
+}
+
+/// A cursor this module handed out, read back as a row offset.
+///
+/// Every forge but GitHub pages by position, so their cursors are all one vocabulary — a row offset
+/// — which each then spends in its own currency: a 1-based page number on GitLab, Gitea and
+/// Bitbucket Cloud, a raw `start` or `$skip` on Bitbucket Server and Azure DevOps. GitHub's cursor
+/// is a GraphQL one and never reaches here.
+///
+/// Anything unparseable reads as the first page rather than failing. A cursor is opaque to whoever
+/// holds it, so a bad one is a bug here or a value left over from an older build, and an error would
+/// leave the panel empty until the user thought to reset something they cannot see.
+pub(super) fn cursor_offset(cursor: Option<&str>) -> usize {
+    cursor.and_then(|value| value.parse().ok()).unwrap_or(0)
+}
+
+/// That offset as the 1-based page number the forge wants.
+pub(super) fn offset_page(offset: usize) -> usize {
+    offset / LIST_PAGE_SIZE + 1
+}
+
+/// The cursor for the page after this one, or `None` when the forge has run out.
+///
+/// A short page is the end of the list on every forge here, which is what lets this decide without
+/// a second request or a total to compare against.
+pub(super) fn next_offset_cursor(returned: usize, offset: usize) -> Option<String> {
+    (returned >= LIST_PAGE_SIZE).then(|| (offset + returned).to_string())
 }
 
 /// The message for a provider [`capabilities`] does not claim, written once so the six dispatchers
@@ -285,10 +387,23 @@ pub struct ForgeCapabilities {
     /// own. Separate from the list above because they fail differently: the list is one page of a
     /// project that may have thousands, and this is exact.
     pub finds_pull_request_by_branch: bool,
+    /// The `search` argument of [`list_open_pull_requests`], and so whether the panel shows a search
+    /// box at all. Half the forges cannot: Gitea and Forgejo take no `q` on `/pulls` and search pull
+    /// requests only through an issues endpoint that answers neither head branch nor head sha, and
+    /// Azure DevOps' `searchCriteria` has no text field. Hiding the box there is deliberate — a
+    /// control that silently searched thirty rows on three providers and the project on the other
+    /// three is worse than one that is absent where it cannot work.
+    pub searches_pull_requests: bool,
     /// [`create_pull_request`].
     pub opens_pull_requests: bool,
     /// [`fetch_pull_request`] — state, title and the diff counts.
     pub reads_pull_requests: bool,
+    /// Whether that read actually carries `additions`, `deletions` and `changed_files`. Weaker than
+    /// `reads_pull_requests`, which every forge here claims: only the GitHub family puts the numbers
+    /// in the body, GitLab needs another request for them and Bitbucket and Azure DevOps answer none
+    /// at all. Together with `enumerates_checks` this decides whether [`fetch_row_detail`] can
+    /// return anything — see the empty-detail fill in [`list_open_pull_requests`].
+    pub reports_diff_counts: bool,
     /// [`fetch_ci_checks`] — checks enumerated by name, which is what the card's rollup needs.
     /// Weaker than it sounds: a forge can answer a CI *verdict* without enumerating anything.
     pub enumerates_checks: bool,
@@ -299,8 +414,10 @@ pub struct ForgeCapabilities {
 const NOTHING: ForgeCapabilities = ForgeCapabilities {
     lists_pull_requests: false,
     finds_pull_request_by_branch: false,
+    searches_pull_requests: false,
     opens_pull_requests: false,
     reads_pull_requests: false,
+    reports_diff_counts: false,
     enumerates_checks: false,
     reports_ci_state: false,
 };
@@ -318,18 +435,24 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         "github" => ForgeCapabilities {
             lists_pull_requests: true,
             finds_pull_request_by_branch: true,
+            searches_pull_requests: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
+            reports_diff_counts: true,
             enumerates_checks: true,
             reports_ci_state: true,
         },
+        // No `reports_diff_counts`: GitLab's merge request body carries no line or file counts, and
+        // the changes endpoint that does would be another request per row.
         "gitlab" => ForgeCapabilities {
             lists_pull_requests: true,
             finds_pull_request_by_branch: true,
+            searches_pull_requests: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             enumerates_checks: true,
             reports_ci_state: true,
+            ..NOTHING
         },
         // Gitea and Forgejo expose commit statuses, but the shape has moved between versions and no
         // answer at all is safer here than a wrong one.
@@ -338,10 +461,18 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
             finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
+            reports_diff_counts: true,
             ..NOTHING
         },
         // A verdict without an enumeration: `ci_bitbucket` answers whether CI passed, but nothing
         // here reads Bitbucket's individual checks, so the card shows no rollup.
+        //
+        // `searches_pull_requests` is false pending a live check, not because Bitbucket cannot. Its
+        // `q` parameter demonstrably works — `find_bitbucket` already filters on
+        // `source.branch.name` with it — but whether BBQL exposes `title ~ "…"` on a pull request is
+        // not something Atlassian's rendered documentation would answer, and shipping a search that
+        // 400s on every keystroke is worse than shipping none. Confirm against a real workspace and
+        // flip this one bool.
         "bitbucket" => ForgeCapabilities {
             lists_pull_requests: true,
             finds_pull_request_by_branch: true,
@@ -378,6 +509,14 @@ pub fn supports_pull_request_list(config: &ProjectCodeHostingConfig) -> bool {
 /// a branch that has none.
 pub fn finds_pull_request_by_branch(config: &ProjectCodeHostingConfig) -> bool {
     capabilities(&config.provider).finds_pull_request_by_branch
+}
+
+/// Whether the panel should offer a search box for this forge.
+///
+/// Read by the frontend through `CodeHostingStatus` rather than discovered by trying: a box that
+/// appears and then errors on the first keystroke is worse than one that was never there.
+pub fn searches_pull_requests(config: &ProjectCodeHostingConfig) -> bool {
+    capabilities(&config.provider).searches_pull_requests
 }
 
 /// Whether Maestro can open a pull request on this project's forge.
@@ -514,6 +653,42 @@ pub fn summarise_checks(checks: &[PullRequestCheck]) -> CiState {
     if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
 }
 
+/// What a pull request's checks add up to, as one mark.
+///
+/// A verdict rather than an enumeration, and that distinction is the whole reason the Worktrees
+/// panel is affordable: GitHub answers this as `statusCheckRollup { state }`, a scalar on a node the
+/// list query already pays for, where the named `contexts` behind it are a hundred nodes *each* —
+/// one point against a hundred and one for the same thirty pull requests.
+///
+/// `Failing` outranks `Running` here, the opposite of [`summarise_checks`]. That one decides whether
+/// to start a fix agent, where acting on a half-finished matrix would waste a round. This one is a
+/// single coloured icon with no room for "3 of 4 done", so the only question it can answer is
+/// whether anything is broken, and a check that has already failed answers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CiRollup {
+    Passing,
+    Failing,
+    Running,
+    /// No CI configured, or the forge would not say. Never rendered as a verdict.
+    Unknown,
+}
+
+impl CiRollup {
+    /// The same verdict from named checks, for the forges that answer nothing cheaper.
+    pub fn from_checks(checks: &[PullRequestCheck]) -> Self {
+        if checks.is_empty() {
+            return Self::Unknown;
+        }
+        if checks.iter().any(|check| check.status == CheckStatus::Failed) {
+            return Self::Failing;
+        }
+        if checks.iter().any(|check| check.status == CheckStatus::Running) {
+            return Self::Running;
+        }
+        Self::Passing
+    }
+}
+
 /// Every check the forge ran, named, for the session panel's rollup.
 ///
 /// Separate from [`fetch_ci_state`] because the two callers want different things: the sweep needs
@@ -534,83 +709,32 @@ pub async fn fetch_ci_checks(
     }
 }
 
-/// One pull request's checks, as the project-wide fetch returns them.
-#[derive(Debug)]
-pub struct PullRequestChecks {
-    pub number: i64,
-    /// The commit the checks describe. The frontend caches against it, so a poll that changed
-    /// nothing re-uses the answer and a pushed commit asks a new question.
-    pub head_sha: Option<String>,
-    pub checks: Vec<PullRequestCheck>,
-}
-
-/// How many pull requests the per-request fallback will ask about before giving up.
+/// The counts and the CI verdict for one row, for a forge whose list did not carry them.
 ///
-/// Only reached when the batch query is unavailable. Answering twenty of fifty is a Worktrees view
-/// where most cards have a CI mark, which is worth more than a view that spends a hundred requests
-/// to be complete and exhausts the token's budget doing it.
-const FALLBACK_PULL_REQUEST_LIMIT: usize = 20;
-
-/// Every open pull request's checks, in one request where the forge allows it.
+/// Two requests on GitLab, one on the rest, and none at all on GitHub — whose list query answers
+/// this as free scalars, so [`ListedPullRequest::detail`] is already populated and nothing calls
+/// this. That asymmetry is deliberate: a caller asks only when the list left a `None`, which means
+/// no provider check anywhere above this module.
 ///
-/// The Worktrees view needs all of them at once — its CI filter counts states across the whole
-/// list, which it cannot do from data held one row at a time. Asked per pull request that was two
-/// requests each on GitHub every poll, so a project with twenty open ones spent most of an hourly
-/// budget on a view nobody was interacting with.
-///
-/// Forges without an arm answer an empty list rather than an error, matching [`fetch_ci_checks`]:
-/// Gitea and Forgejo report no checks anywhere in this module, and a view showing no CI marks is
-/// the same outcome they already had.
-pub async fn fetch_open_pull_request_checks(
+/// Called once per pull request when it is first seen and then held, so the cost is bounded by how
+/// many new pull requests appear rather than by how long the panel stays open.
+pub async fn fetch_row_detail(
     target: &PullRequestTarget<'_>,
-    open: &[ListedPullRequest],
-) -> Result<Vec<PullRequestChecks>, String> {
-    if !capabilities(&target.config.provider).enumerates_checks {
-        return Ok(Vec::new());
-    }
-    match target.config.provider.as_str() {
-        "github" => match checks_all_github(target).await {
-            Ok(checks) => Ok(checks),
-            // An old GitHub Enterprise, or a token without the scope its GraphQL endpoint wants.
-            // Degrading to the per-request path costs requests but keeps the marks on the cards.
-            Err(e) => {
-                log::debug!("[github] batch check query unavailable, falling back: {}", e);
-                fetch_checks_one_by_one(target, open).await
-            }
-        },
-        _ => fetch_checks_one_by_one(target, open).await,
-    }
-}
+    number: i64,
+    head_sha: Option<&str>,
+) -> Result<ListedPullRequestDetail, String> {
+    let detail = fetch_pull_request(target, number).await?;
+    // The list's head sha, not this response's: they describe the same commit, and preferring the
+    // argument keeps the answer keyed to the row that asked for it even if a push landed in between.
+    let sha = head_sha.or(detail.head_sha.as_deref());
+    let checks = fetch_ci_checks(target, number, sha).await?;
 
-/// The fallback, and GitLab's only path: [`fetch_ci_checks`] per pull request, capped.
-///
-/// Sequential rather than concurrent on purpose. This runs when the forge has already refused the
-/// cheap question, and firing twenty parallel requests at an instance that may be rate-limiting us
-/// is how a degraded path becomes an outage.
-async fn fetch_checks_one_by_one(
-    target: &PullRequestTarget<'_>,
-    open: &[ListedPullRequest],
-) -> Result<Vec<PullRequestChecks>, String> {
-    let mut all = Vec::new();
-    for entry in open.iter().take(FALLBACK_PULL_REQUEST_LIMIT) {
-        // REST directly for GitHub rather than through `fetch_ci_checks`: reaching here means
-        // GraphQL has already refused this target, and the dispatcher would try it again per pull
-        // request — paying a failed request each time to rediscover what the batch call just found.
-        let asked = match target.config.provider.as_str() {
-            "github" => checks_github_rest(target, entry.head_sha.as_deref()).await,
-            _ => fetch_ci_checks(target, entry.number, entry.head_sha.as_deref()).await,
-        };
-        match asked {
-            Ok(checks) => all.push(PullRequestChecks {
-                number: entry.number,
-                head_sha: entry.head_sha.clone(),
-                checks,
-            }),
-            // One unreadable pull request must not blank the CI marks on every other card.
-            Err(e) => log::debug!("Could not read CI for pull request #{}: {}", entry.number, e),
-        }
-    }
-    Ok(all)
+    Ok(ListedPullRequestDetail {
+        additions: detail.additions,
+        deletions: detail.deletions,
+        changed_files: detail.changed_files,
+        ci: CiRollup::from_checks(&checks),
+    })
 }
 
 /// Ask the forge whether CI is happy with the pull request's head commit.
@@ -663,6 +787,15 @@ fn owner_repo(config: &ProjectCodeHostingConfig) -> Result<(&str, &str), String>
 /// user can act on and only if they can read them: "a pull request already exists for this branch"
 /// and "no commits between base and head" on creation, a revoked token or a deleted repository on
 /// a read.
+/// How many pull requests the forge says there are in total, if it said so in a header.
+///
+/// Read before the body, because [`read_json`] consumes the response. `None` for a header that is
+/// absent, unreadable or not a number — GitLab omits it once a count would be expensive, and the
+/// panel is built to say "30 shown" rather than to invent a denominator.
+fn header_total(response: &reqwest::Response, name: &str) -> Option<i64> {
+    response.headers().get(name)?.to_str().ok()?.parse().ok()
+}
+
 async fn read_json<T: for<'de> Deserialize<'de>>(
     response: reqwest::Response,
     provider: &str,
@@ -698,27 +831,38 @@ mod tests {
     /// the user never sees.
     #[test]
     fn every_forge_claims_only_what_a_dispatcher_answers() {
-        // provider, (lists, finds by branch, opens, reads, enumerates checks, reports ci)
+        // provider, (lists, finds by branch, searches, opens, reads, counts, enumerates, reports ci)
         let expected = [
-            ("github", (true, true, true, true, true, true)),
-            ("gitlab", (true, true, true, true, true, true)),
-            ("gitea", (true, true, true, true, false, false)),
-            ("forgejo", (true, true, true, true, false, false)),
-            ("bitbucket", (true, true, true, true, false, true)),
-            ("azuredevops", (true, true, true, true, false, false)),
+            ("github", (true, true, true, true, true, true, true, true)),
+            // Searches, but its merge request body carries no diff counts.
+            ("gitlab", (true, true, true, true, true, false, true, true)),
+            // Counts, but `/pulls` takes no `q` — its only pull request search is an issues
+            // endpoint that answers no head branch, which a row cannot be built from.
+            ("gitea", (true, true, false, true, true, true, false, false)),
+            ("forgejo", (true, true, false, true, true, true, false, false)),
+            // `searches_pull_requests` is false pending a live check of BBQL's `title ~`, not
+            // because Bitbucket cannot — see the comment on its row in the table.
+            ("bitbucket", (true, true, false, true, true, false, false, true)),
+            // Neither counts nor checks, which is what makes its rows arrive already answered
+            // rather than sending the panel to ask per row for nothing.
+            ("azuredevops", (true, true, false, true, true, false, false, false)),
             // Nothing at all, rather than an error on a timer, for a host nobody has taught us.
-            ("sourcehut", (false, false, false, false, false, false)),
+            ("sourcehut", (false, false, false, false, false, false, false, false)),
         ];
 
-        for (provider, (lists, finds, opens, reads, enumerates, reports)) in expected {
+        for (provider, (lists, finds, searches, opens, reads, counts, enumerates, reports)) in
+            expected
+        {
             let actual = capabilities(provider);
             assert_eq!(
                 actual,
                 ForgeCapabilities {
                     lists_pull_requests: lists,
                     finds_pull_request_by_branch: finds,
+                    searches_pull_requests: searches,
                     opens_pull_requests: opens,
                     reads_pull_requests: reads,
+                    reports_diff_counts: counts,
                     enumerates_checks: enumerates,
                     reports_ci_state: reports,
                 },
@@ -728,6 +872,84 @@ mod tests {
         }
     }
 
+    /// The two facts that decide whether the panel asks a forge anything per row.
+    ///
+    /// A provider answering neither has its rows filled with an empty detail by
+    /// [`list_open_pull_requests`], so nothing asks. Getting this wrong is not a visible bug — it is
+    /// thirty requests a page that each return nothing, which is exactly the cost the page exists to
+    /// remove and which no test would otherwise catch.
+    #[test]
+    fn a_forge_that_answers_nothing_per_row_is_named() {
+        for provider in ["bitbucket", "azuredevops"] {
+            let forge = capabilities(provider);
+            assert!(
+                !forge.enumerates_checks && !forge.reports_diff_counts,
+                "{} would be asked per row for nothing",
+                provider
+            );
+        }
+        for provider in ["github", "gitlab", "gitea", "forgejo"] {
+            let forge = capabilities(provider);
+            assert!(
+                forge.enumerates_checks || forge.reports_diff_counts,
+                "{} has something to say per row",
+                provider
+            );
+        }
+    }
+
+    /// `Failing` beats `Running`, which is the opposite of [`summarise_checks`] — a single icon can
+    /// only say whether anything is broken, and something that has already failed answers that
+    /// whatever the rest of the matrix is still doing.
+    #[test]
+    fn one_broken_check_makes_the_whole_row_failing() {
+        let check = |name: &str, status| PullRequestCheck { name: name.to_string(), status };
+
+        assert_eq!(CiRollup::from_checks(&[]), CiRollup::Unknown);
+        assert_eq!(
+            CiRollup::from_checks(&[
+                check("build", CheckStatus::Failed),
+                check("lint", CheckStatus::Running),
+            ]),
+            CiRollup::Failing
+        );
+        assert_eq!(
+            CiRollup::from_checks(&[
+                check("build", CheckStatus::Passed),
+                check("lint", CheckStatus::Running),
+            ]),
+            CiRollup::Running
+        );
+        assert_eq!(CiRollup::from_checks(&[check("build", CheckStatus::Passed)]), CiRollup::Passing);
+    }
+
+    /// A cursor is opaque to whoever holds it, so a bad one has to be recoverable: an error here
+    /// would leave the panel empty until the user reset something they cannot see.
+    #[test]
+    fn an_unreadable_cursor_starts_at_the_first_page() {
+        assert_eq!(cursor_offset(None), 0);
+        assert_eq!(cursor_offset(Some("")), 0);
+        assert_eq!(cursor_offset(Some("not a number")), 0);
+        assert_eq!(cursor_offset(Some("60")), 60);
+
+        assert_eq!(offset_page(0), 1);
+        assert_eq!(offset_page(LIST_PAGE_SIZE), 2);
+        assert_eq!(offset_page(LIST_PAGE_SIZE * 3), 4);
+    }
+
+    /// A short page is the end of the list on every forge that pages by offset, which is what lets
+    /// the next cursor be decided without a second request or a total to compare against.
+    #[test]
+    fn a_short_page_is_the_last_one() {
+        assert_eq!(next_offset_cursor(LIST_PAGE_SIZE, 0), Some(LIST_PAGE_SIZE.to_string()));
+        assert_eq!(
+            next_offset_cursor(LIST_PAGE_SIZE, LIST_PAGE_SIZE),
+            Some((LIST_PAGE_SIZE * 2).to_string())
+        );
+        assert_eq!(next_offset_cursor(LIST_PAGE_SIZE - 1, 0), None);
+        assert_eq!(next_offset_cursor(0, LIST_PAGE_SIZE), None);
+    }
+
     /// The predicates the frontend gates on have to answer out of the same table the dispatchers
     /// do. Keeping them as separate provider lists is what let them drift.
     #[test]
@@ -735,6 +957,11 @@ mod tests {
         assert!(supports_pull_request_list(&config("github", "github.com")));
         assert!(finds_pull_request_by_branch(&config("azuredevops", "dev.azure.com")));
         assert!(supports_pull_requests(&config("bitbucket", "bitbucket.org")));
+        assert!(searches_pull_requests(&config("gitlab", "gitlab.com")));
+        // The panel hides its search box on these two rather than degrading it to filtering the
+        // page, which would make one control mean two different things.
+        assert!(!searches_pull_requests(&config("gitea", "gitea.example.com")));
+        assert!(!searches_pull_requests(&config("azuredevops", "dev.azure.com")));
         assert!(!supports_pull_request_list(&config("sourcehut", "git.sr.ht")));
         assert!(!finds_pull_request_by_branch(&config("sourcehut", "git.sr.ht")));
         assert!(!supports_pull_requests(&config("sourcehut", "git.sr.ht")));

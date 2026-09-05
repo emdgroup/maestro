@@ -815,56 +815,42 @@ async fetchBranchPullRequest(projectId: number, branch: string) : Promise<Result
 }
 },
 /**
- * Every open pull request's checks, for the Worktrees view's CI marks and its CI filter.
+ * The counts and CI verdict for one row whose list entry did not carry them.
  * 
- * One command rather than one query per card. Asked per pull request this was two GitHub requests
- * each per poll, so a project with twenty open ones spent roughly an hourly token budget on a view
- * that was only showing coloured icons.
+ * Called once per pull request, when it is first seen, and then held against
+ * `(number, head_sha, updated_at)` — so the steady-state cost of a page is zero and only a new
+ * pull request, a push, or a CI transition pays for anything.
  * 
- * The open list is fetched here rather than taken as an argument: the fallback path needs each
- * pull request's head sha, and a list passed from a frontend poll would be a second copy of the
- * same answer that could disagree with this one.
+ * Never called on GitHub, whose list request answers this for free, and never on Bitbucket or Azure
+ * DevOps, whose rows arrive with an empty answer rather than an absent one precisely so that
+ * nothing asks.
  */
-async fetchProjectPullRequestChecks(projectId: number) : Promise<Result<ProjectPullRequestChecks[], string>> {
+async fetchPullRequestRowDetail(projectId: number, number: number, headSha: string | null) : Promise<Result<PullRequestRowDetail, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_project_pull_request_checks", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("fetch_pull_request_row_detail", { projectId, number, headSha }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Everything the card shows about one pull request except its checks.
+ * One page of the pull requests open on the project's forge.
  * 
- * One request on every forge — the state half and the counts half come out of the same body, and
- * asking for them separately was two identical GETs per poll.
+ * A page, never the whole list — `nixpkgs` has around eleven thousand open at once, so every answer
+ * this could give is a page and the only real choice is whether the caller is told which one. It is
+ * told: `total` and `next_cursor` come back with the rows.
  * 
- * Split from the checks below because the two move at completely different speeds: this changes
- * when somebody pushes, renames or merges, and the checks change while you watch. Polling both at
- * the rate the checks need re-asks the forge for ten fields to learn one.
- */
-async fetchPullRequestDetail(projectId: number, number: number) : Promise<Result<PullRequestDetailInfo, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_pull_request_detail", { projectId, number }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Every pull request open on the project's forge.
+ * `search` is handed to the forge rather than applied here. Filtering thirty rows out of eleven
+ * thousand finds almost nothing and looks like an empty project, so a forge that cannot search
+ * says so through `forge_searches_pull_requests` and the panel shows no box at all.
  * 
- * One request answers the whole Worktrees view, and every open session's card besides. The
- * alternative — a branch search per card — gets slower as a project accumulates worktrees, which
- * is the wrong direction for a view whose whole purpose is having a lot of them.
- * 
- * Answers `Ok(vec![])` rather than an error when the project has no forge or no credential: a
+ * Answers an empty page rather than an error when the project has no forge or no credential: a
  * project that never connected one should show no pull requests, not an error strip over a view
  * that works perfectly well without them.
  */
-async listProjectPullRequests(projectId: number) : Promise<Result<ProjectPullRequest[], string>> {
+async listProjectPullRequests(projectId: number, cursor: string | null, search: string | null) : Promise<Result<PullRequestPageInfo, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_project_pull_requests", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_project_pull_requests", { projectId, cursor, search }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2672,6 +2658,16 @@ forge_supports_pull_request_list: boolean;
  */
 forge_finds_pull_request_by_branch: boolean; 
 /**
+ * Whether the panel should show a search box.
+ * 
+ * Half the forges cannot search pull requests at all: Gitea and Forgejo take no `q` on their
+ * pull request list and search only through an issues endpoint that names no head branch, and
+ * Azure DevOps has no text criterion. The box is hidden rather than degraded to filtering the
+ * visible page, which would make one control mean the project on three providers and thirty
+ * rows on the other three.
+ */
+forge_searches_pull_requests: boolean; 
+/**
  * Whether this forge will name its individual checks.
  * 
  * Weaker than "has CI": Bitbucket reports a verdict Maestro can read without enumerating
@@ -3004,26 +3000,26 @@ remote_name: string | null;
 base_branch: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
 /**
- * One open pull request, as the Worktrees view's panel and card chips read it.
+ * One open pull request, as the Worktrees view's panel reads it.
  * 
- * Deliberately thin: no state, because every entry here is open by definition; no checks and no
- * line counts, because both cost a request each and are asked for separately by the one card the
- * user is actually looking at.
+ * No state, because every entry here is open by definition.
  */
 export type ProjectPullRequest = { number: number; url: string; title: string; 
 /**
  * What the Worktrees view matches a worktree's `branch_name` against.
  */
-head_branch: string; base_branch: string | null; created_at: string | null; head_sha: string | null }
+head_branch: string; base_branch: string | null; created_at: string | null; head_sha: string | null; 
 /**
- * One open pull request's checks, as the Worktrees view reads them.
+ * Part of the key the frontend holds `detail` under. `head_sha` alone would miss a CI run that
+ * started or finished without a new commit, and the row would keep its first answer forever.
  */
-export type ProjectPullRequestChecks = { number: number; 
+updated_at: string | null; 
 /**
- * The commit these describe, so the frontend can cache against it and skip a poll that
- * changed nothing.
+ * `None` means *unasked*, and is the caller's signal to fetch it for this row with
+ * [`fetch_pull_request_row_detail`]. GitHub fills it here from the same GraphQL request that
+ * produced the row, so on GitHub that command is never called at all.
  */
-head_sha: string | null; checks: PullRequestCheckInfo[] }
+detail: PullRequestRowDetail | null }
 /**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.
@@ -3056,18 +3052,36 @@ export type PullRequestCheckStatus = "Passed" | "Failed" | "Running"
  */
 export type PullRequestCi = "Passing" | "Failing" | "Pending"
 /**
- * Everything about one pull request that its *list* entry does not carry, plus what that entry
- * carries but cannot keep current.
+ * A row's CI as one mark.
  * 
- * One shape rather than the state/facts pair it replaces, because on every forge that answers both
- * they come out of the same request. Splitting them cost a request per poll and left `title` with
- * no owner at all — it came from the open list, so a rename waited a whole list cycle, and a
- * merged pull request has left that list for good and would have kept its old title forever.
- * 
- * Every field but `state` is optional: the forges disagree about which they answer, and an absent
- * one renders as a dropped line rather than a zero.
+ * Mirrors [`CiRollup`]. A verdict rather than a list of names, because naming the checks is what
+ * made the query this replaces cost a hundred times as much — and a row draws one coloured icon.
+ * Names are still read where they are shown: the session panel and the worktree card chip both ask
+ * about a single branch and get the full list.
  */
-export type PullRequestDetailInfo = { state: BranchPullRequestState; title: string | null; base_branch: string | null; head_branch: string | null; head_sha: string | null; created_at: string | null; commits: number | null; changed_files: number | null; additions: number | null; deletions: number | null; mergeable: boolean | null }
+export type PullRequestCiRollup = "Passing" | "Failing" | "Running" | "Unknown"
+/**
+ * One page of a project's open pull requests.
+ */
+export type PullRequestPageInfo = { items: ProjectPullRequest[]; 
+/**
+ * Pass back verbatim to ask for the next page. Opaque — a GraphQL cursor on GitHub, a row
+ * offset elsewhere — and `None` when there is no next page.
+ */
+next_cursor: string | null; 
+/**
+ * How many are open in total, where the forge says so cheaply. `None` on Bitbucket Server and
+ * Azure DevOps, whose responses carry no total at all; the header then reports how many it is
+ * showing rather than inventing a denominator.
+ */
+total: number | null }
+/**
+ * The line counts, file count and CI verdict a row shows.
+ * 
+ * The same shape whether it arrived inside the list or from the per-row command, so the frontend
+ * has one type for "what this row knows" and no branch on where it came from.
+ */
+export type PullRequestRowDetail = { additions: number | null; deletions: number | null; changed_files: number | null; ci: PullRequestCiRollup }
 /**
  * What the board shows: how many slots this host has, how many are taken, and why.
  */

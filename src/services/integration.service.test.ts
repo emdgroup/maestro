@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
-import type { BranchPullRequestInfo, PullRequestCheckInfo } from "@/types/bindings";
-import { branchPullRequestPollInterval, burstKeyOf } from "./integration.service";
+import type {
+  BranchPullRequestInfo,
+  PullRequestCheckInfo,
+  PullRequestRowDetail,
+} from "@/types/bindings";
+import {
+  branchPullRequestPollInterval,
+  burstKeyOf,
+  integrationQueryKeys,
+  rowDetailPollInterval,
+} from "./integration.service";
 
 function pullRequest(overrides: Partial<BranchPullRequestInfo> = {}): BranchPullRequestInfo {
   return {
@@ -96,5 +105,83 @@ describe("burstKeyOf", () => {
   it("is null before anything has been found", () => {
     expect(burstKeyOf(null)).toBeNull();
     expect(burstKeyOf(undefined)).toBeNull();
+  });
+});
+
+/**
+ * The rule that decides whether a row keeps costing requests.
+ *
+ * Everything else about a row is held against its key, so this is the *only* thing standing between
+ * a page of thirty and thirty timers. It has to be false in every state but one.
+ */
+describe("rowDetailPollInterval", () => {
+  const detail = (ci: PullRequestRowDetail["ci"]): PullRequestRowDetail => ({
+    additions: 12,
+    deletions: 3,
+    changed_files: 2,
+    ci,
+  });
+
+  /// A run in progress finishes without touching the number, the head commit or `updated_at` on
+  /// some forges, so it is the one thing the key cannot notice and the one thing worth a timer.
+  it("polls only while a run is still going", () => {
+    expect(rowDetailPollInterval(detail("Running"))).toBeGreaterThan(0);
+  });
+
+  it("stops once the run has settled", () => {
+    expect(rowDetailPollInterval(detail("Passing"))).toBe(false);
+    expect(rowDetailPollInterval(detail("Failing"))).toBe(false);
+  });
+
+  /// A repository with no CI at all. Polling this would be a request every thirty seconds, per row,
+  /// forever, to be told the same nothing — which is precisely the cost this design removed.
+  it("never polls a row that has no CI", () => {
+    expect(rowDetailPollInterval(detail("Unknown"))).toBe(false);
+    expect(rowDetailPollInterval(undefined)).toBe(false);
+  });
+});
+
+/**
+ * What makes holding a row's detail safe.
+ *
+ * `staleTime: Infinity` is only correct because everything that can change the answer changes the
+ * key. If one of these stopped being part of it the row would show its first answer until the user
+ * hit refresh — and `updated_at` is the one that is easy to leave out and impossible to notice.
+ */
+describe("pullRequestRowDetail key", () => {
+  const base = integrationQueryKeys.pullRequestRowDetail(
+    1,
+    310,
+    "deadbeef",
+    "2026-09-04T11:00:00Z",
+  );
+
+  it("changes when a push moves the head commit", () => {
+    expect(
+      integrationQueryKeys.pullRequestRowDetail(1, 310, "c0ffee", "2026-09-04T11:00:00Z"),
+    ).not.toEqual(base);
+  });
+
+  /// A CI run starting or finishing moves neither the number nor the commit. Without this the row
+  /// would never re-ask and would sit on "no checks" for the life of the page.
+  it("changes when the forge touches the pull request without a new commit", () => {
+    expect(
+      integrationQueryKeys.pullRequestRowDetail(1, 310, "deadbeef", "2026-09-04T12:00:00Z"),
+    ).not.toEqual(base);
+  });
+
+  it("changes for a different pull request and a different project", () => {
+    expect(
+      integrationQueryKeys.pullRequestRowDetail(1, 311, "deadbeef", "2026-09-04T11:00:00Z"),
+    ).not.toEqual(base);
+    expect(
+      integrationQueryKeys.pullRequestRowDetail(2, 310, "deadbeef", "2026-09-04T11:00:00Z"),
+    ).not.toEqual(base);
+  });
+
+  /// The refresh shortcut and the tab-focus effect invalidate by this prefix, so it has to actually
+  /// be one — it is the only thing that re-reads a row on a forge that never bumps a timestamp.
+  it("sits under a prefix a refresh can reach", () => {
+    expect(base.slice(0, 3)).toEqual(integrationQueryKeys.pullRequestRowDetails(1));
   });
 });

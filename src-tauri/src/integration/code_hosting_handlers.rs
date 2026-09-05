@@ -75,6 +75,14 @@ pub struct CodeHostingStatus {
     /// indistinguishable from a branch that has none — which is a card silently disappearing on a
     /// busy repository.
     pub forge_finds_pull_request_by_branch: bool,
+    /// Whether the panel should show a search box.
+    ///
+    /// Half the forges cannot search pull requests at all: Gitea and Forgejo take no `q` on their
+    /// pull request list and search only through an issues endpoint that names no head branch, and
+    /// Azure DevOps has no text criterion. The box is hidden rather than degraded to filtering the
+    /// visible page, which would make one control mean the project on three providers and thirty
+    /// rows on the other three.
+    pub forge_searches_pull_requests: bool,
     /// Whether this forge will name its individual checks.
     ///
     /// Weaker than "has CI": Bitbucket reports a verdict Maestro can read without enumerating
@@ -195,6 +203,7 @@ pub async fn code_hosting_status(
         forge_supports_pull_requests: false,
         forge_supports_pull_request_list: false,
         forge_finds_pull_request_by_branch: false,
+        forge_searches_pull_requests: false,
         forge_enumerates_checks: false,
         applied: false,
     };
@@ -239,7 +248,8 @@ pub async fn code_hosting_status(
             config: None,
             forge_supports_pull_requests: false,
             forge_supports_pull_request_list: false,
-        forge_finds_pull_request_by_branch: false,
+            forge_finds_pull_request_by_branch: false,
+            forge_searches_pull_requests: false,
             forge_enumerates_checks: false,
             applied: false,
         });
@@ -282,6 +292,8 @@ pub async fn code_hosting_status(
             crate::integration::pull_request::supports_pull_request_list(&config),
         forge_finds_pull_request_by_branch:
             crate::integration::pull_request::finds_pull_request_by_branch(&config),
+        forge_searches_pull_requests:
+            crate::integration::pull_request::searches_pull_requests(&config),
         forge_enumerates_checks: crate::integration::pull_request::enumerates_checks(&config),
         config: Some(config),
         applied,

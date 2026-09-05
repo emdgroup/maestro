@@ -8,7 +8,7 @@ import type {
   IntegrationStatus,
   LandingMode,
   ProjectIssueTrackingConfig,
-  ProjectPullRequest,
+  PullRequestRowDetail,
 } from "@/types/bindings";
 
 export type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig };
@@ -56,18 +56,25 @@ export const integrationQueryKeys = {
   // replaced by a #11 opened on the forge would go on asking about #10 forever.
   branchPullRequest: (projectId: number, branch: string) =>
     [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
+  /**
+   * One page of the project's open pull requests. The prefix is what a refresh invalidates, so it
+   * reaches every page and every search the user has looked at.
+   */
   projectPullRequests: (projectId: number) =>
     [...integrationQueryKeys.base, "project_pull_requests", projectId] as const,
-  // `heads` fingerprints every listed pull request's number and head sha. A push has to re-ask
-  // rather than reuse the previous commit's marks, and that is the only thing that changes here
-  // without the project changing.
-  projectPullRequestChecks: (projectId: number, heads: string) =>
-    [...integrationQueryKeys.base, "project_pull_request_checks", projectId, heads] as const,
-  // Same head-sha keying as the checks: a push is a different question, not a stale answer to this
-  // one. It is not what keeps the answer fresh, though — state, title and mergeable all change with
-  // the head commit standing still, which is why the session polls this rather than caching it.
-  pullRequestDetail: (projectId: number, number: number, headSha: string) =>
-    [...integrationQueryKeys.base, "pull_request_detail", projectId, number, headSha] as const,
+  projectPullRequestPage: (projectId: number, cursor: string | null, search: string) =>
+    [...integrationQueryKeys.projectPullRequests(projectId), cursor ?? "", search] as const,
+  /**
+   * One row's counts and CI verdict.
+   *
+   * Keyed on `updated_at` as well as the head sha, and that is the whole reason the answer can be
+   * held instead of polled: a CI run starting or finishing moves neither the number nor the commit,
+   * so a key without it would leave a row on its first answer until the user hit refresh.
+   */
+  pullRequestRowDetails: (projectId: number) =>
+    [...integrationQueryKeys.base, "pull_request_row_detail", projectId] as const,
+  pullRequestRowDetail: (projectId: number, number: number, headSha: string, updatedAt: string) =>
+    [...integrationQueryKeys.pullRequestRowDetails(projectId), number, headSha, updatedAt] as const,
 };
 
 export function useListIntegrations() {
@@ -220,11 +227,20 @@ export function branchPullRequestPollInterval(
  * The stale window is not about freshness — the interval owns that — but about session switching.
  * At `staleTime: 0` every click between two sessions would fire a request each, which is what a
  * per-session lookup has to avoid to be affordable at all.
+ *
+ * The Worktrees view's cards ask the same question with `poll: false`. They have to ask it
+ * per-branch rather than read a shared list, because that list is now one page of thirty and a
+ * worktree whose pull request sits on page seven would silently lose its chip — but a grid of them
+ * polling at the session's rate would be a request per card per thirty seconds. Unpolled they cost
+ * one request each when the tab opens and nothing after, and they share this cache with the session
+ * panel, so opening a session the grid already asked about costs nothing at all.
  */
 export function useBranchPullRequest(
   projectId: number | null,
   branch: string | null,
   enabled: boolean,
+  /** `true` for the one session panel on screen; `false` for a card in a grid of them. */
+  poll = true,
 ) {
   const burst = useRef<{ key: string; left: number } | null>(null);
 
@@ -233,6 +249,7 @@ export function useBranchPullRequest(
     queryFn: () => api.fetchBranchPullRequest(projectId!, branch!),
     enabled: enabled && projectId != null && branch != null,
     refetchInterval: (query) => {
+      if (!poll) return false;
       const key = burstKeyOf(query.state.data);
       if (key != null && burst.current?.key !== key) {
         burst.current = { key, left: BURST_TRIES };
@@ -242,79 +259,95 @@ export function useBranchPullRequest(
       return interval;
     },
     // Refetched when the user comes back to the window, and when the session is selected again —
-    // which is what re-arms detection after the timer has stopped on a merged pull request.
+    // which is what re-arms detection after the timer has stopped on a merged pull request. The
+    // stale window below is what keeps that affordable for a whole grid: a focus inside it costs
+    // nothing, so twenty cards do not become twenty requests every time the window is clicked.
     refetchOnWindowFocus: true,
-    staleTime: 10_000,
+    staleTime: poll ? 10_000 : 5 * 60_000,
     retry: false,
   });
 }
 
+/** How often the visible page is re-read. See [`useProjectPullRequestPage`]. */
+const PULL_REQUEST_PAGE_POLL_MS = 30_000;
+
 /**
- * Every pull request open on the project's forge, in one request.
+ * One page of the project's open pull requests.
  *
- * The whole app's answer to "which pull request is on this branch". The Worktrees view matches its
- * cards against it, and so does each session's Overview card — one request for the project rather
- * than one per worktree. The session card does not read this: it asks about its own branch, which
- * is exact where one page of a project with thousands of open pull requests is not.
+ * A page, not the list. `nixpkgs` has around eleven thousand open at once, so "all of them" was
+ * never on offer — the previous version asked for a hundred and rendered `100/100`, which is a
+ * denominator that happens to be a lie on every large repository. This asks for thirty, says how
+ * many there are, and hands back a cursor for the next.
  *
- * The command answers an empty list rather than an error for a project with no forge, so there is
+ * On GitHub this single request also carries every row's line counts and CI verdict, because they
+ * are free scalars on nodes the query already pays for — which is what removes the per-row request
+ * the panel used to make and the ~101-point batch check query beside it.
+ *
+ * `search` goes to the forge in the same request rather than filtering what came back. Filtering
+ * thirty rows out of eleven thousand finds almost nothing and reads as an empty project.
+ *
+ * The command answers an empty page rather than an error for a project with no forge, so there is
  * nothing to gate here beyond visibility.
- *
- * The stale window is not about freshness — the interval owns that — but about mounts, so that
- * leaving the Worktrees tab and coming back reuses the answer rather than re-asking for it.
  */
-export function useProjectPullRequests(projectId: number | null, enabled: boolean) {
-  return useQuery({
-    queryKey: integrationQueryKeys.projectPullRequests(projectId ?? -1),
-    queryFn: () => api.listProjectPullRequests(projectId!),
-    enabled: enabled && projectId != null,
-    refetchInterval: 60_000,
-    staleTime: 15_000,
-    retry: false,
-  });
-}
-
-/** How often an open pull request's own fields are re-read. See [`usePullRequestDetail`]. */
-const DETAIL_POLL_MS = 30_000;
-
-/**
- * Everything about one pull request except its checks — state, title, branches and diff counts.
- *
- * One query where there were two, because on every forge that answers both halves they arrive in
- * one response: `/repos/{o}/{r}/pulls/{n}` on GitHub and Gitea, the merge request URL on GitLab.
- * The old split asked that URL twice per poll to parse different halves of the same body.
- *
- * Polled rather than cached against the head sha, which is what the counts alone allowed. Three
- * things change without the head commit moving, and all three were invisible before: a rename, a
- * merge, and `mergeable` — GitHub computes the merge commit in the background and answers `null`
- * until it has one, so the first read after any push says "no answer" and a cache keyed on the
- * commit would have kept that answer until the next one.
- *
- * Stops once the pull request settles. Merged is terminal on every forge here, and a reopen comes
- * back through the open list rather than through this query, so there is nothing left to watch.
- */
-export function usePullRequestDetail(
+export function useProjectPullRequestPage(
   projectId: number | null,
-  number: number | null,
-  headSha: string | null,
+  cursor: string | null,
+  search: string,
   enabled: boolean,
-  /**
-   * `true` for the one card the user is watching. `false` for a list, where polling would be a
-   * request per row per interval — the cost the project-wide list and the batch checks query exist
-   * to avoid, reintroduced through the back door.
-   */
-  poll: boolean,
 ) {
   return useQuery({
-    queryKey: integrationQueryKeys.pullRequestDetail(projectId ?? -1, number ?? -1, headSha ?? ""),
-    queryFn: () => api.fetchPullRequestDetail(projectId!, number!),
-    enabled: enabled && projectId != null && number != null,
-    refetchInterval: (query) =>
-      poll && query.state.data?.state === "Open" ? DETAIL_POLL_MS : false,
-    // Polled: short enough that returning to a session re-reads it, which is what picks up a rename
-    // made while the user was looking somewhere else. Unpolled: the key already holds the head sha,
-    // so the only thing a stale window could do is re-ask the same question about the same commit.
-    staleTime: poll ? 5_000 : Infinity,
+    queryKey: integrationQueryKeys.projectPullRequestPage(projectId ?? -1, cursor, search),
+    queryFn: () => api.listProjectPullRequests(projectId!, cursor, search || null),
+    enabled: enabled && projectId != null,
+    refetchInterval: PULL_REQUEST_PAGE_POLL_MS,
+    // Long enough that paging back and forth reuses what it already has, short enough that the
+    // interval above is what owns freshness.
+    staleTime: 15_000,
+    // A page the user has moved past is not worth keeping alive; the next visit re-asks.
+    placeholderData: (previous) => previous,
+    retry: false,
+  });
+}
+
+/**
+ * One row's line counts, file count and CI verdict, fetched once and then held.
+ *
+ * Only for the forges whose list request cannot answer it — on GitHub `detail` arrives populated and
+ * `enabled` is never true, and on Bitbucket and Azure DevOps the backend fills in an empty answer
+ * rather than an absent one precisely so this stays quiet. Neither needs a provider check here: a
+ * `null` detail *is* the signal, and it is the backend that decides what `null` means.
+ *
+ * `staleTime: Infinity` is not a claim about freshness. The key holds the number, the head sha and
+ * `updated_at`, so everything that could change this answer changes the key instead — a push, a
+ * rename, a merge, a pipeline event. Nothing is left for a refetch to discover.
+ *
+ * The one exception is a run still going, which finishes without touching any of the three on some
+ * forges. That row, and only that row, keeps a poll.
+ */
+export function rowDetailPollInterval(detail: PullRequestRowDetail | undefined): number | false {
+  // Exported and separate so the rule can be read on its own. The bug this design replaces was an
+  // interval condition buried in a hook, which no test could reach and nobody noticed was wrong.
+  return detail?.ci === "Running" ? PULL_REQUEST_PAGE_POLL_MS : false;
+}
+
+export function usePullRequestRowDetail(
+  projectId: number | null,
+  number: number,
+  headSha: string | null,
+  updatedAt: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: integrationQueryKeys.pullRequestRowDetail(
+      projectId ?? -1,
+      number,
+      headSha ?? "",
+      updatedAt ?? "",
+    ),
+    queryFn: () => api.fetchPullRequestRowDetail(projectId!, number, headSha),
+    enabled: enabled && projectId != null,
+    refetchInterval: (query) => rowDetailPollInterval(query.state.data),
+    staleTime: Infinity,
     retry: false,
   });
 }
@@ -322,16 +355,18 @@ export function usePullRequestDetail(
 /**
  * Open a pull request for a branch, touching no task.
  *
- * Puts the new pull request straight into the cached open list. That is not a guess standing in for
- * the forge's answer — it *is* the forge's answer, from the response to the request that created
- * it, and every field the list carries was either in that response or in the arguments we sent.
+ * Puts the new pull request straight into the branch query's cache. That is not a guess standing in
+ * for the forge's answer — it *is* the forge's answer, from the response to the request that created
+ * it, and every field written below was either in that response or in the arguments we sent.
  *
  * Doing it any other way meant waiting: invalidating instead refetched within milliseconds of the
- * POST, before the list endpoint had caught up with its own write, and a list that answers "no such
- * pull request" is indistinguishable from one that has not caught up. The next attempt was a full
+ * POST, before the forge had caught up with its own write, and an endpoint answering "no such pull
+ * request" is indistinguishable from one that has not caught up. The next attempt was a full
  * interval later, which is the minute users spent watching a card that should already have been
- * there. The delayed refresh below is the safety net for forges whose create response omits the
- * head sha, not the mechanism.
+ * there.
+ *
+ * This is the key the session panel *and* the worktree card both read, so seeding it paints both
+ * with no round trip at all.
  */
 export function useOpenPullRequestForBranch() {
   const queryClient = useQueryClient();
@@ -373,29 +408,16 @@ export function useOpenPullRequestForBranch() {
         checks: [],
       } satisfies BranchPullRequestInfo);
 
-      const key = integrationQueryKeys.projectPullRequests(projectId);
-      queryClient.setQueryData(key, (previous: ProjectPullRequest[] | undefined) => {
-        const entry: ProjectPullRequest = {
-          number: opened.number,
-          url: opened.url,
-          title,
-          head_branch: branch,
-          base_branch: base,
-          created_at: new Date().toISOString(),
-          head_sha: opened.head_sha,
-        };
-        const rest = (previous ?? []).filter((item) => item.number !== opened.number);
-        return [entry, ...rest];
+      // The Worktrees *panel* is not seeded, only invalidated, and it is allowed to lag. Its rows
+      // are pages the forge orders and counts, so a hand-placed entry would have to guess which
+      // page it belongs on and what it does to the total — and a list endpoint routinely has not
+      // caught up with its own write, so an immediate refetch can answer "no such pull request".
+      // Nothing depends on it being instant: the seed above is what paints the session card, the
+      // worktree card asks about its own branch and hits that same seed, and the panel's own 30s
+      // poll picks the row up at the top of page one, where `UPDATED_AT desc` puts it.
+      void queryClient.invalidateQueries({
+        queryKey: integrationQueryKeys.projectPullRequests(projectId),
       });
-
-      // A forge that did not name the head commit leaves the checks query with nothing to key on,
-      // so the list has to be asked again for it. Delayed rather than immediate for the reason in
-      // the comment above, and harmless when the seed was already complete.
-      if (opened.head_sha == null) {
-        setTimeout(() => {
-          void queryClient.invalidateQueries({ queryKey: key });
-        }, 2_000);
-      }
     },
     onError: createErrorToastHandler("Failed to open the pull request"),
   });

@@ -8,8 +8,9 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, FoundPullRequest, ListedPullRequest, PullRequestDetail,
-    PullRequestState, PullRequestTarget, read_json,
+    CiState, CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest,
+    PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget, cursor_offset,
+    next_offset_cursor, offset_page, read_json,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -249,13 +250,6 @@ struct BitbucketServerPullRequest {
     links: Option<BitbucketServerLinks>,
 }
 
-/// How many open pull requests one page covers.
-///
-/// Cloud's documented maximum, and comfortably above Server's default of 25. Deliberately not
-/// paginated: this list exists to answer "which pull request is on this branch" for the whole
-/// project in one request, and a second page would reintroduce the per-pull-request cost.
-const LIST_PAGE_SIZE: usize = 100;
-
 #[derive(Deserialize)]
 struct BitbucketCloudBranch {
     #[serde(default)]
@@ -286,6 +280,8 @@ struct BitbucketCloudListEntry {
     #[serde(default)]
     created_on: Option<String>,
     #[serde(default)]
+    updated_on: Option<String>,
+    #[serde(default)]
     links: Option<BitbucketCloudLinks>,
 }
 
@@ -293,6 +289,10 @@ struct BitbucketCloudListEntry {
 struct BitbucketCloudPage {
     #[serde(default)]
     values: Vec<BitbucketCloudListEntry>,
+    /// The count across every page, which Cloud documents as optional and omits once producing it
+    /// would be expensive.
+    #[serde(default)]
+    size: Option<i64>,
 }
 
 /// `None` for an entry with no source branch: that is the field a worktree is matched on, so an
@@ -318,6 +318,10 @@ fn cloud_list_entry_to_listed(
         base_branch: entry.destination.and_then(|d| d.branch).and_then(|branch| branch.name),
         created_at: entry.created_on,
         head_sha: source.commit.map(|commit| commit.hash),
+        updated_at: entry.updated_on,
+        // Cloud's list carries no diff counts, and `enumerates_checks` is false for Bitbucket, so
+        // there is nothing to fill this with even per row.
+        detail: None,
     })
 }
 
@@ -345,12 +349,19 @@ struct BitbucketServerListEntry {
     to_ref: Option<BitbucketServerListRef>,
     #[serde(rename = "createdDate", default)]
     created_date: Option<i64>,
+    #[serde(rename = "updatedDate", default)]
+    updated_date: Option<i64>,
 }
 
 #[derive(Deserialize)]
 struct BitbucketServerPage {
     #[serde(default)]
     values: Vec<BitbucketServerListEntry>,
+    /// Server's own `size` is this page's length, not the collection's, and nothing in the response
+    /// gives a grand total — so `PullRequestPage::total` stays `None` here and the panel says how
+    /// many it is showing rather than inventing a denominator.
+    #[serde(rename = "isLastPage", default)]
+    is_last_page: bool,
 }
 
 /// Server dates are epoch milliseconds, where every other forge here sends RFC 3339.
@@ -381,65 +392,89 @@ fn server_list_entry_to_listed(
         base_branch: entry.to_ref.and_then(|to_ref| to_ref.display_id),
         created_at: entry.created_date.and_then(epoch_millis_to_rfc3339),
         head_sha: from_ref.latest_commit,
+        updated_at: entry.updated_date.and_then(epoch_millis_to_rfc3339),
+        detail: None,
     })
 }
 
-/// Every open pull request on the repository.
+/// One page of the repository's open pull requests.
 ///
-/// Cloud declares exactly one query parameter on this endpoint — `state` — so unlike GitHub,
-/// GitLab and Bitbucket Server there is no way to sort. A repository with more than
-/// [`LIST_PAGE_SIZE`] open pull requests therefore truncates arbitrarily rather than dropping the
-/// ones nobody has touched. Server takes `order=NEWEST`, which is that guarantee.
+/// Cloud declares exactly one filter on this endpoint beyond `q` — `state` — and no sort at all, so
+/// unlike GitHub, GitLab and Bitbucket Server its pages come back in whatever order Bitbucket
+/// chose. Server takes `order=NEWEST`, which is the ordering the panel wants everywhere else.
+///
+/// Cloud pages by 1-based `page`, Server by a row offset in `start`, and this module's cursor is an
+/// offset — so Cloud converts and Server spends it directly.
 pub(super) async fn list_bitbucket(
     target: &PullRequestTarget<'_>,
-) -> Result<Vec<ListedPullRequest>, String> {
+    cursor: Option<&str>,
+) -> Result<PullRequestPage, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
     let client = build_http_client()?;
     let auth = format!("Bearer {}", target.token);
+    let offset = cursor_offset(cursor);
 
     match &deployment {
         BitbucketDeployment::Cloud => {
             let response = client
                 .get(format!(
                     "https://api.bitbucket.org/2.0/repositories/{}/{}/pullrequests\
-                     ?state=OPEN&pagelen={}",
-                    project, repository, LIST_PAGE_SIZE
+                     ?state=OPEN&pagelen={}&page={}",
+                    project,
+                    repository,
+                    LIST_PAGE_SIZE,
+                    offset_page(offset)
                 ))
                 .header("Authorization", &auth)
                 .send()
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let page: BitbucketCloudPage = read_json(response, "Bitbucket").await?;
-            Ok(page
-                .values
-                .into_iter()
-                .filter_map(|entry| {
-                    let fallback =
-                        bitbucket_web_url(&deployment, project, repository, entry.id);
-                    cloud_list_entry_to_listed(entry, &fallback)
-                })
-                .collect())
+            let total = page.size;
+            let returned = page.values.len();
+            Ok(PullRequestPage {
+                items: page
+                    .values
+                    .into_iter()
+                    .filter_map(|entry| {
+                        let fallback =
+                            bitbucket_web_url(&deployment, project, repository, entry.id);
+                        cloud_list_entry_to_listed(entry, &fallback)
+                    })
+                    .collect(),
+                next_cursor: next_offset_cursor(returned, offset),
+                total,
+            })
         }
         BitbucketDeployment::Server(instance) => {
             let response = client
                 .get(format!(
                     "{}/rest/api/latest/projects/{}/repos/{}/pull-requests\
-                     ?state=OPEN&order=NEWEST&limit={}",
-                    instance, project, repository, LIST_PAGE_SIZE
+                     ?state=OPEN&order=NEWEST&limit={}&start={}",
+                    instance, project, repository, LIST_PAGE_SIZE, offset
                 ))
                 .header("Authorization", &auth)
                 .send()
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let page: BitbucketServerPage = read_json(response, "Bitbucket").await?;
-            Ok(page
-                .values
-                .into_iter()
-                .filter_map(|entry| {
-                    server_list_entry_to_listed(entry, &deployment, project, repository)
-                })
-                .collect())
+            // Server says outright whether this is the last page, which is a better answer than
+            // inferring it from a short one — it stays right if the endpoint ever returns fewer
+            // rows than asked for while more remain.
+            let last = page.is_last_page;
+            let returned = page.values.len();
+            Ok(PullRequestPage {
+                items: page
+                    .values
+                    .into_iter()
+                    .filter_map(|entry| {
+                        server_list_entry_to_listed(entry, &deployment, project, repository)
+                    })
+                    .collect(),
+                next_cursor: (!last).then(|| (offset + returned).to_string()),
+                total: None,
+            })
         }
     }
 }

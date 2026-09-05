@@ -12,8 +12,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
-import { usePullRequestDetail } from "@/services/integration.service";
-import { CI_TONE, type CiRollup } from "@/components/execution/worktree-card/pullRequestCi";
+import { usePullRequestRowDetail } from "@/services/integration.service";
+import {
+  CI_TONE,
+  rollupOfCi,
+  type CiRollup,
+} from "@/components/execution/worktree-card/pullRequestCi";
 import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import type { PullRequestEntry } from "./pullRequestFilters";
 
@@ -60,7 +64,6 @@ function action(entry: PullRequestEntry): {
 interface PullRequestRowProps {
   entry: PullRequestEntry;
   projectId: number;
-  ci: CiRollup;
   now: number;
   /** False while the view is off screen. */
   poll: boolean;
@@ -78,24 +81,29 @@ interface PullRequestRowProps {
  * The row itself does nothing on click: the action is a button, and a card that also acted would
  * make the button decorative and every stray click consequential.
  */
-export function PullRequestRow({ entry, projectId, ci, now, poll, onAct }: PullRequestRowProps) {
+export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullRequestRowProps) {
   const { pullRequest } = entry;
-  // Unpolled: this is one row of a list, and a 30-second timer per row is the per-pull-request cost
-  // the batch checks query exists to avoid. Keyed on the head commit, so a push re-reads it once.
-  const { data: facts } = usePullRequestDetail(
+  // Asked only when the list did not already answer it — which on GitHub is never, because its list
+  // query carries the counts and the verdict as free scalars on nodes it has already paid for.
+  // Elsewhere this fires once, the first time a pull request is seen, and is then held: the key
+  // holds `updated_at` as well as the head sha, so a push, a rename, a merge or a CI transition all
+  // ask a new question and nothing else does.
+  const { data: fetched } = usePullRequestRowDetail(
     projectId,
     pullRequest.number,
     pullRequest.head_sha,
-    poll,
-    false,
+    pullRequest.updated_at,
+    poll && pullRequest.detail == null,
   );
+  const detail = pullRequest.detail ?? fetched;
 
   const age = relativeAge(pullRequest.created_at, now);
+  const ci = rollupOfCi(detail?.ci);
   const CiIcon = CI_ICON[ci];
   const { label, hint, icon: ActionIcon } = action(entry);
 
-  const additions = facts?.additions ?? 0;
-  const deletions = facts?.deletions ?? 0;
+  const additions = detail?.additions ?? 0;
+  const deletions = detail?.deletions ?? 0;
 
   // Separated by the same middot at the same opacity `WorktreeMetrics` uses two columns away: this
   // reads as one list of facts about the pull request, as that one does about a worktree. Absent
@@ -109,10 +117,10 @@ export function PullRequestRow({ entry, projectId, ci, now, poll, onAct }: PullR
         {deletions > 0 && <span className="text-destructive">−{deletions}</span>}
       </span>
     ) : null,
-    facts?.changed_files != null ? (
+    detail?.changed_files != null ? (
       <span key="files" className="flex items-center gap-1 tabular-nums text-muted-foreground">
         <FileDiff className="size-3" />
-        {facts.changed_files} {facts.changed_files === 1 ? "file" : "files"}
+        {detail.changed_files} {detail.changed_files === 1 ? "file" : "files"}
       </span>
     ) : null,
     // Only the icon carries the verdict's colour, and the word stays "CI" rather than "passed":

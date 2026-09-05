@@ -1,14 +1,16 @@
+import { useMemo } from "react";
 import { Bot, FolderRoot, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import { useNavigate } from "@/store/navigationStore";
-import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
+import { useBranchPullRequest } from "@/services/integration.service";
+import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import { WorktreeMetrics } from "./WorktreeMetrics";
 import { hasSyncActions, WorktreeSyncActions } from "./WorktreeSyncActions";
 import { WorktreePullRequestChip } from "./WorktreePullRequestChip";
-import { UNKNOWN_CI, type CiStatus } from "./pullRequestCi";
+import { summariseChecks } from "./pullRequestCi";
 import {
   agentLabel,
   isInUse,
@@ -27,14 +29,10 @@ interface WorktreeCardProps {
   /** Passed in rather than read per card, so one ticker drives the whole grid. */
   now: number;
   /**
-   * The open pull request on this worktree's branch, and its CI, both resolved once for the whole
-   * grid.
-   *
-   * Absent means there is none open — including one that has been merged, which is the state that
-   * says this worktree has done its job and can go.
+   * Whether to look this branch's pull request up at all: the forge can answer, and the view is on
+   * screen.
    */
-  pullRequest?: ProjectPullRequest | null;
-  ci?: CiStatus;
+  pullRequests?: boolean;
   onSelect: (path: string) => void;
   onDelete: (path: string) => void;
 }
@@ -48,12 +46,26 @@ export function WorktreeCard({
   projectId,
   sessions,
   now,
-  pullRequest,
-  ci,
+  pullRequests = false,
   onSelect,
   onDelete,
 }: WorktreeCardProps) {
   const navigate = useNavigate();
+  // Asked per branch rather than looked up in the panel's list, because that list is now one page
+  // of thirty: a worktree whose pull request sits on page seven would lose its chip, intermittently,
+  // as colleagues push. Unpolled, so a grid of these costs one request each when the tab opens and
+  // nothing after — and the key is shared with the session panel, so opening a session the grid has
+  // already asked about costs nothing at all.
+  const { data: found } = useBranchPullRequest(
+    projectId,
+    worktree.branch_name,
+    pullRequests && !worktree.detached_at,
+    false,
+  );
+  // Only an open one earns a chip. A merged pull request is what says this worktree has done its
+  // job and can go, which the card says by having no chip rather than by showing a dead one.
+  const pullRequest = found?.state === "Open" ? found : null;
+  const ci = useMemo(() => summariseChecks(pullRequest?.checks), [pullRequest]);
   const isMain = worktree.path === repoPath;
   const usage = worktreeUsage(worktree, sessions);
   const inUse = isInUse(usage);
@@ -113,7 +125,12 @@ export function WorktreeCard({
           }
           pullRequest={
             pullRequest ? (
-              <WorktreePullRequestChip pullRequest={pullRequest} ci={ci ?? UNKNOWN_CI} />
+              <WorktreePullRequestChip
+                number={pullRequest.number}
+                url={pullRequest.url}
+                title={pullRequest.title ?? `#${pullRequest.number}`}
+                ci={ci}
+              />
             ) : undefined
           }
         />

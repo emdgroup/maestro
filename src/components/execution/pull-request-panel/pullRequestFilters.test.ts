@@ -1,13 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
-import type { CiRollup, CiStatus } from "@/components/execution/worktree-card/pullRequestCi";
-
-/** Only the rollup is filtered or counted on; the label is the chip's tooltip. */
-function ciMap(...states: Array<[number, CiRollup]>): Map<number, CiStatus> {
-  return new Map(states.map(([number, rollup]) => [number, { rollup, label: rollup }]));
-}
 import {
-  countCiStates,
   filterPullRequests,
   pullRequestEntries,
   type PullRequestEntry,
@@ -22,6 +15,8 @@ function pullRequest(overrides: Partial<ProjectPullRequest> = {}): ProjectPullRe
     base_branch: "main",
     created_at: "2026-09-02T09:00:00Z",
     head_sha: "deadbeef",
+    updated_at: "2026-09-04T11:00:00Z",
+    detail: null,
     ...overrides,
   };
 }
@@ -161,74 +156,22 @@ describe("filterPullRequests", () => {
     action: { kind: "new-worktree", baseBranch: "origin/maestro/wise-forest-51" },
   };
   const entries = [linked, unlinked];
-  const ci = ciMap([310, "passing"], [305, "failing"]);
-  const noCi = new Set<CiRollup>();
 
+  /// The one filter left, and the only one that could stay. Search went to the forge, because
+  /// matching the thirty rows on screen out of a project's eleven thousand finds almost nothing and
+  /// reads as an empty repository; the CI filter had the same problem and no server-side answer on
+  /// any of the six forges. This one needs nothing from the forge at all — it is a join against the
+  /// user's own worktrees, so it means the same thing on every provider.
   it("splits on whether a worktree exists", () => {
-    expect(filterPullRequests(entries, "", "All", noCi, ci)).toHaveLength(2);
-    expect(filterPullRequests(entries, "", "WithWorktree", noCi, ci)).toEqual([linked]);
-    expect(filterPullRequests(entries, "", "Others", noCi, ci)).toEqual([unlinked]);
+    expect(filterPullRequests(entries, "All")).toHaveLength(2);
+    expect(filterPullRequests(entries, "WithWorktree")).toEqual([linked]);
+    expect(filterPullRequests(entries, "Others")).toEqual([unlinked]);
   });
 
-  /// An untouched CI header is an empty set, and a panel that showed nothing until the user clicked
-  /// something would read as a failed query rather than as a filter.
-  it("treats no CI selection as no CI filter", () => {
-    expect(filterPullRequests(entries, "", "All", noCi, ci)).toHaveLength(2);
-    expect(filterPullRequests(entries, "", "All", new Set<CiRollup>(["failing"]), ci)).toEqual([
-      unlinked,
-    ]);
-  });
-
-  /// A pull request whose checks have not arrived yet has no entry in the map at all, and must not
-  /// silently satisfy a filter the user set for something else.
-  it("counts a pull request with no answer as unknown", () => {
-    expect(
-      filterPullRequests(entries, "", "All", new Set<CiRollup>(["unknown"]), new Map()),
-    ).toHaveLength(2);
-    expect(
-      filterPullRequests(entries, "", "All", new Set<CiRollup>(["passing"]), new Map()),
-    ).toHaveLength(0);
-  });
-
-  it("searches the title, the branch and the bare number", () => {
-    expect(filterPullRequests(entries, "form", "All", noCi, ci)).toEqual([unlinked]);
-    expect(filterPullRequests(entries, "great-lynx", "All", noCi, ci)).toEqual([linked]);
-    // Without the hash, because that is what a user types.
-    expect(filterPullRequests(entries, "305", "All", noCi, ci)).toEqual([unlinked]);
-    expect(filterPullRequests(entries, "SHIP", "All", noCi, ci)).toEqual([linked]);
-  });
-
-  it("combines the filters rather than choosing between them", () => {
-    expect(filterPullRequests(entries, "form", "WithWorktree", noCi, ci)).toHaveLength(0);
-  });
-});
-
-describe("countCiStates", () => {
-  it("counts every state including the ones with no answer", () => {
-    const entries = [
-      {
-        pullRequest: pullRequest({ number: 1 }),
-        worktree: null,
-        action: { kind: "new-worktree", baseBranch: "origin/a" },
-      },
-      {
-        pullRequest: pullRequest({ number: 2 }),
-        worktree: null,
-        action: { kind: "new-worktree", baseBranch: "origin/b" },
-      },
-      {
-        pullRequest: pullRequest({ number: 3 }),
-        worktree: null,
-        action: { kind: "new-worktree", baseBranch: "origin/c" },
-      },
-    ] as PullRequestEntry[];
-    const ci = ciMap([1, "passing"], [2, "passing"], [3, "failing"]);
-    expect(countCiStates(entries, ci)).toEqual({
-      passing: 2,
-      failing: 1,
-      running: 0,
-      unknown: 0,
-    });
-    expect(countCiStates(entries, new Map()).unknown).toBe(3);
+  /// A detached worktree is not a match however its row is labelled, so a page of them filters to
+  /// nothing under "with worktree" rather than to everything.
+  it("keeps an empty page empty", () => {
+    expect(filterPullRequests([], "WithWorktree")).toEqual([]);
+    expect(filterPullRequests([], "All")).toEqual([]);
   });
 });

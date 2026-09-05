@@ -1,31 +1,16 @@
 import { useMemo, useState } from "react";
-import {
-  ChevronDown,
-  CircleCheck,
-  CircleX,
-  GitPullRequest,
-  LoaderCircle,
-  Search,
-} from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, GitPullRequest, Search } from "lucide-react";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
-import { cn } from "@/lib/utils.ts";
-import {
-  CI_TONE,
-  UNKNOWN_CI,
-  type CiRollup,
-  type CiStatus,
-} from "@/components/execution/worktree-card/pullRequestCi";
+import { Button } from "@/ui/button";
 import type { ActiveSessionInfo, ProjectPullRequest, WorktreeWithStatus } from "@/types/bindings";
 import {
-  countCiStates,
   filterPullRequests,
   LINK_FILTERS,
   pullRequestEntries,
@@ -34,27 +19,30 @@ import {
 } from "./pullRequestFilters";
 import { PullRequestRow } from "./PullRequestRow";
 
-/** The three states worth filtering on. `unknown` is not offered — it is the absence of an answer. */
-const CI_FILTERS: Array<{ state: CiRollup; icon: typeof CircleCheck; label: string }> = [
-  { state: "passing", icon: CircleCheck, label: "Passing" },
-  { state: "failing", icon: CircleX, label: "Failing" },
-  { state: "running", icon: LoaderCircle, label: "Running" },
-];
-
-/** Both dropdown triggers, so they sit at the same height as the search field beside them. */
+/** The dropdown trigger, so it sits at the same height as the search field beside it. */
 const filterTriggerClass =
   "flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground";
 
 interface PullRequestPanelProps {
   projectId: number;
+  /** One page of them, not the project's list — see `useProjectPullRequestPage`. */
   pullRequests: ProjectPullRequest[];
+  /** How many are open in total, where the forge says so. `null` means it would not. */
+  total: number | null;
   worktrees: WorktreeWithStatus[];
   sessionsByPath: Map<string, ActiveSessionInfo[]>;
-  ciByNumber: Map<number, CiStatus>;
   /** The project's push remote, which a new worktree is created from. */
   remote: string;
   now: number;
   poll: boolean;
+  /** Hidden where the forge cannot search — see `forge_searches_pull_requests`. */
+  canSearch: boolean;
+  search: string;
+  onSearchChange: (search: string) => void;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
   onAct: (entry: PullRequestEntry) => void;
 }
 
@@ -68,44 +56,28 @@ interface PullRequestPanelProps {
 export function PullRequestPanel({
   projectId,
   pullRequests,
+  total,
   worktrees,
   sessionsByPath,
-  ciByNumber,
   remote,
   now,
   poll,
+  canSearch,
+  search,
+  onSearchChange,
+  hasPrevious,
+  hasNext,
+  onPrevious,
+  onNext,
   onAct,
 }: PullRequestPanelProps) {
-  const [search, setSearch] = useState("");
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("All");
-  const [ciStates, setCiStates] = useState<ReadonlySet<CiRollup>>(() => new Set());
 
   const entries = useMemo(
     () => pullRequestEntries(pullRequests, worktrees, sessionsByPath, remote),
     [pullRequests, worktrees, sessionsByPath, remote],
   );
-  const counts = useMemo(() => countCiStates(entries, ciByNumber), [entries, ciByNumber]);
-  const visible = useMemo(
-    () => filterPullRequests(entries, search, linkFilter, ciStates, ciByNumber),
-    [entries, search, linkFilter, ciStates, ciByNumber],
-  );
-
-  // Named when it says something, "CI" when it does not: with nothing selected the dropdown is not
-  // filtering, and "All" would claim it was set to something.
-  const ciLabel =
-    ciStates.size === 0
-      ? "CI"
-      : ciStates.size === 1
-        ? CI_FILTERS.find((filter) => ciStates.has(filter.state))!.label
-        : `CI · ${ciStates.size}`;
-
-  function toggleCi(state: CiRollup) {
-    setCiStates((previous) => {
-      const next = new Set(previous);
-      if (!next.delete(state)) next.add(state);
-      return next;
-    });
-  }
+  const visible = useMemo(() => filterPullRequests(entries, linkFilter), [entries, linkFilter]);
 
   return (
     // No top border: the column runs out from under the action bar as one surface, which is the
@@ -119,11 +91,13 @@ export function PullRequestPanel({
           <span className="flex-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Open pull requests
           </span>
-          {/* `shown/total` rather than a bare total: with a filter on, the count you want is how
-              much of the list you are looking at, and the total alone silently disagrees with the
-              number of cards below it. */}
+          {/* What is on screen against what the project has, which on a large repository is the
+              difference between 30 and 11,943. The old `shown/total` counted the same page twice
+              and read as "you are seeing all of them" on every project big enough for it to
+              matter. A forge that will not give a total gets a bare count rather than a made-up
+              denominator. */}
           <span className="text-xs tabular-nums text-muted-foreground">
-            {visible.length}/{entries.length}
+            {total != null ? `${visible.length} of ${total.toLocaleString()}` : visible.length}
           </span>
         </div>
 
@@ -150,39 +124,24 @@ export function PullRequestPanel({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger className={filterTriggerClass} aria-label="Filter by CI state">
-              {ciLabel}
-              <ChevronDown className="size-3 shrink-0 opacity-60" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              {CI_FILTERS.map(({ state, icon: Icon, label }) => (
-                <DropdownMenuCheckboxItem
-                  key={state}
-                  checked={ciStates.has(state)}
-                  onCheckedChange={() => toggleCi(state)}
-                  className="text-xs"
-                >
-                  <Icon className={cn("size-3", CI_TONE[state])} />
-                  <span className="flex-1">{label}</span>
-                  <span className="tabular-nums text-muted-foreground">{counts[state]}</span>
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <InputGroup className="ml-auto h-7 min-w-0 flex-1">
-            <InputGroupInput
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              className="h-7 text-xs"
-            />
-            <InputGroupAddon align="inline-start">
-              <Search className="text-muted-foreground" />
-            </InputGroupAddon>
-          </InputGroup>
+          {/* Absent rather than disabled where the forge cannot search. Gitea, Forgejo and Azure
+              DevOps have no pull request text search at all, and a box that quietly filtered the
+              thirty rows on screen would mean the project on three providers and this page on the
+              other three. */}
+          {canSearch && (
+            <InputGroup className="ml-auto h-7 min-w-0 flex-1">
+              <InputGroupInput
+                type="text"
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search all pull requests..."
+                className="h-7 text-xs"
+              />
+              <InputGroupAddon align="inline-start">
+                <Search className="text-muted-foreground" />
+              </InputGroupAddon>
+            </InputGroup>
+          )}
         </div>
       </div>
 
@@ -191,9 +150,11 @@ export function PullRequestPanel({
       <div className="flex-1 space-y-2 overflow-y-auto custom-scrollbar p-2">
         {visible.length === 0 ? (
           <p className="p-4 text-center text-xs text-muted-foreground">
-            {entries.length === 0
-              ? "No open pull requests"
-              : "No pull requests match these filters"}
+            {search
+              ? "No pull requests match that search"
+              : entries.length === 0
+                ? "No open pull requests"
+                : "No pull requests on this page have a worktree to match"}
           </p>
         ) : (
           visible.map((entry) => (
@@ -201,7 +162,6 @@ export function PullRequestPanel({
               key={entry.pullRequest.number}
               entry={entry}
               projectId={projectId}
-              ci={ciByNumber.get(entry.pullRequest.number)?.rollup ?? UNKNOWN_CI.rollup}
               now={now}
               poll={poll}
               onAct={onAct}
@@ -209,6 +169,33 @@ export function PullRequestPanel({
           ))
         )}
       </div>
+
+      {/* Only once there is somewhere to go. On the overwhelming majority of projects every open
+          pull request fits on one page, and a pager with both arrows dead is furniture. */}
+      {(hasPrevious || hasNext) && (
+        <div className="flex shrink-0 items-center justify-end gap-1 border-t p-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="h-6 gap-1 px-2 text-[11px]"
+            disabled={!hasPrevious}
+            onClick={onPrevious}
+          >
+            <ChevronLeft className="size-3" />
+            Previous
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="h-6 gap-1 px-2 text-[11px]"
+            disabled={!hasNext}
+            onClick={onNext}
+          >
+            Next
+            <ChevronRight className="size-3" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
