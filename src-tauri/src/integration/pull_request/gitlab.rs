@@ -7,7 +7,8 @@ use serde::Deserialize;
 
 use super::{
     CheckStatus, CiState, CreatedPullRequest, ListedPullRequest, PullRequestCheck,
-    PullRequestDetail, PullRequestState, PullRequestTarget, instance_base, read_json,
+    FoundPullRequest, PullRequestDetail, PullRequestState, PullRequestTarget, instance_base,
+    read_json,
 };
 use crate::integration::build_http_client;
 
@@ -21,6 +22,10 @@ struct GitLabMergeRequest {
 struct GitLabListEntry {
     iid: i64,
     web_url: String,
+    /// Read only by [`find_gitlab`], which asks for every state and prefers the opened one.
+    /// [`list_gitlab`] asks for opened merge requests only, so there it carries nothing.
+    #[serde(default)]
+    state: String,
     #[serde(default)]
     title: String,
     #[serde(default)]
@@ -182,6 +187,41 @@ pub(super) async fn list_gitlab(
     .await?;
 
     Ok(entries.into_iter().filter_map(list_entry_to_listed).collect())
+}
+
+/// The merge request on one branch. GitLab filters by source branch server-side, so this is one
+/// request and the picker only has to choose between the several a reused branch accumulates.
+pub(super) async fn find_gitlab(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<FoundPullRequest>, String> {
+    let url = format!(
+        "{}/api/v4/projects/{}/merge_requests?state=all&order_by=created_at&sort=desc\
+         &per_page=20&source_branch={}",
+        instance_base(target),
+        urlencoding::encode(&target.config.project_path),
+        urlencoding::encode(branch)
+    );
+
+    let mut entries: Vec<GitLabListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("PRIVATE-TOKEN", target.token)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        "GitLab",
+    )
+    .await?;
+
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    // Opened wins over merged or closed, whatever order GitLab returned them in — the card is about
+    // what is happening now, not what happened three weeks ago.
+    let index = entries.iter().position(|entry| entry.state == "opened").unwrap_or(0);
+    let entry = entries.swap_remove(index);
+    Ok(Some(FoundPullRequest { number: entry.iid, url: entry.web_url }))
 }
 
 /// GitLab answers at the pipeline level, not the job level, so there is exactly one "check" here

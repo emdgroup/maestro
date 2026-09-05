@@ -87,7 +87,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::resolve_commit_message,
             crate::ipc::approve_task_and_merge,
             crate::ipc::reconcile_pull_requests,
-            crate::ipc::fetch_branch_pull_request_checks,
+            crate::ipc::fetch_branch_pull_request,
             crate::ipc::fetch_project_pull_request_checks,
             crate::ipc::fetch_pull_request_detail,
             crate::ipc::list_project_pull_requests,

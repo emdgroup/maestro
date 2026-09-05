@@ -17,9 +17,10 @@ use crate::integration::code_hosting_handlers::{CodeHostingRung, code_hosting_st
 use crate::integration::issue_tracking_handlers::find_integration;
 use crate::integration::pull_request::{
     CheckStatus, PullRequestCheck, PullRequestState, PullRequestTarget, create_pull_request,
-    enumerates_checks, fetch_ci_checks, fetch_open_pull_request_checks, fetch_pull_request,
-    list_open_pull_requests,
-    preferred_credential_base, supports_pull_request_list, supports_pull_requests,
+    enumerates_checks, fetch_branch_pull_request as fetch_branch_pull_request_on_forge,
+    fetch_open_pull_request_checks, fetch_pull_request, finds_pull_request_by_branch,
+    list_open_pull_requests, preferred_credential_base, supports_pull_request_list,
+    supports_pull_requests,
 };
 
 /// What became of a pull request, for the panel.
@@ -34,11 +35,6 @@ pub enum BranchPullRequestState {
     Merged,
     Closed,
 }
-
-// What the Overview card renders is no longer any one command's answer, so it is no longer a type
-// here. It is assembled in the panel from three: the project's open list, this module's facts, and
-// the checks poll — see `SessionPullRequest` in `side-panel/useSessionShipState.ts`. Declaring it
-// in Rust as well would be a second definition of a shape nothing on this side ever builds.
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
@@ -84,6 +80,33 @@ pub struct ProjectPullRequest {
     pub base_branch: Option<String>,
     pub created_at: Option<String>,
     pub head_sha: Option<String>,
+}
+
+/// The pull request on a session's branch, whole.
+///
+/// One shape because it is one question and, on GitHub, one request. Detection, state and CI were
+/// three queries at three rates until measuring showed a single-pull-request GraphQL call carrying
+/// all of it costs one point — and that splitting them is what let the card's header and its check
+/// ring describe two different moments.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct BranchPullRequestInfo {
+    pub number: i64,
+    pub url: String,
+    pub state: BranchPullRequestState,
+    pub title: Option<String>,
+    pub base_branch: Option<String>,
+    pub head_branch: Option<String>,
+    pub head_sha: Option<String>,
+    pub created_at: Option<String>,
+    pub commits: Option<i64>,
+    pub changed_files: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    /// `false` is a conflict to resolve; `None` is the forge still computing the merge commit.
+    pub mergeable: Option<bool>,
+    /// Empty on a forge that names no checks, and for a pull request that has already landed.
+    pub checks: Vec<PullRequestCheckInfo>,
 }
 
 /// Everything about one pull request that its *list* entry does not carry, plus what that entry
@@ -290,24 +313,62 @@ pub async fn fetch_project_pull_request_checks(
         .collect())
 }
 
-/// Just the checks for one pull request, for the panel's fast poll.
+/// The whole session card for one branch: which pull request, what state, and its checks.
 ///
-/// Takes the number detection already found rather than searching by branch — the whole point of
-/// the project-wide open list is that nothing here has to ask "which pull request is this" again.
+/// Asked by branch on every poll rather than detected once and then tracked by number. That is what
+/// makes coming back to a session pick up a `#10` that was closed and replaced by a `#11` somebody
+/// opened on the forge, with no second query and no remembered number to go stale.
+///
+/// Deliberately *not* the project-wide open list. That list is one page of a repository which may
+/// have eleven thousand open pull requests, so a session's own drops off it whenever colleagues are
+/// busier than the user — and a branch missing from a page is indistinguishable from a branch with
+/// no pull request. This asks about one branch and is exact at any project size.
+///
+/// `Ok(None)` for a project with no forge or no credential, and for a forge that cannot be asked:
+/// a session that never connected one should show no card, not an error strip on a 30-second timer.
 #[tauri::command]
 #[specta::specta]
-pub async fn fetch_branch_pull_request_checks(
+pub async fn fetch_branch_pull_request(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    number: i64,
-    head_sha: Option<String>,
-) -> Result<Vec<PullRequestCheckInfo>, String> {
-    let (config, token, instance_url) = resolve_target(app_state.inner(), project_id).await?;
+    branch: String,
+) -> Result<Option<BranchPullRequestInfo>, String> {
+    let Ok((config, token, instance_url)) = resolve_target(app_state.inner(), project_id).await
+    else {
+        return Ok(None);
+    };
+
+    if !finds_pull_request_by_branch(&config) {
+        return Ok(None);
+    }
+
     let target =
         PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
 
-    let checks = fetch_ci_checks(&target, number, head_sha.as_deref()).await?;
-    Ok(checks.into_iter().map(to_check_info).collect())
+    let Some(found) = fetch_branch_pull_request_on_forge(&target, &branch).await? else {
+        return Ok(None);
+    };
+
+    Ok(Some(BranchPullRequestInfo {
+        number: found.number,
+        url: found.url,
+        state: match found.detail.state {
+            PullRequestState::Open => BranchPullRequestState::Open,
+            PullRequestState::Merged => BranchPullRequestState::Merged,
+            PullRequestState::Closed => BranchPullRequestState::Closed,
+        },
+        title: found.detail.title,
+        base_branch: found.detail.base_ref,
+        head_branch: found.detail.head_ref,
+        head_sha: found.detail.head_sha,
+        created_at: found.detail.created_at,
+        commits: found.detail.commits,
+        changed_files: found.detail.changed_files,
+        additions: found.detail.additions,
+        deletions: found.detail.deletions,
+        mergeable: found.detail.mergeable,
+        checks: found.checks.into_iter().map(to_check_info).collect(),
+    }))
 }
 
 /// Open a pull request from `branch` into `base`, touching no task.

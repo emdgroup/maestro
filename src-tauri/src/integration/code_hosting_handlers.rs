@@ -62,12 +62,19 @@ pub struct CodeHostingStatus {
     pub forge_supports_pull_requests: bool,
     /// Whether this forge can be asked for its open pull requests.
     ///
-    /// Every detected card rests on this: a session finds its pull request in that list, and so
-    /// does every worktree card. Separate from `forge_supports_pull_requests` because the two are
-    /// different questions — opening one and enumerating them are different endpoints, and a forge
-    /// could gain either first. Both views poll only when this is true, so a forge without a lister
-    /// costs no requests rather than one failing request per cycle.
+    /// What the Worktrees view rests on: every worktree card finds its pull request in that list.
+    /// Separate from `forge_supports_pull_requests` because the two are different questions —
+    /// opening one and enumerating them are different endpoints, and a forge could gain either
+    /// first. The view polls only when this is true, so a forge without a lister costs no requests
+    /// rather than one failing request per cycle.
     pub forge_supports_pull_request_list: bool,
+    /// Whether this forge can be asked for the pull request on one branch.
+    ///
+    /// What the *session* card rests on, and deliberately not the list above. That list is one page
+    /// of a project which may have thousands of open pull requests, so a branch missing from it is
+    /// indistinguishable from a branch that has none — which is a card silently disappearing on a
+    /// busy repository.
+    pub forge_finds_pull_request_by_branch: bool,
     /// Whether this forge will name its individual checks.
     ///
     /// Weaker than "has CI": Bitbucket reports a verdict Maestro can read without enumerating
@@ -187,6 +194,7 @@ pub async fn code_hosting_status(
         config: None,
         forge_supports_pull_requests: false,
         forge_supports_pull_request_list: false,
+        forge_finds_pull_request_by_branch: false,
         forge_enumerates_checks: false,
         applied: false,
     };
@@ -231,6 +239,7 @@ pub async fn code_hosting_status(
             config: None,
             forge_supports_pull_requests: false,
             forge_supports_pull_request_list: false,
+        forge_finds_pull_request_by_branch: false,
             forge_enumerates_checks: false,
             applied: false,
         });
@@ -271,6 +280,8 @@ pub async fn code_hosting_status(
         ),
         forge_supports_pull_request_list:
             crate::integration::pull_request::supports_pull_request_list(&config),
+        forge_finds_pull_request_by_branch:
+            crate::integration::pull_request::finds_pull_request_by_branch(&config),
         forge_enumerates_checks: crate::integration::pull_request::enumerates_checks(&config),
         config: Some(config),
         applied,

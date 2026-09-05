@@ -8,8 +8,8 @@ use serde::Deserialize;
 
 use super::{
     CheckStatus, CiState, CreatedPullRequest, ListedPullRequest, PullRequestCheck,
-    PullRequestChecks, PullRequestDetail, PullRequestState, PullRequestTarget, instance_base,
-    owner_repo, read_json, summarise_checks,
+    BranchPullRequest, FoundPullRequest, PullRequestChecks, PullRequestDetail, PullRequestState,
+    PullRequestTarget, instance_base, owner_repo, read_json, summarise_checks,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -26,17 +26,19 @@ struct GitHubStylePullRequest {
 /// One entry of the pull request *list* endpoint, which is a different shape from the single-pull
 /// request one.
 ///
-/// No `state` and no `merged_at`: the list is only ever asked for open pull requests now, so every
-/// entry is open and there is nothing to distinguish. Reading them was how the removed branch
-/// search told a merged pull request from a closed one — the trap being that this endpoint has no
-/// `merged` flag, only a timestamp — and that question is now asked by number through
-/// `fetch_github`, which does carry the flag.
+/// `state` is read only by [`pick_branch_pull_request`], which asks for every state and has to
+/// prefer the open one. [`list_open_pull_requests`] asks for open pull requests only, so there it is
+/// always `"open"` and carries nothing. There is deliberately no `merged_at` here: distinguishing a
+/// merged pull request from a closed one is `fetch_github`'s job, which reads the single-pull-request
+/// endpoint's `merged` flag rather than guessing from a timestamp this endpoint may omit.
 #[derive(Deserialize)]
 struct GitHubStyleListEntry {
     number: i64,
     html_url: String,
     #[serde(default)]
     title: String,
+    #[serde(default)]
+    state: String,
     #[serde(default)]
     head: Option<GitHubHeadRef>,
     #[serde(default)]
@@ -245,6 +247,90 @@ pub(super) async fn list_github_family(
 
     Ok(entries.into_iter().filter_map(list_entry_to_listed).collect())
 }
+
+/// An open pull request wins over a closed or merged one whatever order the forge returned them in.
+///
+/// A branch that has been round this loop before has several, and the card is about what is
+/// happening now — "merged three weeks ago" is not it. With no open one among them the first listed
+/// is taken, which for GitHub is the newest because the query sorts descending, and for Gitea is
+/// whatever it chose to list first.
+fn pick_branch_pull_request(mut entries: Vec<GitHubStyleListEntry>) -> Option<FoundPullRequest> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index = entries.iter().position(|entry| entry.state == "open").unwrap_or(0);
+    let entry = entries.swap_remove(index);
+    Some(FoundPullRequest { number: entry.number, url: entry.html_url })
+}
+
+/// The pull request on one branch, for GitHub and for the Gitea/Forgejo API modelled on it.
+///
+/// GitHub filters server-side; Gitea and Forgejo have no head filter on this endpoint, so one page
+/// is fetched and matched here. A Gitea branch whose pull request has fallen off that page is
+/// reported as having none, which is not worth paging the whole history on every poll to improve.
+pub(super) async fn find_github_family(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<FoundPullRequest>, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+    let is_github = target.config.provider == "github";
+    let (url, auth) = if is_github {
+        (
+            // The `head` filter is `owner:branch`, where the owner is the *head* repository's — so
+            // this finds same-repository branches only, which is what Maestro's worktrees create.
+            format!(
+                "{}/repos/{}/{}/pulls?state=all&sort=created&direction=desc&per_page=20&head={}:{}",
+                github_api_base(target),
+                owner,
+                repo,
+                urlencoding::encode(owner),
+                urlencoding::encode(branch)
+            ),
+            format!("Bearer {}", target.token),
+        )
+    } else {
+        (
+            format!(
+                "{}/api/v1/repos/{}/{}/pulls?state=all&limit={}",
+                instance_base(target),
+                urlencoding::encode(owner),
+                urlencoding::encode(repo),
+                GITEA_BRANCH_SCAN_LIMIT
+            ),
+            format!("token {}", target.token),
+        )
+    };
+
+    let entries: Vec<GitHubStyleListEntry> = read_json(
+        build_http_client()?
+            .get(url)
+            .header("Authorization", auth)
+            .header("User-Agent", "maestro/1.0")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?,
+        if is_github { "GitHub" } else { "Gitea" },
+    )
+    .await?;
+
+    let matching: Vec<GitHubStyleListEntry> = if is_github {
+        entries
+    } else {
+        entries
+            .into_iter()
+            .filter(|entry| {
+                entry.head.as_ref().and_then(|head| head.head_ref.as_deref()) == Some(branch)
+            })
+            .collect()
+    };
+
+    Ok(pick_branch_pull_request(matching))
+}
+
+/// How far back Gitea's unfiltered list is scanned for a branch. Its instances clamp to
+/// `MAX_RESPONSE_ITEMS`, 50 by default, so asking for more is asking for nothing.
+const GITEA_BRANCH_SCAN_LIMIT: usize = 50;
 
 pub(super) async fn create_github(
     target: &PullRequestTarget<'_>,
@@ -509,31 +595,31 @@ fn graphql_context_to_check(context: GraphQlContext) -> Option<PullRequestCheck>
     }
 }
 
-/// What both check queries select on a pull request node.
+/// The union behind GitHub's merge box: check runs and commit statuses in one list.
 ///
-/// Written once because both feed [`graphql_to_checks`]: a field asked for by one query and not the
-/// other would make the Worktrees view and the session card disagree about the same pull request.
-///
-/// `commits(last: 1)` is how GraphQL names the head commit — there is no `headCommit` field on a
-/// pull request, and `headRefOid` alone would not carry the rollup hanging off the commit.
-const CHECK_ROLLUP_SELECTION: &str = r#"
-    number
-    commits(last: 1) {
-      nodes {
-        commit {
-          oid
-          statusCheckRollup {
-            contexts(first: 100) {
-              nodes {
-                __typename
-                ... on CheckRun { name status conclusion }
-                ... on StatusContext { context state }
-              }
-            }
-          }
+/// Written once because three queries select it, and a field asked for by one and not another would
+/// make the Worktrees view and the session card disagree about the same pull request.
+const ROLLUP_CONTEXTS: &str = r#"
+    statusCheckRollup {
+      contexts(first: 100) {
+        nodes {
+          __typename
+          ... on CheckRun { name status conclusion }
+          ... on StatusContext { context state }
         }
       }
     }"#;
+
+/// `commits(last: 1)` is how GraphQL names the head commit — there is no `headCommit` field on a
+/// pull request, and `headRefOid` alone would not carry the rollup hanging off the commit.
+fn head_commit_rollup() -> String {
+    ["commits(last: 1) { nodes { commit { oid ", ROLLUP_CONTEXTS, " } } }"].concat()
+}
+
+/// What both *check* queries select, which is the head commit's rollup and the number to key it on.
+fn check_rollup_selection() -> String {
+    ["number ", &head_commit_rollup()].concat()
+}
 
 fn batch_checks_query() -> String {
     [
@@ -542,7 +628,7 @@ fn batch_checks_query() -> String {
             pullRequests(states: OPEN, first: $limit,
                          orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes {",
-        CHECK_ROLLUP_SELECTION,
+        &check_rollup_selection(),
         "} } } }",
     ]
     .concat()
@@ -553,8 +639,58 @@ fn single_checks_query() -> String {
         "query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {",
-        CHECK_ROLLUP_SELECTION,
+        &check_rollup_selection(),
         "} } }",
+    ]
+    .concat()
+}
+
+/// Everything the session card shows about one branch's pull request, in one request.
+///
+/// The whole reason the session stopped needing three queries. GitHub prices a call on its
+/// `first`/`last` arguments rather than on what returns, so for a *single* pull request the
+/// `contexts(first: 100)` inside [`ROLLUP_CONTEXTS`] is ~102 nodes — one point of an hourly 5,000.
+/// State, title, branches, the diff counts, `mergeable` and every named check therefore cost exactly
+/// what asking for state alone would have.
+///
+/// `commitCount` is aliased because `commits` is already spoken for by the rollup above: the same
+/// field cannot be selected twice with different arguments under one name.
+const BRANCH_SCALARS: &str = r#"
+    number
+    url
+    state
+    title
+    baseRefName
+    headRefName
+    createdAt
+    additions
+    deletions
+    changedFiles
+    mergeable
+    commitCount: commits { totalCount }"#;
+
+/// Two aliased connections, because "the pull request on this branch" prefers an open one and falls
+/// back to the most recent — and GitHub cannot express that ordering in a single connection. Both
+/// take `first: 1`, so the pair costs ~2 points rather than the second request the alternative
+/// would be.
+///
+/// `rateLimit` rides along free and is logged, so the cost above is measured rather than derived.
+fn branch_status_query() -> String {
+    [
+        "query($owner: String!, $repo: String!, $branch: String!) {
+          rateLimit { cost remaining }
+          repository(owner: $owner, name: $repo) {
+            open: pullRequests(headRefName: $branch, states: OPEN, first: 1) {
+              nodes {",
+        BRANCH_SCALARS,
+        &head_commit_rollup(),
+        "} }
+            latest: pullRequests(headRefName: $branch, first: 1,
+                                 orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes {",
+        BRANCH_SCALARS,
+        &head_commit_rollup(),
+        "} } } }",
     ]
     .concat()
 }
@@ -663,6 +799,195 @@ async fn checks_one_github(
     Ok(answered.into_iter().next().map(|entry| entry.checks).unwrap_or_default())
 }
 
+#[derive(Deserialize)]
+struct GraphQlBranchResponse {
+    data: Option<GraphQlBranchData>,
+    #[serde(default)]
+    errors: Option<Vec<GraphQlError>>,
+}
+
+#[derive(Deserialize)]
+struct GraphQlBranchData {
+    repository: Option<GraphQlBranchRepository>,
+    #[serde(default, rename = "rateLimit")]
+    rate_limit: Option<GraphQlRateLimit>,
+}
+
+#[derive(Deserialize)]
+struct GraphQlRateLimit {
+    cost: i64,
+    remaining: i64,
+}
+
+#[derive(Deserialize)]
+struct GraphQlBranchRepository {
+    open: GraphQlBranchConnection,
+    latest: GraphQlBranchConnection,
+}
+
+#[derive(Deserialize)]
+struct GraphQlBranchConnection {
+    nodes: Vec<Option<GraphQlBranchNode>>,
+}
+
+#[derive(Deserialize)]
+struct GraphQlBranchNode {
+    number: i64,
+    url: String,
+    state: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default, rename = "baseRefName")]
+    base_ref_name: Option<String>,
+    #[serde(default, rename = "headRefName")]
+    head_ref_name: Option<String>,
+    #[serde(default, rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(default)]
+    additions: Option<i64>,
+    #[serde(default)]
+    deletions: Option<i64>,
+    #[serde(default, rename = "changedFiles")]
+    changed_files: Option<i64>,
+    /// `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while GitHub computes the merge commit.
+    #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(default, rename = "commitCount")]
+    commit_count: Option<GraphQlTotalCount>,
+    commits: GraphQlCommits,
+}
+
+#[derive(Deserialize)]
+struct GraphQlTotalCount {
+    #[serde(rename = "totalCount")]
+    total_count: i64,
+}
+
+/// `UNKNOWN` maps to `None`, not to `false`. GitHub answers it while it computes the merge commit in
+/// the background, so treating it as a conflict would report one on the first read after any push.
+fn graphql_mergeable(value: Option<&str>) -> Option<bool> {
+    match value {
+        Some("MERGEABLE") => Some(true),
+        Some("CONFLICTING") => Some(false),
+        _ => None,
+    }
+}
+
+fn branch_node_to_pull_request(node: GraphQlBranchNode) -> BranchPullRequest {
+    let state = match node.state.as_str() {
+        "MERGED" => PullRequestState::Merged,
+        "CLOSED" => PullRequestState::Closed,
+        _ => PullRequestState::Open,
+    };
+
+    let commit = node.commits.nodes.into_iter().flatten().next().map(|entry| entry.commit);
+    let (head_sha, checks) = match commit {
+        Some(commit) => {
+            let checks = commit
+                .rollup
+                .map(|rollup| {
+                    rollup
+                        .contexts
+                        .nodes
+                        .into_iter()
+                        .flatten()
+                        .filter_map(graphql_context_to_check)
+                        .collect()
+                })
+                .unwrap_or_default();
+            (Some(commit.oid), checks)
+        }
+        None => (None, Vec::new()),
+    };
+
+    BranchPullRequest {
+        number: node.number,
+        url: node.url,
+        detail: PullRequestDetail {
+            state,
+            mergeable: graphql_mergeable(node.mergeable.as_deref()),
+            head_sha,
+            title: node.title,
+            created_at: node.created_at,
+            base_ref: node.base_ref_name,
+            head_ref: node.head_ref_name,
+            commits: node.commit_count.map(|count| count.total_count),
+            changed_files: node.changed_files,
+            additions: node.additions,
+            deletions: node.deletions,
+        },
+        // A landed pull request's checks cannot change, and the card does not draw them, so the
+        // rollup is dropped rather than carried — matching what the composed path asks for.
+        checks: if state == PullRequestState::Open { checks } else { Vec::new() },
+    }
+}
+
+/// The whole session card for one branch, in one GraphQL request.
+///
+/// `Ok(None)` is the forge saying this branch has no pull request — a real answer the caller shows
+/// as an empty card. Only an `Err` means "ask another way", which is what makes the REST fallback
+/// in `fetch_branch_pull_request` fire on a refused query and not on an absent pull request.
+pub(super) async fn branch_status_github(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    let (owner, repo) = owner_repo(target.config)?;
+
+    let response = build_http_client()?
+        .post(github_graphql_url(target))
+        .header("Authorization", format!("Bearer {}", target.token))
+        .header("User-Agent", "maestro/1.0")
+        .json(&serde_json::json!({
+            "query": branch_status_query(),
+            "variables": { "owner": owner, "repo": repo, "branch": branch },
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    graphql_to_branch_pull_request(read_json(response, "GitHub").await?)
+}
+
+fn graphql_to_branch_pull_request(
+    response: GraphQlBranchResponse,
+) -> Result<Option<BranchPullRequest>, String> {
+    if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
+        let joined =
+            errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
+        return Err(format!("GitHub refused the branch query: {}", joined));
+    }
+
+    let data = response
+        .data
+        .ok_or_else(|| "GitHub returned no data for the branch query".to_string())?;
+
+    // The one place the cost of this query is a measurement rather than an inference. `trace` would
+    // hide it; `info` would print it on every poll.
+    if let Some(rate) = data.rate_limit {
+        log::debug!(
+            "[github] branch status query cost {} point(s), {} remaining this hour",
+            rate.cost,
+            rate.remaining
+        );
+    }
+
+    let repository = data
+        .repository
+        .ok_or_else(|| "GitHub returned no repository for the branch query".to_string())?;
+
+    // Open wins over merged or closed however recently the other was touched: the card is about
+    // what is happening now, and a comment on last month's merge is not it.
+    let node = repository
+        .open
+        .nodes
+        .into_iter()
+        .chain(repository.latest.nodes)
+        .flatten()
+        .next();
+
+    Ok(node.map(branch_node_to_pull_request))
+}
+
 /// Commit statuses have four states and no separate "has it finished" flag, unlike check runs.
 fn to_status_check(status: &GitHubCommitStatus) -> PullRequestCheck {
     let mapped = match status.state.as_str() {
@@ -742,6 +1067,157 @@ mod tests {
 
     fn batch(body: &str) -> Result<Vec<PullRequestChecks>, String> {
         graphql_to_checks(serde_json::from_str(body).expect("body should parse"))
+    }
+
+    fn branch(body: &str) -> Result<Option<BranchPullRequest>, String> {
+        graphql_to_branch_pull_request(serde_json::from_str(body).expect("body should parse"))
+    }
+
+    fn picked(body: &str) -> Option<FoundPullRequest> {
+        let entries: Vec<GitHubStyleListEntry> =
+            serde_json::from_str(body).expect("body should parse");
+        pick_branch_pull_request(entries)
+    }
+
+    /// The lookup asks for `state=all`, so a branch reused after a merge answers with both. The
+    /// card is about what is happening now, and GitHub sorts newest-first — so without preferring
+    /// the open one, a branch whose second attempt is open would report the first as merged.
+    #[test]
+    fn a_reused_branch_reports_its_open_pull_request_not_its_merged_one() {
+        let found = picked(
+            r#"[{"number":164,"html_url":"https://github.com/o/r/pull/164","state":"closed"},
+                {"number":161,"html_url":"https://github.com/o/r/pull/161","state":"open"}]"#,
+        );
+        assert_eq!(found.map(|found| found.number), Some(161));
+    }
+
+    /// Nothing open leaves the first listed, which GitHub sorted newest-first — what became of the
+    /// last attempt, rather than an empty card claiming the branch never had one.
+    #[test]
+    fn a_branch_whose_pull_requests_have_all_landed_answers_with_the_newest() {
+        let found = picked(
+            r#"[{"number":164,"html_url":"https://github.com/o/r/pull/164","state":"closed"},
+                {"number":161,"html_url":"https://github.com/o/r/pull/161","state":"closed"}]"#,
+        );
+        assert_eq!(found.map(|found| found.number), Some(164));
+    }
+
+    /// A branch with no pull request is `None`, not an error. An error would be a failing request
+    /// every thirty seconds on every branch that never gets one.
+    #[test]
+    fn a_branch_with_no_pull_request_is_not_an_error() {
+        assert!(picked("[]").is_none());
+    }
+
+    /// The whole session card out of one answer, which is the point of the query. If any of these
+    /// stopped being read the card would silently lose a line and the fallback would never fire —
+    /// the request succeeded, it just came back thinner.
+    #[test]
+    fn one_branch_answer_carries_the_state_the_counts_and_the_checks() {
+        let found = branch(
+            r#"{"data":{"rateLimit":{"cost":2,"remaining":4998},"repository":{
+                 "open":{"nodes":[{"number":164,"url":"https://github.com/o/r/pull/164",
+                   "state":"OPEN","title":"Notify when an agent finishes",
+                   "baseRefName":"main","headRefName":"maestro/great-lynx-58",
+                   "createdAt":"2026-09-01T10:00:00Z","additions":1487,"deletions":18,
+                   "changedFiles":22,"mergeable":"MERGEABLE","commitCount":{"totalCount":2},
+                   "commits":{"nodes":[{"commit":{"oid":"deadbeef","statusCheckRollup":{
+                     "contexts":{"nodes":[
+                       {"__typename":"CheckRun","name":"build","status":"IN_PROGRESS",
+                        "conclusion":null},
+                       {"__typename":"StatusContext","context":"cla/signed","state":"SUCCESS"}
+                     ]}}}}]}}]},
+                 "latest":{"nodes":[]}}}}"#,
+        )
+        .expect("a well-formed answer should parse")
+        .expect("the branch has a pull request");
+
+        assert_eq!(found.number, 164);
+        assert_eq!(found.url, "https://github.com/o/r/pull/164");
+        assert_eq!(found.detail.state, PullRequestState::Open);
+        assert_eq!(found.detail.title.as_deref(), Some("Notify when an agent finishes"));
+        assert_eq!(found.detail.head_ref.as_deref(), Some("maestro/great-lynx-58"));
+        assert_eq!(found.detail.head_sha.as_deref(), Some("deadbeef"));
+        assert_eq!(found.detail.additions, Some(1487));
+        assert_eq!(found.detail.changed_files, Some(22));
+        assert_eq!(found.detail.commits, Some(2), "aliased past the rollup's own `commits`");
+        assert_eq!(found.detail.mergeable, Some(true));
+        assert_eq!(
+            found.checks.iter().map(|check| (check.name.as_str(), check.status)).collect::<Vec<_>>(),
+            vec![("build", CheckStatus::Running), ("cla/signed", CheckStatus::Passed)]
+        );
+    }
+
+    /// The two aliases exist because GitHub cannot express "open, else the most recent" in one
+    /// connection. Reading only `open` would lose a merged pull request the user came back to see.
+    #[test]
+    fn a_branch_with_nothing_open_falls_through_to_its_latest() {
+        let found = branch(
+            r#"{"data":{"repository":{
+                 "open":{"nodes":[]},
+                 "latest":{"nodes":[{"number":161,"url":"https://github.com/o/r/pull/161",
+                   "state":"MERGED","commits":{"nodes":[{"commit":{"oid":"c0ffee",
+                     "statusCheckRollup":{"contexts":{"nodes":[
+                       {"__typename":"CheckRun","name":"build","status":"COMPLETED",
+                        "conclusion":"SUCCESS"}
+                     ]}}}}]}}]}}}}"#,
+        )
+        .expect("a well-formed answer should parse")
+        .expect("the branch has a merged pull request");
+
+        assert_eq!(found.number, 161);
+        assert_eq!(found.detail.state, PullRequestState::Merged);
+        // A landed pull request's checks cannot change and the card does not draw them, so they are
+        // dropped rather than carried — matching what the composed REST path asks for.
+        assert!(found.checks.is_empty());
+    }
+
+    /// A branch nobody has opened anything from answers two empty connections, which is `None` —
+    /// not an error, and not a card.
+    #[test]
+    fn a_branch_the_repository_has_no_pull_request_for_answers_none() {
+        let found = branch(r#"{"data":{"repository":{"open":{"nodes":[]},"latest":{"nodes":[]}}}}"#)
+            .expect("empty connections should parse");
+        assert!(found.is_none());
+    }
+
+    /// GitHub answers `UNKNOWN` while it computes the merge commit in the background, which is
+    /// every first read after a push. Reading that as a conflict would put a "resolve conflicts"
+    /// warning on a pull request that merges cleanly.
+    #[test]
+    fn a_mergeable_state_github_has_not_computed_is_not_a_conflict() {
+        assert_eq!(graphql_mergeable(Some("MERGEABLE")), Some(true));
+        assert_eq!(graphql_mergeable(Some("CONFLICTING")), Some(false));
+        assert_eq!(graphql_mergeable(Some("UNKNOWN")), None);
+        assert_eq!(graphql_mergeable(None), None);
+    }
+
+    /// GraphQL answers a refused query with HTTP 200 and an `errors` array. Missing it here would
+    /// read as "this branch has no pull request" and silently hide the card instead of falling back
+    /// to the REST path.
+    #[test]
+    fn a_refused_branch_query_is_an_error_not_an_absent_pull_request() {
+        let error = branch(r#"{"data":null,"errors":[{"message":"Resource not accessible"}]}"#)
+            .expect_err("an errors array should not read as an empty answer");
+        assert!(error.contains("Resource not accessible"), "the forge's own words: {}", error);
+    }
+
+    /// The branch query has to select the same rollup the check queries do, or the session card and
+    /// the Worktrees view would disagree about the same pull request — and it has to keep asking
+    /// for `rateLimit`, which is the only measurement of what this query actually costs.
+    #[test]
+    fn the_branch_query_selects_the_shared_rollup_and_its_own_cost() {
+        let query = branch_status_query();
+        assert!(query.contains("... on CheckRun"), "{}", query);
+        assert!(query.contains("... on StatusContext"), "{}", query);
+        assert!(query.contains("commits(last: 1)"), "{}", query);
+        assert!(query.contains("rateLimit { cost remaining }"), "{}", query);
+        // Both aliases, or "open, else the most recent" quietly becomes "whatever GitHub listed".
+        assert!(query.contains("open: pullRequests"), "{}", query);
+        assert!(query.contains("latest: pullRequests"), "{}", query);
+        // `commits` is spoken for by the rollup, so the count has to be aliased or GitHub rejects
+        // the whole query for selecting one field twice with different arguments.
+        assert!(query.contains("commitCount: commits { totalCount }"), "{}", query);
     }
 
     /// One query has to answer what two REST endpoints did. `statusCheckRollup` unions check runs

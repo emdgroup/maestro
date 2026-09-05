@@ -1,14 +1,14 @@
-import { useCallback } from "react";
+import { useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { issueTrackingQueryKeys } from "@/services/task.service";
 import type {
+  BranchPullRequestInfo,
   IntegrationStatus,
   LandingMode,
   ProjectIssueTrackingConfig,
   ProjectPullRequest,
-  PullRequestCheckInfo,
 } from "@/types/bindings";
 
 export type { IntegrationStatus, LandingMode, ProjectIssueTrackingConfig };
@@ -51,10 +51,11 @@ export const integrationQueryKeys = {
   codeHostingStatusAll: () => [...integrationQueryKeys.base, "code_hosting_status"] as const,
   codeHostingStatus: (projectId: number) =>
     [...integrationQueryKeys.base, "code_hosting_status", projectId] as const,
-  // Keyed on the head sha as well as the number: a push replaces the whole run, and the previous
-  // commit's results are not a stale version of the new ones, they are a different answer.
-  pullRequestChecks: (projectId: number, number: number, headSha: string) =>
-    [...integrationQueryKeys.base, "pull_request_checks", projectId, number, headSha] as const,
+  // Keyed on the branch, not on a pull request number. The number is the *answer*, so keying on it
+  // would mean holding it somewhere to ask the question — and a session whose #10 was closed and
+  // replaced by a #11 opened on the forge would go on asking about #10 forever.
+  branchPullRequest: (projectId: number, branch: string) =>
+    [...integrationQueryKeys.base, "branch_pull_request", projectId, branch] as const,
   projectPullRequests: (projectId: number) =>
     [...integrationQueryKeys.base, "project_pull_requests", projectId] as const,
   // `heads` fingerprints every listed pull request's number and head sha. A push has to re-ask
@@ -161,87 +162,89 @@ export function useCodeHostingStatus(projectId: number) {
   });
 }
 
-/** While the answer can still change on its own. */
-const CHECKS_LIVE_POLL_MS = 10_000;
-/** Once nothing is running. Not stopped entirely — see [`useBranchPullRequestChecks`]. */
-const CHECKS_SETTLED_POLL_MS = 30_000;
-/**
- * How many empty answers still count as "CI has not started yet".
- *
- * Six at the live rate is about a minute, which is longer than any forge here takes to queue a
- * check run. Past that an empty list is not a pull request waiting for CI, it is a repository
- * without any — and treating the two the same polled a permanently empty answer at ten seconds for
- * the life of the session.
- */
-const CHECKS_EMPTY_POLLS_BEFORE_BACKOFF = 6;
+/** The steady rate: everything the card shows, once every half minute. */
+const BRANCH_PULL_REQUEST_POLL_MS = 30_000;
+/** The burst rate, for the seconds between opening a pull request and CI reporting. */
+const BURST_POLL_MS = 3_000;
+/** How many burst refetches — 5 × 3s covers the window a forge takes to queue its first check. */
+const BURST_TRIES = 5;
 
 /**
- * How soon to ask about a pull request's checks again, given the last answer.
+ * What a burst is armed for: this pull request, on this commit.
  *
- * Exported for its own test rather than left inline in the query options: the whole point of this
- * function is which answers stop deserving the fast rate, and that is exactly what got it wrong —
- * an empty list read as "not started yet" forever, so a repository with no CI polled every ten
- * seconds for the life of the session.
- *
- * @param checks the last answer, `undefined` before the first one arrives
- * @param updateCount successful fetches under this key, which a push resets along with the key
+ * `null` before anything has been found. A change here is the only thing that starts a burst — a
+ * new pull request (including one Maestro just opened) or a push, both of which mean a CI run is
+ * about to start. Merely looking at a session again does not, or every visit to a session whose
+ * checks finished last week would spend five requests re-confirming them.
  */
-export function checksPollInterval(
-  checks: PullRequestCheckInfo[] | undefined,
-  updateCount: number,
-): number {
-  if (checks == null) return CHECKS_LIVE_POLL_MS;
-  if (checks.length === 0) {
-    return updateCount < CHECKS_EMPTY_POLLS_BEFORE_BACKOFF
-      ? CHECKS_LIVE_POLL_MS
-      : CHECKS_SETTLED_POLL_MS;
-  }
-  return checks.some((check) => check.status === "Running")
-    ? CHECKS_LIVE_POLL_MS
-    : CHECKS_SETTLED_POLL_MS;
+export function burstKeyOf(pullRequest: BranchPullRequestInfo | null | undefined): string | null {
+  return pullRequest ? `${pullRequest.number}:${pullRequest.head_sha ?? ""}` : null;
 }
 
 /**
- * One session's pull request checks, polled at the rate the answer is actually moving.
+ * How soon to ask again, given the last answer and how much burst is left.
  *
- * Two rates rather than one, because the same interval cannot serve both ends. An empty list is the
- * window between opening a pull request and the forge queueing its first check, and a `Running`
- * check is a run in progress: both are answers that change on their own, and both are what the user
- * is watching the card for. Everything finished is not — a green pull request asked about every ten
- * seconds costs a request per poll for the rest of the session to confirm what it already said.
+ * Exported for its own test rather than left inline in the query options. The rule this replaces
+ * was inline, and its bug — an empty check list read as "CI has not started yet" *forever*, so a
+ * repository without CI polled every ten seconds for the life of the session — was invisible
+ * precisely because there was nothing to call directly.
  *
- * An empty list is only treated as "not started yet" for the first
- * [`CHECKS_EMPTY_POLLS_BEFORE_BACKOFF`] answers. After that it means the repository has no CI, and
- * before this bound existed that case polled at the live rate forever — for the life of the
- * session, on a card that could never show anything.
- *
- * Slowed rather than stopped, because settled is not final: a forge can queue a check run under a
- * head sha whose other runs have all finished, and re-running a failed job changes nothing else the
- * card could notice.
- *
- * Keyed on the head sha as well as the number, so a push asks a new question under a new key rather
- * than serving the previous commit's answer — which also resets the empty-answer count, so a push
- * into a repository that has just gained CI is watched at the fast rate again.
- *
- * Runs only for an open pull request, and only on a forge that names its checks — a merged pull
- * request's cannot change, and a forge that will not enumerate answers an empty list by
- * construction.
+ * `false` stops the timer for good. A merged or closed pull request cannot change again, and window
+ * focus is what re-arms this query rather than a timer nobody is watching.
  */
-export function useBranchPullRequestChecks(
+export function branchPullRequestPollInterval(
+  pullRequest: BranchPullRequestInfo | null | undefined,
+  burstsLeft: number,
+): number | false {
+  // No pull request on this branch yet. Keep looking — this is how one opened on the forge arrives.
+  if (pullRequest == null) return BRANCH_PULL_REQUEST_POLL_MS;
+  if (pullRequest.state !== "Open") return false;
+  // The window between opening a pull request and the forge queueing its first check. Bounded, so a
+  // repository that simply has no CI settles to the steady rate instead of bursting forever.
+  if (burstsLeft > 0 && pullRequest.checks.length === 0) return BURST_POLL_MS;
+  return BRANCH_PULL_REQUEST_POLL_MS;
+}
+
+/**
+ * The pull request on a session's branch, whole, in one query.
+ *
+ * Detection, state and CI used to be three queries at three rates. They are one because on GitHub
+ * they are one *request*: a single-pull-request GraphQL call carrying every named check costs one
+ * point of an hourly 5,000, so asking for state alone saved nothing and cost the card its
+ * consistency — the header and the check ring were fed by different polls and could describe
+ * different moments.
+ *
+ * Keyed on the branch rather than on a number, so there is no remembered identity to go stale: a
+ * `#10` closed and replaced by a `#11` opened on the forge is picked up by the same question.
+ *
+ * The stale window is not about freshness — the interval owns that — but about session switching.
+ * At `staleTime: 0` every click between two sessions would fire a request each, which is what a
+ * per-session lookup has to avoid to be affordable at all.
+ */
+export function useBranchPullRequest(
   projectId: number | null,
-  number: number | null,
-  headSha: string | null,
+  branch: string | null,
   enabled: boolean,
 ) {
+  const burst = useRef<{ key: string; left: number } | null>(null);
+
   return useQuery({
-    queryKey: integrationQueryKeys.pullRequestChecks(projectId ?? -1, number ?? -1, headSha ?? ""),
-    queryFn: () => api.fetchBranchPullRequestChecks(projectId!, number!, headSha),
-    enabled: enabled && projectId != null && number != null,
-    // `dataUpdateCount` is per key, so a push resets the empty-answer count with the answer itself.
-    refetchInterval: (query) => checksPollInterval(query.state.data, query.state.dataUpdateCount),
-    // No stale window worth the name: the interval owns freshness here, and a longer one would only
-    // decide whether a remount re-asks.
-    staleTime: 2_000,
+    queryKey: integrationQueryKeys.branchPullRequest(projectId ?? -1, branch ?? ""),
+    queryFn: () => api.fetchBranchPullRequest(projectId!, branch!),
+    enabled: enabled && projectId != null && branch != null,
+    refetchInterval: (query) => {
+      const key = burstKeyOf(query.state.data);
+      if (key != null && burst.current?.key !== key) {
+        burst.current = { key, left: BURST_TRIES };
+      }
+      const interval = branchPullRequestPollInterval(query.state.data, burst.current?.left ?? 0);
+      if (interval === BURST_POLL_MS && burst.current) burst.current.left -= 1;
+      return interval;
+    },
+    // Refetched when the user comes back to the window, and when the session is selected again —
+    // which is what re-arms detection after the timer has stopped on a merged pull request.
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
     retry: false,
   });
 }
@@ -251,16 +254,14 @@ export function useBranchPullRequestChecks(
  *
  * The whole app's answer to "which pull request is on this branch". The Worktrees view matches its
  * cards against it, and so does each session's Overview card — one request for the project rather
- * than one per worktree or, as the session panel used to, four per session. Every caller shares this
- * key, so the query runs while *any* of them wants it and stops when the last one looks away.
+ * than one per worktree. The session card does not read this: it asks about its own branch, which
+ * is exact where one page of a project with thousands of open pull requests is not.
  *
  * The command answers an empty list rather than an error for a project with no forge, so there is
  * nothing to gate here beyond visibility.
  *
- * The stale window is not about freshness — the interval owns that — but about mounts. Sessions
- * enable this as they come on screen, and at `staleTime: 0` every switch between them was a fresh
- * request, which is the cost this list exists to avoid. Fifteen seconds is the same floor
- * `useRefreshProjectPullRequests` applies, so the two cannot disagree about what counts as recent.
+ * The stale window is not about freshness — the interval owns that — but about mounts, so that
+ * leaving the Worktrees tab and coming back reuses the answer rather than re-asking for it.
  */
 export function useProjectPullRequests(projectId: number | null, enabled: boolean) {
   return useQuery({
@@ -319,28 +320,6 @@ export function usePullRequestDetail(
 }
 
 /**
- * Ask the open list to refresh, unless it just did.
- *
- * The caller is a session that looked for its branch, found nothing, and wants to be sure the list
- * is not simply out of date — which is every session on a branch that will never have a pull
- * request, every time the user switches to it. The floor is what keeps that from being a request
- * per switch; without it, flicking between sessions polls the forge as fast as the user can click.
- */
-export function useRefreshProjectPullRequests(projectId: number | null) {
-  const queryClient = useQueryClient();
-  return useCallback(
-    (minAgeMs = 15_000) => {
-      if (projectId == null) return;
-      const key = integrationQueryKeys.projectPullRequests(projectId);
-      const updatedAt = queryClient.getQueryState(key)?.dataUpdatedAt ?? 0;
-      if (Date.now() - updatedAt < minAgeMs) return;
-      void queryClient.invalidateQueries({ queryKey: key });
-    },
-    [queryClient, projectId],
-  );
-}
-
-/**
  * Open a pull request for a branch, touching no task.
  *
  * Puts the new pull request straight into the cached open list. That is not a guess standing in for
@@ -371,6 +350,29 @@ export function useOpenPullRequestForBranch() {
       body: string;
     }) => api.openPullRequestForBranch(projectId, branch, base, title, body),
     onSuccess: (opened, { projectId, branch, base, title }) => {
+      // The session card, painted with no round trip at all. Every field here is the forge's own
+      // answer to the request that created it, or an argument we sent — nothing is a guess. The
+      // counts and `mergeable` are absent rather than zero, and the first poll fills them in.
+      //
+      // Writing this also arms the checks burst: the query had no pull request a moment ago and now
+      // has this one, which is exactly the change `burstKeyOf` watches for.
+      queryClient.setQueryData(integrationQueryKeys.branchPullRequest(projectId, branch), {
+        number: opened.number,
+        url: opened.url,
+        state: "Open",
+        title,
+        base_branch: base,
+        head_branch: branch,
+        head_sha: opened.head_sha,
+        created_at: new Date().toISOString(),
+        commits: null,
+        changed_files: null,
+        additions: null,
+        deletions: null,
+        mergeable: null,
+        checks: [],
+      } satisfies BranchPullRequestInfo);
+
       const key = integrationQueryKeys.projectPullRequests(projectId);
       queryClient.setQueryData(key, (previous: ProjectPullRequest[] | undefined) => {
         const entry: ProjectPullRequest = {

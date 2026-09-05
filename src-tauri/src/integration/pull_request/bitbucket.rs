@@ -8,8 +8,8 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState,
-    PullRequestTarget, read_json,
+    CiState, CreatedPullRequest, FoundPullRequest, ListedPullRequest, PullRequestDetail,
+    PullRequestState, PullRequestTarget, read_json,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -275,6 +275,10 @@ struct BitbucketCloudListEntry {
     id: i64,
     #[serde(default)]
     title: String,
+    /// Read only by [`find_bitbucket`], which asks for every state and prefers the open one.
+    /// [`list_bitbucket`] filters to `OPEN`, so there it carries nothing.
+    #[serde(default)]
+    state: String,
     #[serde(default)]
     source: Option<BitbucketCloudListEndpoint>,
     #[serde(default)]
@@ -332,6 +336,9 @@ struct BitbucketServerListEntry {
     id: i64,
     #[serde(default)]
     title: String,
+    /// See [`BitbucketCloudListEntry::state`].
+    #[serde(default)]
+    state: String,
     #[serde(rename = "fromRef", default)]
     from_ref: Option<BitbucketServerListRef>,
     #[serde(rename = "toRef", default)]
@@ -435,6 +442,102 @@ pub(super) async fn list_bitbucket(
                 .collect())
         }
     }
+}
+
+/// How far back a branch's own pull requests are scanned. A branch reused across several is rare;
+/// twenty is generous and keeps the response small.
+const BRANCH_SCAN_LIMIT: usize = 20;
+
+/// The pull request on one branch, in either deployment.
+///
+/// Both filter server-side, so this is one request whatever the project's size — which is the whole
+/// reason the session asks by branch rather than searching the project-wide open list.
+///
+/// Cloud has no `state=ALL`: omitting the parameter defaults to open only, so every state is named
+/// explicitly. Server takes `state=ALL` and wants the branch as a full ref with
+/// `direction=OUTGOING`, meaning "pull requests *from* this branch" rather than into it.
+pub(super) async fn find_bitbucket(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<FoundPullRequest>, String> {
+    let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
+    let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
+    let client = build_http_client()?;
+    let auth = format!("Bearer {}", target.token);
+
+    match &deployment {
+        BitbucketDeployment::Cloud => {
+            let response = client
+                .get(format!(
+                    "https://api.bitbucket.org/2.0/repositories/{}/{}/pullrequests\
+                     ?q={}&state=OPEN&state=MERGED&state=DECLINED&pagelen={}",
+                    project,
+                    repository,
+                    urlencoding::encode(&format!("source.branch.name=\"{}\"", branch)),
+                    BRANCH_SCAN_LIMIT
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let page: BitbucketCloudPage = read_json(response, "Bitbucket").await?;
+            Ok(pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
+                FoundPullRequest {
+                    number: entry.id,
+                    url: entry
+                        .links
+                        .and_then(|links| links.html)
+                        .map(|html| html.href)
+                        .unwrap_or_else(|| {
+                            bitbucket_web_url(&deployment, project, repository, entry.id)
+                        }),
+                }
+            }))
+        }
+        BitbucketDeployment::Server(instance) => {
+            let response = client
+                .get(format!(
+                    "{}/rest/api/latest/projects/{}/repos/{}/pull-requests\
+                     ?at=refs/heads/{}&direction=OUTGOING&state=ALL&limit={}",
+                    instance,
+                    project,
+                    repository,
+                    urlencoding::encode(branch),
+                    BRANCH_SCAN_LIMIT
+                ))
+                .header("Authorization", &auth)
+                .send()
+                .await
+                .map_err(|e| format!("Network error: {}", e))?;
+            let page: BitbucketServerPage = read_json(response, "Bitbucket").await?;
+            Ok(pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
+                FoundPullRequest {
+                    number: entry.id,
+                    url: bitbucket_web_url(&deployment, project, repository, entry.id),
+                }
+            }))
+        }
+    }
+}
+
+/// An open pull request wins over a declined or merged one whatever order Bitbucket returned them
+/// in — the card is about what is happening now.
+///
+/// Generic over the two deployments' entry types, which agree on nothing but the spelling of a
+/// state; the closures are what each of them does differently.
+fn pick_bitbucket<T>(
+    mut entries: Vec<T>,
+    state_of: impl Fn(&T) -> String,
+    into_found: impl FnOnce(T) -> FoundPullRequest,
+) -> Option<FoundPullRequest> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index = entries
+        .iter()
+        .position(|entry| bitbucket_state(&state_of(entry)) == PullRequestState::Open)
+        .unwrap_or(0);
+    Some(into_found(entries.swap_remove(index)))
 }
 
 fn bitbucket_cloud_create_body(
@@ -641,6 +744,66 @@ pub(super) async fn ci_bitbucket(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cloud has no `state=ALL`, so the branch lookup names every state explicitly and gets a
+    /// branch's whole history back. Picking the open one out of that is the difference between a
+    /// card that says "open" and one that says the previous attempt merged.
+    #[test]
+    fn a_cloud_branch_response_prefers_the_open_pull_request() {
+        let page: BitbucketCloudPage = serde_json::from_str(
+            r#"{"values":[
+                 {"id":161,"title":"First attempt","state":"MERGED"},
+                 {"id":164,"title":"Second attempt","state":"OPEN"}
+               ]}"#,
+        )
+        .expect("body should parse");
+
+        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
+            FoundPullRequest { number: entry.id, url: String::new() }
+        });
+        assert_eq!(found.map(|found| found.number), Some(164));
+    }
+
+    /// Server spells the states the same way but hangs everything else off different fields, so it
+    /// needs its own pass through the same picker.
+    #[test]
+    fn a_server_branch_response_prefers_the_open_pull_request() {
+        let page: BitbucketServerPage = serde_json::from_str(
+            r#"{"values":[
+                 {"id":161,"title":"First attempt","state":"DECLINED"},
+                 {"id":164,"title":"Second attempt","state":"OPEN"}
+               ]}"#,
+        )
+        .expect("body should parse");
+
+        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
+            FoundPullRequest { number: entry.id, url: String::new() }
+        });
+        assert_eq!(found.map(|found| found.number), Some(164));
+    }
+
+    /// Nothing open leaves the most recently listed, which on a reused branch is what became of the
+    /// last attempt — better than an empty card claiming the branch never had one.
+    #[test]
+    fn a_branch_whose_pull_requests_have_all_landed_still_answers() {
+        let page: BitbucketCloudPage =
+            serde_json::from_str(r#"{"values":[{"id":161,"title":"Done","state":"MERGED"}]}"#)
+                .expect("body should parse");
+
+        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
+            FoundPullRequest { number: entry.id, url: String::new() }
+        });
+        assert_eq!(found.map(|found| found.number), Some(161));
+    }
+
+    /// A branch with no pull request is `None`, not an error — the card is simply absent.
+    #[test]
+    fn a_branch_with_no_pull_request_is_not_an_error() {
+        let found = pick_bitbucket(Vec::<BitbucketCloudListEntry>::new(), |_| String::new(), |_| {
+            FoundPullRequest { number: 0, url: String::new() }
+        });
+        assert!(found.is_none());
+    }
 
     /// `hosting_from_remote` only fills `owner`/`repo` for a two-segment remote path, and a
     /// Bitbucket Server HTTPS remote is `https://host/scm/PROJ/repo.git` — so both arrive `None`

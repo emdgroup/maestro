@@ -792,14 +792,23 @@ async reconcilePullRequests(projectId: number) : Promise<Result<number[], string
 }
 },
 /**
- * Just the checks for one pull request, for the panel's fast poll.
+ * The whole session card for one branch: which pull request, what state, and its checks.
  * 
- * Takes the number detection already found rather than searching by branch — the whole point of
- * the project-wide open list is that nothing here has to ask "which pull request is this" again.
+ * Asked by branch on every poll rather than detected once and then tracked by number. That is what
+ * makes coming back to a session pick up a `#10` that was closed and replaced by a `#11` somebody
+ * opened on the forge, with no second query and no remembered number to go stale.
+ * 
+ * Deliberately *not* the project-wide open list. That list is one page of a repository which may
+ * have eleven thousand open pull requests, so a session's own drops off it whenever colleagues are
+ * busier than the user — and a branch missing from a page is indistinguishable from a branch with
+ * no pull request. This asks about one branch and is exact at any project size.
+ * 
+ * `Ok(None)` for a project with no forge or no credential, and for a forge that cannot be asked:
+ * a session that never connected one should show no card, not an error strip on a 30-second timer.
  */
-async fetchBranchPullRequestChecks(projectId: number, number: number, headSha: string | null) : Promise<Result<PullRequestCheckInfo[], string>> {
+async fetchBranchPullRequest(projectId: number, branch: string) : Promise<Result<BranchPullRequestInfo | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_branch_pull_request_checks", { projectId, number, headSha }) };
+    return { status: "ok", data: await TAURI_INVOKE("fetch_branch_pull_request", { projectId, branch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2561,6 +2570,23 @@ export type BranchList = { local: string[]; remote: string[] }
  */
 export type BranchMode = "Create" | "Checkout"
 /**
+ * The pull request on a session's branch, whole.
+ * 
+ * One shape because it is one question and, on GitHub, one request. Detection, state and CI were
+ * three queries at three rates until measuring showed a single-pull-request GraphQL call carrying
+ * all of it costs one point — and that splitting them is what let the card's header and its check
+ * ring describe two different moments.
+ */
+export type BranchPullRequestInfo = { number: number; url: string; state: BranchPullRequestState; title: string | null; base_branch: string | null; head_branch: string | null; head_sha: string | null; created_at: string | null; commits: number | null; changed_files: number | null; additions: number | null; deletions: number | null; 
+/**
+ * `false` is a conflict to resolve; `None` is the forge still computing the merge commit.
+ */
+mergeable: boolean | null; 
+/**
+ * Empty on a forge that names no checks, and for a pull request that has already landed.
+ */
+checks: PullRequestCheckInfo[] }
+/**
  * What became of a pull request, for the panel.
  * 
  * Mirrors [`PullRequestState`], which cannot be exported itself: it is `Copy` plumbing shared by
@@ -2629,13 +2655,22 @@ forge_supports_pull_requests: boolean;
 /**
  * Whether this forge can be asked for its open pull requests.
  * 
- * Every detected card rests on this: a session finds its pull request in that list, and so
- * does every worktree card. Separate from `forge_supports_pull_requests` because the two are
- * different questions — opening one and enumerating them are different endpoints, and a forge
- * could gain either first. Both views poll only when this is true, so a forge without a lister
- * costs no requests rather than one failing request per cycle.
+ * What the Worktrees view rests on: every worktree card finds its pull request in that list.
+ * Separate from `forge_supports_pull_requests` because the two are different questions —
+ * opening one and enumerating them are different endpoints, and a forge could gain either
+ * first. The view polls only when this is true, so a forge without a lister costs no requests
+ * rather than one failing request per cycle.
  */
 forge_supports_pull_request_list: boolean; 
+/**
+ * Whether this forge can be asked for the pull request on one branch.
+ * 
+ * What the *session* card rests on, and deliberately not the list above. That list is one page
+ * of a project which may have thousands of open pull requests, so a branch missing from it is
+ * indistinguishable from a branch that has none — which is a card silently disappearing on a
+ * busy repository.
+ */
+forge_finds_pull_request_by_branch: boolean; 
 /**
  * Whether this forge will name its individual checks.
  * 

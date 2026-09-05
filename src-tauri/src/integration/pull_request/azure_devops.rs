@@ -10,7 +10,8 @@
 use serde::Deserialize;
 
 use super::{
-    CreatedPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState, PullRequestTarget,
+    CreatedPullRequest, FoundPullRequest, ListedPullRequest, PullRequestDetail, PullRequestState,
+    PullRequestTarget,
 };
 use crate::integration::azure_devops::{AZDO_API_VERSION, make_azdo_auth, normalize_azdo_org_url};
 use crate::integration::build_http_client;
@@ -393,6 +394,10 @@ struct AzureDevOpsListEntry {
     pull_request_id: i64,
     #[serde(default)]
     title: String,
+    /// `active`, `completed` or `abandoned`. Read only by [`find_azure_devops`], which asks for
+    /// every status and prefers the active one; [`list_azure_devops`] filters to `active`.
+    #[serde(default)]
+    status: Option<String>,
     #[serde(rename = "sourceRefName", default)]
     source_ref_name: Option<String>,
     #[serde(rename = "targetRefName", default)]
@@ -469,6 +474,61 @@ pub(super) async fn list_azure_devops(
     Ok(page.value.into_iter().filter_map(|entry| list_entry_to_listed(entry, &coordinates)).collect())
 }
 
+/// How far back a branch's own pull requests are scanned. A branch reused across several is rare.
+const BRANCH_SCAN_LIMIT: usize = 20;
+
+/// The pull request on one branch.
+///
+/// Azure DevOps filters by source ref server-side, so this is one request whatever the project's
+/// size. `status=all` rather than `active`, because a session opened on a branch whose pull request
+/// already merged should say so rather than show nothing.
+pub(super) async fn find_azure_devops(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<FoundPullRequest>, String> {
+    let coordinates = azure_devops_coordinates(
+        &target.config.host,
+        &target.config.project_path,
+        target.instance_url,
+    )?;
+    credential_matches_coordinates(&coordinates, target.instance_url)?;
+
+    let response = build_http_client()?
+        .get(format!(
+            "{}/{}/_apis/git/repositories/{}/pullrequests\
+             ?searchCriteria.sourceRefName=refs/heads/{}&searchCriteria.status=all\
+             &$top={}&api-version={}",
+            coordinates.base,
+            coordinates.project,
+            coordinates.repository,
+            urlencoding::encode(branch),
+            BRANCH_SCAN_LIMIT,
+            AZDO_API_VERSION
+        ))
+        .header("Authorization", make_azdo_auth(target.token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let page: AzureDevOpsListPage = azure_devops_json(response).await?;
+    Ok(pick_azure_devops(page.value).map(|entry| FoundPullRequest {
+        number: entry.pull_request_id,
+        // The response's own `url` is the REST resource, not a page a user can open.
+        url: azure_devops_web_url(&coordinates, entry.pull_request_id),
+    }))
+}
+
+/// An active pull request wins over a completed or abandoned one whatever order Azure returned them
+/// in — the card is about what is happening now, not what landed last month.
+fn pick_azure_devops(mut entries: Vec<AzureDevOpsListEntry>) -> Option<AzureDevOpsListEntry> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index =
+        entries.iter().position(|entry| entry.status.as_deref() == Some("active")).unwrap_or(0);
+    Some(entries.swap_remove(index))
+}
+
 pub(super) async fn create_azure_devops(
     target: &PullRequestTarget<'_>,
     head: &str,
@@ -539,6 +599,43 @@ mod tests {
 
     fn coordinates(host: &str, project_path: &str) -> AzureDevOpsCoordinates {
         azure_devops_coordinates(host, project_path, None).expect("path should parse")
+    }
+
+    /// The branch lookup asks for every status, so a branch reused after a merge answers with both.
+    /// Reading `status` wrong — a serde rename typo, say — would silently make every entry look
+    /// inactive and hand back whichever Azure happened to list first, which is the merged one.
+    #[test]
+    fn a_branch_with_a_merged_and_an_active_pull_request_picks_the_active_one() {
+        let page: AzureDevOpsListPage = serde_json::from_str(
+            r#"{"value":[
+                 {"pullRequestId":161,"title":"First attempt","status":"completed",
+                  "sourceRefName":"refs/heads/feature"},
+                 {"pullRequestId":164,"title":"Second attempt","status":"active",
+                  "sourceRefName":"refs/heads/feature"}
+               ]}"#,
+        )
+        .expect("body should parse");
+
+        assert_eq!(pick_azure_devops(page.value).map(|entry| entry.pull_request_id), Some(164));
+    }
+
+    /// With nothing active, the most recent is better than nothing — "merged last week" is still
+    /// the answer to what happened on this branch.
+    #[test]
+    fn a_branch_whose_pull_requests_have_all_landed_still_answers() {
+        let page: AzureDevOpsListPage = serde_json::from_str(
+            r#"{"value":[{"pullRequestId":161,"title":"Done","status":"completed"}]}"#,
+        )
+        .expect("body should parse");
+
+        assert_eq!(pick_azure_devops(page.value).map(|entry| entry.pull_request_id), Some(161));
+    }
+
+    /// A branch with no pull request is `None`, not an error — the card is simply absent, and an
+    /// error here would be a toast every thirty seconds on every branch that never gets one.
+    #[test]
+    fn a_branch_with_no_pull_request_is_not_an_error() {
+        assert!(pick_azure_devops(Vec::new()).is_none());
     }
 
     fn azdo_listed(body: &str) -> Vec<ListedPullRequest> {

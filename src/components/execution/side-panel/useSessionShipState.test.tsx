@@ -2,23 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type {
   ActiveSessionInfo,
+  BranchPullRequestInfo,
   CodeHostingStatus,
-  ProjectPullRequest,
-  PullRequestCheckInfo,
-  PullRequestDetailInfo,
   WorktreeWithStatus,
 } from "@/types/bindings";
 
 const worktrees = vi.hoisted(() => ({ current: [] as WorktreeWithStatus[] }));
 const hosting = vi.hoisted(() => ({ current: null as CodeHostingStatus | null }));
 const sessions = vi.hoisted(() => ({ current: [] as ActiveSessionInfo[] }));
-const openPullRequests = vi.hoisted(() => ({ current: [] as ProjectPullRequest[] }));
-const detail = vi.hoisted(() => ({ current: undefined as PullRequestDetailInfo | undefined }));
-const refresh = vi.hoisted(() => vi.fn());
+const found = vi.hoisted(() => ({ current: null as BranchPullRequestInfo | null }));
 const lookupEnabled = vi.hoisted(() => ({ current: false }));
-const detailEnabled = vi.hoisted(() => ({ current: false }));
-const checksEnabled = vi.hoisted(() => ({ current: false }));
-const liveChecks = vi.hoisted(() => ({ current: undefined as PullRequestCheckInfo[] | undefined }));
 
 vi.mock("@/services/execution.service", () => ({
   useAcpSessionMeta: () => ({
@@ -33,32 +26,11 @@ vi.mock("@/services/worktree.service", () => ({
 
 vi.mock("@/services/integration.service", () => ({
   useCodeHostingStatus: () => ({ data: hosting.current }),
-  // Detection: the project's open list, shared with the Worktrees view. `lookupEnabled` now tracks
-  // whether the session asks for it at all, which is the gate that used to sit on the per-branch
-  // lookup this replaced.
-  useProjectPullRequests: (_p: unknown, enabled: boolean) => {
+  // The session's only network question, asked by branch. `lookupEnabled` is what the gate tests
+  // read: it is the single condition standing between an off-screen session and a forge request.
+  useBranchPullRequest: (_p: unknown, _branch: string | null, enabled: boolean) => {
     lookupEnabled.current = enabled;
-    return { data: enabled ? openPullRequests.current : [] };
-  },
-  usePullRequestDetail: (_p: unknown, _number: unknown, _headSha: unknown, enabled: boolean) => {
-    detailEnabled.current = enabled;
-    return { data: detail.current };
-  },
-  useRefreshProjectPullRequests: () => refresh,
-  // The fast checks poll. Left empty by default, which keeps the gate tests about the gates rather
-  // than about which query supplied the check list.
-  //
-  // Mirrors the real hook's own `enabled`, which is the visibility flag *and* a number to ask
-  // about: the caller passes `null` for a pull request that is no longer open, and reading only the
-  // flag here would let that stop being tested.
-  useBranchPullRequestChecks: (
-    _p: unknown,
-    number: number | null,
-    _headSha: unknown,
-    enabled: boolean,
-  ) => {
-    checksEnabled.current = enabled && number != null;
-    return { data: liveChecks.current };
+    return { data: enabled ? found.current : undefined };
   },
 }));
 
@@ -105,29 +77,18 @@ function readyHosting(overrides: Partial<CodeHostingStatus> = {}): CodeHostingSt
     },
     forge_supports_pull_requests: true,
     forge_supports_pull_request_list: true,
+    forge_finds_pull_request_by_branch: true,
     forge_enumerates_checks: true,
     applied: false,
     ...overrides,
   };
 }
 
-/** An entry as the project's open list carries it — thinner than the card's own shape. */
-function listedPullRequest(overrides: Partial<ProjectPullRequest> = {}): ProjectPullRequest {
+/** The whole card in one answer, which is what `fetch_branch_pull_request` returns. */
+function branchPullRequest(overrides: Partial<BranchPullRequestInfo> = {}): BranchPullRequestInfo {
   return {
     number: 164,
     url: "https://github.com/emdgroup/maestro/pull/164",
-    title: "Notify when an agent finishes",
-    head_branch: "maestro/great-lynx-58",
-    base_branch: "main",
-    created_at: "2026-09-01T10:00:00Z",
-    head_sha: "deadbeef",
-    ...overrides,
-  };
-}
-
-/** What the detail poll answers: the same pull request, read from the forge rather than the list. */
-function detailInfo(overrides: Partial<PullRequestDetailInfo> = {}): PullRequestDetailInfo {
-  return {
     state: "Open",
     title: "Notify when an agent finishes",
     base_branch: "main",
@@ -139,22 +100,14 @@ function detailInfo(overrides: Partial<PullRequestDetailInfo> = {}): PullRequest
     additions: 1487,
     deletions: 18,
     mergeable: true,
+    checks: [],
     ...overrides,
   };
 }
 
 type ShipArgs = { taskId?: number | null; isProcessing?: boolean; visible?: boolean };
 
-/**
- * A fresh mount. Most of these tests are about what one render decides, so a new instance per call
- * keeps them independent — but anything about state the panel *keeps* needs `shipHook` below,
- * because a remount is exactly what the real panel never does.
- */
 function ship(args?: ShipArgs) {
-  return shipHook(args).result.current;
-}
-
-function shipHook(args?: ShipArgs) {
   return renderHook(() =>
     useSessionShipState(
       58,
@@ -163,7 +116,7 @@ function shipHook(args?: ShipArgs) {
       "C:/repo",
       args?.visible ?? true,
     ),
-  );
+  ).result.current;
 }
 
 describe("useSessionShipState", () => {
@@ -171,32 +124,22 @@ describe("useSessionShipState", () => {
     worktrees.current = [worktree()];
     hosting.current = readyHosting();
     sessions.current = [];
-    openPullRequests.current = [];
-    detail.current = undefined;
-    refresh.mockClear();
+    found.current = null;
     lookupEnabled.current = false;
-    detailEnabled.current = false;
-    checksEnabled.current = false;
-    liveChecks.current = undefined;
   });
 
   /// Every ACP session's panel stays mounted so its state survives navigation, so without a
-  /// visibility gate each open session asks the forge on its own timer for a card nobody is
-  /// looking at — and the checks half of that is a request every five seconds.
+  /// visibility gate each open session would ask the forge on its own timer for a card nobody is
+  /// looking at. Exactly one session is ever visible, which is what makes a per-branch question
+  /// affordable at all.
   it("asks the forge nothing while the card is off screen", () => {
-    // A detected pull request, so what is being tested is visibility rather than having nothing to
-    // ask about.
-    openPullRequests.current = [listedPullRequest()];
+    found.current = branchPullRequest();
 
     ship({ visible: false });
     expect(lookupEnabled.current).toBe(false);
-    expect(checksEnabled.current).toBe(false);
-    expect(detailEnabled.current).toBe(false);
 
     ship({ visible: true });
     expect(lookupEnabled.current).toBe(true);
-    expect(checksEnabled.current).toBe(true);
-    expect(detailEnabled.current).toBe(true);
   });
 
   /// The session's cwd and the worktree row disagree about slashes and drive-letter case on
@@ -226,10 +169,14 @@ describe("useSessionShipState", () => {
     expect(lookupEnabled.current).toBe(false);
   });
 
-  /// The lookup is the only gate that crosses the network. A forge with no branch-lookup arm would
-  /// return an error every thirty seconds for the life of the session.
+  /// The one gate that crosses the network. A forge with no branch-lookup arm would return an
+  /// error every thirty seconds for the life of the session.
+  ///
+  /// Gated on the branch lookup rather than the project list, and the two are genuinely different
+  /// capabilities: the list answers one *page* of a project which may have thousands of open pull
+  /// requests, so a branch missing from it is indistinguishable from a branch that has none.
   it("does not poll the forge when it cannot answer", () => {
-    hosting.current = readyHosting({ forge_supports_pull_request_list: false });
+    hosting.current = readyHosting({ forge_finds_pull_request_by_branch: false });
     ship();
     expect(lookupEnabled.current).toBe(false);
 
@@ -251,92 +198,47 @@ describe("useSessionShipState", () => {
 
   /// Opening a second pull request for a branch that already has one is a forge error at best.
   it("blocks when the branch already has an open pull request", () => {
-    openPullRequests.current = [listedPullRequest()];
+    found.current = branchPullRequest();
     expect(ship().blocker).toBe("pull-request-open");
   });
 
-  /// The list is open-only, so a merge is the entry disappearing from it. Reading that as "this
-  /// branch never had one" would drop the card at the moment it should be confirming the work
-  /// landed — and the session is the only place that still knows which number to ask about.
-  it("keeps showing a pull request after it leaves the open list", () => {
-    openPullRequests.current = [listedPullRequest()];
-    const hook = shipHook();
-    expect(hook.result.current.pullRequest?.state).toBe("Open");
-
-    // The panel stays mounted for the life of the session, so this is a rerender rather than a
-    // remount — which is the only way the number survives its entry leaving the list.
-    openPullRequests.current = [];
-    detail.current = detailInfo({ state: "Merged" });
-    hook.rerender();
-
-    expect(hook.result.current.pullRequest?.number).toBe(164);
-    expect(hook.result.current.pullRequest?.state).toBe("Merged");
-    expect(detailEnabled.current).toBe(true);
+  /// The lookup asks for every state, not just open ones. A session opened on a branch whose pull
+  /// request already merged should say so — showing nothing would read as "never had one", and the
+  /// confirmation that the work landed is the thing the user came back to see.
+  it("shows a pull request that has already landed", () => {
+    found.current = branchPullRequest({ state: "Merged" });
+    const state = ship();
+    expect(state.pullRequest?.number).toBe(164);
+    expect(state.pullRequest?.state).toBe("Merged");
     // A merged one is history, not a reason to refuse the next.
-    expect(hook.result.current.blocker).toBeNull();
+    expect(state.blocker).toBeNull();
   });
 
-  /// The list carries a title it stops updating the moment the pull request leaves it, and never
-  /// carried the counts at all. Both come from the detail poll, which is why it runs while the pull
-  /// request is open rather than only once it has gone.
-  it("takes the title and the counts from the detail poll, not the list", () => {
-    openPullRequests.current = [listedPullRequest({ title: "Notify when an agent finishes" })];
-    detail.current = detailInfo({ title: "Notify when an agent finishes work", additions: 1487 });
+  /// One answer, one moment. The title, the counts and the checks used to come from three queries
+  /// on three timers, which is how the card's header could describe a different poll than its rows.
+  it("renders the whole card from the single answer", () => {
+    found.current = branchPullRequest({
+      title: "Notify when an agent finishes work",
+      additions: 1487,
+      changed_files: 22,
+      mergeable: true,
+    });
 
     const state = ship();
-    expect(detailEnabled.current).toBe(true);
     expect(state.pullRequest?.title).toBe("Notify when an agent finishes work");
     expect(state.pullRequest?.additions).toBe(1487);
-  });
-
-  /// Nothing to ask about until detection has found a number — the detail endpoint takes one, and
-  /// there is no branch search left to discover it.
-  it("does not ask for detail before a pull request is detected", () => {
-    openPullRequests.current = [];
-    ship();
-    expect(detailEnabled.current).toBe(false);
-  });
-
-  /// Gitea, Bitbucket and Azure DevOps answer an empty check list by construction. An empty list is
-  /// also what the poll reads as "CI has not queued yet", so without this gate those forges polled
-  /// at the live rate for the life of the session for an answer that can never arrive.
-  it("does not poll checks on a forge that will not name them", () => {
-    openPullRequests.current = [listedPullRequest()];
-    hosting.current = readyHosting({ forge_enumerates_checks: false });
-    ship();
-    expect(checksEnabled.current).toBe(false);
-    // Detection and detail are unaffected — the card still appears, just with no rollup.
-    expect(lookupEnabled.current).toBe(true);
-    expect(detailEnabled.current).toBe(true);
-  });
-
-  /// A merged pull request's checks cannot change, so polling them would spend a request every
-  /// thirty seconds for the rest of the session to confirm a finished answer.
-  it("stops polling checks once the pull request is no longer open", () => {
-    openPullRequests.current = [listedPullRequest()];
-    const hook = shipHook();
-    expect(checksEnabled.current).toBe(true);
-
-    openPullRequests.current = [];
-    detail.current = detailInfo({ state: "Merged" });
-    hook.rerender();
-    expect(checksEnabled.current).toBe(false);
-  });
-
-  /// Acting on a branch an agent is still writing to is the race the idle check exists to stop.
-  it("blocks both actions while the agent is mid-turn", () => {
-    expect(ship({ isProcessing: true }).blocker).toBe("agent-busy");
+    expect(state.pullRequest?.changed_files).toBe(22);
+    expect(state.pullRequest?.mergeable).toBe(true);
   });
 
   /// The card gates its entire checks block on `ci`, and a pull request whose checks have not
-  /// queued yet has no verdict to carry. Taking that `null` from anywhere but the fast poll meant
-  /// the poll filled `checks` into a block that never rendered, and the user waited a full cycle
-  /// to see CI appear at all.
-  it("shows CI as soon as the fast poll finds a check", () => {
-    openPullRequests.current = [listedPullRequest()];
+  /// queued yet has no verdict to carry. Deriving it from anything but the checks in this same
+  /// answer is what left `checks` filled into a block that never rendered.
+  it("derives the verdict from the checks in the same answer", () => {
+    found.current = branchPullRequest({ checks: [] });
     expect(ship().pullRequest?.ci).toBeNull();
 
-    liveChecks.current = [{ name: "build", status: "Running" }];
+    found.current = branchPullRequest({ checks: [{ name: "build", status: "Running" }] });
     expect(ship().pullRequest?.ci).toBe("Pending");
   });
 
@@ -344,30 +246,16 @@ describe("useSessionShipState", () => {
   /// separately let the ring show a finished matrix under a header still saying "Pending", and
   /// seeded the agent prompt with a check that had since gone green.
   it("re-derives the verdict and the failing names from the checks it renders", () => {
-    openPullRequests.current = [listedPullRequest()];
-    liveChecks.current = [
-      { name: "build (windows)", status: "Failed" },
-      { name: "vitest", status: "Passed" },
+    const checks = [
+      { name: "build (windows)", status: "Failed" as const },
+      { name: "vitest", status: "Passed" as const },
     ];
+    found.current = branchPullRequest({ checks });
 
     const state = ship();
     expect(state.pullRequest?.ci).toBe("Failing");
     expect(state.pullRequest?.failing_checks).toEqual(["build (windows)"]);
-    expect(state.pullRequest?.checks).toBe(liveChecks.current);
-  });
-
-  /// A branch the list does not mention may only have been asked about before the pull request
-  /// existed — one opened on the forge a minute ago reaches the session this way. The floor lives
-  /// inside the refresh, so a session on a branch that will never have one is not a request per
-  /// switch.
-  it("asks the list again when it has no pull request for the branch", () => {
-    ship();
-    expect(refresh).toHaveBeenCalled();
-
-    refresh.mockClear();
-    openPullRequests.current = [listedPullRequest()];
-    ship();
-    expect(refresh).not.toHaveBeenCalled();
+    expect(state.pullRequest?.checks).toBe(checks);
   });
 
   /// Only sessions in this same directory can be writing to this branch; one elsewhere in the

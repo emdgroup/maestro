@@ -22,13 +22,17 @@ mod bitbucket;
 mod github;
 mod gitlab;
 
-use self::azure_devops::{create_azure_devops, fetch_azure_devops, list_azure_devops};
-use self::bitbucket::{ci_bitbucket, create_bitbucket, fetch_bitbucket, list_bitbucket};
+use self::azure_devops::{
+    create_azure_devops, fetch_azure_devops, find_azure_devops, list_azure_devops,
+};
+use self::bitbucket::{
+    ci_bitbucket, create_bitbucket, fetch_bitbucket, find_bitbucket, list_bitbucket,
+};
 use self::github::{
     checks_all_github, checks_github, checks_github_rest, ci_github, create_gitea, create_github,
-    fetch_gitea, fetch_github, list_github_family,
+    branch_status_github, fetch_gitea, fetch_github, find_github_family, list_github_family,
 };
-use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, list_gitlab};
+use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -124,11 +128,91 @@ impl PullRequestDetail {
     }
 }
 
-// Searching the forge for one branch's pull request used to live here, under
-// `find_pull_request_by_head`. Nothing asks that question any more: a session finds its pull
-// request in [`list_open_pull_requests`] — the same list the Worktrees view already polls — which
-// answers it for every branch in the project at once, where the search cost a request per session
-// and then two more to fill the card it returned.
+/// Where one branch's pull request lives, before anything has been read about it.
+///
+/// Only the two fields the follow-up cannot supply: [`fetch_pull_request`] answers everything else
+/// about a number, but not the number and not the browser URL.
+pub struct FoundPullRequest {
+    pub number: i64,
+    pub url: String,
+}
+
+/// The pull request whose head is `branch`, if the forge has one.
+///
+/// `Ok(None)` means the forge answered and has no pull request for that branch. An unsupported
+/// forge is an error rather than `None`, because the two are not the same thing to a user looking
+/// at a card that is not there — and silently reporting "no pull request" for a branch that has one
+/// is the one answer this must never give.
+///
+/// Asked by branch rather than found in [`list_open_pull_requests`], which is a *project-wide* list
+/// and necessarily one page of it. On a repository with eleven thousand open pull requests — and
+/// `nixpkgs` has that — a session's own pull request drops off that page whenever colleagues are
+/// busier than the user, and the card silently empties. This asks about one branch and is exact at
+/// any project size, for the same one request, because only one session panel is ever visible.
+///
+/// Only same-repository branches are found. A pull request opened from a fork lives under the
+/// fork's owner, which this does not search.
+pub async fn find_pull_request_by_head(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<FoundPullRequest>, String> {
+    if !capabilities(&target.config.provider).finds_pull_request_by_branch {
+        return Err(unsupported(&target.config.provider, "look a pull request up by branch"));
+    }
+    match target.config.provider.as_str() {
+        "github" | "gitea" | "forgejo" => find_github_family(target, branch).await,
+        "gitlab" => find_gitlab(target, branch).await,
+        "bitbucket" => find_bitbucket(target, branch).await,
+        "azuredevops" => find_azure_devops(target, branch).await,
+        other => Err(unsupported(other, "look a pull request up by branch")),
+    }
+}
+
+/// Everything the session card shows about the pull request on a branch.
+///
+/// One shape because it is one question. Detection, state and CI were three queries at three rates
+/// until measuring showed they are a single GitHub GraphQL request costing one point — and that
+/// splitting them was what let the card's header and its check ring describe two different moments.
+#[derive(Debug)]
+pub struct BranchPullRequest {
+    pub number: i64,
+    pub url: String,
+    pub detail: PullRequestDetail,
+    /// Empty on a forge that will not enumerate, and for a pull request that has already landed —
+    /// a merged pull request's checks cannot change, so they are not asked for.
+    pub checks: Vec<PullRequestCheck>,
+}
+
+/// The whole card, in as few requests as the forge allows.
+///
+/// GitHub answers all of it at once: one GraphQL call carries state, title, branches, the diff
+/// counts, `mergeable` and every named check. Everywhere else this composes the three questions the
+/// forge insists on asking separately.
+pub async fn fetch_branch_pull_request(
+    target: &PullRequestTarget<'_>,
+    branch: &str,
+) -> Result<Option<BranchPullRequest>, String> {
+    if target.config.provider == "github" {
+        match branch_status_github(target, branch).await {
+            Ok(found) => return Ok(found),
+            // An old GitHub Enterprise, or a token whose scope its GraphQL endpoint refuses.
+            // Composing from REST costs two more requests but keeps the card working.
+            Err(e) => log::debug!("[github] branch status query unavailable, falling back: {}", e),
+        }
+    }
+
+    let Some(found) = find_pull_request_by_head(target, branch).await? else {
+        return Ok(None);
+    };
+    let detail = fetch_pull_request(target, found.number).await?;
+    let checks = if detail.state == PullRequestState::Open {
+        fetch_ci_checks(target, found.number, detail.head_sha.as_deref()).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(Some(BranchPullRequest { number: found.number, url: found.url, detail, checks }))
+}
 
 /// One entry of the project-wide open list.
 ///
@@ -195,8 +279,12 @@ fn unsupported(provider: &str, action: &str) -> String {
 /// is one answer rather than two that happen to coincide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ForgeCapabilities {
-    /// [`list_open_pull_requests`] — the project-wide open list every card is detected from.
+    /// [`list_open_pull_requests`] — the project-wide open list the Worktrees view is built on.
     pub lists_pull_requests: bool,
+    /// [`find_pull_request_by_head`] — one branch's pull request, which is how a session finds its
+    /// own. Separate from the list above because they fail differently: the list is one page of a
+    /// project that may have thousands, and this is exact.
+    pub finds_pull_request_by_branch: bool,
     /// [`create_pull_request`].
     pub opens_pull_requests: bool,
     /// [`fetch_pull_request`] — state, title and the diff counts.
@@ -210,6 +298,7 @@ pub struct ForgeCapabilities {
 
 const NOTHING: ForgeCapabilities = ForgeCapabilities {
     lists_pull_requests: false,
+    finds_pull_request_by_branch: false,
     opens_pull_requests: false,
     reads_pull_requests: false,
     enumerates_checks: false,
@@ -228,6 +317,7 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
     match provider {
         "github" => ForgeCapabilities {
             lists_pull_requests: true,
+            finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             enumerates_checks: true,
@@ -235,6 +325,7 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         },
         "gitlab" => ForgeCapabilities {
             lists_pull_requests: true,
+            finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             enumerates_checks: true,
@@ -244,6 +335,7 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         // answer at all is safer here than a wrong one.
         "gitea" | "forgejo" => ForgeCapabilities {
             lists_pull_requests: true,
+            finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             ..NOTHING
@@ -252,6 +344,7 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         // here reads Bitbucket's individual checks, so the card shows no rollup.
         "bitbucket" => ForgeCapabilities {
             lists_pull_requests: true,
+            finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             reports_ci_state: true,
@@ -259,6 +352,7 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         },
         "azuredevops" => ForgeCapabilities {
             lists_pull_requests: true,
+            finds_pull_request_by_branch: true,
             opens_pull_requests: true,
             reads_pull_requests: true,
             ..NOTHING
@@ -274,6 +368,16 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
 /// used to guard, which no longer exists.
 pub fn supports_pull_request_list(config: &ProjectCodeHostingConfig) -> bool {
     capabilities(&config.provider).lists_pull_requests
+}
+
+/// Whether this forge can be asked for the pull request on one branch.
+///
+/// What the session card rests on. Distinct from the list above because the two fail in different
+/// ways and the session must not fall back to the list: that answer is one page of a project which
+/// may have thousands of open pull requests, so a branch missing from it is indistinguishable from
+/// a branch that has none.
+pub fn finds_pull_request_by_branch(config: &ProjectCodeHostingConfig) -> bool {
+    capabilities(&config.provider).finds_pull_request_by_branch
 }
 
 /// Whether Maestro can open a pull request on this project's forge.
@@ -594,24 +698,25 @@ mod tests {
     /// the user never sees.
     #[test]
     fn every_forge_claims_only_what_a_dispatcher_answers() {
-        // provider, (lists, opens, reads, enumerates checks, reports ci)
+        // provider, (lists, finds by branch, opens, reads, enumerates checks, reports ci)
         let expected = [
-            ("github", (true, true, true, true, true)),
-            ("gitlab", (true, true, true, true, true)),
-            ("gitea", (true, true, true, false, false)),
-            ("forgejo", (true, true, true, false, false)),
-            ("bitbucket", (true, true, true, false, true)),
-            ("azuredevops", (true, true, true, false, false)),
+            ("github", (true, true, true, true, true, true)),
+            ("gitlab", (true, true, true, true, true, true)),
+            ("gitea", (true, true, true, true, false, false)),
+            ("forgejo", (true, true, true, true, false, false)),
+            ("bitbucket", (true, true, true, true, false, true)),
+            ("azuredevops", (true, true, true, true, false, false)),
             // Nothing at all, rather than an error on a timer, for a host nobody has taught us.
-            ("sourcehut", (false, false, false, false, false)),
+            ("sourcehut", (false, false, false, false, false, false)),
         ];
 
-        for (provider, (lists, opens, reads, enumerates, reports)) in expected {
+        for (provider, (lists, finds, opens, reads, enumerates, reports)) in expected {
             let actual = capabilities(provider);
             assert_eq!(
                 actual,
                 ForgeCapabilities {
                     lists_pull_requests: lists,
+                    finds_pull_request_by_branch: finds,
                     opens_pull_requests: opens,
                     reads_pull_requests: reads,
                     enumerates_checks: enumerates,
@@ -623,13 +728,15 @@ mod tests {
         }
     }
 
-    /// The two predicates the frontend gates on have to answer out of the same table the
-    /// dispatchers do. Keeping them as separate provider lists is what let them drift.
+    /// The predicates the frontend gates on have to answer out of the same table the dispatchers
+    /// do. Keeping them as separate provider lists is what let them drift.
     #[test]
     fn the_predicates_read_the_table() {
         assert!(supports_pull_request_list(&config("github", "github.com")));
+        assert!(finds_pull_request_by_branch(&config("azuredevops", "dev.azure.com")));
         assert!(supports_pull_requests(&config("bitbucket", "bitbucket.org")));
         assert!(!supports_pull_request_list(&config("sourcehut", "git.sr.ht")));
+        assert!(!finds_pull_request_by_branch(&config("sourcehut", "git.sr.ht")));
         assert!(!supports_pull_requests(&config("sourcehut", "git.sr.ht")));
     }
 
