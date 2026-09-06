@@ -80,6 +80,24 @@ fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))
 }
 
+/// Stop the maestro-server processes this instance started, before the app exits.
+///
+/// Without this they are orphaned. `kill_on_drop(true)` only fires when the `Child` is dropped
+/// inside the runtime, and `handle.exit(0)` drops neither map, so the children outlive us — and a
+/// stray server holds the cached `maestro-server.exe` open, which is what makes the next update
+/// fail: Windows will not let the image of a running process be overwritten. Clearing the maps is
+/// exactly what `release_active_project_lock` does when the user leaves a project; quitting simply
+/// never did it, despite that function's own comment claiming both paths.
+///
+/// This kills rather than asking the servers to wind down, because a graceful exit is not
+/// reachable from here: a server only exits on stdin EOF, the pipe only closes when the last
+/// `writer_tx` clone drops, and the shared reader task holds one until *it* sees EOF. Leaving
+/// projects has always ended connection servers this way.
+async fn stop_connection_servers(state: &Arc<AppState>) {
+    state.acp.sessions.lock().await.clear();
+    state.acp.connection_servers.lock().await.clear();
+}
+
 /// Setup hook for Tauri initialization
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = resolve_data_dir(app)?;
@@ -177,6 +195,7 @@ fn main() {
                     }
                     // Give maestro-server time to forward CloseSessionRequest to agents.
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    stop_connection_servers(&state).await;
                     handle.exit(0);
                 });
             }

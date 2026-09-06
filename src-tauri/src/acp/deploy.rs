@@ -517,6 +517,10 @@ async fn ensure_cached_binary(
     let dest = cached_binary_path(app_handle, triple)?;
     let local_version = deployment_version();
 
+    if let Some(parent) = dest.parent() {
+        sweep_stale_binaries(parent).await;
+    }
+
     if let Some(id) = emit_connection_id {
         emit_status(app_handle, id, "checking", None);
     }
@@ -575,6 +579,137 @@ async fn check_cached_version(path: &std::path::Path) -> Option<String> {
     }
 }
 
+/// A unique `<file_name>.old-<nanos>` sibling of `path`. Appended to the whole file name rather
+/// than built with `with_extension`, which would eat the `.exe`.
+fn stale_sibling(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("Cannot derive a sibling name for {}", path.display()))?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    Ok(path.with_file_name(format!("{}.old-{}", name, nanos)))
+}
+
+/// Move `tmp` into place at `dest`, tolerating a `dest` that a running process still holds open.
+///
+/// Windows refuses to overwrite the image of a running process, so an orphaned maestro-server —
+/// left by a crash, or by the installer killing the app mid-update — makes the plain rename fail
+/// with `ERROR_ACCESS_DENIED`. That stranded the user on the previous binary, which the updated
+/// app cannot talk to, and no later attempt could recover because the orphan outlives them all.
+/// Renaming a running image *is* permitted, so the old binary is moved aside and the new one
+/// takes its name. Deleting the aside copy only succeeds once the process holding it exits, which
+/// is why that failing is not an error here — `sweep_stale_binaries` reclaims it on a later run.
+///
+/// Deliberately not gated on `cfg(windows)`: on Unix the first rename replaces a running binary
+/// happily, so the fallback is simply never reached and one code path is less than two.
+async fn install_binary_at(tmp: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+    let blocked = match tokio::fs::rename(tmp, dest).await {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+
+    let aside = stale_sibling(dest)?;
+    if let Err(error) = tokio::fs::rename(dest, &aside).await {
+        discard_temp_download(tmp).await;
+        return Err(format!(
+            "Failed to install {}: {} (moving the old one aside also failed: {}). \
+             A running maestro-server is still holding it — quit Maestro and try again.",
+            dest.display(),
+            blocked,
+            error
+        ));
+    }
+
+    match tokio::fs::rename(tmp, dest).await {
+        Ok(()) => {
+            if let Err(error) = tokio::fs::remove_file(&aside).await {
+                log::debug!(
+                    "[deploy] {} is still in use, sweeping it on a later run: {}",
+                    aside.display(),
+                    error
+                );
+            }
+            Ok(())
+        }
+        Err(error) => {
+            // Put the old binary back rather than leaving nothing at all at dest.
+            if let Err(restore) = tokio::fs::rename(&aside, dest).await {
+                log::warn!(
+                    "[deploy] could not restore {} after a failed install: {}",
+                    dest.display(),
+                    restore
+                );
+            }
+            discard_temp_download(tmp).await;
+            Err(format!("Failed to install {}: {}", dest.display(), error))
+        }
+    }
+}
+
+async fn discard_temp_download(tmp: &std::path::Path) {
+    if let Err(error) = tokio::fs::remove_file(tmp).await {
+        log::debug!(
+            "[deploy] could not remove the partial download {}: {}",
+            tmp.display(),
+            error
+        );
+    }
+}
+
+/// Remove binaries that [`install_binary_at`] moved aside on an earlier run.
+///
+/// Best effort: an `.old-` file whose process is still alive cannot be deleted yet, which is the
+/// expected case rather than a problem, so failures are logged at `debug` and the sweep goes on.
+/// `.download-tmp` files are deliberately left alone — their names are fixed per triple, so the
+/// next download overwrites them, and deleting one here could pull it out from under a concurrent
+/// `ensure_cached_binary` for a different triple.
+async fn sweep_stale_binaries(dir: &std::path::Path) {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(error) => {
+            log::debug!(
+                "[deploy] cannot scan {} for stale binaries: {}",
+                dir.display(),
+                error
+            );
+            return;
+        }
+    };
+
+    loop {
+        match entries.next_entry().await {
+            Ok(Some(entry)) => {
+                let file_name = entry.file_name();
+                let is_stale = file_name
+                    .to_str()
+                    .is_some_and(|name| name.contains(".old-"));
+                if !is_stale {
+                    continue;
+                }
+                if let Err(error) = tokio::fs::remove_file(entry.path()).await {
+                    log::debug!(
+                        "[deploy] stale binary {} not removed yet: {}",
+                        entry.path().display(),
+                        error
+                    );
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                log::debug!(
+                    "[deploy] stale binary scan of {} ended early: {}",
+                    dir.display(),
+                    error
+                );
+                break;
+            }
+        }
+    }
+}
+
 async fn download_server_binary(triple: &str, dest: &std::path::Path) -> Result<(), String> {
     let version = env!("CARGO_PKG_VERSION");
     let filename = asset_filename(triple);
@@ -605,9 +740,7 @@ async fn download_server_binary(triple: &str, dest: &std::path::Path) -> Result<
     tokio::fs::write(&tmp_path, &bytes)
         .await
         .map_err(|e| format!("Failed to write binary to temp file: {}", e))?;
-    tokio::fs::rename(&tmp_path, dest)
-        .await
-        .map_err(|e| format!("Failed to install binary: {}", e))?;
+    install_binary_at(&tmp_path, dest).await?;
 
     #[cfg(unix)]
     {
@@ -629,4 +762,120 @@ fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message
             message,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    fn write(path: &Path, contents: &str) {
+        std::fs::write(path, contents).expect("test file should be writable");
+    }
+
+    fn siblings_ending_in_old(dir: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .expect("test dir should be readable")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.contains(".old-"))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_free_destination_is_replaced_outright() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("maestro-server.exe");
+        let tmp = dir.path().join("maestro-server.download-tmp");
+        write(&dest, "old");
+        write(&tmp, "new");
+
+        install_binary_at(&tmp, &dest).await.expect("install");
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "new");
+        assert!(!tmp.exists(), "the temp file should have been consumed");
+        assert!(
+            siblings_ending_in_old(dir.path()).is_empty(),
+            "no aside copy is needed when the destination is free"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_sweep_reclaims_aside_copies_and_leaves_the_binary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("maestro-server.exe");
+        let stale = stale_sibling(&dest).expect("sibling name");
+        let partial = dir.path().join("maestro-server.download-tmp");
+        write(&dest, "live");
+        write(&stale, "orphaned");
+        write(&partial, "half a download");
+
+        sweep_stale_binaries(dir.path()).await;
+
+        assert!(!stale.exists(), "the aside copy should be gone");
+        assert!(dest.exists(), "the live binary must survive the sweep");
+        assert!(
+            partial.exists(),
+            "a .download-tmp may belong to a concurrent download and is left alone"
+        );
+    }
+
+    /// The bug this whole path exists for: Windows will not let a running process's image be
+    /// overwritten, so the plain rename fails and the binary can never be updated. `ping.exe`
+    /// stands in for an orphaned maestro-server — any live process holding the destination
+    /// reproduces it.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_destination_held_by_a_running_process_is_still_replaced() {
+        let system_root = match std::env::var("SystemRoot") {
+            Ok(root) => root,
+            Err(_) => return,
+        };
+        let source = PathBuf::from(system_root).join("System32").join("PING.EXE");
+        if !source.exists() {
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("maestro-server.exe");
+        std::fs::copy(&source, &dest).expect("copy ping.exe into place");
+        let tmp = dir.path().join("maestro-server.download-tmp");
+        write(&tmp, "the new build");
+
+        let mut holder = tokio::process::Command::new(&dest)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .no_console_window()
+            .spawn()
+            .expect("spawn the process holding the destination");
+
+        // Without the fallback in install_binary_at this is where the update fails.
+        assert!(
+            tokio::fs::rename(&tmp, &dest).await.is_err(),
+            "a running image must not be overwritable, or this test proves nothing"
+        );
+
+        install_binary_at(&tmp, &dest)
+            .await
+            .expect("install should route around the lock");
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "the new build");
+        assert_eq!(
+            siblings_ending_in_old(dir.path()).len(),
+            1,
+            "the held binary should have been moved aside, not deleted"
+        );
+
+        holder.kill().await.expect("kill the holder");
+        sweep_stale_binaries(dir.path()).await;
+        assert!(
+            siblings_ending_in_old(dir.path()).is_empty(),
+            "the aside copy is reclaimed once nothing holds it"
+        );
+    }
 }
