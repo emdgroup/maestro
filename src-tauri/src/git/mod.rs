@@ -18,9 +18,9 @@ pub use diff_models::{DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtySt
 pub use exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
 pub use ops::{
     BranchList, ParsedWorktree,
-    create_worktree, delete_worktree, git_status,
-    list_branches, get_current_branch, list_worktrees, prune_remote_refs, push_branch,
-    parse_worktree_list, parse_branch_list, local_branch_for,
+    create_worktree, create_pull_request_worktree, delete_worktree, forget_pull_request_refspec,
+    git_status, list_branches, get_current_branch, list_worktrees, prune_remote_refs, push_branch,
+    parse_worktree_list, parse_branch_list, local_branch_for, pull_request_branch,
 };
 pub use merge::squash_merge_to_base;
 pub use worktree_lifecycle::canonicalize_repo_path;

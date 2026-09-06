@@ -262,6 +262,16 @@ struct BitbucketCloudListEndpoint {
     branch: Option<BitbucketCloudBranch>,
     #[serde(default)]
     commit: Option<BitbucketCloudCommit>,
+    /// Which repository this end of the pull request is in. The two differ exactly when the pull
+    /// request comes from a fork.
+    #[serde(default)]
+    repository: Option<BitbucketCloudRepositoryRef>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketCloudRepositoryRef {
+    #[serde(default)]
+    full_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -306,6 +316,14 @@ fn cloud_list_entry_to_listed(
     fallback_url: &str,
 ) -> Option<ListedPullRequest> {
     let source = entry.source?;
+    let destination = entry.destination;
+    let from_fork = super::is_cross_repository(
+        source.repository.as_ref().and_then(|repo| repo.full_name.clone()),
+        destination
+            .as_ref()
+            .and_then(|destination| destination.repository.as_ref())
+            .and_then(|repo| repo.full_name.clone()),
+    );
     Some(ListedPullRequest {
         number: entry.id,
         url: entry
@@ -315,10 +333,11 @@ fn cloud_list_entry_to_listed(
             .unwrap_or_else(|| fallback_url.to_string()),
         title: entry.title,
         head_branch: source.branch.and_then(|branch| branch.name)?,
-        base_branch: entry.destination.and_then(|d| d.branch).and_then(|branch| branch.name),
+        base_branch: destination.and_then(|d| d.branch).and_then(|branch| branch.name),
         created_at: entry.created_on,
         head_sha: source.commit.map(|commit| commit.hash),
         updated_at: entry.updated_on,
+        from_fork,
         // Cloud's list carries no diff counts, and `enumerates_checks` is false for Bitbucket, so
         // there is nothing to fill this with even per row.
         detail: None,
@@ -333,6 +352,16 @@ struct BitbucketServerListRef {
     display_id: Option<String>,
     #[serde(rename = "latestCommit", default)]
     latest_commit: Option<String>,
+    /// Which repository this end is in — the two differ exactly when the pull request comes from a
+    /// fork. Server keys repositories by a numeric id, where Cloud uses `workspace/repo`.
+    #[serde(default)]
+    repository: Option<BitbucketServerRepositoryRef>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketServerRepositoryRef {
+    #[serde(default)]
+    id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -384,15 +413,21 @@ fn server_list_entry_to_listed(
     repository: &str,
 ) -> Option<ListedPullRequest> {
     let from_ref = entry.from_ref?;
+    let to_ref = entry.to_ref;
+    let from_fork = super::is_cross_repository(
+        from_ref.repository.as_ref().and_then(|repo| repo.id),
+        to_ref.as_ref().and_then(|to_ref| to_ref.repository.as_ref()).and_then(|repo| repo.id),
+    );
     Some(ListedPullRequest {
         number: entry.id,
         url: bitbucket_web_url(deployment, project, repository, entry.id),
         title: entry.title,
         head_branch: from_ref.display_id?,
-        base_branch: entry.to_ref.and_then(|to_ref| to_ref.display_id),
+        base_branch: to_ref.and_then(|to_ref| to_ref.display_id),
         created_at: entry.created_date.and_then(epoch_millis_to_rfc3339),
         head_sha: from_ref.latest_commit,
         updated_at: entry.updated_date.and_then(epoch_millis_to_rfc3339),
+        from_fork,
         detail: None,
     })
 }
@@ -922,6 +957,39 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// Both deployments name the repository at each end of a pull request, and they differ exactly
+    /// when it comes from a fork — but they name it differently: Cloud by `workspace/repo`, Server
+    /// by a numeric id. Reading either wrong sends a fork's row to `<remote>/<head_branch>`.
+    #[test]
+    fn a_pull_request_whose_ends_are_different_repositories_is_a_fork() {
+        let cloud = |source: &str, destination: &str| {
+            let body = format!(
+                r#"{{"values":[{{"id":1,"title":"T","state":"OPEN",
+                     "source":{{"branch":{{"name":"patch-1"}}{}}},
+                     "destination":{{"branch":{{"name":"main"}}{}}}}}]}}"#,
+                source, destination
+            );
+            cloud_listed(&body).pop().expect("one row").from_fork
+        };
+        let owner = r#","repository":{"full_name":"owner/repo"}"#;
+        assert!(!cloud(owner, owner));
+        assert!(cloud(r#","repository":{"full_name":"contributor/repo"}"#, owner));
+        assert!(cloud("", owner), "unanswered must read as a fork");
+
+        let server = |from: &str, to: &str| {
+            let body = format!(
+                r#"{{"values":[{{"id":1,"title":"T","state":"OPEN",
+                     "fromRef":{{"displayId":"patch-1"{}}},
+                     "toRef":{{"displayId":"main"{}}}}}]}}"#,
+                from, to
+            );
+            server_listed(&body).pop().expect("one row").from_fork
+        };
+        assert!(!server(r#","repository":{"id":7}"#, r#","repository":{"id":7}"#));
+        assert!(server(r#","repository":{"id":9}"#, r#","repository":{"id":7}"#));
+        assert!(server("", r#","repository":{"id":7}"#), "unanswered must read as a fork");
     }
 
     /// Cloud nests the branch two levels down and takes the browser URL from the entry itself.

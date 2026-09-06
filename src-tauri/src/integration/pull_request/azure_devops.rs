@@ -402,6 +402,30 @@ struct AzureDevOpsListEntry {
     creation_date: Option<String>,
     #[serde(rename = "lastMergeSourceCommit", default)]
     last_merge_source_commit: Option<AzureDevOpsCommitRef>,
+    /// Set only on a pull request whose source branch is in a fork, so its *presence* is the
+    /// signal and its contents are never read.
+    #[serde(rename = "forkSource", default)]
+    fork_source: Option<AzureDevOpsForkSource>,
+    /// The repository the pull request belongs to — which is the target — and the source's own,
+    /// when Azure names it separately. A second signal for the same question, because unlike every
+    /// other forge here a `true` costs the user the action entirely: nothing can check out an
+    /// Azure fork pull request (see `pull_request_head_ref`), so the row is refused rather than
+    /// checked out differently. Both signals therefore only ever *add* fork-ness when positively
+    /// observed; neither absence is read as "unknown".
+    #[serde(default)]
+    repository: Option<AzureDevOpsRepositoryRef>,
+    #[serde(rename = "sourceRepository", default)]
+    source_repository: Option<AzureDevOpsRepositoryRef>,
+}
+
+/// Deliberately empty: only whether Azure sent the object at all is meaningful.
+#[derive(Deserialize)]
+struct AzureDevOpsForkSource {}
+
+#[derive(Deserialize)]
+struct AzureDevOpsRepositoryRef {
+    #[serde(default)]
+    id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -437,6 +461,14 @@ fn list_entry_to_listed(
         // are the only timestamps the resource carries — so a row here is invalidated by its head
         // commit moving and by nothing else.
         updated_at: None,
+        from_fork: entry.fork_source.is_some()
+            || match (entry.source_repository, entry.repository) {
+                (Some(source), Some(target)) => match (source.id, target.id) {
+                    (Some(source), Some(target)) => source != target,
+                    _ => false,
+                },
+                _ => false,
+            },
         // Filled in by `list_open_pull_requests` rather than here: this forge reports neither diff
         // counts nor checks, so the answer is "asked, and there is nothing", not "unasked".
         detail: None,
@@ -663,6 +695,31 @@ mod tests {
         let page: AzureDevOpsListPage = serde_json::from_str(body).expect("body should parse");
         let coordinates = coordinates("dev.azure.com", "fabrikam/MyProject/_git/MyRepo");
         page.value.into_iter().filter_map(|e| list_entry_to_listed(e, &coordinates)).collect()
+    }
+
+    /// Azure is the one forge here whose fork rows cannot be checked out at all — it publishes no
+    /// head ref, only the merge commit — so a `from_fork` reported wrongly in either direction is
+    /// visible: `true` withdraws the row's action, `false` sends it at a branch that is not there.
+    ///
+    /// Both signals are therefore read as evidence *for* a fork and never against one, which is
+    /// why an entry naming neither reads as same-repository. That is the opposite default from
+    /// every other provider, and deliberate.
+    #[test]
+    fn a_fork_pull_request_is_recognised_by_either_signal() {
+        let from_fork = |fields: &str| {
+            let body = format!(
+                r#"{{"count":1,"value":[{{"pullRequestId":1,"title":"T","status":"active",
+                     "sourceRefName":"refs/heads/patch-1",
+                     "targetRefName":"refs/heads/main"{}}}]}}"#,
+                fields
+            );
+            azdo_listed(&body).pop().expect("one row").from_fork
+        };
+
+        assert!(!from_fork(""), "nothing said, and nothing can be checked out either way");
+        assert!(from_fork(r#","forkSource":{"name":"refs/heads/patch-1"}"#));
+        assert!(from_fork(r#","sourceRepository":{"id":"aaa"},"repository":{"id":"bbb"}"#));
+        assert!(!from_fork(r#","sourceRepository":{"id":"aaa"},"repository":{"id":"aaa"}"#));
     }
 
     /// Azure DevOps names branches by full ref, where a worktree row carries the bare name.

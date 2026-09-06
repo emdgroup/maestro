@@ -332,6 +332,7 @@ export function useCreateWorktreeMutation() {
       newBranchName,
       uniqueSuffix = false,
       repoPath,
+      pullRequest = null,
     }: {
       projectId: number;
       taskId: number | null;
@@ -340,6 +341,8 @@ export function useCreateWorktreeMutation() {
       /** Only meaningful for a session worktree — see `create_worktree`. */
       uniqueSuffix?: boolean;
       repoPath: string;
+      /** Checks out a fork's pull request instead of `baseBranch` — see `create_worktree`. */
+      pullRequest?: number | null;
     }) => {
       return await api.createWorktree(
         projectId,
@@ -348,6 +351,7 @@ export function useCreateWorktreeMutation() {
         newBranchName,
         uniqueSuffix,
         repoPath,
+        pullRequest,
       );
     },
     onSuccess: () => {

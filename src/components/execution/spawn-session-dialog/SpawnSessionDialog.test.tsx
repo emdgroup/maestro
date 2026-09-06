@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
@@ -32,8 +32,16 @@ vi.mock("@/services/task.service", () => ({
 // The project's default. Non-empty is the whole point: it is what used to overwrite the seed.
 vi.mock("@/hooks/useDefaultBaseBranch", () => ({ useDefaultBaseBranch: () => "main" }));
 
+const resolveWorktree = vi.hoisted(() =>
+  vi.fn(async () => ({
+    cwd: "C:/repo/.maestro/worktrees/session-9",
+    branchName: "pr-412",
+    created: { id: 9, path: "C:/repo/.maestro/worktrees/session-9", branchName: "pr-412" },
+  })),
+);
+
 vi.mock("@/utils/hooks/useResolveWorktree", () => ({
-  useResolveWorktree: () => ({ resolveWorktree: vi.fn(), isCreatingWorktree: false }),
+  useResolveWorktree: () => ({ resolveWorktree, isCreatingWorktree: false }),
 }));
 
 vi.mock("@/store/configStore", () => ({ usePreflightToolChecks: () => [] }));
@@ -110,5 +118,71 @@ describe("SpawnSessionDialog seeding", () => {
   it("still falls back to the project default when nothing is seeded", async () => {
     renderDialog();
     expect(await screen.findByText("main")).toBeInTheDocument();
+  });
+
+  /// A fork's pull request has no branch on the remote, so the picker has nothing to offer and is
+  /// replaced by a line naming what will be checked out. Leaving the picker up would show an
+  /// editable ref that does not resolve, and let the user "correct" it into a failed checkout.
+  it("replaces the branch picker with the pull request when one is seeded", async () => {
+    renderDialog({
+      workspaceMode: "NewWorktree",
+      branchMode: "Checkout",
+      baseBranch: "main",
+      pullRequestNumber: 412,
+      headBranch: "patch-1",
+      sessionName: "Review the fork",
+    });
+
+    expect(await screen.findByText(/#412 · patch-1/)).toBeInTheDocument();
+    expect(screen.getByText(/A new worktree on pr-412/)).toBeInTheDocument();
+    // No branch picker, so the project default it would have shown is nowhere on screen.
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+  });
+
+  /// The number is what makes the difference between fetching the forge's ref and checking out
+  /// `origin/<head_branch>` — which for a fork is either nothing or somebody else's branch. Losing
+  /// it between the panel and the backend is the original bug, one layer further down.
+  it("hands the pull request number to the worktree it creates", async () => {
+    resolveWorktree.mockClear();
+    renderDialog({
+      workspaceMode: "NewWorktree",
+      branchMode: "Checkout",
+      baseBranch: "main",
+      pullRequestNumber: 412,
+      headBranch: "patch-1",
+      sessionName: "Review the fork",
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Session" }));
+
+    await waitFor(() => expect(resolveWorktree).toHaveBeenCalled());
+    expect(resolveWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pullRequest: 412,
+        // Recorded on the row and counted against, not checked out.
+        baseBranch: "main",
+        // The backend names the branch `pr-412`; asking for one here would be a second answer.
+        newBranchName: null,
+      }),
+    );
+  });
+
+  /// The same call without a seed must carry no number, or every ordinary session would be routed
+  /// through the pull request path.
+  it("sends no pull request when the dialog was not seeded with one", async () => {
+    resolveWorktree.mockClear();
+    renderDialog({
+      workspaceMode: "NewWorktree",
+      branchMode: "Checkout",
+      baseBranch: "origin/maestro/great-lynx-58",
+      sessionName: "Ship it",
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Session" }));
+
+    await waitFor(() => expect(resolveWorktree).toHaveBeenCalled());
+    expect(resolveWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ pullRequest: null, baseBranch: "origin/maestro/great-lynx-58" }),
+    );
   });
 });

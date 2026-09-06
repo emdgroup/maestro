@@ -34,6 +34,15 @@ struct GitLabListEntry {
     source_branch: Option<String>,
     #[serde(default)]
     target_branch: Option<String>,
+    /// The two projects a merge request spans, which differ exactly when it comes from a fork.
+    /// `project_id` is the *target* — a merge request belongs to the project it merges into — so it
+    /// is the fallback for an instance old enough not to send `target_project_id`.
+    #[serde(default)]
+    source_project_id: Option<i64>,
+    #[serde(default)]
+    target_project_id: Option<i64>,
+    #[serde(default)]
+    project_id: Option<i64>,
     #[serde(default)]
     created_at: Option<String>,
     #[serde(default)]
@@ -161,6 +170,10 @@ fn list_entry_to_listed(entry: GitLabListEntry) -> Option<ListedPullRequest> {
         created_at: entry.created_at,
         head_sha: entry.sha,
         updated_at: entry.updated_at,
+        from_fork: super::is_cross_repository(
+            entry.source_project_id,
+            entry.target_project_id.or(entry.project_id),
+        ),
         // GitLab's list endpoint carries neither the diff counts nor `head_pipeline` — that one is
         // documented on the single-merge-request endpoint only — so both are fetched per row.
         detail: None,
@@ -321,5 +334,26 @@ mod tests {
     #[test]
     fn an_entry_with_no_source_branch_is_dropped() {
         assert!(listed(r#"[{"iid":1,"web_url":"u","state":"opened"}]"#).is_empty());
+    }
+
+    /// A merge request from a fork spans two projects, which GitLab reports as numeric ids.
+    /// `project_id` is the target — a merge request belongs to the project it merges into — so it
+    /// stands in for `target_project_id` on an instance that does not send one.
+    #[test]
+    fn a_merge_request_across_two_projects_is_a_fork() {
+        let from_fork = |ids: &str| {
+            let body = format!(
+                r#"[{{"iid":1,"web_url":"u","state":"opened","source_branch":"patch-1",
+                     "target_branch":"main"{}}}]"#,
+                ids
+            );
+            listed(&body).pop().expect("one row").from_fork
+        };
+
+        assert!(!from_fork(r#","source_project_id":7,"target_project_id":7"#));
+        assert!(from_fork(r#","source_project_id":9,"target_project_id":7"#));
+        assert!(!from_fork(r#","source_project_id":7,"project_id":7"#));
+        assert!(from_fork(r#","source_project_id":9,"project_id":7"#));
+        assert!(from_fork(""), "unanswered must read as a fork");
     }
 }

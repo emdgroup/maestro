@@ -38,6 +38,7 @@ function pullRequest(overrides: Partial<ProjectPullRequest> = {}): ProjectPullRe
     created_at: "2026-09-02T09:00:00Z",
     head_sha: "deadbeef",
     updated_at: "2026-09-04T11:00:00Z",
+    from_fork: false,
     detail: null,
     ...overrides,
   };
@@ -62,6 +63,7 @@ function panel(props: Partial<Parameters<typeof PullRequestPanel>[0]> = {}) {
       now={Date.parse("2026-09-05T09:00:00Z")}
       poll
       canSearch
+      canCheckOutForks
       search=""
       onSearchChange={() => {}}
       hasPrevious={false}

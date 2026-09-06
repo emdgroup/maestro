@@ -233,10 +233,35 @@ pub struct ListedPullRequest {
     pub created_at: Option<String>,
     pub head_sha: Option<String>,
     pub updated_at: Option<String>,
+    /// Whether the head branch lives in a different repository from the base — a pull request from
+    /// a fork, whose branch the project has no remote for.
+    ///
+    /// Decides how the Worktrees panel checks the pull request out, and the two possible mistakes
+    /// are not symmetric. Reading a fork as same-repository points `create_worktree` at
+    /// `<remote>/<head_branch>`, which either fails outright or — when the base repository happens
+    /// to have an unrelated branch of that name — silently checks out the wrong code. Reading a
+    /// same-repository pull request as a fork costs it only its branch *name*, because the forge's
+    /// own pull request ref exists either way. So anything a forge will not positively tell us
+    /// reads as a fork; see [`is_cross_repository`].
+    pub from_fork: bool,
     /// Filled in only where the list request answers it for nothing, which is GitHub's GraphQL
     /// query and nowhere else. `None` does not mean "no diff and no checks" — it means *unasked*,
     /// and the caller fetches it per pull request.
     pub detail: Option<ListedPullRequestDetail>,
+}
+
+/// Whether a pull request's two endpoints are different repositories, for the forges that name
+/// both rather than answering the question directly.
+///
+/// A missing name on either side reads as a fork, which is the safe direction — see
+/// [`ListedPullRequest::from_fork`]. Generic over the identifier because the forges disagree about
+/// what names a repository: GitHub and Bitbucket Cloud use `owner/name`, GitLab and Bitbucket
+/// Server a numeric id.
+pub(super) fn is_cross_repository<T: PartialEq>(head: Option<T>, base: Option<T>) -> bool {
+    match (head, base) {
+        (Some(head), Some(base)) => head != base,
+        _ => true,
+    }
 }
 
 /// The line counts, the file count and the CI verdict for one row.
@@ -490,6 +515,40 @@ pub fn capabilities(provider: &str) -> ForgeCapabilities {
         },
         _ => NOTHING,
     }
+}
+
+/// The ref under which this forge publishes a pull request's head commit *in the base repository*,
+/// so it can be fetched from the project's own remote.
+///
+/// This is the whole mechanism for checking out a fork: the head branch lives in a contributor's
+/// repository, which the project has no remote for and no credential for, but every forge here bar
+/// one mirrors the head commit into the base repository under a ref of its own. Fetching that ref
+/// needs nothing the project cannot already reach.
+///
+/// Not part of [`ForgeCapabilities`], which is a table of which dispatchers have arms — this is a
+/// ref template, and a bool saying one exists would still leave the template to be written down
+/// somewhere else.
+///
+/// `None` for Azure DevOps, whose `refs/pull/<id>/merge` is the merge commit it *would* produce
+/// rather than the branch under review — checking that out would show code neither side wrote.
+/// Refusing rather than guessing is how this file already treats Azure CI; see
+/// `azure_devops_ci_is_deliberately_unanswered`.
+pub fn pull_request_head_ref(provider: &str, number: i64) -> Option<String> {
+    match provider {
+        "github" | "gitea" | "forgejo" => Some(format!("refs/pull/{}/head", number)),
+        "gitlab" => Some(format!("refs/merge-requests/{}/head", number)),
+        "bitbucket" => Some(format!("refs/pull-requests/{}/from", number)),
+        _ => None,
+    }
+}
+
+/// Whether Maestro can put a fork's pull request into a worktree on this forge.
+///
+/// Read by the frontend through `CodeHostingStatus` so the panel can offer a disabled row with a
+/// reason, rather than a button that fails once pressed. Same-repository pull requests are checked
+/// out from the remote branch and need none of this.
+pub fn checks_out_fork_pull_requests(config: &ProjectCodeHostingConfig) -> bool {
+    pull_request_head_ref(&config.provider, 1).is_some()
 }
 
 /// Whether this forge can be asked which pull requests it has open.
@@ -1007,6 +1066,45 @@ mod tests {
                 provider
             );
         }
+    }
+
+    /// The ref each forge publishes a pull request's head under, written out so that adding a
+    /// forge without deciding the question fails here rather than in front of a user.
+    ///
+    /// These are not interchangeable and none of them is guessable: three different namespaces
+    /// across five providers, and the one that has no head ref at all must stay `None` rather than
+    /// borrow a neighbour's spelling.
+    #[test]
+    fn every_forge_names_the_ref_its_pull_request_head_lives_under() {
+        let head_ref = |provider| pull_request_head_ref(provider, 42);
+
+        assert_eq!(head_ref("github").as_deref(), Some("refs/pull/42/head"));
+        assert_eq!(head_ref("gitea").as_deref(), Some("refs/pull/42/head"));
+        assert_eq!(head_ref("forgejo").as_deref(), Some("refs/pull/42/head"));
+        assert_eq!(head_ref("gitlab").as_deref(), Some("refs/merge-requests/42/head"));
+        assert_eq!(head_ref("bitbucket").as_deref(), Some("refs/pull-requests/42/from"));
+        // `refs/pull/42/merge` is a merge commit Azure computed, not the branch under review.
+        assert_eq!(head_ref("azuredevops"), None);
+        assert_eq!(head_ref("sourcehut"), None);
+
+        assert!(checks_out_fork_pull_requests(&config("github", "github.com")));
+        assert!(checks_out_fork_pull_requests(&config("gitlab", "gitlab.com")));
+        assert!(!checks_out_fork_pull_requests(&config("azuredevops", "dev.azure.com")));
+    }
+
+    /// A forge that will not say which repository a branch is in must be read as a fork, because
+    /// the two mistakes cost different things: a fork read as same-repository is checked out from
+    /// `<remote>/<head_branch>`, which is either nothing or somebody else's branch of that name.
+    #[test]
+    fn a_repository_the_forge_did_not_name_reads_as_a_fork() {
+        assert!(!is_cross_repository(Some("owner/repo"), Some("owner/repo")));
+        assert!(is_cross_repository(Some("contributor/repo"), Some("owner/repo")));
+        assert!(is_cross_repository(None, Some("owner/repo")));
+        assert!(is_cross_repository(Some("owner/repo"), None));
+        assert!(is_cross_repository::<&str>(None, None));
+        // Numeric ids, which is how GitLab and Bitbucket Server name a repository.
+        assert!(!is_cross_repository(Some(7), Some(7)));
+        assert!(is_cross_repository(Some(7), Some(9)));
     }
 
     /// Azure DevOps CI is deliberately unanswered rather than merely unimplemented. Pull request

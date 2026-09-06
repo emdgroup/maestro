@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Terminal as TerminalIcon } from "lucide-react";
+import { GitPullRequest, Terminal as TerminalIcon } from "lucide-react";
+import { pullRequestBranch } from "@/components/execution/pull-request-panel/pullRequestFilters";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import {
   generateSessionName,
@@ -61,6 +62,16 @@ export interface SpawnSeed {
   /** For `NewWorktree` with `branchMode: "Checkout"`: the ref to check out, e.g. `origin/feature`. */
   baseBranch?: string;
   branchMode?: BranchMode;
+  /**
+   * A pull request from a fork, whose head is fetched from the forge's own ref rather than from
+   * `baseBranch` — which then names only the branch it merges into, for the row to record.
+   *
+   * Set only where there is no branch on the remote to check out, so the branch picker has nothing
+   * to offer and is replaced by a line naming the pull request.
+   */
+  pullRequestNumber?: number | null;
+  /** The fork's branch name, shown alongside the number. Display only. */
+  headBranch?: string;
   sessionName?: string;
 }
 
@@ -91,6 +102,10 @@ export function SpawnSessionDialog({
   const { resolveWorktree, isCreatingWorktree } = useResolveWorktree();
 
   const isGitRepo = useIsGitRepo();
+  // Not state, unlike every other seeded field: a pull request is not something this dialog offers
+  // to change. The branch fields that could contradict it are replaced below by a line naming it,
+  // so there is nothing to keep in sync and nothing to reset.
+  const pullRequestNumber = seed?.pullRequestNumber ?? null;
   const toolChecks = usePreflightToolChecks(connection);
   const unavailableTools = new Set(toolChecks.filter((t) => !t.available).map((t) => t.tool));
   const visibleAgents = discovery?.agents ?? [];
@@ -167,6 +182,9 @@ export function SpawnSessionDialog({
               ? null
               : `${MAESTRO_BRANCH_PREFIX}${typed || slugifyName(resolvedName) || generateSessionName()}`,
           uniqueSuffix: branchMode === "Create" && !typed,
+          // Replaces the base branch as the thing to check out; the backend fetches the forge's
+          // head ref and names the branch itself.
+          pullRequest: pullRequestNumber,
         });
         created = resolved.created;
         worktree = {
@@ -233,15 +251,18 @@ export function SpawnSessionDialog({
     }
   }
 
+  // A pull request checkout has no base branch to conflict on: the branch it lands on is named
+  // after the number and cannot already be in use, because the panel would have offered that
+  // worktree instead of sending anyone here.
   const branchConflict =
-    creatingWorktree && branchMode === "Checkout"
+    creatingWorktree && branchMode === "Checkout" && pullRequestNumber === null
       ? findBranchConflict(baseBranch, worktrees, repoPath, branchData?.[0])
       : null;
 
   const canSpawn = !isGitRepo
     ? true
     : creatingWorktree
-      ? !!baseBranch &&
+      ? (!!baseBranch || pullRequestNumber !== null) &&
         branchConflict === null &&
         (branchMode === "Checkout" || validateBranchSuffix(branchSuffix.trim()) === null)
       : effectiveMode === "ReuseWorkspace"
@@ -396,9 +417,31 @@ export function SpawnSessionDialog({
               )}
             </div>
 
+            {/* A fork's pull request has no branch on the remote, so there is nothing for the
+                picker to offer and nothing to choose: the head comes from the forge's own ref and
+                lands on a branch named after the number. Saying so is all this can do. */}
+            {isGitRepo && pullRequestNumber !== null && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  WORKSPACE
+                </span>
+                <span className="flex w-fit items-center gap-1.5 rounded-full border border-border px-2.5 h-7 font-mono text-xs text-muted-foreground">
+                  <GitPullRequest className="size-3 shrink-0" />
+                  <span className="truncate">
+                    #{pullRequestNumber}
+                    {seed?.headBranch ? ` · ${seed.headBranch}` : ""}
+                  </span>
+                </span>
+                <p className="text-[10px] text-muted-foreground/60">
+                  A new worktree on {pullRequestBranch(pullRequestNumber)}, fetched from the forge.
+                  The branch is read-only — it belongs to the fork it came from.
+                </p>
+              </div>
+            )}
+
             {/* Workspace — the dropdown decides whether a branch or an existing worktree is
                 picked underneath it. */}
-            {isGitRepo && (
+            {isGitRepo && pullRequestNumber === null && (
               <WorkspaceSelector
                 mode={effectiveMode}
                 onModeChange={setWorkspaceMode}

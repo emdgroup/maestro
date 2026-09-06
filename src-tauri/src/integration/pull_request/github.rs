@@ -89,6 +89,17 @@ struct GitHubHeadRef {
     /// what the client-side match below compares against.
     #[serde(rename = "ref", default)]
     head_ref: Option<String>,
+    /// Which repository the branch is in, for telling a fork's pull request from one opened on the
+    /// base repository. Null on a pull request whose head repository has since been deleted, which
+    /// [`is_cross_repository`] reads as a fork — the safe direction, and true besides.
+    #[serde(default)]
+    repo: Option<GitHubRepoRef>,
+}
+
+#[derive(Deserialize)]
+struct GitHubRepoRef {
+    #[serde(default)]
+    full_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +130,9 @@ struct GitHubCommitStatus {
 struct GitHubBranchRef {
     #[serde(rename = "ref")]
     name: String,
+    /// See [`GitHubHeadRef::repo`]. Read on the base side only by the list mapper.
+    #[serde(default)]
+    repo: Option<GitHubRepoRef>,
 }
 
 #[derive(Deserialize)]
@@ -193,15 +207,24 @@ fn to_check(run: &GitHubCheckRun) -> PullRequestCheck {
 /// run. Gitea omits it on a pull request whose head repository has been deleted.
 fn list_entry_to_listed(entry: GitHubStyleListEntry) -> Option<ListedPullRequest> {
     let head = entry.head?;
+    let base = entry.base;
+    let repo_name = |repo: &Option<GitHubRepoRef>| {
+        repo.as_ref().and_then(|repo| repo.full_name.clone())
+    };
+    let from_fork = super::is_cross_repository(
+        repo_name(&head.repo),
+        base.as_ref().and_then(|base| repo_name(&base.repo)),
+    );
     Some(ListedPullRequest {
         number: entry.number,
         url: entry.html_url,
         title: entry.title,
         head_branch: head.head_ref?,
-        base_branch: entry.base.map(|base| base.name),
+        base_branch: base.map(|base| base.name),
         created_at: entry.created_at,
         head_sha: Some(head.sha),
         updated_at: entry.updated_at,
+        from_fork,
         // The REST list carries no diff counts and no CI. `None` is "unasked", which is what sends
         // the caller to `fetch_row_detail` for this row and only this row.
         detail: None,
@@ -984,6 +1007,7 @@ const LIST_SCALARS: &str = r#"
     title
     baseRefName
     headRefName
+    isCrossRepository
     createdAt
     updatedAt
     additions
@@ -1102,6 +1126,10 @@ struct GraphQlListNode {
     base_ref_name: Option<String>,
     #[serde(default, rename = "headRefName")]
     head_ref_name: Option<String>,
+    /// GitHub answers the fork question directly, as a free scalar on a node already paid for —
+    /// no comparing repository names as the REST mapper has to.
+    #[serde(default, rename = "isCrossRepository")]
+    is_cross_repository: Option<bool>,
     #[serde(default, rename = "createdAt")]
     created_at: Option<String>,
     #[serde(default, rename = "updatedAt")]
@@ -1133,6 +1161,9 @@ fn list_node_to_listed(node: GraphQlListNode) -> Option<ListedPullRequest> {
         created_at: node.created_at,
         head_sha,
         updated_at: node.updated_at,
+        // An absent answer reads as a fork, for the reason on `ListedPullRequest::from_fork`: the
+        // branch it would otherwise be checked out from may not be the pull request's at all.
+        from_fork: node.is_cross_repository.unwrap_or(true),
         detail: Some(ListedPullRequestDetail {
             additions: node.additions,
             deletions: node.deletions,
@@ -1517,7 +1548,15 @@ mod tests {
             assert!(!query.contains("contexts"), "a hundred nodes per row: {}", query);
             assert!(!query.contains("... on CheckRun"), "{}", query);
             // Free scalars on nodes already paid for. Losing one puts a request per row back.
-            for field in ["additions", "deletions", "changedFiles", "updatedAt", "headRefName"] {
+            for field in [
+                "additions",
+                "deletions",
+                "changedFiles",
+                "updatedAt",
+                "headRefName",
+                // Decides how the row is checked out. Losing it makes every row read as a fork.
+                "isCrossRepository",
+            ] {
                 assert!(query.contains(field), "{} missing from {}", field, query);
             }
             // Without these the header cannot say "30 of 11,943" and there is no next page.
@@ -1562,6 +1601,7 @@ mod tests {
                  "pageInfo":{"hasNextPage":true,"endCursor":"Y3Vyc29yOjMw"},
                  "nodes":[{"number":310,"url":"https://github.com/o/r/pull/310",
                    "title":"Ship it","baseRefName":"main","headRefName":"maestro/great-lynx-58",
+                   "isCrossRepository":false,
                    "createdAt":"2026-09-02T09:00:00Z","updatedAt":"2026-09-04T11:00:00Z",
                    "additions":1487,"deletions":18,"changedFiles":22,
                    "commits":{"nodes":[{"commit":{"oid":"deadbeef",
@@ -1578,11 +1618,57 @@ mod tests {
         assert_eq!(row.head_branch, "maestro/great-lynx-58");
         assert_eq!(row.head_sha.as_deref(), Some("deadbeef"));
         assert_eq!(row.updated_at.as_deref(), Some("2026-09-04T11:00:00Z"));
+        assert!(!row.from_fork, "a branch in the base repository");
 
         let detail = row.detail.expect("GitHub answers the detail in the list request");
         assert_eq!(detail.additions, Some(1487));
         assert_eq!(detail.changed_files, Some(22));
         assert_eq!(detail.ci, CiRollup::Failing);
+    }
+
+    /// The field that decides whether a row is checked out from `<remote>/<head_branch>` or from
+    /// `refs/pull/<n>/head`, in both directions and when GitHub does not answer it at all.
+    ///
+    /// The default matters as much as the two answers: a row whose fork status is unknown must be
+    /// checked out through the pull request ref, because the remote branch of that name is either
+    /// missing or somebody else's.
+    #[test]
+    fn a_cross_repository_row_is_marked_as_a_fork() {
+        let row = |cross: &str| {
+            let body = format!(
+                r#"{{"data":{{"repository":{{"pullRequests":{{"nodes":[
+                     {{"number":7,"url":"u","title":"T","headRefName":"patch-1",
+                       "baseRefName":"main"{}}}]}}}}}}}}"#,
+                cross
+            );
+            page(&body).expect("should parse").items.pop().expect("one row")
+        };
+
+        assert!(row(r#","isCrossRepository":true"#).from_fork);
+        assert!(!row(r#","isCrossRepository":false"#).from_fork);
+        assert!(row("").from_fork, "unanswered must read as a fork");
+    }
+
+    /// The REST fallback has no `isCrossRepository`, so it compares the two repository names —
+    /// including the case where the head repository has been deleted and GitHub sends null.
+    #[test]
+    fn the_rest_fallback_compares_repository_names_for_a_fork() {
+        let rows = listed(
+            r#"[{"number":1,"html_url":"u1","title":"same",
+                 "head":{"sha":"a","ref":"feature","repo":{"full_name":"owner/repo"}},
+                 "base":{"ref":"main","repo":{"full_name":"owner/repo"}}},
+                {"number":2,"html_url":"u2","title":"fork",
+                 "head":{"sha":"b","ref":"patch-1","repo":{"full_name":"contributor/repo"}},
+                 "base":{"ref":"main","repo":{"full_name":"owner/repo"}}},
+                {"number":3,"html_url":"u3","title":"deleted head repo",
+                 "head":{"sha":"c","ref":"patch-2","repo":null},
+                 "base":{"ref":"main","repo":{"full_name":"owner/repo"}}}]"#,
+        );
+
+        assert_eq!(rows.len(), 3);
+        assert!(!rows[0].from_fork);
+        assert!(rows[1].from_fork);
+        assert!(rows[2].from_fork, "a head repository we cannot name is not one we can push at");
     }
 
     /// `Some(detail)` is what stops the frontend asking per row. A repository with no CI at all still

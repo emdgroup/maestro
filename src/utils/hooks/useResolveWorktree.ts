@@ -30,6 +30,12 @@ interface ResolveWorktreeArgs {
    * name, false for one the user typed — see `create_worktree`.
    */
   uniqueSuffix?: boolean;
+  /**
+   * A pull request to check out instead of `baseBranch`, for one opened from a fork: its head is
+   * fetched from the ref the forge publishes it under and lands on `pr-<n>`. `baseBranch` is still
+   * recorded on the row, so pass the branch the pull request merges into.
+   */
+  pullRequest?: number | null;
 }
 
 /**
@@ -48,6 +54,7 @@ export function useResolveWorktree() {
     baseBranch,
     newBranchName,
     uniqueSuffix = false,
+    pullRequest = null,
   }: ResolveWorktreeArgs): Promise<ResolvedWorktree> => {
     if (taskId !== null) {
       const worktrees = await queryClient.fetchQuery({
@@ -67,6 +74,7 @@ export function useResolveWorktree() {
       newBranchName,
       uniqueSuffix,
       repoPath,
+      pullRequest,
     });
     const cwd = `${repoPath}/${row.path}`;
     return {

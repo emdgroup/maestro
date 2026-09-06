@@ -20,7 +20,32 @@ export const LINK_FILTERS: Array<{ value: LinkFilter; label: string }> = [
 export type PullRequestAction =
   | { kind: "open-session"; sessionKey: number; sessionLabel: string }
   | { kind: "reuse-worktree"; worktree: WorktreeWithStatus }
-  | { kind: "new-worktree"; baseBranch: string };
+  | {
+      kind: "new-worktree";
+      /** Recorded on the worktree row, and what its card counts commits against. */
+      baseBranch: string;
+      /**
+       * Set for a pull request from a fork, whose head is fetched from the forge's own ref rather
+       * than from `baseBranch` — see `create_pull_request_worktree` in `src-tauri/src/git/ops.rs`.
+       * Null for one opened on this repository, which is checked out from the remote branch.
+       */
+      pullRequestNumber: number | null;
+    }
+  | { kind: "unsupported"; reason: string };
+
+/**
+ * The local branch a pull request from a fork is checked out onto.
+ *
+ * Mirrors `pull_request_branch` in `src-tauri/src/git/ops.rs`, and the two must agree: this is what
+ * decides whether a pull request already has a worktree, so a disagreement would offer to create a
+ * second one every time.
+ *
+ * Keyed on the number because the head branch name is not unique — two forks can both open a
+ * `patch-1`, and either would collide with a local branch of that name.
+ */
+export function pullRequestBranch(number: number): string {
+  return `pr-${number}`;
+}
 
 export interface PullRequestEntry {
   pullRequest: ProjectPullRequest;
@@ -30,32 +55,67 @@ export interface PullRequestEntry {
 }
 
 /**
- * Pair each pull request with the worktree on its head branch and the action that follows.
+ * Pair each pull request with the worktree holding it and the action that follows.
  *
  * A detached worktree is not a match however its row is labelled: it is not on the branch, so
  * reusing it would put a session somewhere other than the pull request's code.
  *
- * The remote-tracking ref, not the bare branch name, is what a fresh worktree is created from — a
- * local branch of that name either does not exist or is the one the missing worktree would have
- * been on, and `create_worktree` resolves `origin/x` to a local `x` that tracks it.
+ * **Which branch that is depends on where the pull request came from.** One opened on this
+ * repository lives on its own head branch, and a fresh worktree is created from the remote-tracking
+ * ref rather than the bare name — a local branch of that name either does not exist or is the one
+ * the missing worktree would have been on, and `create_worktree` resolves `origin/x` to a local `x`
+ * that tracks it.
+ *
+ * One opened from a *fork* has no such branch here at all: it lives in a repository this project
+ * has no remote for. `${remote}/${head_branch}` is then either nothing — and the checkout fails —
+ * or, worse, an unrelated branch of this repository that happens to share the name, which is a
+ * silent checkout of the wrong code. `patch-1` and `fix-typo` are not rare. So a fork's pull
+ * request is checked out through the ref the forge publishes its head under, onto
+ * `pullRequestBranch(number)`, and matched on that name here.
+ *
+ * `canCheckOutForks` is the forge's answer to whether it publishes such a ref at all. Azure DevOps
+ * does not, so its fork rows say so rather than offering an action that cannot work.
  */
 export function pullRequestEntries(
   pullRequests: ProjectPullRequest[],
   worktrees: WorktreeWithStatus[],
   sessionsByPath: Map<string, ActiveSessionInfo[]>,
   remote: string,
+  canCheckOutForks: boolean,
 ): PullRequestEntry[] {
   return pullRequests.map((pullRequest) => {
+    const localBranch = pullRequest.from_fork
+      ? pullRequestBranch(pullRequest.number)
+      : pullRequest.head_branch;
     const worktree =
       worktrees.find(
-        (candidate) => !candidate.detached_at && candidate.branch_name === pullRequest.head_branch,
+        (candidate) => !candidate.detached_at && candidate.branch_name === localBranch,
       ) ?? null;
 
     if (!worktree) {
+      if (pullRequest.from_fork && !canCheckOutForks) {
+        return {
+          pullRequest,
+          worktree: null,
+          action: {
+            kind: "unsupported",
+            reason:
+              "This forge publishes no ref for a fork's head branch, so Maestro cannot check this pull request out. Open it on the forge instead.",
+          },
+        };
+      }
       return {
         pullRequest,
         worktree: null,
-        action: { kind: "new-worktree", baseBranch: `${remote}/${pullRequest.head_branch}` },
+        action: {
+          kind: "new-worktree",
+          // A fork's worktree is created from the forge's ref, so what goes here is only what the
+          // row records and counts commits against: the branch the pull request merges into.
+          baseBranch: pullRequest.from_fork
+            ? (pullRequest.base_branch ?? "")
+            : `${remote}/${pullRequest.head_branch}`,
+          pullRequestNumber: pullRequest.from_fork ? pullRequest.number : null,
+        },
       };
     }
 

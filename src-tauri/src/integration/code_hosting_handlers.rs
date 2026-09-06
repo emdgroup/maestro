@@ -68,6 +68,14 @@ pub struct CodeHostingStatus {
     /// first. The view polls only when this is true, so a forge without a lister costs no requests
     /// rather than one failing request per cycle.
     pub forge_supports_pull_request_list: bool,
+    /// Whether a pull request opened *from a fork* can be put into a worktree on this forge.
+    ///
+    /// Its head branch lives in a repository the project has no remote for, so the only way to it
+    /// is the ref the forge mirrors into the base repository — and Azure DevOps publishes no such
+    /// ref, only the merge commit it would produce. Read by the panel so a fork's row on that forge
+    /// is offered disabled with a reason, rather than a button that fails once pressed.
+    /// Same-repository pull requests need none of this and are unaffected.
+    pub forge_checks_out_fork_pull_requests: bool,
     /// Whether this forge can be asked for the pull request on one branch.
     ///
     /// What the *session* card rests on, and deliberately not the list above. That list is one page
@@ -202,6 +210,7 @@ pub async fn code_hosting_status(
         config: None,
         forge_supports_pull_requests: false,
         forge_supports_pull_request_list: false,
+        forge_checks_out_fork_pull_requests: false,
         forge_finds_pull_request_by_branch: false,
         forge_searches_pull_requests: false,
         forge_enumerates_checks: false,
@@ -248,6 +257,7 @@ pub async fn code_hosting_status(
             config: None,
             forge_supports_pull_requests: false,
             forge_supports_pull_request_list: false,
+            forge_checks_out_fork_pull_requests: false,
             forge_finds_pull_request_by_branch: false,
             forge_searches_pull_requests: false,
             forge_enumerates_checks: false,
@@ -290,6 +300,8 @@ pub async fn code_hosting_status(
         ),
         forge_supports_pull_request_list:
             crate::integration::pull_request::supports_pull_request_list(&config),
+        forge_checks_out_fork_pull_requests:
+            crate::integration::pull_request::checks_out_fork_pull_requests(&config),
         forge_finds_pull_request_by_branch:
             crate::integration::pull_request::finds_pull_request_by_branch(&config),
         forge_searches_pull_requests:

@@ -37,6 +37,12 @@ interface PullRequestPanelProps {
   poll: boolean;
   /** Hidden where the forge cannot search — see `forge_searches_pull_requests`. */
   canSearch: boolean;
+  /**
+   * Whether a pull request from a fork can be put into a worktree here — see
+   * `forge_checks_out_fork_pull_requests`. False on Azure DevOps, whose fork rows then offer their
+   * reason instead of an action.
+   */
+  canCheckOutForks: boolean;
   search: string;
   onSearchChange: (search: string) => void;
   hasPrevious: boolean;
@@ -63,6 +69,7 @@ export function PullRequestPanel({
   now,
   poll,
   canSearch,
+  canCheckOutForks,
   search,
   onSearchChange,
   hasPrevious,
@@ -74,8 +81,8 @@ export function PullRequestPanel({
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("All");
 
   const entries = useMemo(
-    () => pullRequestEntries(pullRequests, worktrees, sessionsByPath, remote),
-    [pullRequests, worktrees, sessionsByPath, remote],
+    () => pullRequestEntries(pullRequests, worktrees, sessionsByPath, remote, canCheckOutForks),
+    [pullRequests, worktrees, sessionsByPath, remote, canCheckOutForks],
   );
   const visible = useMemo(() => filterPullRequests(entries, linkFilter), [entries, linkFilter]);
 

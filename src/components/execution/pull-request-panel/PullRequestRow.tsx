@@ -38,6 +38,7 @@ function action(entry: PullRequestEntry): {
   label: string;
   hint: string;
   icon: typeof CornerDownRight;
+  disabled?: boolean;
 } {
   switch (entry.action.kind) {
     case "open-session":
@@ -55,8 +56,19 @@ function action(entry: PullRequestEntry): {
     case "new-worktree":
       return {
         label: "Start session",
-        hint: "Create a worktree for this branch and start a session",
+        hint: entry.action.pullRequestNumber
+          ? "Fetch this fork's branch into a worktree and start a session"
+          : "Create a worktree for this branch and start a session",
         icon: GitBranchPlus,
+      };
+    // Kept in place rather than hidden: the row is still worth reading, and a button that vanished
+    // on some rows and not others reads as a loading state rather than as an answer.
+    case "unsupported":
+      return {
+        label: "Start session",
+        hint: entry.action.reason,
+        icon: GitBranchPlus,
+        disabled: true,
       };
   }
 }
@@ -100,7 +112,7 @@ export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullReque
   const age = relativeAge(pullRequest.created_at, now);
   const ci = rollupOfCi(detail?.ci);
   const CiIcon = CI_ICON[ci];
-  const { label, hint, icon: ActionIcon } = action(entry);
+  const { label, hint, icon: ActionIcon, disabled: actionDisabled } = action(entry);
 
   const additions = detail?.additions ?? 0;
   const deletions = detail?.deletions ?? 0;
@@ -192,11 +204,22 @@ export function PullRequestRow({ entry, projectId, now, poll, onAct }: PullReque
               // for something that repeats on every card. The colour is the whole signal.
               // `hover:text-accent` is not redundant: the ghost variant would otherwise drain the
               // accent back to `foreground` exactly when the cursor is on it.
+              // `aria-disabled` rather than `disabled`: a disabled button receives no pointer
+              // events, so the tooltip explaining *why* it cannot be pressed would never open —
+              // and on this row that explanation is the entire content of the answer.
               <Button
                 variant="ghost"
                 size="xs"
-                className="h-6 shrink-0 gap-1 border border-accent px-2 text-[11px] text-accent hover:bg-accent/10 hover:text-accent"
-                onClick={() => onAct(entry)}
+                aria-disabled={actionDisabled}
+                className={cn(
+                  "h-6 shrink-0 gap-1 border px-2 text-[11px]",
+                  actionDisabled
+                    ? "cursor-default border-border text-muted-foreground opacity-60"
+                    : "border-accent text-accent hover:bg-accent/10 hover:text-accent",
+                )}
+                onClick={() => {
+                  if (!actionDisabled) onAct(entry);
+                }}
               />
             }
           >

@@ -81,6 +81,11 @@ pub struct ProjectPullRequest {
     /// Part of the key the frontend holds `detail` under. `head_sha` alone would miss a CI run that
     /// started or finished without a new commit, and the row would keep its first answer forever.
     pub updated_at: Option<String>,
+    /// Whether the head branch is in a fork rather than in this project's own repository, which
+    /// decides how the row checks itself out — and, on a forge that publishes no head ref, whether
+    /// it can be checked out at all. See [`ListedPullRequest::from_fork`] for why an unanswered
+    /// question is `true`.
+    pub from_fork: bool,
     /// `None` means *unasked*, and is the caller's signal to fetch it for this row with
     /// [`fetch_pull_request_row_detail`]. GitHub fills it here from the same GraphQL request that
     /// produced the row, so on GitHub that command is never called at all.
@@ -223,6 +228,7 @@ fn to_project_pull_request(entry: ListedPullRequest) -> ProjectPullRequest {
         created_at: entry.created_at,
         head_sha: entry.head_sha,
         updated_at: entry.updated_at,
+        from_fork: entry.from_fork,
         detail: entry.detail.map(to_row_detail),
     }
 }

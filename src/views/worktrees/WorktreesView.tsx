@@ -260,8 +260,14 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
           workspaceMode: "NewWorktree",
           branchMode: "Checkout",
           baseBranch: entry.action.baseBranch,
+          pullRequestNumber: entry.action.pullRequestNumber,
+          headBranch: entry.pullRequest.head_branch,
           sessionName: entry.pullRequest.title,
         });
+        return;
+      // The row's button is inert, so this is only reachable if the answer changed under it.
+      case "unsupported":
+        return;
     }
   }
 
@@ -457,6 +463,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                   now={now}
                   poll={onWorktreesTab}
                   canSearch={hosting?.forge_searches_pull_requests === true}
+                  canCheckOutForks={hosting?.forge_checks_out_fork_pull_requests === true}
                   search={pullRequestSearch}
                   onSearchChange={(next) => {
                     // A new search is a new list, so the way back through the old one is gone.

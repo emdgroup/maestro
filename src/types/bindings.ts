@@ -405,10 +405,16 @@ async getWorktreeDiffStats(projectId: number, worktreePath: string, diffTarget: 
  * off the same title) and needs the suffix to stay unique; a name the user typed is a deliberate
  * choice, so a collision there should fail loudly rather than come back as a name they did not
  * ask for. `git worktree add -b` reports that itself, and the rollback below removes the row.
+ * 
+ * `pull_request` replaces `base_branch` and `new_branch_name` as the thing to check out: the head
+ * is fetched from the forge's own ref and lands on `pr-<n>`. That is the only way to reach a pull
+ * request opened from a fork, whose branch is in a repository this project has no remote for —
+ * see [`crate::git::create_pull_request_worktree`]. `base_branch` is still recorded on the row, so
+ * pass the pull request's own base: it is what the card counts commits against.
  */
-async createWorktree(projectId: number, taskId: number | null, baseBranch: string, newBranchName: string | null, uniqueSuffix: boolean, repoPath: string) : Promise<Result<Worktree, string>> {
+async createWorktree(projectId: number, taskId: number | null, baseBranch: string, newBranchName: string | null, uniqueSuffix: boolean, repoPath: string, pullRequest: number | null) : Promise<Result<Worktree, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, baseBranch, newBranchName, uniqueSuffix, repoPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_worktree", { projectId, taskId, baseBranch, newBranchName, uniqueSuffix, repoPath, pullRequest }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2649,6 +2655,16 @@ forge_supports_pull_requests: boolean;
  */
 forge_supports_pull_request_list: boolean; 
 /**
+ * Whether a pull request opened *from a fork* can be put into a worktree on this forge.
+ * 
+ * Its head branch lives in a repository the project has no remote for, so the only way to it
+ * is the ref the forge mirrors into the base repository — and Azure DevOps publishes no such
+ * ref, only the merge commit it would produce. Read by the panel so a fork's row on that forge
+ * is offered disabled with a reason, rather than a button that fails once pressed.
+ * Same-repository pull requests need none of this and are unaffected.
+ */
+forge_checks_out_fork_pull_requests: boolean; 
+/**
  * Whether this forge can be asked for the pull request on one branch.
  * 
  * What the *session* card rests on, and deliberately not the list above. That list is one page
@@ -3014,6 +3030,13 @@ head_branch: string; base_branch: string | null; created_at: string | null; head
  * started or finished without a new commit, and the row would keep its first answer forever.
  */
 updated_at: string | null; 
+/**
+ * Whether the head branch is in a fork rather than in this project's own repository, which
+ * decides how the row checks itself out — and, on a forge that publishes no head ref, whether
+ * it can be checked out at all. See [`ListedPullRequest::from_fork`] for why an unanswered
+ * question is `true`.
+ */
+from_fork: boolean; 
 /**
  * `None` means *unasked*, and is the caller's signal to fetch it for this row with
  * [`fetch_pull_request_row_detail`]. GitHub fills it here from the same GraphQL request that

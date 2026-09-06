@@ -84,6 +84,139 @@ pub async fn create_worktree(
     Ok(branch.to_string())
 }
 
+/// The local branch a pull request is checked out onto.
+///
+/// Keyed on the number rather than on the head branch name, which is not unique: two forks can both
+/// open a `patch-1`, and either would collide with a local branch of that name the project already
+/// has. The Worktrees panel matches its rows against this same name.
+pub fn pull_request_branch(number: i64) -> String {
+    format!("pr-{}", number)
+}
+
+/// The pull request a branch belongs to, if [`pull_request_branch`] is what named it.
+///
+/// A branch a user happened to call `pr-42` answers too. That costs nothing: the only caller uses
+/// it to drop a fetch refspec, and unsetting one that was never added is a no-op.
+pub fn pull_request_of_branch(branch: &str) -> Option<i64> {
+    branch.strip_prefix("pr-")?.parse().ok()
+}
+
+/// The remote-tracking ref a pull request's head is fetched into, and the refspec that puts it
+/// there.
+fn pull_request_refspec(remote: &str, number: i64, head_ref: &str) -> (String, String) {
+    let tracking = format!("refs/remotes/{}/pr/{}", remote, number);
+    let refspec = format!("+{}:{}", head_ref, tracking);
+    (tracking, refspec)
+}
+
+/// Create a worktree on a pull request's head commit, fetched from the forge's own ref.
+///
+/// This is what makes a pull request from a *fork* reachable at all. Its head branch is in a
+/// repository the project has no remote for and no credential for, but the forge mirrors the head
+/// commit into the base repository under a ref of its own — `head_ref`, from
+/// `integration::pull_request::pull_request_head_ref` — so everything here goes through the
+/// project's existing remote and needs nothing new to authenticate with.
+///
+/// The refspec is both written into the remote's configuration and passed to the fetch, and both
+/// are load-bearing. Configured, it is what `--track` reverse-maps to give the branch an upstream,
+/// what makes `@{u}` resolve for the card's ahead/behind counts, and what a later bare `git fetch`
+/// refreshes — `pull_worktree_branch` fetches the whole remote and merges `@{u}`, so without it
+/// neither half of that works. Passed explicitly, it holds this fetch to one ref rather than
+/// re-fetching the remote.
+///
+/// The closing `git config` is not redundant. `--track` reverse-maps the tracking ref through the
+/// remote's refspecs *in order*, and the default `+refs/heads/*:refs/remotes/<remote>/*` matches
+/// first, so git writes `branch.<b>.merge=refs/heads/pr/<n>` — naming a branch the remote does not
+/// have, which a plain `git pull` inside the worktree then fails on. Overwriting it with the real
+/// ref is what `gh pr checkout` does, and it keeps `@{u}` working because the exact refspec above
+/// maps forward to the same tracking ref.
+///
+/// An existing branch of this name is checked out as it stands rather than reset onto the fetched
+/// head. `git branch -d` refuses a branch holding commits of its own, so one that survived a
+/// previous worktree's deletion survived *because* there is work on it; resetting would discard
+/// exactly the case worth keeping. It comes back behind its upstream instead, which the card
+/// reports and the Pull button resolves.
+///
+/// Nothing here configures a push. A contributor's fork is not ours to write to, and git refuses
+/// the push on its own: `push.default=simple` will not push a branch whose upstream is named
+/// differently, which `refs/pull/<n>/head` always is.
+pub async fn create_pull_request_worktree(
+    conn: &GitConnection,
+    remote: &str,
+    number: i64,
+    head_ref: &str,
+    worktree_name: &str,
+) -> Result<String, String> {
+    let branch = pull_request_branch(number);
+    let (tracking, refspec) = pull_request_refspec(remote, number, head_ref);
+    let fetch_key = format!("remote.{}.fetch", remote);
+
+    // Added only when absent: `--add` would otherwise stack a duplicate line on every checkout of
+    // the same pull request, and each one costs a ref on every later fetch.
+    let configured = run_git_in_dir_lossy(conn, conn.path(), &["config", "--get-all", &fetch_key])
+        .await
+        .unwrap_or_default();
+    if !configured.lines().any(|line| line.trim() == refspec) {
+        run_git_in_dir(conn, conn.path(), &["config", "--add", &fetch_key, &refspec]).await?;
+    }
+
+    run_git_in_dir(conn, conn.path(), &["fetch", "--no-tags", remote, &refspec]).await?;
+
+    // `rev-parse --verify --quiet` prints the sha or nothing, the same probe `local_branch_for`
+    // uses above — `worktree add -b` on a branch that exists fails, and the error is not one to
+    // show a user who asked to open a pull request.
+    let head_of_branch = format!("refs/heads/{}", branch);
+    let probe = ["rev-parse", "--verify", "--quiet", &head_of_branch];
+    let existing = run_git_in_dir_lossy(conn, conn.path(), &probe).await.unwrap_or_default();
+
+    if existing.trim().is_empty() {
+        run_git_in_dir(
+            conn,
+            conn.path(),
+            &["worktree", "add", "--track", "-b", &branch, worktree_name, &tracking],
+        )
+        .await?;
+    } else {
+        run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, &branch]).await?;
+    }
+
+    let merge_key = format!("branch.{}.merge", branch);
+    let remote_key = format!("branch.{}.remote", branch);
+    run_git_in_dir(conn, conn.path(), &["config", &remote_key, remote]).await?;
+    run_git_in_dir(conn, conn.path(), &["config", &merge_key, head_ref]).await?;
+
+    Ok(branch)
+}
+
+/// Drop the fetch refspec [`create_pull_request_worktree`] added for a pull request.
+///
+/// Best effort, and deliberately so: this runs while a worktree is being deleted, and a stale
+/// refspec costs one ref on later fetches where a failed deletion would cost the user their
+/// worktree. `--unset` matches on a value regex, so the refspec is escaped as one.
+pub async fn forget_pull_request_refspec(conn: &GitConnection, remote: &str, number: i64) {
+    let fetch_key = format!("remote.{}.fetch", remote);
+    let pattern = format!("^\\+refs/.*:refs/remotes/{}/pr/{}$", regex_escape(remote), number);
+    if let Err(e) =
+        run_git_in_dir_lossy(conn, conn.path(), &["config", "--unset", &fetch_key, &pattern]).await
+    {
+        log::debug!("[git] leaving the fetch refspec for pull request {number} in place: {e}");
+    }
+}
+
+/// The handful of regex metacharacters a git remote name may legally contain.
+///
+/// Remote names are `[A-Za-z0-9._/-]` in practice, so this only has to neutralise `.` — but
+/// escaping the rest costs nothing and keeps a name we did not anticipate from matching more
+/// refspecs than its own.
+fn regex_escape(value: &str) -> String {
+    const META: [char; 14] =
+        ['.', '+', '*', '?', '[', ']', '(', ')', '{', '}', '^', '$', '|', '\\'];
+    value
+        .chars()
+        .flat_map(|c| META.contains(&c).then_some('\\').into_iter().chain(std::iter::once(c)))
+        .collect()
+}
+
 /// Remove a worktree from the project repository.
 ///
 /// `worktree_name` is the worktree's path relative to the repository, not a branch name. The
@@ -333,7 +466,38 @@ pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>, remote_name: 
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_branch_list, remove_dir_with_retries, removable_worktree_dir};
+    use super::{
+        parse_branch_list, pull_request_branch, pull_request_of_branch, pull_request_refspec,
+        remove_dir_with_retries, removable_worktree_dir,
+    };
+
+    /// The branch name is a contract with the Worktrees panel, which matches its rows against it
+    /// to decide whether a pull request already has a worktree. The two halves must agree, and the
+    /// refspec must land in the namespace `--track` is pointed at.
+    #[test]
+    fn a_pull_request_branch_round_trips_and_its_refspec_matches() {
+        assert_eq!(pull_request_branch(326), "pr-326");
+        assert_eq!(pull_request_of_branch("pr-326"), Some(326));
+        assert_eq!(pull_request_of_branch(&pull_request_branch(1)), Some(1));
+
+        // Maestro's own branches, and a user's, must not be read as pull request checkouts — that
+        // would drop a fetch refspec belonging to something else on delete.
+        assert_eq!(pull_request_of_branch("maestro/great-lynx-58"), None);
+        assert_eq!(pull_request_of_branch("main"), None);
+        assert_eq!(pull_request_of_branch("pr-"), None);
+        assert_eq!(pull_request_of_branch("pr-feature"), None);
+
+        let (tracking, refspec) = pull_request_refspec("origin", 326, "refs/pull/326/head");
+        assert_eq!(tracking, "refs/remotes/origin/pr/326");
+        // Forced, so a contributor force-pushing their branch resyncs rather than failing.
+        assert_eq!(refspec, "+refs/pull/326/head:refs/remotes/origin/pr/326");
+
+        // A remote that is not `origin`, and a forge that spells the ref differently.
+        let (tracking, refspec) =
+            pull_request_refspec("upstream", 7, "refs/merge-requests/7/head");
+        assert_eq!(tracking, "refs/remotes/upstream/pr/7");
+        assert_eq!(refspec, "+refs/merge-requests/7/head:refs/remotes/upstream/pr/7");
+    }
 
     /// The two lists must be exactly `refs/heads/*` and `refs/remotes/<remote>/*`.
     ///

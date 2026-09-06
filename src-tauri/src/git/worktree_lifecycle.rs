@@ -41,6 +41,72 @@ pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
 // create_worktree — REQ-08
 // ============================================================================
 
+/// Everything checking a pull request out needs, resolved before anything is written.
+struct PullRequestCheckout {
+    number: i64,
+    /// The remote to fetch from — the project's own. The fork is never contacted; the forge
+    /// mirrors the head commit into the base repository, which this remote already points at.
+    remote: String,
+    /// Where the forge publishes that head, e.g. `refs/pull/12/head`.
+    head_ref: String,
+}
+
+impl PullRequestCheckout {
+    async fn create(
+        &self,
+        git_conn: &crate::models::GitConnection,
+        relative_path: &str,
+    ) -> Result<String, String> {
+        crate::git::create_pull_request_worktree(
+            git_conn,
+            &self.remote,
+            self.number,
+            &self.head_ref,
+            relative_path,
+        )
+        .await
+    }
+}
+
+/// Which remote to fetch a pull request's head from, and under which ref — or why this forge
+/// cannot be asked.
+///
+/// Both failures name what is missing, because they are the user's only route out: one means the
+/// project's remote is not on a forge Maestro knows, the other that the forge publishes no head ref
+/// for a pull request. The panel already withholds the action in the second case, so reaching it
+/// here means the row was stale.
+async fn resolve_pull_request_checkout(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    number: i64,
+) -> Result<PullRequestCheckout, String> {
+    let status =
+        crate::integration::code_hosting_handlers::code_hosting_status(app_state, project_id)
+            .await?;
+    let Some(config) = status.config else {
+        return Err(
+            "This project's remote is not on a forge Maestro recognises, so its pull requests \
+             cannot be checked out."
+                .to_string(),
+        );
+    };
+    let Some(head_ref) =
+        crate::integration::pull_request::pull_request_head_ref(&config.provider, number)
+    else {
+        return Err(format!(
+            "Maestro cannot check out a pull request on `{}`: it publishes no ref for a pull \
+             request's head branch. Open it on the forge instead.",
+            config.provider
+        ));
+    };
+
+    Ok(PullRequestCheckout {
+        number,
+        remote: crate::git::remote::project_remote(app_state, project_id).await,
+        head_ref,
+    })
+}
+
 /// `unique_suffix` says whether `new_branch_name` was generated or typed, and only the session path
 /// reads it — a task's branch already carries its id and has never been suffixed.
 ///
@@ -49,8 +115,17 @@ pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
 /// off the same title) and needs the suffix to stay unique; a name the user typed is a deliberate
 /// choice, so a collision there should fail loudly rather than come back as a name they did not
 /// ask for. `git worktree add -b` reports that itself, and the rollback below removes the row.
+///
+/// `pull_request` replaces `base_branch` and `new_branch_name` as the thing to check out: the head
+/// is fetched from the forge's own ref and lands on `pr-<n>`. That is the only way to reach a pull
+/// request opened from a fork, whose branch is in a repository this project has no remote for —
+/// see [`crate::git::create_pull_request_worktree`]. `base_branch` is still recorded on the row, so
+/// pass the pull request's own base: it is what the card counts commits against.
 #[tauri::command]
 #[specta::specta]
+// Argument list is the IPC contract: collapsing it into a struct would change the
+// generated bindings and every frontend call site.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_worktree(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -59,6 +134,7 @@ pub async fn create_worktree(
     new_branch_name: Option<String>,
     unique_suffix: bool,
     repo_path: String,
+    pull_request: Option<i64>,
 ) -> Result<Worktree, String> {
     // Resolve project and git connection (local vs remote SSH)
     let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
@@ -84,6 +160,14 @@ pub async fn create_worktree(
             .map_err(|e| format!("Failed to create worktree directory: {}", e))?;
     }
 
+    // Resolved before either arm below, and before any row is written: a forge that publishes no
+    // head ref cannot be checked out at all, and that should fail before the insert rather than
+    // after it.
+    let checkout = match pull_request {
+        Some(number) => Some(resolve_pull_request_checkout(&app_state, project_id, number).await?),
+        None => None,
+    };
+
     let now = Utc::now().to_rfc3339();
 
     let (worktree_id, branch_name, relative_path) = match task_id {
@@ -92,7 +176,10 @@ pub async fn create_worktree(
             // The name comes back from git rather than being guessed from `base_branch`: checking
             // out `origin/foo` lands the worktree on a local `foo`, and a row saying `origin/foo`
             // would match no worktree git ever reports.
-            let branch_name = crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?;
+            let branch_name = match &checkout {
+                Some(checkout) => checkout.create(&git_conn, &relative_path).await?,
+                None => crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?,
+            };
 
             let worktree_id = {
                 let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
@@ -138,8 +225,12 @@ pub async fn create_worktree(
 
             // `None` means "check out base_branch where it is", so there is no new name to suffix,
             // and git decides the name — see the note in the task arm above.
-            let created =
-                crate::git::create_worktree(&git_conn, &base_branch, &relative_path, requested_branch.as_deref()).await;
+            let created = match &checkout {
+                Some(checkout) => checkout.create(&git_conn, &relative_path).await,
+                None => {
+                    crate::git::create_worktree(&git_conn, &base_branch, &relative_path, requested_branch.as_deref()).await
+                }
+            };
 
             let branch_name = match created {
                 Ok(name) => name,
@@ -257,6 +348,14 @@ pub async fn delete_worktree(
 
     // Call git worktree remove via dispatcher (best effort — don't fail if already gone)
     let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+
+    // The fetch refspec a pull request checkout added exists to serve this worktree, so it goes
+    // with it — each one left behind is a ref every later `git fetch` on the project pays for.
+    // Dropped whether or not the branch is kept: nothing measures a branch with no worktree.
+    if let Some(number) = crate::git::ops::pull_request_of_branch(&branch_name) {
+        let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+        crate::git::forget_pull_request_refspec(&git_conn, &remote, number).await;
+    }
 
     // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
