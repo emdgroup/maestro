@@ -580,9 +580,12 @@ pub async fn diff_stats_in(
     };
     let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
 
-    let stat_output = crate::git::run_git_in_dir(git_conn, worktree_path, &stat_args_ref)
-        .await
-        .unwrap_or_default();
+    // Propagated rather than defaulted: a rebase, amend or reset orphans the session's start
+    // commit, and `git diff <bad sha>` then fails. Swallowing that produced zero tracked files
+    // beside a live untracked count — a wrong number on the Overview card — and handed the
+    // turn-ended gate `Some(false)`, which `classify_turn` reads as "the agent changed nothing"
+    // and parks a task that had in fact done the work. An unreadable diff is unknown, not empty.
+    let stat_output = crate::git::run_git_in_dir(git_conn, worktree_path, &stat_args_ref).await?;
 
     let (mut file_count, mut insertions, mut deletions) = (0u32, 0u32, 0u32);
     // The last non-empty line of `git diff --stat` is the summary, e.g.:
@@ -981,6 +984,33 @@ mod tests {
             untracked(DiffTarget::CommitRange { from: base, to: tip }).await.is_empty(),
             "a commit range ends at a commit and cannot contain a file git has never seen"
         );
+    }
+
+    /// A rebase, amend or reset orphans a session's start commit, and `git diff <that sha>` then
+    /// fails. This used to be defaulted away, which produced a stats row reading zero tracked files
+    /// beside a live untracked count — a wrong number on the Overview card — and told the
+    /// turn-ended gate the agent had changed nothing, parking a task that had done the work.
+    #[tokio::test]
+    async fn an_unreachable_start_commit_is_an_error_not_an_empty_diff() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let repo = temp.path();
+        let (base, _tip) = repo_with_two_commits(repo);
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        std::fs::write(repo.join("scratch.txt"), "never added\n").expect("write untracked file");
+
+        let good = diff_stats_in(&connection, &path, &DiffTarget::Commit { sha: base }, "origin")
+            .await
+            .expect("a reachable start commit produces stats");
+        assert_eq!(good.file_count, 2, "a.txt and added.txt changed since base");
+        assert_eq!(good.untracked_count, 1);
+
+        let orphaned = "0123456789012345678901234567890123456789".to_string();
+        let error = diff_stats_in(&connection, &path, &DiffTarget::Commit { sha: orphaned }, "origin")
+            .await
+            .expect_err("an unreachable start commit must not report as no changes");
+        assert!(!error.is_empty(), "the git failure should carry a message");
     }
 
     #[test]

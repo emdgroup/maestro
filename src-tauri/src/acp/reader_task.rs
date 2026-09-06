@@ -494,15 +494,23 @@ pub(crate) async fn task_has_changes(
     // `Commit` never consults the remote; passed for signature uniformity, and resolving it is a
     // cached map lookup after the first call.
     let remote = crate::git::remote::project_remote(app_state, project_id).await;
-    crate::git::worktree_query::diff_stats_in(
+    match crate::git::worktree_query::diff_stats_in(
         &git_conn,
         &cwd,
         &crate::models::DiffTarget::Commit { sha: start_sha },
         &remote,
     )
     .await
-    .ok()
-    .map(|stats| stats.has_changes())
+    {
+        Ok(stats) => Some(stats.has_changes()),
+        // Most often the start commit no longer exists, because the agent rebased or amended over
+        // it. `None` sends this to `classify_turn` as "unknown", which completes the turn — the
+        // alternative is calling work the agent did invisible on the strength of a failed command.
+        Err(e) => {
+            log::warn!("[acp] diff gate for task {task_id} could not read the diff: {e}");
+            None
+        }
+    }
 }
 
 /// `(project_id, path, connection_id, wsl_connection_id, docker_connection_id)`

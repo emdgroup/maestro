@@ -484,12 +484,22 @@ export function useRenameAcpSessionMutation() {
 /**
  * Lightweight query for ACP session metadata (cwd, project_id, session_start_sha).
  * Used to resolve relative file paths to absolute paths inside working file views.
+ *
+ * `refetchInterval` is off by default because `cwd` and `project_id` are fixed for a session's
+ * lifetime. `session_start_sha` is not: `get_acp_session_meta` reports it as absent once a rebase,
+ * amend or reset has orphaned the commit, and callers that diff against it need to hear about that
+ * to fall back. Panels stay mounted for the app's lifetime and `refetchOnWindowFocus` is off
+ * globally, so without an interval this answer is the one fetched at mount, forever.
  */
-export function useAcpSessionMeta(sessionKey: number | null) {
+export function useAcpSessionMeta(
+  sessionKey: number | null,
+  options?: { refetchInterval?: number | false },
+) {
   return useQuery({
     queryKey: executionQueryKeys.sessionMeta(sessionKey),
     queryFn: () => api.getAcpSessionMeta(sessionKey!),
     enabled: sessionKey != null,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

@@ -108,7 +108,8 @@ export function SidePanelContent({
   // Polling is gated on the session being on screen rather than on the Review or Overview
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
   // the user is looking at another tab, or at a collapsed panel.
-  const { diffStats, changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
+  const { diffStats, changedFilesCount, uncommittedFilesCount, scope, isError } =
+    useSessionDiffStats(sessionKey, isSessionActive);
   // The pull request state is gated harder than the diff stats above, because it is the one thing
   // here that leaves the machine. Its only consumer is a card on the Overview tab and there is no
   // unseen dot for it to raise, so nothing is lost by asking the forge only while that tab is the
@@ -210,6 +211,9 @@ export function SidePanelContent({
                   if (kind === "artifacts" && filePath) setArtifactsSelectedFile(filePath);
                 }}
                 diffStats={diffStats}
+                uncommittedFilesCount={uncommittedFilesCount}
+                scope={scope}
+                statsUnavailable={isError}
                 connection={connection}
                 wslDistroName={wslDistroName}
                 ship={ship}

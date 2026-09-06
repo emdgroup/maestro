@@ -27,6 +27,7 @@ import type { PlanEntry, ToolCallItem } from "@/components/execution/activity/ty
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import { useTaskAttachmentsQuery, useTasksQuery } from "@/services/task.service";
 import type { SessionShipState, SessionPullRequest } from "./useSessionShipState";
+import type { SessionDiffScope } from "./useSessionDiffStats";
 import { BLOCKER_LABELS, commitAndPushPrompt, fixChecksPrompt } from "./shipActions";
 import { OpenPullRequestDialog } from "./OpenPullRequestDialog";
 
@@ -41,6 +42,12 @@ interface OverviewPanelProps {
   taskId: number | null;
   onNavigate: (kind: TabKind, filePath?: string) => void;
   diffStats?: { insertions: number; deletions: number } | null;
+  /** How much of `changedFilesCount` is still outstanding. `null` before the first fetch settles. */
+  uncommittedFilesCount?: number | null;
+  /** Whether `changedFilesCount` is measured from the session's start commit or only from HEAD. */
+  scope?: SessionDiffScope;
+  /** `git diff` failed — show nothing rather than the zero a failed command would otherwise read as. */
+  statsUnavailable?: boolean;
   connection: ConnectionKey;
   wslDistroName?: string;
   ship: SessionShipState;
@@ -197,6 +204,9 @@ export function OverviewPanel({
   taskId,
   onNavigate,
   diffStats,
+  uncommittedFilesCount,
+  scope = "session",
+  statsUnavailable = false,
   connection,
   wslDistroName,
   ship,
@@ -234,6 +244,28 @@ export function OverviewPanel({
 
   const totalDiff = (diffStats?.insertions ?? 0) + (diffStats?.deletions ?? 0);
   const insPct = totalDiff > 0 ? Math.round(((diffStats?.insertions ?? 0) / totalDiff) * 100) : 0;
+
+  // The headline counts everything since the session's start commit, so it does not move when the
+  // agent commits. Subtracting what is still outstanding is what makes shipping visible on the card.
+  //
+  // The two numbers come from two independent `--stat` runs, so a file that was committed and then
+  // edited again is counted once in each and the committed figure reads one low. Being exact would
+  // mean a third `git diff <start>..HEAD` on every poll, which is not worth it for a summary line;
+  // clamping keeps the arithmetic from ever going negative when the two polls land out of step.
+  const showSplit =
+    scope === "session" &&
+    !statsUnavailable &&
+    uncommittedFilesCount != null &&
+    changedFilesCount > 0;
+  const committedFilesCount = Math.max(0, changedFilesCount - (uncommittedFilesCount ?? 0));
+
+  const changesSubtitle = statsUnavailable
+    ? "Changes unavailable"
+    : changedFilesCount === 0
+      ? "No changes"
+      : scope === "session"
+        ? `${changedFilesCount} file${changedFilesCount !== 1 ? "s" : ""} since session start`
+        : `${changedFilesCount} uncommitted file${changedFilesCount !== 1 ? "s" : ""}`;
 
   const agentFiles = workingFiles ?? [];
   const userFiles = attachments ?? [];
@@ -319,18 +351,16 @@ export function OverviewPanel({
 
         {/* Changes */}
         <Card
-          available={changedFilesCount > 0}
+          // Shown on failure too: a card that vanishes when `git diff` errors is indistinguishable
+          // from a session that changed nothing, which is the confusion this card had.
+          available={changedFilesCount > 0 || statsUnavailable}
           onClick={() => onNavigate("review")}
           icon={<FileDiff className="w-3.5 h-3.5 text-success" />}
           iconBg="bg-success/15"
           label="Changes"
-          sub={
-            changedFilesCount === 0
-              ? "No changes"
-              : `${changedFilesCount} file${changedFilesCount !== 1 ? "s" : ""} modified`
-          }
+          sub={changesSubtitle}
         >
-          {changedFilesCount > 0 && diffStats && (
+          {changedFilesCount > 0 && !statsUnavailable && diffStats && (
             <div className="flex flex-col gap-1.5">
               <div className="h-1 rounded-full overflow-hidden flex gap-px">
                 <div className="bg-success rounded-l-full" style={{ width: `${insPct}%` }} />
@@ -353,6 +383,11 @@ export function OverviewPanel({
                   −{diffStats.deletions} deletions
                 </span>
               </div>
+              {showSplit && (
+                <span className="text-[10.5px] text-muted-foreground tabular-nums">
+                  {committedFilesCount} committed · {uncommittedFilesCount} uncommitted
+                </span>
+              )}
             </div>
           )}
           <ShipAction
