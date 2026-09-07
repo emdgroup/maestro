@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // Integer hash → [0, 1). Bubble parameters must be deterministic per slot: Math.random would
@@ -43,6 +43,65 @@ interface FieldSpec {
   start?: string;
 }
 
+/**
+ * The values that may safely change when a bubble finishes a cycle. Duration and delay are
+ * excluded: they define the cycle itself, so changing them mid-flight would jump it. Sway is
+ * excluded because it is the wrapper's width, which the keyframes translate by percentages of.
+ *
+ * `cycle` 0 reproduces the value the field was built with, so the first pass is unchanged.
+ */
+function laneCycle(
+  spec: FieldSpec,
+  lanes: number,
+  lane: number,
+  seed: number,
+  cycle: number,
+): Record<string, string> {
+  const rand = (salt: number) => bubbleRand(seed * 7 + salt + cycle * 977);
+  // Drift up to two lanes either side of home. Confined to its own 100px lane the re-roll was too
+  // small to read as a change at all; letting bubbles roam the full width instead would clump them
+  // and lose the even spread the lane system exists to provide.
+  const drift = cycle === 0 ? 0 : Math.round((rand(7) - 0.5) * 4);
+  const column = Math.min(Math.max(lane + drift, 0), Math.max(lanes - 1, 0));
+  return {
+    "--bx": `${column * 100 + 8 + Math.round(rand(6) * 84)}px`,
+    "--bs": `${spec.minSize + Math.round(rand(1) * spec.sizeRange)}px`,
+    "--bo": (0.3 + rand(4) * 0.25).toFixed(2),
+    // Magnitude only — the sign lives on the class. Safe to change here because at the iteration
+    // boundary the transform is translate(0, 0), so a new wrapper width moves nothing.
+    "--bw": `${(spec.minSway + rand(5) * spec.swayRange).toFixed(1)}px`,
+  };
+}
+
+/**
+ * Giants repeat far more visibly than the small bubbles — there are only three, and they are large,
+ * so a giant returning to its own column at its own size is the thing that reads as a loop. Each
+ * therefore gets the whole width and a wide size range, and its start offset follows its new size,
+ * or a bigger disc would begin partly on screen instead of hidden below the edge.
+ */
+function giantCycle(
+  style: React.CSSProperties,
+  index: number,
+  cycle: number,
+): Record<string, string> {
+  const base = style as Record<string, string>;
+  const baseSize = parseFloat(base["--bs"]);
+  // How far below the edge this giant starts, which has to be preserved across a size change.
+  const margin = -parseFloat(base["--bt"]) - baseSize;
+  const rand = (salt: number) => bubbleRand((index + 1) * 7919 + salt + cycle * 977);
+  // Giants get the full width and a wide size range, because they are what reads as a loop and
+  // there are only three of them. Two of them overlapping is not worth defending against: at 6-12%
+  // opacity they are ghosts, and a band narrow enough to guarantee separation was narrow enough
+  // that the giant appeared to return to the same place.
+  const size = Math.round(baseSize * (0.6 + rand(1) * 0.9));
+  return {
+    "--bx": `${(4 + rand(2) * 88).toFixed(1)}%`,
+    "--bs": `${size}px`,
+    "--bt": `${-(size + margin)}px`,
+    "--bo": (parseFloat(base["--bo"]) * (0.7 + rand(3) * 0.6)).toFixed(3),
+  };
+}
+
 function buildField(spec: FieldSpec, lanes: number): React.CSSProperties[] {
   const bubbles: React.CSSProperties[] = [];
   for (let lane = 0; lane < lanes; lane++) {
@@ -52,11 +111,9 @@ function buildField(spec: FieldSpec, lanes: number): React.CSSProperties[] {
       const duration = spec.minDuration + rand(2) * spec.durationRange;
       const sway = (spec.minSway + rand(5) * spec.swayRange) * (seed % 2 === 0 ? 1 : -1);
       bubbles.push({
-        "--bx": `${lane * 100 + 8 + Math.round(rand(6) * 84)}px`,
-        "--bs": `${spec.minSize + Math.round(rand(1) * spec.sizeRange)}px`,
+        ...laneCycle(spec, lanes, lane, seed, 0),
         "--bu": `${duration.toFixed(2)}s`,
         "--be": `${(-rand(3) * duration).toFixed(2)}s`,
-        "--bo": (0.3 + rand(4) * 0.25).toFixed(2),
         "--bw": `${sway.toFixed(1)}px`,
         ...(spec.travel ? { "--bv": spec.travel } : {}),
         ...(spec.start ? { "--bt": spec.start } : {}),
@@ -173,20 +230,71 @@ interface AccentBubblesProps {
   className?: string;
 }
 
+// The sway direction moves out of `--bw` and onto a class, because the keyframes read the sway as a
+// percentage of the wrapper's width and a width cannot be negative. The spec tables above keep
+// their signed values, which are what a reader wants to see; the split happens once, here.
+function splitSway(style: React.CSSProperties): {
+  style: React.CSSProperties;
+  className: string;
+} {
+  const sway = parseFloat(String((style as Record<string, string>)["--bw"] ?? "4px"));
+  return {
+    style: { ...style, "--bw": `${Math.abs(sway)}px` } as React.CSSProperties,
+    className: sway < 0 ? "accent-bubble sway-neg" : "accent-bubble",
+  };
+}
+
 /** Bubbles rising in the project's accent colour. Decorative: hidden from assistive tech. */
 export function AccentBubbles({ variant, className }: AccentBubblesProps) {
   const lanes = useLaneCount();
   const spec = SPECS[variant];
   const bubbles = useMemo(() => buildField(spec.bubbles, lanes), [spec, lanes]);
+  const field = useMemo(() => [...bubbles, ...spec.giants], [bubbles, spec]);
+  const rootRef = useRef<HTMLSpanElement>(null);
 
+  // A CSS animation is exactly periodic, so every bubble returns to its own column at its own size
+  // on every cycle. Among the small ones that reads as texture; among the three giants it reads as
+  // a loop. Re-rolling on `animationiteration` breaks the repeat at the one instant the bubble is
+  // fully transparent, and is nearly free: it fires once per cycle rather than per frame, and it
+  // writes only static properties, so the keyframes stay free of custom properties and composited.
+  //
+  // One delegated listener rather than one per bubble — animation events bubble, and the disc
+  // inside each wrapper is unanimated so it never fires.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const cycles = new Map<number, number>();
+    const onIteration = (event: AnimationEvent) => {
+      const element = event.target as HTMLElement | null;
+      const attr = element?.dataset?.bubble;
+      if (attr === undefined) return;
+      const index = Number(attr);
+      const cycle = (cycles.get(index) ?? 0) + 1;
+      cycles.set(index, cycle);
+      const next =
+        index < bubbles.length
+          ? laneCycle(spec.bubbles, lanes, Math.floor(index / spec.bubbles.perLane), index, cycle)
+          : giantCycle(spec.giants[index - bubbles.length], index, cycle);
+      for (const [property, value] of Object.entries(next)) {
+        element?.style.setProperty(property, value);
+      }
+    };
+    root.addEventListener("animationiteration", onIteration);
+    return () => root.removeEventListener("animationiteration", onIteration);
+  }, [bubbles, spec, lanes]);
+
+  // Two elements per bubble: the wrapper carries the motion, the inner span is the visible disc.
+  // See `.accent-bubble` in index.css for why the geometry is split this way.
   return (
-    <span aria-hidden className={cn("accent-bubbles", className)}>
-      {bubbles.map((style, index) => (
-        <span key={index} className="accent-bubble" style={style} />
-      ))}
-      {spec.giants.map((style, index) => (
-        <span key={`giant-${index}`} className="accent-bubble" style={style} />
-      ))}
+    <span aria-hidden ref={rootRef} className={cn("accent-bubbles", className)}>
+      {field.map((style, index) => {
+        const bubble = splitSway(style);
+        return (
+          <span key={index} data-bubble={index} className={bubble.className} style={bubble.style}>
+            <span className="accent-bubble-body" />
+          </span>
+        );
+      })}
     </span>
   );
 }

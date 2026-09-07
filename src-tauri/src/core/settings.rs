@@ -103,6 +103,13 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .map(|v| v == "true")
         .unwrap_or(false);
 
+    // Absent or blank is "never chosen", which the frontend resolves against the machine — so it
+    // must stay None rather than collapsing to Some(false), which would pin it off forever.
+    let reduce_motion = settings_map
+        .get("reduce_motion")
+        .filter(|v| !v.is_empty())
+        .map(|v| v == "true");
+
     let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
     let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
     let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
@@ -126,6 +133,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         notify_on_input_needed,
         notify_on_failure,
         native_window_frame,
+        reduce_motion,
     })
 }
 
@@ -152,6 +160,12 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let notify_on_input_needed_str = if settings.notify_on_input_needed { "true" } else { "false" };
     let notify_on_failure_str = if settings.notify_on_failure { "true" } else { "false" };
     let native_window_frame_str = if settings.native_window_frame { "true" } else { "false" };
+    // Empty for None, so "never chosen" round trips as None rather than as an explicit off.
+    let reduce_motion_str = match settings.reduce_motion {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "",
+    };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -170,6 +184,7 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("notify_on_input_needed", notify_on_input_needed_str),
         ("notify_on_failure", notify_on_failure_str),
         ("native_window_frame", native_window_frame_str),
+        ("reduce_motion", reduce_motion_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -279,6 +294,7 @@ mod tests {
             notify_on_input_needed: true,
             notify_on_failure: false,
             native_window_frame: true,
+            reduce_motion: Some(true),
         };
 
         save_settings(&mut conn, &settings).unwrap();
@@ -292,6 +308,34 @@ mod tests {
         assert!(!loaded.notify_on_failure);
         // Not the default, so a round trip that dropped the key would still look like a pass.
         assert!(loaded.native_window_frame);
+        assert_eq!(loaded.reduce_motion, Some(true));
+    }
+
+    /// The three states have to stay distinct: `None` is "follow the machine", and collapsing it to
+    /// `Some(false)` would pin the animation on for a user whose machine cannot afford it. An
+    /// explicit `Some(false)` must equally survive, or a user on such a machine could never turn
+    /// the animation back on.
+    #[test]
+    fn reduce_motion_round_trips_all_three_states() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
+
+        save_settings(&mut conn, &AppSettings::default()).unwrap();
+        assert_eq!(load_settings(&conn).unwrap().reduce_motion, None);
+
+        save_settings(
+            &mut conn,
+            &AppSettings { reduce_motion: Some(false), ..AppSettings::default() },
+        )
+        .unwrap();
+        assert_eq!(load_settings(&conn).unwrap().reduce_motion, Some(false));
+
+        save_settings(
+            &mut conn,
+            &AppSettings { reduce_motion: Some(true), ..AppSettings::default() },
+        )
+        .unwrap();
+        assert_eq!(load_settings(&conn).unwrap().reduce_motion, Some(true));
     }
 
     /// An unparseable stored value must fall back to the default rather than erroring, matching

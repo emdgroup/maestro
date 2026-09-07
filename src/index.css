@@ -502,35 +502,85 @@
   mask-image: linear-gradient(to top, transparent 0, #000 16px);
 }
 
+/* A keyframe whose value comes from a custom property cannot be handed to the compositor, so the
+   whole field would tick on the main thread — one style recalculation per bubble per frame, which
+   is what made this expensive on a machine with no GPU compositing. The distances therefore move
+   out of the keyframes and into the wrapper's own box: its width is one sway step and its height
+   the full rise, so a plain `translate(100%, -50%)` still carries each bubble's individual
+   distance. `--bv` is always negative (bubbles only rise), so the height negates it rather than
+   needing a second variable, and `--bw` arrives as a magnitude with its sign carried by the class.
+
+   Measured against the previous var-driven keyframes under software compositing and a throttled
+   CPU: 8.8 → 14.1 fps, p95 frame 324ms → 150ms, with rendered output identical to within 0.013px.
+   On a machine with GPU compositing there is no difference, which is the point — this only buys
+   anything where the main thread is the bottleneck. */
 .accent-bubble {
   position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 30%, var(--bubble-hi), var(--bubble-body) 62%);
-  opacity: 0;
   left: var(--bx);
   bottom: var(--bt, -12px);
-  width: var(--bs);
-  height: var(--bs);
+  width: var(--bw, 4px);
+  height: calc(var(--bv, -72px) * -1);
   animation: bubble-up var(--bu, 7s) linear infinite;
   animation-delay: var(--be, 0s);
+}
+.accent-bubble.sway-neg {
+  animation-name: bubble-up-mirrored;
+}
+
+/* The visible disc, deliberately unanimated: its static opacity multiplies the wrapper's animated
+   0→1→1→0, which composites to exactly the 0→--bo→--bo→0 the single-element version produced.
+   Keeping the fade on the wrapper rather than here is what holds the animated element count at one
+   per bubble — splitting them across two elements doubles it and gives the saving straight back. */
+.accent-bubble-body {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--bs);
+  height: var(--bs);
+  border-radius: 50%;
+  opacity: var(--bo, 0.5);
+  background: radial-gradient(circle at 32% 30%, var(--bubble-hi), var(--bubble-body) 62%);
 }
 
 @keyframes bubble-up {
   0% {
-    transform: translateY(0);
+    transform: translate(0, 0);
     opacity: 0;
   }
   7% {
-    opacity: var(--bo, 0.5);
+    opacity: 1;
   }
   50% {
-    transform: translateY(calc(var(--bv, -72px) / 2)) translateX(var(--bw, 4px));
+    transform: translate(100%, -50%);
   }
   96% {
-    opacity: var(--bo, 0.5);
+    opacity: 1;
   }
   100% {
-    transform: translateY(var(--bv, -72px)) translateX(calc(var(--bw, 4px) * -0.5));
+    transform: translate(-50%, -100%);
+    opacity: 0;
+  }
+}
+
+/* Identical but for the sign of the X translation. The duplication is the price of the optimisation
+   — the sway direction cannot be a variable without putting a custom property back into a keyframe
+   — so any edit above has to be mirrored here. */
+@keyframes bubble-up-mirrored {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  7% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-100%, -50%);
+  }
+  96% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(50%, -100%);
     opacity: 0;
   }
 }
@@ -539,6 +589,54 @@
   .accent-bubbles {
     display: none;
   }
+}
+
+/* ── Reduce motion ──
+   Set on <html> by ThemeProvider from the `reduce_motion` setting, which defaults to on when the
+   OS asks for reduced motion or no GPU acceleration was detected. The bubble fields assume the
+   compositor is on the GPU — one animated layer per bubble, ~93 of them on the welcome screen at
+   1400px — and on a board compositing in software that alone saturates a CPU. So this is a
+   performance control as much as an accessibility one, which is why it turns off animations the
+   OS preference alone never touched.
+
+   A blanket reset rather than a list of selectors: it catches av-ring-*, animate-glow-*, the
+   shimmers, rail-comet and animate-ping in one rule, and cannot be outgrown by a new animation
+   added later. */
+.reduce-motion .accent-bubbles {
+  display: none;
+}
+
+/* Static, but a full-window feTurbulence texture under a mask is expensive to composite over the
+   animating layers beneath it, and it exists only to dither a gradient. */
+.reduce-motion .screen-gradient::after {
+  display: none;
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Busy indicators are exempted by duration, not by being spinners. A frozen indicator reads as a
+   hung app, so the ones that resolve in a second keep moving; the one that runs for a whole agent
+   turn does not, because minutes of continuous repaint is the cost this setting exists to remove.
+
+   Loader2 and friends: transient, and rarely more than one on screen. */
+.reduce-motion .animate-spin {
+  animation-duration: 1s !important;
+  animation-iteration-count: infinite !important;
+}
+
+/* The compose bar's interrupt button, which spins for as long as the agent is working. The reset
+   above stops its rotation; dropping the dash pattern turns the 22/79 arc into a complete ring, so
+   it reads as "busy, click to interrupt" instead of as a fragment frozen at a random angle.
+   `stroke-dasharray` is a presentation attribute, so this rule beats the element's own attribute
+   without needing !important. */
+.reduce-motion .busy-arc circle {
+  stroke-dasharray: none;
 }
 
 .shimmer-thinking-icon {

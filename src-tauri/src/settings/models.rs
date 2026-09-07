@@ -239,6 +239,14 @@ pub struct AppSettings {
     /// frameless. Ignored on macOS, which always uses its native title bar.
     #[serde(default)]
     pub native_window_frame: bool,
+    /// Switch off decorative animation — the accent bubbles above all, which cost one
+    /// infinitely-animated layer each and saturate a CPU on a machine compositing in software.
+    ///
+    /// `None` means nobody has chosen, and the frontend follows the machine: on when the OS asks
+    /// for reduced motion or no GPU acceleration is detected. Stored rather than derived so an
+    /// explicit `false` on such a machine survives, which a plain bool could not express.
+    #[serde(default)]
+    pub reduce_motion: Option<bool>,
 }
 
 impl Default for AppSettings {
@@ -262,6 +270,7 @@ impl Default for AppSettings {
             notify_on_input_needed: false,
             notify_on_failure: false,
             native_window_frame: false,
+            reduce_motion: None,
         }
     }
 }

@@ -2518,7 +2518,16 @@ notify_on_failure?: boolean;
  * Use the OS window frame instead of Maestro's own title bar. Off by default — the app ships
  * frameless. Ignored on macOS, which always uses its native title bar.
  */
-native_window_frame?: boolean }
+native_window_frame?: boolean; 
+/**
+ * Switch off decorative animation — the accent bubbles above all, which cost one
+ * infinitely-animated layer each and saturate a CPU on a machine compositing in software.
+ * 
+ * `None` means nobody has chosen, and the frontend follows the machine: on when the OS asks
+ * for reduced motion or no GPU acceleration is detected. Stored rather than derived so an
+ * explicit `false` on such a machine survives, which a plain bool could not express.
+ */
+reduce_motion?: boolean | null }
 export type AttachmentValidation = { size_bytes: number; 
 /**
  * `None` when the file can be attached. Otherwise the reason to show the user, phrased for

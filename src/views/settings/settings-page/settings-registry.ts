@@ -33,6 +33,9 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     keywords: [
       "system title bar",
       "window frame",
+      "reduce motion",
+      "animations",
+      "performance",
       "global default color",
       "accent color",
       "new projects",

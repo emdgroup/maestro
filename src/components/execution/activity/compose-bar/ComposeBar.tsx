@@ -489,7 +489,9 @@ export function ComposeBar({
                   >
                     <svg
                       viewBox="0 0 42 42"
-                      className="absolute pointer-events-none"
+                      // `busy-arc` is the hook reduce-motion uses to turn this arc into a
+                      // complete static ring rather than freezing it mid-rotation.
+                      className="busy-arc absolute pointer-events-none"
                       style={{
                         inset: "-5px",
                         width: "42px",

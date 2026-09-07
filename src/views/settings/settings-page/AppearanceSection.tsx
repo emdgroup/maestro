@@ -35,6 +35,8 @@ export function AppearanceSection() {
     globalAccentHue,
     setGlobalAccentColor,
     systemAccentHue,
+    reduceMotion,
+    setReduceMotion,
   } = useTheme();
   const terminalColorMode = appSettings?.terminal_color_mode ?? "follow_theme";
   const enterKeyBehavior = appSettings?.enter_key_behavior ?? "send_prompt";
@@ -103,6 +105,24 @@ export function AppearanceSection() {
           />
         </div>
       )}
+
+      {/* As much a performance control as an accessibility one: the background animation costs one
+          composited layer per bubble, which a machine rendering in software pays for on the CPU. */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">Reduce motion</div>
+          <div className="text-xs text-muted-foreground">
+            Turn off background animation and view transitions. On by default when your system asks
+            for reduced motion or has no graphics acceleration.
+          </div>
+        </div>
+        <Switch
+          tone="accent"
+          checked={reduceMotion}
+          onCheckedChange={(checked) => void setReduceMotion(checked)}
+          className="data-unchecked:bg-muted data-unchecked:border-border/50"
+        />
+      </div>
 
       <div className="space-y-1.5">
         <Label className="text-sm font-medium">Theme</Label>

@@ -6,7 +6,9 @@ import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { useProjectSettings, useSetProjectAccentColor } from "@/services/project.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { randomPresetHue } from "@/utils/constants/accentColors";
+import { reduceMotionDefault } from "@/lib/rendering";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { MotionConfig } from "framer-motion";
 
 export type ThemeValue = "light" | "dark" | "system";
 
@@ -28,6 +30,9 @@ export interface ThemeContextValue {
   systemAccentHue: number | null;
   uiScale: string | null;
   setUiScale: (scale: string) => Promise<void>;
+  /** Whether decorative animation is off — the stored choice, or the machine's default. */
+  reduceMotion: boolean;
+  setReduceMotion: (on: boolean) => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -44,6 +49,14 @@ function applyTheme(theme: ThemeValue, systemTheme: "light" | "dark"): void {
   } else {
     document.documentElement.classList.remove("dark");
   }
+}
+
+/**
+ * One class on the root gates every decorative animation from `index.css`, so the components
+ * carrying those class names need no knowledge of the setting.
+ */
+function applyReduceMotion(on: boolean): void {
+  document.documentElement.classList.toggle("reduce-motion", on);
 }
 
 function applyUiScale(scale: string | null | undefined): void {
@@ -86,6 +99,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [globalAccentHue, setGlobalAccentHueState] = useState<number | null>(null);
   const [uiScale, setUiScaleState] = useState<string | null>(null);
+  // Seeded from the machine so a software-rendering board is already quiet on the first render,
+  // before the settings query resolves and can confirm or override it.
+  const [reduceMotion, setReduceMotionState] = useState<boolean>(() => reduceMotionDefault());
   const [systemAccentHue, setSystemAccentHue] = useState<number | null>(null);
   const settingsQuery = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
@@ -124,6 +140,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const savedScale = settingsQuery.data.ui_scale ?? null;
     setUiScaleState(savedScale);
     applyUiScale(savedScale);
+
+    // `??`, not `||`: a stored `false` is a deliberate "keep the animation" on a machine the
+    // detection would otherwise switch off, and has to win over it.
+    const savedReduceMotion = settingsQuery.data.reduce_motion ?? reduceMotionDefault();
+    setReduceMotionState(savedReduceMotion);
+    applyReduceMotion(savedReduceMotion);
 
     setIsReady(true);
   }, [settingsQuery.data, isReady, systemTheme]);
@@ -246,6 +268,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     await saveSettings.mutateAsync(updatedSettings);
   }
 
+  /** Always stores an explicit boolean: choosing either way ends the follow-the-machine default. */
+  async function handleSetReduceMotion(on: boolean): Promise<void> {
+    const currentSettings = settingsQuery.data;
+    if (!currentSettings) return;
+
+    setReduceMotionState(on);
+    applyReduceMotion(on);
+
+    const updatedSettings: AppSettings = {
+      ...currentSettings,
+      reduce_motion: on,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      await saveSettings.mutateAsync(updatedSettings);
+    } catch {
+      // The class was written to the DOM directly, so a failed save has to be undone here — a
+      // refetch returning the old value re-renders nothing and would leave the class on.
+      setReduceMotionState(!on);
+      applyReduceMotion(!on);
+    }
+  }
+
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = (e: MediaQueryListEvent) => {
@@ -273,9 +318,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     systemAccentHue,
     uiScale,
     setUiScale: handleSetUiScale,
+    reduceMotion,
+    setReduceMotion: handleSetReduceMotion,
   };
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  // The CSS class covers everything animated by a stylesheet; MotionConfig covers the framer-motion
+  // page transitions, which are driven from JS and never touch it. Mounted here because every
+  // animation site — App's view slides, ProjectPicker's tab slides, AppHeader — sits below this
+  // provider in main.tsx. It disables transform and layout animations; opacity still animates, so
+  // a view swap cross-fades rather than sliding.
+  return (
+    <ThemeContext.Provider value={value}>
+      <MotionConfig reducedMotion={reduceMotion ? "always" : "never"}>{children}</MotionConfig>
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme(): ThemeContextValue {
