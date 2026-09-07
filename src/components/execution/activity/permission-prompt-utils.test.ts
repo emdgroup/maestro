@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   extractCommandText,
+  extractDetailText,
   extractTitle,
   toolCallItemFromPayload,
 } from "./permission-prompt-utils";
@@ -77,6 +78,58 @@ describe("permission card heading", () => {
     const payload = permission({ toolCallId: "t5" });
     expect(extractTitle(payload)).toBe("Action");
     expect(extractCommandText(payload)).toBeNull();
+  });
+});
+
+describe("permission card detail text", () => {
+  /** `toolCall.content` as an adapter sends it. */
+  function withContent(text: string, rest: Record<string, unknown>): Record<string, unknown> {
+    return permission({
+      ...rest,
+      content: [{ type: "content", content: { type: "text", text } }],
+    });
+  }
+
+  it("drops content that only repeats the heading", () => {
+    const payload = withContent("Generate canvas mock JSON", {
+      toolCallId: "d1",
+      title: LONG_COMMAND,
+      kind: "execute",
+      rawInput: { command: LONG_COMMAND, description: "Generate canvas mock JSON" },
+    });
+    expect(extractTitle(payload)).toBe("Generate canvas mock JSON");
+    expect(extractDetailText(payload)).toBeNull();
+  });
+
+  it("drops content that only repeats the command", () => {
+    const payload = withContent(LONG_COMMAND, {
+      toolCallId: "d2",
+      title: LONG_COMMAND,
+      kind: "execute",
+      rawInput: { command: LONG_COMMAND, description: "List recent commits" },
+    });
+    expect(extractCommandText(payload)).toBe(LONG_COMMAND);
+    expect(extractDetailText(payload)).toBeNull();
+  });
+
+  it("ignores whitespace when deciding a repeat", () => {
+    const payload = withContent("  Generate   canvas\nmock JSON  ", {
+      toolCallId: "d3",
+      title: LONG_COMMAND,
+      kind: "execute",
+      rawInput: { command: LONG_COMMAND, description: "Generate canvas mock JSON" },
+    });
+    expect(extractDetailText(payload)).toBeNull();
+  });
+
+  it("keeps content that says something the card is not already showing", () => {
+    const payload = withContent("Writes to /tmp, outside the worktree.", {
+      toolCallId: "d4",
+      title: LONG_COMMAND,
+      kind: "execute",
+      rawInput: { command: LONG_COMMAND, description: "Generate canvas mock JSON" },
+    });
+    expect(extractDetailText(payload)).toBe("Writes to /tmp, outside the worktree.");
   });
 });
 

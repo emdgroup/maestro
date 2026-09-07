@@ -123,6 +123,19 @@ export function extractCommandText(payload: Record<string, unknown>): string | n
   return item.title || null;
 }
 
+/**
+ * The body text, or null when it only repeats the heading or the command. A
+ * shell call's `toolCall.content` is often the same description the heading
+ * uses, which the card was printing a second time below the command.
+ */
+export function extractDetailText(payload: Record<string, unknown>): string | null {
+  const body = extractBodyText(payload);
+  if (!body) return null;
+  const shown = [extractTitle(payload), extractCommandText(payload)];
+  const normalize = (text: string) => text.trim().replace(/\s+/g, " ");
+  return shown.some((text) => text && normalize(text) === normalize(body)) ? null : body;
+}
+
 export function isPlanPermission(payload: Record<string, unknown>): boolean {
   const toolCall = payload.toolCall as ToolCallItem | undefined;
   return !!toolCall && isPlanToolCallItem(toolCall);

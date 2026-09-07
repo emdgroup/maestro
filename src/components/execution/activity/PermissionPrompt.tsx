@@ -9,6 +9,7 @@ import {
   extractOptions,
   extractTitle,
   extractBodyText,
+  extractDetailText,
   extractCommandText,
   isPlanPermission,
   isPlanToolCallItem,
@@ -64,6 +65,7 @@ export function PermissionPrompt({
 }: PermissionPromptProps) {
   const title = extractTitle(payload);
   const bodyText = extractBodyText(payload);
+  const detailText = extractDetailText(payload);
   const command = extractCommandText(payload);
   const options = extractOptions(payload);
 
@@ -94,15 +96,16 @@ export function PermissionPrompt({
         <div className="text-sm font-semibold text-foreground">{title}</div>
       </div>
 
+      {/* Tall enough to read a heredoc: 80px cut one off after three lines. */}
       {command && (
-        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 max-h-[80px] overflow-y-auto custom-scrollbar">
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 max-h-[260px] overflow-y-auto custom-scrollbar">
           <CommandLabel command={command} />
         </div>
       )}
 
-      {bodyText && bodyText !== command && (
-        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[80px] overflow-y-auto">
-          {bodyText}
+      {detailText && (
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[160px] overflow-y-auto custom-scrollbar">
+          {detailText}
         </div>
       )}
 
