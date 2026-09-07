@@ -73,7 +73,10 @@ export interface SessionShipState {
   pullRequest: SessionPullRequest | null;
   /** Base branch to default the dialog to, and the branches to offer beside it. */
   baseBranch: string | null;
-  /** Newest commit's subject, which the dialog offers as the pull request title. */
+  /**
+   * Newest commit's subject, which the dialog offers as the pull request title. `null` when the
+   * branch has no commits of its own to describe.
+   */
   lastCommitSubject: string | null;
   /** Other live sessions working in the same directory, by name. */
   concurrentSessions: string[];
@@ -212,7 +215,12 @@ export function useSessionShipState(
     blocker,
     pullRequest: pullRequest ?? null,
     baseBranch: worktree?.base_branch ?? null,
-    lastCommitSubject: worktree?.last_commit_subject ?? null,
+    // A branch with no commits of its own is still sitting on its base branch's tip, so the subject
+    // git read from HEAD describes the base's last commit and not this session's work. Only a
+    // literal `0` says that: `commit_count` is `null` when there was no base branch to count
+    // against, which is not the same claim and leaves the subject alone.
+    lastCommitSubject:
+      worktree?.commit_count === 0 ? null : (worktree?.last_commit_subject ?? null),
     concurrentSessions,
   };
 }

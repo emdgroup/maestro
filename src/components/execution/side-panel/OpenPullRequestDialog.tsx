@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TriangleAlert, Loader2 } from "lucide-react";
 import {
   AlertDialog,
@@ -62,11 +62,27 @@ export function OpenPullRequestDialog({
   const { data: branches } = useProjectBranchesQuery(open ? projectId : null);
   const openPullRequest = useOpenPullRequestForBranch();
 
-  const [target, setTarget] = useState(() => defaultTarget(baseBranch));
-  // The newest commit's subject, because a branch name is a slug and a commit subject is a
-  // sentence somebody already wrote about this work. Falls back to the branch only when the
-  // worktree has no commit to read — a repository with none, or one git could not be asked about.
-  const [title, setTitle] = useState(() => lastCommitSubject ?? branch);
+  const [target, setTarget] = useState("");
+  const [title, setTitle] = useState("");
+
+  // Seeded per open, not per mount. The Overview card renders this dialog unconditionally and
+  // opens it by prop, so it stays mounted for the life of the session panel — and it first mounts
+  // moments after the worktree is created, when the branch has no commit of its own yet. State
+  // initializers run once, so they captured that moment and never let go of it: every commit the
+  // agent made afterwards was invisible here.
+  //
+  // `open` alone in the deps. Adding the seeds would let the ten-second worktree poll overwrite a
+  // title the user is halfway through typing.
+  useEffect(() => {
+    if (!open) return;
+    setTarget(defaultTarget(baseBranch));
+    // The newest commit's subject, because a branch name is a slug and a commit subject is a
+    // sentence somebody already wrote about this work. Falls back to the branch only when the
+    // worktree has no commit of its own to read — a branch still level with its base, a repository
+    // with no commits, or one git could not be asked about.
+    setTitle(lastCommitSubject ?? branch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const localBranches = (branches?.[0]?.local ?? []).filter((name) => name !== branch);
   const canSubmit = target.trim().length > 0 && title.trim().length > 0;

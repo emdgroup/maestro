@@ -298,6 +298,27 @@ describe("useSessionShipState", () => {
     expect(ship().concurrentSessions).toEqual(["reviewer"]);
   });
 
+  /// A branch level with its base has no commit of its own, so the subject git read from HEAD is
+  /// the base branch's last commit — someone else's merge, offered as the title of work that has
+  /// not been written yet.
+  it("offers no commit subject while the branch is level with its base", () => {
+    const subject = "Bump the schema to v28";
+
+    worktrees.current = [worktree({ commit_count: 0, last_commit_subject: subject })];
+    expect(ship().lastCommitSubject).toBeNull();
+
+    worktrees.current = [worktree({ commit_count: 1, last_commit_subject: subject })];
+    expect(ship().lastCommitSubject).toBe(subject);
+  });
+
+  /// `null` is not zero: it means there was no base branch to count against, which says nothing
+  /// about whether the branch has commits of its own. An orphan worktree always lands there.
+  it("keeps the subject when the commit count is unknown", () => {
+    const subject = "Bump the schema to v28";
+    worktrees.current = [worktree({ commit_count: null, last_commit_subject: subject })];
+    expect(ship().lastCommitSubject).toBe(subject);
+  });
+
   /// A detached worktree has no branch to open a pull request from, whatever name the row kept.
   it("has no branch when the worktree is detached", () => {
     worktrees.current = [worktree({ detached_at: "a1b2c3d" })];
