@@ -440,6 +440,14 @@ pub async fn cleanup_worktree_if_clean(
 ) -> Result<Option<String>, String> {
     let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
+    // "Reuse workspace" lets a second session share this directory; closing the first must not
+    // delete it out from under the second.
+    let running = running_session_cwds(&app_state).await;
+    if running.iter().any(|cwd| path_is_within(cwd, &worktree_path)) {
+        log::debug!("keeping worktree {}: a session is running in it", worktree_path);
+        return Ok(Some("another session is running in it".to_string()));
+    }
+
     if let Some(reason) = reason_to_keep(&git_conn, &worktree_path, &branch_name).await? {
         return Ok(Some(reason));
     }
@@ -457,21 +465,29 @@ pub async fn cleanup_worktree_if_clean(
     Ok(None)
 }
 
+/// Directories of sessions running now. Separate from [`live_session_cwds`] because the
+/// `.maestro/state.json` snapshots that one adds outlive the sessions they describe —
+/// `save_current_sessions_for_project` skips the write when the last session closes.
+pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
+    let mut cwds: Vec<String> = Vec::new();
+    {
+        let acp_sessions = app_state.acp.sessions.lock().await;
+        cwds.extend(acp_sessions.values().map(|process| process.cwd.clone()));
+    }
+    {
+        let pty_meta = app_state.pty.session_meta.lock().await;
+        cwds.extend(pty_meta.values().map(|meta| meta.cwd.clone()));
+    }
+    cwds
+}
+
 /// Directories that are in use: running ACP sessions, running PTY shells, and sessions that
 /// `prime_project_server` may still be restoring from `.maestro/state.json`.
 pub async fn live_session_cwds(
     app_state: &Arc<AppState>,
     project: &crate::models::Project,
 ) -> Vec<String> {
-    let mut live_cwds: Vec<String> = Vec::new();
-    {
-        let acp_sessions = app_state.acp.sessions.lock().await;
-        live_cwds.extend(acp_sessions.values().map(|process| process.cwd.clone()));
-    }
-    {
-        let pty_meta = app_state.pty.session_meta.lock().await;
-        live_cwds.extend(pty_meta.values().map(|meta| meta.cwd.clone()));
-    }
+    let mut live_cwds = running_session_cwds(app_state).await;
     let connection_key = crate::acp::ConnectionKey::from_all_ids(
         project.connection_id,
         project.wsl_connection_id,
