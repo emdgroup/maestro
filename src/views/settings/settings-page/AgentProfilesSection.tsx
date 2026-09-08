@@ -122,6 +122,7 @@ function ProfileCard({
 
   const available = config?.models ?? [];
   const availableModes = config?.modes ?? [];
+  const availableEfforts = config?.effort?.values ?? [];
   // The stored model survives a probe that did not return it — an agent reachable from another
   // machine, a model the account lost, a list that simply arrived empty. Silently blanking the
   // team's choice because this machine could not confirm it would be worse than showing it.
@@ -130,6 +131,10 @@ function ProfileCard({
   // still what holds a read-only role read-only on the machine that wrote it.
   const unlistedMode =
     profile.permission_mode && !availableModes.some((m) => m.mode_id === profile.permission_mode);
+  // And once more for the effort, which is the field most likely to be unconfirmable: an agent
+  // that exposes one at all is the exception.
+  const unlistedEffort =
+    profile.effort && !availableEfforts.some((e) => e.value === profile.effort);
 
   const agentMissing = !!profile.agent_id && !agents.some((a) => a.id === profile.agent_id);
   const agentLabel = agentMissing
@@ -179,6 +184,20 @@ function ProfileCard({
       : noModesToOffer
         ? "Not available"
         : "Select a permission mode";
+
+  // Unlike the mode, an unset effort is a real and common answer — most agents have no such
+  // setting, and those that do have a default of their own worth deferring to. So there is nothing
+  // to fill in, and "Not available" is reserved for an agent that offers none at all.
+  const noEffortToOffer = !probeLoading && availableEfforts.length === 0 && !profile.effort;
+  const effortLabel = profile.effort
+    ? unlistedEffort
+      ? `${profile.effort} (not offered)`
+      : (availableEfforts.find((e) => e.value === profile.effort)?.name ?? profile.effort)
+    : probeLoading
+      ? "asking the agent…"
+      : noEffortToOffer
+        ? "Not available"
+        : "agent default";
 
   return (
     // React's `onBlur` is `focusout`, which bubbles — one handler here covers the name and the
@@ -283,42 +302,86 @@ function ProfileCard({
         </div>
       </div>
 
-      {/* Mode ids differ per harness, so the list is the agent's own — the same probe that
-          answers for the models answers for these. Every entry is a mode the agent really has:
-          the role's default is one of them, already selected, rather than a synthetic "automatic"
-          entry standing in for a choice nobody can see. */}
-      <div className="space-y-1">
-        <span className="text-[11px] text-muted-foreground">Permission mode</span>
-        <Select
-          value={profile.permission_mode ?? ""}
-          disabled={probeLoading || noModesToOffer}
-          onValueChange={(v) => onChange({ permission_mode: v || null }, true)}
-        >
-          <SelectTrigger
-            size="sm"
-            className="w-full text-xs"
-            aria-label={`Permission mode for ${profile.name}`}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Mode ids differ per harness, so the list is the agent's own — the same probe that
+            answers for the models answers for these. Every entry is a mode the agent really has:
+            the role's default is one of them, already selected, rather than a synthetic "automatic"
+            entry standing in for a choice nobody can see. */}
+        <div className="space-y-1">
+          <span className="text-[11px] text-muted-foreground">Permission mode</span>
+          <Select
+            value={profile.permission_mode ?? ""}
+            disabled={probeLoading || noModesToOffer}
+            onValueChange={(v) => onChange({ permission_mode: v || null }, true)}
           >
-            <span className="truncate flex-1 text-left">{modeLabel}</span>
-          </SelectTrigger>
-          <SelectContent>
-            {unlistedMode && (
-              <SelectItem value={profile.permission_mode!} className="text-xs">
-                {profile.permission_mode} (not offered)
+            <SelectTrigger
+              size="sm"
+              className="w-full text-xs"
+              aria-label={`Permission mode for ${profile.name}`}
+            >
+              <span className="truncate flex-1 text-left">{modeLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              {unlistedMode && (
+                <SelectItem value={profile.permission_mode!} className="text-xs">
+                  {profile.permission_mode} (not offered)
+                </SelectItem>
+              )}
+              {availableModes.map((mode) => (
+                <SelectItem key={mode.mode_id} value={mode.mode_id} className="text-xs">
+                  {mode.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {noModesToOffer && (
+            <p className="text-[11px] text-muted-foreground">
+              No permission mode available, the agent will use its own default.
+            </p>
+          )}
+        </div>
+
+        {/* Only some harnesses expose a reasoning budget, and it is not part of ACP proper — it
+            arrives as one entry in the generic config-option list, which is why the probe has to
+            find it rather than read a field. An agent without one leaves this disabled instead of
+            hiding it, so a profile written against an agent that has it still shows what it asks
+            for on a machine whose agent does not. */}
+        <div className="space-y-1">
+          <span className="text-[11px] text-muted-foreground">Effort</span>
+          <Select
+            value={profile.effort ?? ""}
+            disabled={probeLoading || noEffortToOffer}
+            onValueChange={(v) => onChange({ effort: v || null }, true)}
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-full text-xs"
+              aria-label={`Effort for ${profile.name}`}
+            >
+              <span className="truncate flex-1 text-left">{effortLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" className="text-xs">
+                agent default
               </SelectItem>
-            )}
-            {availableModes.map((mode) => (
-              <SelectItem key={mode.mode_id} value={mode.mode_id} className="text-xs">
-                {mode.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {noModesToOffer && (
-          <p className="text-[11px] text-muted-foreground">
-            No permission mode available, the agent will use its own default.
-          </p>
-        )}
+              {unlistedEffort && (
+                <SelectItem value={profile.effort!} className="text-xs">
+                  {profile.effort} (not offered)
+                </SelectItem>
+              )}
+              {availableEfforts.map((effort) => (
+                <SelectItem key={effort.value} value={effort.value} className="text-xs">
+                  {effort.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {noEffortToOffer && (
+            <p className="text-[11px] text-muted-foreground">
+              This agent exposes no effort setting.
+            </p>
+          )}
+        </div>
       </div>
 
       <label className="text-[11px] text-muted-foreground space-y-1 block">

@@ -11,9 +11,10 @@ const save = vi.hoisted(() => vi.fn());
 /// agent subprocess, which is not something a unit test should be doing.
 const probe = vi.hoisted(() => ({
   current: {
-    data: { models: [], modes: [] } as {
+    data: { models: [], modes: [], effort: null } as {
       models: Array<{ model_id: string; name: string }>;
       modes: Array<{ mode_id: string; name: string }>;
+      effort: { option_id: string; values: Array<{ value: string; name: string }> } | null;
     },
     isLoading: false,
     isError: false,
@@ -51,6 +52,7 @@ function lastSaved(): ProfilesDocument {
 const oneCoder = (
   model: string | null,
   permissionMode: string | null = null,
+  effort: string | null = null,
 ): ProfilesDocument => ({
   profiles: [
     {
@@ -59,6 +61,7 @@ const oneCoder = (
       role: "Coder",
       agent_id: "claude-acp",
       model,
+      effort,
       permission_mode: permissionMode,
       skills: [],
       mcp_servers: [],
@@ -72,7 +75,11 @@ describe("AgentProfilesSection", () => {
   beforeEach(() => {
     save.mockReset();
     stored.current = { profiles: [], defaults: {} };
-    probe.current = { data: { models: [], modes: [] }, isLoading: false, isError: false };
+    probe.current = {
+      data: { models: [], modes: [], effort: null },
+      isLoading: false,
+      isError: false,
+    };
   });
 
   /// There is no Save button, so the panel writes on every change — which makes "did not change
@@ -204,6 +211,7 @@ describe("AgentProfilesSection", () => {
           { model_id: "opus", name: "Opus" },
         ],
         modes: [],
+        effort: null,
       },
       isLoading: false,
       isError: false,
@@ -221,7 +229,7 @@ describe("AgentProfilesSection", () => {
   it("keeps a stored model the agent did not offer", () => {
     stored.current = oneCoder("gpt-5-codex");
     probe.current = {
-      data: { models: [{ model_id: "sonnet", name: "Sonnet" }], modes: [] },
+      data: { models: [{ model_id: "sonnet", name: "Sonnet" }], modes: [], effort: null },
       isLoading: false,
       isError: false,
     };
@@ -258,6 +266,7 @@ describe("AgentProfilesSection", () => {
           { mode_id: "plan", name: "Plan" },
           { mode_id: "auto", name: "Auto" },
         ],
+        effort: null,
       },
       isLoading: false,
       isError: false,
@@ -275,7 +284,7 @@ describe("AgentProfilesSection", () => {
   it("keeps a stored permission mode the agent did not offer", () => {
     stored.current = oneCoder(null, "dontAsk");
     probe.current = {
-      data: { models: [], modes: [{ mode_id: "plan", name: "Plan" }] },
+      data: { models: [], modes: [{ mode_id: "plan", name: "Plan" }], effort: null },
       isLoading: false,
       isError: false,
     };
@@ -322,6 +331,7 @@ describe("AgentProfilesSection", () => {
           { mode_id: "plan", name: "Plan" },
           { mode_id: "auto", name: "Auto" },
         ],
+        effort: null,
       },
       isLoading: false,
       isError: false,
@@ -355,6 +365,7 @@ describe("AgentProfilesSection", () => {
           { mode_id: "plan", name: "Plan" },
           { mode_id: "auto", name: "Auto" },
         ],
+        effort: null,
       },
       isLoading: false,
       isError: false,
@@ -377,6 +388,65 @@ describe("AgentProfilesSection", () => {
     expect(
       screen.getByText("No permission mode available, the agent will use its own default."),
     ).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  /// Effort is not part of ACP proper — it arrives as one entry in the generic config-option list,
+  /// found by category rather than read off a field, so that it is offered at all is worth pinning.
+  it("names the chosen effort on the trigger", () => {
+    stored.current = oneCoder(null, null, "high");
+    probe.current = {
+      data: {
+        models: [],
+        modes: [],
+        effort: {
+          option_id: "reasoningEffort",
+          values: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
+        },
+      },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent("High");
+  });
+
+  /// Same bargain as the model and the mode, and the one this field needs most: an agent with an
+  /// effort setting is the exception, so a teammate on a different harness must not silently
+  /// rewrite the choice of one who has it.
+  it("keeps a stored effort the agent did not offer", () => {
+    stored.current = oneCoder(null, null, "xhigh");
+    probe.current = {
+      data: {
+        models: [],
+        modes: [],
+        effort: { option_id: "reasoningEffort", values: [{ value: "low", name: "Low" }] },
+      },
+      isLoading: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent(
+      "xhigh (not offered)",
+    );
+  });
+
+  /// Most agents expose no effort at all, which is why the field says so rather than offering an
+  /// empty list — and why it must not fill anything in, unlike the mode beside it.
+  it("disables the dropdown when the agent exposes no effort", () => {
+    stored.current = oneCoder(null);
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toBeDisabled();
+    expect(screen.getByText("This agent exposes no effort setting.")).toBeInTheDocument();
     expect(save).not.toHaveBeenCalled();
   });
 });

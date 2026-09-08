@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { api } from "@/utils/helpers/tauri-utils";
 import { taskBranchName } from "@/lib/generateSessionName";
 import { resolveAutomaticMode } from "@/lib/permission-modes";
+import { findEffortOption } from "@/lib/effort-option";
+import type { ConfigOption } from "@/components/execution/activity/types";
 import type {
   Task,
   JsonValue,
@@ -184,7 +186,7 @@ export function useExecuteTask(
       requestedRole === "Coder" &&
       task.phase == null &&
       (await api
-        .resolveAgentProfile(projectId, "Planner", profileFor("Planner"), [], [], false)
+        .resolveAgentProfile(projectId, "Planner", profileFor("Planner"), [], [], true)
         .then((profile) => profile !== null)
         .catch(() => false));
 
@@ -244,10 +246,14 @@ export function useExecuteTask(
 
     // Resolution order is profile → project override → task override, so the task wins where it
     // says something. Asked for before the capabilities are known because the agent it names is
-    // what gets spawned; the model and mode are applied afterwards, once the agent has reported
-    // what it supports.
+    // what gets spawned; the model, mode and effort are applied afterwards, once the agent has
+    // reported what it supports.
+    //
+    // `true` for the effort here is the same claim `[]` makes for the two lists: not "supported",
+    // but "not yet asked". A `false` would be a verdict, and on a profile set to fail rather than
+    // degrade it would refuse the spawn over a capability nothing has looked at.
     const roleProfile = await api
-      .resolveAgentProfile(projectId, role, profileFor(role), [], [], false)
+      .resolveAgentProfile(projectId, role, profileFor(role), [], [], true)
       .catch(() => null);
 
     // The task's own agent is the coder's, so it must not be imposed on the other three: a task
@@ -400,6 +406,10 @@ export function useExecuteTask(
       // because a plan and its implementation can be different agents on different models and a
       // pipeline that only works when they happen to match is a pipeline with a hidden precondition.
       let capturedModeIds: string[] = [];
+      // The id of the effort setting this agent exposes, or `""` for an agent that exposes none —
+      // a verdict rather than a gap, unlike the modes above: the config options arrive with the
+      // spawn response or not at all.
+      let capturedEffortId = "";
 
       const spawnResult = await spawnAcpSessionMutation.mutateAsync({
         agentId,
@@ -416,12 +426,14 @@ export function useExecuteTask(
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           unlistenSpawnOk();
+          unlistenConfigOptions();
           unlistenSessionError();
           reject(new Error("Agent spawn timed out after 30s"));
         }, 30_000);
 
         let unlistenSpawnOk: () => void = () => {};
         let unlistenModes: () => void = () => {};
+        let unlistenConfigOptions: () => void = () => {};
         let unlistenSessionError: () => void = () => {};
 
         listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
@@ -434,10 +446,20 @@ export function useExecuteTask(
           unlistenModes = fn;
         });
 
+        // Effort has no event of its own — it is one entry in the generic config-option list the
+        // reader emits from the same spawn response the modes come off.
+        listen<{ configOptions?: ConfigOption[] }>(`acp://config-state-updated/${logId}`, (e) => {
+          capturedEffortId = findEffortOption(e.payload.configOptions ?? [])?.id ?? "";
+          unlistenConfigOptions();
+        }).then((fn) => {
+          unlistenConfigOptions = fn;
+        });
+
         listen<null>(`acp://spawn-ok/${logId}`, () => {
           clearTimeout(timer);
           unlistenSpawnOk();
           unlistenModes();
+          unlistenConfigOptions();
           unlistenSessionError();
           resolve();
         }).then((fn) => {
@@ -448,6 +470,7 @@ export function useExecuteTask(
           clearTimeout(timer);
           unlistenSpawnOk();
           unlistenModes();
+          unlistenConfigOptions();
           unlistenSessionError();
           reject(new Error(e.payload));
         }).then((fn) => {
@@ -458,7 +481,14 @@ export function useExecuteTask(
       // Asked again now that the agent has said what it supports, so anything it cannot honour is
       // dropped with a warning rather than being sent and silently failing.
       const resolved = await api
-        .resolveAgentProfile(projectId, role, profileFor(role), [], capturedModeIds, false)
+        .resolveAgentProfile(
+          projectId,
+          role,
+          profileFor(role),
+          [],
+          capturedModeIds,
+          capturedEffortId !== "",
+        )
         .catch(() => null);
 
       for (const warning of resolved?.warnings ?? []) {
@@ -473,6 +503,17 @@ export function useExecuteTask(
           await api.setAcpModel(logId, model);
         } catch (err) {
           console.warn("Failed to set model:", err);
+        }
+      }
+
+      // Addressed by the agent's own config id rather than a fixed name: "effort" and
+      // "thought_level" are categories, and the id under them differs per harness. There is no task
+      // override — effort is a property of how a role should work, which is what a profile is for.
+      if (resolved?.effort && capturedEffortId) {
+        try {
+          await api.setAcpConfigOption(logId, capturedEffortId, resolved.effort);
+        } catch (err) {
+          console.warn("Failed to set effort:", err);
         }
       }
 

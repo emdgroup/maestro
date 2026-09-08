@@ -5,6 +5,8 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
+import { findEffortOption } from "@/lib/effort-option";
+import type { ConfigOption } from "@/components/execution/activity/types";
 import type { ConnectionKey } from "@/types/bindings";
 import { commands } from "@/types/bindings";
 
@@ -32,25 +34,34 @@ export interface AgentMode {
   name: string;
 }
 
+export interface AgentEffort {
+  /** The agent's own config id, which is what `set_acp_config_option` addresses — not the category. */
+  option_id: string;
+  values: Array<{ value: string; name: string }>;
+}
+
 /**
  * What one probe of an agent comes back with.
  *
- * Both lists are properties of a session, arrive on the answer to the same `session/new`, and are
- * wanted by the same caller — so they are one query rather than two. Splitting them would spawn the
- * agent twice to read two fields of one response.
+ * All three are properties of a session, arrive on the answer to the same `session/new`, and are
+ * wanted by the same caller — so they are one query rather than three. Splitting them would spawn
+ * the agent three times to read three fields of one response.
  */
 export interface AgentConfig {
   models: AgentModel[];
   modes: AgentMode[];
+  /** `null` when the agent exposes no effort setting, which most do not — it is not ACP-universal. */
+  effort: AgentEffort | null;
 }
 
 /**
- * The models and permission modes an agent offers, found by opening a session and closing it again.
+ * The models, permission modes and effort levels an agent offers, found by opening a session and
+ * closing it again.
  *
- * An agent only declares either once a session exists — both arrive on the answer to `session/new`,
- * and nothing before that knows them. A settings page has no session by definition, which is why
- * these were free-text boxes you could typo into a spawn failure. So it makes one: spawn, take both
- * lists off the events the reader already emits, close.
+ * An agent only declares them once a session exists — they all arrive on the answer to
+ * `session/new`, and nothing before that knows them. A settings page has no session by definition,
+ * which is why these were free-text boxes you could typo into a spawn failure. So it makes one:
+ * spawn, take the lists off the events the reader already emits, close.
  *
  * `taskId` is null deliberately. `occupied_slots` counts sessions carrying a task id, so a probe
  * can never eat a capacity slot the board was holding for real work.
@@ -78,9 +89,10 @@ async function probeAgentConfig(
 
   try {
     return await new Promise<AgentConfig>((resolve, reject) => {
-      const config: AgentConfig = { models: [], modes: [] };
+      const config: AgentConfig = { models: [], modes: [], effort: null };
       let unlistenModels = () => {};
       let unlistenModes = () => {};
+      let unlistenConfigOptions = () => {};
       let unlistenSpawnOk = () => {};
       let unlistenError = () => {};
 
@@ -88,6 +100,7 @@ async function probeAgentConfig(
         clearTimeout(timer);
         unlistenModels();
         unlistenModes();
+        unlistenConfigOptions();
         unlistenSpawnOk();
         unlistenError();
         run();
@@ -107,6 +120,23 @@ async function probeAgentConfig(
         config.modes = event.payload.available_modes;
       }).then((fn) => {
         unlistenModes = fn;
+      });
+
+      // Effort has no event of its own — it is one entry in the generic config-option list, which
+      // the reader emits from the same spawn response as the two above.
+      void listen<{ configOptions?: ConfigOption[] }>(
+        `acp://config-state-updated/${logId}`,
+        (event) => {
+          const option = findEffortOption(event.payload.configOptions ?? []);
+          config.effort = option
+            ? {
+                option_id: option.id,
+                values: option.options.map((o) => ({ value: o.value, name: o.name })),
+              }
+            : null;
+        },
+      ).then((fn) => {
+        unlistenConfigOptions = fn;
       });
 
       // Settled on spawn-ok, not on the two state events: the reader emits both from
