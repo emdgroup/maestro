@@ -117,11 +117,15 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     maestro_lib::settings::handlers::apply_window_frame(app.handle(), settings.native_window_frame);
 
     // First lines of every log: the facts a bug report is useless without. The level and directory
-    // are among them — they are user-settable, so a reader cannot assume the defaults.
+    // are among them — they are user-settable, so a reader cannot assume the defaults. PATH is
+    // there because local children inherit it: on macOS it is the only way to tell from a log
+    // whether the bundle's LSEnvironment applied, and exactly /usr/bin:/bin:/usr/sbin:/sbin means
+    // it did not.
     log::info!(
-        "Maestro {} starting; data dir {}",
+        "Maestro {} starting; data dir {}; PATH {}",
         env!("CARGO_PKG_VERSION"),
-        app_data_dir.display()
+        app_data_dir.display(),
+        std::env::var("PATH").unwrap_or_else(|_| "(unset)".to_string())
     );
     log::info!(
         "Logging at {} to {}",

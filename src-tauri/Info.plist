@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Merged into the generated bundle plist by tauri-bundler; read for the macOS target only.
+
+	launchd hands a GUI app PATH=/usr/bin:/bin:/usr/sbin:/sbin and never sources shell startup
+	files, so an app launched from Finder cannot see anything a package manager installed. git
+	itself still resolves (/usr/bin/git, from the Xcode command line tools), but git spawns its
+	helpers — git-lfs, hooks, credential helpers, clean/smudge filters — by bare name with our
+	PATH, and those are the ones that go missing.
+
+	Ordering is Homebrew's own (bin then sbin, Apple Silicon prefix before Intel), then MacPorts,
+	then the launchd default. LaunchServices takes the value literally: it expands neither $HOME
+	nor ~, so no home-relative entry can appear here and version managers (nvm, asdf, mise,
+	pyenv) are not covered by this. Recovering the login shell's PATH at runtime is the follow-up
+	if those get reported.
+-->
+<plist version="1.0">
+<dict>
+	<key>LSEnvironment</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+</dict>
+</plist>
