@@ -88,7 +88,8 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
             onClick={
               isPackageInstall ? () => void downloadPackage(status.version) : () => void install()
             }
-            className="h-7 gap-1.5 bg-accent text-xs text-accent-foreground"
+            variant="accent"
+            className="h-7 gap-1.5 text-xs"
           >
             <ArrowDownToLine className="size-3" />
             {isPackageInstall ? "Download" : "Install"}
