@@ -17,13 +17,21 @@ import {
   useActiveTab,
   useNavigate,
 } from "@/store/navigationStore";
-import { useWorktreesQuery, usePrunableBranchesQuery } from "@/services/worktree.service";
+import {
+  useFetchProjectRemoteMutation,
+  usePrunableBranchesQuery,
+  useWorktreesQuery,
+} from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useNow } from "@/utils/hooks/useNow";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";
-import { sessionsByWorktree } from "@/components/execution/worktree-card/worktree-usage";
+import {
+  groupWorktrees,
+  isRepositoryRoot,
+  sessionsByWorktree,
+} from "@/components/execution/worktree-card/worktree-usage";
 import { PullRequestPanel } from "@/components/execution/pull-request-panel/PullRequestPanel";
 import type { PullRequestEntry } from "@/components/execution/pull-request-panel/pullRequestFilters";
 import {
@@ -73,6 +81,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
     isLoading,
     isFetching,
   } = useWorktreesQuery(isGitRepo ? projectId : undefined, isGitRepo ? repoPath : undefined);
+  const { mutateAsync: fetchProjectRemote, isPending: isFetchingRemote } =
+    useFetchProjectRemoteMutation();
   const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   // The age labels are derived at render, so something has to re-render them; one ticker here
   // drives every card rather than one timer per card.
@@ -153,13 +163,37 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
     });
   }, [queryClient, projectId]);
 
-  useShortcuts("worktrees", {
-    "wt-new": () => setShowCreateDialog(true),
-    "wt-refresh": () => {
+  /**
+   * Bring the whole view up to date.
+   *
+   * The fetch comes first and is awaited, because the ahead/behind counts on every card are
+   * measured against remote-tracking refs: reading the list before moving them reports the same
+   * stale numbers the user pressed refresh to clear.
+   *
+   * A failed fetch is not a failed refresh — the local half of the view is still worth updating,
+   * so the rest runs either way. Only a refresh the user asked for says why the fetch failed; one
+   * triggered by arriving on the tab has no business raising a toast about the network.
+   */
+  const refresh = useCallback(
+    async (force: boolean) => {
+      if (projectId != null) {
+        try {
+          await fetchProjectRemote({ projectId, force });
+        } catch (error) {
+          if (force) toast.error(`Failed to fetch from the remote: ${String(error)}`);
+          else console.debug("background fetch skipped:", error);
+        }
+      }
       void refetchWorktrees();
       void refetchPrunableBranches();
       refreshPullRequests();
     },
+    [projectId, fetchProjectRemote, refetchWorktrees, refetchPrunableBranches, refreshPullRequests],
+  );
+
+  useShortcuts("worktrees", {
+    "wt-new": () => setShowCreateDialog(true),
+    "wt-refresh": () => void refresh(true),
     "focus-search": () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
@@ -169,12 +203,8 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
   // Refresh when tab becomes active — always-mounted views don't remount on navigate so
   // refetchOnMount never fires again; this replicates the prior behaviour.
   useEffect(() => {
-    if (activeTab === "worktrees") {
-      void refetchWorktrees();
-      void refetchPrunableBranches();
-      refreshPullRequests();
-    }
-  }, [activeTab, refetchWorktrees, refetchPrunableBranches, refreshPullRequests]);
+    if (activeTab === "worktrees") void refresh(false);
+  }, [activeTab, refresh]);
 
   // Deep-link: pendingWorktreeId overrides selection once the worktree list resolves.
   // The local selection is adjusted during render so the view opens on the right worktree
@@ -207,15 +237,17 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
       );
   }, [worktrees, statusFilter, search]);
 
-  const groupedWorktrees = useMemo(() => {
-    const groupMap = new Map<string, WorktreeWithStatus[]>();
-    for (const wt of filteredWorktrees) {
-      const key = wt.base_branch ?? wt.branch_name;
-      if (!groupMap.has(key)) groupMap.set(key, []);
-      groupMap.get(key)!.push(wt);
-    }
-    return Array.from(groupMap.entries()).map(([groupKey, items]) => ({ groupKey, items }));
-  }, [filteredWorktrees]);
+  // The repository checkout is shown on its own row rather than grouped: it has no base branch, so
+  // it would otherwise file itself in with the worktrees cut *from* its branch.
+  const repositoryWorktree = useMemo(
+    () => filteredWorktrees.find((wt) => isRepositoryRoot(wt.path, repoPath ?? "")) ?? null,
+    [filteredWorktrees, repoPath],
+  );
+
+  const groupedWorktrees = useMemo(
+    () => groupWorktrees(filteredWorktrees, repoPath ?? ""),
+    [filteredWorktrees, repoPath],
+  );
 
   // Resolved against every worktree rather than the filtered list, so a card's session count does
   // not change with the search box — and so a session in `.maestro/worktrees/…` is credited to its
@@ -233,6 +265,10 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
     const anyExpanded = groupKeys.some((k) => !collapsedGroups[k]);
     setCollapsedGroups(Object.fromEntries(groupKeys.map((k) => [k, anyExpanded])));
   };
+
+  // The network fetch is the slow half, so the button has to spin for it too — otherwise it looks
+  // finished while the counts it exists to correct are still being fetched.
+  const isRefreshing = isFetching || isFetchingRemote;
 
   const selectedWorktree = worktrees.find((w) => w.path === selectedWorktreePath) ?? null;
 
@@ -356,12 +392,12 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                     variant="ghost"
                     size="icon-sm"
                     className="h-8 w-8"
-                    disabled={isFetching}
-                    onClick={() => void refetchWorktrees()}
+                    disabled={isRefreshing}
+                    onClick={() => void refresh(true)}
                   />
                 }
               >
-                <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+                <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin")} />
               </TooltipTrigger>
               <TooltipContent>Refresh worktrees</TooltipContent>
             </Tooltip>
@@ -417,6 +453,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                 <WorktreeCardGrid
                   sessionsByPath={sessionsByPath}
                   now={now}
+                  repository={repositoryWorktree}
                   groups={groupedWorktrees}
                   collapsedGroups={collapsedGroups}
                   onToggleGroup={toggleGroup}

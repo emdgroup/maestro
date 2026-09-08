@@ -243,6 +243,23 @@ export function usePullWorktreeMutation() {
 }
 
 /**
+ * Refresh a project's remote-tracking refs, which is what the cards' behind counts are measured
+ * against.
+ *
+ * Deliberately silent: no toast and no invalidation of its own. The backend throttles an unforced
+ * call and emits `worktrees-changed` when it actually fetched, and the two callers want opposite
+ * error behaviour — a refresh the user pressed should say why it failed, one triggered by opening
+ * the tab should not.
+ */
+export function useFetchProjectRemoteMutation() {
+  return useMutation({
+    mutationFn: async ({ projectId, force }: { projectId: number; force: boolean }) => {
+      return await api.fetchProjectRemote(projectId, force);
+    },
+  });
+}
+
+/**
  * Mutation hook for cleaning up zombie worktrees on project open.
  * Silent on error — this is background housekeeping, not user-initiated.
  * Invalidates worktree list only when zombies were actually deleted.

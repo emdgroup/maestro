@@ -15,6 +15,7 @@ import { summariseChecks } from "./pullRequestCi";
 import {
   agentLabel,
   isInUse,
+  isRepositoryRoot,
   relativeWorktreePath,
   worktreeTitle,
   worktreeUsage,
@@ -71,7 +72,7 @@ export function WorktreeCard({
   // offering to publish it again.
   const landed = branchHasLanded(found, worktree);
   const ci = useMemo(() => summariseChecks(pullRequest?.checks), [pullRequest]);
-  const isMain = worktree.path === repoPath;
+  const isMain = isRepositoryRoot(worktree.path, repoPath);
   const usage = worktreeUsage(worktree, sessions);
   const inUse = isInUse(usage);
   const title = worktreeTitle(worktree);

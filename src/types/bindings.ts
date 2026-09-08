@@ -1353,6 +1353,33 @@ async pullWorktreeBranch(projectId: number, worktreePath: string) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Refresh every `<remote>/*` tracking ref for a project, so the cards' behind counts mean
+ * something.
+ * 
+ * The counts come from `rev-list HEAD...@{u}`, which reads a *local* remote-tracking ref. Nothing
+ * moved those refs except a pull, so a card could sit at "behind 0" indefinitely while the remote
+ * ran ahead — and pressing refresh only re-read the same unmoved ref.
+ * 
+ * Run at the repository root, not per worktree: worktrees share one object store and one ref
+ * namespace, so a single fetch updates `@{u}` for all of them.
+ * 
+ * `--prune` drops tracking refs whose branch is gone from the remote, which is what a forge does
+ * to a head branch when it merges a pull request — without it those branches keep reading as
+ * published and `upstream_gone` never becomes true.
+ * 
+ * `force` is the user asking; anything else is throttled to [`AUTO_FETCH_INTERVAL`] so opening the
+ * tab does not cost a network round trip every time. A project with no remote is not an error
+ * here — a local-only repository would otherwise report a failure on every refresh.
+ */
+async fetchProjectRemote(projectId: number, force: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fetch_project_remote", { projectId, force }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<SpawnSessionResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };

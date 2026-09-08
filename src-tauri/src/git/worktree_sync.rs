@@ -82,6 +82,86 @@ pub async fn push_worktree_branch(
     Ok(())
 }
 
+/// How long an automatic fetch waits before it is worth crossing the network again.
+const AUTO_FETCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Whether a fetch should run now, given when the last one for this project started.
+///
+/// A forced fetch always runs: it is a button the user pressed, and answering it with a cached
+/// result would look exactly like the staleness they pressed it to clear.
+fn should_fetch(
+    last: Option<std::time::Instant>,
+    now: std::time::Instant,
+    force: bool,
+    interval: std::time::Duration,
+) -> bool {
+    if force {
+        return true;
+    }
+    match last {
+        None => true,
+        Some(last) => now.duration_since(last) >= interval,
+    }
+}
+
+/// Refresh every `<remote>/*` tracking ref for a project, so the cards' behind counts mean
+/// something.
+///
+/// The counts come from `rev-list HEAD...@{u}`, which reads a *local* remote-tracking ref. Nothing
+/// moved those refs except a pull, so a card could sit at "behind 0" indefinitely while the remote
+/// ran ahead — and pressing refresh only re-read the same unmoved ref.
+///
+/// Run at the repository root, not per worktree: worktrees share one object store and one ref
+/// namespace, so a single fetch updates `@{u}` for all of them.
+///
+/// `--prune` drops tracking refs whose branch is gone from the remote, which is what a forge does
+/// to a head branch when it merges a pull request — without it those branches keep reading as
+/// published and `upstream_gone` never becomes true.
+///
+/// `force` is the user asking; anything else is throttled to [`AUTO_FETCH_INTERVAL`] so opening the
+/// tab does not cost a network round trip every time. A project with no remote is not an error
+/// here — a local-only repository would otherwise report a failure on every refresh.
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_project_remote(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    force: bool,
+) -> Result<(), String> {
+    let (project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    {
+        let now = std::time::Instant::now();
+        let mut last_fetch = app_state
+            .last_remote_fetch
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        if !should_fetch(last_fetch.get(&project_id).copied(), now, force, AUTO_FETCH_INTERVAL) {
+            return Ok(());
+        }
+        // Recorded before the fetch rather than after, so a slow or hung one does not let every
+        // tab switch behind it through as well.
+        last_fetch.insert(project_id, now);
+    }
+
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    let listed = crate::git::run_git_in_dir_lossy(&git_conn, &project.path, &["remote", "-v"])
+        .await
+        .unwrap_or_default();
+    if crate::git::remote::url_for_remote(&listed, &remote).is_none() {
+        log::debug!("project {} has no '{}' remote to fetch from", project_id, remote);
+        return Ok(());
+    }
+
+    crate::git::run_git_in_dir(&git_conn, &project.path, &["fetch", "--prune", &remote])
+        .await
+        .map_err(|e| classify_git_failure(&e))?;
+
+    app_state.app_handle.emit("worktrees-changed", ()).ok();
+    Ok(())
+}
+
 /// Fast-forward one worktree onto its upstream, fetching first.
 ///
 /// Fast-forward only, and that is the whole design: `merge --ff-only` either moves the branch or
@@ -160,6 +240,19 @@ mod tests {
     fn a_missing_upstream_says_to_publish() {
         let stderr = "fatal: no upstream configured for branch 'feat/x'";
         assert!(classify_git_failure(stderr).contains("Publish it first"));
+    }
+
+    #[test]
+    fn the_automatic_fetch_is_throttled_but_the_button_is_not() {
+        let interval = std::time::Duration::from_secs(60);
+        let now = std::time::Instant::now();
+        let recent = now - std::time::Duration::from_secs(10);
+        let old = now - std::time::Duration::from_secs(120);
+
+        assert!(should_fetch(None, now, false, interval), "never fetched");
+        assert!(!should_fetch(Some(recent), now, false, interval), "inside the window");
+        assert!(should_fetch(Some(old), now, false, interval), "outside the window");
+        assert!(should_fetch(Some(recent), now, true, interval), "the user pressed refresh");
     }
 
     /// Credential and connectivity failures are git's to explain: it names the host, the protocol

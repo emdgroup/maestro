@@ -68,6 +68,44 @@ export function sessionsByWorktree(
 }
 
 /**
+ * Whether this worktree *is* the repository checkout rather than one hanging off it.
+ *
+ * Normalised on both sides: git prints worktree paths with forward slashes, while the project path
+ * a caller passes comes from the database and on Windows carries backslashes.
+ */
+export function isRepositoryRoot(worktreePath: string, repoPath: string): boolean {
+  return normalizePath(worktreePath) === normalizePath(repoPath);
+}
+
+/** One collapsible section of the worktree grid, holding every worktree cut from one base branch. */
+export interface WorktreeGroup {
+  groupKey: string;
+  items: WorktreeWithStatus[];
+}
+
+/**
+ * The worktrees, grouped by the branch they were cut from — the repository itself excluded.
+ *
+ * It has to be excluded rather than left to sort itself: the repository has no `worktrees` row, so
+ * it arrives with no `base_branch` and falls back to grouping under its own branch name — which is
+ * the very branch every worktree cut from it records as its base. The collision filed the
+ * repository in with its own children. It is a different kind of thing and the grid gives it its
+ * own row, above the groups and outside them; see `WorktreeCardGrid`.
+ */
+export function groupWorktrees(worktrees: WorktreeWithStatus[], repoPath: string): WorktreeGroup[] {
+  const groupMap = new Map<string, WorktreeWithStatus[]>();
+
+  for (const worktree of worktrees) {
+    if (isRepositoryRoot(worktree.path, repoPath)) continue;
+    const key = worktree.base_branch ?? worktree.branch_name;
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key)!.push(worktree);
+  }
+
+  return Array.from(groupMap.entries()).map(([groupKey, items]) => ({ groupKey, items }));
+}
+
+/**
  * What is using one worktree.
  *
  * `sessionsHere` must already be scoped to this worktree — see `sessionsByWorktree`, which owns the

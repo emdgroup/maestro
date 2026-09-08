@@ -132,6 +132,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
             crate::ipc::discard_all_worktree_changes,
             crate::ipc::push_worktree_branch,
             crate::ipc::pull_worktree_branch,
+            crate::ipc::fetch_project_remote,
             // ACP session management + unified agent discovery
             crate::ipc::spawn_acp_session,
             crate::ipc::send_acp_prompt,

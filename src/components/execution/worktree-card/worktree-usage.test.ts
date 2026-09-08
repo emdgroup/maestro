@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   folderName,
+  groupWorktrees,
   pathIsWithin,
   relativeAge,
   relativeWorktreePath,
@@ -124,6 +125,51 @@ describe("sessionsByWorktree", () => {
     const byPath = sessionsByWorktree([root], [session({ cwd: "/elsewhere" })]);
 
     expect(byPath.get("/repo")).toEqual([]);
+  });
+});
+
+describe("groupWorktrees", () => {
+  /**
+   * The bug this exists to pin. The repository has no `worktrees` row, so it arrives with no
+   * `base_branch` and falls back to grouping under its own branch name — which is exactly the
+   * branch every worktree cut from it records as its base. The two collided in one section.
+   * The grid gives the repository its own row instead, so it must not appear in any group.
+   */
+  it("leaves the repository out rather than filing it under the base branch it shares", () => {
+    const root = worktree({ id: 1, path: "/repo", branch_name: "main", base_branch: null });
+    const child = worktree({ id: 2, path: "/repo/wt/a", branch_name: "feat", base_branch: "main" });
+
+    expect(groupWorktrees([root, child], "/repo")).toEqual([{ groupKey: "main", items: [child] }]);
+  });
+
+  // The project path comes from the database with native separators; git prints forward slashes.
+  it("recognises the repository across separator styles", () => {
+    const root = worktree({ id: 1, path: "C:/repo", branch_name: "main", base_branch: null });
+
+    expect(groupWorktrees([root], "C:\\repo")).toEqual([]);
+  });
+
+  it("groups the worktrees by base branch", () => {
+    const a = worktree({ id: 2, path: "/repo/wt/a", branch_name: "x", base_branch: "main" });
+    const b = worktree({ id: 3, path: "/repo/wt/b", branch_name: "y", base_branch: "main" });
+    const c = worktree({ id: 4, path: "/repo/wt/c", branch_name: "z", base_branch: "release" });
+
+    expect(groupWorktrees([a, b, c], "/repo")).toEqual([
+      { groupKey: "main", items: [a, b] },
+      { groupKey: "release", items: [c] },
+    ]);
+  });
+
+  // A worktree whose base branch was never recorded still has to land somewhere.
+  it("falls back to a worktree's own branch when it has no base", () => {
+    const orphan = worktree({
+      id: 3,
+      path: "/repo/wt/b",
+      branch_name: "hotfix",
+      base_branch: null,
+    });
+
+    expect(groupWorktrees([orphan], "/repo")).toEqual([{ groupKey: "hotfix", items: [orphan] }]);
   });
 });
 

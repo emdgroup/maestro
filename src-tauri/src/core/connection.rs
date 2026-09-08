@@ -147,6 +147,10 @@ pub struct AppState {
     /// seconds and resolving reads settings and runs `git remote -v`, both of which cross the
     /// network for an SSH project.
     pub project_remotes: Mutex<HashMap<i32, String>>,
+    /// When each project last fetched its remote — see `git::worktree_sync::fetch_project_remote`,
+    /// which throttles the automatic fetch against it. Held here rather than in the view because
+    /// the view remounts on every project switch and would forget.
+    pub last_remote_fetch: Mutex<HashMap<i32, std::time::Instant>>,
 }
 
 impl AppState {
@@ -179,6 +183,7 @@ impl AppState {
             is_closing: std::sync::atomic::AtomicBool::new(false),
             task_holds: crate::task::holds::TaskHolds::default(),
             project_remotes: Mutex::new(HashMap::new()),
+            last_remote_fetch: Mutex::new(HashMap::new()),
         }
     }
 
