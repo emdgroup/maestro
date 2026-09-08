@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { MessageCircleQuestionMark, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import {
+  MessageCircleQuestionMark,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Check,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -66,6 +72,9 @@ export function ElicitationPrompt({
   const [otherValues, setOtherValues] = useState<Record<string, string>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [direction, setDirection] = useState(1);
+  // Open on arrival — the agent is blocked on this. Collapsing is the user's own move, to give the
+  // conversation above the panel back its room while they read it.
+  const [collapsed, setCollapsed] = useState(false);
 
   const isMultiField = fields.length > 1;
   const currentField = fields[currentIndex] ?? null;
@@ -102,6 +111,8 @@ export function ElicitationPrompt({
   const goTo = (index: number) => {
     setDirection(index > currentIndex ? 1 : -1);
     setCurrentIndex(index);
+    // The dots stay in the collapsed header, so picking one is also how you reopen the card.
+    setCollapsed(false);
   };
 
   // single-select is unambiguous — advance for the user, after a beat so the pick is visible
@@ -141,7 +152,8 @@ export function ElicitationPrompt({
   return (
     // The sheet around this comes from the slot it renders in — see `AgentBottomBar`.
     <div className="flex flex-col gap-2">
-      {/* Header — the same tile, title and count a permission request or a plan carries. */}
+      {/* Header — the same tile and title a permission request or a plan carries, plus the progress
+          dots and the collapse toggle. It is the whole card when collapsed, so it never reflows. */}
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0">
           <MessageCircleQuestionMark className="w-4 h-4 text-accent" />
@@ -150,250 +162,274 @@ export function ElicitationPrompt({
           {message}
         </div>
         {isMultiField && (
-          <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-            {currentIndex + 1} / {fields.length}
-          </span>
-        )}
-      </div>
-
-      {/* Progress dots */}
-      {isMultiField && (
-        <div className="flex gap-1.5">
-          {fields.map((field, i) => (
-            <Tooltip key={field.key}>
-              <TooltipTrigger
-                onClick={() => goTo(i)}
-                className={cn(
-                  "w-2 h-2 rounded-full transition-all duration-200 border-none p-0 cursor-pointer",
-                  i === currentIndex
-                    ? "bg-accent scale-125 shadow-[0_0_0_3px_hsl(var(--accent)/0.25)]"
-                    : isAnswered(field)
-                      ? "bg-accent/50"
-                      : "bg-muted-foreground/30",
-                )}
-              />
-              <TooltipContent>{field.title ?? field.key}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      )}
-
-      {/* Question body — capped so a long option list scrolls instead of eating the panel. */}
-      <div className="max-h-[40vh] overflow-x-hidden overflow-y-auto custom-scrollbar">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={currentIndex}
-            initial={{ x: direction * 16, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: direction * -16, opacity: 0 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-          >
-            {currentField && (
-              <div className="space-y-1.5">
-                {currentField.title && (
-                  <div className="text-xs font-medium text-foreground">{currentField.title}</div>
-                )}
-                {currentField.description && (
-                  <div className="text-xs text-muted-foreground">{currentField.description}</div>
-                )}
-
-                {/* Single-select (radio) */}
-                {isSingleSelect(currentField) && (
-                  <div className="space-y-1">
-                    {singleSelectOptions.map((opt) => {
-                      const selected = values[currentField.key] === opt.const;
-                      return (
-                        <label
-                          key={opt.const}
-                          className={cn(
-                            "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                            selected
-                              ? "border-accent bg-accent/10 text-foreground"
-                              : "border-border text-muted-foreground hover:border-accent/50",
-                          )}
-                        >
-                          <input
-                            type="radio"
-                            name={currentField.key}
-                            className="sr-only"
-                            checked={selected}
-                            onChange={() => {
-                              set(currentField.key, opt.const);
-                              advanceAfterPick();
-                            }}
-                          />
-                          <div
-                            className={cn(
-                              "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                              selected ? "border-accent bg-accent" : "border-muted-foreground/40",
-                            )}
-                          >
-                            {selected && (
-                              <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
-                            )}
-                          </div>
-                          {opt.title}
-                        </label>
-                      );
-                    })}
-                    {showOtherInput && (
-                      <OtherInput
-                        field={otherField!}
-                        value={otherValues[currentField.key] ?? ""}
-                        onChange={(v) =>
-                          setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
-                        }
-                      />
-                    )}
-                  </div>
-                )}
-
-                {/* Multi-select (checkbox) */}
-                {isMultiSelect(currentField) && (
-                  <div className="space-y-1">
-                    {multiSelectOptions.map((opt) => {
-                      const selected = ((values[currentField.key] as string[]) ?? []).includes(
-                        opt.const,
-                      );
-                      return (
-                        <label
-                          key={opt.const}
-                          className={cn(
-                            "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                            selected
-                              ? "border-accent bg-accent/10 text-foreground"
-                              : "border-border text-muted-foreground hover:border-accent/50",
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={selected}
-                            onChange={() => {
-                              const cur = (values[currentField.key] as string[]) ?? [];
-                              set(
-                                currentField.key,
-                                selected ? cur.filter((x) => x !== opt.const) : [...cur, opt.const],
-                              );
-                            }}
-                          />
-                          <div
-                            className={cn(
-                              "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
-                              selected ? "border-accent bg-accent" : "border-muted-foreground/40",
-                            )}
-                          >
-                            {selected && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
-                          </div>
-                          {opt.title}
-                        </label>
-                      );
-                    })}
-                    {showOtherInput && (
-                      <OtherInput
-                        field={otherField!}
-                        value={otherValues[currentField.key] ?? ""}
-                        onChange={(v) =>
-                          setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
-                        }
-                      />
-                    )}
-                  </div>
-                )}
-
-                {/* Boolean */}
-                {currentField.type === "boolean" && (
-                  <label
-                    className={cn(
-                      "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                      values[currentField.key]
-                        ? "border-accent bg-accent/10 text-foreground"
-                        : "border-border text-muted-foreground hover:border-accent/50",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={Boolean(values[currentField.key])}
-                      onChange={(e) => set(currentField.key, e.target.checked)}
-                    />
-                    <div
-                      className={cn(
-                        "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
-                        values[currentField.key]
-                          ? "border-accent bg-accent"
-                          : "border-muted-foreground/40",
-                      )}
-                    >
-                      {Boolean(values[currentField.key]) && (
-                        <Check className="w-2.5 h-2.5 text-primary-foreground" />
-                      )}
-                    </div>
-                    {currentField.title ?? currentField.key}
-                  </label>
-                )}
-
-                {/* Free text */}
-                {!isSingleSelect(currentField) &&
-                  !isMultiSelect(currentField) &&
-                  currentField.type !== "boolean" && (
-                    <Textarea
-                      value={(values[currentField.key] as string) ?? ""}
-                      onChange={(e) => set(currentField.key, e.target.value)}
-                      className="min-h-15 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
-                      placeholder="Type here…"
-                    />
+          <div className="flex gap-1.5 shrink-0">
+            {fields.map((field, i) => (
+              <Tooltip key={field.key}>
+                <TooltipTrigger
+                  onClick={() => goTo(i)}
+                  className={cn(
+                    "w-2 h-2 rounded-full transition-all duration-200 border-none p-0 cursor-pointer",
+                    i === currentIndex
+                      ? "bg-accent scale-125 shadow-[0_0_0_3px_hsl(var(--accent)/0.25)]"
+                      : isAnswered(field)
+                        ? "bg-accent/50"
+                        : "bg-muted-foreground/30",
                   )}
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+                />
+                <TooltipContent>{field.title ?? field.key}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed((prev) => !prev)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand the questions" : "Collapse the questions"}
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+        >
+          <ChevronDown
+            className={cn("size-3.5 transition-transform duration-200", !collapsed && "rotate-180")}
+          />
+        </button>
       </div>
 
-      {/* Footer: moving between questions on the left, answering the request on the right —
+      {!collapsed && (
+        <>
+          {/* Question body — capped so a long option list scrolls instead of eating the panel. */}
+          <div className="max-h-[40vh] overflow-x-hidden overflow-y-auto custom-scrollbar">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={currentIndex}
+                initial={{ x: direction * 16, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: direction * -16, opacity: 0 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+              >
+                {currentField && (
+                  <div className="space-y-1.5">
+                    {currentField.title && (
+                      <div className="text-xs font-medium text-foreground">
+                        {currentField.title}
+                      </div>
+                    )}
+                    {currentField.description && (
+                      <div className="text-xs text-muted-foreground">
+                        {currentField.description}
+                      </div>
+                    )}
+
+                    {/* Single-select (radio) */}
+                    {isSingleSelect(currentField) && (
+                      <div className="space-y-1">
+                        {singleSelectOptions.map((opt) => {
+                          const selected = values[currentField.key] === opt.const;
+                          return (
+                            <label
+                              key={opt.const}
+                              className={cn(
+                                "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                                selected
+                                  ? "border-accent bg-accent/10 text-foreground"
+                                  : "border-border text-muted-foreground hover:border-accent/50",
+                              )}
+                            >
+                              <input
+                                type="radio"
+                                name={currentField.key}
+                                className="sr-only"
+                                checked={selected}
+                                onChange={() => {
+                                  set(currentField.key, opt.const);
+                                  advanceAfterPick();
+                                }}
+                              />
+                              <div
+                                className={cn(
+                                  "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                  selected
+                                    ? "border-accent bg-accent"
+                                    : "border-muted-foreground/40",
+                                )}
+                              >
+                                {selected && (
+                                  <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
+                                )}
+                              </div>
+                              {opt.title}
+                            </label>
+                          );
+                        })}
+                        {showOtherInput && (
+                          <OtherInput
+                            field={otherField!}
+                            value={otherValues[currentField.key] ?? ""}
+                            onChange={(v) =>
+                              setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
+                            }
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Multi-select (checkbox) */}
+                    {isMultiSelect(currentField) && (
+                      <div className="space-y-1">
+                        {multiSelectOptions.map((opt) => {
+                          const selected = ((values[currentField.key] as string[]) ?? []).includes(
+                            opt.const,
+                          );
+                          return (
+                            <label
+                              key={opt.const}
+                              className={cn(
+                                "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                                selected
+                                  ? "border-accent bg-accent/10 text-foreground"
+                                  : "border-border text-muted-foreground hover:border-accent/50",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={selected}
+                                onChange={() => {
+                                  const cur = (values[currentField.key] as string[]) ?? [];
+                                  set(
+                                    currentField.key,
+                                    selected
+                                      ? cur.filter((x) => x !== opt.const)
+                                      : [...cur, opt.const],
+                                  );
+                                }}
+                              />
+                              <div
+                                className={cn(
+                                  "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
+                                  selected
+                                    ? "border-accent bg-accent"
+                                    : "border-muted-foreground/40",
+                                )}
+                              >
+                                {selected && (
+                                  <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                                )}
+                              </div>
+                              {opt.title}
+                            </label>
+                          );
+                        })}
+                        {showOtherInput && (
+                          <OtherInput
+                            field={otherField!}
+                            value={otherValues[currentField.key] ?? ""}
+                            onChange={(v) =>
+                              setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
+                            }
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Boolean */}
+                    {currentField.type === "boolean" && (
+                      <label
+                        className={cn(
+                          "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
+                          values[currentField.key]
+                            ? "border-accent bg-accent/10 text-foreground"
+                            : "border-border text-muted-foreground hover:border-accent/50",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={Boolean(values[currentField.key])}
+                          onChange={(e) => set(currentField.key, e.target.checked)}
+                        />
+                        <div
+                          className={cn(
+                            "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
+                            values[currentField.key]
+                              ? "border-accent bg-accent"
+                              : "border-muted-foreground/40",
+                          )}
+                        >
+                          {Boolean(values[currentField.key]) && (
+                            <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                          )}
+                        </div>
+                        {currentField.title ?? currentField.key}
+                      </label>
+                    )}
+
+                    {/* Free text */}
+                    {!isSingleSelect(currentField) &&
+                      !isMultiSelect(currentField) &&
+                      currentField.type !== "boolean" && (
+                        <Textarea
+                          value={(values[currentField.key] as string) ?? ""}
+                          onChange={(e) => set(currentField.key, e.target.value)}
+                          className="min-h-15 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+                          placeholder="Type here…"
+                        />
+                      )}
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {/* Footer: moving between questions on the left, answering the request on the right —
           declining beside submitting, since both end it. */}
-      <div className="flex flex-wrap items-center gap-2">
-        {isMultiField && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => goTo(currentIndex - 1)}
-              disabled={currentIndex === 0}
-            >
-              <ChevronLeft className="size-3.5" />
-              Prev
-            </Button>
-            {currentIndex < fields.length - 1 && (
-              <Button variant="outline" size="sm" onClick={() => goTo(currentIndex + 1)}>
-                Next
-                <ChevronRight className="size-3.5" />
-              </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isMultiField && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goTo(currentIndex - 1)}
+                  disabled={currentIndex === 0}
+                >
+                  <ChevronLeft className="size-3.5" />
+                  Prev
+                </Button>
+                {currentIndex < fields.length - 1 && (
+                  <Button variant="outline" size="sm" onClick={() => goTo(currentIndex + 1)}>
+                    Next
+                    <ChevronRight className="size-3.5" />
+                  </Button>
+                )}
+                {/* Beside the arrows rather than up in the header: it says where they will take you. */}
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {currentIndex + 1} / {fields.length}
+                </span>
+              </>
             )}
-          </>
-        )}
-        <div className="flex-1" />
-        {submitAttempted && unansweredCount > 0 && (
-          <span className="text-xs text-muted-foreground">
-            {unansweredCount} unanswered, click again
-          </span>
-        )}
-        <Button variant="ghost" size="sm" onClick={() => onDecline(requestId)}>
-          Decline
-        </Button>
-        <Button
-          variant={submitAttempted && unansweredCount > 0 ? "outline" : "accent"}
-          size="sm"
-          onClick={handleSubmit}
-          className={
-            submitAttempted && unansweredCount > 0
-              ? "border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10"
-              : ""
-          }
-        >
-          {submitAttempted && unansweredCount > 0 ? "Submit anyway" : "Submit"}
-        </Button>
-      </div>
+            <div className="flex-1" />
+            {submitAttempted && unansweredCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {unansweredCount} unanswered, click again
+              </span>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => onDecline(requestId)}>
+              Decline
+            </Button>
+            <Button
+              variant={submitAttempted && unansweredCount > 0 ? "outline" : "accent"}
+              size="sm"
+              onClick={handleSubmit}
+              className={
+                submitAttempted && unansweredCount > 0
+                  ? "border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10"
+                  : ""
+              }
+            >
+              {submitAttempted && unansweredCount > 0 ? "Submit anyway" : "Submit"}
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
