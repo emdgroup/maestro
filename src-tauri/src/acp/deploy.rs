@@ -221,6 +221,10 @@ pub async fn ensure_wsl_server(
 ) -> Result<DeployResult, String> {
     use tokio::io::AsyncWriteExt;
 
+    // A stopped distro would otherwise cold-boot inside the probe's 15s budget and blow it, which
+    // the user sees as a deploy failure rather than as the distro being asleep.
+    crate::connectivity::wsl::ensure_running(distro).await?;
+
     let probe_out = tokio::time::timeout(
         std::time::Duration::from_secs(15),
         tokio::process::Command::new("wsl.exe")

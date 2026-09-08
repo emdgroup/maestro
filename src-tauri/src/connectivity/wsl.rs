@@ -69,6 +69,75 @@ pub async fn list_distros() -> Result<Vec<WslDistro>, String> {
     Ok(vec![])
 }
 
+/// How long a stopped distro gets to come up. Sized above wsl.exe's own VM-start timeout so that
+/// when the virtual machine genuinely fails to start, its error message reaches the user instead
+/// of ours.
+#[cfg(windows)]
+const START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Start `distro` if it is not already running.
+///
+/// WSL starts a stopped distro on demand, so this is not needed for correctness — it is needed
+/// because that boot brings up a virtual machine and runs the distro's init, which routinely takes
+/// longer than the short budgets the callers' own probes run under. A distro that was merely
+/// asleep then surfaces as a failed deploy. Paying the boot here, once, under a budget sized for
+/// it is what keeps a sleeping distro from being reported as a broken connection.
+#[cfg(windows)]
+pub async fn ensure_running(distro: &str) -> Result<(), String> {
+    use crate::command_ext::NoConsoleWindow;
+
+    match list_distros()
+        .await?
+        .iter()
+        .find(|d| d.name.eq_ignore_ascii_case(distro))
+        .map(|d| d.state.clone())
+    {
+        Some(WslDistroState::Running) => return Ok(()),
+        Some(WslDistroState::Stopped) => {}
+        // Absent from the listing. Failing here would turn a parsing quirk into a broken
+        // connection, so let the caller's own command run and report wsl.exe's verdict on the
+        // name it was given.
+        None => log::warn!("WSL distro '{distro}' is not in the distro list; starting it anyway"),
+    }
+
+    log::info!("Starting WSL distro '{distro}'");
+    let output = tokio::time::timeout(
+        START_TIMEOUT,
+        tokio::process::Command::new("wsl.exe")
+            .args(["-d", distro, "--", "sh", "-c", "exit 0"])
+            .no_console_window()
+            .output(),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "WSL distro '{distro}' did not start within {}s",
+            START_TIMEOUT.as_secs()
+        )
+    })?
+    .map_err(|e| format!("Failed to start WSL distro '{distro}': {e}"))?;
+
+    if !output.status.success() {
+        // wsl.exe reports its own failures — a distro mid-install, a VM that would not come up —
+        // on stdout, not stderr. A decode failure is not worth reporting over the exit status we
+        // already have, so it degrades to the empty string and the status is printed instead.
+        let mut detail = decode_wsl_output(&output.stdout).unwrap_or_default();
+        if detail.trim().is_empty() {
+            detail = decode_wsl_output(&output.stderr).unwrap_or_default();
+        }
+        // Piped wsl.exe output is UTF-16LE with no BOM, which `decode_wsl_output` reads as UTF-8
+        // and leaves interleaved with NULs — the same reason `parse_distro_list` strips them.
+        let detail = detail.replace('\0', "").trim().replace(['\r', '\n'], " ");
+        return Err(if detail.is_empty() {
+            format!("Failed to start WSL distro '{distro}' ({})", output.status)
+        } else {
+            format!("Failed to start WSL distro '{distro}': {detail}")
+        });
+    }
+
+    Ok(())
+}
+
 /// Run a command inside a distro through its exec channel, so it costs a message rather than a
 /// `wsl.exe` start. Falls back to a cold spawn when no channel is available.
 #[cfg(windows)]
