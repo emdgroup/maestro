@@ -1036,14 +1036,17 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
                 : "The work was committed but never merged into the base branch. Archiving takes the task off the board; the branch stays where it is."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          {/* Three actions with labels this long overflow the row layout at max-w-lg — the buttons
+              are nowrap and shrink-0, so they spill past the card edge rather than wrap. This one
+              dialog keeps the stacked footer at every width. */}
+          <AlertDialogFooter className="sm:flex-col-reverse">
             <AlertDialogCancel>Keep on the board</AlertDialogCancel>
             {taskWorktree &&
               projectId !== null && (
                 // Deletes the checkout, not the branch. The commits are the unmerged work this
                 // dialog exists to protect; the working copy of them is just disk.
                 <AlertDialogAction
-                  className={buttonVariants({ variant: "outline" })}
+                  variant="outline"
                   onClick={() => {
                     setArchiveConfirmOpen(false);
                     deleteWorktree.mutate(
