@@ -2,16 +2,14 @@
 
 ## [0.22.0](https://github.com/emdgroup/maestro/compare/v0.21.0...v0.22.0) (2026-09-08)
 
-
 ### Features
 
-* answer a plan review from the stream ([#335](https://github.com/emdgroup/maestro/issues/335)) ([7513b71](https://github.com/emdgroup/maestro/commit/7513b71a8623225cf53a7109c074d505dbfe069d))
-* reduce the CPU cost of the accent bubble animation ([#330](https://github.com/emdgroup/maestro/issues/330)) ([87e2848](https://github.com/emdgroup/maestro/commit/87e284882191124dd7376abc0b1d460bb854ffeb))
-
+- answer a plan review from the stream ([#335](https://github.com/emdgroup/maestro/issues/335)) ([7513b71](https://github.com/emdgroup/maestro/commit/7513b71a8623225cf53a7109c074d505dbfe069d))
+- reduce the CPU cost of the accent bubble animation ([#330](https://github.com/emdgroup/maestro/issues/330)) ([87e2848](https://github.com/emdgroup/maestro/commit/87e284882191124dd7376abc0b1d460bb854ffeb))
 
 ### Bug Fixes
 
-* send session notifications on Windows ([#320](https://github.com/emdgroup/maestro/issues/320)) ([7672b8b](https://github.com/emdgroup/maestro/commit/7672b8b33426b57ad9fc59da5748e4d652770129))
+- send session notifications on Windows ([#320](https://github.com/emdgroup/maestro/issues/320)) ([7672b8b](https://github.com/emdgroup/maestro/commit/7672b8b33426b57ad9fc59da5748e4d652770129))
 
 ## [0.21.0](https://github.com/emdgroup/maestro/compare/v0.20.0...v0.21.0) (2026-09-02)
 
