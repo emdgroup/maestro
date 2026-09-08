@@ -3363,7 +3363,19 @@ last_commit_subject: string | null;
  * still carries the name recorded at creation, because that is what branch operations need —
  * but showing it would claim a branch that is not checked out.
  */
-detached_at: string | null }
+detached_at: string | null; 
+/**
+ * The full sha HEAD points at, on a branch or not. Compared against a pull request's head sha
+ * to tell a branch whose work has landed from one that has moved on past the merge.
+ */
+head_sha: string; 
+/**
+ * Whether this branch had an upstream that has since been deleted — what a forge does to the
+ * head branch when it merges a pull request. Read from `%(upstream:track)` saying `gone`, and
+ * never inferred from `ahead_behind` being `None`: that covers a branch which was never pushed
+ * just as much as one whose upstream was pruned, and those want opposite offers.
+ */
+upstream_gone: boolean }
 /**
  * A WSL connection record stored in the database.
  */

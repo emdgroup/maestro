@@ -14,6 +14,7 @@ struct WorktreeGitInfo {
     commit_count: Option<u32>,
     last_activity_at: Option<String>,
     last_commit_subject: Option<String>,
+    upstream_gone: bool,
 }
 
 /// How many of a worktree's changed files are stat'ed to find the most recent one.
@@ -82,6 +83,7 @@ fn parse_rfc3339(raw: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 async fn git_info_for(
     conn: &crate::models::GitConnection,
     worktree_path: &str,
+    branch: Option<&str>,
     base_branch: Option<&str>,
     remote: &str,
 ) -> (String, WorktreeGitInfo) {
@@ -105,6 +107,16 @@ async fn git_info_for(
             "rev-list".into(),
             "--count".into(),
             format!("{}/{}..HEAD", remote, base),
+        ]);
+    }
+    // Last, so the positional reads above keep their arithmetic. `%(upstream:track)` is the only
+    // thing that separates a branch that was never pushed from one whose upstream was deleted
+    // under it — both leave `rev-list HEAD...@{u}` failing with nothing to parse.
+    if let Some(branch) = branch {
+        commands.push(vec![
+            "for-each-ref".into(),
+            "--format=%(upstream:track,nobracket)".into(),
+            format!("refs/heads/{}", branch),
         ]);
     }
 
@@ -139,6 +151,9 @@ async fn git_info_for(
             .ok()
             .or_else(|| from_remote.trim().parse::<u32>().ok())
     });
+    // Only the literal `gone` says the upstream was deleted. An empty answer covers both a branch
+    // with no upstream at all and one exactly level with its upstream, so it cannot be inferred.
+    let upstream_gone = branch.is_some() && outputs.next().unwrap_or_default().trim() == "gone";
 
     let newest_change = newest_changed_file_at(conn, worktree_path, &status_output).await;
     let last_activity_at = match (newest_change, parse_rfc3339(&last_commit_raw)) {
@@ -158,6 +173,7 @@ async fn git_info_for(
         commit_count,
         last_activity_at,
         last_commit_subject,
+        upstream_gone,
     };
     (worktree_path.to_string(), info)
 }
@@ -251,10 +267,12 @@ pub async fn list_worktrees_with_status(
             .map(|wt| {
                 let wt_path = wt.path.clone();
                 let conn = git_conn.clone();
+                let branch = wt.branch.clone();
                 let base_branch = db_map.get(&wt.path).and_then(|row| row.base_branch.clone());
                 let remote = remote.clone();
                 tokio::spawn(async move {
-                    git_info_for(&conn, &wt_path, base_branch.as_deref(), &remote).await
+                    git_info_for(&conn, &wt_path, branch.as_deref(), base_branch.as_deref(), &remote)
+                        .await
                 })
             })
             .collect();
@@ -283,6 +301,7 @@ pub async fn list_worktrees_with_status(
             commit_count,
             last_activity_at,
             last_commit_subject,
+            upstream_gone,
         } = git_info.remove(&wt.path).unwrap_or_default();
         // A worktree with no branch is on a detached HEAD. `branch_name` keeps the recorded name
         // because branch operations still need it, but the card must not present it as checked out.
@@ -317,6 +336,8 @@ pub async fn list_worktrees_with_status(
                 last_activity_at,
                 last_commit_subject: last_commit_subject.clone(),
                 detached_at,
+                head_sha: wt.head.clone(),
+                upstream_gone,
             });
         } else {
             // On-disk but not in DB — orphan entry
@@ -339,6 +360,8 @@ pub async fn list_worktrees_with_status(
                 last_activity_at,
                 last_commit_subject: last_commit_subject.clone(),
                 detached_at,
+                head_sha: wt.head.clone(),
+                upstream_gone,
             });
         }
     }
@@ -1038,7 +1061,7 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "one\ntwo CHANGED\nthree\nfour\n").expect("edit file");
         git(repo, &["add", "a.txt"]);
 
-        let (_, info) = git_info_for(&connection, &path, None, "origin").await;
+        let (_, info) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
         let stat = info.diff_stat.expect("a staged change is still a change");
         assert!(stat.contains("insertion"), "staged insertions must be counted, got {stat:?}");
     }
@@ -1053,7 +1076,7 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, info) = git_info_for(&connection, &path, Some("main"), "origin").await;
+        let (_, info) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1), "one commit since main");
 
         // main gaining a commit of its own must not change how much work this branch has.
@@ -1063,11 +1086,57 @@ mod tests {
         git(repo, &["commit", "-m", "main moves on"]);
         git(repo, &["checkout", "task"]);
 
-        let (_, info) = git_info_for(&connection, &path, Some("main"), "origin").await;
+        let (_, info) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1));
 
-        let (_, info) = git_info_for(&connection, &path, None, "origin").await;
+        let (_, info) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
         assert_eq!(info.commit_count, None, "nothing to count against without a base branch");
+    }
+
+    /// A forge deleting the head branch when it merges prunes the remote-tracking ref, and from
+    /// then on `rev-list HEAD...@{u}` fails outright — so `ahead_behind` is `None` and the branch
+    /// reads exactly like one that was never pushed. `%(upstream:track)` is the only thing that
+    /// separates them, and it must say `gone` rather than merely being empty: a branch level with
+    /// its upstream prints nothing too.
+    #[tokio::test]
+    async fn a_deleted_upstream_is_distinguishable_from_never_having_pushed() {
+        let temp = tempfile::tempdir().expect("create temporary repository");
+        let remote_dir = temp.path().join("remote.git");
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(&repo).expect("create repository directory");
+        Command::new("git")
+            .args(["init", "--bare", "-b", "main"])
+            .arg(&remote_dir)
+            .output()
+            .expect("create bare remote");
+
+        repo_with_two_commits(&repo);
+        let remote_url = remote_dir.to_string_lossy().replace('\\', "/");
+        git(&repo, &["remote", "add", "origin", &remote_url]);
+        git(&repo, &["push", "-u", "origin", "task"]);
+
+        let path = repo.to_string_lossy().into_owned();
+        let connection = GitConnection::Local { path: path.clone() };
+
+        let (_, pushed) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        assert!(!pushed.upstream_gone, "a branch level with its upstream is not gone");
+        assert!(pushed.ahead_behind.is_some());
+        // The commands after it must still land on their own outputs.
+        assert_eq!(pushed.commit_count, Some(1));
+
+        git(&repo, &["push", "origin", "--delete", "task"]);
+        git(&repo, &["fetch", "--prune"]);
+
+        let (_, gone) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        assert!(gone.upstream_gone, "the upstream was deleted under the branch");
+        assert!(gone.ahead_behind.is_none(), "`@{{u}}` no longer resolves");
+        assert_eq!(gone.commit_count, Some(1));
+
+        // A branch that has simply never been pushed prints nothing, which must not read as gone.
+        git(&repo, &["checkout", "-b", "unpushed"]);
+        let (_, never) = git_info_for(&connection, &path, Some("unpushed"), Some("main"), "origin").await;
+        assert!(!never.upstream_gone);
+        assert!(never.ahead_behind.is_none());
     }
 
     /// A clean worktree falls back to its last commit; a dirty one reports the edit, which is later.
@@ -1079,11 +1148,11 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, clean) = git_info_for(&connection, &path, None, "origin").await;
+        let (_, clean) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
         let committed = clean.last_activity_at.expect("a clean worktree still has a last commit");
 
         std::fs::write(repo.join("a.txt"), "edited after the commit\n").expect("edit file");
-        let (_, dirty) = git_info_for(&connection, &path, None, "origin").await;
+        let (_, dirty) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
         let edited = dirty.last_activity_at.expect("a dirty worktree reports its newest edit");
 
         assert!(

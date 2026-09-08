@@ -90,4 +90,29 @@ describe("OverviewPanel — Changes card", () => {
 
     expect(screen.getByText("0 committed · 5 uncommitted")).toBeTruthy();
   });
+
+  /**
+   * Work that has merged has nothing left to ship, so the card carries no action row at all — the
+   * pull request card beside it already says `Merged #336`. The numbers stay: they are measured
+   * from the session's start commit and remain true after the merge.
+   */
+  it("drops the action row once the work has landed, keeping the numbers", () => {
+    renderCard({
+      ship: { ...ship, action: "none" },
+      onSeedPrompt: () => {},
+    });
+
+    expect(screen.queryByText("Commit and push")).toBeNull();
+    expect(screen.queryByText("Open pull request")).toBeNull();
+    expect(screen.getByText("12 files since session start")).toBeTruthy();
+    expect(screen.getByText("+240 insertions")).toBeTruthy();
+    expect(screen.getByText("−58 deletions")).toBeTruthy();
+  });
+
+  /** The control: the same card with work still to ship does render its one action. */
+  it("still offers the action when there is something left to ship", () => {
+    renderCard({ onSeedPrompt: () => {} });
+
+    expect(screen.getByText("Open pull request")).toBeTruthy();
+  });
 });

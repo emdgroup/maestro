@@ -6,6 +6,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
 import { useNavigate } from "@/store/navigationStore";
 import { useBranchPullRequest } from "@/services/integration.service";
+import { branchHasLanded } from "@/lib/branch-landed";
 import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
 import { WorktreeMetrics } from "./WorktreeMetrics";
 import { hasSyncActions, WorktreeSyncActions } from "./WorktreeSyncActions";
@@ -65,6 +66,10 @@ export function WorktreeCard({
   // Only an open one earns a chip. A merged pull request is what says this worktree has done its
   // job and can go, which the card says by having no chip rather than by showing a dead one.
   const pullRequest = found?.state === "Open" ? found : null;
+  // Read from `found` rather than the filtered `pullRequest`, because a merge is precisely what this
+  // has to see: it deletes the head branch, which leaves the branch looking unpublished and the card
+  // offering to publish it again.
+  const landed = branchHasLanded(found, worktree);
   const ci = useMemo(() => summariseChecks(pullRequest?.checks), [pullRequest]);
   const isMain = worktree.path === repoPath;
   const usage = worktreeUsage(worktree, sessions);
@@ -119,8 +124,13 @@ export function WorktreeCard({
           now={now}
           className="mt-2"
           sync={
-            projectId != null && hasSyncActions(worktree) ? (
-              <WorktreeSyncActions worktree={worktree} projectId={projectId} inUse={inUse} />
+            projectId != null && hasSyncActions(worktree, landed) ? (
+              <WorktreeSyncActions
+                worktree={worktree}
+                projectId={projectId}
+                inUse={inUse}
+                landed={landed}
+              />
             ) : undefined
           }
           pullRequest={

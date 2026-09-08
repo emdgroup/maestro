@@ -17,6 +17,8 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     changed_files_count: 0,
     commit_count: null,
     detached_at: null,
+    head_sha: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    upstream_gone: false,
     diff_stat: null,
     ahead_behind: null,
     is_zombie: false,

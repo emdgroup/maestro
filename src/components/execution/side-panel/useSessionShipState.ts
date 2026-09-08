@@ -3,6 +3,7 @@ import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useBranchPullRequest, useCodeHostingStatus } from "@/services/integration.service";
 import type { BranchPullRequestState, PullRequestCheckInfo, PullRequestCi } from "@/types/bindings";
+import { branchHasLanded } from "@/lib/branch-landed";
 import { deriveCi } from "./shipActions";
 
 /**
@@ -66,8 +67,11 @@ export interface SessionShipState {
   projectId: number | null;
   /** Anything uncommitted or unpushed — the condition for offering "Commit and push". */
   needsPush: boolean;
-  /** Exactly one of the two actions is ever offered; this decides which. */
-  action: "commit-push" | "open-pull-request";
+  /**
+   * At most one action is ever offered; this decides which. `"none"` is a branch whose work has
+   * already landed, where every offer would be wrong.
+   */
+  action: "commit-push" | "open-pull-request" | "none";
   /** `null` when the offered action is available. */
   blocker: ShipBlocker | null;
   pullRequest: SessionPullRequest | null;
@@ -119,9 +123,14 @@ export function useSessionShipState(
   // A detached worktree has no branch to open anything from, whatever name the row still carries.
   const branch = worktree && !worktree.detached_at ? worktree.branch_name : null;
 
-  // No upstream means the branch has never been pushed, so every commit on it is unpushed and no
-  // pull request can exist for it. Distinct from `ahead: 0`, which means it is level with a remote.
+  // No upstream means there is nothing to measure against, so every commit on the branch counts as
+  // unpushed. Distinct from `ahead: 0`, which means it is level with a remote.
+  //
+  // It does *not* mean the branch was never pushed: a forge deleting the head branch when it merges
+  // prunes the remote-tracking ref, and `upstream_gone` is what tells the two apart. That matters
+  // because a branch that has been pushed once can have a pull request worth asking about.
   const hasUpstream = worktree?.ahead_behind != null;
+  const everPushed = hasUpstream || worktree?.upstream_gone === true;
   const uncommitted = (worktree?.changed_files_count ?? 0) > 0;
   const unpushed = !hasUpstream || (worktree?.ahead_behind?.ahead ?? 0) > 0;
   const needsPush = uncommitted || unpushed;
@@ -139,7 +148,7 @@ export function useSessionShipState(
   const { data: found } = useBranchPullRequest(
     projectId,
     branch,
-    visible && canFind && hasUpstream && branch != null,
+    visible && canFind && everPushed && branch != null,
   );
 
   // The verdict is derived from the checks that arrived in the same answer, which is what keeps the
@@ -186,9 +195,16 @@ export function useSessionShipState(
     [activeSessions, sessionKey, sessionMeta?.cwd],
   );
 
-  const action = needsPush ? "commit-push" : "open-pull-request";
+  // A merged pull request sitting on this exact commit means the work is done, and both offers
+  // would contradict it — "Commit and push" most loudly, because the merge is also what deleted the
+  // upstream that made the branch look unpushed. Once HEAD moves past the merged commit the branch
+  // has new work, and commit-push is right again: recreating the deleted upstream is what
+  // `commitAndPushPrompt` already asks for.
+  const landed = branchHasLanded(pullRequest, worktree);
+  const action = landed ? "none" : needsPush ? "commit-push" : "open-pull-request";
 
   const blocker: ShipBlocker | null = (() => {
+    if (landed) return null;
     if (isProcessing) return "agent-busy";
     // A session in the repository directory has no worktree row, so `hasUpstream` is false and it
     // lands here permanently. That is the intended fallback rather than an oversight: the offer is

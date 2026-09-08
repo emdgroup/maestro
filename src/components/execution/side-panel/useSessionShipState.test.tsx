@@ -58,6 +58,8 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     last_activity_at: null,
     last_commit_subject: null,
     detached_at: null,
+    head_sha: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    upstream_gone: false,
     ...overrides,
   };
 }
@@ -169,6 +171,47 @@ describe("useSessionShipState", () => {
     const state = ship();
     expect(state.action).toBe("commit-push");
     expect(lookupEnabled.current).toBe(false);
+  });
+
+  /// The lookup gate used to be `ahead_behind != null`, so a merge deleting the head branch stopped
+  /// the card asking the forge anything at all: the `Merged` badge beside it was cache from before
+  /// the prune and vanished on the next restart, leaving only the wrong button. `upstream_gone` is
+  /// what says the branch *was* pushed and is worth a question — while a branch that genuinely
+  /// never was still costs no request, which is the point of the gate.
+  it("still asks the forge once the upstream was deleted under the branch", () => {
+    worktrees.current = [worktree({ ahead_behind: null, upstream_gone: true })];
+    ship();
+    expect(lookupEnabled.current).toBe(true);
+
+    worktrees.current = [worktree({ ahead_behind: null, upstream_gone: false })];
+    ship();
+    expect(lookupEnabled.current).toBe(false);
+  });
+
+  /// The reported bug: #336 merged, GitHub deleted the head branch, `@{u}` stopped resolving, and
+  /// the Changes card read that as "never pushed" and offered to commit and push work already in
+  /// main — right beside a card reading `Merged #336`.
+  it("offers nothing once the branch's work has merged at this commit", () => {
+    worktrees.current = [
+      worktree({ ahead_behind: null, upstream_gone: true, head_sha: "landed-sha" }),
+    ];
+    found.current = branchPullRequest({ state: "Merged", head_sha: "landed-sha" });
+
+    const state = ship();
+    expect(state.action).toBe("none");
+    expect(state.blocker).toBeNull();
+  });
+
+  /// The head-sha equality is what keeps the rule a refinement rather than "a merged pull request
+  /// silences the card forever". A commit made after the merge is new work, and pushing it does
+  /// need `--set-upstream` to recreate the branch the forge deleted.
+  it("offers again once the branch has moved past the merged commit", () => {
+    worktrees.current = [
+      worktree({ ahead_behind: null, upstream_gone: true, head_sha: "moved-on-sha" }),
+    ];
+    found.current = branchPullRequest({ state: "Merged", head_sha: "landed-sha" });
+
+    expect(ship().action).toBe("commit-push");
   });
 
   /// The one gate that crosses the network. A forge with no branch-lookup arm would return an

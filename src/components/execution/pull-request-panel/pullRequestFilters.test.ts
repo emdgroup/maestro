@@ -41,6 +41,8 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     last_activity_at: null,
     last_commit_subject: null,
     detached_at: null,
+    head_sha: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    upstream_gone: false,
     ...overrides,
   };
 }

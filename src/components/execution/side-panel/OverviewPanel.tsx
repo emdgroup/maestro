@@ -101,9 +101,11 @@ function CardAction({
 }
 
 /**
- * The Changes card's shipping affordance. Exactly one of the two is ever rendered — a branch with
+ * The Changes card's shipping affordance. At most one of the two is ever rendered — a branch with
  * something to push cannot also be ready for a pull request — so they are alternatives rather than
  * a pair, and the card never grows a row of buttons that contradict each other.
+ *
+ * A branch whose work has already merged gets neither, which is `action: "none"`.
  */
 function ShipAction({
   ship,
@@ -115,6 +117,10 @@ function ShipAction({
   onOpenDialog: () => void;
 }) {
   const hint = ship.blocker ? BLOCKER_LABELS[ship.blocker] : undefined;
+
+  // The work has landed, so no row at all — rather than a passive "Merged in #336", which the pull
+  // request card beside this one already says with its badge.
+  if (ship.action === "none") return null;
 
   if (ship.action === "commit-push") {
     // With no agent to ask there is nothing this button could do, so it is not offered at all.

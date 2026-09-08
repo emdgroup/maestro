@@ -83,6 +83,14 @@ pub struct WorktreeWithStatus {
     /// still carries the name recorded at creation, because that is what branch operations need —
     /// but showing it would claim a branch that is not checked out.
     pub detached_at: Option<String>,
+    /// The full sha HEAD points at, on a branch or not. Compared against a pull request's head sha
+    /// to tell a branch whose work has landed from one that has moved on past the merge.
+    pub head_sha: String,
+    /// Whether this branch had an upstream that has since been deleted — what a forge does to the
+    /// head branch when it merges a pull request. Read from `%(upstream:track)` saying `gone`, and
+    /// never inferred from `ahead_behind` being `None`: that covers a branch which was never pushed
+    /// just as much as one whose upstream was pruned, and those want opposite offers.
+    pub upstream_gone: bool,
 }
 
 /// Session kind: an ACP-managed AI agent or a user-controlled PTY shell.

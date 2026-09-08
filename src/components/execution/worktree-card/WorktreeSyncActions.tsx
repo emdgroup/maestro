@@ -52,9 +52,18 @@ const HIDDEN: SyncAction = { show: false, count: 0, reason: "" };
  * branch, and what it would send is the branch's own commits — `commit_count`, which the card
  * already counts against the base branch. A brand-new branch with no commits of its own is worth
  * nothing on the remote, so it gets no chip either.
+ *
+ * `landed` is the one case that does not fall out of the counts, and it looks exactly like the
+ * unpublished one: merging a pull request deletes the head branch, so `ahead_behind` goes to `null`
+ * and the branch's own commits are still there to count. The chip would offer to publish the branch
+ * the forge just deleted, and push back the commits it just merged.
  */
-export function syncActions(worktree: WorktreeWithStatus, inUse: boolean): SyncActions {
-  if (worktree.detached_at != null) {
+export function syncActions(
+  worktree: WorktreeWithStatus,
+  inUse: boolean,
+  landed: boolean,
+): SyncActions {
+  if (worktree.detached_at != null || landed) {
     return { push: HIDDEN, pull: HIDDEN, publish: false };
   }
 
@@ -104,8 +113,8 @@ export function syncActions(worktree: WorktreeWithStatus, inUse: boolean): SyncA
 }
 
 /** Whether this worktree has anything to offer, so the card knows not to pass an empty slot. */
-export function hasSyncActions(worktree: WorktreeWithStatus): boolean {
-  const actions = syncActions(worktree, false);
+export function hasSyncActions(worktree: WorktreeWithStatus, landed: boolean): boolean {
+  const actions = syncActions(worktree, false, landed);
   return actions.push.show || actions.pull.show;
 }
 
@@ -114,6 +123,8 @@ interface WorktreeSyncActionsProps {
   projectId: number;
   /** From `isInUse` — a live agent or shell makes a pull ask before rewriting files under it. */
   inUse: boolean;
+  /** From `branchHasLanded` — a merged branch has nothing left to move in either direction. */
+  landed: boolean;
 }
 
 /**
@@ -128,11 +139,16 @@ interface WorktreeSyncActionsProps {
  * the text around it, so the wrapping metrics row never changes height and the card never moves
  * under the cursor.
  */
-export function WorktreeSyncActions({ worktree, projectId, inUse }: WorktreeSyncActionsProps) {
+export function WorktreeSyncActions({
+  worktree,
+  projectId,
+  inUse,
+  landed,
+}: WorktreeSyncActionsProps) {
   const [confirmPull, setConfirmPull] = useState(false);
   const push = usePushWorktreeMutation();
   const pull = usePullWorktreeMutation();
-  const actions = syncActions(worktree, inUse);
+  const actions = syncActions(worktree, inUse, landed);
   const busy = push.isPending || pull.isPending;
 
   const runPull = () => pull.mutate({ projectId, worktreePath: worktree.path });

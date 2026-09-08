@@ -31,6 +31,8 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
     last_activity_at: null,
     last_commit_subject: null,
     detached_at: null,
+    head_sha: "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    upstream_gone: false,
     is_zombie: false,
     is_orphan: false,
     ...overrides,
@@ -43,7 +45,7 @@ function renderActions(wt: WorktreeWithStatus, inUse = false) {
   });
   render(
     <QueryClientProvider client={client}>
-      <WorktreeSyncActions worktree={wt} projectId={1} inUse={inUse} />
+      <WorktreeSyncActions worktree={wt} projectId={1} inUse={inUse} landed={false} />
     </QueryClientProvider>,
   );
 }
@@ -55,7 +57,7 @@ beforeEach(() => {
 
 describe("syncActions", () => {
   it("offers both directions with their counts when the branch tracks a remote", () => {
-    const { push: up, pull: down, publish } = syncActions(worktree(), false);
+    const { push: up, pull: down, publish } = syncActions(worktree(), false, false);
 
     expect(publish).toBe(false);
     expect(up).toMatchObject({ show: true, count: 2 });
@@ -70,17 +72,25 @@ describe("syncActions", () => {
   it("offers nothing when the branch is level with its remote", () => {
     const level = worktree({ ahead_behind: { ahead: 0, behind: 0 } });
 
-    expect(syncActions(level, false).push.show).toBe(false);
-    expect(syncActions(level, false).pull.show).toBe(false);
-    expect(hasSyncActions(level)).toBe(false);
+    expect(syncActions(level, false, false).push.show).toBe(false);
+    expect(syncActions(level, false, false).pull.show).toBe(false);
+    expect(hasSyncActions(level, false)).toBe(false);
   });
 
   it("offers only the direction that has commits", () => {
-    const aheadOnly = syncActions(worktree({ ahead_behind: { ahead: 3, behind: 0 } }), false);
+    const aheadOnly = syncActions(
+      worktree({ ahead_behind: { ahead: 3, behind: 0 } }),
+      false,
+      false,
+    );
     expect(aheadOnly.push).toMatchObject({ show: true, count: 3 });
     expect(aheadOnly.pull.show).toBe(false);
 
-    const behindOnly = syncActions(worktree({ ahead_behind: { ahead: 0, behind: 1 } }), false);
+    const behindOnly = syncActions(
+      worktree({ ahead_behind: { ahead: 0, behind: 1 } }),
+      false,
+      false,
+    );
     expect(behindOnly.push.show).toBe(false);
     expect(behindOnly.pull).toMatchObject({ show: true, count: 1 });
   });
@@ -92,9 +102,9 @@ describe("syncActions", () => {
   it("offers nothing at all on a detached head", () => {
     const detached = worktree({ detached_at: "a3f19c2" });
 
-    expect(syncActions(detached, false).push.show).toBe(false);
-    expect(syncActions(detached, false).pull.show).toBe(false);
-    expect(hasSyncActions(detached)).toBe(false);
+    expect(syncActions(detached, false, false).push.show).toBe(false);
+    expect(syncActions(detached, false, false).pull.show).toBe(false);
+    expect(hasSyncActions(detached, false)).toBe(false);
   });
 
   /**
@@ -103,7 +113,7 @@ describe("syncActions", () => {
    * branch, and what it sends is the branch's own commits.
    */
   it("counts an unpublished branch's own commits as what a push would send", () => {
-    const actions = syncActions(worktree({ ahead_behind: null, commit_count: 4 }), false);
+    const actions = syncActions(worktree({ ahead_behind: null, commit_count: 4 }), false, false);
 
     expect(actions.publish).toBe(true);
     expect(actions.push).toMatchObject({ show: true, count: 4 });
@@ -111,14 +121,29 @@ describe("syncActions", () => {
     expect(actions.pull.show).toBe(false);
   });
 
+  /**
+   * A merged branch is indistinguishable from an unpublished one by the counts alone — the forge
+   * deleted the head branch, so `ahead_behind` is `null` and the branch's own commits are still
+   * there to count. The chip offered to publish the branch that had just been deleted and push back
+   * the commits that had just been merged, so `landed` has to override the case above.
+   */
+  it("offers nothing on a branch whose work has already merged", () => {
+    const merged = worktree({ ahead_behind: null, commit_count: 1 });
+
+    expect(syncActions(merged, false, true).push.show).toBe(false);
+    expect(syncActions(merged, false, true).pull.show).toBe(false);
+    expect(syncActions(merged, false, true).publish).toBe(false);
+    expect(hasSyncActions(merged, true)).toBe(false);
+  });
+
   /** An unpublished branch with no commits of its own is not worth a ref on the remote. */
   it("offers nothing for an unpublished branch that has no commits", () => {
-    expect(hasSyncActions(worktree({ ahead_behind: null, commit_count: 0 }))).toBe(false);
-    expect(hasSyncActions(worktree({ ahead_behind: null, commit_count: null }))).toBe(false);
+    expect(hasSyncActions(worktree({ ahead_behind: null, commit_count: 0 }), false)).toBe(false);
+    expect(hasSyncActions(worktree({ ahead_behind: null, commit_count: null }), false)).toBe(false);
   });
 
   it("warns on the push tooltip that uncommitted files are not included", () => {
-    const actions = syncActions(worktree({ changed_files_count: 5 }), false);
+    const actions = syncActions(worktree({ changed_files_count: 5 }), false, false);
 
     expect(actions.push.reason).toMatch(/5 uncommitted files will not be included/i);
   });
