@@ -3,6 +3,8 @@ import {
   extractCommandText,
   extractDetailText,
   extractTitle,
+  getAcceptMeta,
+  splitPermissionOptions,
   toolCallItemFromPayload,
 } from "./permission-prompt-utils";
 
@@ -148,5 +150,40 @@ describe("toolCallItemFromPayload", () => {
     expect(item?.meta?.toolName).toBe("Bash");
     // Nothing has run — the prompt is what it is waiting on.
     expect(item?.status).toBe("pending");
+  });
+});
+
+describe("splitPermissionOptions", () => {
+  it("orders the accepts by escalation and picks the first decline", () => {
+    const { acceptOptions, rejectOption } = splitPermissionOptions([
+      { optionId: "bypassPermissions", name: "Bypass permissions", kind: "allow_always" },
+      { optionId: "reject", name: "Keep planning", kind: "reject_once" },
+      { optionId: "acceptEdits", name: "Accept edits", kind: "allow_always" },
+      { optionId: "default", name: "Accept", kind: "allow_once" },
+      { optionId: "reject_always", name: "Never", kind: "reject_always" },
+    ]);
+    expect(acceptOptions.map((o) => o.optionId)).toEqual([
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+    ]);
+    expect(rejectOption?.optionId).toBe("reject");
+  });
+
+  it("keeps an option set it has never seen, in the order the agent sent it", () => {
+    const { acceptOptions, rejectOption } = splitPermissionOptions([
+      { optionId: "proceed", name: "Go ahead", kind: "allow_once" },
+      { optionId: "yolo", name: "Never ask again", kind: "allow_always" },
+      { optionId: "stop", name: "Not yet", kind: "reject_once" },
+    ]);
+    expect(acceptOptions.map((o) => o.optionId)).toEqual(["proceed", "yolo"]);
+    expect(rejectOption?.optionId).toBe("stop");
+    // An unrecognised id still gets an icon and a running order, so the menu renders.
+    expect(getAcceptMeta(acceptOptions[0]).description).toBe("");
+    expect(getAcceptMeta(acceptOptions[0]).icon).toBeTruthy();
+  });
+
+  it("reports nothing for a payload that carries no options", () => {
+    expect(splitPermissionOptions(null)).toEqual({ acceptOptions: [], rejectOption: null });
   });
 });

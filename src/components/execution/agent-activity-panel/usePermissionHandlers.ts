@@ -19,8 +19,6 @@ export type PermissionHandlers = {
     requestId: string;
   }>;
   liveElicitationSummaries: Array<{ item: ElicitationSummaryItem; insertAt: number }>;
-  showPlanOverlay: boolean;
-  setShowPlanOverlay: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 export function usePermissionHandlers(
@@ -39,8 +37,6 @@ export function usePermissionHandlers(
   const [livePermissionResponses, setLivePermissionResponses] = useState<
     Array<{ item: PermissionResponseItem; insertAt: number; requestId: string }>
   >([]);
-
-  const [showPlanOverlay, setShowPlanOverlay] = useState(false);
 
   const handlePermissionRespond = useCallback(
     async (requestId: string, optionId: string | null) => {
@@ -66,7 +62,6 @@ export function usePermissionHandlers(
           ]);
         }
       }
-      setShowPlanOverlay(false);
       setPendingPermission(null);
       setActivity(sessionKey, "thinking");
     },
@@ -158,7 +153,5 @@ export function usePermissionHandlers(
     handleElicitationDecline,
     livePermissionResponses,
     liveElicitationSummaries,
-    showPlanOverlay,
-    setShowPlanOverlay,
   };
 }

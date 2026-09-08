@@ -2,7 +2,6 @@ import { Shield, Pencil, Terminal, Eye, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";
-import { PlanPermissionOverlay } from "./PlanPermissionOverlay";
 import { rowIcon } from "./ToolCallTimeline";
 import {
   isAllowKind,
@@ -24,7 +23,6 @@ interface PermissionPromptProps {
   requestId: string;
   payload: Record<string, unknown>;
   onRespond: (requestId: string, optionId: string | null) => void;
-  fullHeight?: boolean;
 }
 
 function LegacyButtons({
@@ -57,28 +55,11 @@ const TOOL_ICON_MAP: Record<string, React.ElementType> = {
   delete_file: Trash2,
 };
 
-export function PermissionPrompt({
-  requestId,
-  payload,
-  onRespond,
-  fullHeight,
-}: PermissionPromptProps) {
+export function PermissionPrompt({ requestId, payload, onRespond }: PermissionPromptProps) {
   const title = extractTitle(payload);
-  const bodyText = extractBodyText(payload);
   const detailText = extractDetailText(payload);
   const command = extractCommandText(payload);
   const options = extractOptions(payload);
-
-  if (fullHeight) {
-    return (
-      <PlanPermissionOverlay
-        requestId={requestId}
-        bodyText={bodyText}
-        options={options}
-        onRespond={onRespond}
-      />
-    );
-  }
 
   // Same icon the stream row for this call will carry — `rowIcon` keys off kind, the
   // agent's tool name and the `mcp__` prefix, none of which the map below can see.
@@ -87,8 +68,15 @@ export function PermissionPrompt({
   const toolName = payload.tool as string | undefined;
   const icon = item ? rowIcon(item) : (TOOL_ICON_MAP[toolName ?? ""] ?? Shield);
 
+  // Declining sits to the left of accepting, as it does on the plan card. Agents send their
+  // options allow-first, which would otherwise put the rejection under the cursor's landing spot.
+  const ordered = options
+    ? [...options].sort((a, b) => Number(isAllowKind(a.kind)) - Number(isAllowKind(b.kind)))
+    : null;
+
   return (
-    <div className="rounded-[10px] border border-accent/30 bg-gradient-to-br from-accent/10 to-transparent p-3.5 flex flex-col gap-2.5 shadow-[0_2px_8px_oklch(0%_0_0/0.08)]">
+    // The sheet around this comes from the slot it renders in — see `AgentBottomBar`.
+    <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 rounded-[7px] bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0">
           <DynamicIcon icon={icon} className="w-4 h-4 text-accent" />
@@ -110,8 +98,8 @@ export function PermissionPrompt({
       )}
 
       <div className="flex flex-wrap gap-2 justify-end">
-        {options ? (
-          options.map((opt) => (
+        {ordered ? (
+          ordered.map((opt) => (
             <Button
               key={opt.optionId}
               variant={isAllowKind(opt.kind) ? "accent" : "ghost"}

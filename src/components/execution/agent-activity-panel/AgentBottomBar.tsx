@@ -10,6 +10,15 @@ import type { AcpPromptCapabilities } from "../activity/useAcpSessionLifecycle";
 interface AgentBottomBarProps {
   isSessionDead: boolean;
   showCompose: boolean;
+  /**
+   * Takes the composer's place while the agent is waiting on an answer — a permission request, a
+   * plan, an elicitation. Rendered in the same box so it lands where the composer was rather than
+   * trailing the conversation, and so the stream reserves the same room beneath itself for it.
+   *
+   * The sheet around it is supplied here rather than by each card: it is the slot that makes one
+   * of these a sheet, and only this component knows the stream's width setting.
+   */
+  replacement?: React.ReactNode;
   composeBarWrapperRef: React.RefObject<HTMLDivElement | null>;
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
   onSend: (content: string, contentBlocks?: JsonValue) => void;
@@ -29,6 +38,7 @@ interface AgentBottomBarProps {
 export function AgentBottomBar({
   isSessionDead,
   showCompose,
+  replacement,
   composeBarWrapperRef,
   composeBarRef,
   onSend,
@@ -47,36 +57,55 @@ export function AgentBottomBar({
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
 
-  if (isSessionDead || !showCompose) return null;
+  if (isSessionDead) return null;
+  if (!showCompose && !replacement) return null;
 
   return (
     <motion.div
       ref={composeBarWrapperRef}
-      className={cn("absolute inset-x-0 bottom-0 z-10 pb-2.5 pt-1", !isCompact && "px-16")}
+      className={cn(
+        "absolute inset-x-0 bottom-0 z-10",
+        // The composer floats clear of the bottom edge. A request does not — it is attached to it,
+        // so it reads as the panel changing state rather than as something that landed on top of
+        // the conversation. Its gutter goes above instead: the stream reserves room from this
+        // box's measured height, so padding here is what keeps the last message off the sheet.
+        replacement ? "pt-3" : cn("pb-2.5 pt-1", !isCompact && "px-16"),
+      )}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      <div
-        className={cn(isCompact && "mx-auto w-full px-12")}
-        style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
-      >
-        <ComposeBar
-          ref={composeBarRef}
-          onSend={onSend}
-          onCancel={onCancel}
-          isProcessing={isProcessing}
-          commands={commands}
-          embeddedContext={embeddedContext}
-          logId={logId}
-          projectPath={projectPath}
-          configOptions={configOptions}
-          configValues={configValues}
-          usageState={usageState}
-          onConfigChange={onConfigChange}
-          promptCapabilities={promptCapabilities}
-        />
-      </div>
+      {replacement ? (
+        // Width tracks the message stream, so the sheet sits inset from the panel borders.
+        <div className={cn("w-full px-3", isCompact && "mx-auto max-w-3xl")}>
+          {/* Opaque under the gradient — which is only a background-image — because the stream
+              keeps scrolling behind this. No bottom border: that edge is off the panel. */}
+          <div className="rounded-t-xl border border-b-0 border-accent/30 bg-background bg-gradient-to-br from-accent/10 to-transparent px-3.5 pt-3 pb-2.5">
+            {replacement}
+          </div>
+        </div>
+      ) : (
+        <div
+          className={cn(isCompact && "mx-auto w-full px-12")}
+          style={isCompact ? { maxWidth: "min(48rem, calc(100% - 2rem))" } : undefined}
+        >
+          <ComposeBar
+            ref={composeBarRef}
+            onSend={onSend}
+            onCancel={onCancel}
+            isProcessing={isProcessing}
+            commands={commands}
+            embeddedContext={embeddedContext}
+            logId={logId}
+            projectPath={projectPath}
+            configOptions={configOptions}
+            configValues={configValues}
+            usageState={usageState}
+            onConfigChange={onConfigChange}
+            promptCapabilities={promptCapabilities}
+          />
+        </div>
+      )}
     </motion.div>
   );
 }

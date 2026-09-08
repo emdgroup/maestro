@@ -23,6 +23,8 @@ interface PlanAnnotationLayerProps {
   sessionKey: number;
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
+  /** Overrides the send button's wording — see `AnnotationBar`. */
+  sendLabel?: string;
   /** Classes for the scrolling content area — padding and type styles of the host pane. */
   scrollClassName?: string;
   className?: string;
@@ -40,6 +42,7 @@ export function PlanAnnotationLayer({
   sessionKey,
   onSend,
   sendDisabled,
+  sendLabel,
   scrollClassName = "px-4 py-4 text-sm",
   className,
   children,
@@ -282,6 +285,7 @@ export function PlanAnnotationLayer({
             kind="plan"
             onSend={onSend}
             sendDisabled={sendDisabled}
+            sendLabel={sendLabel}
             onGoTo={goTo}
             activeId={viewingId}
           />

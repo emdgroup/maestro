@@ -1,13 +1,14 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAcpActivity } from "../activity/useAcpActivity";
 import { useAcpSessionLifecycle } from "../activity/useAcpSessionLifecycle";
 import { useSelectedProject } from "@/store/projectStore";
 import { ActivityPlanPanel } from "../activity/ActivityPlanPanel";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { PermissionPrompt, isPlanPermission, extractBodyText } from "../activity/PermissionPrompt";
+import { PendingPlanCard } from "../activity/PlanReviewCard";
 import {
   extractPlanToolCallId,
   extractBodyTextFromToolCallItem,
@@ -233,7 +234,6 @@ export function AgentActivityPanel({
   const {
     liveElicitationSummaries,
     livePermissionResponses,
-    showPlanOverlay,
     handlePermissionRespond,
     handleElicitationDecline,
     handleElicitationSubmit,
@@ -322,6 +322,13 @@ export function AgentActivityPanel({
     agentItemsCountRef.current = liveState.items.length;
   });
 
+  // Same shape, for the same reason: `useMessageSender` polls this from a callback while waiting
+  // out a cancelled turn, and a value captured in a closure would never change.
+  const isTurnActiveRef = useRef(liveState.isTurnActive);
+  useEffect(() => {
+    isTurnActiveRef.current = liveState.isTurnActive;
+  }, [liveState.isTurnActive]);
+
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
     [liveState.items, livePermissionResponses, liveElicitationSummaries],
@@ -350,6 +357,7 @@ export function AgentActivityPanel({
     isCenteredCompose,
     onCenteredTransition: () => setHasSentFirstMessage(true),
     pendingSendRef,
+    isTurnActiveRef,
   });
 
   // The Overview's "asks the agent" actions write into the composer instead of prompting, so the
@@ -521,14 +529,19 @@ export function AgentActivityPanel({
     : null;
 
   const hasInlinePermission = !!(pendingPermission && !isPlanPermWithBody);
-  const hasPlanOverlay = isPlanPermWithBody && showPlanOverlay;
+  // A plan review takes the composer's place the same way an inline permission does: the card in
+  // the stream is the answer, and a prompt sent while the agent is blocked on the request has
+  // nowhere to go — see the cancel-first sequence in `useMessageSender`.
+  const hasPendingPlan = !!(pendingPermission && isPlanPermWithBody);
 
   const showCompose =
     !isSessionDead &&
     !elicitationContent &&
     !hasInlinePermission &&
-    !hasPlanOverlay &&
+    !hasPendingPlan &&
     !isCenteredCompose;
+
+  const hasElicitation = !!elicitationContent;
 
   const [composeBarHeight, setComposeBarHeight] = useState(0);
   useEffect(() => {
@@ -543,7 +556,10 @@ export function AgentActivityPanel({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [showCompose, liveState.isInitializing]);
+    // The bar is also present when a request has replaced the composer, and that card is a
+    // different height — the stream reserves room from this measurement, so it has to re-measure
+    // when one takes the other's place.
+  }, [showCompose, hasInlinePermission, hasPendingPlan, hasElicitation, liveState.isInitializing]);
 
   const hasInterruptedCalls = useMemo(
     () => [...liveState.toolCallMap.values()].some((tc) => tc.status === "interrupted"),
@@ -563,22 +579,54 @@ export function AgentActivityPanel({
     }
   }, [liveState.isInitializing, hasInterruptedCalls, isNewSession, taskId, handleSend]);
 
-  const inlinePermission =
-    !isSessionDead && hasInlinePermission && pendingPermission ? (
-      <motion.div
-        key={pendingPermission.requestId}
-        className="px-3"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.15 }}
-      >
-        <PermissionPrompt
-          requestId={pendingPermission.requestId}
-          payload={pendingPermission.payload}
-          onRespond={handlePermissionRespond}
-        />
-      </motion.div>
-    ) : null;
+  // The plan tool call the open request names, so its row can be left out of the stream and shown
+  // in the slot below instead.
+  const livePlanToolCallId =
+    hasPendingPlan && pendingPermission ? extractPlanToolCallId(pendingPermission.payload) : null;
+
+  // Whatever the agent is waiting on, in the composer's place — see `AgentBottomBar`. A plan and an
+  // elicitation are one more thing it is asking for, so all three go here rather than into the
+  // conversation they are about, where they would trail the last message with dead space beneath.
+  const pendingRequestBody = isSessionDead ? null : elicitationContent ? (
+    <ElicitationPrompt
+      key={elicitationContent.requestId}
+      requestId={elicitationContent.requestId}
+      message={elicitationContent.message}
+      fields={elicitationContent.fields}
+      otherField={elicitationContent.otherField}
+      onSubmit={handleElicitationSubmit}
+      onDecline={handleElicitationDecline}
+    />
+  ) : hasPendingPlan && pendingPermission ? (
+    <PendingPlanCard
+      key={pendingPermission.requestId}
+      sessionKey={sessionKey}
+      title={
+        (livePlanToolCallId ? liveState.toolCallMap.get(livePlanToolCallId)?.title : null) ?? null
+      }
+      requestId={pendingPermission.requestId}
+      payload={pendingPermission.payload}
+      onRespond={handlePlanRespond}
+      onOpen={handleOpenPlanOverlay}
+    />
+  ) : hasInlinePermission && pendingPermission ? (
+    <PermissionPrompt
+      key={pendingPermission.requestId}
+      requestId={pendingPermission.requestId}
+      payload={pendingPermission.payload}
+      onRespond={handlePermissionRespond}
+    />
+  ) : null;
+
+  const pendingRequestCard = pendingRequestBody ? (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.15 }}
+    >
+      {pendingRequestBody}
+    </motion.div>
+  ) : null;
 
   const sharedComposeBarProps = {
     onSend: handleSendWithTransition as (content: string, contentBlocks?: JsonValue) => void,
@@ -636,9 +684,8 @@ export function AgentActivityPanel({
                 agentSections={agentSections}
                 toolCallMap={liveState.toolCallMap}
                 canvasMap={liveState.canvasMap}
-                onOpenPlanOverlay={handleOpenPlanOverlay}
+                livePlanToolCallId={livePlanToolCallId}
                 onOpenFile={handleOpenFile}
-                inlinePermission={inlinePermission}
                 bottomPadding={composeBarHeight}
                 commands={availableCommands}
                 onAuthLogin={
@@ -649,6 +696,7 @@ export function AgentActivityPanel({
             <AgentBottomBar
               isSessionDead={isSessionDead}
               showCompose={showCompose}
+              replacement={pendingRequestCard}
               composeBarWrapperRef={composeBarWrapperRef}
               composeBarRef={composeBarRef}
               {...sharedComposeBarProps}
@@ -658,32 +706,13 @@ export function AgentActivityPanel({
               orderedSectionIds={orderedSectionIds}
               isSelected={isSelected}
               isCenteredCompose={isCenteredCompose}
-              planOverlay={null}
+              // Measured from the same box the card renders in, so this is its exact height.
+              fabLift={pendingRequestCard ? composeBarHeight : 0}
               composeBarRef={composeBarRef}
               {...sharedComposeBarProps}
             />
           </div>
         </MessageScrollerProvider>
-        <AnimatePresence>
-          {elicitationContent && !isSessionDead && (
-            <motion.div
-              className="shrink-0 overflow-hidden"
-              initial={{ height: 0 }}
-              animate={{ height: "auto" }}
-              exit={{ height: 0 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ElicitationPrompt
-                requestId={elicitationContent.requestId}
-                message={elicitationContent.message}
-                fields={elicitationContent.fields}
-                otherField={elicitationContent.otherField}
-                onSubmit={handleElicitationSubmit}
-                onDecline={handleElicitationDecline}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     </>
   );
@@ -780,7 +809,6 @@ export function AgentActivityPanel({
             sidePanelPlan={sidePanelPlan}
             planEntries={liveState.plan}
             planTitle={liveState.planTitle}
-            onPlanRespond={handlePlanRespond}
             collapsed={sidePanelCollapsed}
             onCollapsedChange={(v) => setSidePanelCollapsed(v)}
             unseenTabIds={unseenTabIds}

@@ -11,6 +11,7 @@ import type {
   UserMessageItem,
 } from "../activity/types";
 import type { JsonValue } from "@/types/bindings";
+import { useSettings } from "@/services/settings.service";
 import type { AcpPromptCapabilities } from "../activity/useAcpSessionLifecycle";
 import {
   useMessageScroller,
@@ -101,7 +102,14 @@ interface AgentScrollOverlaysProps {
   orderedSectionIds: string[];
   isSelected: boolean;
   isCenteredCompose: boolean;
-  planOverlay: React.ReactNode;
+  /**
+   * The height of the request card at the bottom of the panel, or `0` when there is none.
+   *
+   * Used only in full width, where the card runs nearly the panel's width and would sit under the
+   * scroll-to-bottom button; the button moves above it instead. Compact leaves a wide enough
+   * gutter for both, so the button stays where it has always been.
+   */
+  fabLift: number;
   composeBarRef: React.RefObject<ComposeBarHandle | null>;
   onSend: (content: string, contentBlocks?: JsonValue) => void;
   onCancel: () => Promise<void>;
@@ -122,7 +130,7 @@ export function AgentScrollOverlays({
   orderedSectionIds,
   isSelected,
   isCenteredCompose,
-  planOverlay,
+  fabLift,
   composeBarRef,
   onSend,
   onCancel,
@@ -139,6 +147,8 @@ export function AgentScrollOverlays({
 }: AgentScrollOverlaysProps) {
   const { scrollToEnd } = useMessageScroller();
   const scrollable = useMessageScrollerScrollable();
+  const { data: appSettings } = useSettings();
+  const lift = appSettings?.agent_stream_width === "compact" ? 0 : fabLift;
 
   const showScrollFab = scrollable.end;
   const hasUnread = scrollable.end && isProcessing;
@@ -186,10 +196,6 @@ export function AgentScrollOverlays({
         )}
       </AnimatePresence>
 
-      {planOverlay && (
-        <div className="absolute inset-0 z-30 flex flex-col bg-background">{planOverlay}</div>
-      )}
-
       {isSelected && (
         <PinnedUserMessage userMessages={userMessages} orderedSectionIds={orderedSectionIds} />
       )}
@@ -204,6 +210,7 @@ export function AgentScrollOverlays({
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
             onClick={() => scrollToBottom()}
+            style={lift > 0 ? { bottom: lift + 8 } : undefined}
             className={`absolute bottom-4 right-4 z-20 w-8 h-8 rounded-full border backdrop-blur-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_-1px_0_0_rgba(0,0,0,0.15)] flex items-center justify-center transition-colors ${hasUnread ? "bg-accent/15 border-accent/50 hover:bg-accent/25" : "bg-card/60 border-border/30 hover:bg-muted/60"}`}
             aria-label="Scroll to bottom"
           >

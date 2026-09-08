@@ -6,11 +6,9 @@ import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChange
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { extractBodyText } from "@/components/execution/activity/PermissionPrompt";
 import {
-  extractOptions,
   extractPlanToolCallId,
   extractBodyTextFromToolCallItem,
 } from "@/components/execution/activity/permission-prompt-utils";
-import { PlanPermissionOverlay } from "@/components/execution/activity/PlanPermissionOverlay";
 import { TerminalComponent } from "@/components/execution/terminal/Terminal";
 import { AcpTerminalView } from "@/components/execution/terminal/AcpTerminalView";
 import { OverviewPanel } from "./OverviewPanel";
@@ -49,8 +47,9 @@ interface SidePanelContentProps {
   sessionKey: number;
   subagentItems: ToolCallItem[];
   toolCallMap: Map<string, ToolCallItem>;
+  /** Set while a plan is awaiting an answer — the tab reads and annotates it, the stream card
+   *  answers it. Only the send button's wording depends on this. */
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
-  onPlanRespond: (requestId: string, optionId: string | null) => void;
   canvasMap: Map<string, CanvasSurface>;
   latestCanvasSurfaceId: string | null;
   workingFiles: WorkingFileEntry[];
@@ -82,7 +81,6 @@ export function SidePanelContent({
   subagentItems,
   toolCallMap,
   sidePanelPlan,
-  onPlanRespond,
   canvasMap,
   latestCanvasSurfaceId,
   workingFiles,
@@ -189,6 +187,20 @@ export function SidePanelContent({
     };
   }, [toolCallMap]);
 
+  // A pending request carries its own copy of the plan, which is the freshest one. The tool call
+  // the stream already holds is the fallback, and the only source once the request is answered.
+  const planBody = useMemo(() => {
+    if (sidePanelPlan) {
+      const fromPayload = extractBodyText(sidePanelPlan.payload);
+      if (fromPayload !== null) return fromPayload;
+      const id = extractPlanToolCallId(sidePanelPlan.payload);
+      const item = id ? toolCallMap.get(id) : undefined;
+      const fromItem = item ? extractBodyTextFromToolCallItem(item) : null;
+      if (fromItem !== null) return fromItem;
+    }
+    return planContent;
+  }, [sidePanelPlan, toolCallMap, planContent]);
+
   return (
     <>
       {tabs.map(({ id, kind, initialPath, acpTerminalId, isAuthTerminal }) => {
@@ -222,32 +234,18 @@ export function SidePanelContent({
             )}
             {kind === "plan" && (
               <div className="absolute inset-0 flex flex-col overflow-hidden">
-                {sidePanelPlan ? (
-                  <PlanPermissionOverlay
-                    requestId={sidePanelPlan.requestId}
-                    bodyText={(() => {
-                      const fromPayload = extractBodyText(sidePanelPlan.payload);
-                      if (fromPayload !== null) return fromPayload;
-                      const id = extractPlanToolCallId(sidePanelPlan.payload);
-                      const item = id ? toolCallMap.get(id) : undefined;
-                      return item ? extractBodyTextFromToolCallItem(item) : null;
-                    })()}
-                    options={extractOptions(sidePanelPlan.payload)}
-                    onRespond={onPlanRespond}
-                    annotations={{
-                      sessionKey,
-                      onSend: onSendAnnotations,
-                      sendDisabled: isProcessing,
-                    }}
-                  />
-                ) : planContent ? (
+                {/* Read and annotate only. The request itself is answered from the card in the
+                    stream, so a pending plan and a settled one render the same way — all that
+                    changes is where the body comes from and what the send button is called. */}
+                {planBody ? (
                   <PlanAnnotationLayer
                     className="flex-1"
                     sessionKey={sessionKey}
                     onSend={onSendAnnotations}
                     sendDisabled={isProcessing}
+                    sendLabel={sidePanelPlan ? "Revise plan" : undefined}
                   >
-                    <MarkdownBlock text={planContent} />
+                    <MarkdownBlock text={planBody} />
                   </PlanAnnotationLayer>
                 ) : planEntries && planEntries.length > 0 ? (
                   <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">

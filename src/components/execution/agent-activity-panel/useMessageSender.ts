@@ -2,13 +2,36 @@ import React, { useCallback, useEffect, useRef, type MutableRefObject } from "re
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import { api } from "@/lib/tauri-utils";
-import { isPlanPermission, isAllowKind } from "../activity/PermissionPrompt";
+import { isPlanPermission } from "../activity/PermissionPrompt";
 import type { ActivityAction } from "../activity/useAcpActivity";
 import type { JsonValue } from "@/types/bindings";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 
 type PendingPermission = { requestId: string; payload: Record<string, unknown> };
 type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
+
+/** How long to wait for a cancelled turn to actually end before prompting anyway. */
+const TURN_END_TIMEOUT_MS = 3000;
+const TURN_END_POLL_MS = 50;
+
+/**
+ * Resolves once the agent reports the turn over, or when the wait runs out.
+ *
+ * The ceiling matters more than the precision: a wedged agent never answers a cancel, and losing
+ * the user's notes to that is worse than sending them a beat early.
+ */
+function waitForTurnEnd(isTurnActiveRef: React.RefObject<boolean>): Promise<void> {
+  if (!isTurnActiveRef.current) return Promise.resolve();
+  return new Promise((resolve) => {
+    const deadline = Date.now() + TURN_END_TIMEOUT_MS;
+    const id = setInterval(() => {
+      if (!isTurnActiveRef.current || Date.now() >= deadline) {
+        clearInterval(id);
+        resolve();
+      }
+    }, TURN_END_POLL_MS);
+  });
+}
 
 export function useMessageSender({
   sessionKey,
@@ -24,6 +47,7 @@ export function useMessageSender({
   isCenteredCompose,
   onCenteredTransition,
   pendingSendRef,
+  isTurnActiveRef,
 }: {
   sessionKey: number;
   isProcessing: boolean;
@@ -38,6 +62,8 @@ export function useMessageSender({
   isCenteredCompose: boolean;
   onCenteredTransition: () => void;
   pendingSendRef: MutableRefObject<boolean>;
+  /** Mirrors `liveState.isTurnActive`, so a send can wait for a cancelled turn to finish. */
+  isTurnActiveRef: React.RefObject<boolean>;
 }): {
   handleSend: (content: string, contentBlocks?: JsonValue) => Promise<void>;
   handleCancel: () => Promise<void>;
@@ -55,12 +81,23 @@ export function useMessageSender({
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
+      // Revising a plan. The agent is blocked inside `session/request_permission`, which is inside
+      // its turn, so the prompt cannot simply go out: ACP only sanctions another `session/prompt`
+      // once a turn completes, and `maestro-server` does not serialise them — a second one would
+      // race the first (see command_loop.rs, SessionCommand::Prompt).
+      //
+      // The protocol's answer is `session/cancel`, which requires every pending permission request
+      // to be answered `cancelled`. Cancel first, so the agent is not unblocked into carrying on
+      // before the cancel lands, then wait for the turn to actually end.
       if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
-        const options = pendingPermission.payload.options as
-          | Array<{ optionId: string; kind: string }>
-          | undefined;
-        const rejectOpt = options?.find((o) => !isAllowKind(o.kind));
-        await handlePermissionRespond(pendingPermission.requestId, rejectOpt?.optionId ?? null);
+        try {
+          await api.interruptAcpTurn(sessionKey);
+        } catch {
+          // Best-effort: answering the request below still unblocks the agent.
+        }
+        // `null` is what maestro-server maps to RequestPermissionOutcome::Cancelled.
+        await handlePermissionRespond(pendingPermission.requestId, null);
+        await waitForTurnEnd(isTurnActiveRef);
       }
       liveDispatch({ type: "finalize_streaming" });
       pendingSendRef.current = true;
@@ -84,6 +121,7 @@ export function useMessageSender({
       pendingPermission,
       handlePermissionRespond,
       pendingSendRef,
+      isTurnActiveRef,
     ],
   );
 

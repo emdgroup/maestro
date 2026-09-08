@@ -30,6 +30,11 @@ interface AnnotationBarProps {
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
   /**
+   * What the send button says. Hosts where sending does more than deliver the notes name that
+   * instead — the plan pane calls it "Revise plan", because sending there also ends the review.
+   */
+  sendLabel?: string;
+  /**
    * Reveal the annotation at `id` in its host view. Supplying it turns the list into a
    * navigator — rows become clickable and the header grows chevrons. Left unset by hosts with
    * no notion of a location to travel to, which is why the diff bar looks unchanged.
@@ -50,6 +55,7 @@ export function AnnotationBar({
   kind,
   onSend,
   sendDisabled,
+  sendLabel = "Send annotations",
   onGoTo,
   activeId,
   isStale,
@@ -76,7 +82,7 @@ export function AnnotationBar({
             }}
             className="px-2 py-1 bg-accent text-accent-foreground font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            Send annotations
+            {sendLabel}
           </TooltipTrigger>
           <TooltipContent>{sendTitle}</TooltipContent>
         </Tooltip>

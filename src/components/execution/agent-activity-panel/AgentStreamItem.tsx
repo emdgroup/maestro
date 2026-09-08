@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 
 interface AgentStreamItemProps {
   gi: GroupedDisplayItem;
-  onOpenPlanOverlay: () => void;
   toolCallMap: Map<string, ToolCallItem>;
   onAuthLogin?: () => void;
   /** Only the item closing an agent reply carries the action bar — see ActivityMessageItem. */
@@ -23,15 +22,16 @@ interface AgentStreamItemProps {
 
 export function AgentStreamItem({
   gi,
-  onOpenPlanOverlay,
   toolCallMap,
   onAuthLogin,
   isLastInSection,
 }: AgentStreamItemProps) {
   if (gi.type === "toolGroup") {
     const tc = gi.items[0];
+    // A plan still awaiting an answer never reaches here — AgentStreamContent filters it out, and
+    // `PendingPlanCard` renders it in the composer's slot instead.
     if (gi.items.length === 1 && isPlanToolCallItem(tc)) {
-      return <PlanReviewCard key={tc.toolCallId} item={tc} onOpen={onOpenPlanOverlay} />;
+      return <PlanReviewCard key={tc.toolCallId} item={tc} />;
     }
 
     if (gi.items.length === 1 && isSubagentToolCall(gi.items[0])) {

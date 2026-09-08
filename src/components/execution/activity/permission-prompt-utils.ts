@@ -1,3 +1,5 @@
+import type { ElementType } from "react";
+import { ShieldCheck, ShieldEllipsis, ShieldAlert, ShieldOff } from "lucide-react";
 import type {
   ToolCallContent,
   ToolCallItem,
@@ -10,6 +12,47 @@ export interface PermissionOption {
   optionId: string;
   name: string;
   kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+}
+
+/**
+ * What an accept option means, for the ones we recognise. The agent sends the name, so this only
+ * adds an icon, a gloss and a running order — and `getAcceptMeta` falls back for an id we have
+ * never seen, which is what lets a harness other than Claude Code send its own option set.
+ */
+type AcceptMeta = { icon: ElementType; description: string; order: number };
+
+const OPTION_META: Record<string, AcceptMeta> = {
+  default: { icon: ShieldCheck, description: "Approve each tool use", order: 0 },
+  acceptEdits: { icon: ShieldEllipsis, description: "File ops auto-approved", order: 1 },
+  auto: { icon: ShieldAlert, description: "All tools, full session", order: 2 },
+  bypassPermissions: { icon: ShieldOff, description: "No safety checks", order: 3 },
+};
+
+export function getAcceptMeta(option: PermissionOption): AcceptMeta {
+  return OPTION_META[option.optionId] ?? { icon: ShieldCheck, description: "", order: 99 };
+}
+
+export function isBypassOption(optionId: string): boolean {
+  return optionId === "bypassPermissions";
+}
+
+/**
+ * The options split into the two things a card does with them: the accepts, in the order they
+ * should be offered, and the single option that declines. An agent may send several rejects — the
+ * first is the one taken, because a card has one decline button and answering `null` instead would
+ * report the turn as cancelled rather than as a decision.
+ */
+export function splitPermissionOptions(options: PermissionOption[] | null): {
+  acceptOptions: PermissionOption[];
+  rejectOption: PermissionOption | null;
+} {
+  if (!options) return { acceptOptions: [], rejectOption: null };
+  return {
+    acceptOptions: options
+      .filter((o) => isAllowKind(o.kind))
+      .sort((a, b) => getAcceptMeta(a).order - getAcceptMeta(b).order),
+    rejectOption: options.find((o) => !isAllowKind(o.kind)) ?? null,
+  };
 }
 
 export function extractPlanToolCallId(payload: Record<string, unknown>): string | null {

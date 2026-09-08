@@ -1,4 +1,3 @@
-import { AnimatePresence } from "framer-motion";
 import { ActivityUserMessage } from "../activity/ActivityUserMessage";
 import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
@@ -37,9 +36,13 @@ interface AgentStreamContentProps {
   agentSections: AgentSectionItem[];
   toolCallMap: Map<string, ToolCallItem>;
   canvasMap: Map<string, CanvasSurface>;
-  onOpenPlanOverlay: () => void;
+  /**
+   * The plan tool call whose request is still open, if any. Its row is left out of the stream
+   * because `inlinePermission` renders it at the bottom instead — two of the same card, one of
+   * them scrolled away mid-conversation, is worse than one in the place the user is answering from.
+   */
+  livePlanToolCallId: string | null;
   onOpenFile?: (uri: string) => void;
-  inlinePermission: React.ReactNode;
   bottomPadding?: number;
   onAuthLogin?: () => void;
   commands: AvailableCommand[];
@@ -49,9 +52,8 @@ export function AgentStreamContent({
   agentSections,
   toolCallMap,
   canvasMap,
-  onOpenPlanOverlay,
+  livePlanToolCallId,
   onOpenFile,
-  inlinePermission,
   bottomPadding,
   onAuthLogin,
   commands,
@@ -135,7 +137,10 @@ export function AgentStreamContent({
                 const { items } = section;
 
                 const visibleItems = items.filter((gi) => {
-                  if (gi.type === "toolGroup") return !toolCallsHidden;
+                  if (gi.type === "toolGroup") {
+                    if (toolCallsHidden) return false;
+                    return !gi.items.some((tc) => tc.toolCallId === livePlanToolCallId);
+                  }
                   if (gi.item.type === "thinking") return !thinkingHidden;
                   return true;
                 });
@@ -152,7 +157,6 @@ export function AgentStreamContent({
                         : firstItem.item.item.id;
 
                 const sharedItemProps = {
-                  onOpenPlanOverlay,
                   toolCallMap,
                   canvasMap,
                   onAuthLogin,
@@ -173,7 +177,6 @@ export function AgentStreamContent({
                   </MessageScrollerItem>
                 );
               })}
-              <AnimatePresence>{inlinePermission}</AnimatePresence>
             </MessageScrollerContent>
           </MessageScrollerViewport>
         </MessageScroller>

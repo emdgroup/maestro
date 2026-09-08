@@ -34,7 +34,6 @@ interface ExecutionSidePanelProps {
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
   planEntries?: PlanEntry[] | null;
   planTitle?: string | null;
-  onPlanRespond: (requestId: string, optionId: string | null) => void;
   collapsed: boolean;
   onCollapsedChange: (c: boolean) => void;
   unseenTabIds: ReadonlySet<string>;
@@ -70,7 +69,6 @@ export function ExecutionSidePanel({
   sidePanelPlan,
   planEntries,
   planTitle,
-  onPlanRespond,
   collapsed,
   onCollapsedChange,
   unseenTabIds,
@@ -153,7 +151,6 @@ export function ExecutionSidePanel({
                 subagentItems={subagentItems}
                 toolCallMap={toolCallMap}
                 sidePanelPlan={sidePanelPlan}
-                onPlanRespond={onPlanRespond}
                 canvasMap={canvasMap}
                 latestCanvasSurfaceId={latestCanvasSurfaceId}
                 workingFiles={workingFiles}
