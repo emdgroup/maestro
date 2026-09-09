@@ -5,17 +5,16 @@ edition = "2021"
 description = "Maestro remote headless server — spawns ACP agents on SSH hosts"
 license = "Apache-2.0"
 
-[features]
-unstable_auth_methods = []
-
 [[bin]]
 name = "maestro-server"
 path = "src/main.rs"
 
 [dependencies]
 maestro-protocol = { path = "../maestro-protocol" }
-agent-client-protocol = { version = "2.0.0", features = ["unstable_elicitation"] }
-agent-client-protocol-schema = { version = "1.4.0", features = ["unstable_auth_methods"] }
+# Elicitation and terminal authentication are stable as of schema 1.7.0, so the
+# `unstable_elicitation` / `unstable_auth_methods` flags no longer exist upstream.
+agent-client-protocol = "2.1.0"
+agent-client-protocol-schema = "1.7.0"
 tokio = { version = "1", features = [
   "rt",
   "io-util",
