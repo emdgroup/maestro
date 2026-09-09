@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::ConnectionKey;
-use crate::connectivity::exec_channel::run_on;
+use crate::connectivity::exec_channel::{run_on, run_with_stdin, ExecTarget};
 use crate::connectivity::filesystem_handlers::{self, FileEntry};
 use crate::core::AppState;
 use crate::git::remote::shell_quote;
@@ -245,6 +245,158 @@ pub async fn read_binary(conn: &GitConnection, path: &str) -> Result<String, Str
     Ok(text.to_string())
 }
 
+/// A temporary name in the destination's own directory, unique without any shell help.
+///
+/// The counter is here for the same reason [`crate::core::project_storage::atomic_write_script`]
+/// has one: two concurrent writes with a fixed name race, the first `mv` consumes the temporary
+/// and the second fails having lost its content.
+fn temp_sibling(path: &str) -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "{path}.{}.{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
+}
+
+/// The script the remote write runs, with the content arriving on stdin rather than in it.
+///
+/// Kept to `>`, `&&` and `mv` for the same reason
+/// [`crate::core::project_storage::atomic_write_script`] is: SSH runs this through the user's
+/// *login* shell, not `sh -c`, so anything a non-POSIX login shell might not parse is a host we
+/// silently cannot write to. Nothing cleans up the temporary here — a `||` tail would replace the
+/// failure's exit code with `rm`'s success and the caller would report the write as having worked.
+fn remote_write_script(path: &str, temp_path: &str) -> String {
+    format!(
+        "base64 -d > {} && mv -f {} {}",
+        shell_quote(temp_path),
+        shell_quote(temp_path),
+        shell_quote(path),
+    )
+}
+
+/// Replace a file's text content, without exposing a half-written file to the agent reading it.
+///
+/// The remote form pipes base64 over stdin rather than interpolating the content into the command
+/// the way [`crate::core::project_storage::atomic_write_script`] does. That helper writes
+/// `state.json`, a couple of hundred bytes; a source file put on the command line blows past the
+/// argv limit on the WSL and container paths, where the script becomes a real process argument
+/// list. Base64 also removes the question of quoting arbitrary file content entirely.
+pub async fn write_text(conn: &GitConnection, path: &str, contents: &str) -> Result<(), String> {
+    if contents.len() > TEXT_LIMIT {
+        return Err("File too large".to_string());
+    }
+
+    if is_local(conn) {
+        return crate::core::project_storage::atomic_write(
+            std::path::Path::new(path),
+            contents.as_bytes(),
+        )
+        .map_err(|e| format!("Failed to write {path}: {e}"));
+    }
+
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    let encoded = STANDARD.encode(contents.as_bytes());
+    let temp_path = temp_sibling(path);
+    let command = remote_write_script(path, &temp_path);
+
+    let output = run_with_stdin(
+        &ExecTarget::of(conn),
+        None,
+        "sh",
+        &["-c", &command],
+        Some(encoded.into_bytes()),
+    )
+    .await?;
+
+    if output.success() {
+        return Ok(());
+    }
+
+    // Cleaning up in the script would mask the failure in its exit code, so the temporary is
+    // removed separately and only its own failure is swallowed.
+    if let Err(e) = run_on(conn, None, "rm", &["-f", &temp_path]).await {
+        log::warn!("could not remove {temp_path} after a failed write: {e}");
+    }
+    Err(format!("Failed to write {path}: {}", output.stderr_string()))
+}
+
+/// Create an empty file, refusing to truncate one that is already there.
+pub async fn create_file(conn: &GitConnection, path: &str) -> Result<(), String> {
+    if is_local(conn) {
+        return std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map(|_| ())
+            .map_err(|e| format!("Failed to create {path}: {e}"));
+    }
+    // `touch` is happy to reopen an existing file, so the check is what makes this a create.
+    // It is advisory — nothing holds a lock between here and the command below.
+    if exists(conn, path).await {
+        return Err(format!("{path} already exists"));
+    }
+    let output = run_on(conn, None, "touch", &[path]).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(format!("Failed to create {path}: {}", output.stderr_string()))
+    }
+}
+
+/// Create a single directory. Unlike [`create_dir_all`] an existing path is an error, because the
+/// caller is a user typing a new name rather than code ensuring a layout.
+pub async fn create_directory(conn: &GitConnection, path: &str) -> Result<(), String> {
+    if is_local(conn) {
+        return std::fs::create_dir(path).map_err(|e| format!("Failed to create {path}: {e}"));
+    }
+    // Plain `mkdir` fails on an existing path by itself, so no separate check is needed here.
+    let output = run_on(conn, None, "mkdir", &[path]).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(format!("Failed to create {path}: {}", output.stderr_string()))
+    }
+}
+
+/// Move a file or directory, refusing to replace anything already at the destination.
+pub async fn rename_path(conn: &GitConnection, from: &str, to: &str) -> Result<(), String> {
+    // `fs::rename` replaces the destination on Unix and `mv` replaces it everywhere, so the check
+    // is what stops a rename from silently destroying a sibling. Advisory, as in `create_file`.
+    if exists(conn, to).await {
+        return Err(format!("{to} already exists"));
+    }
+    if is_local(conn) {
+        return std::fs::rename(from, to).map_err(|e| format!("Failed to rename {from}: {e}"));
+    }
+    let output = run_on(conn, None, "mv", &[from, to]).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(format!("Failed to rename {from}: {}", output.stderr_string()))
+    }
+}
+
+/// Delete a file, or a directory and everything under it when `recursive` is set.
+pub async fn delete_path(conn: &GitConnection, path: &str, recursive: bool) -> Result<(), String> {
+    if is_local(conn) {
+        let result = if recursive {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        return result.map_err(|e| format!("Failed to delete {path}: {e}"));
+    }
+    let flag = if recursive { "-rf" } else { "-f" };
+    let output = run_on(conn, None, "rm", &[flag, path]).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(format!("Failed to delete {path}: {}", output.stderr_string()))
+    }
+}
+
 // The IPC surface: one command per operation, taking the connection the frontend already holds.
 
 #[tauri::command]
@@ -300,9 +452,62 @@ pub async fn read_file_binary(
     read_binary(&connect(&app_state, connection, path.clone()).await?, &path).await
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn write_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
+    write_text(&connect(&app_state, connection, path.clone()).await?, &path, &contents).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_file_at(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    path: String,
+) -> Result<(), String> {
+    create_file(&connect(&app_state, connection, path.clone()).await?, &path).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_directory_at(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    path: String,
+) -> Result<(), String> {
+    create_directory(&connect(&app_state, connection, path.clone()).await?, &path).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    rename_path(&connect(&app_state, connection, from.clone()).await?, &from, &to).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_file(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    path: String,
+    recursive: bool,
+) -> Result<(), String> {
+    delete_path(&connect(&app_state, connection, path.clone()).await?, &path, recursive).await
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_listing;
+    use super::{parse_listing, remote_write_script, temp_sibling};
 
     /// `ls -1aF` is the whole reason one listing can answer both "which are directories" and
     /// "what is in here": the markers it appends are the only type information in the output, and
@@ -326,5 +531,30 @@ mod tests {
     fn only_one_marker_is_stripped_from_a_name() {
         let (_dirs, files) = parse_listing("report|*\nnotes=\nplain\n", true);
         assert_eq!(files, vec!["notes", "plain", "report|"]);
+    }
+
+    /// The file's bytes must never appear in the command. They arrive on stdin precisely so that a
+    /// 200 KB source file does not have to fit in an argument list, which is where the WSL and
+    /// container paths would refuse it.
+    #[test]
+    fn the_remote_write_carries_no_content_and_quotes_both_paths() {
+        let script = remote_write_script("/home/u/it's here.ts", "/home/u/it's here.ts.7.0.tmp");
+
+        // Spelled out in full because the apostrophe and the space are the whole point: both paths
+        // stay single arguments, and `shell_quote` closes and reopens its quote around the `'`.
+        assert_eq!(
+            script,
+            r#"base64 -d > '/home/u/it'\''s here.ts.7.0.tmp' && mv -f '/home/u/it'\''s here.ts.7.0.tmp' '/home/u/it'\''s here.ts'"#
+        );
+    }
+
+    /// The temporary has to sit in the destination's own directory, or the `mv` stops being a
+    /// metadata rename and becomes a cross-volume copy that a reader can catch half-written.
+    #[test]
+    fn the_temporary_is_a_sibling_of_its_destination() {
+        let temp = temp_sibling("/srv/app/config.json");
+        assert!(temp.starts_with("/srv/app/config.json."), "{temp} left its directory");
+        assert!(temp.ends_with(".tmp"), "{temp} is not marked temporary");
+        assert_ne!(temp, temp_sibling("/srv/app/config.json"), "two writes must not collide");
     }
 }

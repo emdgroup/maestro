@@ -72,7 +72,7 @@ export function ReviewFilePanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto">
         <FileTree
           files={treeFiles}
           selectedFile={selectedFile}
@@ -85,7 +85,7 @@ export function ReviewFilePanel({
 }
 
 /**
- * The same panel floating over the diff, for a container too narrow to seat it alongside.
+ * Where a file panel goes when the container is too narrow to seat it alongside.
  *
  * It covers the container rather than sitting in a rail, so there is no "outside" left to click:
  * picking a file dismisses it, as does the host's toggle.
@@ -93,12 +93,17 @@ export function ReviewFilePanel({
  * Escape does too, but only where the review is not inside a dialog — base-ui consumes the key
  * before a `window` listener can see it, so in task review and the worktree view the dialog is
  * what Escape reaches. That is why it is not the only way out.
+ *
+ * Taken apart from `ReviewFilePanelOverlay` so the Files tab's own tree can float in exactly this
+ * shell rather than growing a second, slightly different answer to the same question.
  */
-export function ReviewFilePanelOverlay({
+export function ReviewPanelOverlayShell({
   onDismiss,
-  onSelectFile,
-  ...props
-}: ReviewFilePanelProps & { onDismiss: () => void }) {
+  children,
+}: {
+  onDismiss: () => void;
+  children: React.ReactNode;
+}) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onDismiss();
@@ -108,13 +113,28 @@ export function ReviewFilePanelOverlay({
   }, [onDismiss]);
 
   return (
-    <ReviewFilePanel
-      {...props}
-      onSelectFile={(fileName) => {
-        onSelectFile(fileName);
-        onDismiss();
-      }}
-      className="absolute inset-0 z-30 border-r border-border"
-    />
+    <div className="absolute inset-0 z-30 flex flex-col min-h-0 border-r border-border bg-card">
+      {children}
+    </div>
+  );
+}
+
+/** The review's file panel in that shell, dismissing itself once a file has been picked. */
+export function ReviewFilePanelOverlay({
+  onDismiss,
+  onSelectFile,
+  ...props
+}: ReviewFilePanelProps & { onDismiss: () => void }) {
+  return (
+    <ReviewPanelOverlayShell onDismiss={onDismiss}>
+      <ReviewFilePanel
+        {...props}
+        onSelectFile={(fileName) => {
+          onSelectFile(fileName);
+          onDismiss();
+        }}
+        className="flex-1 min-h-0"
+      />
+    </ReviewPanelOverlayShell>
   );
 }

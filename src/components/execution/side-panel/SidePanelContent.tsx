@@ -71,6 +71,8 @@ interface SidePanelContentProps {
   canSendImages?: boolean;
   /** Puts text in the composer without sending it. Absent when there is no live agent to ask. */
   onSeedPrompt?: (text: string) => void;
+  /** Reports a Files tab holding an unsaved draft, so closing it can be guarded. */
+  onTabDirtyChange?: (tabId: string, dirty: boolean) => void;
 }
 
 export function SidePanelContent({
@@ -98,6 +100,7 @@ export function SidePanelContent({
   isProcessing,
   canSendImages,
   onSeedPrompt,
+  onTabDirtyChange,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
@@ -248,7 +251,7 @@ export function SidePanelContent({
                     <MarkdownBlock text={planBody} />
                   </PlanAnnotationLayer>
                 ) : planEntries && planEntries.length > 0 ? (
-                  <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
+                  <div className="flex-1 overflow-y-auto px-4 py-4">
                     {planTitle && (
                       <div className="text-xs font-medium text-muted-foreground mb-3">
                         {planTitle}
@@ -459,6 +462,8 @@ export function SidePanelContent({
                 wslDistroName={wslDistroName}
                 isActive={isActive}
                 initialPath={initialPath}
+                isProcessing={isProcessing}
+                onDirtyChange={(dirty) => onTabDirtyChange?.(id, dirty)}
               />
             )}
             {kind === "terminal" && (

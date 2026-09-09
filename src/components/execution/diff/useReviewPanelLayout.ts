@@ -29,8 +29,13 @@ export function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
 }
 
-const WIDTH_KEY = "review:sidebarWidth";
-const OPEN_KEY = "review:panelOpen";
+/**
+ * Storage keys are namespaced so a host that is not the review can keep its own answer. The Files
+ * tab sits in the same side panel as the Changes tab and uses the same layout, but they are two
+ * different lists — toggling one must not toggle the other.
+ */
+const widthKey = (prefix: string) => `${prefix}:sidebarWidth`;
+const openKey = (prefix: string) => `${prefix}:panelOpen`;
 
 // Storage can throw (private mode, disabled cookies). A remembered pane width is never worth
 // taking the review down for.
@@ -50,13 +55,13 @@ function write(key: string, value: string) {
   }
 }
 
-export function readSidebarWidth(): number {
-  const stored = read(WIDTH_KEY);
+export function readSidebarWidth(keyPrefix = "review"): number {
+  const stored = read(widthKey(keyPrefix));
   return clampSidebarWidth(stored === null ? SIDEBAR_MIN_WIDTH : Number(stored));
 }
 
-export function readPanelOpen(): boolean {
-  return read(OPEN_KEY) !== "false";
+export function readPanelOpen(keyPrefix = "review"): boolean {
+  return read(openKey(keyPrefix)) !== "false";
 }
 
 /**
@@ -66,15 +71,21 @@ export function readPanelOpen(): boolean {
  * The container ref is returned rather than taken, because the host owns the element whose width
  * decides the layout — and the host needs the verdict itself to render the right chrome. Passing
  * the measurement back up from a child would loop: measure → setState → re-render → measure.
+ *
+ * `keyPrefix` namespaces the stored width and open state. Hosts showing the same list share the
+ * default; a host showing a different list passes its own.
  */
-export function useReviewPanelLayout() {
+export function useReviewPanelLayout(keyPrefix = "review") {
   const containerRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<ReviewPanelLayout>("fixed");
-  const [sidebarWidth, setWidth] = useState(readSidebarWidth);
-  const [panelOpen, setOpen] = useState(readPanelOpen);
+  const [sidebarWidth, setWidth] = useState(() => readSidebarWidth(keyPrefix));
+  const [panelOpen, setOpen] = useState(() => readPanelOpen(keyPrefix));
   // Mirrors `layout` for the callbacks below, which must not re-create on every flip.
   const layoutRef = useRef<ReviewPanelLayout>("fixed");
   const draggedWidth = useRef(sidebarWidth);
+  // Captured once, for the same reason: a host's prefix is fixed for the life of the hook, and
+  // holding it here keeps the measurement effect and the drag callbacks free of it as a dependency.
+  const prefixRef = useRef(keyPrefix);
 
   // Measured before paint, so the first frame is already the right layout rather than a flash of
   // the wrong one.
@@ -90,7 +101,7 @@ export function useReviewPanelLayout() {
       // The floating panel covers the diff it is meant to navigate, so it opens on demand and
       // starts closed. The inline one is a column the user chose to keep, so it comes back the
       // way they left it.
-      setOpen(next === "overlay" ? false : readPanelOpen());
+      setOpen(next === "overlay" ? false : readPanelOpen(prefixRef.current));
     };
 
     apply(element.clientWidth);
@@ -108,7 +119,7 @@ export function useReviewPanelLayout() {
    */
   const trackSidebarWidth = useCallback((width: number) => {
     draggedWidth.current = clampSidebarWidth(width);
-    write(WIDTH_KEY, String(draggedWidth.current));
+    write(widthKey(prefixRef.current), String(draggedWidth.current));
   }, []);
 
   /**
@@ -122,7 +133,7 @@ export function useReviewPanelLayout() {
     setOpen(open);
     // Only the inline layout's state is a preference. The overlay always starts closed, so
     // recording a dismissal there would collapse the inline panel on the next wide review.
-    if (layoutRef.current === "fixed") write(OPEN_KEY, String(open));
+    if (layoutRef.current === "fixed") write(openKey(prefixRef.current), String(open));
   }, []);
 
   return {

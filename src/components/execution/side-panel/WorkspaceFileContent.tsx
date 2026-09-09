@@ -1,8 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { cn } from "@/lib/utils.ts";
 import { Spinner } from "@/ui/spinner";
-import { langForExtension } from "@/components/execution/activity/fileTypeUtils";
-import { HighlightedCode, MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
+import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 
 function PdfViewer({ content, fileName }: { content: string; fileName: string }) {
@@ -26,6 +24,12 @@ interface WorkspaceFileContentProps {
   fileName: string | null;
   mimeType?: string;
   fileDir?: string;
+  /**
+   * The scrolling element for text and markdown, so a caller can keep it in step with another
+   * pane. Only attached on that branch — the image, PDF, audio and video branches scroll their
+   * own way and have nothing to sync with.
+   */
+  scrollRef?: React.Ref<HTMLDivElement>;
 }
 
 export function WorkspaceFileContent({
@@ -35,9 +39,9 @@ export function WorkspaceFileContent({
   fileName,
   mimeType,
   fileDir,
+  scrollRef,
 }: WorkspaceFileContentProps) {
   const project = useSelectedProject();
-  const lang = fileName ? (langForExtension(fileName) ?? "text") : "text";
 
   if (!fileName) {
     return (
@@ -101,22 +105,12 @@ export function WorkspaceFileContent({
     }
   }
 
-  const isMarkdown = fileName?.toLowerCase().endsWith(".md") ?? false;
-
+  // Plain text does not reach here: the panel renders it through `FileEditor` in both modes, so
+  // that reading and editing a file cannot disagree about how it is coloured. What is left are the
+  // things an editor cannot show — rendered markdown, and the mime branches above.
   return (
-    <div
-      className={cn(
-        "flex-1 overflow-auto custom-scrollbar min-h-0",
-        isMarkdown ? "px-6 py-5" : "p-0",
-      )}
-    >
-      {isMarkdown ? (
-        <MarkdownBlock text={content ?? ""} projectId={project?.id} baseDir={fileDir} />
-      ) : (
-        <div className="min-w-max file-code-view">
-          <HighlightedCode code={content} lang={lang} stripContainerStyle />
-        </div>
-      )}
+    <div ref={scrollRef} className="flex-1 overflow-auto min-h-0 px-6 py-5">
+      <MarkdownBlock text={content ?? ""} projectId={project?.id} baseDir={fileDir} />
     </div>
   );
 }

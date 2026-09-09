@@ -6,6 +6,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resiz
 import {
   ReviewFilePanel,
   ReviewFilePanelOverlay,
+  ReviewPanelOverlayShell,
   type ReviewFilePanelProps,
 } from "./ReviewFilePanel";
 import {
@@ -39,8 +40,14 @@ export function FilePanelToggle({ open, onToggle }: { open: boolean; onToggle: (
 
 interface ReviewLayoutProps {
   panel: ReviewPanelState;
-  /** Everything the file list needs. The layout decides where it is drawn, not what it shows. */
-  files: ReviewFilePanelProps;
+  /** Everything the review's file list needs. The layout decides where it is drawn, not what it shows. */
+  files?: ReviewFilePanelProps;
+  /**
+   * A panel that is not the review's file list — the Files tab's lazy directory tree. `onDismiss`
+   * is given only in the overlay layout, where picking something has to close the panel too; in the
+   * inline layout the panel is a column that stays.
+   */
+  renderPanel?: (options: { onDismiss?: () => void }) => React.ReactNode;
   /** The card stack. Seated on the inset surface when the panel is beside it. */
   children: React.ReactNode;
 }
@@ -55,8 +62,12 @@ interface ReviewLayoutProps {
  *
  * Wide enough, and the panel is a resizable column and the diff sits inset beside it, rounded at
  * the corner where the two meet. Too narrow, and the panel floats over the diff instead.
+ *
+ * The Files tab is the fourth host and the one that is not a review: its panel is a lazy directory
+ * tree rather than a list of changed files, which is what `renderPanel` is for. Everything else —
+ * which arrangement, how wide, how the overlay is dismissed — it shares with the other three.
  */
-export function ReviewLayout({ panel, files, children }: ReviewLayoutProps) {
+export function ReviewLayout({ panel, files, renderPanel, children }: ReviewLayoutProps) {
   const {
     containerRef,
     inset,
@@ -99,7 +110,7 @@ export function ReviewLayout({ panel, files, children }: ReviewLayoutProps) {
             onResize={(size) => trackSidebarWidth(size.inPixels)}
             className="flex flex-col min-h-0"
           >
-            <ReviewFilePanel {...files} />
+            {renderPanel ? renderPanel({}) : files && <ReviewFilePanel {...files} />}
           </ResizablePanel>
           {/* No bar of its own: the diff surface's left border is already the line between the
               two, and the handle runs the full height, so a hover tint on it painted a stripe past
@@ -113,7 +124,14 @@ export function ReviewLayout({ panel, files, children }: ReviewLayoutProps) {
       ) : (
         <>
           <div className="flex-1 flex flex-col min-w-0">{diffSurface}</div>
-          {panelOpen && <ReviewFilePanelOverlay {...files} onDismiss={() => setPanelOpen(false)} />}
+          {panelOpen &&
+            (renderPanel ? (
+              <ReviewPanelOverlayShell onDismiss={() => setPanelOpen(false)}>
+                {renderPanel({ onDismiss: () => setPanelOpen(false) })}
+              </ReviewPanelOverlayShell>
+            ) : (
+              files && <ReviewFilePanelOverlay {...files} onDismiss={() => setPanelOpen(false)} />
+            ))}
         </>
       )}
     </div>

@@ -110,6 +110,14 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .filter(|v| !v.is_empty())
         .map(|v| v == "true");
 
+    let markdown_edit_layout =
+        settings_map.get("markdown_edit_layout").filter(|v| !v.is_empty()).cloned();
+
+    // Blank stays None, which the frontend reads as on — collapsing it to Some(false) would turn
+    // the sync off for everyone who has never touched the toggle.
+    let markdown_scroll_sync =
+        settings_map.get("markdown_scroll_sync").filter(|v| !v.is_empty()).map(|v| v == "true");
+
     let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
     let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
     let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
@@ -134,6 +142,8 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         notify_on_failure,
         native_window_frame,
         reduce_motion,
+        markdown_edit_layout,
+        markdown_scroll_sync,
     })
 }
 
@@ -166,6 +176,11 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         Some(false) => "false",
         None => "",
     };
+    let markdown_scroll_sync_str = match settings.markdown_scroll_sync {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "",
+    };
     let pairs: Vec<(&str, &str)> = vec![
         ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
         ("auto_mode", auto_mode_str),
@@ -185,6 +200,8 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("notify_on_failure", notify_on_failure_str),
         ("native_window_frame", native_window_frame_str),
         ("reduce_motion", reduce_motion_str),
+        ("markdown_edit_layout", settings.markdown_edit_layout.as_deref().unwrap_or("")),
+        ("markdown_scroll_sync", markdown_scroll_sync_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
 
@@ -295,6 +312,8 @@ mod tests {
             notify_on_failure: false,
             native_window_frame: true,
             reduce_motion: Some(true),
+            markdown_edit_layout: Some("split".to_string()),
+            markdown_scroll_sync: Some(false),
         };
 
         save_settings(&mut conn, &settings).unwrap();
@@ -336,6 +355,55 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load_settings(&conn).unwrap().reduce_motion, Some(true));
+    }
+
+    /// Absent has to stay absent rather than becoming an empty string, because the frontend
+    /// distinguishes "never chosen" — which takes the `source` default — from a stored choice.
+    #[test]
+    fn markdown_edit_layout_round_trips_and_starts_unset() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
+
+        save_settings(&mut conn, &AppSettings::default()).unwrap();
+        assert_eq!(load_settings(&conn).unwrap().markdown_edit_layout, None);
+
+        save_settings(
+            &mut conn,
+            &AppSettings {
+                markdown_edit_layout: Some("split".to_string()),
+                ..AppSettings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            load_settings(&conn).unwrap().markdown_edit_layout,
+            Some("split".to_string())
+        );
+    }
+
+    /// `None` is "never chosen", which the frontend turns into an on toggle. Collapsing it to
+    /// `Some(false)` on the way through would silently disable the sync for every existing user.
+    #[test]
+    fn markdown_scroll_sync_round_trips_all_three_states() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::initialize_schema(&conn).unwrap();
+
+        save_settings(&mut conn, &AppSettings::default()).unwrap();
+        assert_eq!(load_settings(&conn).unwrap().markdown_scroll_sync, None);
+
+        save_settings(
+            &mut conn,
+            &AppSettings { markdown_scroll_sync: Some(false), ..AppSettings::default() },
+        )
+        .unwrap();
+        assert_eq!(load_settings(&conn).unwrap().markdown_scroll_sync, Some(false));
+
+        save_settings(
+            &mut conn,
+            &AppSettings { markdown_scroll_sync: Some(true), ..AppSettings::default() },
+        )
+        .unwrap();
+        assert_eq!(load_settings(&conn).unwrap().markdown_scroll_sync, Some(true));
     }
 
     /// An unparseable stored value must fall back to the default rather than erroring, matching

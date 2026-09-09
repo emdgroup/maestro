@@ -1,6 +1,17 @@
+import { useCallback, useState } from "react";
 import { Terminal, FileText } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { PopoverContent, PopoverClose } from "@/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import { SidePanelCollapsedStrip } from "./SidePanelCollapsedStrip";
 import { SidePanelTabBar } from "./SidePanelTabBar";
 import { SidePanelContent } from "./SidePanelContent";
@@ -83,6 +94,39 @@ export function ExecutionSidePanel({
   canSendImages,
   onSeedPrompt,
 }: ExecutionSidePanelProps) {
+  // Closing a Files tab unmounts its editor and takes the draft with it, and the tab bar's X is
+  // several components away from the panel that knows about the draft — hence the registry here
+  // rather than a check inside `useSidePanelTabs`, which owns no content.
+  const [dirtyTabIds, setDirtyTabIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [closePrompt, setClosePrompt] = useState<string | null>(null);
+
+  const forgetTab = useCallback((id: string) => {
+    setDirtyTabIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleTabDirtyChange = useCallback((id: string, dirty: boolean) => {
+    setDirtyTabIds((prev) => {
+      if (prev.has(id) === dirty) return prev;
+      const next = new Set(prev);
+      if (dirty) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const requestTabClose = useCallback(
+    (id: string) => {
+      if (dirtyTabIds.has(id)) setClosePrompt(id);
+      else onTabClose(id);
+    },
+    [dirtyTabIds, onTabClose],
+  );
+
   const addTabPopoverContent = (side: "bottom" | "left") => (
     <PopoverContent align="start" side={side} className="w-44 p-1 gap-0">
       <PopoverClose
@@ -135,7 +179,7 @@ export function ExecutionSidePanel({
             tabs={tabs}
             activeTabId={activeTabId}
             onTabChange={onTabChange}
-            onTabClose={onTabClose}
+            onTabClose={requestTabClose}
             onCollapsedChange={onCollapsedChange}
             onMaximizedChange={onMaximizedChange}
             maximized={maximized}
@@ -168,11 +212,42 @@ export function ExecutionSidePanel({
                 isProcessing={isProcessing}
                 canSendImages={canSendImages}
                 onSeedPrompt={onSeedPrompt}
+                onTabDirtyChange={handleTabDirtyChange}
               />
             </div>
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={closePrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setClosePrompt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close this tab and discard your edits?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This Files tab has changes that have not been written to disk. Closing it loses them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (closePrompt !== null) {
+                  forgetTab(closePrompt);
+                  onTabClose(closePrompt);
+                }
+                setClosePrompt(null);
+              }}
+            >
+              Discard and close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

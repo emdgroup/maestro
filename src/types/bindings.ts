@@ -1149,6 +1149,46 @@ async readFileBinary(connection: ConnectionKey, path: string) : Promise<Result<s
     else return { status: "error", error: e  as any };
 }
 },
+async writeFile(connection: ConnectionKey, path: string, contents: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("write_file", { connection, path, contents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createFileAt(connection: ConnectionKey, path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_file_at", { connection, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createDirectoryAt(connection: ConnectionKey, path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_directory_at", { connection, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameFile(connection: ConnectionKey, from: string, to: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_file", { connection, from, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteFile(connection: ConnectionKey, path: string, recursive: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_file", { connection, path, recursive }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Read a local file's text content. Rejects binary files and files over [`TEXT_LIMIT`].
  */
@@ -2560,7 +2600,19 @@ native_window_frame?: boolean;
  * for reduced motion or no GPU acceleration is detected. Stored rather than derived so an
  * explicit `false` on such a machine survives, which a plain bool could not express.
  */
-reduce_motion?: boolean | null }
+reduce_motion?: boolean | null; 
+/**
+ * How the Files tab lays out an open markdown file in edit mode: `source`, `split` or
+ * `preview`. Stored so the choice survives a restart, since it is a working preference
+ * rather than a per-file one. An unrecognised value falls back to `source`.
+ */
+markdown_edit_layout?: string | null; 
+/**
+ * Whether the two panes of the markdown split view scroll together. `None` means nobody has
+ * chosen, which the frontend reads as on — the sync is the point of the split view, and a
+ * plain bool could not tell "never chosen" from an explicit off.
+ */
+markdown_scroll_sync?: boolean | null }
 export type AttachmentValidation = { size_bytes: number; 
 /**
  * `None` when the file can be attached. Otherwise the reason to show the user, phrased for

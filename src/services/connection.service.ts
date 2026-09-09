@@ -298,6 +298,93 @@ export function useReadFileBinary(
 }
 
 /**
+ * Replace a file's contents on whichever machine the connection points at.
+ *
+ * No cache invalidation here: the Files tab re-baselines from the text it just wrote and resumes
+ * its own polling on leaving edit mode, so invalidating would only cost a redundant read.
+ */
+export function useWriteFile() {
+  return useMutation({
+    mutationFn: ({
+      connection,
+      path,
+      contents,
+    }: {
+      connection: ConnectionKey;
+      path: string;
+      contents: string;
+    }) => api.writeFile(connection, path, contents),
+  });
+}
+
+/**
+ * Invalidate every cached directory listing for a connection. The listings are keyed by directory,
+ * and a create or rename can change a parent this hook does not know about, so it drops all of
+ * them — only mounted queries (the tree root and expanded folders) actually refetch.
+ */
+function useInvalidateFileBrowser() {
+  const queryClient = useQueryClient();
+  return (connection: ConnectionKey) =>
+    queryClient.invalidateQueries({
+      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
+    });
+}
+
+export function useCreateFile() {
+  const invalidate = useInvalidateFileBrowser();
+  return useMutation({
+    mutationFn: ({ connection, path }: { connection: ConnectionKey; path: string }) =>
+      api.createFileAt(connection, path),
+    onSuccess: (_data, { connection }) => void invalidate(connection),
+    onError: createErrorToastHandler("Failed to create file"),
+  });
+}
+
+export function useCreateDirectory() {
+  const invalidate = useInvalidateFileBrowser();
+  return useMutation({
+    mutationFn: ({ connection, path }: { connection: ConnectionKey; path: string }) =>
+      api.createDirectoryAt(connection, path),
+    onSuccess: (_data, { connection }) => void invalidate(connection),
+    onError: createErrorToastHandler("Failed to create folder"),
+  });
+}
+
+export function useRenamePath() {
+  const invalidate = useInvalidateFileBrowser();
+  return useMutation({
+    mutationFn: ({
+      connection,
+      from,
+      to,
+    }: {
+      connection: ConnectionKey;
+      from: string;
+      to: string;
+    }) => api.renameFile(connection, from, to),
+    onSuccess: (_data, { connection }) => void invalidate(connection),
+    onError: createErrorToastHandler("Failed to rename"),
+  });
+}
+
+export function useDeletePath() {
+  const invalidate = useInvalidateFileBrowser();
+  return useMutation({
+    mutationFn: ({
+      connection,
+      path,
+      recursive,
+    }: {
+      connection: ConnectionKey;
+      path: string;
+      recursive: boolean;
+    }) => api.deleteFile(connection, path, recursive),
+    onSuccess: (_data, { connection }) => void invalidate(connection),
+    onError: createErrorToastHandler("Failed to delete"),
+  });
+}
+
+/**
  * Query hook for getting default file picker path
  * Returns the user's default directory for file selection (platform-dependent)
  */
