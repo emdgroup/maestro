@@ -240,12 +240,12 @@ describe("CanvasAnnotationLayer", () => {
     // Reopen, then edit.
     fireEvent.mouseDown(overlay, { clientX: 50, clientY: 50, button: 0 });
     fireEvent.mouseUp(overlay, { clientX: 50, clientY: 50, button: 0 });
-    fireEvent.click(await screen.findByTitle("Edit"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
 
     // Still visible while the text is rewritten, and as the same chip it was created with.
     expect(await screen.findByAltText("Region capture")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle(/remove the screenshot/i));
+    fireEvent.click(screen.getByRole("button", { name: /remove the screenshot/i }));
     await waitFor(() => expect(annotations()[0].shotDataUrl).toBeUndefined());
     expect(annotations()[0].shotPath).toBeUndefined();
     // The note itself survives losing its capture.

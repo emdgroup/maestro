@@ -167,24 +167,38 @@ function AnnotationListPanel({
         </span>
         {onGoTo && annotations.length > 1 && (
           <div className="flex items-center gap-0.5 ml-auto">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              title="Previous annotation"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => step(-1)}
-            >
-              <ChevronUp className="size-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              title="Next annotation"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => step(1)}
-            >
-              <ChevronDown className="size-3" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Previous annotation"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => step(-1)}
+                  />
+                }
+              >
+                <ChevronUp className="size-3" />
+              </TooltipTrigger>
+              <TooltipContent>Previous annotation</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Next annotation"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => step(1)}
+                  />
+                }
+              >
+                <ChevronDown className="size-3" />
+              </TooltipTrigger>
+              <TooltipContent>Next annotation</TooltipContent>
+            </Tooltip>
           </div>
         )}
       </div>
@@ -232,26 +246,40 @@ function AnnotationListPanel({
                     className="w-full resize-y rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:border-accent"
                   />
                   <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => setEditingId(null)}
-                      title="Cancel"
-                    >
-                      <X className="size-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={!draft.trim()}
-                      title="Save"
-                      onClick={() => {
-                        updateAnnotation(sessionKey, a.id, draft.trim());
-                        setEditingId(null);
-                      }}
-                    >
-                      <Check className="size-3" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Cancel"
+                            onClick={() => setEditingId(null)}
+                          />
+                        }
+                      >
+                        <X className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipContent>Cancel</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            disabled={!draft.trim()}
+                            aria-label="Save"
+                            onClick={() => {
+                              updateAnnotation(sessionKey, a.id, draft.trim());
+                              setEditingId(null);
+                            }}
+                          />
+                        }
+                      >
+                        <Check className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipContent>Save</TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
               ) : (
@@ -262,37 +290,58 @@ function AnnotationListPanel({
             </div>
             {editingId !== a.id && (
               <div className="flex items-center gap-0.5 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  title={sendDisabled ? "Agent is busy" : "Send this annotation"}
-                  disabled={sendDisabled}
-                  className="text-muted-foreground hover:text-accent"
-                  onClick={() => onSend([a])}
-                >
-                  <Send className="size-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  title="Edit"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setDraft(a.text);
-                    setEditingId(a.id);
-                  }}
-                >
-                  <Pencil className="size-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  title="Delete"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => removeAnnotations(sessionKey, [a.id])}
-                >
-                  <Trash2 className="size-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger render={<span className="inline-flex" />}>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={sendDisabled ? "Agent is busy" : "Send this annotation"}
+                      disabled={sendDisabled}
+                      className="text-muted-foreground hover:text-accent"
+                      onClick={() => onSend([a])}
+                    >
+                      <Send className="size-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {sendDisabled ? "Agent is busy" : "Send this annotation"}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Edit"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setDraft(a.text);
+                          setEditingId(a.id);
+                        }}
+                      />
+                    }
+                  >
+                    <Pencil className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipContent>Edit</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Delete"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => removeAnnotations(sessionKey, [a.id])}
+                      />
+                    }
+                  >
+                    <Trash2 className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipContent>Delete</TooltipContent>
+                </Tooltip>
               </div>
             )}
           </div>

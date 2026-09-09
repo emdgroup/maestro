@@ -153,10 +153,14 @@ export function FileSelector({
                     : "border-transparent hover:bg-muted/10",
                 )}
               >
-                <span
-                  className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor)}
-                  title={STATUS_LABEL[status]}
-                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor)} />
+                    }
+                  />
+                  <TooltipContent>{STATUS_LABEL[status]}</TooltipContent>
+                </Tooltip>
                 <span className="flex-1 text-xs truncate text-foreground/80">{basename}</span>
                 {isViewed && <CheckCheck className="size-3.5 shrink-0 text-success" />}
               </button>

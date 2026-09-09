@@ -157,7 +157,7 @@ describe("ReviewFileCard", () => {
     const { unmount } = renderCard({
       fileComment: { comment: { id: "c1", text: "hoist this" }, onSubmit, onRemove },
     });
-    expect(screen.queryByTitle("Send this annotation")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send this annotation" })).toBeNull();
     unmount();
 
     renderCard({
@@ -168,7 +168,7 @@ describe("ReviewFileCard", () => {
         onSend: vi.fn(),
       },
     });
-    expect(screen.getByTitle("Send this annotation")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send this annotation" })).toBeTruthy();
   });
 });
 

@@ -21,6 +21,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { McpIcon } from "@/components/common/icons/McpIcon";
 import { cn } from "@/lib/utils.ts";
 import { basename } from "@/lib/path-utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";
 import { OpenFileContext } from "./MarkdownBlock";
 import { ContentErrorBoundary, ToolCallContentBlock } from "./ToolCallContentBlock";
@@ -257,17 +258,23 @@ export function FileLabel({
   return (
     <span className={cn("flex min-w-0 items-center", className)}>
       {before && <span className="shrink-0 font-semibold">{before.trimEnd()}&nbsp;</span>}
-      <button
-        type="button"
-        title={path}
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenFile(path);
-        }}
-        className="truncate rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground hover:decoration-solid"
-      >
-        {shown}
-      </button>
+      <Tooltip trackCursorAxis="x">
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenFile(path);
+              }}
+              className="truncate rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground hover:decoration-solid"
+            />
+          }
+        >
+          {shown}
+        </TooltipTrigger>
+        <TooltipContent className="max-w-md break-all">{path}</TooltipContent>
+      </Tooltip>
     </span>
   );
 }

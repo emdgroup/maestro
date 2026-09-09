@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import {
   useSpawnInteractiveExecutionMutation,
@@ -344,7 +345,7 @@ export function SpawnSessionDialog({
                   const disabled = missingDeps.length > 0;
                   const isSelected = sessionType === agent.id;
                   const isDefault = agent.id === projectSettings?.default_agent;
-                  return (
+                  const card = (
                     <Button
                       key={agent.id}
                       variant="ghost"
@@ -352,13 +353,8 @@ export function SpawnSessionDialog({
                       onClick={() => {
                         setSessionType(agent.id);
                       }}
-                      title={
-                        disabled
-                          ? `Requires ${missingDeps.join(", ")} (not available on this connection)`
-                          : undefined
-                      }
                       className={cn(
-                        "flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
+                        "w-full flex items-center gap-2.5 px-3 py-2.5 h-auto rounded-lg border text-left justify-start transition-colors",
                         disabled
                           ? "opacity-40 cursor-not-allowed border-border/40"
                           : isSelected
@@ -401,6 +397,17 @@ export function SpawnSessionDialog({
                         ) : null}
                       </div>
                     </Button>
+                  );
+                  if (!disabled) return card;
+                  return (
+                    <Tooltip key={agent.id}>
+                      <TooltipTrigger render={<div className="cursor-not-allowed" />}>
+                        {card}
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Requires {missingDeps.join(", ")} (not available on this connection)
+                      </TooltipContent>
+                    </Tooltip>
                   );
                 })}
               </div>

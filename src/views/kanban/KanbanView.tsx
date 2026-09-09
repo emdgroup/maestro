@@ -16,6 +16,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Checkbox } from "@/ui/checkbox";
 import { Button, buttonVariants } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { Task, TaskPriority } from "@/types/bindings";
 import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
@@ -229,17 +230,23 @@ export const KanbanView: React.FC = () => {
 
         <AutoModeToggle />
 
-        <Button
-          size="sm"
-          variant={needsMeOnly ? "accent" : "outline"}
-          onClick={() => setNeedsMeOnly((v) => !v)}
-          disabled={needsMeCount === 0 && !needsMeOnly}
-          title="Show only tasks the pipeline is waiting on you for"
-        >
-          <BellDot className="size-4" />
-          Needs me
-          {needsMeCount > 0 && <Badge variant="secondary">{needsMeCount}</Badge>}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="sm"
+                variant={needsMeOnly ? "accent" : "outline"}
+                onClick={() => setNeedsMeOnly((v) => !v)}
+                disabled={needsMeCount === 0 && !needsMeOnly}
+              />
+            }
+          >
+            <BellDot className="size-4" />
+            Needs me
+            {needsMeCount > 0 && <Badge variant="secondary">{needsMeCount}</Badge>}
+          </TooltipTrigger>
+          <TooltipContent>Show only tasks the pipeline is waiting on you for</TooltipContent>
+        </Tooltip>
 
         <Button size="sm" variant="outline" onClick={() => setIsArchiveModalOpen(true)}>
           <Archive className="size-4" />

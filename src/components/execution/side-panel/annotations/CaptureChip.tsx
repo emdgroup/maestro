@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { Attachment, AttachmentMedia } from "@/ui/attachment";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 interface CaptureChipProps {
   dataUrl: string;
@@ -27,15 +28,22 @@ export function CaptureChip({ dataUrl, onRemove }: CaptureChipProps) {
         Region capture
       </span>
       {onRemove && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title="Remove the screenshot from this note"
-          className="mr-1 text-muted-foreground hover:text-destructive"
-          onClick={onRemove}
-        >
-          <X className="size-3" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Remove the screenshot from this note"
+                className="mr-1 text-muted-foreground hover:text-destructive"
+                onClick={onRemove}
+              />
+            }
+          >
+            <X className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent>Remove the screenshot from this note</TooltipContent>
+        </Tooltip>
       )}
     </Attachment>
   );

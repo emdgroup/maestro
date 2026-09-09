@@ -745,18 +745,26 @@ export function WorkspaceFilesPanel({
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 overflow-hidden">
           {basename ? (
             <>
-              <span
-                className="text-xs font-mono text-muted-foreground truncate"
-                title={selected ?? undefined}
-              >
-                {basename}
-              </span>
+              <Tooltip trackCursorAxis="x">
+                <TooltipTrigger
+                  render={<span className="text-xs font-mono text-muted-foreground truncate" />}
+                >
+                  {basename}
+                </TooltipTrigger>
+                <TooltipContent className="max-w-md break-all">{selected}</TooltipContent>
+              </Tooltip>
               {isDirty && (
-                <span
-                  className="size-2 rounded-full bg-accent shrink-0"
-                  title="Unsaved changes"
-                  aria-label="Unsaved changes"
-                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className="size-2 rounded-full bg-accent shrink-0"
+                        aria-label="Unsaved changes"
+                      />
+                    }
+                  />
+                  <TooltipContent>Unsaved changes</TooltipContent>
+                </Tooltip>
               )}
             </>
           ) : (
@@ -795,23 +803,26 @@ export function WorkspaceFilesPanel({
                     {MARKDOWN_LAYOUTS.map(({ value, Icon, label }) => {
                       const unavailable = layoutUnavailable(value);
                       return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => chooseLayout(value)}
-                          disabled={unavailable}
-                          aria-label={label}
-                          aria-pressed={effectiveLayout === value}
-                          title={unavailable ? splitTooltip : label}
-                          className={cn(
-                            "inline-flex items-center justify-center size-7 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none",
-                            effectiveLayout === value
-                              ? "text-foreground bg-background shadow-sm"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="size-3.5" />
-                        </button>
+                        <Tooltip key={value}>
+                          <TooltipTrigger render={<span className="inline-flex" />}>
+                            <button
+                              type="button"
+                              onClick={() => chooseLayout(value)}
+                              disabled={unavailable}
+                              aria-label={label}
+                              aria-pressed={effectiveLayout === value}
+                              className={cn(
+                                "inline-flex items-center justify-center size-7 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none",
+                                effectiveLayout === value
+                                  ? "text-foreground bg-background shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              <Icon className="size-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{unavailable ? splitTooltip : label}</TooltipContent>
+                        </Tooltip>
                       );
                     })}
                   </div>
@@ -827,7 +838,6 @@ export function WorkspaceFilesPanel({
                         aria-label="Save"
                         onClick={() => void handleSave()}
                         disabled={saveDisabled}
-                        title="Ctrl+S"
                         // The accent is what says "there is unsaved work here". Wearing it with
                         // nothing to save promised an action the button would not perform.
                         className={cn("ml-1.5", !saveDisabled && "text-accent")}

@@ -56,6 +56,7 @@ import {
 import { useSortable } from "@dnd-kit/react/sortable";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { cn } from "@/lib/utils.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";
@@ -435,35 +436,45 @@ function FooterCTAs({
             enabled, the only thing pressing it produced was a toast about the default agent — an
             answer to a question the user had not asked, on a project whose real problem is that no
             role has a profile yet. */}
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRefine();
-          }}
-          disabled={isExecuting || !canRefine}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-          title={
-            canRefine
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRefine();
+              }}
+              disabled={isExecuting || !canRefine}
+              variant="ghost"
+              className={cn(base, "h-auto")}
+            >
+              <Sparkles className="w-2.5 h-2.5" />
+              Refine
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {canRefine
               ? "Ask an agent to sharpen this task's description"
-              : "No agent can refine this task. Add a Refinement profile in Settings."
-          }
-        >
-          <Sparkles className="w-2.5 h-2.5" />
-          Refine
-        </Button>
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenProfiles();
-          }}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-          title="Choose which agent runs each stage of this task"
-        >
-          <SlidersHorizontal className="w-2.5 h-2.5" />
-          Agents
-        </Button>
+              : "No agent can refine this task. Add a Refinement profile in Settings."}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenProfiles();
+                }}
+                variant="ghost"
+                className={cn(base, "h-auto")}
+              />
+            }
+          >
+            <SlidersHorizontal className="w-2.5 h-2.5" />
+            Agents
+          </TooltipTrigger>
+          <TooltipContent>Choose which agent runs each stage of this task</TooltipContent>
+        </Tooltip>
       </div>
     );
   }
@@ -474,34 +485,47 @@ function FooterCTAs({
     // the backend refuses — visible to the user only as a button that does nothing.
     const starting = task.phase === "Spawning" && task.phase_status !== "Failed";
 
+    // A failed spawn keeps the claim so the card can show it, and this is the retry. A
+    // deferred task keeps the button too, so a user who has just freed a slot can take it
+    // rather than waiting for the next drain.
+    const executeHint =
+      task.phase_status === "Failed"
+        ? "Try starting this task again"
+        : task.execute_requested_at
+          ? "Waiting for a free agent, press to try now"
+          : null;
+
+    const executeButton = (
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          onExecute();
+        }}
+        disabled={isExecuting || starting}
+        variant="ghost"
+        className={cn(base, "h-auto")}
+      >
+        <Play className="w-2.5 h-2.5 fill-current" />
+        {isExecuting || starting
+          ? "Starting…"
+          : task.phase_status === "Failed"
+            ? "Retry"
+            : "Execute"}
+      </Button>
+    );
+
     return (
       <div className="flex gap-1 mt-1.5">
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onExecute();
-          }}
-          disabled={isExecuting || starting}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-          // A failed spawn keeps the claim so the card can show it, and this is the retry. A
-          // deferred task keeps the button too, so a user who has just freed a slot can take it
-          // rather than waiting for the next drain.
-          title={
-            task.phase_status === "Failed"
-              ? "Try starting this task again"
-              : task.execute_requested_at
-                ? "Waiting for a free agent, press to try now"
-                : undefined
-          }
-        >
-          <Play className="w-2.5 h-2.5 fill-current" />
-          {isExecuting || starting
-            ? "Starting…"
-            : task.phase_status === "Failed"
-              ? "Retry"
-              : "Execute"}
-        </Button>
+        {executeHint === null ? (
+          executeButton
+        ) : (
+          <Tooltip>
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              {executeButton}
+            </TooltipTrigger>
+            <TooltipContent>{executeHint}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
     );
   }
@@ -538,19 +562,28 @@ function FooterCTAs({
     // returns below because a dead session is exactly when this is needed: the work may well be
     // finished and only the session gone.
     const sendToReview = isStuck && (
-      <Button
-        onClick={(e) => {
-          e.stopPropagation();
-          onSendToReview();
-        }}
-        disabled={isSendingToReview}
-        variant="ghost"
-        className={cn(base, "h-auto")}
-        title="Move this task to review without waiting for the agent to finish"
-      >
-        <ScanEye className="w-2.5 h-2.5" />
-        Review
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSendToReview();
+              }}
+              disabled={isSendingToReview}
+              variant="ghost"
+              aria-label="Send to review"
+              className={cn(base, "h-auto")}
+            />
+          }
+        >
+          <ScanEye className="w-2.5 h-2.5" />
+          Review
+        </TooltipTrigger>
+        <TooltipContent>
+          Move this task to review without waiting for the agent to finish
+        </TooltipContent>
+      </Tooltip>
     );
 
     if (showSessionLost) {
@@ -615,18 +648,24 @@ function FooterCTAs({
     }
     return (
       <div className="flex gap-1 mt-1.5">
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onStop();
-          }}
-          variant="ghost"
-          className={cn(base, "h-auto bg-foreground text-background")}
-          title="Discard this run and return the task to Planning"
-        >
-          <Square className="w-2.5 h-2.5 fill-current" />
-          Abandon
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop();
+                }}
+                variant="ghost"
+                className={cn(base, "h-auto bg-foreground text-background")}
+              />
+            }
+          >
+            <Square className="w-2.5 h-2.5 fill-current" />
+            Abandon
+          </TooltipTrigger>
+          <TooltipContent>Discard this run and return the task to Planning</TooltipContent>
+        </Tooltip>
         {activeSession && (
           <Button
             onClick={(e) => {

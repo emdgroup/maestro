@@ -313,48 +313,66 @@ export function AgentMonitor({
     <div className="px-4 py-3 border-b border-border bg-background shrink-0">
       <div className="flex items-center justify-between gap-2">
         {session.execution_mode === "acp" && session.agent_id ? (
-          <AgentIcon
-            agentId={session.agent_id}
-            src={agentIcons?.[session.agent_id]}
-            className="w-10 h-10 rounded-sm shrink-0"
-          />
+          <Tooltip>
+            <TooltipTrigger render={<span className="shrink-0 inline-flex" />}>
+              <AgentIcon
+                agentId={session.agent_id}
+                src={agentIcons?.[session.agent_id]}
+                className="w-10 h-10 rounded-sm shrink-0"
+              />
+            </TooltipTrigger>
+            <TooltipContent>{agentNames?.[session.agent_id] ?? session.agent_id}</TooltipContent>
+          </Tooltip>
         ) : (
-          <div className="w-10 h-10 rounded-sm shrink-0 bg-muted/40 border border-border flex items-center justify-center">
-            <Terminal className="w-5 h-5 text-accent" />
-          </div>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="w-10 h-10 rounded-sm shrink-0 bg-muted/40 border border-border flex items-center justify-center" />
+              }
+            >
+              <Terminal className="w-5 h-5 text-accent" />
+            </TooltipTrigger>
+            <TooltipContent>Terminal session</TooltipContent>
+          </Tooltip>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             {session.execution_mode === "acp" && session.acp_session_id ? (
-              <input
-                ref={renameInputRef}
-                className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
-                value={
-                  renamingKey === session.session_key
-                    ? renameValue
-                    : (session.session_name ??
-                      session.task_name ??
-                      session.branch_name ??
-                      "Interactive session")
-                }
-                title="Click to rename"
-                onFocus={() => {
-                  setRenamingKey(session.session_key);
-                  setRenameValue(
-                    session.session_name ?? session.task_name ?? session.branch_name ?? "",
-                  );
-                  requestAnimationFrame(() => renameInputRef.current?.select());
-                }}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") renameInputRef.current?.blur();
-                  if (e.key === "Escape") {
-                    renameCanceledRef.current = true;
-                    renameInputRef.current?.blur();
+              <Tooltip disabled={renamingKey === session.session_key} trackCursorAxis="x">
+                <TooltipTrigger
+                  render={
+                    <input
+                      ref={renameInputRef}
+                      className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
+                      value={
+                        renamingKey === session.session_key
+                          ? renameValue
+                          : (session.session_name ??
+                            session.task_name ??
+                            session.branch_name ??
+                            "Interactive session")
+                      }
+                      onFocus={() => {
+                        setRenamingKey(session.session_key);
+                        setRenameValue(
+                          session.session_name ?? session.task_name ?? session.branch_name ?? "",
+                        );
+                        requestAnimationFrame(() => renameInputRef.current?.select());
+                      }}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") renameInputRef.current?.blur();
+                        if (e.key === "Escape") {
+                          renameCanceledRef.current = true;
+                          renameInputRef.current?.blur();
+                        }
+                      }}
+                      onBlur={() => commitRename(session)}
+                    />
                   }
-                }}
-                onBlur={() => commitRename(session)}
-              />
+                />
+                <TooltipContent>Click to rename</TooltipContent>
+              </Tooltip>
             ) : (
               <h3 className="text-sm font-semibold flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]">
                 {session.session_name ??

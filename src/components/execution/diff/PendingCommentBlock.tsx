@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pencil, Trash2, Send, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { AnnotationComposer } from "@/components/execution/side-panel/annotations/AnnotationComposer";
 import { CaptureChip } from "@/components/execution/side-panel/annotations/CaptureChip";
@@ -94,37 +95,56 @@ export function PendingCommentBlock({
   const actions = (
     <>
       {onSend && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title={sendDisabled ? "Agent is busy" : "Send this annotation"}
-          disabled={sendDisabled}
-          className="shrink-0 text-muted-foreground hover:text-accent"
-          onClick={onSend}
-        >
-          <Send className="size-3" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={sendDisabled ? "Agent is busy" : "Send this annotation"}
+              disabled={sendDisabled}
+              className="shrink-0 text-muted-foreground hover:text-accent"
+              onClick={onSend}
+            >
+              <Send className="size-3" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{sendDisabled ? "Agent is busy" : "Send this annotation"}</TooltipContent>
+        </Tooltip>
       )}
       {onEdit && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title="Edit"
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={() => setEditing(true)}
-        >
-          <Pencil className="size-3" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Edit"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setEditing(true)}
+              />
+            }
+          >
+            <Pencil className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent>Edit</TooltipContent>
+        </Tooltip>
       )}
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title="Delete"
-        className="shrink-0 text-muted-foreground hover:text-destructive"
-        onClick={onRemove}
-      >
-        <Trash2 className="size-3" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Delete"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={onRemove}
+            />
+          }
+        >
+          <Trash2 className="size-3" />
+        </TooltipTrigger>
+        <TooltipContent>Delete</TooltipContent>
+      </Tooltip>
     </>
   );
 
@@ -139,24 +159,38 @@ export function PendingCommentBlock({
         )}
       >
         <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            title="Previous comment"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onPrev}
-          >
-            <ChevronUp className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            title="Next comment"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onNext}
-          >
-            <ChevronDown className="size-3" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Previous comment"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={onPrev}
+                />
+              }
+            >
+              <ChevronUp className="size-3" />
+            </TooltipTrigger>
+            <TooltipContent>Previous comment</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Next comment"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={onNext}
+                />
+              }
+            >
+              <ChevronDown className="size-3" />
+            </TooltipTrigger>
+            <TooltipContent>Next comment</TooltipContent>
+          </Tooltip>
           {position && (
             <span className="ml-1 text-[10px] font-mono text-muted-foreground tabular-nums">
               {position[0]} / {position[1]}

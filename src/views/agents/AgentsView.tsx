@@ -399,26 +399,40 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           </ShortcutHint>
           {(discovery?.agents?.length ?? 0) > 0 && (
             <ShortcutHint shortcutId="agents-history">
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
-                onClick={() => setShowHistory((v) => !v)}
-              >
-                <History className="size-3.5 mr-1" />
-                History
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn("h-8 text-xs", showHistory && "bg-muted text-foreground")}
+                      onClick={() => setShowHistory((v) => !v)}
+                    />
+                  }
+                >
+                  <History className="size-3.5 mr-1" />
+                  History
+                </TooltipTrigger>
+                <TooltipContent>Browse and reopen this agent&apos;s past sessions</TooltipContent>
+              </Tooltip>
             </ShortcutHint>
           )}
         </div>
         <div className="flex items-center gap-2">
           <Popover>
-            <PopoverTrigger
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Display settings"
-            >
-              <Settings2 className="size-3.5" />
-            </PopoverTrigger>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <PopoverTrigger
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Display settings"
+                  />
+                }
+              >
+                <Settings2 className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Display settings</TooltipContent>
+            </Tooltip>
             <PopoverContent align="end" className="w-60 gap-3">
               <p className="text-xs font-semibold text-foreground">Display Settings</p>
               <div className="flex flex-col gap-1.5">

@@ -282,17 +282,17 @@ describe("TaskCard pipeline treatment", () => {
 describe("TaskCard send-to-review escape hatch", () => {
   it("is offered when the agent has stopped and is waiting", () => {
     renderCard({ phase: "Implementing", phase_status: "Waiting", ball: "User" });
-    expect(screen.getByTitle(/without waiting for the agent/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
   });
 
   it("is offered when the phase failed", () => {
     renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
-    expect(screen.getByTitle(/without waiting for the agent/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
   });
 
   it("is hidden while the agent is running", () => {
     renderCard({ phase: "Implementing", phase_status: "Running", ball: "Agent" });
-    expect(screen.queryByTitle(/without waiting for the agent/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
   });
 
   /// A dead session is exactly when the work may be finished and only the session gone, so the
@@ -301,12 +301,12 @@ describe("TaskCard send-to-review escape hatch", () => {
   it("survives the session-lost branch", async () => {
     renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
     // The branch is gated on a 2s debounce; the button must be present either side of it.
-    expect(screen.getByTitle(/without waiting for the agent/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
   });
 
   it("is hidden outside In Progress", () => {
     renderCard({ status: "Review", phase: "Approval", phase_status: "Waiting", ball: "User" });
-    expect(screen.queryByTitle(/without waiting for the agent/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
   });
 });
 
@@ -324,7 +324,7 @@ describe("TaskCard empty-review confirmation", () => {
   it("asks first when the backend reports nothing to review", async () => {
     const user = userEvent.setup();
     renderCard(stuck);
-    await user.click(screen.getByTitle(/without waiting for the agent/i));
+    await user.click(screen.getByRole("button", { name: "Send to review" }));
 
     expect(sendToReview.mutate).toHaveBeenCalledWith({ taskId: 7 });
     expect(await screen.findByText("Nothing to review")).toBeInTheDocument();
@@ -333,7 +333,7 @@ describe("TaskCard empty-review confirmation", () => {
   it("forces on confirmation", async () => {
     const user = userEvent.setup();
     renderCard(stuck);
-    await user.click(screen.getByTitle(/without waiting for the agent/i));
+    await user.click(screen.getByRole("button", { name: "Send to review" }));
     await user.click(await screen.findByText("Review anyway"));
 
     expect(sendToReview.mutate).toHaveBeenLastCalledWith({ taskId: 7, force: true });
@@ -343,7 +343,7 @@ describe("TaskCard empty-review confirmation", () => {
     sendToReview.result = makeTask({ status: "Review" });
     const user = userEvent.setup();
     renderCard(stuck);
-    await user.click(screen.getByTitle(/without waiting for the agent/i));
+    await user.click(screen.getByRole("button", { name: "Send to review" }));
 
     expect(screen.queryByText("Nothing to review")).not.toBeInTheDocument();
   });

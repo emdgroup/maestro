@@ -64,7 +64,11 @@ export function BrandIcon({ slug, className, width = 16, height = 16 }: BrandIco
   if (!Icon) return null;
   return (
     <Icon
-      className={cn(className, DARK_INVERT_SLUGS.has(slug) && "dark:[filter:invert(1)]")}
+      className={cn(
+        className,
+        "pointer-events-none",
+        DARK_INVERT_SLUGS.has(slug) && "dark:[filter:invert(1)]",
+      )}
       width={width}
       height={height}
     />

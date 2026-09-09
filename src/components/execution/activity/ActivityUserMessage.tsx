@@ -10,6 +10,7 @@ import {
   AttachmentTitle,
   AttachmentDescription,
 } from "@/ui/attachment";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { docIcon, formatFileSize } from "./compose-bar/AttachmentShelf";
 import { MessageActionBar } from "./MessageActionBar";
 
@@ -232,7 +233,12 @@ export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessage
                             />
                           </AttachmentMedia>
                           <AttachmentContent>
-                            <AttachmentTitle title={b.name}>{b.name}</AttachmentTitle>
+                            <Tooltip>
+                              <TooltipTrigger render={<AttachmentTitle />}>{b.name}</TooltipTrigger>
+                              <TooltipContent className="max-w-md break-all">
+                                {b.name}
+                              </TooltipContent>
+                            </Tooltip>
                             <AttachmentDescription>
                               {b.mimeType.split("/").pop()?.toUpperCase()} ·{" "}
                               {formatFileSize(Math.round(b.data.length * 0.75))}

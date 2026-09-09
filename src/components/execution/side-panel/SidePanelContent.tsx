@@ -368,17 +368,24 @@ export function SidePanelContent({
                         {/* Save and delete gave up their places in the row to the mode toggle and
                             the annotation bar: they are occasional, and the row is 400px wide. */}
                         <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <button
-                                type="button"
-                                title="Canvas actions"
-                                className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                              />
-                            }
-                          >
-                            <MoreHorizontal className="w-3.5 h-3.5" />
-                          </DropdownMenuTrigger>
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <DropdownMenuTrigger
+                                  render={
+                                    <button
+                                      type="button"
+                                      aria-label="Canvas actions"
+                                      className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                                    />
+                                  }
+                                />
+                              }
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent>Canvas actions</TooltipContent>
+                          </Tooltip>
                           {/* `DropdownMenuContent` is `w-(--anchor-width)` by default, which here
                               is the width of an icon button — every label would wrap to three
                               lines. These items are labels, not a menu sized to a field. */}

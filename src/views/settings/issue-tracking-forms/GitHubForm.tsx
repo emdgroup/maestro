@@ -135,14 +135,21 @@ export function GitHubForm({ integration, fields, onFieldsChange, showValidation
             Repository
           </Label>
           {ownerValid && (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              onClick={refreshRepos}
-              title="Refresh repositories"
-            >
-              <RefreshCw className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Refresh repositories"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={refreshRepos}
+                  />
+                }
+              >
+                <RefreshCw className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Refresh repositories</TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Combobox

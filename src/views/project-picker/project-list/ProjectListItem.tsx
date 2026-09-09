@@ -61,19 +61,25 @@ export function ProjectListItem({
         button
       )}
       {onRemove && !locked && (
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          variant="ghost"
-          tabIndex={-1}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-          title="Remove from recent projects (Del key)"
-          aria-label="Remove from recent projects"
-        >
-          <X className="size-3.5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                variant="ghost"
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                aria-label="Remove from recent projects"
+              />
+            }
+          >
+            <X className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent>Remove from recent projects (Del key)</TooltipContent>
+        </Tooltip>
       )}
     </li>
   );

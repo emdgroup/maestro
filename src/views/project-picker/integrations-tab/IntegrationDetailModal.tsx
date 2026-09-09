@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import { BrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { useSaveIntegration, PROVIDER_NAMES } from "@/services/integration.service";
@@ -106,15 +107,29 @@ export function IntegrationDetailModal({ integration, open, onOpenChange, onDisc
             </div>
 
             <DialogFooter className="flex-row justify-between sm:justify-between">
-              <Button
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                disabled={integration.source === "gh_cli"}
-                title={integration.source === "gh_cli" ? "Managed by gh CLI" : undefined}
-                onClick={() => onDisconnect(integration)}
-              >
-                Disconnect
-              </Button>
+              {integration.source === "gh_cli" ? (
+                <Tooltip>
+                  <TooltipTrigger render={<span className="inline-flex" />}>
+                    <Button
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      disabled
+                      onClick={() => onDisconnect(integration)}
+                    >
+                      Disconnect
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Managed by gh CLI</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onDisconnect(integration)}
+                >
+                  Disconnect
+                </Button>
+              )}
               {integration.source !== "gh_cli" && (
                 <Button onClick={handleEditClick}>Edit credentials</Button>
               )}
