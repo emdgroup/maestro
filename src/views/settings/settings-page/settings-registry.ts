@@ -124,7 +124,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     label: "Appearance",
     icon: Palette,
     scope: "project",
-    keywords: ["project color", "accent color", "header color"],
+    keywords: [
+      "project color",
+      "accent color",
+      "header color",
+      "opens on",
+      "startup tab",
+      "default tab",
+    ],
   },
 ];
 

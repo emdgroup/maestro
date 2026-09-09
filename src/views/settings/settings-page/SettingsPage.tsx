@@ -188,7 +188,7 @@ function ProjectScopePane({
   const settings = projectSettingsQuery.data;
 
   // The command takes the whole request, so a patch has to be merged onto what is stored —
-  // including `startup_tab`, which has no control here but must survive a write from one that has.
+  // every field a patch does not name has to survive a write from a control on another page.
   function updateSettings(patch: Partial<ProjectConfigRequest>) {
     if (!settings) return;
     updateProjectSettings.mutate({
@@ -257,7 +257,12 @@ function ProjectScopePane({
           issueTrackingIntegrations={issueTrackingIntegrations}
         />
       )}
-      {pageId === "project-appearance" && <ProjectAppearanceSection />}
+      {pageId === "project-appearance" && (
+        <ProjectAppearanceSection
+          startupTab={settings?.startup_tab ?? null}
+          onChange={updateSettings}
+        />
+      )}
     </div>
   );
 }
