@@ -75,7 +75,7 @@ export function ReworkModal({
               {comments.length} comment{comments.length !== 1 ? "s" : ""}
             </Button>
             {expanded && (
-              <div className="max-h-40 overflow-y-auto custom-scrollbar border-t divide-y">
+              <div className="max-h-40 overflow-y-auto border-t divide-y">
                 {comments.map((c) => (
                   <div key={c.id} className="px-3 py-2 text-xs">
                     <span className="font-mono text-muted-foreground">

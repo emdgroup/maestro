@@ -17,7 +17,7 @@ export function WslPickerPanel({ onBack, onAdded }: { onBack: () => void; onAdde
   return (
     <>
       <PanelHeader onBack={onBack} title="WSL" />
-      <div className="flex-1 overflow-auto custom-scrollbar">
+      <div className="flex-1 overflow-auto">
         {unsavedDistros.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center px-4 py-8">
             All WSL distros already added

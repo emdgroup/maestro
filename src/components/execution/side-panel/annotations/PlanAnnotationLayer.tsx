@@ -292,10 +292,7 @@ export function PlanAnnotationLayer({
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto custom-scrollbar", scrollClassName)}
-      >
+      <div ref={scrollRef} className={cn("flex-1 overflow-y-auto", scrollClassName)}>
         <div
           ref={containerRef}
           className="relative"

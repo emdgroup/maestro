@@ -189,7 +189,7 @@ function AnnotationListPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-border">
+      <div className="flex-1 overflow-y-auto divide-y divide-border">
         {annotations.map((a) => (
           <div
             key={a.id}

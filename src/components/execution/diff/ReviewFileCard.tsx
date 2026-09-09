@@ -204,7 +204,7 @@ export function ReviewFileCard({
       {expanded && (
         <div
           className={cn(
-            "border border-t-0 rounded-b-lg overflow-auto custom-scrollbar transition-colors",
+            "border border-t-0 rounded-b-lg overflow-auto transition-colors",
             focused ? "border-accent" : "border-border",
           )}
         >

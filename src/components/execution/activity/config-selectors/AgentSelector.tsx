@@ -95,7 +95,7 @@ export function AgentSelector({ option, value, onChange, disabled }: SelectorPro
             autoFocus
           />
         </div>
-        <div className="custom-scrollbar max-h-100 overflow-y-auto overflow-x-visible p-1">
+        <div className="max-h-100 overflow-y-auto overflow-x-visible p-1">
           {grouped.length === 0 && (
             <p className="py-4 text-left text-xs text-muted-foreground px-2">No agents match</p>
           )}

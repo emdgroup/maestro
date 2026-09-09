@@ -68,11 +68,7 @@ export function BaseDropdownSelector({
         align="start"
         alignItemWithTrigger={false}
         sideOffset={4}
-        className={cn(
-          GLASS_CONTENT_CLASS,
-          "p-1 max-h-128 overflow-y-auto custom-scrollbar",
-          contentClassName,
-        )}
+        className={cn(GLASS_CONTENT_CLASS, "p-1 max-h-128 overflow-y-auto", contentClassName)}
       >
         {option.options.map((opt, i) => renderItem(opt, i))}
       </SelectContent>

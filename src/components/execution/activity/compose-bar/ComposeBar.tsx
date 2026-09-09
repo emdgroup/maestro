@@ -460,7 +460,7 @@ export function ComposeBar({
                 logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"
               }
               rows={1}
-              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 leading-relaxed custom-scrollbar"
+              className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 leading-relaxed"
             />
           </div>
           {sendError && <p className="px-3.5 pb-1 text-xs text-destructive">{sendError}</p>}

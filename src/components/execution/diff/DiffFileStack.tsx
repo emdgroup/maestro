@@ -452,7 +452,8 @@ export function DiffFileStack({
   return (
     <div
       ref={scrollContainerRef}
-      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-3 flex flex-col"
+      data-slot="diff-stack-scroller"
+      className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col"
     >
       {loading && (
         <div className="text-xs text-muted-foreground py-8 text-center animate-pulse">

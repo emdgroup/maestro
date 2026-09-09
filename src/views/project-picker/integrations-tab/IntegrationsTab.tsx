@@ -61,7 +61,7 @@ export function IntegrationsTab() {
                 Loading...
               </div>
             ) : (
-              <div className="flex-1 overflow-auto px-1 py-1 custom-scrollbar">
+              <div className="flex-1 overflow-auto px-1 py-1">
                 <ul className="space-y-2">
                   {integrations.map((integration) => (
                     <li key={integration.id}>
@@ -117,7 +117,7 @@ export function IntegrationsTab() {
           {/* Panel 1 — provider picker */}
           <div className="w-1/2 h-full flex flex-col min-w-0">
             <PanelHeader onBack={() => setScreen("list")} title="Add integration" />
-            <div className="flex-1 overflow-auto p-2 custom-scrollbar">
+            <div className="flex-1 overflow-auto p-2">
               <div className="grid grid-cols-2 gap-2">
                 {ALL_PROVIDERS.map((provider) => (
                   <button

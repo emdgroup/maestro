@@ -91,7 +91,7 @@ export function UntrackedFileDiffViewer({
           </span>
         </div>
       )}
-      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+      <div className="flex-1 min-h-0 overflow-auto">
         {note ? (
           <div className="px-3 py-6 text-xs text-center text-muted-foreground">{note}</div>
         ) : tooLarge ? (

@@ -111,7 +111,7 @@ export function SettingsPage({
 
           {/* Recessed to `bg-background`: the section cards inside are `bg-card`, so on a
               card-coloured well they would have no surface to sit on. */}
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-xl border-t border-l border-border bg-background custom-scrollbar">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-xl border-t border-l border-border bg-background">
             <div className="mx-auto max-w-2xl p-6">
               <div className="mb-6">
                 <h1 className="text-2xl font-semibold text-foreground">

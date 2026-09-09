@@ -51,7 +51,7 @@ function BranchList({
     return <p className="px-4 py-3 text-xs text-muted-foreground">No branches found.</p>;
   }
   return (
-    <div className="max-h-48 overflow-y-auto py-1 custom-scrollbar">
+    <div className="max-h-48 overflow-y-auto py-1">
       {branches.map((b) => {
         const reason = unavailable?.(b) ?? null;
         return (

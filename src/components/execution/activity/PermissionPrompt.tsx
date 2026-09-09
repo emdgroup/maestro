@@ -86,13 +86,13 @@ export function PermissionPrompt({ requestId, payload, onRespond }: PermissionPr
 
       {/* Tall enough to read a heredoc: 80px cut one off after three lines. */}
       {command && (
-        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 max-h-[260px] overflow-y-auto custom-scrollbar">
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 max-h-[260px] overflow-y-auto">
           <CommandLabel command={command} />
         </div>
       )}
 
       {detailText && (
-        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[160px] overflow-y-auto custom-scrollbar">
+        <div className="px-2.5 py-2 bg-muted/50 rounded-md border border-border/50 text-xs text-muted-foreground font-mono break-all whitespace-pre-wrap max-h-[160px] overflow-y-auto">
           {detailText}
         </div>
       )}

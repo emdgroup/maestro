@@ -212,7 +212,7 @@ export function ScopeSelector({
             <div className="px-3 pt-3 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
               SELECT A RANGE OF COMMITS
             </div>
-            <div className="max-h-64 overflow-y-auto custom-scrollbar">
+            <div className="max-h-64 overflow-y-auto">
               {commits.map((commit) => {
                 const inDraft = draft.has(commit.sha);
                 const isCurrent =

@@ -62,7 +62,7 @@ export function ProposalGate({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-w-0 max-h-[60vh] overflow-y-auto custom-scrollbar rounded-md bg-muted p-4 text-sm">
+        <div className="min-w-0 max-h-[60vh] overflow-y-auto rounded-md bg-muted p-4 text-sm">
           {/* The refiner ending its turn is what opens this gate, so an empty proposal means it
               finished with nothing to say — worth showing plainly rather than as a blank panel the
               user has to interpret. */}

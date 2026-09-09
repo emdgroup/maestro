@@ -15,7 +15,7 @@ export function ConnectionListPanel({
   onAddClick: () => void;
 }) {
   return (
-    <div className="flex-1 overflow-auto px-1 py-1 custom-scrollbar">
+    <div className="flex-1 overflow-auto px-1 py-1">
       <ul className="space-y-2">
         {connections.map((connection) => {
           if (connection.type === "ssh" && connection.sshConnection) {

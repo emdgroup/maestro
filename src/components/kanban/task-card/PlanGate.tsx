@@ -74,7 +74,7 @@ export function PlanGate({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-w-0 max-h-[50vh] overflow-y-auto custom-scrollbar rounded-md bg-muted p-4 text-sm">
+        <div className="min-w-0 max-h-[50vh] overflow-y-auto rounded-md bg-muted p-4 text-sm">
           {body ? (
             <MarkdownBlock text={body} projectId={projectId} />
           ) : (

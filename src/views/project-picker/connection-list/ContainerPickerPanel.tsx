@@ -23,7 +23,7 @@ export function ContainerPickerPanel({
   return (
     <>
       <PanelHeader onBack={onBack} title="Container" />
-      <div className="flex-1 overflow-auto custom-scrollbar">
+      <div className="flex-1 overflow-auto">
         {containersLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-5 h-5 rounded-full border-2 border-muted-foreground/30 border-t-foreground animate-spin" />

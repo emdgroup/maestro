@@ -22,7 +22,7 @@ export function CommandSuggestionsPanel({
   return (
     <SuggestionsPortalWrapper panelPos={panelPos}>
       <div className="flex max-h-48">
-        <div className="overflow-y-auto shrink-0 border-r border-border/20 p-1 max-w-[40%] custom-scrollbar">
+        <div className="overflow-y-auto shrink-0 border-r border-border/20 p-1 max-w-[40%]">
           {commands.length > 0 ? (
             commands.map((cmd, i) => (
               <button
@@ -58,7 +58,7 @@ export function CommandSuggestionsPanel({
             </div>
           )}
         </div>
-        <div className="flex-1 p-3 overflow-y-auto min-w-0 custom-scrollbar">
+        <div className="flex-1 p-3 overflow-y-auto min-w-0">
           {commands[highlight] && (
             <p className="text-xs text-muted-foreground leading-relaxed">
               {commands[highlight].description}

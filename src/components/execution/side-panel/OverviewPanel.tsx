@@ -285,7 +285,7 @@ export function OverviewPanel({
   const extraUserFiles = userFiles.length - MAX_ROWS;
 
   return (
-    <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-3">
+    <div className="absolute inset-0 overflow-y-auto p-3">
       <div className="[column-count:2] [column-width:268px] gap-2">
         {/* Plan */}
         <Card

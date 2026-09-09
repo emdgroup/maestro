@@ -197,7 +197,7 @@ export function ElicitationPrompt({
       {!collapsed && (
         <>
           {/* Question body — capped so a long option list scrolls instead of eating the panel. */}
-          <div className="max-h-[40vh] overflow-x-hidden overflow-y-auto custom-scrollbar">
+          <div className="max-h-[40vh] overflow-x-hidden overflow-y-auto">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={currentIndex}

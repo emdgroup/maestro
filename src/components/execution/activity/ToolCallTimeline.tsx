@@ -438,7 +438,7 @@ export function RowBody({ tc }: { tc: ToolCallItem }) {
         <ToolCallContentBlock key={i} content={c} />
       ))}
       {tc.content.length === 0 && meta?.output && (
-        <div className="custom-scrollbar max-h-64 overflow-y-auto">
+        <div className="max-h-64 overflow-y-auto">
           <pre
             className={cn(
               "font-mono text-[11px] break-words whitespace-pre-wrap",

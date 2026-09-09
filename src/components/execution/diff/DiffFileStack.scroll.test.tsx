@@ -30,7 +30,7 @@ function diffItems(count: number): DisplayItem[] {
  * scroller whose top edge sits at `CONTAINER_TOP`, with a `scrollTop` that actually moves them.
  */
 function fakeLayout(root: HTMLElement) {
-  const scroller = root.querySelector<HTMLDivElement>(".custom-scrollbar");
+  const scroller = root.querySelector<HTMLDivElement>("[data-slot='diff-stack-scroller']");
   if (!scroller) throw new Error("scroll container not found");
   const cards = Array.from(root.querySelectorAll<HTMLElement>("[data-file-card]"));
 

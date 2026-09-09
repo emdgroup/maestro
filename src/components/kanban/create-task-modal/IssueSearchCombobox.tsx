@@ -74,7 +74,7 @@ export function IssueSearchCombobox({
         </InputGroupAddon>
       </InputGroup>
       <ComboboxContent className="min-w-(--anchor-width)" sideOffset={4}>
-        <ComboboxList className="custom-scrollbar space-y-1">
+        <ComboboxList className="space-y-1">
           {issuesFetching && <ComboboxEmpty>Loading issues...</ComboboxEmpty>}
           {!issuesFetching && filteredIssues.length === 0 && (
             <ComboboxEmpty>No issues found.</ComboboxEmpty>

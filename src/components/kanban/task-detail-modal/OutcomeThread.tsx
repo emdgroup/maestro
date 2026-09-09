@@ -97,7 +97,7 @@ export function OutcomeThread({ taskId }: { taskId: number }) {
           Nothing recorded yet. An agent's closing message lands here when a phase finishes.
         </p>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-3 pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
           {comments.map((comment) => (
             <Entry key={comment.id} comment={comment} />
           ))}

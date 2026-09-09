@@ -154,7 +154,7 @@ export function PullRequestPanel({
 
       {/* Padded, with the cards spaced apart: each pull request is a thing you act on, the way a
           worktree card is, rather than a line in a table. */}
-      <div className="flex-1 space-y-2 overflow-y-auto custom-scrollbar p-2">
+      <div className="flex-1 space-y-2 overflow-y-auto p-2">
         {visible.length === 0 ? (
           <p className="p-4 text-center text-xs text-muted-foreground">
             {search

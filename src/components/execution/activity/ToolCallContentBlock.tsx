@@ -74,7 +74,7 @@ export function ToolCallContentBlock({ content }: { content: ToolCallContent }) 
       // alignment on lines wider than the panel — carets under a compiler error,
       // ASCII tables — which is the cheaper of the two.
       return (
-        <div className="max-h-64 overflow-y-auto custom-scrollbar text-[11px] [&_pre]:overflow-x-visible! [&_pre]:break-words [&_pre]:whitespace-pre-wrap">
+        <div className="max-h-64 overflow-y-auto text-[11px] [&_pre]:overflow-x-visible! [&_pre]:break-words [&_pre]:whitespace-pre-wrap">
           {bare != null ? (
             <pre className="font-mono text-[11px] break-words whitespace-pre-wrap">{bare}</pre>
           ) : hasCodeFence(text) ? (
@@ -172,7 +172,7 @@ function InlineDiffBlock({
           {path}
         </div>
       )}
-      <div className="overflow-x-auto max-h-52 overflow-y-auto custom-scrollbar">
+      <div className="overflow-x-auto max-h-52 overflow-y-auto">
         {/*
          * A row's width resolves against the scroll container's *visible* width,
          * so an overflowing line paints its background only as far as the card

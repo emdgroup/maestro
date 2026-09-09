@@ -106,7 +106,7 @@ export function KanbanColumn({
       </div>
       <div
         ref={ref}
-        className={`flex-1 overflow-y-auto custom-scrollbar p-3 transition-all duration-150 ${isHighlighted ? getDropTargetClass(status) : ""}`}
+        className={`flex-1 overflow-y-auto p-3 transition-all duration-150 ${isHighlighted ? getDropTargetClass(status) : ""}`}
       >
         {tasks.length === 0 && COLUMN_EMPTY_STATE[status] && (
           <div className="border border-dashed border-border rounded-lg p-5 flex flex-col items-center gap-2 text-center w-full">

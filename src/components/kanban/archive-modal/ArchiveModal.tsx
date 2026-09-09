@@ -96,7 +96,7 @@ export function ArchiveModal({ isOpen, onClose, projectId }: ArchiveModalProps) 
           </TabsList>
         </Tabs>
 
-        <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {isLoading ? (
             <p className="text-sm text-muted-foreground p-4">Loading...</p>
           ) : archiveTasks.length === 0 ? (

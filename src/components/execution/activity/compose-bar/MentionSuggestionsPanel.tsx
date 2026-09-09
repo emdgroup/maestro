@@ -21,7 +21,7 @@ export function MentionSuggestionsPanel({
   if (!panelPos || suggestions.length === 0) return null;
   return (
     <SuggestionsPortalWrapper panelPos={panelPos}>
-      <div className="overflow-y-auto max-h-48 p-1 custom-scrollbar">
+      <div className="overflow-y-auto max-h-48 p-1">
         {suggestions.map((path, i) => (
           <button
             key={path}

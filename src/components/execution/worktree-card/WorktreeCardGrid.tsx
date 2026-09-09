@@ -63,7 +63,7 @@ export function WorktreeCardGrid({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+    <div className="flex-1 overflow-y-auto p-4 space-y-2">
       {/* No header and no chevron: a section of one, that is always the same one and can never
           gain a sibling, is a heading that says nothing. Sitting above the first group header is
           enough to set it apart. */}

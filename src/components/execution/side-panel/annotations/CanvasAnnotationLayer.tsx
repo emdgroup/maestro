@@ -512,7 +512,7 @@ export function CanvasAnnotationLayer({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
         <div ref={frameRef} className="relative">
           {/* The capture target. The overlay below is deliberately a sibling: anything inside this
               element — the marquee, the outlines, the bubble — would be rasterised into the shot. */}

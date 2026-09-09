@@ -55,7 +55,7 @@ export function SettingsSidebar({
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-3">
+      <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {hits.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             No settings match &ldquo;{query.trim()}&rdquo;

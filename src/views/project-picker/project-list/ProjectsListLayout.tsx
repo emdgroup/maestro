@@ -62,7 +62,7 @@ export function ProjectsListLayout({
         {headerContent}
       </div>
 
-      <div className="flex-1 overflow-auto mb-4 px-1 py-1 custom-scrollbar">{children}</div>
+      <div className="flex-1 overflow-auto mb-4 px-1 py-1">{children}</div>
 
       <div className="pt-4 border-t border-border flex gap-2">
         <Button

@@ -22,9 +22,7 @@ export function DescriptionWithAttachments({
 }: DescriptionWithAttachmentsProps) {
   return (
     <div className="min-h-25 flex-1 flex flex-col gap-2 relative">
-      <div
-        className={cn("flex-1 min-h-0 overflow-y-auto custom-scrollbar", isDragging && "invisible")}
-      >
+      <div className={cn("flex-1 min-h-0 overflow-y-auto", isDragging && "invisible")}>
         <MarkdownEditor
           value={value}
           onSave={onSave}

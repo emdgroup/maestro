@@ -47,7 +47,7 @@ function FileContentInner({
         <iframe
           src={blobUrl ?? undefined}
           sandbox="allow-scripts"
-          className="w-full h-full border-0 bg-background custom-scrollbar"
+          className="w-full h-full border-0 bg-background"
           title={path.split("/").pop()}
         />
       );
@@ -230,7 +230,7 @@ export function WorkingFileContentView({
       )}
       <div
         className={cn(
-          "flex-1 overflow-auto text-sm custom-scrollbar",
+          "flex-1 overflow-auto text-sm",
           viewType === "html" || viewType === "code" ? "p-0" : "px-6 py-5",
         )}
       >
