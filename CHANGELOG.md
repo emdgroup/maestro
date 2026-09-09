@@ -2,15 +2,13 @@
 
 ## [0.23.0](https://github.com/emdgroup/maestro/compare/v0.22.0...v0.23.0) (2026-09-09)
 
-
 ### Features
 
-* pin the repository card and fetch before reading its counts ([#341](https://github.com/emdgroup/maestro/issues/341)) ([e8bbc1f](https://github.com/emdgroup/maestro/commit/e8bbc1f0666f307838d6b5eb9b703647baa0aa80))
-
+- pin the repository card and fetch before reading its counts ([#341](https://github.com/emdgroup/maestro/issues/341)) ([e8bbc1f](https://github.com/emdgroup/maestro/commit/e8bbc1f0666f307838d6b5eb9b703647baa0aa80))
 
 ### Bug Fixes
 
-* make the unmerged-archive dialog's actions readable and fit ([#339](https://github.com/emdgroup/maestro/issues/339)) ([8b45449](https://github.com/emdgroup/maestro/commit/8b4544942d5618345ae9399a5a90e534a39398e5))
+- make the unmerged-archive dialog's actions readable and fit ([#339](https://github.com/emdgroup/maestro/issues/339)) ([8b45449](https://github.com/emdgroup/maestro/commit/8b4544942d5618345ae9399a5a90e534a39398e5))
 
 ## [0.22.0](https://github.com/emdgroup/maestro/compare/v0.21.0...v0.22.0) (2026-09-08)
 
