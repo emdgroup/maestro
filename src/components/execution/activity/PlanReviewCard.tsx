@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from "react";
 import { Route, ChevronDown, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils.ts";
 import { Button } from "@/ui/button";
@@ -16,6 +17,7 @@ import {
   isBypassOption,
   splitPermissionOptions,
 } from "./permission-prompt-utils";
+import { pickDefaultAccept, readLastAccept, writeLastAccept } from "./plan-accept-preference";
 import type { PermissionOption } from "./permission-prompt-utils";
 import type { ToolCallItem } from "./types";
 
@@ -63,6 +65,7 @@ export function PlanReviewCard({ item }: { item: ToolCallItem }) {
 export function PendingPlanCard({
   title,
   sessionKey,
+  modelId,
   requestId,
   payload,
   onRespond,
@@ -71,6 +74,8 @@ export function PendingPlanCard({
   /** The plan's own heading, from the tool call the request names. */
   title: string | null;
   sessionKey: number;
+  /** The session's current model, which the remembered accept is keyed by. Null when unreported. */
+  modelId: string | null;
   requestId: string;
   payload: Record<string, unknown>;
   onRespond: (requestId: string, optionId: string | null) => void;
@@ -78,7 +83,19 @@ export function PendingPlanCard({
 }) {
   const noteCount = useSessionAnnotations(sessionKey, "plan").length;
   const { acceptOptions, rejectOption } = splitPermissionOptions(extractOptions(payload));
-  const primary = acceptOptions[0] ?? null;
+
+  // Read once per model rather than per render. The card is keyed by request id, so it remounts
+  // for the next plan and picks up whatever this one wrote.
+  const lastAcceptId = useMemo(() => readLastAccept(modelId), [modelId]);
+  const primary = pickDefaultAccept(acceptOptions, lastAcceptId);
+
+  const respondAccept = useCallback(
+    (optionId: string) => {
+      writeLastAccept(modelId, optionId);
+      onRespond(requestId, optionId);
+    },
+    [modelId, onRespond, requestId],
+  );
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -117,11 +134,7 @@ export function PendingPlanCard({
         </Button>
         {primary ? (
           <ButtonGroup>
-            <Button
-              variant="accent"
-              size="sm"
-              onClick={() => onRespond(requestId, primary.optionId)}
-            >
+            <Button variant="accent" size="sm" onClick={() => respondAccept(primary.optionId)}>
               {primary.name}
             </Button>
             {acceptOptions.length > 1 && (
@@ -142,7 +155,7 @@ export function PendingPlanCard({
                       // A bypass option is set apart rather than sitting flush against the
                       // ordinary ones, so it cannot be picked by momentum.
                       separated={isBypassOption(opt.optionId) && i > 0}
-                      onSelect={() => onRespond(requestId, opt.optionId)}
+                      onSelect={() => respondAccept(opt.optionId)}
                     />
                   ))}
                 </DropdownMenuContent>

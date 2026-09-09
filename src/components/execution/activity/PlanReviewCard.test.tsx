@@ -26,13 +26,14 @@ const CLAUDE_OPTIONS = [
 
 /** `null` stands for a payload with no `options` at all — a default parameter cannot, since it
  *  would swallow the `undefined` meant to select that case. */
-function setup(options: unknown[] | null = CLAUDE_OPTIONS) {
+function setup(options: unknown[] | null = CLAUDE_OPTIONS, modelId: string | null = null) {
   const onRespond = vi.fn();
   const onOpen = vi.fn();
   render(
     <PendingPlanCard
       title={TITLE}
       sessionKey={SESSION}
+      modelId={modelId}
       requestId="perm-1"
       payload={
         {
@@ -51,6 +52,7 @@ function setup(options: unknown[] | null = CLAUDE_OPTIONS) {
 describe("PendingPlanCard", () => {
   beforeEach(() => {
     act(() => useAnnotationStore.getState().clearSession(SESSION));
+    localStorage.clear();
   });
 
   it("answers with the agent's own option ids, under the agent's own labels", () => {
@@ -87,6 +89,44 @@ describe("PendingPlanCard", () => {
     // Null is what maestro-server maps to the `cancelled` outcome.
     act(() => screen.getByText("Reject").click());
     expect(onRespond).toHaveBeenLastCalledWith("perm-1", null);
+  });
+
+  it("leads with the accept the user last chose for this model", () => {
+    localStorage.setItem("plan:acceptOption:sonnet", "acceptEdits");
+    const { onRespond } = setup(CLAUDE_OPTIONS, "sonnet");
+
+    // The menu is closed, so the only "Accept edits" on screen is the primary button.
+    act(() => screen.getByText("Accept edits").click());
+    expect(onRespond).toHaveBeenCalledWith("perm-1", "acceptEdits");
+  });
+
+  it("records the accept under the model it was chosen for, and nowhere else", () => {
+    setup(CLAUDE_OPTIONS, "sonnet");
+    act(() => screen.getByText("Accept").click());
+    expect(localStorage.getItem("plan:acceptOption:sonnet")).toBe("default");
+
+    // Another model's options are its own — it must not inherit this one's choice.
+    expect(localStorage.getItem("plan:acceptOption:opus")).toBeNull();
+  });
+
+  it("remembers a choice made by a session whose agent reports no model", () => {
+    setup(CLAUDE_OPTIONS, null);
+    act(() => screen.getByText("Accept").click());
+    expect(localStorage.getItem("plan:acceptOption:<none>")).toBe("default");
+  });
+
+  it("falls back to the agent's own first accept when the remembered one is not on offer", () => {
+    localStorage.setItem("plan:acceptOption:sonnet", "acceptEdits");
+    const { onRespond } = setup(
+      [
+        { optionId: "proceed", name: "Go ahead", kind: "allow_once" },
+        { optionId: "stop", name: "Not yet", kind: "reject_once" },
+      ],
+      "sonnet",
+    );
+
+    act(() => screen.getByText("Go ahead").click());
+    expect(onRespond).toHaveBeenCalledWith("perm-1", "proceed");
   });
 
   it("opens the plan rather than answering it", () => {

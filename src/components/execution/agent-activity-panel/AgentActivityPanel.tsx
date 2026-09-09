@@ -601,6 +601,7 @@ export function AgentActivityPanel({
     <PendingPlanCard
       key={pendingPermission.requestId}
       sessionKey={sessionKey}
+      modelId={configValues.model ?? null}
       title={
         (livePlanToolCallId ? liveState.toolCallMap.get(livePlanToolCallId)?.title : null) ?? null
       }
