@@ -3,8 +3,7 @@ use std::sync::Arc;
 use maestro_protocol::{
     CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse, FileSearchResponse,
     InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
-    ServerRequest, ServerResponse, SessionListOkResponse, SessionLoadOkResponse, SessionUpdate,
-    SpawnResponse, AUTH_REQUIRED_ERROR,
+    ServerRequest, ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
 use tokio::sync::Mutex;
 
@@ -12,16 +11,11 @@ use crate::agent;
 use crate::auth::{self, AuthTerminals};
 use crate::file_ops::{handle_file_read, handle_file_search};
 use crate::helpers::{
-    ensure_and_get_connection, forward_to_session, resolve_agent_spawn_params, send_diag,
-    send_response,
+    ensure_and_get_connection, evict_if_same_connection, forward_to_session,
+    resolve_agent_spawn_params, send_diag, send_response,
 };
-use crate::session::{
-    create_session_on_connection, load_session_on_connection, pre_initialize_agent,
-    session_close_on_connection, session_delete_on_connection, session_list_on_connection,
-};
-use crate::sessions::{
-    ActiveSession, AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections,
-};
+use crate::session::{self, create_session_on_connection, pre_initialize_agent};
+use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 use crate::tool_check::check_tools;
 
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
@@ -129,14 +123,12 @@ pub(crate) async fn dispatch_message(
                         // Keep connection alive for auth_required so Authenticate can follow.
                         // Evict on any other failure (broken connection, protocol error, etc.).
                         if msg != AUTH_REQUIRED_ERROR {
-                            let mut connections = agent_connections_task.lock().await;
-                            if connections
-                                .get(&req.agent_id)
-                                .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
-                                .unwrap_or(false)
-                            {
-                                connections.remove(&req.agent_id);
-                            }
+                            evict_if_same_connection(
+                                &agent_connections_task,
+                                &req.agent_id,
+                                &conn_handle.router,
+                            )
+                            .await;
                         }
                         return;
                     }
@@ -372,240 +364,40 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
-            let conn_handle = agent_connections
-                .lock()
-                .await
-                .get(&req.agent_id)
-                .map(AgentConnectionHandle::from);
-            let Some(conn_handle) = conn_handle else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
-                            SessionListOkResponse {
-                                sessions: vec![],
-                                next_cursor: None,
-                                supports_session_delete: false
-                            },
-                        )),
-                    )
-                    .await
-                );
-                return true;
-            };
-            let supports_session_delete = conn_handle.capabilities.supports_session_delete;
-            let list_result = session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await;
-            if list_result.is_err() {
-                let mut connections = agent_connections.lock().await;
-                if connections
-                    .get(&req.agent_id)
-                    .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
-                    .unwrap_or(false)
-                {
-                    connections.remove(&req.agent_id);
-                }
-            }
-            match list_result {
-                Ok((sessions_list, next_cursor)) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
-                                SessionListOkResponse {
-                                    sessions: sessions_list,
-                                    next_cursor,
-                                    supports_session_delete
-                                },
-                            )),
-                        )
-                        .await
-                    );
-                }
-                Err(e) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: e,
-                                session_id: None,
-                            })),
-                        )
-                        .await
-                    );
-                }
-            }
+            return session::requests::list(req, agent_connections, stdout).await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {
-            let Some((cmd, args, env)) =
-                resolve_agent_spawn_params(&req.agent_id, agents_with_spawn, stdout).await
-            else {
-                return true;
-            };
-            let stdout_task = Arc::clone(stdout);
-            let agent_connections_task = Arc::clone(agent_connections);
-            let spawn_result_tx = spawn_result_tx.clone();
-            tokio::spawn(async move {
-                let conn_handle = ensure_and_get_connection(
-                    &req.agent_id,
-                    &agent_connections_task,
-                    &cmd,
-                    &args,
-                    &env,
-                    &req.cwd,
-                    &stdout_task,
-                )
-                .await;
-                let conn_handle = match conn_handle {
-                    Some(h) => h,
-                    None => return,
-                };
-                let result = load_session_on_connection(
-                    &conn_handle,
-                    req.session_id.clone(),
-                    req.resume_session_id.clone(),
-                    &req.cwd,
-                    &req.additional_directories,
-                    Arc::clone(&stdout_task),
-                )
-                .await;
-                match result {
-                    Err(()) => {
-                        let mut connections = agent_connections_task.lock().await;
-                        if connections
-                            .get(&req.agent_id)
-                            .map(|c| Arc::ptr_eq(&c.router, &conn_handle.router))
-                            .unwrap_or(false)
-                        {
-                            connections.remove(&req.agent_id);
-                        }
-                    }
-                    Ok(None) => {}
-                    Ok(Some((mut session, models, modes, prompt_caps, config_options))) => {
-                        session.agent_id = req.agent_id;
-                        session.cwd = req.cwd;
-                        session.additional_directories = req.additional_directories;
-                        let session_id = req.session_id.clone();
-                        if send_response(
-                            &stdout_task,
-                            &MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(
-                                SessionLoadOkResponse {
-                                    session_id: req.session_id,
-                                    models,
-                                    modes,
-                                    prompt_capabilities: Some(prompt_caps),
-                                    config_options,
-                                },
-                            )),
-                        )
-                        .await
-                        .is_ok()
-                        {
-                            let _ = spawn_result_tx.send((session_id, session)).await;
-                        }
-                    }
-                }
-            });
+            return session::requests::load(
+                req,
+                agent_connections,
+                agents_with_spawn,
+                spawn_result_tx,
+                stdout,
+            )
+            .await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionClose(req)) => {
-            let conn_handle = agent_connections
-                .lock()
-                .await
-                .get(&req.agent_id)
-                .map(AgentConnectionHandle::from);
-            let close_result = match conn_handle {
-                Some(ref handle) => {
-                    session_close_on_connection(handle, req.session_id.clone()).await
-                }
-                None => Err(format!(
-                    "no connection found for agent {} with session {}",
-                    req.agent_id, req.session_id
-                )),
-            };
-            if let (Some(ref handle), Err(_)) = (&conn_handle, &close_result) {
-                let mut connections = agent_connections.lock().await;
-                if connections
-                    .get(&req.agent_id)
-                    .map(|c| Arc::ptr_eq(&c.router, &handle.router))
-                    .unwrap_or(false)
-                {
-                    connections.remove(&req.agent_id);
-                }
-            }
-            match close_result {
-                Ok(()) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
-                        )
-                        .await
-                    );
-                }
-                Err(e) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: e,
-                                session_id: None,
-                            })),
-                        )
-                        .await
-                    );
-                }
-            }
+            return session::requests::end(
+                session::requests::EndKind::Close,
+                req.agent_id,
+                req.session_id,
+                agent_connections,
+                stdout,
+            )
+            .await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionDelete(req)) => {
-            let conn_handle = agent_connections
-                .lock()
-                .await
-                .get(&req.agent_id)
-                .map(AgentConnectionHandle::from);
-            let delete_result = match conn_handle {
-                Some(ref handle) => {
-                    session_delete_on_connection(handle, req.session_id.clone()).await
-                }
-                None => Err(format!(
-                    "no connection found for agent {} with session {}",
-                    req.agent_id, req.session_id
-                )),
-            };
-            if let (Some(ref handle), Err(_)) = (&conn_handle, &delete_result) {
-                let mut connections = agent_connections.lock().await;
-                if connections
-                    .get(&req.agent_id)
-                    .map(|c| Arc::ptr_eq(&c.router, &handle.router))
-                    .unwrap_or(false)
-                {
-                    connections.remove(&req.agent_id);
-                }
-            }
-            match delete_result {
-                Ok(()) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk),
-                        )
-                        .await
-                    );
-                }
-                Err(e) => {
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                                message: e,
-                                session_id: None,
-                            })),
-                        )
-                        .await
-                    );
-                }
-            }
+            return session::requests::end(
+                session::requests::EndKind::Delete,
+                req.agent_id,
+                req.session_id,
+                agent_connections,
+                stdout,
+            )
+            .await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
