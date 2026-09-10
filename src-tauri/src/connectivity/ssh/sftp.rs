@@ -79,6 +79,9 @@ pub async fn upload_file(
 
         bytes_transferred += bytes_read as u64;
 
+        // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
+        // webview that has gone away would turn one transfer into thousands of identical warnings.
+        // The transfer itself still succeeds or fails on its own errors above.
         let _ = app_handle.emit(
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {
@@ -167,6 +170,9 @@ pub async fn download_file(
 
         bytes_transferred += bytes_read as u64;
 
+        // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
+        // webview that has gone away would turn one transfer into thousands of identical warnings.
+        // The transfer itself still succeeds or fails on its own errors above.
         let _ = app_handle.emit(
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {

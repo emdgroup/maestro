@@ -385,8 +385,15 @@ pub async fn delete_worktree(
     let (_project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    // Call git worktree remove via dispatcher (best effort — don't fail if already gone)
-    let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+    // Best effort: a worktree already gone from disk is the outcome this asks for, and the DB row
+    // below is removed either way so the card does not outlive it.
+    if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree_path).await {
+        log::warn!(
+            "Could not remove the git worktree at {}: {}",
+            worktree_path,
+            e
+        );
+    }
 
     // The fetch refspec a pull request checkout added exists to serve this worktree, so it goes
     // with it — each one left behind is a ref every later `git fetch` on the project pays for.
@@ -411,7 +418,12 @@ pub async fn delete_worktree(
             .db
             .lock()
             .map_err(|e| format!("Lock failed: {}", e))?;
-        let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
+        // Not fatal: the git worktree is already gone, so failing here leaves a row pointing at
+        // nothing rather than losing anything. `list_worktrees_with_status` reaps it on the next
+        // poll — but silently, so this is the only place the failure is visible.
+        if let Err(e) = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]) {
+            log::warn!("Could not delete worktree row {}: {}", id, e);
+        }
     }
 
     app_state.app_handle.emit("worktrees-changed", ()).ok();
@@ -738,7 +750,13 @@ pub async fn cleanup_zombie_worktrees(
     // Uses `git branch -d` (safe delete): git refuses to delete branches with unmerged
     // commits, so branches with actual work are preserved automatically.
     for (_, relative_path, branch_name) in &to_delete {
-        let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
+        if let Err(e) = crate::git::delete_worktree(&git_conn, relative_path).await {
+            log::warn!(
+                "Could not remove the git worktree at {}: {}",
+                relative_path,
+                e
+            );
+        }
 
         let _ =
             crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", branch_name])
@@ -816,8 +834,14 @@ pub async fn discard_task_workspace(app_state: &Arc<AppState>, task_id: i32) -> 
         let (_project, git_conn) =
             crate::core::get_project_with_git_conn(app_state, project_id).await?;
 
-        // Remove worktree from disk (best effort)
-        let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+        // Best effort: already gone from disk is the outcome this asks for.
+        if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree_path).await {
+            log::warn!(
+                "Could not remove the git worktree at {}: {}",
+                worktree_path,
+                e
+            );
+        }
 
         // Delete branch (best effort)
         let _ = crate::git::run_git_in_dir_lossy(

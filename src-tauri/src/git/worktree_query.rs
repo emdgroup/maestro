@@ -416,7 +416,12 @@ pub async fn list_worktrees_with_status(
             .lock()
             .map_err(|e| format!("Lock failed: {}", e))?;
         for id in &unmatched_db_ids {
-            let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]);
+            // Not fatal: this poll's answer is already built and a row that survives is simply
+            // offered for reaping again in ten seconds. Logged because a row that never goes
+            // means the reap is failing every time, which is otherwise invisible.
+            if let Err(e) = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]) {
+                log::warn!("Could not reap worktree row {}: {}", id, e);
+            }
         }
     }
 

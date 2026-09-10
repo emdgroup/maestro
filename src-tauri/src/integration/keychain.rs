@@ -139,8 +139,19 @@ impl KeychainStore {
         let entry = Entry::new(SERVICE, &integration_key(provider, id))
             .map_err(|e| format!("Keyring error: {}", e))?;
         let keyring_result = entry.delete_credential();
-        // Clean up file fallback regardless of keyring result.
-        let _ = std::fs::remove_file(integration_file_path_for_id(provider, id, app_data_dir));
+        // Clean up file fallback regardless of keyring result. Logged rather than dropped: a
+        // failure here leaves an encrypted credential on disk for an integration the user has
+        // just disconnected, and nothing else reports that.
+        let fallback_path = integration_file_path_for_id(provider, id, app_data_dir);
+        if let Err(e) = std::fs::remove_file(&fallback_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "Could not remove the stored credential at {}: {}",
+                    fallback_path.display(),
+                    e
+                );
+            }
+        }
         let _ = Self::registry_remove(provider, id, app_data_dir);
         match keyring_result {
             Ok(()) => Ok(KeychainOutcome::Keychain(())),
@@ -365,9 +376,22 @@ impl KeychainStore {
         // time, making existing encrypted files unreadable. This is acceptable: the
         // file fallback is last-resort when neither machine_uid nor keyring work.
         if let Some(parent) = secret_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::warn!(
+                    "Could not create {} for the fallback secret: {}",
+                    parent.display(),
+                    e
+                );
+            }
         }
-        let _ = std::fs::write(&secret_path, &hex);
+        if let Err(e) = std::fs::write(&secret_path, &hex) {
+            log::warn!(
+                "Could not persist the fallback secret to {}: {}. Integrations stored with it \
+                 will not be readable after a restart.",
+                secret_path.display(),
+                e
+            );
+        }
         hex
     }
 

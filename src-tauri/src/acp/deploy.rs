@@ -1,5 +1,5 @@
 use crate::command_ext::NoConsoleWindow;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 const REMOTE_INSTALL_DIR: &str = ".local/bin";
 const REMOTE_BINARY_NAME: &str = "maestro-server";
@@ -758,7 +758,8 @@ async fn download_server_binary(triple: &str, dest: &std::path::Path) -> Result<
 }
 
 fn emit_status(app_handle: &AppHandle, connection_id: i32, status: &str, message: Option<String>) {
-    let _ = app_handle.emit(
+    crate::core::emit_or_log(
+        app_handle,
         "maestro-server://deploy-status",
         DeployStatus {
             connection_id,

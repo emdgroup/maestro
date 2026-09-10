@@ -83,7 +83,7 @@ pub fn spawn_heartbeat_task(
                     break;
                 }
                 _ => {
-                    let _ = app_handle.emit("ssh-connection-lost", connection_id);
+                    crate::core::emit_or_log(&app_handle, "ssh-connection-lost", connection_id);
                     cleanup_pty_sessions_for_connection(&app_state, connection_id).await;
                     *session.state.lock().await = SshConnectionState::Reconnecting;
 
@@ -92,7 +92,8 @@ pub fn spawn_heartbeat_task(
                     let mut reconnected = false;
 
                     for attempt in 1..=max_attempts {
-                        let _ = app_handle.emit(
+                        crate::core::emit_or_log(
+                            &app_handle,
                             "ssh-reconnecting",
                             ReconnectingPayload {
                                 connection_id,
@@ -118,7 +119,7 @@ pub fn spawn_heartbeat_task(
                             .as_ref()
                             .map(|p| p.to_string());
                         if let Ok(()) = session.connect(password).await {
-                            let _ = app_handle.emit("ssh-reconnected", connection_id);
+                            crate::core::emit_or_log(&app_handle, "ssh-reconnected", connection_id);
                             reconnected = true;
 
                             let restore_state = Arc::clone(&app_state);
@@ -143,7 +144,11 @@ pub fn spawn_heartbeat_task(
                                     }
                                     restore_state.app_handle.emit("sessions-changed", ()).ok();
                                 }
-                                let _ = restore_handle.emit("acp-sessions-restored", connection_id);
+                                crate::core::emit_or_log(
+                                    &restore_handle,
+                                    "acp-sessions-restored",
+                                    connection_id,
+                                );
                             });
 
                             break;
@@ -166,7 +171,11 @@ pub fn spawn_heartbeat_task(
                         if had_restorable {
                             app_state.app_handle.emit("sessions-changed", ()).ok();
                         }
-                        let _ = app_handle.emit("ssh-connection-failed", connection_id);
+                        crate::core::emit_or_log(
+                            &app_handle,
+                            "ssh-connection-failed",
+                            connection_id,
+                        );
                         *session.state.lock().await = SshConnectionState::Disconnected;
                         break;
                     }

@@ -441,7 +441,8 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
             .emit(&format!("acp://session-modes/{}", log_id), &payload);
     }
     if let Some(capabilities) = prompt_capabilities {
-        let _ = app_state.app_handle.emit(
+        crate::core::emit_or_log(
+            &app_state.app_handle,
             &format!("acp://session-capabilities/{}", log_id),
             &capabilities,
         );

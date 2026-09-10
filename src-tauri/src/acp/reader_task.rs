@@ -160,9 +160,15 @@ pub(crate) fn spawn_reader_task(
             ) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
-                        let _ = crate::acp::session_ops::upsert_session_alias(
+                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
                             &conn, pid, &agent_id, &native_id, name,
-                        );
+                        ) {
+                            log::warn!(
+                                "Could not record the session alias for {}: {}",
+                                native_id,
+                                e
+                            );
+                        }
                     }
                 }
                 // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
@@ -308,7 +314,13 @@ async fn resolve_turn_end(
             let Ok(conn) = app_state.db.lock() else {
                 return;
             };
-            let _ = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed);
+            if let Err(e) = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed)
+            {
+                // The push already failed and was reported above. Failing to record that leaves
+                // the task showing as running with nothing behind it, which the user cannot act
+                // on and no later sweep corrects.
+                log::error!("Could not mark task {} as failed: {}", task_id, e);
+            }
         }
         return;
     }
@@ -1462,13 +1474,19 @@ async fn handle_shared_server_message(
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
-                        let _ = crate::acp::session_ops::upsert_session_alias(
+                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
                             &conn,
                             project_id_val,
                             &agent_id,
                             &native_id,
                             name,
-                        );
+                        ) {
+                            log::warn!(
+                                "Could not record the session alias for {}: {}",
+                                native_id,
+                                e
+                            );
+                        }
                     }
                 }
                 // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
@@ -1750,7 +1768,7 @@ async fn handle_shared_server_message(
                     .collect()
             };
             for lid in log_ids {
-                let _ = app_handle.emit(&format!("acp://diagnostic/{}", lid), &diag);
+                crate::core::emit_or_log(app_handle, &format!("acp://diagnostic/{}", lid), &diag);
             }
             // Connection-scoped event so the auth modal can receive output even when the
             // session that triggered auth was discarded before the modal opened.

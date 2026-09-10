@@ -39,7 +39,16 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::
             fs::rename(&temp_path, path)
         })();
         if result.is_err() {
-            let _ = fs::remove_file(&temp_path);
+            // The caller already has the write error; this only clears the partial file so a
+            // later attempt is not confused by it. Logged at debug because a leftover temporary
+            // is inert, but a directory filling with them explains itself nowhere else.
+            if let Err(e) = fs::remove_file(&temp_path) {
+                log::debug!(
+                    "Could not remove the temporary file {}: {}",
+                    temp_path.display(),
+                    e
+                );
+            }
         }
         return result;
     }
