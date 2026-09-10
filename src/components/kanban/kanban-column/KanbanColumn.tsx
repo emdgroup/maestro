@@ -6,6 +6,7 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { CSSProperties } from "react";
 import { Inbox, Clock, RefreshCw, Eye, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils.ts";
 
 interface KanbanColumnProps {
   columnTitle: string;
@@ -24,16 +25,13 @@ export const colors: Record<TaskStatus, string> = {
   Cancelled: "var(--destructive)",
 };
 
-const getBadgeColor = (status: TaskStatus): string => {
-  const colors: Record<TaskStatus, string> = {
-    Planning: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-    Queue: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-    InProgress: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    Review: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-    Done: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-    Cancelled: "bg-destructive/15 text-destructive",
-  };
-  return colors[status] || "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+const BADGE_COLORS: Record<TaskStatus, string> = {
+  Planning: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  Queue: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  InProgress: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  Review: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+  Done: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+  Cancelled: "bg-destructive/15 text-destructive",
 };
 
 const getDropTargetClass = (status: TaskStatus): string => {
@@ -82,7 +80,7 @@ export function KanbanColumn({
   isHighlighted,
 }: KanbanColumnProps) {
   const isDndColumn = status === "Planning" || status === "Queue";
-  const badgeColor = getBadgeColor(status);
+  const badgeColor = BADGE_COLORS[status] ?? BADGE_COLORS.Planning;
 
   const { ref } = useDroppable({
     id: status,
@@ -98,15 +96,21 @@ export function KanbanColumn({
   return (
     <div
       style={{ "--column-border-color": colors[status] } as CSSProperties}
-      className={`flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-background shadow-sm overflow-hidden border-t-4 border-t-(--column-border-color) transition-all duration-150 ${isDimmed ? "opacity-35" : ""}`}
+      className={cn(
+        "flex flex-col first:rounded-l-lg last:rounded-r-lg border border-border bg-background shadow-sm overflow-hidden border-t-4 border-t-(--column-border-color) transition-all duration-150",
+        isDimmed && "opacity-35",
+      )}
     >
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
         <h3 className="font-semibold text-base text-foreground">{columnTitle}</h3>
-        <Badge className={`h-5 px-2 text-xs border-0 ${badgeColor}`}>{tasks.length}</Badge>
+        <Badge className={cn("h-5 px-2 text-xs border-0", badgeColor)}>{tasks.length}</Badge>
       </div>
       <div
         ref={ref}
-        className={`flex-1 overflow-y-auto p-3 transition-all duration-150 ${isHighlighted ? getDropTargetClass(status) : ""}`}
+        className={cn(
+          "flex-1 overflow-y-auto p-3 transition-all duration-150",
+          isHighlighted && getDropTargetClass(status),
+        )}
       >
         {tasks.length === 0 && COLUMN_EMPTY_STATE[status] && (
           <div className="border border-dashed border-border rounded-lg p-5 flex flex-col items-center gap-2 text-center w-full">

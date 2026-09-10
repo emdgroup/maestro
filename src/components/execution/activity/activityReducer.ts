@@ -119,20 +119,20 @@ function continuesMessage(existing: string | undefined, incoming: string | undef
 }
 
 function interruptStalledToolCalls(state: ActivityState): ActivityState {
-  const stalledIds: string[] = [];
+  const stalledIds = new Set<string>();
   for (const [id, tc] of state.toolCallMap) {
     if (tc.status === "in_progress" || tc.status === "pending") {
-      stalledIds.push(id);
+      stalledIds.add(id);
     }
   }
-  if (stalledIds.length === 0) return state;
+  if (stalledIds.size === 0) return state;
   const newMap = new Map(state.toolCallMap);
   for (const id of stalledIds) {
     const tc = newMap.get(id)!;
     newMap.set(id, { ...tc, status: "interrupted" });
   }
   const items = state.items.map((item) => {
-    if (item.type === "toolCall" && stalledIds.includes(item.item.toolCallId)) {
+    if (item.type === "toolCall" && stalledIds.has(item.item.toolCallId)) {
       return { ...item, item: newMap.get(item.item.toolCallId)! };
     }
     return item;

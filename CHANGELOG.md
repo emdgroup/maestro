@@ -2,11 +2,10 @@
 
 ## [0.24.0](https://github.com/emdgroup/maestro/compare/v0.23.0...v0.24.0) (2026-09-09)
 
-
 ### Features
 
-* replace native title tooltips with the tooltip component ([#350](https://github.com/emdgroup/maestro/issues/350)) ([f3ff55b](https://github.com/emdgroup/maestro/commit/f3ff55bc84f3f4c75549a2fe4cf932b0baf7da13))
-* **settings:** restore the startup tab control and rework two appearance controls ([#348](https://github.com/emdgroup/maestro/issues/348)) ([d2b4eba](https://github.com/emdgroup/maestro/commit/d2b4eba9ae50f03e87ae33ab0f8cc96022a0dd88))
+- replace native title tooltips with the tooltip component ([#350](https://github.com/emdgroup/maestro/issues/350)) ([f3ff55b](https://github.com/emdgroup/maestro/commit/f3ff55bc84f3f4c75549a2fe4cf932b0baf7da13))
+- **settings:** restore the startup tab control and rework two appearance controls ([#348](https://github.com/emdgroup/maestro/issues/348)) ([d2b4eba](https://github.com/emdgroup/maestro/commit/d2b4eba9ae50f03e87ae33ab0f8cc96022a0dd88))
 
 ## [0.23.0](https://github.com/emdgroup/maestro/compare/v0.22.0...v0.23.0) (2026-09-09)
 

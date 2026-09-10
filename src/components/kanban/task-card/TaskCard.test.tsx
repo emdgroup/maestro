@@ -97,8 +97,12 @@ vi.mock("@/services/worktree.service", () => ({
   useDeleteWorktreeMutation: () => ({ mutate: deleteWorktree }),
 }));
 
+/// Hoisted rather than inline so a test can assert the card did *not* navigate — an inline
+/// `vi.fn()` is a fresh spy per render and records nothing a test can read.
+const setActiveTaskId = vi.hoisted(() => vi.fn());
+
 vi.mock("@/store/navigationStore", () => ({
-  useNavigationActions: () => ({ setActiveTaskId: vi.fn() }),
+  useNavigationActions: () => ({ setActiveTaskId }),
   useNavigate: () => vi.fn(),
 }));
 
@@ -164,6 +168,7 @@ beforeEach(() => {
   sendToReview.result = null;
   interrupt.mutate.mockClear();
   openUrl.mockClear();
+  setActiveTaskId.mockClear();
 });
 
 describe("TaskCard abandon", () => {
@@ -961,5 +966,41 @@ describe("TaskCard after a pull request is closed", () => {
     renderCard(closed);
 
     expect(screen.getByRole("button", { name: /pull request #42/i })).toBeInTheDocument();
+  });
+});
+
+describe("TaskCard for an imported task", () => {
+  const imported: Partial<Task> = {
+    status: "Planning",
+    is_imported: true,
+    external_id: "PROJ-142",
+    external_url: "https://tracker.example/browse/PROJ-142",
+  };
+
+  /// The affordance shipped as a bare lucide icon carrying an `href`, which lucide spreads onto the
+  /// `<svg>` — so it rendered, looked like a link and did nothing. Asserting the icon was present
+  /// is what would let that through again, so this presses it and pins where it goes.
+  it("opens the issue on the tracker it was imported from", async () => {
+    renderCard(imported);
+
+    await userEvent.click(screen.getByRole("button", { name: /PROJ-142.*issue tracker/i }));
+
+    expect(openUrl).toHaveBeenCalledWith("https://tracker.example/browse/PROJ-142");
+  });
+
+  /// The whole card opens the task detail screen, so the link has to stop the click reaching it —
+  /// otherwise following the link also navigates away behind the browser.
+  it("does not also open the task detail screen", async () => {
+    renderCard(imported);
+
+    await userEvent.click(screen.getByRole("button", { name: /PROJ-142.*issue tracker/i }));
+
+    expect(setActiveTaskId).not.toHaveBeenCalled();
+  });
+
+  it("offers no tracker link when the import recorded no URL", () => {
+    renderCard({ ...imported, external_url: null });
+
+    expect(screen.queryByRole("button", { name: /issue tracker/i })).not.toBeInTheDocument();
   });
 });

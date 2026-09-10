@@ -68,6 +68,32 @@ interface TaskCardProps {
   dndGroup?: TaskStatus;
 }
 
+/// The issue this card was imported from, on the tracker it came from. `openUrl` rather than an
+/// anchor because the card itself is clickable — the click has to be stopped before it opens the
+/// task detail screen underneath.
+function ExternalIdLink({ externalId, url }: { externalId?: string | null; url: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Open ${externalId ?? "this issue"} in the issue tracker`}
+            onClick={(e) => {
+              e.stopPropagation();
+              void openUrl(url);
+            }}
+            className="text-muted-foreground hover:text-foreground"
+          />
+        }
+      >
+        <ExternalLink className="size-4" />
+      </TooltipTrigger>
+      <TooltipContent>Open in the issue tracker</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function AgentAvatar({ agentId }: { agentId: string }) {
   return hasBrandIcon(agentId) ? (
     <div className="size-6 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-muted">
@@ -344,7 +370,8 @@ function FooterCTAs({
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
 
-  // ponytail: 2s debounce avoids flashing "session lost" during spawn race between sessions-changed and tasks-changed
+  // Debounced by 2s: `sessions-changed` and `tasks-changed` do not arrive together, so mid-spawn a
+  // task reads as InProgress with no session behind it and would flash "session lost".
   const isSessionLost = task.status === "InProgress" && !activeSession;
   const [sessionLostStable, setSessionLostStable] = useState(false);
   // The debounce only ever raises the flag, so a session that is no longer lost cannot
@@ -900,7 +927,7 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
               {task.is_imported ? task.external_id : `task-${task.id}`}
             </span>
             {task.is_imported && task.external_url && (
-              <ExternalLink className="size-4" href={task.external_url} />
+              <ExternalIdLink externalId={task.external_id} url={task.external_url} />
             )}
           </div>
           {task.agent_id && <AgentAvatar agentId={task.agent_id} />}

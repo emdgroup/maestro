@@ -56,7 +56,8 @@ export function useFileInput(
           const mimeType = file.type || "image/png";
           const buffer = await file.arrayBuffer();
           const bytes = new Uint8Array(buffer);
-          // ponytail: chunked to avoid stack overflow on large pastes (>64K bytes)
+          // Chunked because `String.fromCharCode(...bytes)` overflows the stack past ~64K args,
+          // which is any screenshot at all.
           const CHUNK = 0x8000;
           let binary = "";
           for (let i = 0; i < bytes.length; i += CHUNK) {
