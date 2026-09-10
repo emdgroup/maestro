@@ -200,7 +200,7 @@ async fn validate_credentials(
     instance_url: Option<&str>,
     email: Option<&str>,
 ) -> Result<String, String> {
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
 
     match provider {
         "github" => {

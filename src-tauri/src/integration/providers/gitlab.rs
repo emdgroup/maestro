@@ -148,7 +148,7 @@ pub async fn resolve_project_id(
     token: &str,
 ) -> Result<i64, String> {
     let base = normalize_instance_url(instance_url);
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get(format!(
@@ -191,7 +191,7 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let user_response = client
         .get(format!("{}/api/v4/user", base))
@@ -240,7 +240,7 @@ pub async fn fetch_issues(
 ) -> Result<Vec<RemoteIssue>, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "{}/api/v4/projects/{}/issues?state=opened&per_page=100",

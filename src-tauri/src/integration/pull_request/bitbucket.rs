@@ -12,7 +12,7 @@ use super::{
     FoundPullRequest, ListedPullRequest, PullRequestDetail, PullRequestPage, PullRequestState,
     PullRequestTarget, LIST_PAGE_SIZE,
 };
-use crate::integration::{build_http_client, normalize_instance_url};
+use crate::integration::{http_client, normalize_instance_url};
 
 /// Which Bitbucket a target refers to. Cloud and Server share a provider name and nothing else.
 enum BitbucketDeployment {
@@ -468,7 +468,7 @@ pub(super) async fn list_bitbucket(
 ) -> Result<PullRequestPage, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
     let offset = cursor_offset(cursor);
 
@@ -554,7 +554,7 @@ pub(super) async fn find_bitbucket(
 ) -> Result<Option<FoundPullRequest>, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
 
     match &deployment {
@@ -732,7 +732,7 @@ pub(super) async fn create_bitbucket(
         ),
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(url)
         .header("Authorization", format!("Bearer {}", target.token))
         .json(&payload)
@@ -763,7 +763,7 @@ pub(super) async fn fetch_bitbucket(
 ) -> Result<PullRequestDetail, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
 
     match &deployment {
@@ -826,7 +826,7 @@ pub(super) async fn ci_bitbucket(
         ),
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("Authorization", format!("Bearer {}", target.token))
         .send()

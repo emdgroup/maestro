@@ -15,7 +15,7 @@ pub mod token_manager;
 
 pub use integration_models::{CredentialSource, IntegrationCredentials, IntegrationStatus};
 pub use issue_tracking_models::{IssueTrackingConfig, RemoteIssue};
-pub(crate) use providers::{build_http_client, normalize_instance_url};
+pub(crate) use providers::{http_client, normalize_instance_url};
 pub use token_manager::TokenManager;
 // Re-export provider modules at integration:: level for existing crate::integration::github etc. paths
 pub use providers::azure_devops;

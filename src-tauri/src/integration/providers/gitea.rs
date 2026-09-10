@@ -36,7 +36,7 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get(format!("{}/api/v1/user", base))
@@ -94,7 +94,7 @@ pub async fn fetch_issues(
 ) -> Result<Vec<RemoteIssue>, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "{}/api/v1/repos/{}/{}/issues?state=open&type=issues&limit=50",

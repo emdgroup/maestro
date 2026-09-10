@@ -40,7 +40,7 @@ async fn fetch_image_with_auth(
     project_id: i32,
     url: &str,
 ) -> Result<Vec<u8>, String> {
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
 
     let (_project, git_conn) =
         crate::core::get_project_with_git_conn(app_state, project_id).await?;
@@ -131,7 +131,7 @@ async fn fetch_jira_attachment(
     let credentials = format!("{}:{}", email, creds.token);
     let auth = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let response = client
         .get(&url)
         .header("Authorization", format!("Basic {}", auth))

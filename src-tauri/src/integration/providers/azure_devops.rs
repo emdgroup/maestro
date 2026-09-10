@@ -128,7 +128,7 @@ pub async fn validate_and_store(
     let base = normalize_azdo_org_url(org_url);
     let auth = make_azdo_auth(token);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get(format!(
@@ -196,7 +196,7 @@ pub async fn fetch_issues(
     let base = normalize_azdo_org_url(org_url);
     let auth = make_azdo_auth(token);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     // Step 1: WIQL — get list of work item IDs
     // Single-quote escaping: WIQL uses '' to escape ' within string literals.

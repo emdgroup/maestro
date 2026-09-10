@@ -11,7 +11,7 @@ use super::{
     PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
     LIST_PAGE_SIZE,
 };
-use crate::integration::build_http_client;
+use crate::integration::http_client;
 
 #[derive(Deserialize)]
 struct GitLabMergeRequest {
@@ -99,7 +99,7 @@ pub(super) async fn create_gitlab(
     // is why `project_path` is kept rather than just owner/repo.
     let project = urlencoding::encode(&target.config.project_path);
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(format!(
             "{}/api/v4/projects/{}/merge_requests",
             instance, project
@@ -133,7 +133,7 @@ pub(super) async fn fetch_gitlab(
         urlencoding::encode(&target.config.project_path),
         number
     );
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("PRIVATE-TOKEN", target.token)
         .send()
@@ -214,7 +214,7 @@ pub(super) async fn list_gitlab(
         url.push_str(&format!("&in=title&search={}", urlencoding::encode(term)));
     }
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("PRIVATE-TOKEN", target.token)
         .send()
@@ -252,7 +252,7 @@ pub(super) async fn find_gitlab(
     );
 
     let mut entries: Vec<GitLabListEntry> = read_json(
-        build_http_client()?
+        http_client()?
             .get(url)
             .header("PRIVATE-TOKEN", target.token)
             .send()
@@ -301,7 +301,7 @@ pub(super) async fn ci_gitlab(
     target: &PullRequestTarget<'_>,
     number: i64,
 ) -> Result<CiState, String> {
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/api/v4/projects/{}/merge_requests/{}",
             instance_base(target),

@@ -13,7 +13,7 @@ pub async fn check_github_owner(
     owner: String,
 ) -> Result<bool, String> {
     let token = super::get_github_token(&app_state).await?;
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let url = format!(
         "https://api.github.com/users/{}",
         urlencoding::encode(&owner)
@@ -41,7 +41,7 @@ pub async fn list_github_repos(
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
     let token = super::get_github_token(&app_state).await?;
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("Bearer {}", token);
     let base_url = format!(
         "https://api.github.com/users/{}/repos?sort=updated",

@@ -93,7 +93,7 @@ pub async fn validate_and_store(
         })?,
     };
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get("https://api.github.com/user")
@@ -142,7 +142,7 @@ pub async fn fetch_issues(
     repo: &str,
     token: &str,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "https://api.github.com/repos/{}/{}/issues?state=open&per_page=100",

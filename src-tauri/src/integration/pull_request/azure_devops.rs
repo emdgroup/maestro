@@ -14,7 +14,7 @@ use super::{
     PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget, LIST_PAGE_SIZE,
 };
 use crate::integration::azure_devops::{make_azdo_auth, normalize_azdo_org_url, AZDO_API_VERSION};
-use crate::integration::build_http_client;
+use crate::integration::http_client;
 
 /// Which shape of Azure DevOps URL a remote is. The host decides, never the credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,7 +380,7 @@ async fn azure_devops_repository_id(
     coordinates: &AzureDevOpsCoordinates,
     token: &str,
 ) -> Result<String, String> {
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}?api-version={}",
             coordinates.base, coordinates.project, coordinates.repository, AZDO_API_VERSION
@@ -510,7 +510,7 @@ pub(super) async fn list_azure_devops(
     credential_matches_coordinates(&coordinates, target.instance_url)?;
     let offset = cursor_offset(cursor);
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests\
              ?searchCriteria.status=active&$top={}&$skip={}&api-version={}",
@@ -560,7 +560,7 @@ pub(super) async fn find_azure_devops(
     )?;
     credential_matches_coordinates(&coordinates, target.instance_url)?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests\
              ?searchCriteria.sourceRefName=refs/heads/{}&searchCriteria.status=all\
@@ -614,7 +614,7 @@ pub(super) async fn create_azure_devops(
 
     let repository_id = azure_devops_repository_id(&coordinates, target.token).await?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests?api-version={}",
             coordinates.base, coordinates.project, repository_id, AZDO_API_VERSION
@@ -646,7 +646,7 @@ pub(super) async fn fetch_azure_devops(
 
     // A pull request id is unique per organization, so this needs no repository — which is
     // exactly why the credential has to have been checked against the organization first.
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/_apis/git/pullrequests/{}?api-version={}",
             coordinates.base, number, AZDO_API_VERSION

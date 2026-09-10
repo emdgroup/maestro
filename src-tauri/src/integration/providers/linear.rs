@@ -113,7 +113,7 @@ pub async fn validate_and_store(
     _project_path: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response =
         post_graphql_query(&client, api_key, VIEWER_QUERY, serde_json::Value::Null).await?;
@@ -165,7 +165,7 @@ pub async fn validate_and_store(
 
 /// Fetch all teams in the Linear workspace for the given API key.
 pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = post_graphql_query(&client, token, TEAMS_QUERY, serde_json::Value::Null).await?;
 
@@ -201,7 +201,7 @@ pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
 
 /// Fetch open issues from Linear, optionally filtered to a specific team.
 pub async fn fetch_issues(token: &str, team_id: Option<&str>) -> Result<Vec<RemoteIssue>, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = match team_id {
         None => {

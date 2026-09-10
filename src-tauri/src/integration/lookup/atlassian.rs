@@ -36,7 +36,7 @@ pub async fn list_jira_projects(
             .encode(format!("{}:{}", email, creds.token).as_bytes())
     );
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let max_results = 50u32;
 
     #[derive(serde::Deserialize)]
@@ -127,7 +127,7 @@ pub async fn list_azuredevops_projects(
         base64::engine::general_purpose::STANDARD.encode(format!(":{}", creds.token).as_bytes())
     );
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let top = 50u32;
 
     #[derive(serde::Deserialize)]
@@ -219,7 +219,7 @@ pub async fn list_azuredevops_repos(
         base64::engine::general_purpose::STANDARD.encode(format!(":{}", creds.token).as_bytes())
     );
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let url = format!(
         "{}/{}/_apis/git/repositories?api-version={}",
         base,
@@ -292,7 +292,7 @@ pub async fn list_bitbucket_repos(
         "bitbucket",
         &app_state,
     )?;
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
 
     match creds.instance_url {
         Some(base_url) => {
@@ -496,7 +496,7 @@ pub async fn list_bitbucket_projects(
     let base_url = creds.instance_url.ok_or_else(|| {
         "list_bitbucket_projects is only available for Bitbucket Server/DC".to_string()
     })?;
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("Bearer {}", creds.token);
 
     #[derive(serde::Deserialize)]

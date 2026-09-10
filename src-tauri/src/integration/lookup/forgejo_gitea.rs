@@ -20,7 +20,7 @@ pub async fn list_forgejo_repos(
         .ok_or_else(|| "Forgejo: instance_url missing from stored credentials".to_string())?;
     let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",
@@ -71,7 +71,7 @@ pub async fn list_gitea_repos(
         .ok_or_else(|| "Gitea: instance_url missing from stored credentials".to_string())?;
     let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",

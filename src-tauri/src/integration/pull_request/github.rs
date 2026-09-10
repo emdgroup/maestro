@@ -13,7 +13,7 @@ use super::{
     PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
     LIST_PAGE_SIZE,
 };
-use crate::integration::{build_http_client, normalize_instance_url};
+use crate::integration::{http_client, normalize_instance_url};
 
 #[derive(Deserialize)]
 struct GitHubStylePullRequest {
@@ -295,7 +295,7 @@ pub(super) async fn list_github_family(
         )
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("Authorization", auth)
         .header("User-Agent", "maestro/1.0")
@@ -382,7 +382,7 @@ pub(super) async fn find_github_family(
     };
 
     let entries: Vec<GitHubStyleListEntry> = read_json(
-        build_http_client()?
+        http_client()?
             .get(url)
             .header("Authorization", auth)
             .header("User-Agent", "maestro/1.0")
@@ -425,7 +425,7 @@ pub(super) async fn create_github(
 ) -> Result<CreatedPullRequest, String> {
     let (owner, repo) = owner_repo(target.config)?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(format!(
             "{}/repos/{}/{}/pulls",
             github_api_base(target),
@@ -460,7 +460,7 @@ pub(super) async fn fetch_github(
         repo,
         number
     );
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("Authorization", format!("Bearer {}", target.token))
         .header("User-Agent", "maestro/1.0")
@@ -514,7 +514,7 @@ async fn checks_github_rest(
         return Ok(Vec::new());
     };
     let (owner, repo) = owner_repo(target.config)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let api = github_api_base(target);
     let auth = format!("Bearer {}", target.token);
 
@@ -885,7 +885,7 @@ async fn checks_one_github(
 ) -> Result<Vec<PullRequestCheck>, String> {
     let (owner, repo) = owner_repo(target.config)?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(github_graphql_url(target))
         .header("Authorization", format!("Bearer {}", target.token))
         .header("User-Agent", "maestro/1.0")
@@ -1020,7 +1020,7 @@ pub(super) async fn branch_status_github(
 ) -> Result<Option<BranchPullRequest>, String> {
     let (owner, repo) = owner_repo(target.config)?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(github_graphql_url(target))
         .header("Authorization", format!("Bearer {}", target.token))
         .header("User-Agent", "maestro/1.0")
@@ -1283,7 +1283,7 @@ async fn list_github_graphql(
         ),
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(github_graphql_url(target))
         .header("Authorization", format!("Bearer {}", target.token))
         .header("User-Agent", "maestro/1.0")
@@ -1362,7 +1362,7 @@ pub(super) async fn create_gitea(
     let (owner, repo) = owner_repo(target.config)?;
     let instance = instance_base(target);
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(format!(
             "{}/api/v1/repos/{}/{}/pulls",
             instance,
@@ -1395,7 +1395,7 @@ pub(super) async fn fetch_gitea(
         urlencoding::encode(repo),
         number
     );
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("Authorization", format!("token {}", target.token))
         .send()
