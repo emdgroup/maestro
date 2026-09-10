@@ -82,7 +82,13 @@ function turn(n: number, isStreaming: boolean): ActivityItem[] {
   ];
 }
 
-const TURNS = 200;
+/*
+  Big enough that "one row" and "every row" cannot be confused — 180 against 1 — and small
+  enough to mount twice inside vitest's default timeout when the whole suite runs in parallel.
+  At 200 turns the equivalence test below spent ~5.8s on its two mounts and timed out on a
+  loaded machine; the property under test does not care about the exact figure.
+*/
+const TURNS = 60;
 const LAST = TURNS - 1;
 
 /** A session of `TURNS` completed turns whose final message is still streaming. */
