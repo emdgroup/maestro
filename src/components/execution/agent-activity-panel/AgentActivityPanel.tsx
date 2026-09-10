@@ -335,10 +335,32 @@ export function AgentActivityPanel({
   );
   const groupedItems = useMemo(() => groupToolCalls(displayItems), [displayItems]);
   const agentSections = useMemo(() => groupIntoAgentSections(groupedItems), [groupedItems]);
-  const userMessageCount = useMemo(
-    () => agentSections.filter((s) => s.type === "standalone").length,
-    [agentSections],
-  );
+
+  /*
+    Four consumers wanted four different views of the same list, and each used to walk it
+    separately. One pass, since they all key off the same "is this a standalone user message"
+    test — a readability win rather than a speed one; the memo already meant none of the four
+    re-ran unless the sections changed.
+  */
+  const { userMessages, orderedSectionIds, userMessageCount } = useMemo(() => {
+    const msgs: UserMessageItem[] = [];
+    const ids: string[] = [];
+    let standalones = 0;
+    for (const section of agentSections) {
+      if (section.type === "standalone") {
+        standalones++;
+        const gi = section.item;
+        if (gi.type === "solo" && gi.item.type === "userMessage") {
+          msgs.push(gi.item.item);
+          ids.push(gi.item.item.id);
+        }
+      } else {
+        ids.push(getItemKey(section.items[0]));
+      }
+    }
+    return { userMessages: msgs, orderedSectionIds: ids, userMessageCount: standalones };
+  }, [agentSections]);
+  const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
   const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
 
   const removeAnnotations = useAnnotationStore((s) => s.removeAnnotations);
@@ -400,6 +422,10 @@ export function AgentActivityPanel({
     [sessionKey],
   );
 
+  // Stable so the stream's memoized rows can bail out: an inline arrow here would be a new prop
+  // on every render of this panel, which is every chunk.
+  const handleAuthLogin = useCallback(() => setIsAuthModalOpen(true), []);
+
   const handleOpenPlanOverlay = useCallback(() => {
     handleOpenPlanOverlaySplit();
     openTabKind("plan");
@@ -418,45 +444,6 @@ export function AgentActivityPanel({
     },
     [addDynamicTab, workspacePath, setSidePanelCollapsed],
   );
-
-  const lastUserMessage = useMemo(() => {
-    for (let i = agentSections.length - 1; i >= 0; i--) {
-      const s = agentSections[i];
-      if (s.type === "standalone" && s.item.type === "solo" && s.item.item.type === "userMessage") {
-        return s.item.item.item;
-      }
-    }
-    return null;
-  }, [agentSections]);
-
-  const userMessages = useMemo(() => {
-    const msgs: UserMessageItem[] = [];
-    for (const section of agentSections) {
-      if (
-        section.type === "standalone" &&
-        section.item.type === "solo" &&
-        section.item.item.type === "userMessage"
-      ) {
-        msgs.push(section.item.item.item);
-      }
-    }
-    return msgs;
-  }, [agentSections]);
-
-  const orderedSectionIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const section of agentSections) {
-      if (section.type === "standalone") {
-        const gi = section.item;
-        if (gi.type === "solo" && gi.item.type === "userMessage") {
-          ids.push(gi.item.item.id);
-        }
-      } else {
-        ids.push(getItemKey(section.items[0]));
-      }
-    }
-    return ids;
-  }, [agentSections]);
 
   useEffect(() => {
     if (lastItem?.type === "error" && lastItem.item.stopReason === "auth_required" && agentId) {
@@ -684,14 +671,11 @@ export function AgentActivityPanel({
               <AgentStreamContent
                 agentSections={agentSections}
                 toolCallMap={liveState.toolCallMap}
-                canvasMap={liveState.canvasMap}
                 livePlanToolCallId={livePlanToolCallId}
                 onOpenFile={handleOpenFile}
                 bottomPadding={composeBarHeight}
                 commands={availableCommands}
-                onAuthLogin={
-                  hasAuthError || hasPreSpawnAuthError ? () => setIsAuthModalOpen(true) : undefined
-                }
+                onAuthLogin={hasAuthError || hasPreSpawnAuthError ? handleAuthLogin : undefined}
               />
             )}
             <AgentBottomBar

@@ -110,7 +110,6 @@ function appendChunk(state: ActivityState): ActivityState {
 
 const streamProps = {
   toolCallMap: new Map<string, ToolCallItem>(),
-  canvasMap: new Map(),
   livePlanToolCallId: null,
   commands: [],
 };
@@ -148,9 +147,9 @@ describe("AgentStreamContent re-render cost", () => {
     renderedKeys.length = 0;
     rerender(<AgentStreamContent {...streamProps} agentSections={sectionsOf(after)} />);
 
-    // The number this test exists to move: every row in the session re-renders for a chunk
-    // that changed one of them.
-    expect(renderedKeys).toHaveLength(TURNS * 3);
+    // The number this test exists to move: it was TURNS * 3 — every row in the session, for a
+    // chunk that changed one of them. O(1) now, and independent of TURNS.
+    expect(renderedKeys).toEqual([`m-${LAST}`]);
   });
 
   /*

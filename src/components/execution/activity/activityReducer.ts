@@ -48,6 +48,16 @@ function trimCatchUpBuffer(buffer: string): string {
   return newlineAt === -1 ? buffer.slice(cutFrom) : buffer.slice(newlineAt + 1);
 }
 
+/**
+ * Every case here rebuilds `items` around the elements it changes rather than mapping the whole
+ * array — `[...items.slice(0, -1), updated]`, not `items.map(...)`. That is a contract, not a
+ * style: the wrapper caches in `utils.ts` are keyed on these element objects, and the stream's
+ * memoized rows compare on the wrappers. Replacing an untouched element with an equal copy is
+ * invisible here and re-renders the entire transcript for one token. The same goes for the
+ * `{ ...state }` spreads, which is why `toolCallMap` and `canvasMap` survive a chunk untouched.
+ *
+ * `AgentStreamContent.render.test.tsx` asserts this directly.
+ */
 export function activityReducer(state: ActivityState, action: ActivityAction): ActivityState {
   switch (action.type) {
     case "event":

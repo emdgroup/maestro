@@ -14,6 +14,80 @@ export type AgentSectionItem =
   | { type: "agentSection"; items: GroupedDisplayItem[] }
   | { type: "standalone"; item: GroupedDisplayItem };
 
+/*
+  Wrapper caches: the point of the whole file, and the reason the stream does not re-render
+  itself for every token.
+
+  `activityReducer` is deliberate about identity — appending a chunk rebuilds `state.items` but
+  every element the chunk did not touch keeps its object reference (see the note there). Both
+  functions below run over that array on every chunk and, without these caches, allocated a
+  fresh `{ type: "solo", item }` for each element every time. New objects are new props, and a
+  component whose props are new cannot bail out of re-rendering, so a one-token chunk re-rendered
+  the entire transcript — markdown, syntax highlighting and all.
+
+  Keyed by the inner value, so an entry cannot outlive what it wraps and there is nothing to
+  evict. Each wrapper is a pure function of its key, which is what makes reuse safe: two callers
+  handed the same item are entitled to the same wrapper.
+
+  The outer arrays are still rebuilt on every pass. That is cheap and nobody memoizes on them.
+*/
+const soloCache = new WeakMap<ActivityItem, GroupedDisplayItem>();
+const toolGroupCache = new WeakMap<ToolCallItem, GroupedDisplayItem>();
+const standaloneCache = new WeakMap<GroupedDisplayItem, AgentSectionItem>();
+const agentSectionCache = new WeakMap<GroupedDisplayItem, AgentSectionItem>();
+
+function solo(item: ActivityItem): GroupedDisplayItem {
+  let wrapper = soloCache.get(item);
+  if (!wrapper) {
+    wrapper = { type: "solo", item };
+    soloCache.set(item, wrapper);
+  }
+  return wrapper;
+}
+
+/**
+ * Groups grow as their tool calls arrive, and an update replaces the member object, so unlike a
+ * solo wrapper a cached group is not determined by its key alone — membership has to be checked.
+ * It is a short list, and the check runs only where a full re-render was running before.
+ */
+function toolGroup(items: ToolCallItem[]): GroupedDisplayItem {
+  const cached = toolGroupCache.get(items[0]);
+  if (
+    cached?.type === "toolGroup" &&
+    cached.items.length === items.length &&
+    cached.items.every((tc, i) => tc === items[i])
+  ) {
+    return cached;
+  }
+  const wrapper: GroupedDisplayItem = { type: "toolGroup", items };
+  toolGroupCache.set(items[0], wrapper);
+  return wrapper;
+}
+
+function standalone(item: GroupedDisplayItem): AgentSectionItem {
+  let wrapper = standaloneCache.get(item);
+  if (!wrapper) {
+    wrapper = { type: "standalone", item };
+    standaloneCache.set(item, wrapper);
+  }
+  return wrapper;
+}
+
+/** Same membership check as `toolGroup`, for the same reason: sections grow mid-reply. */
+function agentSection(items: GroupedDisplayItem[]): AgentSectionItem {
+  const cached = agentSectionCache.get(items[0]);
+  if (
+    cached?.type === "agentSection" &&
+    cached.items.length === items.length &&
+    cached.items.every((gi, i) => gi === items[i])
+  ) {
+    return cached;
+  }
+  const wrapper: AgentSectionItem = { type: "agentSection", items };
+  agentSectionCache.set(items[0], wrapper);
+  return wrapper;
+}
+
 /**
  * One avatar per reply, not per message item. Only a user message opens a new section: an agent
  * that ends one ACP message and starts another mid-reply — around a tool call, or because it
@@ -26,10 +100,10 @@ export function groupIntoAgentSections(items: GroupedDisplayItem[]): AgentSectio
   for (const gi of items) {
     if (gi.type === "solo" && gi.item.type === "userMessage") {
       if (currentSection) {
-        sections.push({ type: "agentSection", items: currentSection });
+        sections.push(agentSection(currentSection));
         currentSection = null;
       }
-      sections.push({ type: "standalone", item: gi });
+      sections.push(standalone(gi));
     } else {
       // Thinking blocks and tool calls that precede the first agent message in a turn open a
       // section rather than a standalone — the renderer's standalone guard drops anything that
@@ -39,7 +113,7 @@ export function groupIntoAgentSections(items: GroupedDisplayItem[]): AgentSectio
   }
 
   if (currentSection) {
-    sections.push({ type: "agentSection", items: currentSection });
+    sections.push(agentSection(currentSection));
   }
 
   return sections;
@@ -82,7 +156,7 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
         continue;
       }
       if (isSubagentToolCall(item.item) || item.item.kind === "switch_mode") {
-        result.push({ type: "toolGroup", items: [item.item] });
+        result.push(toolGroup([item.item]));
       } else {
         const group: ToolCallItem[] = [item.item];
         while (i + 1 < items.length) {
@@ -97,10 +171,10 @@ export function groupToolCalls(items: ActivityItem[]): GroupedDisplayItem[] {
           i++;
           group.push(lookahead.item);
         }
-        result.push({ type: "toolGroup", items: group });
+        result.push(toolGroup(group));
       }
     } else {
-      result.push({ type: "solo", item });
+      result.push(solo(item));
     }
     i++;
   }
