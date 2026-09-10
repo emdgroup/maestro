@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useCallback } from "react";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -17,7 +16,9 @@ export const worktreeQueryKeys = {
 };
 
 /**
- * Event-driven worktree list. Refreshes on "worktrees-changed" Tauri event.
+ * The project's worktree list. Kept fresh by the app-wide `worktrees-changed` subscription in
+ * `useServerEventSync` rather than a listener of its own — this hook is called per card, and a
+ * subscription here turned one event into one invalidation of the whole prefix per caller.
  *
  * `refetchInterval` exists for the session panel, whose commit/push gate reads
  * `changed_files_count` and `ahead_behind` from these rows: an agent committing inside its
@@ -31,20 +32,6 @@ export function useWorktreesQuery(
   repoPath: string | undefined,
   options?: { refetchInterval?: number | false },
 ) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen("worktrees-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [queryClient]);
-
   return useQuery({
     queryKey: worktreeQueryKeys.list(projectId ?? 0),
     queryFn: () => api.listWorktreesWithStatus(projectId!, repoPath!),

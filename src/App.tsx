@@ -12,6 +12,7 @@ import {
   usePrefetchWorktrees,
 } from "@/services/worktree.service";
 import { useConnectionHealth } from "@/utils/hooks/useConnectionHealth";
+import { useServerEventSync } from "@/services/tauri-events";
 import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
   useActiveTab,
@@ -153,6 +154,10 @@ function App() {
       currentProject?.docker_connection_id,
     ],
   );
+
+  // The backend's change events, subscribed once here rather than inside each list hook — those
+  // are called per card, so a listener in the hook was one native subscription per card.
+  useServerEventSync(projectId);
 
   // Health of whichever connection this project lives on — every type, not just SSH.
   const {

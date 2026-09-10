@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
@@ -195,27 +194,14 @@ export function useAgentConfigQuery(
 }
 
 /**
- * Active session list. Refreshes on the "sessions-changed" Tauri event, plus a slow poll: a
- * checkout inside a session's directory changes the branch it reports and emits no event.
+ * Active session list. Invalidated by the app-wide `sessions-changed` subscription in
+ * `useServerEventSync` rather than a listener of its own — this hook is called per card, so a
+ * subscription here was one native listener per caller.
+ *
+ * The slow poll is its own concern and stays: a checkout inside a session's directory changes the
+ * branch it reports and emits no event.
  */
 export function useActiveSessionsQuery(projectId: number | undefined) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (projectId === undefined) return;
-    let unlisten: (() => void) | undefined;
-    listen("sessions-changed", () => {
-      void queryClient.invalidateQueries({
-        queryKey: executionQueryKeys.activeSessions(projectId),
-      });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [queryClient, projectId]);
-
   return useQuery({
     queryKey:
       projectId !== undefined

@@ -48,23 +48,11 @@ export const taskQueryKeys = {
  */
 
 /**
- * Event-driven task list. Refreshes on "tasks-changed" Tauri event.
+ * The project's task list. Kept fresh by the app-wide `tasks-changed` subscription in
+ * `useServerEventSync`, not by a listener of its own — this hook is called per board *and* per
+ * card, and a subscription here was one native listener per caller.
  */
 export function useTasksQuery(projectId: number | null) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen("tasks-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [queryClient]);
-
   return useQuery({
     queryKey: taskQueryKeys.list(projectId!),
     queryFn: () => api.getTasks(projectId!),
