@@ -103,16 +103,34 @@ vi.mock("@/store/navigationStore", () => ({
   useNavigate: () => vi.fn(),
 }));
 
+/// Whether the agent stopped to ask for credentials. Swapped per test so the auth modal can be
+/// rendered at all — with this null it never mounts.
+const authRequired = vi.hoisted(
+  () => ({ current: null }) as { current: Record<string, unknown> | null },
+);
+const clearAuthRequired = vi.hoisted(() => vi.fn());
+
 vi.mock("@/store/boardStore", () => ({
   useBoardStore: (selector: (state: { pendingAuthRetry: number | null }) => unknown) =>
     selector({ pendingAuthRetry: null }),
   useBoardActions: () => ({
     openReview: vi.fn(),
-    clearAuthRequired: vi.fn(),
+    clearAuthRequired,
     setAuthTerminalIdle: vi.fn(),
     clearPendingAuthRetry: vi.fn(),
   }),
-  useAuthRequiredTask: () => null,
+  useAuthRequiredTask: () => authRequired.current,
+}));
+
+/// Stands in for the real modal, which drives a terminal. The test only needs a way to press
+/// "authenticated" and a way to see whether the modal is open.
+vi.mock("@/components/common/AgentAuthModal", () => ({
+  AgentAuthModal: ({ open, onAuthSuccess }: { open: boolean; onAuthSuccess: () => void }) =>
+    open ? (
+      <button type="button" onClick={onAuthSuccess}>
+        finish auth
+      </button>
+    ) : null,
 }));
 
 vi.mock("@/store/sessionActivityStore", () => ({
@@ -155,6 +173,8 @@ beforeEach(() => {
   activeSession.current = null;
   taskWorktree.current = null;
   canRefine.current = true;
+  authRequired.current = null;
+  clearAuthRequired.mockClear();
   comments.current = [];
   profiles.current = [{ id: "refiner-1", role: "Refiner" }];
   execute.mockClear();
@@ -991,5 +1011,58 @@ describe("TaskCard for an imported task", () => {
     renderCard({ ...imported, external_url: null });
 
     expect(screen.queryByRole("button", { name: /issue tracker/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("TaskCard when the agent needs credentials", () => {
+  const blockedOnAuth: Partial<Task> = {
+    status: "InProgress",
+    phase: "Implementing",
+    phase_status: "Running",
+    ball: "Agent",
+  };
+
+  function requireAuth() {
+    authRequired.current = {
+      agentId: "claude-acp",
+      connection: { type: "local" },
+      terminalState: "idle",
+      terminalId: null,
+      lastPrompt: null,
+    };
+  }
+
+  it("offers Login rather than the ordinary controls", () => {
+    requireAuth();
+    renderCard(blockedOnAuth);
+
+    expect(screen.getByRole("button", { name: /login/i })).toBeInTheDocument();
+  });
+
+  it("opens the auth modal on Login", async () => {
+    requireAuth();
+    renderCard(blockedOnAuth);
+
+    await userEvent.click(screen.getByRole("button", { name: /login/i }));
+
+    expect(screen.getByRole("button", { name: /finish auth/i })).toBeInTheDocument();
+  });
+
+  /// The card tracks which dialog is up separately from the store entry that mounts the modal, so
+  /// success has to reset both. Clearing only the store would close the modal for now but leave
+  /// the card still believing the auth dialog is open, and the next time this task needed
+  /// credentials it would be up before anything asked for it.
+  ///
+  /// The store mock deliberately does not clear, which is what makes this test see the card's own
+  /// value rather than the entry unmounting the modal underneath it.
+  it("forgets the auth dialog once authentication succeeds", async () => {
+    requireAuth();
+    renderCard(blockedOnAuth);
+
+    await userEvent.click(screen.getByRole("button", { name: /login/i }));
+    await userEvent.click(screen.getByRole("button", { name: /finish auth/i }));
+
+    expect(clearAuthRequired).toHaveBeenCalledWith(7);
+    expect(screen.queryByRole("button", { name: /finish auth/i })).not.toBeInTheDocument();
   });
 });
