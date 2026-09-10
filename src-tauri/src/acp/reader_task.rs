@@ -704,35 +704,6 @@ async fn try_auto_approve_permission(
     true
 }
 
-/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
-///
-/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
-/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
-/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
-/// read-only role write access — a live run had the *planner* implement its own task, tests and
-/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
-/// reread its plan, polish it and ask again, so the gate never opens.
-///
-/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
-/// the session that produced it has no further part to play: a project can put a different agent
-/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
-/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
-/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
-/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
-///
-/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
-/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
-/// many days pass before someone looks at the gate — and still able to be prompted into
-/// implementing the work it was supposed to only describe.
-///
-/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
-/// asked whether the session was currently held in `plan`, which is a question the host cannot
-/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
-/// `current_mode_update` the agent chose to send. The plan in the payload is the better
-/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
-/// reviewer running in `default` asking for permission to write still reaches the user as the real
-/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
-/// vocabulary.
 /// File a read-only role's deliverable and move the task on from it.
 ///
 /// Split out from `try_conclude_plan_mode_phase` for the ordinary reason: everything above it in
@@ -772,6 +743,35 @@ fn conclude_read_only_phase(
     crate::task::transition::apply_if_active(conn, task_id, event)
 }
 
+/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
+///
+/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
+/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
+/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
+/// read-only role write access — a live run had the *planner* implement its own task, tests and
+/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
+/// reread its plan, polish it and ask again, so the gate never opens.
+///
+/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
+/// the session that produced it has no further part to play: a project can put a different agent
+/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
+/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
+/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
+/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
+///
+/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
+/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
+/// many days pass before someone looks at the gate — and still able to be prompted into
+/// implementing the work it was supposed to only describe.
+///
+/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
+/// asked whether the session was currently held in `plan`, which is a question the host cannot
+/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
+/// `current_mode_update` the agent chose to send. The plan in the payload is the better
+/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
+/// reviewer running in `default` asking for permission to write still reaches the user as the real
+/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
+/// vocabulary.
 async fn try_conclude_plan_mode_phase(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
