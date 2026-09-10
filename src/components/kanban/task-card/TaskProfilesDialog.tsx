@@ -14,8 +14,10 @@ import { useAgentProfilesQuery } from "@/services/project.service";
 import { useSetTaskProfileOverridesMutation } from "@/services/task.service";
 import type { AgentRole, Task } from "@/types/bindings";
 
-/// The roles in the order a task passes through them, with the label the board uses for the stage
-/// rather than the role's own name.
+/**
+ * The roles in the order a task passes through them, with the label the board uses for the stage
+ * rather than the role's own name.
+ */
 const ROLES: Array<{ role: AgentRole; label: string }> = [
   { role: "Refiner", label: "Refinement" },
   { role: "Planner", label: "Planning" },
@@ -25,15 +27,17 @@ const ROLES: Array<{ role: AgentRole; label: string }> = [
 
 const USE_PROJECT_DEFAULT = "";
 
-/// Which agent profile this one task should use for each stage.
-///
-/// Profiles, not settings. A task picks between the profiles the project has defined rather than
-/// describing an agent of its own, so it cannot ask for a combination nobody configured — and a
-/// profile deleted afterwards falls back to the project default rather than breaking the task.
-/// That is `ProfilesDocument::resolve`'s existing behaviour, which already takes an override id.
-///
-/// Only reachable from a Planning card, because this is a decision to make *before* the work
-/// starts: a role that has already run does not re-run because its profile changed.
+/**
+ * Which agent profile this one task should use for each stage.
+ *
+ * Profiles, not settings. A task picks between the profiles the project has defined rather than
+ * describing an agent of its own, so it cannot ask for a combination nobody configured — and a
+ * profile deleted afterwards falls back to the project default rather than breaking the task.
+ * That is `ProfilesDocument::resolve`'s existing behaviour, which already takes an override id.
+ *
+ * Only reachable from a Planning card, because this is a decision to make *before* the work
+ * starts: a role that has already run does not re-run because its profile changed.
+ */
 export function TaskProfilesDialog({
   task,
   projectId,

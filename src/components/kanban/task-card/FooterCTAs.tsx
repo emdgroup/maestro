@@ -19,8 +19,10 @@ import {
   ListChecks,
 } from "lucide-react";
 
-/// What each control on the card does. One object rather than twelve props: the card supplies all
-/// of them together and none is meaningful on its own.
+/**
+ * What each control on the card does. One object rather than twelve props: the card supplies all
+ * of them together and none is meaningful on its own.
+ */
 export interface FooterActions {
   onExecute: () => void;
   onRefine: () => void;
@@ -38,11 +40,11 @@ export interface FooterActions {
 
 interface FooterCTAsProps {
   task: Task;
-  /// Only ever read for its truthiness — the footer offers Join, it does not address the session.
+  /** Only ever read for its truthiness — the footer offers Join, it does not address the session. */
   hasActiveSession: boolean;
-  /// The board's, not the task's: whether *this* task is the one mid-spawn.
+  /** The board's, not the task's: whether *this* task is the one mid-spawn. */
   isExecuting: boolean;
-  /// Whether any role on the project can run a refinement at all.
+  /** Whether any role on the project can run a refinement at all. */
   canRefine: boolean;
   isAuthRequired: boolean;
   isRecovering: boolean;
@@ -72,11 +74,15 @@ export function FooterCTAs({
     onSendToReview,
   },
 }: FooterCTAsProps & { actions: FooterActions }) {
-  /// The agent is waiting on the user rather than working. Derived here rather than passed: it is
-  /// a reading of the task, and the card had nothing to add to it.
+  /**
+   * The agent is waiting on the user rather than working. Derived here rather than passed: it is
+   * a reading of the task, and the card had nothing to add to it.
+   */
   const isAwaiting = task.phase_status === "Blocked";
-  /// The pipeline has stopped for a reason the user can act on — which is the only time there is
-  /// anything to send on. While it is genuinely working there is no finished work to move.
+  /**
+   * The pipeline has stopped for a reason the user can act on — which is the only time there is
+   * anything to send on. While it is genuinely working there is no finished work to move.
+   */
   const isStuck =
     task.phase_status === "Waiting" ||
     task.phase_status === "Blocked" ||

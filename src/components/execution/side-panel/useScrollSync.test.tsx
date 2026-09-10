@@ -58,9 +58,11 @@ describe("useScrollSync", () => {
     await waitFor(() => expect(source.scrollTop).toBe(250));
   });
 
-  /// Writing one pane's scrollTop fires the other's scroll event. Without the echo guard that
-  /// event mirrors straight back and the two panes fight, which shows up as a stuck or juddering
-  /// scroll rather than as an error.
+  /**
+   * Writing one pane's scrollTop fires the other's scroll event. Without the echo guard that
+   * event mirrors straight back and the two panes fight, which shows up as a stuck or juddering
+   * scroll rather than as an error.
+   */
   it("does not bounce the originating pane back", async () => {
     render(<Harness enabled a={source} b={preview} />);
 
@@ -82,9 +84,11 @@ describe("useScrollSync", () => {
     expect(preview.scrollTop).toBe(0);
   });
 
-  /// The regression this hook shipped with: CodeMirror's scroller does not exist until its view is
-  /// constructed, so the element arrives after the first render. Reading it from a ref inside the
-  /// effect meant the listeners were never attached and scrolling did nothing.
+  /**
+   * The regression this hook shipped with: CodeMirror's scroller does not exist until its view is
+   * constructed, so the element arrives after the first render. Reading it from a ref inside the
+   * effect meant the listeners were never attached and scrolling did nothing.
+   */
   it("attaches once a scroller that started null arrives", async () => {
     function Late() {
       const [b, setB] = useState<HTMLElement | null>(null);

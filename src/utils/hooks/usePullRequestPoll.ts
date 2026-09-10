@@ -3,8 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { taskQueryKeys } from "@/services/task.service";
 
-/// Long enough that a repository full of open pull requests does not become a rate-limit problem,
-/// short enough that a merge landed over coffee is on the board when the user looks back.
+/**
+ * Long enough that a repository full of open pull requests does not become a rate-limit problem,
+ * short enough that a merge landed over coffee is on the board when the user looks back.
+ */
 const POLL_MS = 3 * 60 * 1000;
 
 /**

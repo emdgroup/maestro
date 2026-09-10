@@ -71,8 +71,10 @@ function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo 
 const noSessions = new Map<string, ActiveSessionInfo[]>();
 
 describe("pullRequestEntries", () => {
-  /// The three actions are the whole feature: which one a row offers is decided here, and getting
-  /// it wrong means a button whose label promises something other than what it does.
+  /**
+   * The three actions are the whole feature: which one a row offers is decided here, and getting
+   * it wrong means a button whose label promises something other than what it does.
+   */
   it("offers the session when one is already running on the branch", () => {
     const wt = worktree();
     const sessions = new Map([[wt.path, [session()]]]);
@@ -92,8 +94,10 @@ describe("pullRequestEntries", () => {
     expect(entry.action).toEqual({ kind: "reuse-worktree", worktree: wt });
   });
 
-  /// The remote-tracking ref, not the bare name: `create_worktree` resolves `origin/x` into a local
-  /// `x` that tracks it, where a bare `x` would need a local branch that does not exist yet.
+  /**
+   * The remote-tracking ref, not the bare name: `create_worktree` resolves `origin/x` into a local
+   * `x` that tracks it, where a bare `x` would need a local branch that does not exist yet.
+   */
   it("offers a new worktree from the remote ref when there is none", () => {
     const [entry] = pullRequestEntries([pullRequest()], [], noSessions, "origin", true);
     expect(entry.worktree).toBeNull();
@@ -104,8 +108,10 @@ describe("pullRequestEntries", () => {
     });
   });
 
-  /// A project whose remote is not called `origin` would otherwise be handed a ref that does not
-  /// resolve, and the worktree creation would fail well after the user committed to it.
+  /**
+   * A project whose remote is not called `origin` would otherwise be handed a ref that does not
+   * resolve, and the worktree creation would fail well after the user committed to it.
+   */
   it("builds the ref from the project's own remote", () => {
     const [entry] = pullRequestEntries([pullRequest()], [], noSessions, "upstream", true);
     expect(entry.action).toEqual({
@@ -115,8 +121,10 @@ describe("pullRequestEntries", () => {
     });
   });
 
-  /// A detached worktree keeps the branch name in its row but is not on that branch, so reusing it
-  /// would drop a session somewhere other than the pull request's code.
+  /**
+   * A detached worktree keeps the branch name in its row but is not on that branch, so reusing it
+   * would drop a session somewhere other than the pull request's code.
+   */
   it("does not match a detached worktree", () => {
     const [entry] = pullRequestEntries(
       [pullRequest()],
@@ -129,8 +137,10 @@ describe("pullRequestEntries", () => {
     expect(entry.action.kind).toBe("new-worktree");
   });
 
-  /// A terminal is a shell the user opened, not a conversation to resume. Treating it as one would
-  /// navigate them to a prompt instead of offering to start the agent they came here for.
+  /**
+   * A terminal is a shell the user opened, not a conversation to resume. Treating it as one would
+   * navigate them to a prompt instead of offering to start the agent they came here for.
+   */
   it("ignores a terminal when deciding whether a session exists", () => {
     const wt = worktree();
     const sessions = new Map([[wt.path, [session({ execution_mode: "pty" })]]]);
@@ -138,8 +148,10 @@ describe("pullRequestEntries", () => {
     expect(entry.action.kind).toBe("reuse-worktree");
   });
 
-  /// A fork's head branch is in a repository this project has no remote for, so `origin/<head>` is
-  /// not it. The head comes from the ref the forge publishes instead, and the number goes with it.
+  /**
+   * A fork's head branch is in a repository this project has no remote for, so `origin/<head>` is
+   * not it. The head comes from the ref the forge publishes instead, and the number goes with it.
+   */
   it("checks a fork's pull request out through the forge rather than the remote", () => {
     const fork = pullRequest({ number: 412, head_branch: "patch-1", from_fork: true });
     const [entry] = pullRequestEntries([fork], [], noSessions, "origin", true);
@@ -154,10 +166,12 @@ describe("pullRequestEntries", () => {
     });
   });
 
-  /// The bug this whole path exists for. `origin/patch-1` may well resolve — to an unrelated branch
-  /// of this repository that happens to share the fork's name — and checking that out succeeds
-  /// silently, leaving a session reviewing code that has nothing to do with the pull request.
-  /// `patch-1` and `fix-typo` are the names GitHub's own web editor generates.
+  /**
+   * The bug this whole path exists for. `origin/patch-1` may well resolve — to an unrelated branch
+   * of this repository that happens to share the fork's name — and checking that out succeeds
+   * silently, leaving a session reviewing code that has nothing to do with the pull request.
+   * `patch-1` and `fix-typo` are the names GitHub's own web editor generates.
+   */
   it("never offers a fork's row the remote branch that shares its name", () => {
     const fork = pullRequest({ number: 412, head_branch: "patch-1", from_fork: true });
     const ours = worktree({ id: 9, branch_name: "patch-1", path: "C:/repo/.maestro/worktrees/x" });
@@ -173,8 +187,10 @@ describe("pullRequestEntries", () => {
     });
   });
 
-  /// Matched on the branch the checkout actually lands on, or the panel would offer to create a
-  /// second worktree for a pull request that already has one.
+  /**
+   * Matched on the branch the checkout actually lands on, or the panel would offer to create a
+   * second worktree for a pull request that already has one.
+   */
   it("matches a fork's worktree by its pull request branch", () => {
     const fork = pullRequest({ number: 412, head_branch: "patch-1", from_fork: true });
     const wt = worktree({
@@ -191,8 +207,10 @@ describe("pullRequestEntries", () => {
     expect(running.action).toMatchObject({ kind: "open-session", sessionKey: 58 });
   });
 
-  /// Azure DevOps publishes only the merge commit it would produce, not the branch under review.
-  /// Saying so beats a button that fails once pressed — and beats checking out the wrong thing.
+  /**
+   * Azure DevOps publishes only the merge commit it would produce, not the branch under review.
+   * Saying so beats a button that fails once pressed — and beats checking out the wrong thing.
+   */
   it("withholds the action on a forge that publishes no head ref", () => {
     const fork = pullRequest({ number: 412, head_branch: "patch-1", from_fork: true });
     const [entry] = pullRequestEntries([fork], [], noSessions, "origin", false);
@@ -200,7 +218,7 @@ describe("pullRequestEntries", () => {
     expect(entry.action.kind).toBe("unsupported");
   });
 
-  /// The same forge still checks out its own branches: only the fork rows lose the action.
+  /** The same forge still checks out its own branches: only the fork rows lose the action. */
   it("still offers the remote branch for a same-repository row on that forge", () => {
     const [entry] = pullRequestEntries([pullRequest()], [], noSessions, "origin", false);
     expect(entry.action).toEqual({
@@ -239,19 +257,23 @@ describe("filterPullRequests", () => {
   };
   const entries = [linked, unlinked];
 
-  /// The one filter left, and the only one that could stay. Search went to the forge, because
-  /// matching the thirty rows on screen out of a project's eleven thousand finds almost nothing and
-  /// reads as an empty repository; the CI filter had the same problem and no server-side answer on
-  /// any of the six forges. This one needs nothing from the forge at all — it is a join against the
-  /// user's own worktrees, so it means the same thing on every provider.
+  /**
+   * The one filter left, and the only one that could stay. Search went to the forge, because
+   * matching the thirty rows on screen out of a project's eleven thousand finds almost nothing and
+   * reads as an empty repository; the CI filter had the same problem and no server-side answer on
+   * any of the six forges. This one needs nothing from the forge at all — it is a join against the
+   * user's own worktrees, so it means the same thing on every provider.
+   */
   it("splits on whether a worktree exists", () => {
     expect(filterPullRequests(entries, "All")).toHaveLength(2);
     expect(filterPullRequests(entries, "WithWorktree")).toEqual([linked]);
     expect(filterPullRequests(entries, "Others")).toEqual([unlinked]);
   });
 
-  /// A detached worktree is not a match however its row is labelled, so a page of them filters to
-  /// nothing under "with worktree" rather than to everything.
+  /**
+   * A detached worktree is not a match however its row is labelled, so a page of them filters to
+   * nothing under "with worktree" rather than to everything.
+   */
   it("keeps an empty page empty", () => {
     expect(filterPullRequests([], "WithWorktree")).toEqual([]);
     expect(filterPullRequests([], "All")).toEqual([]);

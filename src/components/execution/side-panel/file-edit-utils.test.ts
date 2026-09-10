@@ -17,8 +17,10 @@ describe("parseMarkdownEditLayout", () => {
     expect(parseMarkdownEditLayout(value)).toBe(value);
   });
 
-  /// The setting shares a free-text column with every other preference, so absent, blank and
-  /// unrecognised all have to land somewhere usable rather than blanking the pane.
+  /**
+   * The setting shares a free-text column with every other preference, so absent, blank and
+   * unrecognised all have to land somewhere usable rather than blanking the pane.
+   */
   it.each([null, undefined, "", "three-up", "SPLIT"])("falls back to source for %p", (value) => {
     expect(parseMarkdownEditLayout(value)).toBe("source");
   });
@@ -33,7 +35,7 @@ describe("resolveMarkdownLayout", () => {
     );
   });
 
-  /// Two columns of ~300px are not a split view, they are two unreadable columns.
+  /** Two columns of ~300px are not a split view, they are two unreadable columns. */
   it("collapses split to source when the panel is too narrow", () => {
     expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: 600 })).toBe(
       "source",
@@ -50,8 +52,10 @@ describe("resolveMarkdownLayout", () => {
     ).toBe("source");
   });
 
-  /// The stored preference is untouched by the collapse, so widening restores split by itself —
-  /// this is the render-time expression of that.
+  /**
+   * The stored preference is untouched by the collapse, so widening restores split by itself —
+   * this is the render-time expression of that.
+   */
   it("restores split once the panel is wide again", () => {
     const narrow = resolveMarkdownLayout({
       layout: "split",
@@ -84,16 +88,20 @@ describe("resolveMarkdownLayout", () => {
     ).toBe("source");
   });
 
-  /// Before the first measurement, assume the chosen layout fits — otherwise a user who picked
-  /// split sees a frame of source view on every open.
+  /**
+   * Before the first measurement, assume the chosen layout fits — otherwise a user who picked
+   * split sees a frame of source view on every open.
+   */
   it("assumes split fits until the width has been measured", () => {
     expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: null })).toBe(
       "split",
     );
   });
 
-  /// An inactive side-panel tab is `hidden`, so it measures zero while its layout is perfectly
-  /// wide. Reading that as "too narrow" collapsed the pane for the frame before the tab was shown.
+  /**
+   * An inactive side-panel tab is `hidden`, so it measures zero while its layout is perfectly
+   * wide. Reading that as "too narrow" collapsed the pane for the frame before the tab was shown.
+   */
   it("treats a zero width as not-yet-laid-out rather than too narrow", () => {
     expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: 0 })).toBe(
       "split",
@@ -121,15 +129,17 @@ describe("proportionalScrollTop", () => {
     expect(proportionalScrollTop({ scrollTop: 500, ...pane, ...ends })).toBe(2500);
   });
 
-  /// Overscroll on a trackpad reports a scrollTop past the end; without the clamp the other pane
-  /// would be driven past its own bottom and snap back.
+  /**
+   * Overscroll on a trackpad reports a scrollTop past the end; without the clamp the other pane
+   * would be driven past its own bottom and snap back.
+   */
   it("clamps an overscrolled or negative position", () => {
     const ends = { targetScrollHeight: 1500, targetClientHeight: 500 };
     expect(proportionalScrollTop({ scrollTop: 900, ...pane, ...ends })).toBe(1000);
     expect(proportionalScrollTop({ scrollTop: -40, ...pane, ...ends })).toBe(0);
   });
 
-  /// A pane with nothing to scroll divides by zero; NaN assigned to scrollTop wipes the position.
+  /** A pane with nothing to scroll divides by zero; NaN assigned to scrollTop wipes the position. */
   it("yields zero rather than NaN when either pane cannot scroll", () => {
     expect(
       proportionalScrollTop({
@@ -160,8 +170,10 @@ describe("folderLabel", () => {
     expect(folderLabel("/work/repo/src/components", "/work/repo")).toBe("src/components");
   });
 
-  /// The tree can be pointed at a path outside the workspace; an absolute path is the only
-  /// honest label there, and silently stripping a non-matching prefix would name the wrong folder.
+  /**
+   * The tree can be pointed at a path outside the workspace; an absolute path is the only
+   * honest label there, and silently stripping a non-matching prefix would name the wrong folder.
+   */
   it("falls back to the absolute path for somewhere outside the workspace", () => {
     expect(folderLabel("/etc/nginx", "/work/repo")).toBe("/etc/nginx");
   });
@@ -178,8 +190,10 @@ describe("filePollInterval", () => {
     );
   });
 
-  /// Without this the agent's next write lands in the query cache and replaces the buffer the user
-  /// is typing into. It is the reason `decideSave` has to exist at all.
+  /**
+   * Without this the agent's next write lands in the query cache and replaces the buffer the user
+   * is typing into. It is the reason `decideSave` has to exist at all.
+   */
   it("stops polling in edit mode, so a refetch cannot replace the buffer being typed into", () => {
     expect(filePollInterval({ hasError: false, isActive: true, mode: "edit" })).toBe(false);
   });
@@ -198,9 +212,11 @@ describe("decideSave", () => {
     expect(decideSave({ baseline: "a", draft: "b", onDisk: "a" })).toEqual({ kind: "write" });
   });
 
-  /// The agent writing this file mid-edit is the normal case, not an exotic one — the panel stops
-  /// polling in edit mode precisely so the user's buffer is left alone, which is what makes this
-  /// check the only thing standing between them and a silently clobbered file.
+  /**
+   * The agent writing this file mid-edit is the normal case, not an exotic one — the panel stops
+   * polling in edit mode precisely so the user's buffer is left alone, which is what makes this
+   * check the only thing standing between them and a silently clobbered file.
+   */
   it("reports a conflict when something else wrote the file", () => {
     expect(decideSave({ baseline: "a", draft: "b", onDisk: "agent wrote this" })).toEqual({
       kind: "conflict",
@@ -234,8 +250,10 @@ describe("canEditFile", () => {
     expect(canEditFile({ ...base, fileName: null })).toBe(false);
   });
 
-  /// The read view renders these through its mime branches and never loads text for them. Opening
-  /// an editor would show an empty buffer whose save would then truncate the real file.
+  /**
+   * The read view renders these through its mime branches and never loads text for them. Opening
+   * an editor would show an empty buffer whose save would then truncate the real file.
+   */
   it.each(["image/png", "application/pdf", "audio/mpeg", "video/mp4"])(
     "refuses binary content (%s)",
     (mime) => {
@@ -271,7 +289,7 @@ describe("validateEntryName", () => {
     expect(validateEntryName("", [])).toBe("Name cannot be empty");
   });
 
-  /// A name carrying a separator would silently write outside the folder the user picked.
+  /** A name carrying a separator would silently write outside the folder the user picked. */
   it.each(["a/b", "a\\b", "a:b", "a*b", "a?b", 'a"b', "a<b", "a>b", "a|b"])(
     "rejects the separator or reserved character in %s",
     (name) => {
@@ -292,8 +310,10 @@ describe("validateEntryName", () => {
     expect(validateEntryName(".gitignore", ["src"])).toBeNull();
   });
 
-  /// An unexpanded folder has no cached listing, so the dialog cannot check collisions and the
-  /// backend's own refusal is what protects the user.
+  /**
+   * An unexpanded folder has no cached listing, so the dialog cannot check collisions and the
+   * backend's own refusal is what protects the user.
+   */
   it("passes anything unique when the sibling list is unknown", () => {
     expect(validateEntryName("src", [])).toBeNull();
   });

@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 describe("AppearanceSection", () => {
-  /// `TerminalColorMode::FollowTheme` is the Rust default, so an unset setting reads as on.
+  /** `TerminalColorMode::FollowTheme` is the Rust default, so an unset setting reads as on. */
   it("shows the terminal switch on when nothing is stored", () => {
     renderSection();
 

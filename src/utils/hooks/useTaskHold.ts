@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { api } from "@/lib/tauri-utils";
 
-/// Half the backend's `HOLD_TTL`, so a hold survives one missed beat — a slow frame, a renderer
-/// the OS paused — without the user's card being taken out from under them.
+/**
+ * Half the backend's `HOLD_TTL`, so a hold survives one missed beat — a slow frame, a renderer
+ * the OS paused — without the user's card being taken out from under them.
+ */
 const HEARTBEAT_MS = 5_000;
 
 /**

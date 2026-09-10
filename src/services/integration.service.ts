@@ -191,10 +191,8 @@ export function burstKeyOf(pullRequest: BranchPullRequestInfo | null | undefined
 /**
  * How soon to ask again, given the last answer and how much burst is left.
  *
- * Exported for its own test rather than left inline in the query options. The rule this replaces
- * was inline, and its bug — an empty check list read as "CI has not started yet" *forever*, so a
- * repository without CI polled every ten seconds for the life of the session — was invisible
- * precisely because there was nothing to call directly.
+ * Exported so it can be tested directly: an interval rule buried in query options is one no test
+ * can reach, which is how a repository with no CI once ended up polling for the life of a session.
  *
  * `false` stops the timer for good. A merged or closed pull request cannot change again, and window
  * focus is what re-arms this query rather than a timer nobody is watching.
@@ -215,25 +213,21 @@ export function branchPullRequestPollInterval(
 /**
  * The pull request on a session's branch, whole, in one query.
  *
- * Detection, state and CI used to be three queries at three rates. They are one because on GitHub
- * they are one *request*: a single-pull-request GraphQL call carrying every named check costs one
- * point of an hourly 5,000, so asking for state alone saved nothing and cost the card its
- * consistency — the header and the check ring were fed by different polls and could describe
- * different moments.
+ * Detection, state and CI are one question because on GitHub they are one *request*: a
+ * single-pull-request GraphQL call carrying every named check costs one point of an hourly 5,000.
+ * Splitting them saved nothing and cost the card its consistency, since the header and the check
+ * ring would be fed by different polls.
  *
  * Keyed on the branch rather than on a number, so there is no remembered identity to go stale: a
  * `#10` closed and replaced by a `#11` opened on the forge is picked up by the same question.
  *
- * The stale window is not about freshness — the interval owns that — but about session switching.
- * At `staleTime: 0` every click between two sessions would fire a request each, which is what a
- * per-session lookup has to avoid to be affordable at all.
+ * The stale window is about session switching rather than freshness — the interval owns that. At
+ * `staleTime: 0` every click between two sessions would fire a request each.
  *
- * The Worktrees view's cards ask the same question with `poll: false`. They have to ask it
- * per-branch rather than read a shared list, because that list is now one page of thirty and a
- * worktree whose pull request sits on page seven would silently lose its chip — but a grid of them
- * polling at the session's rate would be a request per card per thirty seconds. Unpolled they cost
- * one request each when the tab opens and nothing after, and they share this cache with the session
- * panel, so opening a session the grid already asked about costs nothing at all.
+ * The Worktrees grid asks the same question with `poll: false`. It has to ask per-branch rather
+ * than read the paged list, or a worktree whose pull request sits on page seven loses its chip —
+ * but a grid polling at the session's rate would be a request per card per thirty seconds.
+ * Unpolled the cards cost one request each on open, and share this cache with the session panel.
  */
 export function useBranchPullRequest(
   projectId: number | null,
@@ -275,13 +269,10 @@ const PULL_REQUEST_PAGE_POLL_MS = 30_000;
  * One page of the project's open pull requests.
  *
  * A page, not the list. `nixpkgs` has around eleven thousand open at once, so "all of them" was
- * never on offer — the previous version asked for a hundred and rendered `100/100`, which is a
- * denominator that happens to be a lie on every large repository. This asks for thirty, says how
- * many there are, and hands back a cursor for the next.
+ * never on offer. This asks for thirty, says how many there are, and hands back a cursor.
  *
- * On GitHub this single request also carries every row's line counts and CI verdict, because they
- * are free scalars on nodes the query already pays for — which is what removes the per-row request
- * the panel used to make and the ~101-point batch check query beside it.
+ * On GitHub the same request carries every row's line counts and CI verdict, because they are free
+ * scalars on nodes the query already pays for — which is what removes the per-row request beside it.
  *
  * `search` goes to the forge in the same request rather than filtering what came back. Filtering
  * thirty rows out of eleven thousand finds almost nothing and reads as an empty project.
@@ -355,15 +346,12 @@ export function usePullRequestRowDetail(
 /**
  * Open a pull request for a branch, touching no task.
  *
- * Puts the new pull request straight into the branch query's cache. That is not a guess standing in
- * for the forge's answer — it *is* the forge's answer, from the response to the request that created
- * it, and every field written below was either in that response or in the arguments we sent.
+ * Puts the new pull request straight into the branch query's cache. Not a guess standing in for
+ * the forge's answer — it *is* the forge's answer, from the response that created it.
  *
- * Doing it any other way meant waiting: invalidating instead refetched within milliseconds of the
- * POST, before the forge had caught up with its own write, and an endpoint answering "no such pull
- * request" is indistinguishable from one that has not caught up. The next attempt was a full
- * interval later, which is the minute users spent watching a card that should already have been
- * there.
+ * Invalidating instead means waiting: a refetch milliseconds after the POST can land before the
+ * forge has caught up with its own write, and "no such pull request" is indistinguishable from
+ * "not caught up yet" — leaving the card blank until a full interval later.
  *
  * This is the key the session panel *and* the worktree card both read, so seeding it paints both
  * with no round trip at all.

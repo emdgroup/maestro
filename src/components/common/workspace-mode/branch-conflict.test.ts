@@ -37,8 +37,10 @@ describe("findBranchConflict", () => {
     expect(findBranchConflict("feature/other", [worktree()], REPO)).toBeNull();
   });
 
-  /// git refuses the branch its main worktree is on just as readily, but the recovery differs:
-  /// the root is not reusable as a workspace, so the caller offers `RepositoryDirectory` instead.
+  /**
+   * git refuses the branch its main worktree is on just as readily, but the recovery differs:
+   * the root is not reusable as a workspace, so the caller offers `RepositoryDirectory` instead.
+   */
   it("distinguishes the repository directory from a worktree", () => {
     const conflict = findBranchConflict(
       "main",
@@ -60,8 +62,10 @@ describe("findBranchConflict", () => {
     expect(conflict?.kind).toBe("repositoryDirectory");
   });
 
-  /// The one rule most likely to regress. A detached worktree keeps the branch name it was created
-  /// on, but is checked out on nothing, so it blocks nothing.
+  /**
+   * The one rule most likely to regress. A detached worktree keeps the branch name it was created
+   * on, but is checked out on nothing, so it blocks nothing.
+   */
   it("ignores a detached worktree even when its recorded branch matches", () => {
     const detached = worktree({ detached_at: "a1b2c3d" });
     expect(findBranchConflict("feature/payments", [detached], REPO)).toBeNull();
@@ -83,9 +87,11 @@ describe("findBranchConflict", () => {
     expect(findBranchConflict("", [worktree({ branch_name: "" })], REPO)).toBeNull();
   });
 
-  /// Checking out `origin/main` lands the worktree on a local `main`, so the repository directory
-  /// sitting on `main` blocks it. Matching the qualified name against `branch_name` — which is
-  /// always local — would report no conflict and then fail inside git.
+  /**
+   * Checking out `origin/main` lands the worktree on a local `main`, so the repository directory
+   * sitting on `main` blocks it. Matching the qualified name against `branch_name` — which is
+   * always local — would report no conflict and then fail inside git.
+   */
   it("resolves a remote branch to the local one it would check out", () => {
     const conflict = findBranchConflict(
       "origin/main",
@@ -99,8 +105,10 @@ describe("findBranchConflict", () => {
     });
   });
 
-  /// A local branch really can be called `origin/foo` — it lives at `refs/heads/origin/foo`. The
-  /// Local tab offers it under that name, so it must not be stripped down to `foo`.
+  /**
+   * A local branch really can be called `origin/foo` — it lives at `refs/heads/origin/foo`. The
+   * Local tab offers it under that name, so it must not be stripped down to `foo`.
+   */
   it("prefers a local branch whose own name looks remote-qualified", () => {
     const holder = worktree({ id: 3, branch_name: "origin/main" });
     const branches = { local: ["origin/main"], remote: ["origin/main"] };
@@ -126,8 +134,10 @@ describe("checkoutTargetBranch", () => {
     expect(checkoutTargetBranch("fork/experiment", branches)).toBe("experiment");
   });
 
-  /// The reason membership decides this rather than the presence of a slash: plenty of local
-  /// branches are namespaced, and stripping one would point the conflict check at the wrong branch.
+  /**
+   * The reason membership decides this rather than the presence of a slash: plenty of local
+   * branches are namespaced, and stripping one would point the conflict check at the wrong branch.
+   */
   it("leaves a slashed local branch untouched", () => {
     expect(checkoutTargetBranch("feature/payments", branches)).toBe("feature/payments");
     expect(checkoutTargetBranch("maestro/kind-canyon-49", branches)).toBe("maestro/kind-canyon-49");

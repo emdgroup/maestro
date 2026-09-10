@@ -4,8 +4,10 @@ import { useWriteFile } from "@/services/connection.service";
 import { decideSave } from "./file-edit-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
-/// Why the user is being asked before losing a draft: they tried to leave edit mode, or to open
-/// another file. The second carries where they were going, so confirming can still go there.
+/**
+ * Why the user is being asked before losing a draft: they tried to leave edit mode, or to open
+ * another file. The second carries where they were going, so confirming can still go there.
+ */
 export type DiscardPrompt = { reason: "leave" } | { reason: "select"; next: string } | null;
 
 interface UseFileDraftOptions {
@@ -71,8 +73,10 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
     setMode("edit");
   }
 
-  /// Returns whether it actually left. A dirty buffer raises the discard prompt instead, and the
-  /// caller must not refetch over an edit the user has not decided about yet.
+  /**
+   * Returns whether it actually left. A dirty buffer raises the discard prompt instead, and the
+   * caller must not refetch over an edit the user has not decided about yet.
+   */
   function leaveEdit(): boolean {
     if (isDirty) {
       setDiscardPrompt({ reason: "leave" });
@@ -83,8 +87,10 @@ export function useFileDraft({ connection, fullPath, onDirtyChange }: UseFileDra
     return true;
   }
 
-  /// Leaves edit mode without saving. The caller decides what to do next — the "select" prompt
-  /// carries a file to open once the draft is gone.
+  /**
+   * Leaves edit mode without saving. The caller decides what to do next — the "select" prompt
+   * carries a file to open once the draft is gone.
+   */
   function discardDraft() {
     setDiscardPrompt(null);
     setMode("view");

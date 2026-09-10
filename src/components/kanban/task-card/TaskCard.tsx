@@ -47,9 +47,11 @@ interface TaskCardProps {
   dndGroup?: TaskStatus;
 }
 
-/// The issue this card was imported from, on the tracker it came from. `openUrl` rather than an
-/// anchor because the card itself is clickable — the click has to be stopped before it opens the
-/// task detail screen underneath.
+/**
+ * The issue this card was imported from, on the tracker it came from. `openUrl` rather than an
+ * anchor because the card itself is clickable — the click has to be stopped before it opens the
+ * task detail screen underneath.
+ */
 function ExternalIdLink({ externalId, url }: { externalId?: string | null; url: string }) {
   return (
     <Tooltip>
@@ -94,17 +96,19 @@ function CompletionLine({ task }: { task: Task }) {
   );
 }
 
-/// What the forge last said, in the slot the phase name had.
-///
-/// "Awaiting merge" only ever repeated the column the card is already sitting in. The question at
-/// this card is whether the thing being waited on can land, and until now the answer was nowhere:
-/// between a red build and the next three-minute sweep, a healthy pull request and a broken one
-/// looked identical, which is what made a working sweep read as no sweep at all.
-///
-/// The conflict is derived rather than stored. `AwaitingMerge` with `Waiting` and the ball on the
-/// user is reachable only through `PullRequestConflicted` — `AwaitingUserInput` gives `Blocked` and
-/// a closed pull request gives `Failed` — so a cached flag would be a second copy of a fact the
-/// lifecycle fields already carry, and one a sweep that learned nothing could overwrite.
+/**
+ * What the forge last said, in the slot the phase name had.
+ *
+ * "Awaiting merge" only ever repeated the column the card is already sitting in. The question at
+ * this card is whether the thing being waited on can land, and until now the answer was nowhere:
+ * between a red build and the next three-minute sweep, a healthy pull request and a broken one
+ * looked identical, which is what made a working sweep read as no sweep at all.
+ *
+ * The conflict is derived rather than stored. `AwaitingMerge` with `Waiting` and the ball on the
+ * user is reachable only through `PullRequestConflicted` — `AwaitingUserInput` gives `Blocked` and
+ * a closed pull request gives `Failed` — so a cached flag would be a second copy of a fact the
+ * lifecycle fields already carry, and one a sweep that learned nothing could overwrite.
+ */
 function PullRequestLine({ task }: { task: Task }) {
   const conflicted = task.phase_status === "Waiting" && task.ball === "User";
   const ci = task.pull_request_ci;
@@ -502,9 +506,11 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   );
 }
 
-/// Memoized because the board renders one of these per task and `tasks` is refetched whole.
-///
-/// Worth it only now that the card holds no cross-card subscription of its own: while it mounted
-/// the session list itself, every ten-second poll re-rendered every card from the inside and no
-/// prop comparison could have stopped it.
+/**
+ * Memoized because the board renders one of these per task and `tasks` is refetched whole.
+ *
+ * Worth it only now that the card holds no cross-card subscription of its own: while it mounted
+ * the session list itself, every ten-second poll re-rendered every card from the inside and no
+ * prop comparison could have stopped it.
+ */
 export const TaskCard = memo(TaskCardImpl);

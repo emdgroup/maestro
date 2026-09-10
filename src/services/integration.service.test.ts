@@ -52,27 +52,33 @@ describe("branchPullRequestPollInterval", () => {
     expect(branchPullRequestPollInterval(undefined, 0)).toBe(steady);
   });
 
-  /// The seconds between opening a pull request and the forge queueing its first check — the delay
-  /// the user actually complained about.
+  /**
+   * The seconds between opening a pull request and the forge queueing its first check — the delay
+   * the user actually complained about.
+   */
   it("bursts while a new pull request has no checks yet", () => {
     expect(burst).toBeLessThan(steady);
   });
 
-  /// The bug the old rule had. An empty check list read as "CI has not started yet" with nothing
-  /// bounding it, so a repository that simply has no CI polled at the fast rate forever.
+  /**
+   * The bug the old rule had. An empty check list read as "CI has not started yet" with nothing
+   * bounding it, so a repository that simply has no CI polled at the fast rate forever.
+   */
   it("stops bursting once the tries are spent", () => {
     expect(branchPullRequestPollInterval(pullRequest(), 0)).toBe(steady);
   });
 
-  /// The burst exists to catch CI appearing; once it has, there is nothing left to catch.
+  /** The burst exists to catch CI appearing; once it has, there is nothing left to catch. */
   it("stops bursting as soon as checks arrive", () => {
     expect(branchPullRequestPollInterval(pullRequest({ checks: [check("Running")] }), 5)).toBe(
       steady,
     );
   });
 
-  /// Terminal on every forge here. Window focus is what re-arms this query, not a timer nobody is
-  /// watching — and a merged pull request polled every 30s is the cost that buys nothing.
+  /**
+   * Terminal on every forge here. Window focus is what re-arms this query, not a timer nobody is
+   * watching — and a merged pull request polled every 30s is the cost that buys nothing.
+   */
   it("stops entirely once the pull request has landed", () => {
     expect(branchPullRequestPollInterval(pullRequest({ state: "Merged" }), 0)).toBe(false);
     expect(branchPullRequestPollInterval(pullRequest({ state: "Closed" }), 0)).toBe(false);
@@ -90,8 +96,10 @@ describe("burstKeyOf", () => {
     expect(burstKeyOf(pullRequest({ number: 311 }))).not.toBe(burstKeyOf(pullRequest()));
   });
 
-  /// A push starts a fresh CI run, which is the same situation as opening one and happens more
-  /// often inside a session.
+  /**
+   * A push starts a fresh CI run, which is the same situation as opening one and happens more
+   * often inside a session.
+   */
   it("changes for a new head commit", () => {
     expect(burstKeyOf(pullRequest({ head_sha: "c0ffee" }))).not.toBe(burstKeyOf(pullRequest()));
   });
@@ -122,8 +130,10 @@ describe("rowDetailPollInterval", () => {
     ci,
   });
 
-  /// A run in progress finishes without touching the number, the head commit or `updated_at` on
-  /// some forges, so it is the one thing the key cannot notice and the one thing worth a timer.
+  /**
+   * A run in progress finishes without touching the number, the head commit or `updated_at` on
+   * some forges, so it is the one thing the key cannot notice and the one thing worth a timer.
+   */
   it("polls only while a run is still going", () => {
     expect(rowDetailPollInterval(detail("Running"))).toBeGreaterThan(0);
   });
@@ -133,8 +143,10 @@ describe("rowDetailPollInterval", () => {
     expect(rowDetailPollInterval(detail("Failing"))).toBe(false);
   });
 
-  /// A repository with no CI at all. Polling this would be a request every thirty seconds, per row,
-  /// forever, to be told the same nothing — which is precisely the cost this design removed.
+  /**
+   * A repository with no CI at all. Polling this would be a request every thirty seconds, per row,
+   * forever, to be told the same nothing — which is precisely the cost this design removed.
+   */
   it("never polls a row that has no CI", () => {
     expect(rowDetailPollInterval(detail("Unknown"))).toBe(false);
     expect(rowDetailPollInterval(undefined)).toBe(false);
@@ -162,8 +174,10 @@ describe("pullRequestRowDetail key", () => {
     ).not.toEqual(base);
   });
 
-  /// A CI run starting or finishing moves neither the number nor the commit. Without this the row
-  /// would never re-ask and would sit on "no checks" for the life of the page.
+  /**
+   * A CI run starting or finishing moves neither the number nor the commit. Without this the row
+   * would never re-ask and would sit on "no checks" for the life of the page.
+   */
   it("changes when the forge touches the pull request without a new commit", () => {
     expect(
       integrationQueryKeys.pullRequestRowDetail(1, 310, "deadbeef", "2026-09-04T12:00:00Z"),
@@ -179,8 +193,10 @@ describe("pullRequestRowDetail key", () => {
     ).not.toEqual(base);
   });
 
-  /// The refresh shortcut and the tab-focus effect invalidate by this prefix, so it has to actually
-  /// be one — it is the only thing that re-reads a row on a forge that never bumps a timestamp.
+  /**
+   * The refresh shortcut and the tab-focus effect invalidate by this prefix, so it has to actually
+   * be one — it is the only thing that re-reads a row on a forge that never bumps a timestamp.
+   */
   it("sits under a prefix a refresh can reach", () => {
     expect(base.slice(0, 3)).toEqual(integrationQueryKeys.pullRequestRowDetails(1));
   });

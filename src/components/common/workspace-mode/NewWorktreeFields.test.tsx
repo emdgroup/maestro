@@ -10,8 +10,10 @@ const branches = vi.hoisted(() => ({
   remote: [] as string[],
 }));
 
-/// The picker fetches its own branches through the project store and a query; neither is what
-/// these tests are about, so both are replaced by a fixed list.
+/**
+ * The picker fetches its own branches through the project store and a query; neither is what
+ * these tests are about, so both are replaced by a fixed list.
+ */
 vi.mock("@/services/task.service", () => ({
   useProjectBranchesQuery: () => ({ data: [branches, "main"], isFetching: false }),
   taskQueryKeys: { base: ["tasks"] },
@@ -43,8 +45,10 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
   } as WorktreeWithStatus;
 }
 
-/// `BranchPicker` reaches for the query client directly to refresh its branch list, so the tree
-/// needs a real provider even though the query itself is mocked out above.
+/**
+ * `BranchPicker` reaches for the query client directly to refresh its branch list, so the tree
+ * needs a real provider even though the query itself is mocked out above.
+ */
 function setup(props: Partial<React.ComponentProps<typeof NewWorktreeFields>> = {}) {
   const handlers = {
     onBranchModeChange: vi.fn(),
@@ -81,7 +85,7 @@ describe("NewWorktreeFields — the mode chip", () => {
     expect(screen.getByRole("button", { name: /Checking out the branch/ })).toHaveTextContent("On");
   });
 
-  /// The whole point of the chip: both options are named, so the second one is not invisible.
+  /** The whole point of the chip: both options are named, so the second one is not invisible. */
   it("offers both modes by name, ticking the active one", async () => {
     setup();
     await userEvent.click(screen.getByRole("button", { name: /Creating a new branch/ }));
@@ -115,7 +119,7 @@ describe("NewWorktreeFields — the branch name", () => {
     expect(screen.getByLabelText("Branch name")).toHaveAttribute("placeholder", "42-fix-login");
   });
 
-  /// A value-shaped placeholder for a name nothing will use reads as a template to fill in.
+  /** A value-shaped placeholder for a name nothing will use reads as a template to fill in. */
   it("says the name is generated when there is none to preview", () => {
     setup({ generatedSuffix: null });
     const input = screen.getByLabelText("Branch name");
@@ -129,7 +133,7 @@ describe("NewWorktreeFields — the branch name", () => {
     expect(screen.getByText(/cannot contain spaces/)).toBeInTheDocument();
   });
 
-  /// Nothing is being created, so there is no name to give.
+  /** Nothing is being created, so there is no name to give. */
   it("drops the name field when checking out", () => {
     setup({ branchMode: "Checkout" });
     expect(screen.queryByLabelText("Branch name")).not.toBeInTheDocument();
@@ -162,7 +166,7 @@ describe("NewWorktreeFields — a branch already checked out", () => {
     expect(onBranchChange).toHaveBeenCalledWith("main");
   });
 
-  /// A detached worktree keeps the branch name it was made on but is checked out on nothing.
+  /** A detached worktree keeps the branch name it was made on but is checked out on nothing. */
   it("does not grey a branch a detached worktree merely remembers", async () => {
     setup({
       branchMode: "Checkout",
@@ -209,7 +213,7 @@ describe("NewWorktreeFields — a branch already checked out", () => {
     ).toBeInTheDocument();
   });
 
-  /// A dead button is worse than none: the alert explains instead.
+  /** A dead button is worse than none: the alert explains instead. */
   it("withholds the reuse action when the caller says it is unavailable, and says why", () => {
     setup({
       branchMode: "Checkout",
@@ -224,7 +228,7 @@ describe("NewWorktreeFields — a branch already checked out", () => {
     expect(screen.getByRole("button", { name: "Create a branch from it" })).toBeInTheDocument();
   });
 
-  /// The Workspaces view passes no callback at all — it has no workspace to fall back to.
+  /** The Workspaces view passes no callback at all — it has no workspace to fall back to. */
   it("offers only the branch recovery when no reuse handler is given", () => {
     setup({ branchMode: "Checkout", branch: "feature/payments", worktrees: [worktree()] });
 
@@ -232,7 +236,7 @@ describe("NewWorktreeFields — a branch already checked out", () => {
     expect(screen.getByRole("button", { name: "Create a branch from it" })).toBeInTheDocument();
   });
 
-  /// Creating a branch makes a new ref, which by definition no worktree is on.
+  /** Creating a branch makes a new ref, which by definition no worktree is on. */
   it("says nothing about conflicts while creating a branch", () => {
     setup({ branchMode: "Create", branch: "feature/payments", worktrees: [worktree()] });
     expect(screen.queryByText(/already checked out/)).not.toBeInTheDocument();

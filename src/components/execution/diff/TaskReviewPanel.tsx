@@ -57,11 +57,15 @@ const MERGE_STRATEGIES: Record<string, string> = {
 
 interface TaskReviewPanelProps {
   task: Task;
-  /// Where to run git for this review — the worktree, or the project itself when the task runs
-  /// without one. Everything that reads the code uses this.
+  /**
+   * Where to run git for this review — the worktree, or the project itself when the task runs
+   * without one. Everything that reads the code uses this.
+   */
   reviewPath: string | null;
-  /// The worktree, if the task has one. Only things that act on the worktree as an object — the
-  /// approve strategy, the discard warning — may use this.
+  /**
+   * The worktree, if the task has one. Only things that act on the worktree as an object — the
+   * approve strategy, the discard warning — may use this.
+   */
   worktreePath: string | null;
   baseBranch: string | null;
   branchName: string | null;

@@ -125,12 +125,14 @@ export function IssueTrackingSection({
     }
   }
 
-  /// There is no Save button: the config persists as it is filled in.
-  ///
-  /// Only once every field the provider needs is present — a half-filled config would be stored
-  /// and then fail at the first `list_remote_issues`, which is worse than not storing it yet.
-  /// The integration and fields are passed in because a handler that just called `setState` still
-  /// sees the previous render's values.
+  /**
+   * There is no Save button: the config persists as it is filled in.
+   *
+   * Only once every field the provider needs is present — a half-filled config would be stored
+   * and then fail at the first `list_remote_issues`, which is worse than not storing it yet.
+   * The integration and fields are passed in because a handler that just called `setState` still
+   * sees the previous render's values.
+   */
   function saveNow(
     integration: { id: string; provider: string } | null,
     fields: Record<string, string>,

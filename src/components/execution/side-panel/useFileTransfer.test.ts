@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import { useFileTransfer, transferTooltip } from "./useFileTransfer";
 
-/// A promise the test resolves by hand, so a transfer can be held open across timer advances.
+/** A promise the test resolves by hand, so a transfer can be held open across timer advances. */
 function deferred<T>() {
   let settle!: (value: T) => void;
   let fail!: (reason: unknown) => void;

@@ -24,8 +24,10 @@ function makeTask(id: number, priority: TaskPriority): Task {
 }
 
 describe("clampPriority", () => {
-  /// The case the rule was written for: order and priority are one fact, so jumping the queue
-  /// has to mean claiming the priority that position implies.
+  /**
+   * The case the rule was written for: order and priority are one fact, so jumping the queue
+   * has to mean claiming the priority that position implies.
+   */
   it("raises a card dropped above a higher-priority one", () => {
     expect(clampPriority("Low", "Urgent", "High")).toBe("High");
   });
@@ -34,20 +36,22 @@ describe("clampPriority", () => {
     expect(clampPriority("Urgent", "Low", "None")).toBe("Low");
   });
 
-  /// A clamp, not an adoption. Dragging within a run of equal-priority cards must not promote.
+  /** A clamp, not an adoption. Dragging within a run of equal-priority cards must not promote. */
   it("leaves a card that already fits between its neighbours alone", () => {
     expect(clampPriority("Medium", "High", "Low")).toBe("Medium");
     expect(clampPriority("High", "High", "High")).toBe("High");
   });
 
-  /// Only a lower bound at the top: the card must outrank what is below it, and may outrank it
-  /// by more than one step.
+  /**
+   * Only a lower bound at the top: the card must outrank what is below it, and may outrank it
+   * by more than one step.
+   */
   it("applies only the lower bound at the top", () => {
     expect(clampPriority("Low", undefined, "High")).toBe("High");
     expect(clampPriority("Urgent", undefined, "Medium")).toBe("Urgent");
   });
 
-  /// Only an upper bound at the bottom, symmetrically.
+  /** Only an upper bound at the bottom, symmetrically. */
   it("applies only the upper bound at the bottom", () => {
     expect(clampPriority("Urgent", "Medium", undefined)).toBe("Medium");
     expect(clampPriority("None", "Medium", undefined)).toBe("None");
@@ -71,7 +75,7 @@ describe("priorityAfterDrop", () => {
     expect(priorityAfterDrop([1, 3, 2, 4], 3, tasks)).toBe("High");
   });
 
-  /// Null rather than the unchanged value, so the caller writes nothing at all.
+  /** Null rather than the unchanged value, so the caller writes nothing at all. */
   it("reports nothing when the drop changes no priority", () => {
     expect(priorityAfterDrop([1, 2, 3, 4], 3, tasks)).toBeNull();
   });
@@ -81,8 +85,10 @@ describe("priorityAfterDrop", () => {
     expect(priorityAfterDrop([1, 2, 3, 4], 99, tasks)).toBeNull();
   });
 
-  /// The drop position is read against the post-drop order, so a card landing first is bounded
-  /// only by what is now beneath it.
+  /**
+   * The drop position is read against the post-drop order, so a card landing first is bounded
+   * only by what is now beneath it.
+   */
   it("handles a drop at the head of the queue", () => {
     expect(priorityAfterDrop([3, 1, 2, 4], 3, tasks)).toBe("Urgent");
   });

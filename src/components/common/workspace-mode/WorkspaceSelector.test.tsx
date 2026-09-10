@@ -4,14 +4,18 @@ import userEvent from "@testing-library/user-event";
 import { WorkspaceSelector } from "./WorkspaceSelector";
 import type { WorktreeWithStatus } from "@/types/bindings";
 
-/// Pulls in the project store and a branches query, and none of that is what these tests are
-/// about — the branch picker only renders in the mode they never select.
+/**
+ * Pulls in the project store and a branches query, and none of that is what these tests are
+ * about — the branch picker only renders in the mode they never select.
+ */
 vi.mock("@/components/kanban/shared/BranchPicker", () => ({
   BranchPicker: () => null,
 }));
 
-/// `NewWorktreeFields` reads the same branch query itself, to tell a remote-qualified base apart
-/// from a local branch, so stubbing the picker alone no longer keeps the query out of the tree.
+/**
+ * `NewWorktreeFields` reads the same branch query itself, to tell a remote-qualified base apart
+ * from a local branch, so stubbing the picker alone no longer keeps the query out of the tree.
+ */
 vi.mock("@/services/task.service", () => ({
   useProjectBranchesQuery: () => ({ data: [{ local: [], remote: [] }, "main"] }),
   taskQueryKeys: { base: ["tasks"] },
@@ -43,7 +47,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
   } as WorktreeWithStatus;
 }
 
-/// The list lives in a dropdown, so every test has to open it first.
+/** The list lives in a dropdown, so every test has to open it first. */
 async function openList() {
   await userEvent.click(screen.getByRole("combobox", { name: "Workspace" }));
 }
@@ -71,8 +75,10 @@ function renderReuse(worktrees: WorktreeWithStatus[], props: { claimsOwnership?:
   return onSelectedWorktreeChange;
 }
 
-/// The mode select, in the mode that renders nothing else with a combobox — `BranchPicker` is
-/// mocked away above.
+/**
+ * The mode select, in the mode that renders nothing else with a combobox — `BranchPicker` is
+ * mocked away above.
+ */
 function renderModeSelect(worktrees: WorktreeWithStatus[]) {
   const onModeChange = vi.fn();
   render(
@@ -96,8 +102,10 @@ function renderModeSelect(worktrees: WorktreeWithStatus[]) {
 }
 
 describe("WorkspaceSelector — reusing a workspace", () => {
-  /// A branch name alone does not answer "which of these do I want", which is why each option is
-  /// the worktree card rather than a line of text.
+  /**
+   * A branch name alone does not answer "which of these do I want", which is why each option is
+   * the worktree card rather than a line of text.
+   */
   it("shows what is in each workspace, not just its branch", async () => {
     renderReuse([
       worktree({
@@ -121,7 +129,7 @@ describe("WorkspaceSelector — reusing a workspace", () => {
     expect(option).toHaveTextContent("3 min");
   });
 
-  /// The repository directory is its own mode, so offering it here would be the same choice twice.
+  /** The repository directory is its own mode, so offering it here would be the same choice twice. */
   it("leaves the repository root out of the list", async () => {
     renderReuse([worktree(), worktree({ id: 2, path: REPO, branch_name: "main" })]);
     await openList();
@@ -139,8 +147,10 @@ describe("WorkspaceSelector — reusing a workspace", () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
   });
 
-  /// A task takes ownership of the workspace it reuses, so one another task already holds cannot
-  /// be picked — but it stays listed, naming the holder, rather than silently disappearing.
+  /**
+   * A task takes ownership of the workspace it reuses, so one another task already holds cannot
+   * be picked — but it stays listed, naming the holder, rather than silently disappearing.
+   */
   it("blocks a workspace another task owns, and says who has it", async () => {
     const onSelect = renderReuse([worktree({ task_id: 9, task_name: "Fix diff context" })], {
       claimsOwnership: true,
@@ -155,7 +165,7 @@ describe("WorkspaceSelector — reusing a workspace", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  /// A session claims nothing, so the same workspace is selectable there.
+  /** A session claims nothing, so the same workspace is selectable there. */
   it("leaves that workspace selectable for a session, which claims nothing", async () => {
     const onSelect = renderReuse([worktree({ task_id: 9, task_name: "Fix diff context" })]);
     await openList();
@@ -169,8 +179,10 @@ describe("WorkspaceSelector — reusing a workspace", () => {
 });
 
 describe("WorkspaceSelector — the mode select", () => {
-  /// Picking a mode whose list is empty is a dead end, so it is refused up front rather than
-  /// after the fact.
+  /**
+   * Picking a mode whose list is empty is a dead end, so it is refused up front rather than
+   * after the fact.
+   */
   it("blocks reusing a workspace when the project has none", async () => {
     const onModeChange = renderModeSelect([worktree({ id: 2, path: REPO, branch_name: "main" })]);
 

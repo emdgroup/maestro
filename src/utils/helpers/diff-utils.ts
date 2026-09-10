@@ -43,25 +43,6 @@ function detectLanguage(fileName: string): DiffHighlighterLang {
 }
 
 /**
- * Parse unified diff string into DiffFile array.
- *
- * The @git-diff-view/react library's `data.hunks` field is `string[]` where
- * each element is passed to an internal diff parser that requires a full
- * per-file diff header (`--- a/file\n+++ b/file\n`) followed by hunk blocks.
- * Therefore each element must be the complete diff text for one file, with
- * the `---`/`+++` header and all `@@` hunk blocks joined as a single string.
- *
- * Format:
- *   diff --git a/path/file b/path/file
- *   index ...
- *   --- a/path/file
- *   +++ b/path/file
- *   @@ -start,count +start,count @@ optional context
- *   context line
- *   -removed line
- *   +added line
- */
-/**
  * Undo git's C-style path quoting. Non-ASCII bytes come through as octal escapes of the
  * UTF-8 encoding (`"caf\303\251.ts"`), so they have to be decoded as bytes, not characters.
  * A path that is not quoted is returned untouched.
@@ -124,6 +105,13 @@ function parseOldHeaderPath(rest: string): string | null {
   return unquoted.startsWith("a/") ? unquoted.slice(2) : unquoted;
 }
 
+/**
+ * Split a unified diff into one entry per file.
+ *
+ * Each entry has to be the *complete* diff text for its file — the `---`/`+++` header and every
+ * `@@` block joined into one string — because `@git-diff-view/react` passes each element of
+ * `data.hunks` to a parser that requires that header.
+ */
 export function parseDiffString(diffString: string): DiffFileWithName[] {
   const files: DiffFileWithName[] = [];
   // Git terminates its output with a newline, so splitting yields a final empty element that is

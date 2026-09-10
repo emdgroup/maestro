@@ -170,9 +170,8 @@ export function proportionalScrollTop({
 /**
  * How a create destination is named in the tree's tooltips and the create dialog.
  *
- * "New file" used to give no clue where the file would land — the header button always meant the
- * workspace root and nothing said so. The destination is now always spelled out, relative to the
- * workspace so it matches what the tree shows rather than an absolute path nobody recognises.
+ * Always spelled out, and relative to the workspace so it matches what the tree shows rather than
+ * an absolute path nobody recognises. A bare "New file" says nothing about where the file lands.
  */
 export function folderLabel(absolutePath: string, workspacePath: string): string {
   if (absolutePath === workspacePath) return "the workspace root";

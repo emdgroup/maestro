@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProjectAppearanceSection } from "./ProjectAppearanceSection";
 
-/// Only for the colour picker, which reads the resolved accent out of the provider.
+/** Only for the colour picker, which reads the resolved accent out of the provider. */
 vi.mock("@/providers/ThemeProvider", () => ({
   useTheme: () => ({
     isDark: false,
@@ -38,8 +38,10 @@ describe("ProjectAppearanceSection", () => {
     expect(onChange).toHaveBeenCalledWith({ startup_tab: "worktrees" });
   });
 
-  /// Tasks stores null rather than "kanban": `useProjectAgentIntro` reads any stored value as a
-  /// configured project and suppresses the first-run intro, which picking the default must not do.
+  /**
+   * Tasks stores null rather than "kanban": `useProjectAgentIntro` reads any stored value as a
+   * configured project and suppresses the first-run intro, which picking the default must not do.
+   */
   it("clears the setting when Tasks is picked", async () => {
     const onChange = renderSection("agents");
 
@@ -48,7 +50,7 @@ describe("ProjectAppearanceSection", () => {
     expect(onChange).toHaveBeenCalledWith({ startup_tab: null });
   });
 
-  /// `settings` is still a legal stored value, it just has no tile.
+  /** `settings` is still a legal stored value, it just has no tile. */
   it("presses no tile for a tab it does not offer", () => {
     renderSection("settings");
 

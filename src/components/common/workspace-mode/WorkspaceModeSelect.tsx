@@ -2,8 +2,10 @@ import { GitBranchPlus, FolderRoot, FolderGit2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import type { WorkspaceMode } from "@/types/bindings";
 
-/// The one place the three workspaces are described, so a task, a session and the project default
-/// read the same words for the same choice.
+/**
+ * The one place the three workspaces are described, so a task, a session and the project default
+ * read the same words for the same choice.
+ */
 const MODES: {
   value: WorkspaceMode;
   label: string;

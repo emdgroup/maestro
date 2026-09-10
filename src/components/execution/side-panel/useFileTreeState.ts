@@ -173,7 +173,7 @@ export function useFileTreeState({
     setSelectedFolder,
     treeRef,
     targetLabel,
-    /// Any of the three writes the name dialog can start, for its own pending state.
+    /** Any of the three writes the name dialog can start, for its own pending state. */
     namePending: renamePath.isPending || createFile.isPending || createDirectory.isPending,
     deletePending: deletePath.isPending,
     nameDialog,

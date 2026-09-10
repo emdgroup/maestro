@@ -1,27 +1,31 @@
 import type { AgentRole } from "@/types/bindings";
 
-/// Modes that let an agent write, and the read-only ones for the three roles that must not. Used
-/// only when no profile names a mode.
-///
-/// A fallback list, not a ladder: harnesses disagree about what these are called, so this is read
-/// in order and the first one *this* agent advertises wins. Every name past the first exists
-/// because some harness uses it and no other — the list is expected to grow as harnesses are tried,
-/// which is why the resolved mode is logged.
-///
-/// `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
-/// running a command, and a task in this pipeline is meant to run without a person: stopping on
-/// every test run is the failure mode, not a safeguard. `bypassPermissions` is last for the
-/// opposite reason — it is the right answer only when a harness offers nothing better.
+/**
+ * Modes that let an agent write, and the read-only ones for the three roles that must not. Used
+ * only when no profile names a mode.
+ *
+ * A fallback list, not a ladder: harnesses disagree about what these are called, so this is read
+ * in order and the first one *this* agent advertises wins. Every name past the first exists
+ * because some harness uses it and no other — the list is expected to grow as harnesses are tried,
+ * which is why the resolved mode is logged.
+ *
+ * `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
+ * running a command, and a task in this pipeline is meant to run without a person: stopping on
+ * every test run is the failure mode, not a safeguard. `bypassPermissions` is last for the
+ * opposite reason — it is the right answer only when a harness offers nothing better.
+ */
 const WRITABLE_MODES = ["auto", "agent", "build", "full-access", "bypassPermissions"];
 const READ_ONLY_MODES = ["readonly", "plan"];
 
-/// The three roles that exist because they do not write. Only the coder implements.
+/** The three roles that exist because they do not write. Only the coder implements. */
 export function isReadOnlyRole(role: AgentRole): boolean {
   return role !== "Coder";
 }
 
-/// The mode every harness that has one calls its default: writes become a permission prompt
-/// rather than being allowed or refused outright.
+/**
+ * The mode every harness that has one calls its default: writes become a permission prompt
+ * rather than being allowed or refused outright.
+ */
 const DEFAULT_MODE = "default";
 
 /**

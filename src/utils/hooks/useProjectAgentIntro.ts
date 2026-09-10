@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useNavigationActions } from "@/store/navigationStore";
 
-/// Per project, per machine. `localStorage` rather than `.maestro/settings.json` because "has this
-/// person seen the agent settings" is a fact about a person, not about a repository — recording it
-/// in the project's shared file would suppress the introduction for the next teammate who opens it.
+/**
+ * Per project, per machine. `localStorage` rather than `.maestro/settings.json` because "has this
+ * person seen the agent settings" is a fact about a person, not about a repository — recording it
+ * in the project's shared file would suppress the introduction for the next teammate who opens it.
+ */
 function seenKey(projectId: number): string {
   return `project:${projectId}:agentsIntroShown`;
 }

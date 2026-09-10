@@ -86,8 +86,10 @@ export function useDefaultAgentFallback(projectId: number | null, connection: Co
   ]);
 }
 
-/// The update command takes the whole config, so every field the response carries and the request
-/// also has must be copied across or it is written away. Same merge `SettingsPage` performs.
+/**
+ * The update command takes the whole config, so every field the response carries and the request
+ * also has must be copied across or it is written away. Same merge `SettingsPage` performs.
+ */
 function requestFrom(settings: ProjectConfigResponse, defaultAgent: string) {
   return {
     default_agent: defaultAgent,

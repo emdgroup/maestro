@@ -195,9 +195,11 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
-  /// Both modes are the same editor, which is what makes them agree about colour. If the toggle
-  /// remounted it, the scroll position would reset on every entry to edit mode and the two views
-  /// would be free to drift apart again.
+  /**
+   * Both modes are the same editor, which is what makes them agree about colour. If the toggle
+   * remounted it, the scroll position would reset on every entry to edit mode and the two views
+   * would be free to drift apart again.
+   */
   it("switches into edit mode without remounting the editor", async () => {
     renderPanel();
     await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
@@ -212,8 +214,10 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(editorMountCount).toBe(mountsAfterRead);
   });
 
-  /// The read view renders these through a mime branch and never loads text for them; an editor
-  /// would open empty and its save would truncate the real file.
+  /**
+   * The read view renders these through a mime branch and never loads text for them; an editor
+   * would open empty and its save would truncate the real file.
+   */
   it("offers no editing for a binary file", async () => {
     renderPanel({ initialPath: "docs/diagram.png" });
     await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
@@ -254,8 +258,10 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(writeFile).toHaveBeenCalled();
   });
 
-  /// The agent happened to write exactly what the user typed. Raising a conflict here would ask
-  /// them to choose between two identical files.
+  /**
+   * The agent happened to write exactly what the user typed. Raising a conflict here would ask
+   * them to choose between two identical files.
+   */
   it("writes nothing when the draft already matches what is on disk", async () => {
     renderPanel();
     await enterEditMode();
@@ -269,9 +275,11 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.queryByText(/changed while you were editing/i)).toBeNull();
   });
 
-  /// `disabled` on a base-ui TooltipTrigger does not reach the DOM, so the button is genuinely
-  /// clickable with nothing to save — and a save on a clean buffer would compare a stale baseline
-  /// against disk and raise a conflict dialog over an edit that was never made.
+  /**
+   * `disabled` on a base-ui TooltipTrigger does not reach the DOM, so the button is genuinely
+   * clickable with nothing to save — and a save on a clean buffer would compare a stale baseline
+   * against disk and raise a conflict dialog over an edit that was never made.
+   */
   it("does nothing when saving a buffer that was never edited", async () => {
     renderPanel();
     await enterEditMode();
@@ -284,9 +292,11 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.queryByText(/changed while you were editing/i)).toBeNull();
   });
 
-  /// Reported from real use: a floppy-disk icon and a tick gave no answer to "how do I leave
-  /// without saving". The controls are icons again, so the answer lives in their names and
-  /// tooltips instead — which is what a screen reader and a hover both reach.
+  /**
+   * Reported from real use: a floppy-disk icon and a tick gave no answer to "how do I leave
+   * without saving". The controls are icons again, so the answer lives in their names and
+   * tooltips instead — which is what a screen reader and a hover both reach.
+   */
   it("names its edit-mode actions, however they are drawn", async () => {
     renderPanel();
     await enterEditMode();
@@ -295,8 +305,10 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 
-  /// "Cancel" was wrong on a clean buffer — nothing was being cancelled. One X now serves both,
-  /// and the name follows the buffer so it always says what pressing it will do.
+  /**
+   * "Cancel" was wrong on a clean buffer — nothing was being cancelled. One X now serves both,
+   * and the name follows the buffer so it always says what pressing it will do.
+   */
   it("names the exit for what it will do to the buffer", async () => {
     renderPanel();
     await enterEditMode();
@@ -311,10 +323,12 @@ describe("WorkspaceFilesPanel edit mode", () => {
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 
-  /// Also reported from real use. This is the base-ui gap: `disabled` on a `TooltipTrigger`
-  /// becomes `data-trigger-disabled` and never reaches the DOM, so the previous Save button looked
-  /// and behaved enabled with nothing to save. A plain `<button>` is what makes this assertion
-  /// possible at all.
+  /**
+   * Also reported from real use. This is the base-ui gap: `disabled` on a `TooltipTrigger`
+   * becomes `data-trigger-disabled` and never reaches the DOM, so the previous Save button looked
+   * and behaved enabled with nothing to save. A plain `<button>` is what makes this assertion
+   * possible at all.
+   */
   it("disables Save until something has actually changed", async () => {
     renderPanel();
     await enterEditMode();
@@ -359,8 +373,10 @@ describe("WorkspaceFilesPanel edit mode", () => {
   });
 });
 
-/// The pin is gone: `ReviewLayout` decides from a measured width whether the list is a column or
-/// an overlay, which is the choice the pin was being asked to make by hand.
+/**
+ * The pin is gone: `ReviewLayout` decides from a measured width whether the list is a column or
+ * an overlay, which is the choice the pin was being asked to make by hand.
+ */
 describe("WorkspaceFilesPanel file list", () => {
   beforeEach(() => {
     listContents.mockImplementation((_conn: unknown, path: string) =>
@@ -387,8 +403,10 @@ describe("WorkspaceFilesPanel file list", () => {
     expect(await screen.findByText("src")).toBeInTheDocument();
   });
 
-  /// The create and visibility actions arrive and leave with the list they act on — pointing them
-  /// at a folder nobody can see is worse than not offering them.
+  /**
+   * The create and visibility actions arrive and leave with the list they act on — pointing them
+   * at a folder nobody can see is worse than not offering them.
+   */
   it("mounts the create actions only while the list is open", async () => {
     renderPanel();
     expect(
@@ -402,8 +420,10 @@ describe("WorkspaceFilesPanel file list", () => {
   });
 });
 
-/// Reported from real use: the create actions act on a folder, but nothing on screen said which
-/// one. The tree now highlights it and every affordance names it.
+/**
+ * Reported from real use: the create actions act on a folder, but nothing on screen said which
+ * one. The tree now highlights it and every affordance names it.
+ */
 describe("WorkspaceFilesPanel create destination", () => {
   beforeEach(() => {
     listContents.mockImplementation((_conn: unknown, path: string) =>
@@ -480,8 +500,10 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     expect(screen.queryByTestId("read-view")).toBeNull();
   });
 
-  /// The point of the preview is to see the edit. Rendering what is on disk while the user is
-  /// typing something else would be worse than having no preview at all.
+  /**
+   * The point of the preview is to see the edit. Rendering what is on disk while the user is
+   * typing something else would be worse than having no preview at all.
+   */
   it("renders the draft, not the file on disk", async () => {
     await enterMarkdownEdit();
     await typeDraft("# my heading");
@@ -525,8 +547,10 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     );
   });
 
-  /// happy-dom lays nothing out, so the edit area is driven directly here. The arithmetic behind
-  /// the threshold is covered by `resolveMarkdownLayout`; this checks the panel is wired to it.
+  /**
+   * happy-dom lays nothing out, so the edit area is driven directly here. The arithmetic behind
+   * the threshold is covered by `resolveMarkdownLayout`; this checks the panel is wired to it.
+   */
   it("collapses split to a single pane when the panel is too narrow", async () => {
     getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
     await enterMarkdownEdit();
@@ -551,8 +575,10 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     expect(screen.getByTestId("editor")).toBeInTheDocument();
   });
 
-  /// The sync is the point of the split view, so a user who has never touched the toggle gets it
-  /// on — the stored value is `null` until they do.
+  /**
+   * The sync is the point of the split view, so a user who has never touched the toggle gets it
+   * on — the stored value is `null` until they do.
+   */
   it("has synced scrolling on by default", async () => {
     getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
     await enterMarkdownEdit();
@@ -591,8 +617,10 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     ).toBeInTheDocument();
   });
 
-  /// With one pane there is nothing to keep in step, and a toggle that does nothing is worse than
-  /// no toggle at all.
+  /**
+   * With one pane there is nothing to keep in step, and a toggle that does nothing is worse than
+   * no toggle at all.
+   */
   it("offers no sync toggle outside the split view", async () => {
     await enterMarkdownEdit();
 
@@ -631,8 +659,10 @@ describe("WorkspaceFilesPanel markdown preview", () => {
     expect(screen.getByTestId("editor")).toBeInTheDocument();
   });
 
-  /// The column is shared free text, so a value from a newer build — or a hand-edited row — must
-  /// not leave the pane blank.
+  /**
+   * The column is shared free text, so a value from a newer build — or a hand-edited row — must
+   * not leave the pane blank.
+   */
   it("falls back to source on an unrecognised stored layout", async () => {
     getSettings.mockResolvedValue({ markdown_edit_layout: "three-up", updated_at: "now" });
     await enterMarkdownEdit();

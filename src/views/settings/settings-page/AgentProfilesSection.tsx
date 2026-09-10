@@ -11,18 +11,20 @@ import { useSelectedProject } from "@/store/projectStore";
 import type { AgentProfile, AgentRole, ConnectionKey, ProfilesDocument } from "@/types/bindings";
 import { cn } from "@/lib/utils";
 
-/// The four roles, in the order a task passes through them.
-///
-/// Each line says what the role costs the user rather than what it is called: a project with no
-/// profile for a role simply skips that stage, and "no Reviewer" being the difference between a
-/// task stopping at your gate and going straight to it is not obvious from the word "Reviewer".
-///
-/// `defaultPrompt` is the text a new profile of that role starts with. It is copied into the
-/// profile on creation rather than applied as a fallback at resolution time, because the user has
-/// to be able to read it, edit it and delete it — none of which is true of a prompt that only
-/// exists as a hidden default. The cost of that choice is that editing the text here does not
-/// reach profiles already written, which is the right way round: those are the team's, not ours.
-/// Deliberately project-neutral, since the project-specific half is what the user adds.
+/**
+ * The four roles, in the order a task passes through them.
+ *
+ * Each line says what the role costs the user rather than what it is called: a project with no
+ * profile for a role simply skips that stage, and "no Reviewer" being the difference between a
+ * task stopping at your gate and going straight to it is not obvious from the word "Reviewer".
+ *
+ * `defaultPrompt` is the text a new profile of that role starts with. It is copied into the
+ * profile on creation rather than applied as a fallback at resolution time, because the user has
+ * to be able to read it, edit it and delete it — none of which is true of a prompt that only
+ * exists as a hidden default. The cost of that choice is that editing the text here does not
+ * reach profiles already written, which is the right way round: those are the team's, not ours.
+ * Deliberately project-neutral, since the project-specific half is what the user adds.
+ */
 const ROLES: Array<{ role: AgentRole; title: string; blurb: string; defaultPrompt: string }> = [
   {
     role: "Refiner",
@@ -77,11 +79,13 @@ interface AgentProfilesSectionProps {
   connection: ConnectionKey;
 }
 
-/// One profile's editable fields.
-///
-/// Its own component so it can ask for its own agent's models: the probe costs a real subprocess,
-/// and TanStack dedupes by query key, so four profiles all naming `claude-acp` pay for one session
-/// between them rather than four.
+/**
+ * One profile's editable fields.
+ *
+ * Its own component so it can ask for its own agent's models: the probe costs a real subprocess,
+ * and TanStack dedupes by query key, so four profiles all naming `claude-acp` pay for one session
+ * between them rather than four.
+ */
 function ProfileCard({
   profile,
   title,
@@ -397,17 +401,19 @@ function ProfileCard({
   );
 }
 
-/// A profile id the user never has to see or type.
-///
-/// The id is what a task's override stores and what `defaults` points at, so it has to be stable
-/// and unique — but asking for one would be asking about a foreign key. Derived from the role and
-/// a timestamp rather than the name, because renaming a profile must not orphan the tasks pointing
-/// at it.
+/**
+ * A profile id the user never has to see or type.
+ *
+ * The id is what a task's override stores and what `defaults` points at, so it has to be stable
+ * and unique — but asking for one would be asking about a foreign key. Derived from the role and
+ * a timestamp rather than the name, because renaming a profile must not orphan the tasks pointing
+ * at it.
+ */
 function newProfileId(role: AgentRole): string {
   return `${role.toLowerCase()}-${Date.now().toString(36)}`;
 }
 
-/// Comparable form of the document, for skipping writes that would change nothing.
+/** Comparable form of the document, for skipping writes that would change nothing. */
 function serialize(profiles: AgentProfile[], defaults: Record<string, string>): string {
   return JSON.stringify({ profiles, defaults });
 }
@@ -453,11 +459,13 @@ export function AgentProfilesSection({ projectId, agents, connection }: AgentPro
     setDefaults({});
   }
 
-  /// There is no Save button: every change persists as it is made.
-  ///
-  /// The next profiles and defaults are passed in rather than read from state, because a handler
-  /// that just called `setProfiles` still sees the previous render's value. Guarded on `loaded`
-  /// so the adopt-from-query render can never write an empty document over the project's file.
+  /**
+   * There is no Save button: every change persists as it is made.
+   *
+   * The next profiles and defaults are passed in rather than read from state, because a handler
+   * that just called `setProfiles` still sees the previous render's value. Guarded on `loaded`
+   * so the adopt-from-query render can never write an empty document over the project's file.
+   */
   function saveNow(nextProfiles: AgentProfile[], nextDefaults: Record<string, string>) {
     if (!loaded) return;
     const next = serialize(nextProfiles, nextDefaults);

@@ -84,8 +84,10 @@ describe("PruneBranchesDialog", () => {
     );
   });
 
-  /// Ticking an unmerged row is the only opt-in to `git branch -D`, so it has to both warn and
-  /// carry the force flag through — a silent upgrade to a destructive delete is the bug here.
+  /**
+   * Ticking an unmerged row is the only opt-in to `git branch -D`, so it has to both warn and
+   * carry the force flag through — a silent upgrade to a destructive delete is the bug here.
+   */
   it("warns and forces once an unmerged branch is selected", async () => {
     const user = userEvent.setup();
     renderDialog([MERGED_ONE, UNMERGED]);

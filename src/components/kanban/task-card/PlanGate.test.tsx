@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { PlanGate } from "./PlanGate";
 import type { Task } from "@/types/bindings";
 
-/// The plan lives in the outcome thread, and the gate reads the most recent one.
+/** The plan lives in the outcome thread, and the gate reads the most recent one. */
 const comments = vi.hoisted(() => ({
   current: [{ id: 1, kind: "plan", body: "Touch `src/greet.js` and nothing else." }],
 }));
@@ -17,7 +17,7 @@ vi.mock("@/store/projectStore", () => ({
   useSelectedProject: () => ({ id: 1, path: "/tmp/demo" }),
 }));
 
-/// The plan body renders through the full markdown stack, which this test has no interest in.
+/** The plan body renders through the full markdown stack, which this test has no interest in. */
 vi.mock("@/components/execution/activity/MarkdownBlock", () => ({
   MarkdownBlock: ({ text }: { text: string }) => <pre>{text}</pre>,
 }));
@@ -30,9 +30,11 @@ const notes = () =>
   screen.getByPlaceholderText("Notes on the plan. Leave empty to approve it as it stands");
 
 describe("PlanGate", () => {
-  /// A new plan is a new decision. The reset used to run from an effect, which the React Compiler
-  /// flags and which paints one frame of the reopened gate still holding the last plan's notes —
-  /// so this pins the behaviour the render-phase adjustment replaced it with.
+  /**
+   * A new plan is a new decision. The reset used to run from an effect, which the React Compiler
+   * flags and which paints one frame of the reopened gate still holding the last plan's notes —
+   * so this pins the behaviour the render-phase adjustment replaced it with.
+   */
   it("does not carry notes from one plan over into the next", async () => {
     const user = userEvent.setup();
     const props = {
@@ -52,8 +54,10 @@ describe("PlanGate", () => {
     expect(notes()).toHaveValue("");
   });
 
-  /// The button says which of the two things the notes have turned it into, because approving a
-  /// plan the user has just written objections to is not something to offer.
+  /**
+   * The button says which of the two things the notes have turned it into, because approving a
+   * plan the user has just written objections to is not something to offer.
+   */
   it("offers to refine rather than approve once there are notes", async () => {
     const user = userEvent.setup();
     const props = {

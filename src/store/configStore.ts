@@ -7,12 +7,14 @@ import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 export const AVAILABLE_MCP_SERVERS = ["filesystem", "web", "git"];
 export const AVAILABLE_SKILLS = ["javascript", "python", "react", "rust"];
 
-/// Deliberately does not hold the project's default agent.
-///
-/// It used to, and nothing ever wrote it: the value lives in `.maestro/settings.json` and is read
-/// through `useProjectSettings`, so the copy here sat at `null` for the life of every session and
-/// silently disabled the fallback that lets a task run without an agent profile. A second home for
-/// a value that belongs to a file is what produced that bug — read the query.
+/**
+ * Deliberately does not hold the project's default agent.
+ *
+ * It used to, and nothing ever wrote it: the value lives in `.maestro/settings.json` and is read
+ * through `useProjectSettings`, so the copy here sat at `null` for the life of every session and
+ * silently disabled the fallback that lets a task run without an agent profile. A second home for
+ * a value that belongs to a file is what produced that bug — read the query.
+ */
 export interface ConfigState {
   isLoading: boolean;
   error: string | null;

@@ -81,9 +81,11 @@ beforeEach(() => {
 });
 
 describe("the header's count", () => {
-  /// The bug that started this. The old header read `shown/total` where both came from the same
-  /// page, so a repository with 11,943 open pull requests rendered `100/100` — a denominator that
-  /// happens to be a lie on exactly the projects where it matters.
+  /**
+   * The bug that started this. The old header read `shown/total` where both came from the same
+   * page, so a repository with 11,943 open pull requests rendered `100/100` — a denominator that
+   * happens to be a lie on exactly the projects where it matters.
+   */
   it("counts the page against the project, not against itself", () => {
     panel({ total: 11943 });
     // The thousands separator is the user's locale's, so the assertion allows any of them rather
@@ -91,8 +93,10 @@ describe("the header's count", () => {
     expect(screen.getByText((text) => /^1 of 11\D?943$/.test(text))).toBeTruthy();
   });
 
-  /// Bitbucket Server and Azure DevOps carry no total anywhere in their responses. A bare count is
-  /// the honest answer; inventing a denominator from the page would put the old lie back.
+  /**
+   * Bitbucket Server and Azure DevOps carry no total anywhere in their responses. A bare count is
+   * the honest answer; inventing a denominator from the page would put the old lie back.
+   */
   it("shows a bare count where the forge will not say how many there are", () => {
     panel({ total: null });
     expect(screen.getByText("1")).toBeTruthy();
@@ -106,10 +110,12 @@ describe("the search box", () => {
     expect(screen.getByPlaceholderText("Search all pull requests...")).toBeTruthy();
   });
 
-  /// Gitea, Forgejo and Azure DevOps have no pull request text search at all. Absent rather than
-  /// disabled-and-filtering-locally: a box that quietly matched the thirty rows on screen would
-  /// mean the whole project on three providers and this page on the other three, which is the
-  /// ambiguity that removing the local filters was meant to end.
+  /**
+   * Gitea, Forgejo and Azure DevOps have no pull request text search at all. Absent rather than
+   * disabled-and-filtering-locally: a box that quietly matched the thirty rows on screen would
+   * mean the whole project on three providers and this page on the other three, which is the
+   * ambiguity that removing the local filters was meant to end.
+   */
   it("is absent where it cannot work", () => {
     panel({ canSearch: false });
     expect(screen.queryByPlaceholderText("Search all pull requests...")).toBeNull();
@@ -117,8 +123,10 @@ describe("the search box", () => {
 });
 
 describe("the pager", () => {
-  /// Every open pull request fits on one page for the overwhelming majority of projects, and a
-  /// pager with both arrows dead is furniture.
+  /**
+   * Every open pull request fits on one page for the overwhelming majority of projects, and a
+   * pager with both arrows dead is furniture.
+   */
   it("stays away until there is somewhere to go", () => {
     panel({ hasPrevious: false, hasNext: false });
     expect(screen.queryByText("Next")).toBeNull();
@@ -129,22 +137,26 @@ describe("the pager", () => {
 });
 
 describe("what a row asks the forge", () => {
-  /// The whole point of folding the counts and the verdict into the list request. On GitHub every
-  /// row arrives answered, and a page of thirty must make no further requests at all — this is the
-  /// per-row cost the panel used to pay, and nothing in the rendered output would reveal its return.
+  /**
+   * The whole point of folding the counts and the verdict into the list request. On GitHub every
+   * row arrives answered, and a page of thirty must make no further requests at all — this is the
+   * per-row cost the panel used to pay, and nothing in the rendered output would reveal its return.
+   */
   it("asks nothing when the list already answered", () => {
     panel({ pullRequests: [pullRequest({ detail })] });
     expect(asked.current.every((call) => !call.enabled)).toBe(true);
   });
 
-  /// And the other half: a forge whose list cannot answer sends exactly one question per row, once.
+  /** And the other half: a forge whose list cannot answer sends exactly one question per row, once. */
   it("asks once for a row the list left unanswered", () => {
     panel({ pullRequests: [pullRequest({ detail: null })] });
     expect(asked.current.some((call) => call.number === 310 && call.enabled)).toBe(true);
   });
 
-  /// Off-screen views cost nothing. Without this the panel would keep asking while the user is on
-  /// the Kanban board.
+  /**
+   * Off-screen views cost nothing. Without this the panel would keep asking while the user is on
+   * the Kanban board.
+   */
   it("asks nothing while the view is off screen", () => {
     panel({ pullRequests: [pullRequest({ detail: null })], poll: false });
     expect(asked.current.every((call) => !call.enabled)).toBe(true);

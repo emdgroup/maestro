@@ -138,8 +138,10 @@ describe("navigationStore – clear actions", () => {
   });
 });
 
-/// `SettingsPage` owns which page is showing, so this field is the only way anything outside it
-/// can open one — without it, a message telling the user where to go could not take them there.
+/**
+ * `SettingsPage` owns which page is showing, so this field is the only way anything outside it
+ * can open one — without it, a message telling the user where to go could not take them there.
+ */
 describe("navigationStore – pendingSettingsPage", () => {
   beforeEach(resetStore);
 

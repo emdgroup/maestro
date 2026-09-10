@@ -6,7 +6,7 @@ import type { CodeHostingStatus } from "@/types/bindings";
 
 const status = vi.hoisted(() => ({ current: null as CodeHostingStatus | null }));
 const saveLandingMode = vi.hoisted(() => vi.fn());
-/// The project's git remotes, swapped per test.
+/** The project's git remotes, swapped per test. */
 const remotes = vi.hoisted(() => ({ current: ["origin", "fork"] as string[] }));
 
 vi.mock("@/services/project.service", () => ({
@@ -21,8 +21,10 @@ vi.mock("@/services/integration.service", async (importOriginal) => ({
   useSaveProjectLandingMode: () => ({ mutate: saveLandingMode, isPending: false }),
 }));
 
-/// The connect flow is the project picker's dialog, driven here exactly as the Issue tracking
-/// page drives it. These tests are about whether the card offers it, not what it does.
+/**
+ * The connect flow is the project picker's dialog, driven here exactly as the Issue tracking
+ * page drives it. These tests are about whether the card offers it, not what it does.
+ */
 vi.mock("@/views/project-picker/integrations-tab/IntegrationConnectDialog", () => ({
   IntegrationConnectDialog: ({ open, provider }: { open: boolean; provider: string }) =>
     open ? <div data-testid="connect-dialog">{provider}</div> : null,
@@ -63,7 +65,7 @@ function renderCard(overrides: Partial<CodeHostingStatus> = {}, remoteName: stri
   return onChange;
 }
 
-/// Its accessible name comes from the `Git remote` label, not from whichever remote is selected.
+/** Its accessible name comes from the `Git remote` label, not from whichever remote is selected. */
 const remoteSelect = () => screen.getByRole("combobox", { name: /git remote/i });
 
 describe("CodeHostingSection", () => {
@@ -80,8 +82,10 @@ describe("CodeHostingSection", () => {
     expect(screen.getByText("GitHub")).toBeTruthy();
   });
 
-  /// The reason this card exists: the Approve dialog tells people to connect the forge "in
-  /// Settings", so Settings has to be somewhere they can actually do it.
+  /**
+   * The reason this card exists: the Approve dialog tells people to connect the forge "in
+   * Settings", so Settings has to be somewhere they can actually do it.
+   */
   it("offers to connect a forge nothing has authenticated for", async () => {
     renderCard({ rung: "NotConnected" });
 
@@ -96,8 +100,10 @@ describe("CodeHostingSection", () => {
     expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
   });
 
-  /// Inviting someone to connect a forge that still could not open a pull request asks for work
-  /// that changes nothing — the same rule the Approve dialog applies to its own invitation.
+  /**
+   * Inviting someone to connect a forge that still could not open a pull request asks for work
+   * that changes nothing — the same rule the Approve dialog applies to its own invitation.
+   */
   it("does not offer to connect a forge it could not post to anyway", () => {
     renderCard({ rung: "NotConnected", forge_supports_pull_requests: false });
 
@@ -127,8 +133,10 @@ describe("CodeHostingSection", () => {
     expect(saveLandingMode).toHaveBeenCalledWith({ projectId: 1, landingMode: "PullRequest" });
   });
 
-  /// The setting stays selectable before its forge is connected, so the card owes the user a
-  /// sentence about what Approve will actually do in the meantime.
+  /**
+   * The setting stays selectable before its forge is connected, so the card owes the user a
+   * sentence about what Approve will actually do in the meantime.
+   */
   it("says what will happen when the chosen mode cannot be honoured", () => {
     renderCard({ rung: "NotConnected", landing_mode: "PullRequest" });
 
@@ -141,8 +149,10 @@ describe("CodeHostingSection", () => {
     expect(screen.queryByText(/Approve will merge locally/i)).toBeNull();
   });
 
-  /// The remote picker sits here rather than on the card above, because the URL and forge beneath
-  /// it are what the chosen remote resolves to. A card apart, the two could disagree on screen.
+  /**
+   * The remote picker sits here rather than on the card above, because the URL and forge beneath
+   * it are what the chosen remote resolves to. A card apart, the two could disagree on screen.
+   */
   it("persists the remote as soon as it is picked", async () => {
     const onChange = renderCard();
 
@@ -152,8 +162,10 @@ describe("CodeHostingSection", () => {
     expect(onChange).toHaveBeenCalledWith({ remote_name: "fork" });
   });
 
-  /// "Auto" is the absence of a choice, so it is stored as null rather than as whichever remote
-  /// detection happened to land on when it was picked.
+  /**
+   * "Auto" is the absence of a choice, so it is stored as null rather than as whichever remote
+   * detection happened to land on when it was picked.
+   */
   it("stores auto-detect as no remote at all", async () => {
     const onChange = renderCard({}, "fork");
 
@@ -163,8 +175,10 @@ describe("CodeHostingSection", () => {
     expect(onChange).toHaveBeenCalledWith({ remote_name: null });
   });
 
-  /// A configured remote the repository no longer has must stay visible, or the picker would show
-  /// "Auto-detect" while the stored setting says otherwise.
+  /**
+   * A configured remote the repository no longer has must stay visible, or the picker would show
+   * "Auto-detect" while the stored setting says otherwise.
+   */
   it("still offers a configured remote the project no longer has", () => {
     remotes.current = ["origin"];
     renderCard({}, "gone");

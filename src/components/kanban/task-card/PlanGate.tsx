@@ -38,7 +38,7 @@ export function PlanGate({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onApprove: () => void;
-  /// `feedback` empty means "start over"; with text it means "this plan, but address this".
+  /** `feedback` empty means "start over"; with text it means "this plan, but address this". */
   onReplan: (feedback: string) => void;
 }) {
   const { data: comments } = useTaskCommentsQuery(open ? task.id : undefined);

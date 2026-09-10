@@ -75,8 +75,10 @@ beforeEach(() => {
   worktrees.current = [];
 });
 
-/// These two rules decided whether a card could offer Refine, and were recomputed identically in
-/// every card on the board before they moved here. They are a property of the project.
+/**
+ * These two rules decided whether a card could offer Refine, and were recomputed identically in
+ * every card on the board before they moved here. They are a property of the project.
+ */
 describe("canRefine", () => {
   it("is true when a role has a Refiner profile", () => {
     profiles.current = [{ id: "refiner-1", role: "Refiner" }];
@@ -86,8 +88,10 @@ describe("canRefine", () => {
     expect(result.current.canRefine).toBe(true);
   });
 
-  /// A project that predates profiles configures one agent and expects everything to use it, so
-  /// gating purely on the Refiner profile would take Refine away from it.
+  /**
+   * A project that predates profiles configures one agent and expects everything to use it, so
+   * gating purely on the Refiner profile would take Refine away from it.
+   */
   it("is true with no Refiner profile but a project default agent", () => {
     defaultAgent.current = "claude-acp";
 
@@ -102,8 +106,10 @@ describe("canRefine", () => {
     expect(result.current.canRefine).toBe(false);
   });
 
-  /// Another role's profile is not a refiner. The check used to be `.some(...)` over every profile
-  /// in the document, so this pins that it reads the role.
+  /**
+   * Another role's profile is not a refiner. The check used to be `.some(...)` over every profile
+   * in the document, so this pins that it reads the role.
+   */
   it("is false when only other roles have profiles", () => {
     profiles.current = [{ id: "coder-1", role: "Coder" }];
 
@@ -130,8 +136,10 @@ describe("useTaskSession", () => {
     expect(result.current).toBeNull();
   });
 
-  /// A session belonging to no task — one the user started from the Agents view — must not be
-  /// indexed under a task id at all, or it would surface on whichever card shares its key.
+  /**
+   * A session belonging to no task — one the user started from the Agents view — must not be
+   * indexed under a task id at all, or it would surface on whichever card shares its key.
+   */
   it("ignores sessions that belong to no task", () => {
     sessions.current = [session(null, 100)];
 
@@ -165,9 +173,11 @@ describe("useTaskWorktree", () => {
   });
 });
 
-/// The card compares its own id rather than reading a boolean, because one instance of
-/// `useExecuteTask` now serves the whole board — a bare `isExecuting` would put every card's
-/// Execute button into "Starting…" while any one task spawned.
+/**
+ * The card compares its own id rather than reading a boolean, because one instance of
+ * `useExecuteTask` now serves the whole board — a bare `isExecuting` would put every card's
+ * Execute button into "Starting…" while any one task spawned.
+ */
 describe("executingTaskId", () => {
   it("is exposed as an id rather than a flag", () => {
     const { result } = renderHook(() => useBoardActionsContext(), { wrapper });

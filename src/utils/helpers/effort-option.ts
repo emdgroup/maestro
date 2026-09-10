@@ -1,10 +1,12 @@
 import type { ConfigOption } from "@/components/execution/activity/types";
 
-/// The ACP config-option categories that mean "how hard should the model think about this".
-///
-/// Two names for one idea: harnesses that expose a reasoning budget call it either, and the compose
-/// bar already renders both through the same slider. Matched on the category rather than the id,
-/// because the id is the agent's own and is what has to be sent back to set the value.
+/**
+ * The ACP config-option categories that mean "how hard should the model think about this".
+ *
+ * Two names for one idea: harnesses that expose a reasoning budget call it either, and the compose
+ * bar already renders both through the same slider. Matched on the category rather than the id,
+ * because the id is the agent's own and is what has to be sent back to set the value.
+ */
 const EFFORT_CATEGORIES = ["effort", "thought_level"];
 
 /**

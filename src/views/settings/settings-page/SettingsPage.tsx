@@ -151,9 +151,11 @@ function AppScopePane({ pageId }: { pageId: string }) {
   );
 }
 
-/// Separate from `ProjectScopePane` rather than folded into it: these pages need only the
-/// connection, and that pane blocks on the project's settings — a page with no project to load
-/// would sit on "Loading settings..." for a query it does not use.
+/**
+ * Separate from `ProjectScopePane` rather than folded into it: these pages need only the
+ * connection, and that pane blocks on the project's settings — a page with no project to load
+ * would sit on "Loading settings..." for a query it does not use.
+ */
 function ConnectionScopePane({
   pageId,
   connection,

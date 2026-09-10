@@ -59,21 +59,25 @@ const ALL_STATUSES: TaskStatus[] = [
   "Cancelled",
 ];
 
-/// Everywhere the user may send a task by hand.
-///
-/// Only the two columns a task sits in before it runs. Everything past that point is reached by
-/// an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
-/// Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
-/// no action had made true — most visibly, re-selecting Review on a task already in Review
-/// applies `ManualMove`, which parks it and strips the phase and ball off a live review.
-///
-/// This does still let a cancelled task be re-filed to Planning, which is how restoring from the
-/// archive works.
+/**
+ * Everywhere the user may send a task by hand.
+ *
+ * Only the two columns a task sits in before it runs. Everything past that point is reached by
+ * an action rather than by re-filing: InProgress by Execute, Review by an agent finishing,
+ * Done by Approve, Cancelled by its own button. Offering them here let the picker assert things
+ * no action had made true — most visibly, re-selecting Review on a task already in Review
+ * applies `ManualMove`, which parks it and strips the phase and ball off a live review.
+ *
+ * This does still let a cancelled task be re-filed to Planning, which is how restoring from the
+ * archive works.
+ */
 const SELECTABLE_STATUSES = new Set<TaskStatus>(["Planning", "Queue"]);
 
-/// Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
-/// working in is locked for the same reason the card cannot be dragged — re-filing applies
-/// `ManualMove`, which parks the task and orphans the session still running against it.
+/**
+ * Done is terminal: view the outcome and archive it, nothing else. A task an agent is currently
+ * working in is locked for the same reason the card cannot be dragged — re-filing applies
+ * `ManualMove`, which parks the task and orphans the session still running against it.
+ */
 const STATUS_IS_LOCKED = (task: Task) =>
   task.status === "Done" || task.phase_status === "Running" || task.phase_status === "Blocked";
 

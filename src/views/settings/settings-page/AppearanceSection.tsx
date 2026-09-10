@@ -16,23 +16,29 @@ const UI_SCALE_PRESETS = [
   { value: "130", label: "Large", hint: "130%", fontSize: 17 },
 ] as const;
 
-/// The same three values the header's ThemeToggle cycles through, laid out so the choice can
-/// be made directly rather than by clicking until the right one comes round.
+/**
+ * The same three values the header's ThemeToggle cycles through, laid out so the choice can
+ * be made directly rather than by clicking until the right one comes round.
+ */
 const THEME_PRESETS: { value: ThemeValue; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: SunMoon },
 ];
 
-/// The compose bar sends on `ctrlKey || metaKey`, so the label has to name the key the user
-/// actually has. There is no shared modifier-label helper to reach for.
+/**
+ * The compose bar sends on `ctrlKey || metaKey`, so the label has to name the key the user
+ * actually has. There is no shared modifier-label helper to reach for.
+ */
 const SEND_MODIFIER = isMacOS ? "⌘" : "Ctrl";
 
 const ENTER_ICON = <CornerDownLeft />;
 
-/// Both halves of the choice, spelled out as the key combinations they are rather than as a
-/// sentence about them — the question this control answers is "what does Enter do", and a list
-/// of bindings answers it without being read.
+/**
+ * Both halves of the choice, spelled out as the key combinations they are rather than as a
+ * sentence about them — the question this control answers is "what does Enter do", and a list
+ * of bindings answers it without being read.
+ */
 const ENTER_PRESETS: {
   value: EnterKeyBehavior;
   title: string;

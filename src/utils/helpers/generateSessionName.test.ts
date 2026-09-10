@@ -33,8 +33,10 @@ describe("slugifyName", () => {
 });
 
 describe("taskBranchName", () => {
-  /// The prefix is not decoration: `list_prunable_branches` decides what it may delete purely
-  /// from it, so a task branch created outside the namespace can never be cleaned up.
+  /**
+   * The prefix is not decoration: `list_prunable_branches` decides what it may delete purely
+   * from it, so a task branch created outside the namespace can never be cleaned up.
+   */
   it("puts the branch inside the Maestro namespace", () => {
     expect(taskBranchName(12, "Fix Windows Path")).toBe("maestro/12-fix-windows-path");
     expect(taskBranchName(12, "Fix Windows Path").startsWith(MAESTRO_BRANCH_PREFIX)).toBe(true);
@@ -58,8 +60,10 @@ describe("validateBranchSuffix", () => {
     },
   );
 
-  /// Empty means "use the generated name" — the state an untouched field is in — so it is not an
-  /// error here. Callers that require a name check for emptiness themselves.
+  /**
+   * Empty means "use the generated name" — the state an untouched field is in — so it is not an
+   * error here. Callers that require a name check for emptiness themselves.
+   */
   it("accepts an empty suffix", () => {
     expect(validateBranchSuffix("")).toBeNull();
   });

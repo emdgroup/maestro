@@ -3,9 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { IssueTrackingSection } from "./IssueTrackingSection";
 import type { IntegrationStatus, ProjectIssueTrackingConfig } from "@/types/bindings";
 
-/// What `get_project_issue_tracking_config` resolves to, and whether it has resolved yet.
-/// `App` keeps this query open for the whole session, so the section normally mounts with the
-/// answer already in cache — `loading: false` on the very first render is the real-world case.
+/**
+ * What `get_project_issue_tracking_config` resolves to, and whether it has resolved yet.
+ * `App` keeps this query open for the whole session, so the section normally mounts with the
+ * answer already in cache — `loading: false` on the very first render is the real-world case.
+ */
 const config = vi.hoisted(() => ({
   current: null as ProjectIssueTrackingConfig | null,
   loading: false,
@@ -21,8 +23,10 @@ vi.mock("@/services/integration.service", () => ({
   PROVIDER_NAMES: { github: "GitHub" },
 }));
 
-/// The forms reach for provider lookup queries of their own; the section under test only cares
-/// that a form appears at all.
+/**
+ * The forms reach for provider lookup queries of their own; the section under test only cares
+ * that a form appears at all.
+ */
 vi.mock("@/views/settings/issue-tracking-forms/IssueTrackingProviderForm", () => ({
   IssueTrackingProviderForm: ({ provider }: { provider: string }) => (
     <div data-testid="provider-form">{provider}</div>

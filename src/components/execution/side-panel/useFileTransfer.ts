@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-/// Nothing is shown until a transfer has run this long, so copying a small file — the common case
-/// on a container or a distro — does not flash an indicator for a few frames.
+/**
+ * Nothing is shown until a transfer has run this long, so copying a small file — the common case
+ * on a container or a distro — does not flash an indicator for a few frames.
+ */
 const APPEAR_AFTER_MS = 300;
 
-/// How long a success confirmation stays before the button returns to its resting icon. Failures
-/// are not on a timer: they stay until the next attempt.
+/**
+ * How long a success confirmation stays before the button returns to its resting icon. Failures
+ * are not on a timer: they stay until the next attempt.
+ */
 const CONFIRM_FOR_MS = 2500;
 
 export type TransferState =
@@ -16,20 +20,26 @@ export type TransferState =
   | { status: "error"; detail: string };
 
 export interface RunOptions<T> {
-  /// Channel `sftp://transfer-progress/` reports on. Ignored unless `reportsProgress`.
+  /** Channel `sftp://transfer-progress/` reports on. Ignored unless `reportsProgress`. */
   transferId: string;
-  /// Only SSH counts bytes. A distro copy and `docker cp` are each one opaque call, so they get
-  /// the indeterminate ring rather than a percentage frozen at zero.
+  /**
+   * Only SSH counts bytes. A distro copy and `docker cp` are each one opaque call, so they get
+   * the indeterminate ring rather than a percentage frozen at zero.
+   */
   reportsProgress: boolean;
   action: () => Promise<T>;
-  /// Tooltip text once it succeeds, or null to go quiet. Open returns null — the file appearing on
-  /// screen is its own confirmation — while a download says where it landed, which is otherwise
-  /// invisible.
+  /**
+   * Tooltip text once it succeeds, or null to go quiet. Open returns null — the file appearing on
+   * screen is its own confirmation — while a download says where it landed, which is otherwise
+   * invisible.
+   */
   describeDone?: (result: T) => string | null;
 }
 
-/// Drives the transfer indicator on the panel toolbars: one action at a time, progress when the
-/// transport reports any, and the backend's own message when it fails.
+/**
+ * Drives the transfer indicator on the panel toolbars: one action at a time, progress when the
+ * transport reports any, and the backend's own message when it fails.
+ */
 export function useFileTransfer() {
   const [state, setState] = useState<TransferState>({ status: "idle" });
   const [pending, setPending] = useState(false);
@@ -113,7 +123,7 @@ export function useFileTransfer() {
   return { state, run, pending };
 }
 
-/// Tooltip for a toolbar button, falling back to `idleText` when nothing is in flight.
+/** Tooltip for a toolbar button, falling back to `idleText` when nothing is in flight. */
 export function transferTooltip(state: TransferState, idleText: string): string {
   switch (state.status) {
     case "busy":

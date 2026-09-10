@@ -4,9 +4,11 @@ import { api } from "@/lib/tauri-utils";
 import type { Task } from "@/types/bindings";
 import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
 
-/// Long enough to collapse the burst of events one transition produces — a turn ending emits
-/// `tasks-changed` and `sessions-changed` together — and short enough that a freed slot is filled
-/// while the user is still looking at the board.
+/**
+ * Long enough to collapse the burst of events one transition produces — a turn ending emits
+ * `tasks-changed` and `sessions-changed` together — and short enough that a freed slot is filled
+ * while the user is still looking at the board.
+ */
 const DEBOUNCE_MS = 400;
 
 /**
@@ -43,8 +45,10 @@ export function useQueueDrain(
     executeRef.current = execute;
   });
 
-  /// Guards against overlapping drains. Two in flight would each be told the same slots are free,
-  /// since the first one's claims are not written until its spawns begin.
+  /**
+   * Guards against overlapping drains. Two in flight would each be told the same slots are free,
+   * since the first one's claims are not written until its spawns begin.
+   */
   const drainingRef = useRef(false);
 
   useEffect(() => {

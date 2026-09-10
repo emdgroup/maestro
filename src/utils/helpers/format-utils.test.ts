@@ -28,15 +28,19 @@ describe("formatTimeAgoCompact", () => {
     expect(formatTimeAgoCompact(NOW - 23 * HOUR, NOW)).toBe("23h ago");
   });
 
-  /// Past a day, counting hours stops saying anything a person can use — `72h ago` is arithmetic,
-  /// not a date. Two of the formatters this replaces had no rollover and did print `72h ago`.
+  /**
+   * Past a day, counting hours stops saying anything a person can use — `72h ago` is arithmetic,
+   * not a date. Two of the formatters this replaces had no rollover and did print `72h ago`.
+   */
   it("falls back to a date once hours stop being useful", () => {
     expect(formatTimeAgoCompact(NOW - DAY, NOW)).toBe("Jul 28");
     expect(formatTimeAgoCompact(NOW - 5 * DAY, NOW)).toBe("Jul 24");
   });
 
-  /// A status change re-stamps its timestamp mid-tick, so `now` can be behind the value it is
-  /// subtracted from. Unclamped this counted backwards.
+  /**
+   * A status change re-stamps its timestamp mid-tick, so `now` can be behind the value it is
+   * subtracted from. Unclamped this counted backwards.
+   */
   it("treats a clock-skewed future stamp as just now, not negative", () => {
     expect(formatTimeAgoCompact(NOW + 5_000, NOW)).toBe("just now");
     expect(formatTimeAgoCompact(NOW + DAY, NOW)).toBe("just now");
@@ -46,7 +50,7 @@ describe("formatTimeAgoCompact", () => {
     expect(formatTimeAgoCompact("2026-07-29T11:00:00Z", NOW)).toBe("1h ago");
   });
 
-  /// A row with an unreadable timestamp should lose its subtitle, not render "Invalid Date".
+  /** A row with an unreadable timestamp should lose its subtitle, not render "Invalid Date". */
   it("gives nothing for an unparseable input", () => {
     expect(formatTimeAgoCompact("not a date", NOW)).toBe("");
     expect(formatTimeAgoCompact(Number.NaN, NOW)).toBe("");

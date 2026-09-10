@@ -111,10 +111,12 @@ describe("the CodeMirror GitHub theme", () => {
     }
   });
 
-  /// Read mode selects natively and edit mode paints `.cm-selectionBackground` divs, so the two
-  /// only agree if both are covered — and the drawn one only wins if it out-specifies CodeMirror's
-  /// own, which is six classes deep. Losing either is invisible in a unit test but obvious the
-  /// moment someone drags across a line.
+  /**
+   * Read mode selects natively and edit mode paints `.cm-selectionBackground` divs, so the two
+   * only agree if both are covered — and the drawn one only wins if it out-specifies CodeMirror's
+   * own, which is six classes deep. Losing either is invisible in a unit test but obvious the
+   * moment someone drags across a line.
+   */
   it("selects in the app's accent, in both modes", () => {
     expect(SELECTION_BG).toContain("var(--accent)");
     // Read mode: the browser's own selection.
@@ -187,9 +189,11 @@ describe("the CodeMirror GitHub theme", () => {
     }
   });
 
-  /// End to end against the real grammar, which is the form the complaint arrived in: a page of
-  /// TypeScript came out mostly blue and purple in the editor where the read view showed it mostly
-  /// plain. Every expectation here is what `github-dark` produces for the same snippet.
+  /**
+   * End to end against the real grammar, which is the form the complaint arrived in: a page of
+   * TypeScript came out mostly blue and purple in the editor where the read view showed it mostly
+   * plain. Every expectation here is what `github-dark` produces for the same snippet.
+   */
   it("paints a snippet of TypeScript the way the theme does", () => {
     const { foreground, keyword, entity, string, constant, comment } = githubPalette(true);
     const painted = paint(

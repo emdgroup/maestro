@@ -148,8 +148,10 @@ interface ApproveModalProps {
   isPending?: boolean;
 }
 
-/// The strategy each landing mode asks for. `Merge` is also the fallback, so it is the value any
-/// unavailable preference resolves to.
+/**
+ * The strategy each landing mode asks for. `Merge` is also the fallback, so it is the value any
+ * unavailable preference resolves to.
+ */
 const STRATEGY_FOR_LANDING_MODE: Record<LandingMode, string> = {
   Merge: "merge-delete",
   PullRequest: "pull-request",

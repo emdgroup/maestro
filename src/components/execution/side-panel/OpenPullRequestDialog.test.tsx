@@ -46,11 +46,13 @@ const title = () => field("input");
 const target = () => field("input-group-control");
 
 describe("OpenPullRequestDialog", () => {
-  /// The Overview card renders this dialog unconditionally and opens it by prop, so it mounts
-  /// moments after the worktree is created — while the branch is still level with its base — and
-  /// stays mounted for the life of the session panel. Seeding the fields from state initializers
-  /// froze that first moment, so the title was whatever `main` last committed and no amount of
-  /// work by the agent afterwards changed it.
+  /**
+   * The Overview card renders this dialog unconditionally and opens it by prop, so it mounts
+   * moments after the worktree is created — while the branch is still level with its base — and
+   * stays mounted for the life of the session panel. Seeding the fields from state initializers
+   * froze that first moment, so the title was whatever `main` last committed and no amount of
+   * work by the agent afterwards changed it.
+   */
   it("takes the newest commit subject each time it is opened", () => {
     const { rerender } = render(
       <OpenPullRequestDialog
@@ -67,16 +69,20 @@ describe("OpenPullRequestDialog", () => {
     expect(title().value).toBe("Fix the review queue");
   });
 
-  /// A branch with no commit of its own has no sentence to offer, and the slug is better than the
-  /// base branch's last commit message.
+  /**
+   * A branch with no commit of its own has no sentence to offer, and the slug is better than the
+   * base branch's last commit message.
+   */
   it("falls back to the branch name when there is no commit to name it after", () => {
     render(<OpenPullRequestDialog {...props({ lastCommitSubject: null })} />);
 
     expect(title().value).toBe("maestro/great-lynx-58");
   });
 
-  /// The worktrees behind these props refetch every ten seconds. Re-seeding on anything but `open`
-  /// would rewrite the field under whoever was typing in it.
+  /**
+   * The worktrees behind these props refetch every ten seconds. Re-seeding on anything but `open`
+   * would rewrite the field under whoever was typing in it.
+   */
   it("leaves a title being edited alone when the worktree poll lands", () => {
     const { rerender } = render(
       <OpenPullRequestDialog {...props({ lastCommitSubject: "Add the review queue" })} />,
@@ -92,8 +98,10 @@ describe("OpenPullRequestDialog", () => {
     expect(title().value).toBe("Rework the review queue");
   });
 
-  /// `origin/main` is right for branching and never right as a merge target, since no forge has a
-  /// branch by that name. Seeded in the same effect as the title, so it regresses the same way.
+  /**
+   * `origin/main` is right for branching and never right as a merge target, since no forge has a
+   * branch by that name. Seeded in the same effect as the title, so it regresses the same way.
+   */
   it("defaults the target to the base branch without its remote", () => {
     render(<OpenPullRequestDialog {...props({ baseBranch: "origin/main" })} />);
 

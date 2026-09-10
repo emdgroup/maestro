@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import type { AgentRole, Task } from "@/types/bindings";
 import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
 
-/// Collapses the burst of events one transition produces — a turn ending emits `tasks-changed`
-/// more than once — so a handoff is started from the settled state rather than a partial one.
+/**
+ * Collapses the burst of events one transition produces — a turn ending emits `tasks-changed`
+ * more than once — so a handoff is started from the settled state rather than a partial one.
+ */
 const DEBOUNCE_MS = 400;
 
 /**
@@ -35,8 +37,10 @@ export function useAgentPipeline(
     executeRef.current = execute;
   });
 
-  /// Ids already handed to `execute` this session. The task's state does not change until the
-  /// session is up, so without this the debounce window would start the same agent twice.
+  /**
+   * Ids already handed to `execute` this session. The task's state does not change until the
+   * session is up, so without this the debounce window would start the same agent twice.
+   */
   const startedRef = useRef(new Set<number>());
 
   // `tasks` is a dependency here and deliberately a ref in `useQueueDrain`, which looks like an

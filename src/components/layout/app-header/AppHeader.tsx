@@ -27,8 +27,10 @@ interface AppHeaderProps {
   onViewChange: (view: ViewType) => void;
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
-  /// The connection stopped answering but is still open — reported here rather than as a
-  /// blocking overlay, because nothing has necessarily failed.
+  /**
+   * The connection stopped answering but is still open — reported here rather than as a
+   * blocking overlay, because nothing has necessarily failed.
+   */
   connectionQuiet?: boolean;
 }
 

@@ -14,12 +14,16 @@ import { AgentAuthModal } from "@/components/common/AgentAuthModal";
 import type { Task, WorktreeWithStatus } from "@/types/bindings";
 import type { AuthRequiredEntry } from "@/store/boardStore";
 
-/// Which confirmation is up. One value rather than four booleans: only one of these can be open,
-/// and four independent flags could describe a state the card has no rendering for.
+/**
+ * Which confirmation is up. One value rather than four booleans: only one of these can be open,
+ * and four independent flags could describe a state the card has no rendering for.
+ */
 export type CardDialog = "auth" | "abandon" | "archive" | "emptyReview" | null;
 
-/// What each confirmation does once confirmed. The mutations stay with the card, which also fires
-/// some of them from the footer — this keeps one instance of each rather than two.
+/**
+ * What each confirmation does once confirmed. The mutations stay with the card, which also fires
+ * some of them from the footer — this keeps one instance of each rather than two.
+ */
 export interface DialogActions {
   onAbandon: () => void;
   onArchive: () => void;
@@ -33,10 +37,10 @@ interface TaskCardDialogsProps {
   task: Task;
   dialog: CardDialog;
   onClose: () => void;
-  /// Present when the agent stopped to ask for credentials; the auth modal needs its details.
+  /** Present when the agent stopped to ask for credentials; the auth modal needs its details. */
   authRequired: AuthRequiredEntry | null;
   sessionKey: number | null;
-  /// What the task left behind, which decides whether the archive prompt can offer to remove it.
+  /** What the task left behind, which decides whether the archive prompt can offer to remove it. */
   taskWorktree: WorktreeWithStatus | null;
   projectId: number | null;
   actions: DialogActions;

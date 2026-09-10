@@ -14,8 +14,10 @@ vi.mock("@tanstack/react-query", () => ({
 
 import { usePullRequestPoll } from "./usePullRequestPoll";
 
-/// Lets the sweep's promise chain settle. `waitFor` cannot be used — it polls on real timers,
-/// which never advance while these are faked.
+/**
+ * Lets the sweep's promise chain settle. `waitFor` cannot be used — it polls on real timers,
+ * which never advance while these are faked.
+ */
 async function settle() {
   for (let i = 0; i < 10; i += 1) {
     await vi.advanceTimersByTimeAsync(0);

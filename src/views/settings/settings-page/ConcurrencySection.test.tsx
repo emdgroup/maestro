@@ -24,8 +24,10 @@ describe("ConcurrencySection", () => {
     save.mockReset();
   });
 
-  /// The memory estimate is what the setting is for — a fixed number chosen before anyone knew
-  /// what the machine looks like cannot protect it — so it has to be the first thing offered.
+  /**
+   * The memory estimate is what the setting is for — a fixed number chosen before anyone knew
+   * what the machine looks like cannot protect it — so it has to be the first thing offered.
+   */
   it("offers the memory estimate before the fixed number", () => {
     render(<ConcurrencySection connection={LOCAL} />);
 
@@ -43,8 +45,10 @@ describe("ConcurrencySection", () => {
     expect(screen.getByRole("radio", { name: /fixed number/i })).toBeChecked();
   });
 
-  /// The regression the whole change exists to prevent: a limit saved while looking at one host
-  /// must not be written against another.
+  /**
+   * The regression the whole change exists to prevent: a limit saved while looking at one host
+   * must not be written against another.
+   */
   it("saves against the connection it was given", async () => {
     render(<ConcurrencySection connection={REMOTE} />);
 
@@ -56,8 +60,10 @@ describe("ConcurrencySection", () => {
     });
   });
 
-  /// The number is one value with two uses — the cap in fixed mode, the fallback in auto — so
-  /// editing it must not silently switch modes.
+  /**
+   * The number is one value with two uses — the cap in fixed mode, the fallback in auto — so
+   * editing it must not silently switch modes.
+   */
   it("keeps the chosen mode when the number is edited", async () => {
     render(<ConcurrencySection connection={LOCAL} />);
 
@@ -76,8 +82,10 @@ describe("settings registry", () => {
     expect(page?.scope).toBe("connection");
   });
 
-  /// The welcome screen has no connection in scope, and `SettingsPage` filters it to app pages —
-  /// so a host limit must not be reachable there, where there is nothing to apply it to.
+  /**
+   * The welcome screen has no connection in scope, and `SettingsPage` filters it to app pages —
+   * so a host limit must not be reachable there, where there is nothing to apply it to.
+   */
   it("is absent from the welcome screen's page list", () => {
     const welcomePages = orderedPages(SETTINGS_PAGES.filter((p) => p.scope === "app"));
 

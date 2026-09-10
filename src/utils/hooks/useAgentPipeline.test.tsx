@@ -65,11 +65,13 @@ describe("useAgentPipeline", () => {
     });
   });
 
-  /// Every start from here is unattended, and it is not a nicety. This hook takes `execute` and
-  /// none of the dialog state beside it, so anything `execute` stops to ask has nothing rendered
-  /// that could answer it. A live CI fix round deadlocked on the dirty-worktree prompt — awaiting
-  /// a promise no visible dialog could resolve — and the task stayed at `Spawning` for good,
-  /// because the claim is released in a `finally` that never runs.
+  /**
+   * Every start from here is unattended, and it is not a nicety. This hook takes `execute` and
+   * none of the dialog state beside it, so anything `execute` stops to ask has nothing rendered
+   * that could answer it. A live CI fix round deadlocked on the dirty-worktree prompt — awaiting
+   * a promise no visible dialog could resolve — and the task stayed at `Spawning` for good,
+   * because the claim is released in a `finally` that never runs.
+   */
   it("never starts a handoff that could stop to ask a question", async () => {
     render([pendingReview, pendingRework]);
     await settle();

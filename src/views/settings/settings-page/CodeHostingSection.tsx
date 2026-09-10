@@ -70,7 +70,7 @@ function RemoteSelect({
   );
 }
 
-/// What each way of landing work does, in the order of how much of it Maestro performs.
+/** What each way of landing work does, in the order of how much of it Maestro performs. */
 const LANDING_MODES: {
   value: LandingMode;
   label: string;

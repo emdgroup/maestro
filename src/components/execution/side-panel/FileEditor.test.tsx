@@ -53,9 +53,11 @@ describe("FileEditor", () => {
     expect(lastCall[0]).toContain("hello");
   });
 
-  /// Ctrl+S is the whole save affordance for anyone who does not go looking for the toolbar, and
-  /// it has to be swallowed — the webview's own save dialog appearing over the panel is the
-  /// failure this binding prevents.
+  /**
+   * Ctrl+S is the whole save affordance for anyone who does not go looking for the toolbar, and
+   * it has to be swallowed — the webview's own save dialog appearing over the panel is the
+   * failure this binding prevents.
+   */
   it("saves on Ctrl+S and does not let the key reach the webview", async () => {
     const onSave = vi.fn();
     const { container } = render(
@@ -76,9 +78,11 @@ describe("FileEditor", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
   });
 
-  /// The parent re-baselines on every save, so `doc` changes constantly. Taking it again
-  /// each time would throw away undo history and the cursor mid-edit; only an explicit epoch bump
-  /// — the conflict dialog's "reload" — may replace the buffer.
+  /**
+   * The parent re-baselines on every save, so `doc` changes constantly. Taking it again
+   * each time would throw away undo history and the cursor mid-edit; only an explicit epoch bump
+   * — the conflict dialog's "reload" — may replace the buffer.
+   */
   it("replaces the document only when the epoch changes", async () => {
     const { container, rerender } = render(
       <FileEditor
@@ -116,8 +120,10 @@ describe("FileEditor", () => {
     );
   });
 
-  /// Read mode is this same component, which is the only reason reading and editing a file cannot
-  /// disagree about colour. It has to actually be read-only, and has to look it.
+  /**
+   * Read mode is this same component, which is the only reason reading and editing a file cannot
+   * disagree about colour. It has to actually be read-only, and has to look it.
+   */
   describe("read mode", () => {
     it("refuses edits and does not present itself as typable", async () => {
       const onChange = vi.fn();
@@ -164,8 +170,10 @@ describe("FileEditor", () => {
       expect(document.activeElement).toBe(elsewhere);
     });
 
-    /// The panel polls the open file every few seconds so an agent's write shows up. Read mode has
-    /// to follow that without the epoch bump edit mode requires, or the view would go stale.
+    /**
+     * The panel polls the open file every few seconds so an agent's write shows up. Read mode has
+     * to follow that without the epoch bump edit mode requires, or the view would go stale.
+     */
     it("follows the document it is given, with no epoch bump", async () => {
       const { container, rerender } = render(
         <FileEditor
@@ -194,8 +202,10 @@ describe("FileEditor", () => {
       );
     });
 
-    /// Toggling the mode reconfigures a compartment. If it rebuilt the view instead, the scroll
-    /// position would be lost every time someone pressed the pencil.
+    /**
+     * Toggling the mode reconfigures a compartment. If it rebuilt the view instead, the scroll
+     * position would be lost every time someone pressed the pencil.
+     */
     it("becomes editable in place, keeping the same view", async () => {
       const { container, rerender } = render(
         <FileEditor

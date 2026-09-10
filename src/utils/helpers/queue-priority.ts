@@ -1,8 +1,10 @@
 import type { Task, TaskPriority } from "@/types/bindings";
 
-/// Highest first. The queue is sorted by this, so a card's position and its priority are two
-/// views of one fact — which is why dragging edits the priority rather than a separate order
-/// field that could disagree with it.
+/**
+ * Highest first. The queue is sorted by this, so a card's position and its priority are two
+ * views of one fact — which is why dragging edits the priority rather than a separate order
+ * field that could disagree with it.
+ */
 const PRIORITY_ORDER: TaskPriority[] = ["Urgent", "High", "Medium", "Low", "None"];
 
 function rank(priority: TaskPriority): number {

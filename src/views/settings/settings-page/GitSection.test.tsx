@@ -11,7 +11,7 @@ const branches = vi.hoisted(() => ({
   remote: ["origin/main"],
 }));
 
-/// Only for `BranchPicker`, which resolves the project id it queries from the store.
+/** Only for `BranchPicker`, which resolves the project id it queries from the store. */
 vi.mock("@/store/projectStore", () => ({
   useSelectedProject: () => ({ id: 1, path: "/repo" }),
 }));
@@ -49,9 +49,11 @@ function renderSection(
 const workspaceSelect = () => screen.getByRole("combobox", { name: /default workspace/i });
 
 describe("GitSection", () => {
-  /// The regression this panel was reported for: the workspace default is written to
-  /// `.maestro/settings.json` the moment it is picked, not when a Save button is pressed.
-  /// There no longer is one.
+  /**
+   * The regression this panel was reported for: the workspace default is written to
+   * `.maestro/settings.json` the moment it is picked, not when a Save button is pressed.
+   * There no longer is one.
+   */
   it("persists the workspace default as soon as it is picked", async () => {
     const onChange = renderSection({ defaultWorkspaceMode: "NewWorktree" });
 
@@ -61,7 +63,7 @@ describe("GitSection", () => {
     expect(onChange).toHaveBeenCalledWith({ default_workspace_mode: "RepositoryDirectory" });
   });
 
-  /// A project default cannot name a specific workspace, so the third mode is not offered here.
+  /** A project default cannot name a specific workspace, so the third mode is not offered here. */
   it("does not offer reusing a workspace as a project default", async () => {
     renderSection();
 
@@ -79,8 +81,10 @@ describe("GitSection", () => {
     expect(onChange).toHaveBeenCalledWith({ base_branch: "develop" });
   });
 
-  /// "Auto" is the absence of a choice, so it has to be stored as null rather than as the name of
-  /// whichever branch the repository happened to be on when it was picked.
+  /**
+   * "Auto" is the absence of a choice, so it has to be stored as null rather than as the name of
+   * whichever branch the repository happened to be on when it was picked.
+   */
   it("stores auto as no branch at all", async () => {
     const onChange = renderSection({ baseBranch: "develop" });
 
@@ -91,8 +95,10 @@ describe("GitSection", () => {
   });
 });
 
-/// The page itself is gated, not just its contents. A project with no git has no worktrees, no
-/// base branch and no remote, so a Git entry in the sidebar would lead to an empty card.
+/**
+ * The page itself is gated, not just its contents. A project with no git has no worktrees, no
+ * base branch and no remote, so a Git entry in the sidebar would lead to an empty card.
+ */
 describe("the Git page's place in the sidebar", () => {
   it("is offered to a git project", () => {
     const ids = visiblePages({ inProject: true, isGitRepo: true }).map((p) => p.id);
@@ -108,7 +114,7 @@ describe("the Git page's place in the sidebar", () => {
     expect(ids).toContain("agents");
   });
 
-  /// The welcome screen has no project at all, so it never reaches the git question.
+  /** The welcome screen has no project at all, so it never reaches the git question. */
   it("is absent from the welcome screen whatever the flag says", () => {
     const ids = visiblePages({ inProject: false, isGitRepo: true }).map((p) => p.id);
 

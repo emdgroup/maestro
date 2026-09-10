@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-/// Every registration the hook makes, in order, so a test can count them as well as fire them.
-/// A `Map` keyed on the event name would hide the bug this file exists to prevent — N components
-/// each registering the same event looked identical to one component registering it once.
+/**
+ * Every registration the hook makes, in order, so a test can count them as well as fire them.
+ * A `Map` keyed on the event name would hide the bug this file exists to prevent — N components
+ * each registering the same event looked identical to one component registering it once.
+ */
 const registrations = vi.hoisted(
   () => [] as Array<{ event: string; handler: () => void; unlisten: () => void }>,
 );
@@ -28,7 +30,7 @@ import { taskQueryKeys } from "./task.service";
 import { worktreeQueryKeys } from "./worktree.service";
 import { executionQueryKeys } from "./execution.service";
 
-/// `listen` resolves on a microtask, so nothing is registered until the queue drains.
+/** `listen` resolves on a microtask, so nothing is registered until the queue drains. */
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
@@ -56,8 +58,10 @@ describe("useServerEventSync", () => {
     expect(eventsRegistered()).toEqual(["tasks-changed", "worktrees-changed", "sessions-changed"]);
   });
 
-  /// The point of the hook. Before it, each of these lived inside a list query hook that a board of
-  /// N cards called N times, so one event became N invalidations of the same prefix.
+  /**
+   * The point of the hook. Before it, each of these lived inside a list query hook that a board of
+   * N cards called N times, so one event became N invalidations of the same prefix.
+   */
   it("registers one listener per event however many consumers exist", async () => {
     renderHook(() => useServerEventSync(7));
     await flush();
@@ -96,8 +100,10 @@ describe("useServerEventSync", () => {
     });
   });
 
-  /// The sessions key is per project, so there is nothing to ask about until one is open. The other
-  /// two invalidate prefixes and stay armed through the project picker.
+  /**
+   * The sessions key is per project, so there is nothing to ask about until one is open. The other
+   * two invalidate prefixes and stay armed through the project picker.
+   */
   it("does not subscribe to sessions before a project is open", async () => {
     renderHook(() => useServerEventSync(undefined));
     await flush();
@@ -130,8 +136,10 @@ describe("useServerEventSync", () => {
     expect(unlistened).toEqual(["tasks-changed", "worktrees-changed", "sessions-changed"]);
   });
 
-  /// `listen` is async, so an unmount can land before it settles. Without the cancelled flag the
-  /// cleanup has nothing to call and the listener outlives the component forever.
+  /**
+   * `listen` is async, so an unmount can land before it settles. Without the cancelled flag the
+   * cleanup has nothing to call and the listener outlives the component forever.
+   */
   it("unsubscribes a listener that resolved after unmount", async () => {
     const { unmount } = renderHook(() => useServerEventSync(7));
 

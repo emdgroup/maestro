@@ -8,9 +8,11 @@ import { useTaskCommentsQuery, useAddTaskNoteMutation } from "@/services/task.se
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { useSelectedProject } from "@/store/projectStore";
 
-/// What each kind of entry is called on screen. Unknown kinds render as themselves rather than
-/// being dropped: the pipeline gains kinds as roles land, and a thread written by a newer build
-/// must still be readable by an older one.
+/**
+ * What each kind of entry is called on screen. Unknown kinds render as themselves rather than
+ * being dropped: the pipeline gains kinds as roles land, and a thread written by a newer build
+ * must still be readable by an older one.
+ */
 const KIND_LABELS: Record<string, string> = {
   proposal: "Proposal",
   plan: "Plan",

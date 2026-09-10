@@ -96,13 +96,15 @@ function renderDialog(seed?: Parameters<typeof SpawnSessionDialog>[0]["seed"]) {
 }
 
 describe("SpawnSessionDialog seeding", () => {
-  /// The Worktrees panel opens this dialog already knowing the branch, and the branch is the whole
-  /// point of the action — a session started on the project default instead of the pull request's
-  /// branch is on the wrong code, silently.
-  ///
-  /// This regressed on the interaction between two effects rather than on either one: the reset
-  /// applies the seed, then the "fill the default in if branches loaded late" effect ran in the
-  /// same commit still holding the empty `baseBranch` its render had captured, and overwrote it.
+  /**
+   * The Worktrees panel opens this dialog already knowing the branch, and the branch is the whole
+   * point of the action — a session started on the project default instead of the pull request's
+   * branch is on the wrong code, silently.
+   *
+   * This regressed on the interaction between two effects rather than on either one: the reset
+   * applies the seed, then the "fill the default in if branches loaded late" effect ran in the
+   * same commit still holding the empty `baseBranch` its render had captured, and overwrote it.
+   */
   it("keeps the seeded branch rather than the project default", async () => {
     renderDialog({
       workspaceMode: "NewWorktree",
@@ -115,16 +117,20 @@ describe("SpawnSessionDialog seeding", () => {
     expect(screen.queryByText("main")).not.toBeInTheDocument();
   });
 
-  /// The other half of the same effect: with nothing seeded it still has to supply the default,
-  /// which is what it was there for in the first place.
+  /**
+   * The other half of the same effect: with nothing seeded it still has to supply the default,
+   * which is what it was there for in the first place.
+   */
   it("still falls back to the project default when nothing is seeded", async () => {
     renderDialog();
     expect(await screen.findByText("main")).toBeInTheDocument();
   });
 
-  /// A fork's pull request has no branch on the remote, so the picker has nothing to offer and is
-  /// replaced by a line naming what will be checked out. Leaving the picker up would show an
-  /// editable ref that does not resolve, and let the user "correct" it into a failed checkout.
+  /**
+   * A fork's pull request has no branch on the remote, so the picker has nothing to offer and is
+   * replaced by a line naming what will be checked out. Leaving the picker up would show an
+   * editable ref that does not resolve, and let the user "correct" it into a failed checkout.
+   */
   it("replaces the branch picker with the pull request when one is seeded", async () => {
     renderDialog({
       workspaceMode: "NewWorktree",
@@ -141,9 +147,11 @@ describe("SpawnSessionDialog seeding", () => {
     expect(screen.queryByText("main")).not.toBeInTheDocument();
   });
 
-  /// The number is what makes the difference between fetching the forge's ref and checking out
-  /// `origin/<head_branch>` — which for a fork is either nothing or somebody else's branch. Losing
-  /// it between the panel and the backend is the original bug, one layer further down.
+  /**
+   * The number is what makes the difference between fetching the forge's ref and checking out
+   * `origin/<head_branch>` — which for a fork is either nothing or somebody else's branch. Losing
+   * it between the panel and the backend is the original bug, one layer further down.
+   */
   it("hands the pull request number to the worktree it creates", async () => {
     resolveWorktree.mockClear();
     renderDialog({
@@ -169,8 +177,10 @@ describe("SpawnSessionDialog seeding", () => {
     );
   });
 
-  /// The same call without a seed must carry no number, or every ordinary session would be routed
-  /// through the pull request path.
+  /**
+   * The same call without a seed must carry no number, or every ordinary session would be routed
+   * through the pull request path.
+   */
   it("sends no pull request when the dialog was not seeded with one", async () => {
     resolveWorktree.mockClear();
     renderDialog({

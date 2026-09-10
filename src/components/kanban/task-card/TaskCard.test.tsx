@@ -11,24 +11,30 @@ vi.mock("@/contexts/KanbanContext", () => ({
   useKanban: () => ({ projectId: 1, projectPath: "/tmp/demo", connection: { type: "local" } }),
 }));
 
-/// Swapped per-test so a card can be rendered with or without a live session behind it.
+/** Swapped per-test so a card can be rendered with or without a live session behind it. */
 const activeSession = vi.hoisted(() => ({ current: null as { session_key: number } | null }));
 
 const execute = vi.hoisted(() => vi.fn());
 
-/// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
-/// be rendered with and without one.
+/**
+ * The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
+ * be rendered with and without one.
+ */
 const taskWorktree = vi.hoisted(() => ({
   current: null as { id: number; task_id: number; path: string; branch_name: string } | null,
 }));
 
-/// The other half of what decides whether Refine is offered, now answered once for the board
-/// rather than recomputed per card.
+/**
+ * The other half of what decides whether Refine is offered, now answered once for the board
+ * rather than recomputed per card.
+ */
 const canRefine = vi.hoisted(() => ({ current: true }));
 
-/// The board's shared state. Everything here used to be mounted inside the card itself; the mocks
-/// honour their task-id argument rather than ignoring it, so a card that declines to look one of
-/// them up gets null instead of having the omission papered over.
+/**
+ * The board's shared state. Everything here used to be mounted inside the card itself; the mocks
+ * honour their task-id argument rather than ignoring it, so a card that declines to look one of
+ * them up gets null instead of having the omission papered over.
+ */
 vi.mock("@/contexts/BoardActionsContext", () => ({
   useBoardActionsContext: () => ({
     execute,
@@ -39,19 +45,19 @@ vi.mock("@/contexts/BoardActionsContext", () => ({
   useTaskWorktree: (taskId: number | null) => (taskId === null ? null : taskWorktree.current),
 }));
 
-/// Captures what the card sends, and lets a test decide what the backend answered.
+/** Captures what the card sends, and lets a test decide what the backend answered. */
 const sendToReview = vi.hoisted(() => ({
   mutate: vi.fn(),
-  /// `null` is the backend saying "this task changed nothing"; a Task means it moved.
+  /** `null` is the backend saying "this task changed nothing"; a Task means it moved. */
   result: null as unknown,
 }));
 
-/// Abandoning deletes the worktree and branch, so the test needs to see whether it fired.
+/** Abandoning deletes the worktree and branch, so the test needs to see whether it fired. */
 const interrupt = vi.hoisted(() => ({ mutate: vi.fn() }));
 
 const archive = vi.hoisted(() => vi.fn());
 const closeRefinement = vi.hoisted(() => vi.fn());
-/// The task's outcome thread — where the refiner's proposal lives.
+/** The task's outcome thread — where the refiner's proposal lives. */
 const comments = vi.hoisted(() => ({
   current: [] as Array<{ id: number; kind: string; body: string | null }>,
 }));
@@ -75,11 +81,13 @@ vi.mock("@/services/execution.service", () => ({
   useRecoverTaskSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-/// The per-task agent override dialog hangs off every card, so its queries have to be answered
-/// even for the cards that never open it.
+/**
+ * The per-task agent override dialog hangs off every card, so its queries have to be answered
+ * even for the cards that never open it.
+ */
 const setProfileOverrides = vi.hoisted(() => vi.fn());
 
-/// The project's roles, read by the override dialog rather than by the card.
+/** The project's roles, read by the override dialog rather than by the card. */
 const profiles = vi.hoisted(() => ({ current: [] as Array<{ id: string; role: string }> }));
 
 vi.mock("@/services/project.service", () => ({
@@ -94,8 +102,10 @@ vi.mock("@/services/worktree.service", () => ({
   useDeleteWorktreeMutation: () => ({ mutate: deleteWorktree }),
 }));
 
-/// Hoisted rather than inline so a test can assert the card did *not* navigate — an inline
-/// `vi.fn()` is a fresh spy per render and records nothing a test can read.
+/**
+ * Hoisted rather than inline so a test can assert the card did *not* navigate — an inline
+ * `vi.fn()` is a fresh spy per render and records nothing a test can read.
+ */
 const setActiveTaskId = vi.hoisted(() => vi.fn());
 
 vi.mock("@/store/navigationStore", () => ({
@@ -103,8 +113,10 @@ vi.mock("@/store/navigationStore", () => ({
   useNavigate: () => vi.fn(),
 }));
 
-/// Whether the agent stopped to ask for credentials. Swapped per test so the auth modal can be
-/// rendered at all — with this null it never mounts.
+/**
+ * Whether the agent stopped to ask for credentials. Swapped per test so the auth modal can be
+ * rendered at all — with this null it never mounts.
+ */
 const authRequired = vi.hoisted(
   () => ({ current: null }) as { current: Record<string, unknown> | null },
 );
@@ -122,8 +134,10 @@ vi.mock("@/store/boardStore", () => ({
   useAuthRequiredTask: () => authRequired.current,
 }));
 
-/// Stands in for the real modal, which drives a terminal. The test only needs a way to press
-/// "authenticated" and a way to see whether the modal is open.
+/**
+ * Stands in for the real modal, which drives a terminal. The test only needs a way to press
+ * "authenticated" and a way to see whether the modal is open.
+ */
 vi.mock("@/components/common/AgentAuthModal", () => ({
   AgentAuthModal: ({ open, onAuthSuccess }: { open: boolean; onAuthSuccess: () => void }) =>
     open ? (
@@ -223,9 +237,11 @@ describe("TaskCard abandon", () => {
     expect(interrupt.mutate).toHaveBeenCalledWith(42);
   });
 
-  /// `AlertDialogAction` is a plain button — unlike `AlertDialogCancel` it does not render through
-  /// base-ui's `Close` — so confirming left the dialog standing over a task already abandoned,
-  /// with nothing to say whether the click had registered.
+  /**
+   * `AlertDialogAction` is a plain button — unlike `AlertDialogCancel` it does not render through
+   * base-ui's `Close` — so confirming left the dialog standing over a task already abandoned,
+   * with nothing to say whether the click had registered.
+   */
   it("closes the dialog once confirmed", async () => {
     activeSession.current = { session_key: 1 };
     renderCard(running);
@@ -259,7 +275,7 @@ describe("TaskCard pipeline treatment", () => {
     expect(screen.getByText("Self review")).toBeInTheDocument();
   });
 
-  /// The distinction the whole design rests on: only a blocked agent animates.
+  /** The distinction the whole design rests on: only a blocked agent animates. */
   it("animates only when an agent is blocked, not when a gate is merely waiting", () => {
     const blocked = renderCard({
       phase: "Implementing",
@@ -273,9 +289,11 @@ describe("TaskCard pipeline treatment", () => {
     expect(waiting.className).toContain("border-accent");
   });
 
-  /// The card's own border must stay neutral so the three phase treatments can each take it
-  /// over. It used to repeat the column's colour, which made waiting and blocked indistinguishable
-  /// from the card itself in the amber In Progress column.
+  /**
+   * The card's own border must stay neutral so the three phase treatments can each take it
+   * over. It used to repeat the column's colour, which made waiting and blocked indistinguishable
+   * from the card itself in the amber In Progress column.
+   */
   it("keeps a neutral border when no phase state applies", () => {
     const running = renderCard({ phase: "Implementing", phase_status: "Running", ball: "Agent" });
     expect(running.className).toContain("border-border");
@@ -299,8 +317,10 @@ describe("TaskCard pipeline treatment", () => {
   });
 });
 
-/// The escape hatch for a task neither completion signal moved on. It must not be offered while
-/// the agent is still working, or it invites sending half-finished work to review.
+/**
+ * The escape hatch for a task neither completion signal moved on. It must not be offered while
+ * the agent is still working, or it invites sending half-finished work to review.
+ */
 describe("TaskCard send-to-review escape hatch", () => {
   it("is offered when the agent has stopped and is waiting", () => {
     renderCard({ phase: "Implementing", phase_status: "Waiting", ball: "User" });
@@ -317,9 +337,11 @@ describe("TaskCard send-to-review escape hatch", () => {
     expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
   });
 
-  /// A dead session is exactly when the work may be finished and only the session gone, so the
-  /// "Session lost" branch must not swallow the escape hatch — it used to return before the
-  /// button was even constructed.
+  /**
+   * A dead session is exactly when the work may be finished and only the session gone, so the
+   * "Session lost" branch must not swallow the escape hatch — it used to return before the
+   * button was even constructed.
+   */
   it("survives the session-lost branch", async () => {
     renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
     // The branch is gated on a 2s debounce; the button must be present either side of it.
@@ -332,9 +354,11 @@ describe("TaskCard send-to-review escape hatch", () => {
   });
 });
 
-/// The manual path must not manufacture the state the automatic one refuses: a task that changed
-/// nothing goes to review only after the user says so, or the escape hatch becomes a way to open
-/// an empty review by accident.
+/**
+ * The manual path must not manufacture the state the automatic one refuses: a task that changed
+ * nothing goes to review only after the user says so, or the escape hatch becomes a way to open
+ * an empty review by accident.
+ */
 describe("TaskCard empty-review confirmation", () => {
   const stuck: Partial<Task> = {
     status: "InProgress",
@@ -371,9 +395,11 @@ describe("TaskCard empty-review confirmation", () => {
   });
 });
 
-/// Planning shapes a task and Queue runs it. Both columns used to offer Execute, which made
-/// dragging to Queue a step that changed nothing and gave the board a way to start work that the
-/// scheduler — the thing that owns capacity — knew nothing about.
+/**
+ * Planning shapes a task and Queue runs it. Both columns used to offer Execute, which made
+ * dragging to Queue a step that changed nothing and gave the board a way to start work that the
+ * scheduler — the thing that owns capacity — knew nothing about.
+ */
 describe("TaskCard execute affordance", () => {
   it("offers Execute on a Queue card", () => {
     renderCard({ status: "Queue" });
@@ -388,7 +414,7 @@ describe("TaskCard execute affordance", () => {
     },
   );
 
-  /// What Planning offers instead: shape the task, or choose which agents will run it.
+  /** What Planning offers instead: shape the task, or choose which agents will run it. */
   it("offers Refine and the agent overrides on a Planning card", () => {
     renderCard({ status: "Planning" });
     expect(screen.getByText("Refine")).toBeInTheDocument();
@@ -396,8 +422,10 @@ describe("TaskCard execute affordance", () => {
   });
 });
 
-/// A claimed task keeps its column, so `Spawning` is the only thing that distinguishes a task
-/// waiting to start from one already starting. The card has to say which.
+/**
+ * A claimed task keeps its column, so `Spawning` is the only thing that distinguishes a task
+ * waiting to start from one already starting. The card has to say which.
+ */
 describe("TaskCard spawning state", () => {
   it("shows a starting task as busy and refuses a second Execute", () => {
     renderCard({
@@ -411,8 +439,10 @@ describe("TaskCard spawning state", () => {
     expect(screen.getByRole("button", { name: /starting/i })).toBeDisabled();
   });
 
-  /// A failed spawn keeps its claim so the card can show it, which would be a dead end without
-  /// a way to try again.
+  /**
+   * A failed spawn keeps its claim so the card can show it, which would be a dead end without
+   * a way to try again.
+   */
   it("offers a retry on a failed spawn", () => {
     renderCard({
       status: "Queue",
@@ -427,8 +457,10 @@ describe("TaskCard spawning state", () => {
   });
 });
 
-/// A deferred task has no phase, because nothing is running — but it is not idle either, and a
-/// card that looks untouched after the user was promised a slot is the deferral failing silently.
+/**
+ * A deferred task has no phase, because nothing is running — but it is not idle either, and a
+ * card that looks untouched after the user was promised a slot is the deferral failing silently.
+ */
 describe("TaskCard deferred execution", () => {
   const deferred: Partial<Task> = {
     status: "Queue",
@@ -440,8 +472,10 @@ describe("TaskCard deferred execution", () => {
     expect(screen.getByText(/waiting for a slot/i)).toBeInTheDocument();
   });
 
-  /// The user who has just freed a slot should be able to take it rather than waiting for the
-  /// next drain, so the button stays live.
+  /**
+   * The user who has just freed a slot should be able to take it rather than waiting for the
+   * next drain, so the button stays live.
+   */
   it("keeps Execute available on a deferred task", () => {
     renderCard(deferred);
     expect(screen.getByRole("button", { name: /execute/i })).not.toBeDisabled();
@@ -452,8 +486,10 @@ describe("TaskCard deferred execution", () => {
     expect(screen.queryByText(/waiting for a slot/i)).not.toBeInTheDocument();
   });
 
-  /// The button is where the capacity question is asked. The scheduler's own starts must not ask
-  /// it — they were already counted against the free slots — so it cannot be the default.
+  /**
+   * The button is where the capacity question is asked. The scheduler's own starts must not ask
+   * it — they were already counted against the free slots — so it cannot be the default.
+   */
   it("asks whether the host has room before starting", async () => {
     renderCard({ status: "Queue" });
 
@@ -469,7 +505,7 @@ describe("TaskCard deferred execution", () => {
   });
 });
 
-/// Done says the task is finished; it does not say the changes are still sitting in a worktree.
+/** Done says the task is finished; it does not say the changes are still sitting in a worktree. */
 describe("TaskCard completion", () => {
   it("flags a task whose changes were never merged", () => {
     renderCard({ status: "Done", completion: "LocalOnly" });
@@ -481,7 +517,7 @@ describe("TaskCard completion", () => {
     expect(screen.getByText("no changes")).toBeInTheDocument();
   });
 
-  /// Merged is what Done already means, so saying it again is noise.
+  /** Merged is what Done already means, so saying it again is noise. */
   it("says nothing extra about a merged task", () => {
     const { container } = render(
       <TaskCard task={makeTask({ status: "Done", completion: "Merged" })} index={0} />,
@@ -490,9 +526,11 @@ describe("TaskCard completion", () => {
   });
 });
 
-/// A task keeps its session into Review — that is what Join is for. The button existed but the
-/// card looked the session up only while the task was In Progress, so it could never render, and
-/// nothing asserted otherwise. These pin both halves.
+/**
+ * A task keeps its session into Review — that is what Join is for. The button existed but the
+ * card looked the session up only while the task was In Progress, so it could never render, and
+ * nothing asserted otherwise. These pin both halves.
+ */
 describe("TaskCard session reachability", () => {
   const review: Partial<Task> = {
     status: "Review",
@@ -513,8 +551,10 @@ describe("TaskCard session reachability", () => {
   });
 });
 
-/// Every other completion is finished business. `LocalOnly` means the changes were committed and
-/// never merged, so archiving it silently would put unmerged work out of sight — D36.
+/**
+ * Every other completion is finished business. `LocalOnly` means the changes were committed and
+ * never merged, so archiving it silently would put unmerged work out of sight — D36.
+ */
 describe("TaskCard archiving unmerged work", () => {
   const localOnly: Partial<Task> = { status: "Done", completion: "LocalOnly" };
 
@@ -556,8 +596,10 @@ describe("TaskCard archiving unmerged work", () => {
     expect(deleteWorktree).not.toHaveBeenCalled();
   });
 
-  /// The commits are the unmerged work this dialog exists to protect. Removing the checkout
-  /// reclaims disk; deleting the branch would destroy exactly what the warning is about.
+  /**
+   * The commits are the unmerged work this dialog exists to protect. Removing the checkout
+   * reclaims disk; deleting the branch would destroy exactly what the warning is about.
+   */
   it("keeps the branch when removing the worktree", async () => {
     taskWorktree.current = { id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" };
     renderCard(localOnly);
@@ -571,8 +613,10 @@ describe("TaskCard archiving unmerged work", () => {
     );
   });
 
-  /// A task whose worktree is already gone still has unmerged commits on its branch, so the
-  /// warning stands — but there is nothing left to offer to remove.
+  /**
+   * A task whose worktree is already gone still has unmerged commits on its branch, so the
+   * warning stands — but there is nothing left to offer to remove.
+   */
   it("offers no removal when the worktree is already gone", async () => {
     renderCard(localOnly);
 
@@ -583,8 +627,10 @@ describe("TaskCard archiving unmerged work", () => {
   });
 });
 
-/// Planning is a working column, not a parked one. The card has to say which of the two it is in,
-/// and offer the controls that belong to each.
+/**
+ * Planning is a working column, not a parked one. The card has to say which of the two it is in,
+ * and offer the controls that belong to each.
+ */
 describe("TaskCard refinement", () => {
   const refining: Partial<Task> = {
     status: "Planning",
@@ -611,12 +657,14 @@ describe("TaskCard refinement", () => {
     );
   });
 
-  /// The button used to be live on a project that had configured nothing, and pressing it produced
-  /// a toast about the default agent — an answer to a question the user had not asked, on a
-  /// project whose actual problem is that no role has a profile.
-  ///
-  /// What makes `canRefine` false is the board's to work out, and is covered in
-  /// `BoardActionsContext.test.tsx`. This pins what the card does with the answer.
+  /**
+   * The button used to be live on a project that had configured nothing, and pressing it produced
+   * a toast about the default agent — an answer to a question the user had not asked, on a
+   * project whose actual problem is that no role has a profile.
+   *
+   * What makes `canRefine` false is the board's to work out, and is covered in
+   * `BoardActionsContext.test.tsx`. This pins what the card does with the answer.
+   */
   it("does not offer Refine when nothing can run it", async () => {
     canRefine.current = false;
     renderCard({ status: "Planning" });
@@ -628,15 +676,19 @@ describe("TaskCard refinement", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  /// Sharpening a ticket the scheduler may pick up mid-sentence is editing something already on
-  /// its way to an agent.
+  /**
+   * Sharpening a ticket the scheduler may pick up mid-sentence is editing something already on
+   * its way to an agent.
+   */
   it("does not offer Refine on a queued task", () => {
     renderCard({ status: "Queue" });
     expect(screen.queryByRole("button", { name: /refine/i })).not.toBeInTheDocument();
   });
 
-  /// The bug §3 names: the Planning branch returned Execute unconditionally, so a blocked refiner
-  /// pulsed amber with nothing on the card to answer it.
+  /**
+   * The bug §3 names: the Planning branch returned Execute unconditionally, so a blocked refiner
+   * pulsed amber with nothing on the card to answer it.
+   */
   it("offers Respond rather than Execute to a blocked refiner", () => {
     activeSession.current = { session_key: 3 };
     renderCard({ ...refining, phase_status: "Blocked", ball: "User" });
@@ -659,10 +711,12 @@ describe("TaskCard refinement", () => {
     expect(screen.getByText("A sharper description")).toBeInTheDocument();
   });
 
-  /// The gate used to show the current description beside the proposal. Both are markdown
-  /// documents, so half-width preformatted columns read as neither prose nor a diff — and the
-  /// description is on the card the dialog opened from. The safety the comparison was there for is
-  /// that accepting is the first write, which the dialog says in words.
+  /**
+   * The gate used to show the current description beside the proposal. Both are markdown
+   * documents, so half-width preformatted columns read as neither prose nor a diff — and the
+   * description is on the card the dialog opened from. The safety the comparison was there for is
+   * that accepting is the first write, which the dialog says in words.
+   */
   it("shows the proposal on its own, without the description it would replace", async () => {
     comments.current = [{ id: 1, kind: "proposal", body: "A sharper description" }];
     renderCard({ ...atTheGate, description: "The original wording" });
@@ -701,8 +755,10 @@ describe("TaskCard refinement", () => {
     expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: false }, expect.anything());
   });
 
-  /// An empty proposal is the refiner having finished with nothing to say. Accepting it would
-  /// blank the description.
+  /**
+   * An empty proposal is the refiner having finished with nothing to say. Accepting it would
+   * blank the description.
+   */
   it("refuses to accept an empty proposal", async () => {
     comments.current = [{ id: 1, kind: "proposal", body: "   " }];
     renderCard(atTheGate);
@@ -713,7 +769,7 @@ describe("TaskCard refinement", () => {
   });
 });
 
-/// The plan gate sits inside In Progress, not in Review — it gates an intention, not a diff.
+/** The plan gate sits inside In Progress, not in Review — it gates an intention, not a diff. */
 describe("TaskCard plan gate", () => {
   const atTheGate: Partial<Task> = {
     status: "InProgress",
@@ -722,8 +778,10 @@ describe("TaskCard plan gate", () => {
     ball: "User",
   };
 
-  /// The label has to ask, not describe. `APPROVAL` under a reviewer that just said `APPROVED`
-  /// reads as a verdict already delivered — a live run stalled on exactly that.
+  /**
+   * The label has to ask, not describe. `APPROVAL` under a reviewer that just said `APPROVED`
+   * reads as a verdict already delivered — a live run stalled on exactly that.
+   */
   it("says what is wanted of the user rather than naming the phase", () => {
     renderCard({
       status: "Review",
@@ -736,8 +794,10 @@ describe("TaskCard plan gate", () => {
     expect(screen.queryByText(/^approval$/i)).not.toBeInTheDocument();
   });
 
-  /// Only when it is the user's move. The same phase with an agent working keeps the stage name,
-  /// which is the useful thing to know while something is running.
+  /**
+   * Only when it is the user's move. The same phase with an agent working keeps the stage name,
+   * which is the useful thing to know while something is running.
+   */
   it("keeps the phase name while the ball is with an agent", () => {
     renderCard({
       status: "Review",
@@ -757,27 +817,33 @@ describe("TaskCard plan gate", () => {
     expect(screen.queryByRole("button", { name: /abandon/i })).not.toBeInTheDocument();
   });
 
-  /// The plan lives in the task's thread, not in the session that wrote it, so a gate reached days
-  /// later still works. The card must not report a lost session as the problem — and at this gate
-  /// there is always no session, because the planner's is closed the moment its plan is taken. A
-  /// live run put "Session lost / Recover" here with the finished plan unreachable behind it.
+  /**
+   * The plan lives in the task's thread, not in the session that wrote it, so a gate reached days
+   * later still works. The card must not report a lost session as the problem — and at this gate
+   * there is always no session, because the planner's is closed the moment its plan is taken. A
+   * live run put "Session lost / Recover" here with the finished plan unreachable behind it.
+   */
   it("says nothing about a lost session at the gate", () => {
     renderCard(atTheGate);
     expect(screen.queryByText(/session lost/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /recover/i })).not.toBeInTheDocument();
   });
 
-  /// No Join either, even if a session somehow survives. There is nothing to say to a planner that
-  /// has already delivered: the one useful thing to tell it is what is wrong with its plan, and the
-  /// gate takes that itself.
+  /**
+   * No Join either, even if a session somehow survives. There is nothing to say to a planner that
+   * has already delivered: the one useful thing to tell it is what is wrong with its plan, and the
+   * gate takes that itself.
+   */
   it("offers nothing to join at the gate", () => {
     activeSession.current = { session_key: 12 };
     renderCard(atTheGate);
     expect(screen.queryByRole("button", { name: /join/i })).not.toBeInTheDocument();
   });
 
-  /// Rendered, not dumped. A plan is a markdown document — headings, numbered steps, code spans —
-  /// and the preformatted block it used to land in turned all of that back into its own syntax.
+  /**
+   * Rendered, not dumped. A plan is a markdown document — headings, numbered steps, code spans —
+   * and the preformatted block it used to land in turned all of that back into its own syntax.
+   */
   it("shows the plan as markdown", async () => {
     comments.current = [{ id: 1, kind: "plan", body: "## Steps\n\n1. Do the thing" }];
     renderCard(atTheGate);
@@ -788,8 +854,10 @@ describe("TaskCard plan gate", () => {
     expect(screen.getByRole("listitem")).toHaveTextContent("Do the thing");
   });
 
-  /// Approving must name the coder. `execute` routes a standing start through the planner when
-  /// the project has one, so inheriting the default here would plan the plan.
+  /**
+   * Approving must name the coder. `execute` routes a standing start through the planner when
+   * the project has one, so inheriting the default here would plan the plan.
+   */
   it("approving starts the coder explicitly", async () => {
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
     renderCard(atTheGate);
@@ -803,10 +871,12 @@ describe("TaskCard plan gate", () => {
     );
   });
 
-  /// The planner's session is never handed on, even when one is somehow still open. It was, once:
-  /// the coder reused it whenever both roles ran the same agent. That only ever worked when they
-  /// did, and a project is free to put a different agent — or a different vendor — behind each, so
-  /// the plan travels as text and the coder always starts clean.
+  /**
+   * The planner's session is never handed on, even when one is somehow still open. It was, once:
+   * the coder reused it whenever both roles ran the same agent. That only ever worked when they
+   * did, and a project is free to put a different agent — or a different vendor — behind each, so
+   * the plan travels as text and the coder always starts clean.
+   */
   it("never hands the planner's session to the coder", async () => {
     activeSession.current = { session_key: 12 };
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
@@ -834,9 +904,11 @@ describe("TaskCard plan gate", () => {
     );
   });
 
-  /// Notes on the plan turn the approve button into a request for a better one. Offering to
-  /// implement a plan the user has just written objections to would be offering the wrong thing:
-  /// the objections *are* the answer, and the coder has no way to act on them.
+  /**
+   * Notes on the plan turn the approve button into a request for a better one. Offering to
+   * implement a plan the user has just written objections to would be offering the wrong thing:
+   * the objections *are* the answer, and the coder has no way to act on them.
+   */
   it("turns approval into a refinement once the plan is annotated", async () => {
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
     renderCard(atTheGate);
@@ -889,10 +961,12 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 
-  /// Review shipped with no icon, and the first fix gave it the pull-request one — which put two
-  /// buttons carrying the same glyph side by side in the same row, one opening the forge and the
-  /// other the diff. Asserting merely that an icon was present is what let that through, so this
-  /// pins the distinction rather than the presence.
+  /**
+   * Review shipped with no icon, and the first fix gave it the pull-request one — which put two
+   * buttons carrying the same glyph side by side in the same row, one opening the forge and the
+   * other the diff. Asserting merely that an icon was present is what let that through, so this
+   * pins the distinction rather than the presence.
+   */
   it("does not give Review the same icon as the pull request link", () => {
     renderCard(awaitingMerge);
 
@@ -907,9 +981,11 @@ describe("TaskCard awaiting a pull request", () => {
     expect(review).not.toEqual(pullRequest);
   });
 
-  /// The half of the user's report that was right. The sweep was working and the card said
-  /// nothing, so for the three minutes between a red build and the next pass a healthy pull
-  /// request and a broken one looked identical.
+  /**
+   * The half of the user's report that was right. The sweep was working and the card said
+   * nothing, so for the three minutes between a red build and the next pass a healthy pull
+   * request and a broken one looked identical.
+   */
   it("says what the forge thinks of the checks", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: "Passing" });
 
@@ -923,8 +999,10 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.getByText(/CI failing/i)).toBeInTheDocument();
   });
 
-  /// A repository with no CI has nothing to report, and "no checks" on every card in a project
-  /// that will never have any is noise. The absence is the answer.
+  /**
+   * A repository with no CI has nothing to report, and "no checks" on every card in a project
+   * that will never have any is noise. The absence is the answer.
+   */
   it("says nothing extra when the repository has no CI", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: null });
 
@@ -932,9 +1010,11 @@ describe("TaskCard awaiting a pull request", () => {
     expect(screen.queryByText(/checks/i)).not.toBeInTheDocument();
   });
 
-  /// The card-side twin of `a_conflicted_pull_request_is_amber_and_not_a_closed_one`. A conflict
-  /// is derived from the lifecycle fields rather than stored, so this pins the derivation: the
-  /// same phase with the ball on the user and `Waiting` rather than `Failed`.
+  /**
+   * The card-side twin of `a_conflicted_pull_request_is_amber_and_not_a_closed_one`. A conflict
+   * is derived from the lifecycle fields rather than stored, so this pins the derivation: the
+   * same phase with the ball on the user and `Waiting` rather than `Failed`.
+   */
   it("shows a conflict as something for the user, not as a closed pull request", () => {
     renderCard({ ...awaitingMerge, phase_status: "Waiting", ball: "User" });
 
@@ -986,9 +1066,11 @@ describe("TaskCard for an imported task", () => {
     external_url: "https://tracker.example/browse/PROJ-142",
   };
 
-  /// The affordance shipped as a bare lucide icon carrying an `href`, which lucide spreads onto the
-  /// `<svg>` — so it rendered, looked like a link and did nothing. Asserting the icon was present
-  /// is what would let that through again, so this presses it and pins where it goes.
+  /**
+   * The affordance shipped as a bare lucide icon carrying an `href`, which lucide spreads onto the
+   * `<svg>` — so it rendered, looked like a link and did nothing. Asserting the icon was present
+   * is what would let that through again, so this presses it and pins where it goes.
+   */
   it("opens the issue on the tracker it was imported from", async () => {
     renderCard(imported);
 
@@ -997,8 +1079,10 @@ describe("TaskCard for an imported task", () => {
     expect(openUrl).toHaveBeenCalledWith("https://tracker.example/browse/PROJ-142");
   });
 
-  /// The whole card opens the task detail screen, so the link has to stop the click reaching it —
-  /// otherwise following the link also navigates away behind the browser.
+  /**
+   * The whole card opens the task detail screen, so the link has to stop the click reaching it —
+   * otherwise following the link also navigates away behind the browser.
+   */
   it("does not also open the task detail screen", async () => {
     renderCard(imported);
 
@@ -1048,13 +1132,15 @@ describe("TaskCard when the agent needs credentials", () => {
     expect(screen.getByRole("button", { name: /finish auth/i })).toBeInTheDocument();
   });
 
-  /// The card tracks which dialog is up separately from the store entry that mounts the modal, so
-  /// success has to reset both. Clearing only the store would close the modal for now but leave
-  /// the card still believing the auth dialog is open, and the next time this task needed
-  /// credentials it would be up before anything asked for it.
-  ///
-  /// The store mock deliberately does not clear, which is what makes this test see the card's own
-  /// value rather than the entry unmounting the modal underneath it.
+  /**
+   * The card tracks which dialog is up separately from the store entry that mounts the modal, so
+   * success has to reset both. Clearing only the store would close the modal for now but leave
+   * the card still believing the auth dialog is open, and the next time this task needed
+   * credentials it would be up before anything asked for it.
+   *
+   * The store mock deliberately does not clear, which is what makes this test see the card's own
+   * value rather than the entry unmounting the modal underneath it.
+   */
   it("forgets the auth dialog once authentication succeeds", async () => {
     requireAuth();
     renderCard(blockedOnAuth);

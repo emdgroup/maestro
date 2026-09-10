@@ -30,8 +30,10 @@ describe("useTaskHold", () => {
     expect(holdTask).toHaveBeenCalledWith(4);
   });
 
-  /// The backend expires a hold nobody renews, which is what frees a task whose window went away.
-  /// A client that held once and stopped would have the task taken back mid-drag.
+  /**
+   * The backend expires a hold nobody renews, which is what frees a task whose window went away.
+   * A client that held once and stopped would have the task taken back mid-drag.
+   */
   it("keeps renewing while the interaction lasts", async () => {
     renderHook(() => useTaskHold(4, true));
     holdTask.mockClear();
@@ -59,8 +61,10 @@ describe("useTaskHold", () => {
     expect(releaseTaskHold).toHaveBeenCalledWith(4);
   });
 
-  /// Every card on the board mounts this. Holding one that is not being interacted with would
-  /// hand the whole queue to the scheduler's skip list.
+  /**
+   * Every card on the board mounts this. Holding one that is not being interacted with would
+   * hand the whole queue to the scheduler's skip list.
+   */
   it("does nothing while inactive", async () => {
     renderHook(() => useTaskHold(4, false));
 

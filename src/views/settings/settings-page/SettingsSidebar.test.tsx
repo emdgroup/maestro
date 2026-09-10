@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { SETTINGS_PAGES } from "./settings-registry";
 
-/// The two hosts of the settings surface: in a project every scope is registered, on the
-/// welcome screen only the application one is.
+/**
+ * The two hosts of the settings surface: in a project every scope is registered, on the
+ * welcome screen only the application one is.
+ */
 const APP_ONLY = SETTINGS_PAGES.filter((p) => p.scope === "app");
 
 function renderSidebar(pages = SETTINGS_PAGES) {
@@ -48,8 +50,10 @@ describe("SettingsSidebar", () => {
     expect(screen.getByText("Project · maestro")).toBeTruthy();
   });
 
-  /// Nearest scope first. What brought the user to Settings is nearly always the project in
-  /// front of them; the application-wide preferences are the ones set once and left alone.
+  /**
+   * Nearest scope first. What brought the user to Settings is nearly always the project in
+   * front of them; the application-wide preferences are the ones set once and left alone.
+   */
   it("orders the groups from project out to application", () => {
     const { container } = renderSidebar();
 
@@ -58,16 +62,20 @@ describe("SettingsSidebar", () => {
     expect(headings).toEqual(["Project · maestro", "Connection · build-box", "Application"]);
   });
 
-  /// An empty group must not draw a heading over nothing — that is what lets a scope exist
-  /// before it has settings, and what keeps the welcome screen from listing hosts it has none of.
+  /**
+   * An empty group must not draw a heading over nothing — that is what lets a scope exist
+   * before it has settings, and what keeps the welcome screen from listing hosts it has none of.
+   */
   it("draws no heading for a scope with no pages", () => {
     renderSidebar(SETTINGS_PAGES.filter((p) => p.scope !== "connection"));
 
     expect(screen.queryByText(/^Connection/)).toBeNull();
   });
 
-  /// The welcome screen has no project and no connection, so those groups are absent rather
-  /// than present and disabled.
+  /**
+   * The welcome screen has no project and no connection, so those groups are absent rather
+   * than present and disabled.
+   */
   it("renders only the application group when no project is open", () => {
     renderSidebar(APP_ONLY);
 
@@ -76,7 +84,7 @@ describe("SettingsSidebar", () => {
     expect(screen.queryByText(/^Project/)).toBeNull();
   });
 
-  /// Searching by a control name, not a page name — the thing a user actually remembers.
+  /** Searching by a control name, not a page name — the thing a user actually remembers. */
   it("finds a page by a control it renders", () => {
     const { withQuery } = renderSidebar();
     withQuery("log level");
@@ -95,8 +103,10 @@ describe("SettingsSidebar", () => {
     expect(pageNames()).toEqual([expect.stringContaining("Notifications")]);
   });
 
-  /// "Appearance" exists under both Application and Project, and a search for it must keep
-  /// both — collapsing them would hide the very distinction the grouping exists to make.
+  /**
+   * "Appearance" exists under both Application and Project, and a search for it must keep
+   * both — collapsing them would hide the very distinction the grouping exists to make.
+   */
   it("keeps same-named pages from different scopes apart", () => {
     const { withQuery } = renderSidebar();
     withQuery("appearance");

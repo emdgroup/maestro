@@ -3,16 +3,20 @@ import { open as openDirPicker } from "@tauri-apps/plugin-dialog";
 import { api } from "@/lib/tauri-utils";
 import type { ConnectionKey } from "@/types/bindings";
 
-/// Where a remote file is staged so a host application can open it. The file is a copy: edits made
-/// in whatever opens it do not travel back.
+/**
+ * Where a remote file is staged so a host application can open it. The file is a copy: edits made
+ * in whatever opens it do not travel back.
+ */
 async function hostCopyPath(absolutePath: string): Promise<string> {
   const basename = absolutePath.split("/").pop() ?? "file";
   return join(await tempDir(), "maestro", basename);
 }
 
-/// Whether [openFileWithConnection] stages a copy on the host before opening it, rather than
-/// opening the file where it already lives. Lives here rather than in the callers so the answer
-/// cannot drift from the branches below that decide it.
+/**
+ * Whether [openFileWithConnection] stages a copy on the host before opening it, rather than
+ * opening the file where it already lives. Lives here rather than in the callers so the answer
+ * cannot drift from the branches below that decide it.
+ */
 export function opensViaHostCopy(connection: ConnectionKey): boolean {
   return connection.type === "ssh" || connection.type === "docker";
 }
@@ -46,13 +50,15 @@ export async function openFileWithConnection(
   }
 }
 
-/// Copy a file off whichever machine the connection names into a folder the user picks.
-///
-/// `transferId` names the channel `sftp://transfer-progress/` reports on, and only SSH reports:
-/// the distro copy and `docker cp` are each one opaque call with no byte counts to forward.
-///
-/// Returns where the file landed, or null when the folder picker was dismissed — the caller needs
-/// to tell those apart to avoid confirming a copy that never happened.
+/**
+ * Copy a file off whichever machine the connection names into a folder the user picks.
+ *
+ * `transferId` names the channel `sftp://transfer-progress/` reports on, and only SSH reports:
+ * the distro copy and `docker cp` are each one opaque call with no byte counts to forward.
+ *
+ * Returns where the file landed, or null when the folder picker was dismissed — the caller needs
+ * to tell those apart to avoid confirming a copy that never happened.
+ */
 export async function downloadFileToFolder(
   connection: ConnectionKey,
   absolutePath: string,
