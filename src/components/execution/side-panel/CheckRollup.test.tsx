@@ -10,7 +10,7 @@ vi.mock("@/services/task.service", () => ({
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
-const { CheckRollup, PullRequestFacts, branchSummary } = await import("./OverviewPanel");
+const { CheckRollup, PullRequestFacts, branchSummary } = await import("./PullRequestCard");
 
 function pullRequest(overrides: Partial<SessionPullRequest> = {}): SessionPullRequest {
   return {
