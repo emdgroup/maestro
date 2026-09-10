@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Save, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
 import { extractBodyText } from "@/components/execution/activity/PermissionPrompt";

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
-import { useShortcuts } from "@/utils/hooks/useShortcuts";
-import { cn } from "@/lib/utils.ts";
+import { useShortcuts } from "@/hooks/useShortcuts";
+import { cn } from "@/lib/utils";
 import { AgentMonitor } from "@/components/execution/agent-monitor/AgentMonitor";
 import { SidebarProvider } from "@/ui/sidebar";
 import { SessionHistoryModal } from "@/components/execution/session-history/SessionHistoryModal";

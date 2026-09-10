@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, XCircle, AlertTriangle } from "lucide-react"
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
-import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
+import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation";
 import { useSetToolPathMutation } from "@/services/execution.service";
 import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 

@@ -40,7 +40,7 @@ const resolveWorktree = vi.hoisted(() =>
   })),
 );
 
-vi.mock("@/utils/hooks/useResolveWorktree", () => ({
+vi.mock("@/hooks/useResolveWorktree", () => ({
   useResolveWorktree: () => ({ resolveWorktree, isCreatingWorktree: false }),
 }));
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { AgentRole, Task } from "@/types/bindings";
-import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
+import { useExecuteTask } from "@/hooks/useExecuteTask";
 
 /**
  * Collapses the burst of events one transition produces — a turn ending emits `tasks-changed`

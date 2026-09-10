@@ -1,7 +1,7 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { SelectContent } from "@/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { ConfigOption, ConfigOptionValue } from "../types";
 
 export interface SelectorProps {

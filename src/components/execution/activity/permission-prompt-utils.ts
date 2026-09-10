@@ -4,9 +4,9 @@ import type {
   ToolCallContent,
   ToolCallItem,
   ToolCallLocation,
-} from "@/components/execution/activity/types.ts";
-import { isTerminalKind, rowLabel } from "@/components/execution/activity/ToolCallTimeline.tsx";
-import { extractAgentMeta } from "@/components/execution/activity/agentMeta.ts";
+} from "@/components/execution/activity/types";
+import { isTerminalKind, rowLabel } from "@/components/execution/activity/ToolCallTimeline";
+import { extractAgentMeta } from "@/components/execution/activity/agentMeta";
 
 export interface PermissionOption {
   optionId: string;

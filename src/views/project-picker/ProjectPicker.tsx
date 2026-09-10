@@ -9,7 +9,7 @@ import { UpdateCard } from "@/components/settings/UpdateCard";
 import { SettingsPage } from "@/views/settings/settings-page/SettingsPage";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { ConnectionList } from "./connection-list/ConnectionList";
 import { ProjectList } from "./project-list/ProjectList";
 import { IntegrationsTab } from "./integrations-tab/IntegrationsTab";

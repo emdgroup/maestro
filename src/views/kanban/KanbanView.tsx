@@ -1,11 +1,11 @@
 import { useState, useMemo, useRef } from "react";
-import { useShortcuts } from "@/utils/hooks/useShortcuts";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import { Plus, Archive, Search, BellDot } from "lucide-react";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { BoardView } from "@/views/kanban/board-view/BoardView";
 import { useActiveTaskId } from "@/store/navigationStore";
 import { useReviewPanelTaskId, useBoardActions } from "@/store/boardStore";
-import { TaskDetailModal } from "@/components/kanban/task-detail-modal/TaskDetailModal.tsx";
+import { TaskDetailModal } from "@/components/kanban/task-detail-modal/TaskDetailModal";
 import { TaskReviewPanel } from "@/components/execution/diff/TaskReviewPanel";
 import { useTasksQuery } from "@/services/task.service";
 import { useSelectedProject } from "@/store/projectStore";
@@ -22,9 +22,9 @@ import { PRIORITIES } from "@/utils/constants/priority";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
 import { ArchiveModal } from "@/components/kanban/archive-modal/ArchiveModal";
 import { useKanban } from "@/contexts/KanbanContext";
-import { useQueueDrain } from "@/utils/hooks/useQueueDrain";
-import { usePullRequestPoll } from "@/utils/hooks/usePullRequestPoll";
-import { useAgentPipeline } from "@/utils/hooks/useAgentPipeline";
+import { useQueueDrain } from "@/hooks/useQueueDrain";
+import { usePullRequestPoll } from "@/hooks/usePullRequestPoll";
+import { useAgentPipeline } from "@/hooks/useAgentPipeline";
 import { QueueCapacityBadge } from "@/components/kanban/QueueCapacityBadge";
 import { AutoModeToggle } from "@/components/kanban/AutoModeToggle";
 

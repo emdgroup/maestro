@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
+import { getTerminalTheme, getTerminalThemeOnly } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import { useTheme } from "@/providers/ThemeProvider";
 import {

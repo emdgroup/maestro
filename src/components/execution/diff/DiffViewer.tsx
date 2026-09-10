@@ -8,15 +8,12 @@ import {
   type MultiSelectResult,
   type MultiSelectState,
 } from "@git-diff-view/react";
-import {
-  getDiffHighlighter,
-  type DiffHighlighterInstance,
-} from "@/utils/helpers/shiki-highlighter";
+import { getDiffHighlighter, type DiffHighlighterInstance } from "@/lib/shiki-highlighter";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./diff-expand.css";
 import { DiffFile } from "@/types/review";
 import { useTheme } from "@/providers/ThemeProvider";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/ui/skeleton";
 import { InlineCommentInput } from "./InlineCommentInput";
 import { PendingCommentBlock } from "./PendingCommentBlock";

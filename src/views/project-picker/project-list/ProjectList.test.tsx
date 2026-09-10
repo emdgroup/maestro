@@ -83,7 +83,7 @@ vi.mock("../ProjectListItem", () => ({
   ProjectListItem: () => <div data-testid="project-list-item">ProjectListItem</div>,
 }));
 
-vi.mock("@/utils/hooks", () => ({
+vi.mock("@/hooks/useProjectPickerNavigation", () => ({
   useProjectPickerNavigation: () => ({
     navigateToConnections: vi.fn(),
   }),

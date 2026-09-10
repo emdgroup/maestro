@@ -8,7 +8,7 @@ import {
 } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { GitBranch, Loader2 } from "lucide-react";
-import { getFolderName } from "@/utils/helpers/path-utils";
+import { getFolderName } from "@/lib/path-utils";
 
 interface GitInitDialogProps {
   open: boolean;

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, X } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { TransferState } from "./useFileTransfer";
 
 /**

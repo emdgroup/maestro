@@ -4,7 +4,7 @@ import type { Task } from "@/types/bindings";
 
 const execute = vi.hoisted(() => vi.fn<(task: Task, opts: unknown) => Promise<void>>());
 
-vi.mock("@/utils/hooks/useExecuteTask", () => ({
+vi.mock("@/hooks/useExecuteTask", () => ({
   useExecuteTask: () => ({ execute }),
 }));
 

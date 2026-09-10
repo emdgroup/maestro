@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from "react";
 import { BotOff, GitBranch, Terminal, X } from "lucide-react";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Empty, EmptyDescription } from "@/ui/empty";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";

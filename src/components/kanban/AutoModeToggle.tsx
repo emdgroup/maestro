@@ -1,7 +1,7 @@
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSaveSettings, useSettings } from "@/services/settings.service";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 /**
  * Auto vs Manual execution of the Ready queue.

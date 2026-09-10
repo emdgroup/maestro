@@ -9,7 +9,7 @@ import {
   GitPullRequestCreate,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openFileWithConnection } from "@/lib/file-opener";
 import { formatBytes, formatTimeAgoCompact } from "@/lib/format-utils";

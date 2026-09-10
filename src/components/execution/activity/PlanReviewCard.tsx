@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Route, ChevronDown, ArrowUpRight } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {

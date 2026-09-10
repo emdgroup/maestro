@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { List, FolderTree, CheckCheck, X } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { FileStatus } from "@/types/review";
 import { FileTree } from "./FileTree";

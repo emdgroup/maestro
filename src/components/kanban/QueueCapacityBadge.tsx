@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Cpu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Badge } from "@/ui/badge";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri-utils";
 
 /**

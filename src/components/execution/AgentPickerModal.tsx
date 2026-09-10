@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { Task } from "@/types/bindings";
 
 interface AgentPickerModalProps {

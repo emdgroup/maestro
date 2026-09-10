@@ -3,7 +3,7 @@ import { AgentResponseSection } from "../activity/AgentResponseSection";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem, CanvasSurface, AvailableCommand } from "../activity/types";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { useSettings } from "@/services/settings.service";
 import React, { useRef } from "react";
 import {

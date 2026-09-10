@@ -1,6 +1,6 @@
 import { DiffModeEnum } from "@git-diff-view/react";
 import { X, AlignJustify, Columns2, CheckCheck } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 

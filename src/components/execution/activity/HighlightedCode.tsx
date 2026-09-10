@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { Copy, Check } from "lucide-react";
 import { getDiffHighlighter } from "@/lib/shiki-highlighter";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/ThemeProvider";
 
 export function useCopyToClipboard(text: string) {

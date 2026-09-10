@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Bot, User } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Textarea } from "@/ui/textarea";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { TaskComment } from "@/types/bindings";
 import { useTaskCommentsQuery, useAddTaskNoteMutation } from "@/services/task.service";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";

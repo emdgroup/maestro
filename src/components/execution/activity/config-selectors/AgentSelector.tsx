@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
 import { Bot, Check, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { TRIGGER_CLASS, GLASS_CONTENT_CLASS } from "./BaseDropdownSelector";
 import type { SelectorProps } from "./BaseDropdownSelector";
 import type { ConfigOptionValue } from "../types";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 function deriveGroup(value: string): string {
   if (value === "default") return "built-in";

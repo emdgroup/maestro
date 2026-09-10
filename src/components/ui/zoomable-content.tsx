@@ -3,7 +3,7 @@ import { ZoomIn, ZoomOut, Fullscreen, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 interface ZoomableContentProps {
   children: ReactNode;

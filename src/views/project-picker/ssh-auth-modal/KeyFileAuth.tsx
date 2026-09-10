@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { Eye, EyeOff, ChevronDown, ChevronUp, FileKey, Lock } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/ui/field";
 import { Checkbox } from "@/ui/checkbox";
 import { Label } from "@/ui/label";

@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 /**
  * One row of the Overview: an icon, a label, a subtitle, an optional badge, and whatever the

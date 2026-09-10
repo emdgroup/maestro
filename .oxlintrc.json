@@ -3,7 +3,30 @@
   "plugins": ["react", "react-perf", "vitest"],
   "categories": {},
   "rules": {
-    "vitest/require-mock-type-parameters": "off"
+    "vitest/require-mock-type-parameters": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["@/utils/helpers", "@/utils/helpers/**"],
+            "message": "Use the @/lib/ alias — it points at the same directory."
+          },
+          {
+            "group": ["@/components/ui", "@/components/ui/**"],
+            "message": "Use the @/ui/ alias — it points at the same directory."
+          },
+          {
+            "group": ["@/utils/hooks", "@/utils/hooks/**"],
+            "message": "Use the @/hooks/ alias — it points at the same directory."
+          },
+          {
+            "group": ["@/**/*.ts", "@/**/*.tsx", "@/*.ts", "@/*.tsx"],
+            "message": "Import aliased modules without the file extension."
+          }
+        ]
+      }
+    ]
   },
   "settings": {
     "jsx-a11y": {

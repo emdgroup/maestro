@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/ui/dynamic-icon";
 import { CommandLabel } from "./CommandLabel";
 import { OpenFileContext } from "./MarkdownBlock";

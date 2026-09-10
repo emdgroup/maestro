@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Paperclip, Upload, X } from "lucide-react";
 import type { TaskAttachment } from "@/types/bindings";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
   useTaskAttachmentsQuery,

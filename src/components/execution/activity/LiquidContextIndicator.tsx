@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useId } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { humanizeTokenCount } from "@/lib/format-utils";
 import { Progress, ProgressTrack, ProgressIndicator } from "@/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";

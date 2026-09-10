@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib/tauri-utils";
 import { taskBranchName } from "@/lib/generateSessionName";
 import { resolveAutomaticMode } from "@/lib/permission-modes";
 import { findEffortOption } from "@/lib/effort-option";
@@ -15,7 +15,7 @@ import type {
   WorkspaceMode,
   WorktreeWithStatus,
 } from "@/types/bindings";
-import { useResolveWorktree } from "@/utils/hooks/useResolveWorktree";
+import { useResolveWorktree } from "@/hooks/useResolveWorktree";
 import { useClaimWorktreeForTaskMutation, worktreeQueryKeys } from "@/services/worktree.service";
 import {
   useSpawnAcpSessionMutation,

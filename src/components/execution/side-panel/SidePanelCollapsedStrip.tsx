@@ -11,7 +11,7 @@ import {
   Maximize2,
   Plus,
 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Popover, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { SidePanelTab, TabKind } from "./useSidePanelTabs";

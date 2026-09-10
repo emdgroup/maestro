@@ -1,5 +1,5 @@
 import { Paperclip, Upload } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 

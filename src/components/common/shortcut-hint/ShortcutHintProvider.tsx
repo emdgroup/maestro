@@ -1,4 +1,4 @@
-import { useCtrlHoldHint } from "@/utils/hooks/useCtrlHoldHint";
+import { useCtrlHoldHint } from "@/hooks/useCtrlHoldHint";
 
 export function ShortcutHintProvider({ children }: { children: React.ReactNode }) {
   useCtrlHoldHint();

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { SshAuthModal } from "../ssh-auth-modal/SshAuthModal";
-import { useConnectionManager } from "@/utils/hooks/useConnectionManager";
-import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
+import { useConnectionManager } from "@/hooks/useConnectionManager";
+import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import type { Connection } from "@/contexts/ConnectionContext";
 import { ConnectionListPanel } from "./ConnectionListPanel";

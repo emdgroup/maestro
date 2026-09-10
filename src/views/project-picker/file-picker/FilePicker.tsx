@@ -11,9 +11,9 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
 } from "@/ui/breadcrumb";
-import { usePathNavigation } from "@/utils/hooks/usePathNavigation";
-import { useKeyboardNavigation } from "@/utils/hooks/useKeyboardNavigation";
-import { useFilePickerInitialization } from "@/utils/hooks/useFilePickerInitialization";
+import { usePathNavigation } from "@/hooks/usePathNavigation";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
+import { useFilePickerInitialization } from "@/hooks/useFilePickerInitialization";
 import {
   useListDirectories,
   useWslDirectories,

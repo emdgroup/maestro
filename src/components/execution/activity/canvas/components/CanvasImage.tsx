@@ -1,5 +1,5 @@
 import { ZoomableContent } from "@/ui/zoomable-content";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 interface Props {
   src?: string;

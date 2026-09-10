@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString } from "@/lib/diff-utils";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { DiffActionBar } from "./DiffActionBar";
 import { DiffFileStack, type DiffFileStackHandle } from "./DiffFileStack";
 import { ReviewLayout, FilePanelToggle } from "./ReviewLayout";

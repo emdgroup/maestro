@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { PendingCommentBlock } from "@/components/execution/diff/PendingCommentBlock";
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";

@@ -8,7 +8,7 @@ import { ActivityElicitationCard } from "../activity/ActivityElicitationCard";
 import { isSubagentToolCall } from "../activity/utils";
 import type { GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem } from "../activity/types";
-import { isPlanToolCallItem } from "@/components/execution/activity/PermissionPrompt.tsx";
+import { isPlanToolCallItem } from "@/components/execution/activity/PermissionPrompt";
 import { AlertCircle, LockKeyhole } from "lucide-react";
 import { cn } from "@/lib/utils";
 

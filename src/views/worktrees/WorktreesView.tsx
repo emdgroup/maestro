@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useShortcuts } from "@/utils/hooks/useShortcuts";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { ChevronsUpDown, GitBranch, Plus, RefreshCw, Scissors, SearchIcon } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Spinner } from "@/ui/spinner";
@@ -23,7 +23,7 @@ import {
   useWorktreesQuery,
 } from "@/services/worktree.service";
 import { useActiveSessionsQuery } from "@/services/execution.service";
-import { useNow } from "@/utils/hooks/useNow";
+import { useNow } from "@/hooks/useNow";
 import { useGitInitProject } from "@/services/project.service";
 import { useIsGitRepo, useSelectedProject, useSelectedProjectActions } from "@/store/projectStore";
 import { WorktreeCardGrid } from "@/components/execution/worktree-card/WorktreeCardGrid";

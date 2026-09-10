@@ -6,7 +6,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
-} from "@/components/ui/context-menu";
+} from "@/ui/context-menu";
 import {
   classifyContextTarget,
   copyText,

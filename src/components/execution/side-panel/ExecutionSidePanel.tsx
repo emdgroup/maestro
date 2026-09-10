@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Terminal, FileText } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { PopoverContent, PopoverClose } from "@/ui/popover";
 import {
   AlertDialog,

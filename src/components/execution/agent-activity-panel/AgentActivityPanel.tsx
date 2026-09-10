@@ -22,7 +22,7 @@ import {
 } from "../activity/utils";
 import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { toPosixPath } from "@/lib/path-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
@@ -35,7 +35,7 @@ import { buildAnnotationBlocks } from "@/components/execution/side-panel/annotat
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
 import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 
 import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useSidePanelState } from "./useSidePanelState";

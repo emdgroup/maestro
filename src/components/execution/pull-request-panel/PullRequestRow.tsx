@@ -11,7 +11,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { usePullRequestRowDetail } from "@/services/integration.service";
 import {
   CI_TONE,

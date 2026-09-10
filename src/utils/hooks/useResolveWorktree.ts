@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib/tauri-utils";
 import { useCreateWorktreeMutation, worktreeQueryKeys } from "@/services/worktree.service";
 
 /** A worktree created for a session, so the caller can clean it up on close. */

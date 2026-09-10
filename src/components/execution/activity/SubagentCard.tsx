@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Bot, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { formatElapsed, humanizeTokenCount } from "@/lib/format-utils";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { TypingDots } from "./ActivityMessageItem";

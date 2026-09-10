@@ -8,7 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { DiffModeEnum } from "@git-diff-view/react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Send, Pencil, Trash2, Check, X, ChevronUp, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Checkbox } from "@/ui/checkbox";

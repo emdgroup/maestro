@@ -18,7 +18,7 @@ vi.mock("@/lib/tauri-utils", () => ({
   api: { drainReadyQueue: () => drainReadyQueue() },
 }));
 
-vi.mock("@/utils/hooks/useExecuteTask", () => ({
+vi.mock("@/hooks/useExecuteTask", () => ({
   useExecuteTask: () => ({ execute }),
 }));
 

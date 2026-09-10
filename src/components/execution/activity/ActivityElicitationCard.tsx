@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessageCircleQuestionMark, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/ui/collapsible";
 import type { ElicitationSummaryItem } from "./types";
 

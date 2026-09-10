@@ -6,7 +6,7 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { CSSProperties } from "react";
 import { Inbox, Clock, RefreshCw, Eye, CheckCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 interface KanbanColumnProps {
   columnTitle: string;

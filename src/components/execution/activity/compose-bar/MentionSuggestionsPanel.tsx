@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { iconForFilePath } from "./composeUtils";
 import { SuggestionsPortalWrapper } from "./SuggestionsPortalWrapper";
 

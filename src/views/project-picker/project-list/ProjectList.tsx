@@ -4,7 +4,7 @@ import { ProjectsListLayout } from "./ProjectsListLayout";
 import { CloneProjectDialog } from "../clone-project-dialog/CloneProjectDialog";
 import { CreateProjectDialog } from "../create-project-dialog/CreateProjectDialog";
 import { PreflightModal } from "./PreflightModal";
-import { useProjectPickerNavigation } from "@/utils/hooks/useProjectPickerNavigation";
+import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation";
 import {
   useRecentProjects,
   useProjectLocks,

@@ -10,7 +10,7 @@ import {
   FileDiff,
 } from "lucide-react";
 import { useState } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatTimeAgoCompact, plural } from "@/lib/format-utils";
 import { useTasksQuery } from "@/services/task.service";

@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { CanvasSurface } from "../../types";
 import { CanvasComponentNode } from "../CanvasRenderer";
 

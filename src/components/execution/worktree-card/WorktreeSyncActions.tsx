@@ -12,7 +12,7 @@ import {
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { usePullWorktreeMutation, usePushWorktreeMutation } from "@/services/worktree.service";
 import type { WorktreeWithStatus } from "@/types/bindings";
 

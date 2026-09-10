@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { McpIcon } from "@/components/common/icons/McpIcon";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { basename } from "@/lib/path-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { CommandLabel } from "./CommandLabel";

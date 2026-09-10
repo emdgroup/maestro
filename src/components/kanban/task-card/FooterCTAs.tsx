@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {

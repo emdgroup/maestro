@@ -3,7 +3,7 @@ import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { ChevronDown, TriangleAlert } from "lucide-react";
 import { parseDiffString } from "@/lib/diff-utils";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { DiffActionBar } from "./DiffActionBar";
 import { type PendingComment } from "./DiffViewer";
 import { DiffFileStack, type DiffFileStackHandle, type DiffReviewApi } from "./DiffFileStack";
@@ -43,7 +43,7 @@ import { useCodeHostingStatus } from "@/services/integration.service";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
-import { api } from "@/utils/helpers/tauri-utils";
+import { api } from "@/lib/tauri-utils";
 import { displayItemPath } from "@/types/review";
 import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
 

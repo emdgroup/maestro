@@ -1,5 +1,5 @@
 import type { ForwardRefExoticComponent, RefAttributes, SVGProps } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import Github from "@thesvg/react/github";
 import Gitlab from "@thesvg/react/gitlab";
 import Jira from "@thesvg/react/jira";

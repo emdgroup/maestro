@@ -20,7 +20,7 @@ import {
   AttachmentDescription,
   AttachmentActions,
   AttachmentAction,
-} from "@/components/ui/attachment";
+} from "@/ui/attachment";
 import type { ExternalAttachment } from "./externalAttachment";
 
 function imageMime(displayName: string): string {

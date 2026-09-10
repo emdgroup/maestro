@@ -1,5 +1,5 @@
 import { Loader2, WifiOff, AlertTriangle, LogOut } from "lucide-react";
-import type { ConnectionHealthState } from "@/utils/hooks/useConnectionHealth";
+import type { ConnectionHealthState } from "@/hooks/useConnectionHealth";
 import type { ConnectionKey } from "@/types/bindings";
 
 interface DisconnectBackdropProps {

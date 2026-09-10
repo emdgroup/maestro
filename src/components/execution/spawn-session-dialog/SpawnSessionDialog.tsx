@@ -9,7 +9,7 @@ import {
   MAESTRO_BRANCH_PREFIX,
 } from "@/lib/generateSessionName";
 import { findBranchConflict } from "@/components/common/workspace-mode/branch-conflict";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -24,7 +24,7 @@ import {
 import { useProjectSettings } from "@/services/project.service";
 import { useProjectBranchesQuery } from "@/services/task.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
-import { useResolveWorktree, type CreatedWorktree } from "@/utils/hooks/useResolveWorktree";
+import { useResolveWorktree, type CreatedWorktree } from "@/hooks/useResolveWorktree";
 import { usePreflightToolChecks } from "@/store/configStore";
 import { useIsGitRepo } from "@/store/projectStore";
 import type {

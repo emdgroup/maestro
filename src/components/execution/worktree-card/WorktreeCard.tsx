@@ -3,7 +3,7 @@ import { Bot, FolderRoot, SquareCheckBig, Terminal, Trash2 } from "lucide-react"
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { useNavigate } from "@/store/navigationStore";
 import { useBranchPullRequest } from "@/services/integration.service";
 import { branchHasLanded } from "@/lib/branch-landed";

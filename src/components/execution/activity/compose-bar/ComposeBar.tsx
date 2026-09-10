@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { flushSync } from "react-dom";
 import { Send, Paperclip } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri-utils";
 import type { JsonValue } from "@/types/bindings";
 import type { AcpPromptCapabilities } from "../useAcpSessionLifecycle";

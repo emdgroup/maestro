@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { api } from "@/lib/tauri-utils";
-import { getTerminalTheme, getTerminalThemeOnly } from "@/utils/helpers/terminalTheme";
+import { getTerminalTheme, getTerminalThemeOnly } from "@/lib/terminalTheme";
 import { useSettings } from "@/services/settings.service";
 import {
   registerTerminal,

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import type { Task } from "@/types/bindings";
-import { useExecuteTask } from "@/utils/hooks/useExecuteTask";
+import { useExecuteTask } from "@/hooks/useExecuteTask";
 
 /**
  * Long enough to collapse the burst of events one transition produces — a turn ending emits

@@ -17,7 +17,7 @@ import {
   Unlink2,
   TriangleAlert,
 } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
@@ -58,7 +58,7 @@ import { useFileDraft } from "./useFileDraft";
 import { useFileTreeState } from "./useFileTreeState";
 import { useMarkdownLayout } from "./useMarkdownLayout";
 import { ToolbarButton } from "./ToolbarButton";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
 import { openFileWithConnection, downloadFileToFolder, opensViaHostCopy } from "@/lib/file-opener";

@@ -1,6 +1,6 @@
 import { Check, CheckCheck, ChevronRight, Copy, MessageSquare } from "lucide-react";
 import { useState } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { computeFileStats } from "@/lib/diff-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useCopyToClipboard } from "@/components/execution/activity/HighlightedCode";

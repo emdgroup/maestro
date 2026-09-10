@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import type { AvailableCommand } from "../types";
 import { SuggestionsPortalWrapper } from "./SuggestionsPortalWrapper";
 

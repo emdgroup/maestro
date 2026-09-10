@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { useState, useRef } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { buttonVariants } from "@/ui/button";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 
 type ThemeConfig = {
   title: string;

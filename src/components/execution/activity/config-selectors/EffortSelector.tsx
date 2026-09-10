@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Dumbbell } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { cn } from "@/lib/utils.ts";
+import { cn } from "@/lib/utils";
 import { TRIGGER_CLASS, GLASS_CONTENT_CLASS } from "./BaseDropdownSelector";
 import type { SelectorProps } from "./BaseDropdownSelector";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 const PAD = 11; // shell px padding = thumb radius — keeps thumb inside shell
 const INSET = 8; // extra inset so first/last dot sit inside track, not at edge
