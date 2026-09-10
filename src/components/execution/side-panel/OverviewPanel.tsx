@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { openFileWithConnection } from "@/lib/file-opener";
+import { formatBytes, formatTimeAgoCompact, plural } from "@/lib/format-utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import type { TabKind } from "./useSidePanelTabs";
@@ -184,19 +185,6 @@ function PipRow({ items }: { items: ToolCallItem[] }) {
 // Takes an absolute timestamp and reads the clock itself, so the panel body stays
 // pure. These labels are minute-granular and the panel does not tick, so rows
 // resolving the clock a few milliseconds apart is not observable.
-function timeAgo(at: number): string {
-  const m = Math.floor((Date.now() - at) / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
-}
-
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const MAX_ROWS = 5;
 
 export function OverviewPanel({
@@ -462,7 +450,7 @@ export function OverviewPanel({
                             <TooltipContent>{path}</TooltipContent>
                           </Tooltip>
                           <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                            {timeAgo(addedAt)}
+                            {formatTimeAgoCompact(addedAt)}
                           </span>
                           <Tooltip>
                             <TooltipTrigger
@@ -534,10 +522,10 @@ export function OverviewPanel({
                           <TooltipContent>{att.file_path}</TooltipContent>
                         </Tooltip>
                         <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                          {fmtSize(att.file_size)}
+                          {formatBytes(att.file_size)}
                         </span>
                         <span className="text-[9px] text-muted-foreground/40 shrink-0 tabular-nums">
-                          {timeAgo(new Date(att.created_at).getTime())}
+                          {formatTimeAgoCompact(att.created_at)}
                         </span>
                       </div>
                     ))}
@@ -618,10 +606,6 @@ const STATE_BADGES: Record<SessionPullRequest["state"], { label: string; tone: s
   Closed: { label: "Closed", tone: "bg-destructive/15 text-destructive" },
 };
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
-
 /**
  * What is merging where, for the card's subtitle.
  *
@@ -650,7 +634,7 @@ export function branchSummary(pullRequest: SessionPullRequest): string | null {
  */
 export function PullRequestFacts({ pullRequest }: { pullRequest: SessionPullRequest }) {
   const { changed_files, additions, deletions, created_at, mergeable, base_branch } = pullRequest;
-  const opened = created_at ? timeAgo(Date.parse(created_at)) : null;
+  const opened = created_at ? formatTimeAgoCompact(created_at) : null;
 
   // Size before age: how big the change is decides whether it is worth opening, and how long it
   // has been sitting there only matters once you know that.

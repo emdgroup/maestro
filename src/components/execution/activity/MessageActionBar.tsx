@@ -1,16 +1,11 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
-import { format, formatDistance } from "date-fns";
+import { format } from "date-fns";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { formatTimeAgoLong } from "@/lib/format-utils";
 import { useCopyToClipboard } from "./HighlightedCode";
-
-export function relativeTime(sentAt: number, now: number): string {
-  // date-fns says "less than a minute ago"; under a minute reads better as "just now".
-  if (now - sentAt < 60_000) return "just now";
-  return formatDistance(sentAt, now, { addSuffix: true });
-}
 
 // One timer for the whole stream, not one per message: a long session holds hundreds of
 // these and each would otherwise wake the main thread on its own schedule.
@@ -73,7 +68,7 @@ export function MessageActionBar({
       {sentAt !== undefined && (
         <Tooltip>
           <TooltipTrigger render={<span />} className="cursor-default px-1 tabular-nums">
-            {relativeTime(sentAt, clock)}
+            {formatTimeAgoLong(sentAt, clock)}
           </TooltipTrigger>
           <TooltipContent>{format(sentAt, "PPpp")}</TooltipContent>
         </Tooltip>

@@ -1,4 +1,5 @@
 import { memo, useState, useEffect } from "react";
+import { formatTimeAgoCompact } from "@/lib/format-utils";
 import type { SessionActivityStatus } from "@/store/sessionActivityStore";
 
 export const ACTIVITY_DOT: Record<SessionActivityStatus, string> = {
@@ -24,14 +25,6 @@ export function formatElapsedCompact(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function formatTimeAgo(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
-}
-
 export const ElapsedTime = memo(function ElapsedTime({
   status,
   stateChangedAt,
@@ -47,7 +40,7 @@ export const ElapsedTime = memo(function ElapsedTime({
   return (
     <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0 whitespace-nowrap">
       {status === "idle"
-        ? formatTimeAgo(now - stateChangedAt)
+        ? formatTimeAgoCompact(stateChangedAt, now)
         : formatElapsedCompact(now - stateChangedAt)}
     </span>
   );

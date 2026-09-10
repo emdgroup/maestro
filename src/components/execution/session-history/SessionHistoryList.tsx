@@ -1,20 +1,10 @@
-import { format } from "date-fns";
 import { Check, History, Pencil, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatTimeAgoCompact } from "@/lib/format-utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Checkbox } from "@/ui/checkbox";
-
-function relativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const diffMs = Date.now() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return format(date, "MMM d");
-}
 
 interface Entry {
   session_id: string;
@@ -215,7 +205,7 @@ export function SessionHistoryList({
                   <div className="flex items-center gap-1.5 shrink-0">
                     {entry.updated_at && (
                       <span className="text-[10px] text-muted-foreground/60">
-                        {relativeTime(entry.updated_at)}
+                        {formatTimeAgoCompact(entry.updated_at)}
                       </span>
                     )}
                   </div>

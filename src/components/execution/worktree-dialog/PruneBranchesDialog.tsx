@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatDistanceToNow } from "date-fns";
+import { formatTimeAgoLong } from "@/lib/format-utils";
 import { TriangleAlert } from "lucide-react";
 import {
   AlertDialog,
@@ -24,11 +24,6 @@ interface PruneBranchesDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId: number;
   branches: PrunableBranch[];
-}
-
-function relativeTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : formatDistanceToNow(date, { addSuffix: true });
 }
 
 function GroupHeader({ label, count, note }: { label: string; count: number; note: string }) {
@@ -116,7 +111,7 @@ export function PruneBranchesDialog({
           </span>
         )}
         <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-          {relativeTime(branch.last_commit_at)}
+          {formatTimeAgoLong(branch.last_commit_at)}
         </span>
       </div>
     );

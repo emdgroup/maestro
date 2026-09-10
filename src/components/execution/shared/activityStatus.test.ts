@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatElapsedCompact, formatTimeAgo } from "./activityStatus";
+import { formatElapsedCompact } from "./activityStatus";
 
 describe("formatElapsedCompact", () => {
   it("floors to whole seconds and pads", () => {
@@ -19,19 +19,5 @@ describe("formatElapsedCompact", () => {
     expect(formatElapsedCompact(-999)).toBe("0:00");
     expect(formatElapsedCompact(-1_000)).toBe("0:00");
     expect(formatElapsedCompact(-60_000)).toBe("0:00");
-  });
-});
-
-describe("formatTimeAgo", () => {
-  it("describes the span in the largest unit that fits", () => {
-    expect(formatTimeAgo(0)).toBe("just now");
-    expect(formatTimeAgo(59_999)).toBe("just now");
-    expect(formatTimeAgo(60_000)).toBe("1m ago");
-    expect(formatTimeAgo(3_599_999)).toBe("59m ago");
-    expect(formatTimeAgo(3_600_000)).toBe("1h ago");
-  });
-
-  it("does not go negative on a not-yet-elapsed span", () => {
-    expect(formatTimeAgo(-500)).toBe("just now");
   });
 });
