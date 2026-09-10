@@ -19,6 +19,10 @@ const probe = vi.hoisted(() => ({
       effort: { option_id: string; values: Array<{ value: string; name: string }> } | null;
     },
     isLoading: false,
+    // The three states are not derivable from each other, which is the point: a query whose key
+    // has just changed is neither loading nor answered, and that gap is what the resets must not
+    // act in. Set them the way TanStack would rather than inferring one from another.
+    isSuccess: true,
     isError: false,
   },
 }));
@@ -28,8 +32,24 @@ vi.mock("@/services/project.service", () => ({
   useSaveAgentProfilesMutation: () => ({ mutate: save }),
 }));
 
+/**
+ * The probe's arguments, so the tests can assert that the model a profile names is what gets
+ * asked about — the whole reason the effort list is trustworthy.
+ */
+const probeArgs = vi.hoisted(() => vi.fn());
+
 vi.mock("@/services/execution.service", () => ({
-  useAgentConfigQuery: () => probe.current,
+  useAgentConfigQuery: (
+    agentId: string | null,
+    cwd: string | null,
+    projectId: number | null,
+    connection: unknown,
+    modelId: string | null,
+    enabled: boolean,
+  ) => {
+    probeArgs({ agentId, cwd, projectId, connection, modelId, enabled });
+    return probe.current;
+  },
 }));
 
 vi.mock("@/store/projectStore", () => ({
@@ -42,8 +62,15 @@ const agents = [
 ];
 
 function renderSection() {
-  render(<AgentProfilesSection projectId={1} agents={agents} connection={{ type: "local" }} />);
+  return render(
+    <AgentProfilesSection projectId={1} agents={agents} connection={{ type: "local" }} />,
+  );
 }
+
+/** The same element again, for a rerender that swaps what the probe is reporting. */
+const section = (
+  <AgentProfilesSection projectId={1} agents={agents} connection={{ type: "local" }} />
+);
 
 /** The document handed to the most recent write. */
 function lastSaved(): ProfilesDocument {
@@ -76,10 +103,12 @@ const oneCoder = (
 describe("AgentProfilesSection", () => {
   beforeEach(() => {
     save.mockReset();
+    probeArgs.mockReset();
     stored.current = { profiles: [], defaults: {} };
     probe.current = {
       data: { models: [], modes: [], effort: null },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
   });
@@ -91,6 +120,14 @@ describe("AgentProfilesSection", () => {
    */
   it("writes nothing when the user changes nothing", async () => {
     stored.current = oneCoder("opus");
+    // Confirmed by the probe, so none of the reset effects have anything to do — an unconfirmable
+    // value is a change, and is covered by its own tests below.
+    probe.current = {
+      data: { models: [{ model_id: "opus", name: "Opus" }], modes: [], effort: null },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
 
     renderSection();
     // Focus and leave the name field: blur is what commits a text edit, and tabbing through a
@@ -228,6 +265,7 @@ describe("AgentProfilesSection", () => {
         effort: null,
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
@@ -237,23 +275,249 @@ describe("AgentProfilesSection", () => {
   });
 
   /**
-   * The failure that turning a text box into a list invites: the stored value silently vanishing
-   * because this machine could not confirm it. A profile is the team's choice, committed to the
-   * repository — an agent that is unreachable here, or an account without that model, must not
-   * rewrite it to "agent default" behind the user's back.
+   * The field must never show a selection the agent does not have. Keeping one and labelling it
+   * `(not offered)` read as a choice that had been made, and was not: the spawn path drops a value
+   * the agent rejects with a console warning, so the profile said one thing and the run did
+   * another. Clearing it to "agent default" is what the run would do anyway.
    */
-  it("keeps a stored model the agent did not offer", () => {
+  it("clears a stored model the agent does not offer", () => {
     stored.current = oneCoder("gpt-5-codex");
     probe.current = {
       data: { models: [{ model_id: "sonnet", name: "Sonnet" }], modes: [], effort: null },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
     renderSection();
 
     expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
-      "gpt-5-codex (not offered)",
+      "agent default",
+    );
+    // And it lands on disk: a value only cleared on screen would come back on the next visit.
+    expect(lastSaved().profiles![0]!.model).toBeNull();
+  });
+
+  /**
+   * The accepted cost of the rule above, pinned here so it is a decision rather than a surprise.
+   * A probe that failed and one that came back empty are indistinguishable from the panel, so an
+   * agent that is unreachable *here* — SSH down, spawn timed out — clears the fields of the
+   * profiles naming it, for the whole team, since `profiles.json` is committed. The carve-out is
+   * the agent being absent entirely, covered below.
+   */
+  it("clears every unconfirmable field when the probe failed", () => {
+    stored.current = oneCoder("opus", "auto", "high");
+    probe.current = { data: undefined as never, isLoading: false, isSuccess: false, isError: true };
+
+    renderSection();
+
+    const saved = lastSaved().profiles![0]!;
+    expect(saved.model).toBeNull();
+    expect(saved.permission_mode).toBeNull();
+    expect(saved.effort).toBeNull();
+  });
+
+  /**
+   * The reset has to wait for an answer. A probe still in flight has the same empty lists as one
+   * that failed, and clearing on that would wipe a good value every time the panel opened — or,
+   * worse, every time the user changed the model, since that re-probes.
+   */
+  it("writes nothing while the probe is still running", () => {
+    stored.current = oneCoder("opus", "auto", "high");
+    probe.current = { data: undefined as never, isLoading: true, isSuccess: false, isError: false };
+
+    renderSection();
+
+    expect(save).not.toHaveBeenCalled();
+    // All three go on showing what is stored while the asking happens — the labels are covered by
+    // their own tests below; this one is only about not writing.
+    expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent("high");
+  });
+
+  /**
+   * Changing the model re-probes, and the field that must not go blank for it is the model itself:
+   * it is the one answer on the card the user supplied rather than the agent, and the model list
+   * is a property of the agent, so nothing a re-probe returns can change it. Blanking it read as
+   * the panel asking the agent to confirm a choice it had just been given.
+   */
+  it("goes on naming the model while a model change re-probes", () => {
+    stored.current = oneCoder("opus");
+    probe.current = {
+      data: {
+        models: [
+          { model_id: "opus", name: "Opus 4.7" },
+          { model_id: "sonnet", name: "Sonnet 4.6" },
+        ],
+        modes: [],
+        effort: null,
+      },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
+
+    const { rerender } = renderSection();
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("Opus 4.7");
+
+    // The new query key has nothing cached, so the probe restarts with no data at all.
+    probe.current = { data: undefined as never, isLoading: true, isSuccess: false, isError: false };
+    rerender(section);
+
+    // Still the display name, not the raw id and not a spinner message.
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("Opus 4.7");
+    // Effort is the field that genuinely does not know yet — it is per-model, so it says so.
+    expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent(
+      "asking the agent…",
+    );
+  });
+
+  /**
+   * A model id is only meaningful to the harness that issued it. Carrying one across an agent
+   * change made the next probe ask the new agent to select a model it had never heard of, which
+   * it answers with an error the user is shown as "Agent failed to start: SetModel failed". The
+   * mode and effort go the same way and for the same reason — they are the old agent's.
+   */
+  it("drops the model, mode and effort when the agent changes", async () => {
+    stored.current = oneCoder("opus", "auto", "high");
+    probe.current = {
+      data: {
+        models: [{ model_id: "opus", name: "Opus" }],
+        modes: [{ mode_id: "auto", name: "Auto" }],
+        effort: { option_id: "reasoningEffort", values: [{ value: "high", name: "High" }] },
+      },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
+
+    renderSection();
+    const before = save.mock.calls.length;
+    await userEvent.click(screen.getByRole("combobox", { name: "Claude" }));
+    await userEvent.click(screen.getByRole("option", { name: "Codex" }));
+
+    // The agent change itself, in one patch — no render in between where the new agent is paired
+    // with the old agent's model, which is the state that produced the SetModel error.
+    const patched = (save.mock.calls[before]![0].document as ProfilesDocument).profiles![0]!;
+    expect(patched.agent_id).toBe("codex");
+    expect(patched.model).toBeNull();
+    expect(patched.permission_mode).toBeNull();
+    expect(patched.effort).toBeNull();
+
+    // The probe of the new agent then asks about no model at all, rather than the old one's, and
+    // the mode is filled back in from what *it* offers — a refresh, not a wipe.
+    expect(probeArgs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agentId: "codex", modelId: null }),
+    );
+    const settled = lastSaved().profiles![0]!;
+    expect(settled.permission_mode).toBe("auto");
+    expect(settled.model).toBeNull();
+    expect(settled.effort).toBeNull();
+  });
+
+  /**
+   * A query whose key has just changed is neither loading nor answered for a render or two, and
+   * `!isLoading` counted that gap as "the agent offers nothing" — so picking a model cleared it
+   * back to "agent default" on the very next render. The resets wait for a settled state, not for
+   * the absence of a loading one.
+   */
+  it("keeps a model the user just picked while the re-probe has not answered", () => {
+    stored.current = oneCoder("opus");
+    probe.current = {
+      data: undefined as never,
+      isLoading: false,
+      isSuccess: false,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("opus");
+  });
+
+  /**
+   * The dropdown has to stay usable across the re-probe its own selection set off. Disabling it
+   * mid-interaction had base-ui tear down the open popup and report the value as cleared, which is
+   * what made a freshly picked model snap back to "agent default". The list it offers cannot go
+   * stale — models are a property of the agent, not of the model in use.
+   */
+  it("stays selectable while re-probing, off the list it already has", async () => {
+    stored.current = oneCoder("opus");
+    probe.current = {
+      data: {
+        models: [
+          { model_id: "opus", name: "Opus 4.7" },
+          { model_id: "sonnet", name: "Sonnet 4.6" },
+        ],
+        modes: [],
+        effort: null,
+      },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
+
+    const { rerender } = renderSection();
+    probe.current = {
+      data: undefined as never,
+      isLoading: true,
+      isSuccess: false,
+      isError: false,
+    };
+    rerender(section);
+
+    const trigger = screen.getByRole("combobox", { name: "Model for Coder" });
+    expect(trigger).not.toBeDisabled();
+
+    await userEvent.click(trigger);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "agent default",
+      "Opus 4.7",
+      "Sonnet 4.6",
+    ]);
+  });
+
+  /** With no model chosen there is no name to keep, so the probe is what the field waits on. */
+  it("says it is asking when no model is chosen yet", () => {
+    stored.current = oneCoder(null);
+    probe.current = { data: undefined as never, isLoading: true, isSuccess: false, isError: false };
+
+    renderSection();
+
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent(
+      "asking the agent…",
+    );
+  });
+
+  /**
+   * An agent this machine does not have cannot be asked, and asking anyway would clear every field
+   * of every profile naming it on sight. Not probing is what keeps a profile written on a machine
+   * that has the agent intact on one that does not.
+   */
+  it("does not probe an agent this machine does not have", () => {
+    const doc = oneCoder("opus", "auto", "high");
+    doc.profiles![0]!.agent_id = "gemini";
+    stored.current = doc;
+
+    renderSection();
+
+    expect(probeArgs).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "Model for Coder" })).toHaveTextContent("opus");
+  });
+
+  /**
+   * Effort is a property of the model, not of the agent — the same harness offers different
+   * budgets per model. A probe that never names the profile's model reports the agent's *default*
+   * model's list, which is the wrong list for every profile that picked another one.
+   */
+  it("asks the agent about the model the profile names", () => {
+    stored.current = oneCoder("gpt-5-codex");
+
+    renderSection();
+
+    expect(probeArgs).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "claude-acp", modelId: "gpt-5-codex", enabled: true }),
     );
   });
 
@@ -263,7 +527,7 @@ describe("AgentProfilesSection", () => {
    */
   it("says when it could not ask the agent", () => {
     stored.current = oneCoder(null);
-    probe.current = { data: undefined as never, isLoading: false, isError: true };
+    probe.current = { data: undefined as never, isLoading: false, isSuccess: false, isError: true };
 
     renderSection();
 
@@ -289,6 +553,7 @@ describe("AgentProfilesSection", () => {
         effort: null,
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
@@ -300,22 +565,33 @@ describe("AgentProfilesSection", () => {
   });
 
   /**
-   * Same reasoning as the model, and more load-bearing: a mode this machine could not confirm is
-   * still what holds a read-only role read-only on the machine that wrote the profile.
+   * Same rule as the model, and the mode has somewhere better to land than blank: the one the role
+   * would have been given had it named none. A mode the agent does not have is not what holds a
+   * read-only role read-only — it is dropped with a warning at spawn — so replacing it with a mode
+   * the agent does have is what actually keeps the promise the stored value was making.
    */
-  it("keeps a stored permission mode the agent did not offer", () => {
+  it("replaces a stored permission mode the agent does not offer", () => {
     stored.current = oneCoder(null, "dontAsk");
     probe.current = {
-      data: { models: [], modes: [{ mode_id: "plan", name: "Plan" }], effort: null },
+      data: {
+        models: [],
+        modes: [
+          { mode_id: "plan", name: "Plan" },
+          { mode_id: "auto", name: "Auto" },
+        ],
+        effort: null,
+      },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
     renderSection();
 
     expect(screen.getByRole("combobox", { name: "Permission mode for Coder" })).toHaveTextContent(
-      "dontAsk (not offered)",
+      "Auto",
     );
+    expect(lastSaved().profiles![0]!.permission_mode).toBe("auto");
   });
 
   /**
@@ -358,6 +634,7 @@ describe("AgentProfilesSection", () => {
         effort: null,
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
@@ -394,6 +671,7 @@ describe("AgentProfilesSection", () => {
         effort: null,
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
@@ -438,6 +716,7 @@ describe("AgentProfilesSection", () => {
         },
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
@@ -447,11 +726,11 @@ describe("AgentProfilesSection", () => {
   });
 
   /**
-   * Same bargain as the model and the mode, and the one this field needs most: an agent with an
-   * effort setting is the exception, so a teammate on a different harness must not silently
-   * rewrite the choice of one who has it.
+   * The field this rule matters most for: the spawn path sets the effort through
+   * `set_acp_config_option` and swallows the rejection with a console warning, so a value the
+   * model does not have was the one setting on the card that visibly did nothing.
    */
-  it("keeps a stored effort the agent did not offer", () => {
+  it("clears a stored effort the model does not offer", () => {
     stored.current = oneCoder(null, null, "xhigh");
     probe.current = {
       data: {
@@ -460,27 +739,72 @@ describe("AgentProfilesSection", () => {
         effort: { option_id: "reasoningEffort", values: [{ value: "low", name: "Low" }] },
       },
       isLoading: false,
+      isSuccess: true,
       isError: false,
     };
 
     renderSection();
 
     expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toHaveTextContent(
-      "xhigh (not offered)",
+      "agent default",
     );
+    expect(lastSaved().profiles![0]!.effort).toBeNull();
   });
 
   /**
-   * Most agents expose no effort at all, which is why the field says so rather than offering an
+   * Most models expose no effort at all, which is why the field says so rather than offering an
    * empty list — and why it must not fill anything in, unlike the mode beside it.
+   *
+   * It names the model rather than the agent because that is what decides it: the probe runs
+   * against the profile's own model, so "this agent has none" was both wrong and unactionable —
+   * the fix is to pick a different model, not a different agent.
    */
-  it("disables the dropdown when the agent exposes no effort", () => {
-    stored.current = oneCoder(null);
+  it("disables the dropdown and names the model when it exposes no effort", () => {
+    stored.current = oneCoder("opus");
+    probe.current = {
+      data: { models: [{ model_id: "opus", name: "Opus" }], modes: [], effort: null },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
 
     renderSection();
 
     expect(screen.getByRole("combobox", { name: "Effort for Coder" })).toBeDisabled();
-    expect(screen.getByText("This agent exposes no effort setting.")).toBeInTheDocument();
+    expect(screen.getByText("Opus exposes no effort setting.")).toBeInTheDocument();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  /** With no model chosen the probe ran against whichever one the agent opens on, so say that. */
+  it("names the agent's default model when no model is chosen", () => {
+    stored.current = oneCoder(null);
+
+    renderSection();
+
+    expect(
+      screen.getByText("This agent's default model exposes no effort setting."),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The label that started all this. Every field now shows a real, selectable option, so the
+   * suffix has no state left to describe.
+   */
+  it("never labels anything as not offered", () => {
+    stored.current = oneCoder("gpt-5-codex", "dontAsk", "xhigh");
+    probe.current = {
+      data: {
+        models: [{ model_id: "sonnet", name: "Sonnet" }],
+        modes: [{ mode_id: "auto", name: "Auto" }],
+        effort: { option_id: "reasoningEffort", values: [{ value: "low", name: "Low" }] },
+      },
+      isLoading: false,
+      isSuccess: true,
+      isError: false,
+    };
+
+    renderSection();
+
+    expect(screen.queryByText(/not offered/)).not.toBeInTheDocument();
   });
 });

@@ -19,8 +19,11 @@ export const executionQueryKeys = {
   sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
   sessionFile: (sessionKey: number, relativePath: string, binary: boolean) =>
     ["sessionFile", sessionKey, relativePath, binary] as const,
-  agentConfig: (agentId: string, cwd: string, connection: ConnectionKey) =>
-    ["agentConfig", agentId, cwd, connection] as const,
+  // `modelId` is part of the key because the effort list is a property of the model, not the
+  // agent: the same harness offers different reasoning budgets per model, so a probe answered
+  // against the agent's default model is the wrong answer for a profile naming another one.
+  agentConfig: (agentId: string, cwd: string, connection: ConnectionKey, modelId: string) =>
+    ["agentConfig", agentId, cwd, connection, modelId] as const,
 };
 
 export interface AgentModel {
@@ -67,13 +70,20 @@ export interface AgentConfig {
  *
  * Resolves with whatever arrived rather than throwing when a list is missing — plenty of agents
  * have exactly one model, or a single fixed permission mode, and say nothing about it. That is an
- * answer, not a failure, and the caller keeps its stored value either way.
+ * answer, not a failure.
+ *
+ * `modelId` is what makes the effort list right. Effort is per-model — the same harness offers
+ * different budgets for different models — and a session starts on the agent's default, so a probe
+ * that never switches reports the default model's list for every profile. When the caller names a
+ * model that is not already current, the probe sets it and waits for the refreshed option set the
+ * protocol sends back with the acknowledgement.
  */
 async function probeAgentConfig(
   agentId: string,
   cwd: string,
   projectId: number,
   connection: ConnectionKey,
+  modelId: string | null,
 ): Promise<AgentConfig> {
   const { log_id: logId } = await api.spawnAcpSession(
     agentId,
@@ -89,6 +99,15 @@ async function probeAgentConfig(
   try {
     return await new Promise<AgentConfig>((resolve, reject) => {
       const config: AgentConfig = { models: [], modes: [], effort: null };
+      // The model the session actually opened on, so a caller asking for that one does not pay for
+      // a round trip to set what is already set.
+      let currentModelId: string | null = null;
+      // Past spawn-ok the models and modes are already in hand, so nothing after it is worth
+      // failing the whole probe over — a model the account lacks is one absent effort list, not an
+      // unreachable agent.
+      let spawned = false;
+      // Set once the model switch is in flight: the next config-state-updated is its answer.
+      let awaitingModel = false;
       let unlistenModels = () => {};
       let unlistenModes = () => {};
       let unlistenConfigOptions = () => {};
@@ -109,9 +128,13 @@ async function probeAgentConfig(
       // closed in `finally` regardless of which way this settles.
       const timer = setTimeout(() => finish(() => resolve(config)), 30_000);
 
-      void listen<{ available_models: AgentModel[] }>(`acp://session-models/${logId}`, (event) => {
-        config.models = event.payload.available_models;
-      }).then((fn) => {
+      void listen<{ available_models: AgentModel[]; current_model_id: string }>(
+        `acp://session-models/${logId}`,
+        (event) => {
+          config.models = event.payload.available_models;
+          currentModelId = event.payload.current_model_id;
+        },
+      ).then((fn) => {
         unlistenModels = fn;
       });
 
@@ -122,7 +145,8 @@ async function probeAgentConfig(
       });
 
       // Effort has no event of its own — it is one entry in the generic config-option list, which
-      // the reader emits from the same spawn response as the two above.
+      // the reader emits from the same spawn response as the two above, and again with every
+      // option refreshed when a config option is set.
       void listen<{ configOptions?: ConfigOption[] }>(
         `acp://config-state-updated/${logId}`,
         (event) => {
@@ -133,6 +157,9 @@ async function probeAgentConfig(
                 values: option.options.map((o) => ({ value: o.value, name: o.name })),
               }
             : null;
+          // The reader emits the initial one from `spawn_ok.config_options` *before* spawn-ok, so
+          // the first to arrive after the model switch is unambiguously its answer.
+          if (awaitingModel) finish(() => resolve(config));
         },
       ).then((fn) => {
         unlistenConfigOptions = fn;
@@ -141,14 +168,32 @@ async function probeAgentConfig(
       // Settled on spawn-ok, not on the two state events: the reader emits both from
       // `emit_session_init_events` and spawn-ok after, so by here anything the agent declares has
       // arrived. Waiting on either state event alone would hang for every agent that declares none.
-      void listen<null>(`acp://spawn-ok/${logId}`, () => finish(() => resolve(config))).then(
-        (fn) => {
-          unlistenSpawnOk = fn;
-        },
-      );
+      void listen<null>(`acp://spawn-ok/${logId}`, () => {
+        spawned = true;
+        // A model id means nothing to a harness that did not issue it, and asking for one the
+        // agent has not listed is answered with an error the user sees as "Agent failed to start".
+        // There is nothing to learn from asking: the effort list we would be waiting for belongs
+        // to a model this agent does not have. An empty list is not a refusal — plenty of agents
+        // declare no models at all — so only a list that exists and excludes it counts.
+        const refused =
+          config.models.length > 0 && !config.models.some((m) => m.model_id === modelId);
+        if (!modelId || modelId === currentModelId || refused) {
+          finish(() => resolve(config));
+          return;
+        }
+        awaitingModel = true;
+        // The command only reports whether the request reached the agent; the agent's own refusal
+        // comes back as a session-error, which is handled below. Either way the lists in hand are
+        // still worth returning.
+        void api.setAcpConfigOption(logId, "model", modelId).catch(() => {
+          finish(() => resolve(config));
+        });
+      }).then((fn) => {
+        unlistenSpawnOk = fn;
+      });
 
       void listen<string>(`acp://session-error/${logId}`, (event) =>
-        finish(() => reject(new Error(event.payload))),
+        finish(() => (spawned ? resolve(config) : reject(new Error(event.payload)))),
       ).then((fn) => {
         unlistenError = fn;
       });
@@ -163,29 +208,38 @@ async function probeAgentConfig(
 /**
  * Cached for the life of the project, not on a timer.
  *
- * A probe is not a read — it spawns an agent subprocess and kills it again — and the answer is a
- * property of the installed agent, which does not change while the app is open. A five-minute
- * window meant closing settings and reopening it later paid for the whole thing again, for a list
- * that had not moved. The key carries `cwd`, so opening another project probes afresh.
+ * A probe is not a read — it spawns an agent subprocess and kills it again — and the answer does
+ * not change while the app is open. A five-minute window meant closing settings and reopening it
+ * later paid for the whole thing again, for a list that had not moved. The key carries `cwd`, so
+ * opening another project probes afresh.
+ *
+ * It also carries `modelId`, because the answer is a property of the *session's model* rather than
+ * of the installed agent: switching a profile's model has to re-ask, and that re-probe is the only
+ * way the effort list can be right for a profile that does not run the agent's default. The cost
+ * is one extra subprocess per (agent, cwd, model) the user actually picks.
  *
  * `gcTime` matters as much as `staleTime` here: the probe's only observers are the profile cards,
  * so leaving settings unmounts all of them and a collected entry is re-probed on the way back in.
  *
+ * No `placeholderData`: callers reset a stored value the agent turns out not to offer, and they
+ * gate that on the query having reached a settled state. Serving the previous model's answer
+ * through a re-probe would present that stale list as a settled one, and a value would be cleared
+ * against the wrong model's options.
+ *
  * The cost is that an agent updated underneath a running app keeps reporting its old lists until
- * restart. That is the same bargain `useAgentDiscoveryQuery` already makes, and the wrong side of
- * it is a stale list rather than a lost setting — an unlisted value is kept and labelled, never
- * silently dropped.
+ * restart. That is the same bargain `useAgentDiscoveryQuery` already makes.
  */
 export function useAgentConfigQuery(
   agentId: string | null,
   cwd: string | null,
   projectId: number | null,
   connection: ConnectionKey,
+  modelId: string | null,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.agentConfig(agentId ?? "", cwd ?? "", connection),
-    queryFn: () => probeAgentConfig(agentId!, cwd!, projectId!, connection),
+    queryKey: executionQueryKeys.agentConfig(agentId ?? "", cwd ?? "", connection, modelId ?? ""),
+    queryFn: () => probeAgentConfig(agentId!, cwd!, projectId!, connection, modelId),
     enabled: enabled && !!agentId && !!cwd && projectId != null,
     staleTime: Infinity,
     gcTime: Infinity,
