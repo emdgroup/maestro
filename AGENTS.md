@@ -50,6 +50,20 @@ cargo test            # Run Rust tests (see below on Windows)
 cargo check           # Check compilation without building
 ```
 
+Formatting is a workspace-level concern, so it runs from the repo root rather than `src-tauri/`,
+and has scripts alongside the frontend's `format`/`format:fix` so both halves are driven the same
+way:
+
+```bash
+bun run format:rust       # Check formatting with rustfmt
+bun run format:rust:fix   # Fix formatting with rustfmt
+```
+
+There is no `rustfmt.toml`: the settings are stock rustfmt, and the absence of a config file is
+what keeps them that way. The tree was reformatted wholesale once, in `613fcabf`, after having
+drifted to 1349 unformatted hunks across 148 of 161 files — run `format:rust` before pushing so
+that does not have to happen twice.
+
 **On Windows, `cargo test` does not work — use this instead:**
 
 ```bash

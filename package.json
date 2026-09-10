@@ -19,7 +19,9 @@
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --check",
-    "format:fix": "oxfmt ."
+    "format:fix": "oxfmt .",
+    "format:rust": "cargo fmt --all -- --check",
+    "format:rust:fix": "cargo fmt --all"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
