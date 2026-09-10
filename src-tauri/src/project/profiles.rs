@@ -136,6 +136,32 @@ impl ProfilesDocument {
     }
 }
 
+/// Whether the task has explicitly turned this role off, as opposed to leaving it to the project.
+///
+/// The overrides map is role → profile id, where an absent key means "the project decides". That
+/// leaves no way to say "not this task" — a task cannot name the absence of a profile — so a
+/// present key with a null value carries it. The distinction is the whole point: reading the map
+/// with `get(..).flatten()` would collapse both back into "no choice made".
+///
+/// Unreadable JSON is `false`, mirroring `has_profile_for_role`: the caller is deciding whether to
+/// *skip* a stage, and a parse failure is not a reason to skip one.
+pub fn role_is_skipped(overrides_json: Option<&str>, role: AgentRole) -> bool {
+    let Some(raw) = overrides_json else {
+        return false;
+    };
+    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, Option<String>>>(raw)
+    else {
+        return false;
+    };
+    let Some(role_key) = serde_json::to_value(role)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+    else {
+        return false;
+    };
+    matches!(map.get(&role_key), Some(None))
+}
+
 /// What a profile resolved to for an actual spawn, with anything the agent cannot honour removed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ResolvedProfile {
@@ -428,6 +454,22 @@ mod tests {
             defaults: Default::default(),
         };
         assert!(doc.resolve(AgentRole::Reviewer, None).is_none());
+    }
+
+    /// The three states the map can put a role in, plus the one it cannot be trusted to.
+    #[test]
+    fn only_a_present_null_marks_a_role_as_skipped() {
+        let json = r#"{"Planner": null, "Reviewer": "strict"}"#;
+
+        assert!(role_is_skipped(Some(json), AgentRole::Planner));
+        // Named, so it runs.
+        assert!(!role_is_skipped(Some(json), AgentRole::Reviewer));
+        // Absent, so the project decides — which is not the same as "off".
+        assert!(!role_is_skipped(Some(json), AgentRole::Refiner));
+
+        assert!(!role_is_skipped(None, AgentRole::Planner));
+        assert!(!role_is_skipped(Some("{"), AgentRole::Planner));
+        assert!(!role_is_skipped(Some("[]"), AgentRole::Planner));
     }
 
     #[test]

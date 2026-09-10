@@ -387,7 +387,10 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
 /// every column it names, so a caller that only wanted to change one has to resend the rest
 /// correctly or silently clear them. The override dialog knows about roles and nothing else.
 ///
-/// An empty map stores `NULL`, so "no overrides" has one representation rather than two.
+/// An empty map stores `NULL`, so "no overrides" has one representation rather than two. A `None`
+/// value is not an absence but the opposite of one: it says the task skips that stage, which only
+/// an entry can express — an absent key already means "the project decides".
+///
 /// Ids are not checked against the project's profiles: a profile deleted after a task named it
 /// falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
 /// want anyway, and validating here would only move the same outcome earlier.
@@ -396,7 +399,7 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
 pub fn set_task_profile_overrides(
     app_state: State<Arc<AppState>>,
     task_id: i32,
-    overrides: std::collections::HashMap<String, String>,
+    overrides: std::collections::HashMap<String, Option<String>>,
 ) -> Result<(), String> {
     {
         let conn = app_state
@@ -413,7 +416,7 @@ pub fn set_task_profile_overrides(
 fn store_profile_overrides(
     conn: &rusqlite::Connection,
     task_id: i32,
-    overrides: &std::collections::HashMap<String, String>,
+    overrides: &std::collections::HashMap<String, Option<String>>,
 ) -> Result<(), String> {
     let stored = if overrides.is_empty() {
         None
@@ -523,16 +526,25 @@ mod tests {
             "a new task defers to the project"
         );
 
-        let overrides = HashMap::from([("Reviewer".to_string(), "strict-reviewer".to_string())]);
+        // A named profile and a skipped stage together, because the two are stored in one map and
+        // the null is the half that only exists on the way through JSON.
+        let overrides = HashMap::from([
+            ("Reviewer".to_string(), Some("strict-reviewer".to_string())),
+            ("Planner".to_string(), None),
+        ]);
         store_profile_overrides(&conn, task.id, &overrides).unwrap();
 
         let query = format!("{} WHERE id = ?", crate::models::TASK_SELECT);
         let stored: crate::models::Task = conn
             .query_row(&query, [task.id], crate::models::Task::from_row)
             .unwrap();
-        let parsed: HashMap<String, String> =
+        let parsed: HashMap<String, Option<String>> =
             serde_json::from_str(stored.profile_overrides.as_deref().unwrap()).unwrap();
         assert_eq!(parsed, overrides);
+        assert!(crate::project::profiles::role_is_skipped(
+            stored.profile_overrides.as_deref(),
+            crate::project::profiles::AgentRole::Planner
+        ));
 
         // Clearing the last override returns the task to "the project decides", which has to be
         // NULL rather than "{}" or two values would mean the same thing.

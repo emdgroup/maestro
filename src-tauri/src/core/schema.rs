@@ -109,8 +109,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- lets the card answer "can this land" in between. NULL whenever there is nothing to say.
     pull_request_ci TEXT,
     -- Which agent profile this task wants for a given role, as a JSON object keyed by role name:
-    -- {"Reviewer": "strict-reviewer"}. A role absent from it uses the project's default, so NULL
-    -- and "{}" both mean "the project decides everything", which is what almost every task wants.
+    -- {"Reviewer": "strict-reviewer", "Planner": null}. A role absent from it uses the project's
+    -- default, so NULL and "{}" both mean "the project decides everything", which is what almost
+    -- every task wants. A null value is the opposite of an absent key: it means this task skips
+    -- that stage even where the project defines a profile for it.
     --
     -- Profile ids rather than inlined settings, so a task cannot describe an agent the project
     -- never defined: `ProfilesDocument::resolve` already takes an override id and falls back when

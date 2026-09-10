@@ -109,10 +109,12 @@ pub struct Task {
     /// sweep; `None` while there is nothing to say.
     #[specta(optional)]
     pub pull_request_ci: Option<PullRequestCi>,
-    /// Which profile this task wants for a given role, as JSON keyed by role name. Carried as the
-    /// raw string rather than a parsed map because nothing in Rust reads it: it is written by the
-    /// card's override dialog and handed straight back to `resolve_agent_profile`, which already
-    /// takes an override id and falls back when it names nothing.
+    /// Which profile this task wants for a given role, as JSON keyed by role name — a profile id,
+    /// or null for "skip this stage". Carried as the raw string rather than a parsed map because
+    /// the frontend is what reads it: it is written by the card's override dialog and handed
+    /// straight back to `resolve_agent_profile`, which already takes an override id and falls back
+    /// when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
+    /// backend decides on its own.
     #[specta(optional)]
     pub profile_overrides: Option<String>,
 }

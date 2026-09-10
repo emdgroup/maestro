@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
+import type { ProfileOverrides } from "@/lib/profile-overrides";
 import { toast } from "sonner";
 
 import { commands } from "@/types/bindings";
@@ -124,7 +125,7 @@ export function useSetTaskProfileOverridesMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, overrides }: { taskId: number; overrides: Record<string, string> }) =>
+    mutationFn: ({ taskId, overrides }: { taskId: number; overrides: ProfileOverrides }) =>
       api.setTaskProfileOverrides(taskId, overrides),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });

@@ -390,21 +390,28 @@ async fn resolve_turn_end(
 
 /// Whether a review agent should look at this task before the user does.
 ///
-/// Two conditions, both necessary. The project must define a `Reviewer` profile, which is how a
-/// team opts in — a project without one keeps the pipeline it had. And the loop must have rounds
-/// left, or a reviewer would be started only to have its verdict escalated anyway.
+/// Three conditions, all necessary. The project must define a `Reviewer` profile, which is how a
+/// team opts in — a project without one keeps the pipeline it had. The task must not have turned
+/// the stage off for itself, which is the same opt-out one task at a time. And the loop must have
+/// rounds left, or a reviewer would be started only to have its verdict escalated anyway.
 ///
 /// So the work of the last rework round reaches the user unreviewed, deliberately: by then they
 /// are the reviewer, and the alternative is paying an agent for a verdict nobody may act on.
 pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_id: i32) -> bool {
     use crate::acp::completion::review_rounds_remain;
 
-    let Ok(Some((project_id, rounds))) = ({
+    let Ok(Some((project_id, rounds, overrides))) = ({
         app_state.db.lock().map(|conn| {
             conn.query_row(
-                "SELECT project_id, review_rounds FROM tasks WHERE id = ?",
+                "SELECT project_id, review_rounds, profile_overrides FROM tasks WHERE id = ?",
                 [task_id],
-                |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i32>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, i32>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
             )
             .ok()
         })
@@ -413,6 +420,14 @@ pub(crate) async fn reviewer_should_run(app_state: &crate::core::AppState, task_
     };
 
     if !review_rounds_remain(rounds) {
+        return false;
+    }
+
+    if crate::project::profiles::role_is_skipped(
+        overrides.as_deref(),
+        crate::project::profiles::AgentRole::Reviewer,
+    ) {
+        log::debug!("[acp] task {task_id} skips review, so it goes straight to the user");
         return false;
     }
 

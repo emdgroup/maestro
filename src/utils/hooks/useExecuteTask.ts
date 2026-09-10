@@ -6,6 +6,7 @@ import { api } from "@/lib/tauri-utils";
 import { taskBranchName } from "@/lib/generateSessionName";
 import { resolveAutomaticMode } from "@/lib/permission-modes";
 import { findEffortOption } from "@/lib/effort-option";
+import { parseProfileOverrides, profileIdFor, isRoleSkipped } from "@/lib/profile-overrides";
 import type { ConfigOption } from "@/components/execution/activity/types";
 import type {
   Task,
@@ -177,23 +178,16 @@ export function useExecuteTask(
   ) => {
     if (!projectId) return;
 
-    /**
-     * Which profile this task asked for, per role. Parsed defensively: it is written by the card's
-     * override dialog, and a task that cannot be started is a worse outcome than one that starts
-     * with the project's defaults.
-     */
-    let overrides: Record<string, string> = {};
-    if (task.profile_overrides) {
-      try {
-        overrides = JSON.parse(task.profile_overrides) as Record<string, string>;
-      } catch {
-        console.warn(`Ignoring unreadable profile overrides on task ${task.id}`);
-      }
-    }
-    const profileFor = (role: AgentRole) => overrides[role] ?? null;
+    /** Which profile this task asked for, per role, and which stages it has turned off. */
+    const overrides = parseProfileOverrides(task.profile_overrides);
+    const profileFor = (role: AgentRole) => profileIdFor(overrides, role);
 
     // Planning runs first when the project has a planner, which is what "optional plan agent"
     // means in practice — Execute is one button whether or not a plan stage exists.
+    //
+    // Unless this task said not to: a project-wide planner is still opt-out one task at a time,
+    // and the check comes before `resolveAgentProfile` because a skipped stage has nothing to
+    // resolve — the project's planner is exactly what it is declining.
     //
     // Only from a standing start. At the plan gate the task is at `PlanReview` with a phase, and
     // approving the plan calls this with the coder explicitly; without the guard that approval
@@ -201,6 +195,7 @@ export function useExecuteTask(
     const plannerFirst =
       requestedRole === "Coder" &&
       task.phase == null &&
+      !isRoleSkipped(overrides, "Planner") &&
       (await api
         .resolveAgentProfile(projectId, "Planner", profileFor("Planner"), [], [], true)
         .then((profile) => profile !== null)

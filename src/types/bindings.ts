@@ -1008,12 +1008,15 @@ async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<
  * every column it names, so a caller that only wanted to change one has to resend the rest
  * correctly or silently clear them. The override dialog knows about roles and nothing else.
  * 
- * An empty map stores `NULL`, so "no overrides" has one representation rather than two.
+ * An empty map stores `NULL`, so "no overrides" has one representation rather than two. A `None`
+ * value is not an absence but the opposite of one: it says the task skips that stage, which only
+ * an entry can express — an absent key already means "the project decides".
+ * 
  * Ids are not checked against the project's profiles: a profile deleted after a task named it
  * falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
  * want anyway, and validating here would only move the same outcome earlier.
  */
-async setTaskProfileOverrides(taskId: number, overrides: Partial<{ [key in string]: string }>) : Promise<Result<null, string>> {
+async setTaskProfileOverrides(taskId: number, overrides: Partial<{ [key in string]: string | null }>) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { taskId, overrides }) };
 } catch (e) {
@@ -3311,10 +3314,12 @@ fix_rounds: number;
  */
 pull_request_ci?: PullRequestCi | null; 
 /**
- * Which profile this task wants for a given role, as JSON keyed by role name. Carried as the
- * raw string rather than a parsed map because nothing in Rust reads it: it is written by the
- * card's override dialog and handed straight back to `resolve_agent_profile`, which already
- * takes an override id and falls back when it names nothing.
+ * Which profile this task wants for a given role, as JSON keyed by role name — a profile id,
+ * or null for "skip this stage". Carried as the raw string rather than a parsed map because
+ * the frontend is what reads it: it is written by the card's override dialog and handed
+ * straight back to `resolve_agent_profile`, which already takes an override id and falls back
+ * when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
+ * backend decides on its own.
  */
 profile_overrides?: string | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
