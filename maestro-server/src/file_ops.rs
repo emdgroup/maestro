@@ -16,7 +16,10 @@ pub(crate) struct OutputBuffer {
 
 impl OutputBuffer {
     pub(crate) fn new() -> Self {
-        Self { lines: VecDeque::new(), bytes: 0 }
+        Self {
+            lines: VecDeque::new(),
+            bytes: 0,
+        }
     }
 
     /// Append `chunk`, dropping whole lines from the front while `limit` is exceeded.

@@ -1,12 +1,12 @@
 //! Transport channel setup: open local, remote, and WSL connections to maestro-server.
 
-use crate::command_ext::NoConsoleWindow;
-use tokio::io::{AsyncWriteExt, BufWriter, BufReader};
-use tokio::process::ChildStdin;
 use crate::acp::transport::{
-    MaestroRpcMessage, ServerRequest, HandshakeRequest, PROTOCOL_VERSION, write_message,
+    write_message, HandshakeRequest, MaestroRpcMessage, ServerRequest, PROTOCOL_VERSION,
 };
-use crate::acp::transport_types::{AcpReadSource, write_to_acp_session_raw, perform_handshake};
+use crate::acp::transport_types::{perform_handshake, write_to_acp_session_raw, AcpReadSource};
+use crate::command_ext::NoConsoleWindow;
+use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
+use tokio::process::ChildStdin;
 
 /// Shared post-spawn logic for subprocess transports (local and WSL).
 /// Takes an already-spawned child with stdin/stdout piped, sends the handshake, and returns
@@ -29,7 +29,9 @@ pub(crate) async fn handshake_local_child(
     }));
     write_to_acp_session_raw(&mut stdin_writer, &handshake).await?;
 
-    let mut source = AcpReadSource::Local { reader: BufReader::new(child_stdout) };
+    let mut source = AcpReadSource::Local {
+        reader: BufReader::new(child_stdout),
+    };
     perform_handshake(&mut source).await?;
 
     Ok((stdin_writer, source, child))
@@ -78,10 +80,16 @@ pub(crate) async fn open_remote_transport(
         write_message(&mut writer, &handshake)
             .await
             .map_err(|e| format!("remote handshake write failed: {}", e))?;
-        writer.flush().await.map_err(|e| format!("remote handshake flush failed: {}", e))?;
+        writer
+            .flush()
+            .await
+            .map_err(|e| format!("remote handshake flush failed: {}", e))?;
     }
 
-    let mut source = AcpReadSource::Remote { read_half, msg_buf: Vec::new() };
+    let mut source = AcpReadSource::Remote {
+        read_half,
+        msg_buf: Vec::new(),
+    };
     perform_handshake(&mut source).await?;
 
     let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
@@ -138,14 +146,21 @@ pub(crate) async fn open_container_transport(
         .kill_on_drop(true)
         .no_console_window()
         .spawn()
-        .map_err(|e| format!("Failed to spawn container maestro-server in {}: {}", container_name, e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to spawn container maestro-server in {}: {}",
+                container_name, e
+            )
+        })?;
 
     handshake_local_child(child).await
 }
 
 /// Wrap a subprocess's stdin in an mpsc channel so multiple senders can write to it.
 /// Returns the sender end; the write task runs until the channel is dropped.
-pub(crate) fn spawn_stdin_writer_task(mut stdin_writer: BufWriter<ChildStdin>) -> tokio::sync::mpsc::Sender<Vec<u8>> {
+pub(crate) fn spawn_stdin_writer_task(
+    mut stdin_writer: BufWriter<ChildStdin>,
+) -> tokio::sync::mpsc::Sender<Vec<u8>> {
     let (write_tx, mut write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
     tokio::spawn(async move {
         while let Some(bytes) = write_rx.recv().await {

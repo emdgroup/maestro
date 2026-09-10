@@ -269,11 +269,7 @@ async fn git_conn(app_state: &Arc<AppState>, project_id: i32) -> Result<GitConne
 /// run, and a project with no profiles keeps exactly the pipeline it had. Unreadable profiles are
 /// `false` rather than an error — the caller is deciding whether to start an agent, and a parse
 /// failure is not a reason to start one.
-pub async fn has_profile_for_role(
-    app_state: &AppState,
-    project_id: i32,
-    role: AgentRole,
-) -> bool {
+pub async fn has_profile_for_role(app_state: &AppState, project_id: i32, role: AgentRole) -> bool {
     let Ok((_project, conn)) = crate::core::get_project_with_git_conn(app_state, project_id).await
     else {
         return false;
@@ -346,7 +342,11 @@ pub async fn resolve_agent_profile(
         return Ok(None);
     };
 
-    let capabilities = AgentCapabilities { model_ids, mode_ids, supports_effort };
+    let capabilities = AgentCapabilities {
+        model_ids,
+        mode_ids,
+        supports_effort,
+    };
     apply_capabilities(profile, &capabilities).map(Some)
 }
 
@@ -393,11 +393,18 @@ mod tests {
         // No default set: the first profile declaring the role.
         assert_eq!(doc.resolve(AgentRole::Reviewer, None).unwrap().id, "strict");
 
-        doc.defaults.insert("Reviewer".to_string(), "lenient".to_string());
-        assert_eq!(doc.resolve(AgentRole::Reviewer, None).unwrap().id, "lenient");
+        doc.defaults
+            .insert("Reviewer".to_string(), "lenient".to_string());
+        assert_eq!(
+            doc.resolve(AgentRole::Reviewer, None).unwrap().id,
+            "lenient"
+        );
 
         // An explicit choice beats the default.
-        assert_eq!(doc.resolve(AgentRole::Reviewer, Some("strict")).unwrap().id, "strict");
+        assert_eq!(
+            doc.resolve(AgentRole::Reviewer, Some("strict")).unwrap().id,
+            "strict"
+        );
     }
 
     /// An id that no longer exists must not silently pick something else — but it must not strand
@@ -408,7 +415,10 @@ mod tests {
             profiles: vec![profile(AgentRole::Coder)],
             defaults: Default::default(),
         };
-        assert_eq!(doc.resolve(AgentRole::Coder, Some("deleted")).unwrap().id, "coder");
+        assert_eq!(
+            doc.resolve(AgentRole::Coder, Some("deleted")).unwrap().id,
+            "coder"
+        );
     }
 
     #[test]

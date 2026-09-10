@@ -16,7 +16,10 @@ use crate::models::issue_tracking::{
 pub async fn list_jira_projects(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<JiraProjectOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("jira_cloud", &app_state)?;
+    let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+        "jira_cloud",
+        &app_state,
+    )?;
     let site_url = creds
         .instance_url
         .as_deref()
@@ -74,7 +77,10 @@ pub async fn list_jira_projects(
             .map_err(|e| format!("Network error: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("Jira Cloud API error {}", response.status().as_u16()));
+            return Err(format!(
+                "Jira Cloud API error {}",
+                response.status().as_u16()
+            ));
         }
 
         let result: JiraSearchResponse = response
@@ -106,7 +112,10 @@ pub async fn list_jira_projects(
 pub async fn list_azuredevops_projects(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<AzureDevOpsProjectOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("azuredevops", &app_state)?;
+    let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+        "azuredevops",
+        &app_state,
+    )?;
     let org_url = creds
         .instance_url
         .as_deref()
@@ -115,8 +124,7 @@ pub async fn list_azuredevops_projects(
 
     let auth = format!(
         "Basic {}",
-        base64::engine::general_purpose::STANDARD
-            .encode(format!(":{}", creds.token).as_bytes())
+        base64::engine::general_purpose::STANDARD.encode(format!(":{}", creds.token).as_bytes())
     );
 
     let client = crate::integration::build_http_client()?;
@@ -140,7 +148,10 @@ pub async fn list_azuredevops_projects(
     loop {
         let url = format!(
             "{}/_apis/projects?api-version={}&$top={}&$skip={}",
-            base, crate::integration::azure_devops::AZDO_API_VERSION, top, skip,
+            base,
+            crate::integration::azure_devops::AZDO_API_VERSION,
+            top,
+            skip,
         );
         let response = client
             .get(&url)
@@ -152,8 +163,16 @@ pub async fn list_azuredevops_projects(
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
-            return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+            let body_hint = if body.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", &body[..body.len().min(500)])
+            };
+            return Err(format!(
+                "Azure DevOps: HTTP {}{}",
+                status.as_u16(),
+                body_hint
+            ));
         }
 
         let result: AzdoProjectsResponse = response
@@ -170,7 +189,11 @@ pub async fn list_azuredevops_projects(
 
     Ok(all_projects
         .into_iter()
-        .map(|p| AzureDevOpsProjectOption { id: p.id, name: p.name, description: p.description })
+        .map(|p| AzureDevOpsProjectOption {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+        })
         .collect())
 }
 
@@ -181,7 +204,10 @@ pub async fn list_azuredevops_repos(
     app_state: State<'_, Arc<AppState>>,
     project: String,
 ) -> Result<Vec<AzureDevOpsRepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("azuredevops", &app_state)?;
+    let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+        "azuredevops",
+        &app_state,
+    )?;
     let org_url = creds
         .instance_url
         .as_deref()
@@ -190,8 +216,7 @@ pub async fn list_azuredevops_repos(
 
     let auth = format!(
         "Basic {}",
-        base64::engine::general_purpose::STANDARD
-            .encode(format!(":{}", creds.token).as_bytes())
+        base64::engine::general_purpose::STANDARD.encode(format!(":{}", creds.token).as_bytes())
     );
 
     let client = crate::integration::build_http_client()?;
@@ -211,8 +236,16 @@ pub async fn list_azuredevops_repos(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
-        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+        let body_hint = if body.is_empty() {
+            String::new()
+        } else {
+            format!(" — {}", &body[..body.len().min(500)])
+        };
+        return Err(format!(
+            "Azure DevOps: HTTP {}{}",
+            status.as_u16(),
+            body_hint
+        ));
     }
 
     #[derive(serde::Deserialize)]
@@ -255,7 +288,10 @@ pub async fn list_bitbucket_repos(
     app_state: State<'_, Arc<AppState>>,
     workspace: String,
 ) -> Result<Vec<BitbucketRepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("bitbucket", &app_state)?;
+    let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+        "bitbucket",
+        &app_state,
+    )?;
     let client = crate::integration::build_http_client()?;
 
     match creds.instance_url {
@@ -309,13 +345,18 @@ pub async fn list_bitbucket_repos(
                     .map_err(|e| format!("Network error: {}", e))?;
 
                 if !response.status().is_success() {
-                    return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+                    return Err(format!(
+                        "Bitbucket API error {}",
+                        response.status().as_u16()
+                    ));
                 }
 
-                let result: BbServerReposResponse = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("Failed to parse Bitbucket Server repositories response: {}", e))?;
+                let result: BbServerReposResponse = response.json().await.map_err(|e| {
+                    format!(
+                        "Failed to parse Bitbucket Server repositories response: {}",
+                        e
+                    )
+                })?;
 
                 let is_last = result.is_last_page;
                 let next_start = result.next_page_start;
@@ -401,13 +442,15 @@ pub async fn list_bitbucket_repos(
                     );
                 }
                 if !response.status().is_success() {
-                    return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+                    return Err(format!(
+                        "Bitbucket API error {}",
+                        response.status().as_u16()
+                    ));
                 }
 
-                let result: BbCloudReposResponse = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("Failed to parse Bitbucket repositories response: {}", e))?;
+                let result: BbCloudReposResponse = response.json().await.map_err(|e| {
+                    format!("Failed to parse Bitbucket repositories response: {}", e)
+                })?;
 
                 let next_url = result.next;
                 all_repos.extend(result.values);
@@ -446,7 +489,10 @@ pub async fn list_bitbucket_repos(
 pub async fn list_bitbucket_projects(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<BitbucketProjectOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("bitbucket", &app_state)?;
+    let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+        "bitbucket",
+        &app_state,
+    )?;
     let base_url = creds.instance_url.ok_or_else(|| {
         "list_bitbucket_projects is only available for Bitbucket Server/DC".to_string()
     })?;
@@ -473,7 +519,10 @@ pub async fn list_bitbucket_projects(
     let mut start = 0u32;
 
     loop {
-        let url = format!("{}/rest/api/latest/projects?limit=100&start={}", base, start);
+        let url = format!(
+            "{}/rest/api/latest/projects?limit=100&start={}",
+            base, start
+        );
         let response = client
             .get(&url)
             .header("Authorization", &auth)
@@ -482,7 +531,10 @@ pub async fn list_bitbucket_projects(
             .map_err(|e| format!("Network error: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("Bitbucket API error {}", response.status().as_u16()));
+            return Err(format!(
+                "Bitbucket API error {}",
+                response.status().as_u16()
+            ));
         }
 
         let result: BbProjectsResponse = response
@@ -502,6 +554,9 @@ pub async fn list_bitbucket_projects(
 
     Ok(all_projects
         .into_iter()
-        .map(|p| BitbucketProjectOption { key: p.key, name: p.name })
+        .map(|p| BitbucketProjectOption {
+            key: p.key,
+            name: p.name,
+        })
         .collect())
 }

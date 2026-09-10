@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 pub const PROJECT_LOCKED_PREFIX: &str = "PROJECT_LOCKED:";
 
 fn lock_file_path(app_data_dir: &Path, project_id: i32) -> PathBuf {
-    app_data_dir.join("locks").join(format!("{}.lock", project_id))
+    app_data_dir
+        .join("locks")
+        .join(format!("{}.lock", project_id))
 }
 
 /// Acquire an exclusive advisory lock on the project lock file.
@@ -19,8 +21,7 @@ pub fn acquire_project_lock(app_data_dir: &Path, project_id: i32) -> Result<File
     let lock_path = lock_file_path(app_data_dir, project_id);
 
     if let Some(parent) = lock_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create locks dir: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create locks dir: {}", e))?;
     }
 
     let file = OpenOptions::new()
@@ -71,7 +72,11 @@ mod tests {
 
     fn tmp_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = PathBuf::from(format!("/tmp/maestro-lock-test-{}-{}", std::process::id(), n));
+        let dir = PathBuf::from(format!(
+            "/tmp/maestro-lock-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

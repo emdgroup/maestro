@@ -14,7 +14,10 @@ pub async fn check_github_owner(
 ) -> Result<bool, String> {
     let token = super::get_github_token(&app_state).await?;
     let client = crate::integration::build_http_client()?;
-    let url = format!("https://api.github.com/users/{}", urlencoding::encode(&owner));
+    let url = format!(
+        "https://api.github.com/users/{}",
+        urlencoding::encode(&owner)
+    );
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
@@ -55,7 +58,10 @@ pub async fn list_github_repos(
     let repos: Vec<GhRepo> = super::fetch_all_pages(
         &client,
         &base_url,
-        &[("Authorization", auth.as_str()), ("User-Agent", "maestro/1.0")],
+        &[
+            ("Authorization", auth.as_str()),
+            ("User-Agent", "maestro/1.0"),
+        ],
         "page",
         "per_page",
         100,
@@ -65,6 +71,10 @@ pub async fn list_github_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
+        .map(|r| RepoOption {
+            name: r.name,
+            description: r.description,
+            clone_url: r.clone_url,
+        })
         .collect())
 }

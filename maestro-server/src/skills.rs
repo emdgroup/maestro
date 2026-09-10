@@ -162,7 +162,11 @@ mod tests {
             "not installed yet, so it must still run"
         );
 
-        let installed = home.path().join(".agents").join("skills").join("maestro-output");
+        let installed = home
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("maestro-output");
         std::fs::create_dir_all(&installed).expect("installed dir");
         std::fs::write(installed.join("SKILL.md"), "body").expect("installed file");
 

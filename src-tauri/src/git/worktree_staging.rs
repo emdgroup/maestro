@@ -14,13 +14,15 @@ pub async fn stash_worktree(
     project_id: i32,
     worktree_path: String,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     crate::git::run_git_in_dir(
         &git_conn,
         &worktree_path,
         &["stash", "push", "-m", "maestro-auto-stash"],
-    ).await?;
+    )
+    .await?;
 
     Ok(())
 }
@@ -36,7 +38,8 @@ pub async fn discard_all_worktree_changes(
     project_id: i32,
     worktree_path: String,
 ) -> Result<(), String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["checkout", "--", "."]).await?;
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["clean", "-fd"]).await?;

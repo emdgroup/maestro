@@ -15,10 +15,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use agent_client_protocol as acp;
 use acp::schema::v1::{
     EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
 };
+use agent_client_protocol as acp;
 use serde::Deserialize;
 
 pub(crate) const MCP_CONFIG_FILE: &str = ".mcp.json";
@@ -128,7 +128,7 @@ fn convert_entry(
         // reading it as stdio would fail later with a confusing missing-command error.
         None if entry.url.is_some() => {
             return Err(
-                "has a \"url\" but no \"type\"; add \"type\": \"http\" or \"sse\"".to_string()
+                "has a \"url\" but no \"type\"; add \"type\": \"http\" or \"sse\"".to_string(),
             );
         }
         None => "stdio",
@@ -308,7 +308,10 @@ mod tests {
         let loaded = parse_mcp_servers(config, NEITHER, &env(&[]));
         assert!(loaded.servers.is_empty());
         assert_eq!(loaded.skipped.len(), 2);
-        assert!(loaded.skipped.iter().all(|s| s.contains("does not support")));
+        assert!(loaded
+            .skipped
+            .iter()
+            .all(|s| s.contains("does not support")));
 
         let http_only = McpTransportSupport {
             http: true,
@@ -327,7 +330,11 @@ mod tests {
             &env(&[]),
         );
         assert!(loaded.servers.is_empty());
-        assert!(loaded.skipped[0].contains("no \"type\""), "{:?}", loaded.skipped);
+        assert!(
+            loaded.skipped[0].contains("no \"type\""),
+            "{:?}",
+            loaded.skipped
+        );
     }
 
     #[test]
@@ -338,7 +345,11 @@ mod tests {
             &env(&[]),
         );
         assert!(loaded.servers.is_empty());
-        assert!(loaded.skipped[0].contains("no ACP equivalent"), "{:?}", loaded.skipped);
+        assert!(
+            loaded.skipped[0].contains("no ACP equivalent"),
+            "{:?}",
+            loaded.skipped
+        );
     }
 
     #[test]
@@ -385,7 +396,10 @@ mod tests {
         assert_eq!(expand("Bearer ${TOKEN}", &e, &mut missing), "Bearer secret");
         assert_eq!(expand("${NOPE:-fallback}", &e, &mut missing), "fallback");
         assert_eq!(expand("${HOME:-unused}", &e, &mut missing), "/home/x");
-        assert_eq!(expand("${A}-${B:-b}", &env(&[("A", "a")]), &mut missing), "a-b");
+        assert_eq!(
+            expand("${A}-${B:-b}", &env(&[("A", "a")]), &mut missing),
+            "a-b"
+        );
         assert!(missing.is_empty());
     }
 
@@ -413,7 +427,11 @@ mod tests {
                 "b":{"type":"http","url":"${BASE}/mcp","headers":{"Authorization":"Bearer ${V}"}}
             }}"#,
             BOTH,
-            &env(&[("BIN", "/usr/bin/s"), ("V", "val"), ("BASE", "https://e.com")]),
+            &env(&[
+                ("BIN", "/usr/bin/s"),
+                ("V", "val"),
+                ("BASE", "https://e.com"),
+            ]),
         );
         match &loaded.servers[..] {
             [McpServer::Stdio(a), McpServer::Http(b)] => {

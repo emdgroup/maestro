@@ -1,5 +1,8 @@
 // Tauri build script marker
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
 use maestro_lib::core::{init_db, load_settings, logging, AppState};
 use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
@@ -105,8 +108,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize database — init_db returns Result<Connection, String>
     // Use map_err to convert String -> Box<dyn Error> since String doesn't impl Error
-    let conn = init_db(db_path)
-        .map_err(|e| format!("Failed to initialize database: {}", e))?;
+    let conn = init_db(db_path).map_err(|e| format!("Failed to initialize database: {}", e))?;
 
     // Settings drive the log level and directory, so this has to come before any logging.
     let settings = load_settings(&conn).unwrap_or_default();
@@ -146,7 +148,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         Err(error) => log::warn!("Could not clear {}: {error}", cache_dir.display()),
     }
 
-    let app_state = Arc::new(AppState::new(conn, app.handle().clone(), app_data_dir.clone()));
+    let app_state = Arc::new(AppState::new(
+        conn,
+        app.handle().clone(),
+        app_data_dir.clone(),
+    ));
 
     app.manage(app_state);
 
@@ -187,15 +193,20 @@ fn main() {
 
                     // Block saves triggered by session cancel events during shutdown — state.json
                     // was already written on the last spawn/cancel before close was requested.
-                    state.is_closing.store(true, std::sync::atomic::Ordering::Relaxed);
+                    state
+                        .is_closing
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
 
-                    let session_keys: Vec<i32> = state.acp.sessions.lock().await.keys().copied().collect();
+                    let session_keys: Vec<i32> =
+                        state.acp.sessions.lock().await.keys().copied().collect();
                     for log_id in session_keys {
                         let session_id = format!("session-{}", log_id);
-                        let cancel_msg = MaestroRpcMessage::Request(
-                            ServerRequest::Cancel(CancelRequest { session_id }),
-                        );
-                        let _ = maestro_lib::acp::write_to_acp_session(&state, log_id, &cancel_msg).await;
+                        let cancel_msg =
+                            MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+                                session_id,
+                            }));
+                        let _ = maestro_lib::acp::write_to_acp_session(&state, log_id, &cancel_msg)
+                            .await;
                     }
                     // Give maestro-server time to forward CloseSessionRequest to agents.
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;

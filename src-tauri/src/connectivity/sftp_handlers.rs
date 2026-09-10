@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
 
-use crate::core::AppState;
 use crate::connectivity::ssh::sftp;
+use crate::core::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct FileTransferResult {
@@ -27,7 +27,8 @@ pub async fn sftp_upload(
     transfer_id: String,
 ) -> Result<FileTransferResult, String> {
     let session = app_state
-        .ssh.get_session(connection_id)
+        .ssh
+        .get_session(connection_id)
         .await
         .ok_or_else(|| format!("No active SSH session for connection {}", connection_id))?;
 
@@ -65,7 +66,8 @@ pub async fn sftp_download(
     transfer_id: String,
 ) -> Result<FileTransferResult, String> {
     let session = app_state
-        .ssh.get_session(connection_id)
+        .ssh
+        .get_session(connection_id)
         .await
         .ok_or_else(|| format!("No active SSH session for connection {}", connection_id))?;
 

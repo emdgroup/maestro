@@ -9,4 +9,9 @@ pub mod ops;
 pub mod relationships;
 pub mod transition;
 
-pub use models::{Task, TaskStatus, TaskPhase, PhaseStatus, TaskBall, TaskCompletion, PullRequestCi, TaskPriority, TaskRelationship, TaskInstruction, TaskAttachment, TaskComment, CreateTaskRequest, ProjectConfigResponse, ProjectConfigRequest, TaskConfigRequest, WorkspaceMode, BranchMode, TASK_SELECT};
+pub use models::{
+    BranchMode, CreateTaskRequest, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse,
+    PullRequestCi, Task, TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskConfigRequest,
+    TaskInstruction, TaskPhase, TaskPriority, TaskRelationship, TaskStatus, WorkspaceMode,
+    TASK_SELECT,
+};

@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub struct RemoteProcessHandle {
     pub remote_pid: u32,
     pub ssh_session: Arc<RemoteSshSession>,
-    pub channel_id: u32,  // SSH channel identifier for stream reading
+    pub channel_id: u32, // SSH channel identifier for stream reading
 }
 
 /// Poll a remote log file and forward new bytes to a callback until the process exits.

@@ -5,10 +5,10 @@ use rand::RngCore;
 use tauri::{Emitter, State};
 
 use crate::core::AppState;
-use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
-use crate::models::project::now_rfc3339;
 use crate::integration::keychain::{KeychainOutcome, KeychainStore};
 use crate::integration::normalize_instance_url;
+use crate::models::integration::{CredentialSource, IntegrationCredentials, IntegrationStatus};
+use crate::models::project::now_rfc3339;
 
 const KNOWN_PROVIDERS: &[&str] = &[
     "github",
@@ -46,11 +46,18 @@ pub async fn list_integrations(
             continue; // gh CLI is ephemeral, no legacy keyring key to migrate
         }
         if !registry.contains_key(provider) || registry[provider].is_empty() {
-            if let Ok(Some(mut creds)) = KeychainStore::get_legacy_integration(provider, app_data_dir) {
+            if let Ok(Some(mut creds)) =
+                KeychainStore::get_legacy_integration(provider, app_data_dir)
+            {
                 let new_id = generate_id();
                 creds.id = new_id.clone();
-                if let Ok(outcome) = KeychainStore::store_integration_by_id(provider, &new_id, &creds, app_data_dir) {
-                    registry.entry(provider.to_string()).or_default().push(new_id);
+                if let Ok(outcome) =
+                    KeychainStore::store_integration_by_id(provider, &new_id, &creds, app_data_dir)
+                {
+                    registry
+                        .entry(provider.to_string())
+                        .or_default()
+                        .push(new_id);
                     // Suppress "keyring unavailable" event during migration to avoid spam.
                     let _ = outcome;
                 }
@@ -66,8 +73,7 @@ pub async fn list_integrations(
         for id in ids {
             let outcome = KeychainStore::get_integration_by_id(provider, &id, app_data_dir);
             if let Ok(
-                KeychainOutcome::Keychain(Some(creds))
-                | KeychainOutcome::FileFallback(Some(creds)),
+                KeychainOutcome::Keychain(Some(creds)) | KeychainOutcome::FileFallback(Some(creds)),
             ) = outcome
             {
                 statuses.push(IntegrationStatus {
@@ -98,7 +104,9 @@ pub async fn list_integrations(
 
         // glab CLI: ephemeral, not stored in keyring — probe each call
         if provider == "gitlab" {
-            if let Some((_token, instance_url, display_name)) = crate::integration::gitlab::try_glab_cli_credentials().await {
+            if let Some((_token, instance_url, display_name)) =
+                crate::integration::gitlab::try_glab_cli_credentials().await
+            {
                 statuses.push(IntegrationStatus {
                     id: "glab_cli".to_string(),
                     provider: "gitlab".to_string(),
@@ -145,7 +153,8 @@ pub async fn save_integration(
         source: CredentialSource::Manual,
     };
 
-    let outcome = KeychainStore::store_integration_by_id(&provider, &id, &creds, &app_state.app_data_dir)?;
+    let outcome =
+        KeychainStore::store_integration_by_id(&provider, &id, &creds, &app_state.app_data_dir)?;
 
     if matches!(outcome, KeychainOutcome::FileFallback(_)) {
         app_state
@@ -342,8 +351,7 @@ async fn validate_credentials(
                 email_address: Option<String>,
             }
 
-            let email_str =
-                email.ok_or_else(|| "jira_cloud: email required".to_string())?;
+            let email_str = email.ok_or_else(|| "jira_cloud: email required".to_string())?;
             let base = normalize_instance_url(
                 instance_url.ok_or_else(|| "jira_cloud: instance_url required".to_string())?,
             );
@@ -431,7 +439,11 @@ async fn validate_credentials(
                 base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
             );
             let response = client
-                .get(format!("{}/_apis/connectionData?api-version={}", base, crate::integration::azure_devops::AZDO_API_VERSION))
+                .get(format!(
+                    "{}/_apis/connectionData?api-version={}",
+                    base,
+                    crate::integration::azure_devops::AZDO_API_VERSION
+                ))
                 .header("Authorization", auth)
                 .send()
                 .await
@@ -443,8 +455,16 @@ async fn validate_credentials(
             if !response.status().is_success() {
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
-                return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+                let body_hint = if body.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", &body[..body.len().min(500)])
+                };
+                return Err(format!(
+                    "Azure DevOps: HTTP {}{}",
+                    status.as_u16(),
+                    body_hint
+                ));
             }
             let conn_data: AzdoConnectionDataResponse = response
                 .json()

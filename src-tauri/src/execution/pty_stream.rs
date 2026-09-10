@@ -74,7 +74,11 @@ pub async fn attach_terminal(
                 // Dead session: replay in-memory history if available.
                 let text = {
                     let hist = history.lock().await;
-                    if !hist.is_empty() { Some(hist.clone()) } else { None }
+                    if !hist.is_empty() {
+                        Some(hist.clone())
+                    } else {
+                        None
+                    }
                 };
                 if let Some(text) = text {
                     if !text.is_empty() {
@@ -222,9 +226,8 @@ pub async fn attach_terminal(
             match result {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = output_channel.send(
-                        format!("\r\n\x1b[31m[Terminal error: {}]\x1b[0m\r\n", e)
-                    );
+                    let _ = output_channel
+                        .send(format!("\r\n\x1b[31m[Terminal error: {}]\x1b[0m\r\n", e));
                     return;
                 }
             }

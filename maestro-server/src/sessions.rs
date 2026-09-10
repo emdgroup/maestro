@@ -149,7 +149,6 @@ impl AgentConnection {
             connection_task,
         }
     }
-
 }
 
 /// Cleanup metadata for fast-path (shared connection server) sessions.

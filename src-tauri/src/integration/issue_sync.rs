@@ -18,16 +18,25 @@ pub async fn import_tasks(
     issues: Vec<RemoteIssue>,
     base_branch: String,
 ) -> Result<Vec<Task>, String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let mut conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
-    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Transaction failed: {}", e))?;
 
     let already_imported: HashSet<String> = if issues.is_empty() {
         HashSet::new()
     } else {
         let external_ids: Vec<&str> = issues.iter().map(|i| i.external_id.as_str()).collect();
-        let placeholders = external_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let placeholders = external_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
         let query = format!(
             "SELECT external_id FROM tasks WHERE project_id = ? AND external_id IN ({})",
             placeholders
@@ -53,10 +62,18 @@ pub async fn import_tasks(
         }
 
         if issue.title.len() > 1000 || issue.external_id.len() > 200 {
-            return Err(format!("Issue fields exceed maximum allowed length: {}", issue.external_id));
+            return Err(format!(
+                "Issue fields exceed maximum allowed length: {}",
+                issue.external_id
+            ));
         }
 
-        let import_source = issue.external_id.split(':').next().unwrap_or("").to_string();
+        let import_source = issue
+            .external_id
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .to_string();
 
         let priority_str = match issue.priority.as_deref() {
             Some("Urgent") => "Urgent",
@@ -88,11 +105,13 @@ pub async fn import_tasks(
                 &now,
                 &now,
             ],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         let task_id = tx.last_insert_rowid();
         let query = format!("{} WHERE id = ?", TASK_SELECT);
-        let task = tx.query_row(&query, [task_id], Task::from_row)
+        let task = tx
+            .query_row(&query, [task_id], Task::from_row)
             .map_err(|e| e.to_string())?;
         created_tasks.push(task);
     }
@@ -112,13 +131,18 @@ pub fn update_task_from_remote(
     task_id: i32,
     issue: RemoteIssue,
 ) -> Result<Task, String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let mut conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     let labels_json = serde_json::to_string(&issue.labels)
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
-    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Transaction failed: {}", e))?;
 
     tx.execute(
         "UPDATE tasks SET title = ?, description = ?, labels = ?, \
@@ -131,10 +155,12 @@ pub fn update_task_from_remote(
             &now,
             task_id,
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = tx.query_row(&query, [task_id], Task::from_row)
+    let task = tx
+        .query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
@@ -152,18 +178,25 @@ pub fn dismiss_task_change(
     task_id: i32,
     remote_updated_at: String,
 ) -> Result<Task, String> {
-    let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let mut conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
-    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Transaction failed: {}", e))?;
 
     tx.execute(
         "UPDATE tasks SET external_updated_at = ?, updated_at = ? WHERE id = ?",
         rusqlite::params![&remote_updated_at, &now, task_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = tx.query_row(&query, [task_id], Task::from_row)
+    let task = tx
+        .query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;

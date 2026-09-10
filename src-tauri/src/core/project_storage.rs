@@ -1,8 +1,8 @@
+use crate::git::remote::shell_quote;
+use crate::models::GitConnection;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
-use crate::git::remote::shell_quote;
-use crate::models::GitConnection;
 
 const DEFAULT_COMMIT_TEMPLATE: &str = "\
 Merge task #{task_id}: {task_name}
@@ -19,7 +19,11 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), std::io::
             std::process::id(),
             attempt
         ));
-        let mut temp = match OpenOptions::new().write(true).create_new(true).open(&temp_path) {
+        let mut temp = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+        {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error),
@@ -106,8 +110,8 @@ pub async fn write_maestro_json<T: serde::Serialize>(
     file_name: &str,
     value: &T,
 ) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(value)
-        .map_err(|e| format!("Serialization failed: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(value).map_err(|e| format!("Serialization failed: {}", e))?;
     write_maestro_file(conn, file_name, &json).await
 }
 
@@ -128,11 +132,15 @@ pub async fn write_maestro_file(
     }
 
     let script = atomic_write_script(&dir, &path, contents);
-    let output = crate::connectivity::exec_channel::run_on(conn, None, "sh", &["-c", &script]).await?;
+    let output =
+        crate::connectivity::exec_channel::run_on(conn, None, "sh", &["-c", &script]).await?;
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to write {path}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to write {path}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -150,7 +158,6 @@ pub async fn ensure_project_storage(conn: &GitConnection) -> Result<(), String> 
     write_maestro_file(conn, "commit-template.txt", DEFAULT_COMMIT_TEMPLATE).await
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{atomic_write, atomic_write_script};
@@ -163,11 +170,20 @@ mod tests {
     fn atomic_write_script_stays_portable_across_login_shells() {
         let script = atomic_write_script("/srv/p/.maestro", "/srv/p/.maestro/state.json", "{}");
 
-        assert!(script.starts_with("mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > "), "{script}");
-        assert!(script.ends_with(" '/srv/p/.maestro/state.json'"), "{script}");
+        assert!(
+            script.starts_with("mkdir -p '/srv/p/.maestro' && printf '%s' '{}' > "),
+            "{script}"
+        );
+        assert!(
+            script.ends_with(" '/srv/p/.maestro/state.json'"),
+            "{script}"
+        );
         assert!(script.contains("&& mv -f "), "{script}");
         for construct in ["trap", "$$", "tmp="] {
-            assert!(!script.contains(construct), "{construct} is not portable: {script}");
+            assert!(
+                !script.contains(construct),
+                "{construct} is not portable: {script}"
+            );
         }
     }
 
@@ -183,7 +199,8 @@ mod tests {
 
     #[test]
     fn atomic_write_script_quotes_paths_and_contents() {
-        let script = atomic_write_script("/a b/.maestro", "/a b/.maestro/s.json", "{\"k\":\"it's\"}");
+        let script =
+            atomic_write_script("/a b/.maestro", "/a b/.maestro/s.json", "{\"k\":\"it's\"}");
 
         assert!(script.contains("'/a b/.maestro/s.json."), "{script}");
         assert!(script.contains(r#"'{"k":"it'\''s"}'"#), "{script}");
@@ -197,8 +214,16 @@ mod tests {
 
         atomic_write(&path, b"new contents").expect("atomic replacement");
 
-        assert_eq!(std::fs::read(&path).expect("read replacement"), b"new contents");
-        assert_eq!(std::fs::read_dir(dir.path()).expect("list directory").count(), 1);
+        assert_eq!(
+            std::fs::read(&path).expect("read replacement"),
+            b"new contents"
+        );
+        assert_eq!(
+            std::fs::read_dir(dir.path())
+                .expect("list directory")
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -210,6 +235,11 @@ mod tests {
         assert!(atomic_write(&path, b"new contents").is_err());
 
         assert!(path.is_dir(), "the original destination must remain intact");
-        assert_eq!(std::fs::read_dir(dir.path()).expect("list directory").count(), 1);
+        assert_eq!(
+            std::fs::read_dir(dir.path())
+                .expect("list directory")
+                .count(),
+            1
+        );
     }
 }

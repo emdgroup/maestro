@@ -131,7 +131,10 @@ mod tests {
             bytes: vec![0x00, 0xff, 0xfe, b'h', b'i'],
         };
         let json = serde_json::to_string(&event).expect("serialize");
-        assert_eq!(serde_json::from_str::<ExecEvent>(&json).expect("deserialize"), event);
+        assert_eq!(
+            serde_json::from_str::<ExecEvent>(&json).expect("deserialize"),
+            event
+        );
     }
 
     #[test]
@@ -153,6 +156,9 @@ mod tests {
             stdin: Some(vec![0x00, 0x9f, b'p', b'a', b't', b'c', b'h']),
         };
         let json = serde_json::to_string(&command).expect("serialize");
-        assert_eq!(serde_json::from_str::<ExecCommand>(&json).expect("deserialize"), command);
+        assert_eq!(
+            serde_json::from_str::<ExecCommand>(&json).expect("deserialize"),
+            command
+        );
     }
 }

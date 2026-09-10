@@ -3,13 +3,13 @@ use std::sync::Arc;
 use maestro_protocol::{
     AuthTerminalExitResponse, CheckToolsResponse, DiscoveredAgent, ErrorResponse, FileReadResponse,
     FileSearchResponse, InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage,
-    PreInitializeResponse,
-    ServerRequest, ServerResponse, SessionListOkResponse, SessionLoadOkResponse, SessionUpdate,
-    SpawnResponse, AUTH_REQUIRED_ERROR,
+    PreInitializeResponse, ServerRequest, ServerResponse, SessionListOkResponse,
+    SessionLoadOkResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
 use tokio::sync::Mutex;
 
 use crate::agent;
+use crate::command_ext::NoConsoleWindow;
 use crate::file_ops::{handle_file_read, handle_file_search};
 use crate::helpers::{
     ensure_and_get_connection, forward_to_session, resolve_agent_spawn_params, send_diag,
@@ -22,7 +22,6 @@ use crate::session::{
 use crate::sessions::{
     ActiveSession, AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections,
 };
-use crate::command_ext::NoConsoleWindow;
 use crate::tool_check::check_tools;
 
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
@@ -78,11 +77,11 @@ pub(crate) async fn dispatch_message(
                 .collect();
             send_or_return!(
                 send_response(
-                stdout,
-                &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
-                    ListAgentsResponse { agents },
-                )),
-            )
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
+                        ListAgentsResponse { agents },
+                    )),
+                )
                 .await
             );
         }
@@ -183,18 +182,18 @@ pub(crate) async fn dispatch_message(
                     .as_millis() as u64;
                 send_or_return!(
                     send_response(
-                    stdout,
+                        stdout,
                         &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(
                             SessionUpdate {
-                        session_id: req.session_id.clone(),
-                        payload: serde_json::json!({
-                            "sessionUpdate": "user_message",
-                            "content": req.content,
-                            "sentAt": sent_at,
-                        }),
+                                session_id: req.session_id.clone(),
+                                payload: serde_json::json!({
+                                    "sessionUpdate": "user_message",
+                                    "content": req.content,
+                                    "sentAt": sent_at,
+                                }),
                             }
                         )),
-                )
+                    )
                     .await
                 );
                 let cmd = match req.content {
@@ -204,24 +203,24 @@ pub(crate) async fn dispatch_message(
                 if session.cmd_tx.send(cmd).await.is_err() {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: format!("session {} connection closed", req.session_id),
-                            session_id: None,
-                        })),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!("session {} connection closed", req.session_id),
+                                session_id: None,
+                            })),
+                        )
                         .await
                     );
                 }
             } else {
                 send_or_return!(
                     send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: format!("unknown session: {}", req.session_id),
-                        session_id: None,
-                    })),
-                )
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: format!("unknown session: {}", req.session_id),
+                            session_id: None,
+                        })),
+                    )
                     .await
                 );
             }
@@ -243,8 +242,8 @@ pub(crate) async fn dispatch_message(
                     tokio::spawn(async move {
                         let timed_out =
                             tokio::time::timeout(std::time::Duration::from_secs(5), session.task)
-                        .await
-                        .is_err();
+                                .await
+                                .is_err();
                         if timed_out {
                             abort_handle.abort();
                         }
@@ -350,14 +349,14 @@ pub(crate) async fn dispatch_message(
                 .unwrap_or_else(|e| Err(format!("spawn_blocking: {}", e)));
             let response =
                 match result {
-                Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
-                    FileSearchResponse { files },
-                )),
-                Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: msg,
-                    session_id: None,
-                })),
-            };
+                    Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
+                        FileSearchResponse { files },
+                    )),
+                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: msg,
+                        session_id: None,
+                    })),
+                };
             send_or_return!(send_response(stdout, &response).await);
         }
 
@@ -386,15 +385,15 @@ pub(crate) async fn dispatch_message(
             let Some(conn_handle) = conn_handle else {
                 send_or_return!(
                     send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
                             SessionListOkResponse {
                                 sessions: vec![],
                                 next_cursor: None,
                                 supports_session_delete: false
                             },
-                    )),
-                )
+                        )),
+                    )
                     .await
                 );
                 return true;
@@ -415,27 +414,27 @@ pub(crate) async fn dispatch_message(
                 Ok((sessions_list, next_cursor)) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::SessionListOk(
                                 SessionListOkResponse {
                                     sessions: sessions_list,
                                     next_cursor,
                                     supports_session_delete
                                 },
-                        )),
-                    )
+                            )),
+                        )
                         .await
                     );
                 }
                 Err(e) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: e,
-                            session_id: None,
-                        })),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: e,
+                                session_id: None,
+                            })),
+                        )
                         .await
                     );
                 }
@@ -543,21 +542,21 @@ pub(crate) async fn dispatch_message(
                 Ok(()) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
+                        )
                         .await
                     );
                 }
                 Err(e) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: e,
-                            session_id: None,
-                        })),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: e,
+                                session_id: None,
+                            })),
+                        )
                         .await
                     );
                 }
@@ -593,21 +592,21 @@ pub(crate) async fn dispatch_message(
                 Ok(()) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk),
+                        )
                         .await
                     );
                 }
                 Err(e) => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: e,
-                            session_id: None,
-                        })),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: e,
+                                session_id: None,
+                            })),
+                        )
                         .await
                     );
                 }
@@ -617,12 +616,12 @@ pub(crate) async fn dispatch_message(
         MaestroRpcMessage::Request(ServerRequest::Handshake(_)) => {
             send_or_return!(
                 send_response(
-                stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: "unexpected Handshake after initialization".to_string(),
-                    session_id: None,
-                })),
-            )
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: "unexpected Handshake after initialization".to_string(),
+                        session_id: None,
+                    })),
+                )
                 .await
             );
         }
@@ -656,9 +655,9 @@ pub(crate) async fn dispatch_message(
                     agent_connections.lock().await.insert(req.agent_id, conn);
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(response)),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(response)),
+                        )
                         .await
                     );
                 }
@@ -682,12 +681,12 @@ pub(crate) async fn dispatch_message(
             let Some(conn) = conn_opt else {
                 send_or_return!(
                     send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: format!("agent '{}' not found", req.agent_id),
-                        session_id: None,
-                    })),
-                )
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message: format!("agent '{}' not found", req.agent_id),
+                            session_id: None,
+                        })),
+                    )
                     .await
                 );
                 return true;
@@ -728,8 +727,8 @@ pub(crate) async fn dispatch_message(
                                 &stdout_task,
                                 &MaestroRpcMessage::Response(ServerResponse::Error(
                                     ErrorResponse {
-                                    message: format!("failed to spawn auth command: {}", e),
-                                    session_id: None,
+                                        message: format!("failed to spawn auth command: {}", e),
+                                        session_id: None,
                                     },
                                 )),
                             )
@@ -758,7 +757,7 @@ pub(crate) async fn dispatch_message(
                     }
                     let result =
                         tokio::time::timeout(std::time::Duration::from_secs(300), child.wait())
-                    .await;
+                            .await;
                     let response = match result {
                         Ok(Ok(status)) if status.success() => {
                             MaestroRpcMessage::Response(ServerResponse::AuthenticateOk)
@@ -830,15 +829,15 @@ pub(crate) async fn dispatch_message(
             let Some(method) = method else {
                 send_or_return!(
                     send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                             message: format!(
                                 "auth method '{}' not found for agent '{}'",
                                 req.method_id, req.agent_id
                             ),
-                        session_id: None,
-                    })),
-                )
+                            session_id: None,
+                        })),
+                    )
                     .await
                 );
                 return true;
@@ -987,9 +986,9 @@ pub(crate) async fn dispatch_message(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(
                         AuthTerminalExitResponse {
-                        terminal_id,
-                        agent_id,
-                        exit_code,
+                            terminal_id,
+                            agent_id,
+                            exit_code,
                         },
                     )),
                 )
@@ -1024,12 +1023,12 @@ pub(crate) async fn dispatch_message(
                 None => {
                     send_or_return!(
                         send_response(
-                        stdout,
-                        &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                            message: format!("agent '{}' not found", req.agent_id),
-                            session_id: None,
-                        })),
-                    )
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                                message: format!("agent '{}' not found", req.agent_id),
+                                session_id: None,
+                            })),
+                        )
                         .await
                     );
                 }
@@ -1042,10 +1041,10 @@ pub(crate) async fn dispatch_message(
                             match conn.send_request(LogoutRequest::new()).block_task().await {
                                 Ok(_) => MaestroRpcMessage::Response(ServerResponse::LogoutOk),
                                 Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
-                                        ErrorResponse {
-                                            message: format!("logout failed: {}", e),
-                                            session_id: None,
-                                        },
+                                    ErrorResponse {
+                                        message: format!("logout failed: {}", e),
+                                        session_id: None,
+                                    },
                                 )),
                             };
                         send_response(&stdout_task, &response).await.ok();
@@ -1058,7 +1057,7 @@ pub(crate) async fn dispatch_message(
             let results = check_tools(req.tools).await;
             send_or_return!(
                 send_response(
-                stdout,
+                    stdout,
                     &MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(
                         CheckToolsResponse { results }
                     )),
@@ -1113,7 +1112,7 @@ pub(crate) async fn dispatch_message(
                 send_response(
                     stdout,
                     &MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(result))
-            )
+                )
                 .await
             );
         }
@@ -1154,9 +1153,9 @@ pub(crate) async fn dispatch_message(
 
             send_or_return!(
                 send_response(
-                stdout,
-                &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(response)),
-            )
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(response)),
+                )
                 .await
             );
         }
@@ -1165,9 +1164,9 @@ pub(crate) async fn dispatch_message(
             let response = agent::detection::detect_project_agents(&req.cwd).await;
             send_or_return!(
                 send_response(
-                stdout,
-                &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(response)),
-            )
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(response)),
+                )
                 .await
             );
         }

@@ -10,11 +10,11 @@ pub struct Project {
     pub id: i32,
     pub name: String,
     pub path: String,
-    pub created_at: String,  // ISO 8601
-    pub updated_at: String,  // ISO 8601
-    pub last_opened: Option<String>, // ISO 8601
-    pub connection_id: Option<i32>,  // Foreign key to ssh_connections; None = local project
-    pub wsl_connection_id: Option<i32>, // Foreign key to wsl_connections; None = non-WSL project
+    pub created_at: String,                // ISO 8601
+    pub updated_at: String,                // ISO 8601
+    pub last_opened: Option<String>,       // ISO 8601
+    pub connection_id: Option<i32>,        // Foreign key to ssh_connections; None = local project
+    pub wsl_connection_id: Option<i32>,    // Foreign key to wsl_connections; None = non-WSL project
     pub docker_connection_id: Option<i32>, // Foreign key to docker_connections; None = non-Docker project
 }
 
@@ -160,10 +160,11 @@ impl ProjectConfig {
     /// A worktree of its own is what Maestro did before either key existed, so an absent setting
     /// and an explicit `default_worktree: true` both land there.
     pub fn default_workspace_mode(&self) -> WorkspaceMode {
-        self.default_workspace_mode.unwrap_or(match self.default_worktree {
-            Some(false) => WorkspaceMode::RepositoryDirectory,
-            _ => WorkspaceMode::NewWorktree,
-        })
+        self.default_workspace_mode
+            .unwrap_or(match self.default_worktree {
+                Some(false) => WorkspaceMode::RepositoryDirectory,
+                _ => WorkspaceMode::NewWorktree,
+            })
     }
 
     /// Records a new default and retires the legacy key, so the file never carries both.
@@ -361,7 +362,10 @@ mod tests {
         let reloaded: ProjectConfig =
             serde_json::from_str(&written).expect("written config should parse");
 
-        assert_eq!(reloaded.additional_directories, config.additional_directories);
+        assert_eq!(
+            reloaded.additional_directories,
+            config.additional_directories
+        );
     }
 
     #[test]
@@ -389,7 +393,10 @@ mod tests {
         let opted_in: ProjectConfig =
             serde_json::from_str(r#"{"updated_at": "", "default_worktree": true}"#)
                 .expect("a v0.18 settings file should still load");
-        assert_eq!(opted_in.default_workspace_mode(), WorkspaceMode::NewWorktree);
+        assert_eq!(
+            opted_in.default_workspace_mode(),
+            WorkspaceMode::NewWorktree
+        );
 
         // Writing the setting retires the legacy key rather than leaving two answers in the file.
         let mut config = opted_out;
@@ -401,7 +408,10 @@ mod tests {
         );
         let reloaded: ProjectConfig =
             serde_json::from_str(&written).expect("written config should parse");
-        assert_eq!(reloaded.default_workspace_mode(), WorkspaceMode::NewWorktree);
+        assert_eq!(
+            reloaded.default_workspace_mode(),
+            WorkspaceMode::NewWorktree
+        );
     }
 
     #[test]
@@ -441,6 +451,11 @@ mod tests {
 
         let _: ProjectConfig = read_maestro_json(&conn, "settings.json").await;
         let _: ProjectState = read_maestro_json(&conn, "state.json").await;
-        assert_eq!(std::fs::read_dir(maestro_dir).expect("list .maestro").count(), 2);
+        assert_eq!(
+            std::fs::read_dir(maestro_dir)
+                .expect("list .maestro")
+                .count(),
+            2
+        );
     }
 }

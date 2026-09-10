@@ -1,10 +1,10 @@
+use chrono::Utc;
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use chrono::Utc;
 
-use crate::models::{Task, TASK_SELECT, ReviewResult, TaskReviewWithComments, ReviewCommentEntry};
 use crate::core::AppState;
 use crate::git;
+use crate::models::{ReviewCommentEntry, ReviewResult, Task, TaskReviewWithComments, TASK_SELECT};
 use crate::task::transition::{self, TaskTransition};
 
 /// Insert (or replace) a review record with optional per-file comments.
@@ -54,14 +54,26 @@ pub async fn save_task_review(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let comments_ref = per_file_comments.as_deref();
     let review_id = insert_review_with_comments(
-        &conn, task_id, &decision, general_feedback.as_deref(), comments_ref, &now,
+        &conn,
+        task_id,
+        &decision,
+        general_feedback.as_deref(),
+        comments_ref,
+        &now,
     )?;
 
-    Ok(ReviewResult { success: true, review_id, task_status: None })
+    Ok(ReviewResult {
+        success: true,
+        review_id,
+        task_status: None,
+    })
 }
 
 /// Request changes on a task: saves feedback and moves task back to InProgress
@@ -78,16 +90,28 @@ pub async fn request_changes(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let comments_ref = per_file_comments.as_deref();
     let review_id = insert_review_with_comments(
-        &conn, task_id, "RequestChanges", general_feedback.as_deref(), comments_ref, &now,
+        &conn,
+        task_id,
+        "RequestChanges",
+        general_feedback.as_deref(),
+        comments_ref,
+        &now,
     )?;
     transition::apply(&conn, task_id, TaskTransition::ReworkRequested)?;
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(ReviewResult { success: true, review_id, task_status: Some("InProgress".to_string()) })
+    Ok(ReviewResult {
+        success: true,
+        review_id,
+        task_status: Some("InProgress".to_string()),
+    })
 }
 
 /// Get the current review (with comments) for a task
@@ -97,29 +121,51 @@ pub async fn get_task_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<Option<TaskReviewWithComments>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
-    let review = conn.query_row(
-        "SELECT id, decision, general_feedback, created_at FROM task_reviews WHERE task_id = ?",
-        [task_id],
-        |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, String>(3)?)),
-    ).ok();
+    let review = conn
+        .query_row(
+            "SELECT id, decision, general_feedback, created_at FROM task_reviews WHERE task_id = ?",
+            [task_id],
+            |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .ok();
 
     let Some((review_id, decision, general_feedback, created_at)) = review else {
         return Ok(None);
     };
 
-    let mut stmt = conn.prepare(
-        "SELECT file_path, comment FROM review_comments WHERE review_id = ?"
-    ).map_err(|e| format!("Prepare failed: {}", e))?;
+    let mut stmt = conn
+        .prepare("SELECT file_path, comment FROM review_comments WHERE review_id = ?")
+        .map_err(|e| format!("Prepare failed: {}", e))?;
 
-    let comments: Vec<ReviewCommentEntry> = stmt.query_map([review_id], |row| {
-        Ok(ReviewCommentEntry { file_path: row.get(0)?, comment: row.get(1)? })
-    }).map_err(|e| format!("Query failed: {}", e))?
-      .filter_map(|r| r.ok())
-      .collect();
+    let comments: Vec<ReviewCommentEntry> = stmt
+        .query_map([review_id], |row| {
+            Ok(ReviewCommentEntry {
+                file_path: row.get(0)?,
+                comment: row.get(1)?,
+            })
+        })
+        .map_err(|e| format!("Query failed: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
 
-    Ok(Some(TaskReviewWithComments { decision, general_feedback, comments, created_at }))
+    Ok(Some(TaskReviewWithComments {
+        decision,
+        general_feedback,
+        comments,
+        created_at,
+    }))
 }
 
 /// Clear the review and its comments for a task after feedback has been injected into the agent.
@@ -130,11 +176,15 @@ pub async fn clear_task_review(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     conn.execute(
         "DELETE FROM task_reviews WHERE task_id = ?",
         rusqlite::params![task_id],
-    ).map_err(|e| format!("Delete review failed: {}", e))?;
+    )
+    .map_err(|e| format!("Delete review failed: {}", e))?;
     Ok(())
 }
 
@@ -164,7 +214,10 @@ pub async fn reject_review(
             };
 
             {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 transition::apply(&conn, task_id, event)?;
             }
 
@@ -179,9 +232,13 @@ pub async fn reject_review(
     }
 
     // Read back the updated task
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn.query_row(&query, [task_id], Task::from_row)
+    let task = conn
+        .query_row(&query, [task_id], Task::from_row)
         .map_err(|e| format!("Failed to read updated task: {}", e))?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)

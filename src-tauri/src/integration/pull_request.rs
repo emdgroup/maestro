@@ -32,7 +32,9 @@ use self::github::{
     branch_status_github, checks_github, ci_github, create_gitea, create_github, fetch_gitea,
     fetch_github, find_github_family, list_github_family,
 };
-use self::gitlab::{checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab};
+use self::gitlab::{
+    checks_gitlab, ci_gitlab, create_gitlab, fetch_gitlab, find_gitlab, list_gitlab,
+};
 use crate::models::project::ProjectCodeHostingConfig;
 
 /// Where to open the pull request, and what to authenticate with.
@@ -157,7 +159,10 @@ pub async fn find_pull_request_by_head(
     branch: &str,
 ) -> Result<Option<FoundPullRequest>, String> {
     if !capabilities(&target.config.provider).finds_pull_request_by_branch {
-        return Err(unsupported(&target.config.provider, "look a pull request up by branch"));
+        return Err(unsupported(
+            &target.config.provider,
+            "look a pull request up by branch",
+        ));
     }
     match target.config.provider.as_str() {
         "github" | "gitea" | "forgejo" => find_github_family(target, branch).await,
@@ -197,7 +202,10 @@ pub async fn fetch_branch_pull_request(
             Ok(found) => return Ok(found),
             // An old GitHub Enterprise, or a token whose scope its GraphQL endpoint refuses.
             // Composing from REST costs two more requests but keeps the card working.
-            Err(e) => log::debug!("[github] branch status query unavailable, falling back: {}", e),
+            Err(e) => log::debug!(
+                "[github] branch status query unavailable, falling back: {}",
+                e
+            ),
         }
     }
 
@@ -211,7 +219,12 @@ pub async fn fetch_branch_pull_request(
         Vec::new()
     };
 
-    Ok(Some(BranchPullRequest { number: found.number, url: found.url, detail, checks }))
+    Ok(Some(BranchPullRequest {
+        number: found.number,
+        url: found.url,
+        detail,
+        checks,
+    }))
 }
 
 /// One entry of the project-wide open list.
@@ -701,7 +714,10 @@ pub fn summarise_checks(checks: &[PullRequestCheck]) -> CiState {
     if checks.is_empty() {
         return CiState::Unknown;
     }
-    if checks.iter().any(|check| check.status == CheckStatus::Running) {
+    if checks
+        .iter()
+        .any(|check| check.status == CheckStatus::Running)
+    {
         return CiState::Pending;
     }
     let failed: Vec<String> = checks
@@ -709,7 +725,11 @@ pub fn summarise_checks(checks: &[PullRequestCheck]) -> CiState {
         .filter(|check| check.status == CheckStatus::Failed)
         .map(|check| check.name.clone())
         .collect();
-    if failed.is_empty() { CiState::Passing } else { CiState::Failing(failed) }
+    if failed.is_empty() {
+        CiState::Passing
+    } else {
+        CiState::Failing(failed)
+    }
 }
 
 /// What a pull request's checks add up to, as one mark.
@@ -738,10 +758,16 @@ impl CiRollup {
         if checks.is_empty() {
             return Self::Unknown;
         }
-        if checks.iter().any(|check| check.status == CheckStatus::Failed) {
+        if checks
+            .iter()
+            .any(|check| check.status == CheckStatus::Failed)
+        {
             return Self::Failing;
         }
-        if checks.iter().any(|check| check.status == CheckStatus::Running) {
+        if checks
+            .iter()
+            .any(|check| check.status == CheckStatus::Running)
+        {
             return Self::Running;
         }
         Self::Passing
@@ -863,7 +889,10 @@ async fn read_json<T: for<'de> Deserialize<'de>>(
     let text = response.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        return Err(format!("{} refused the request ({}): {}", provider, status, text));
+        return Err(format!(
+            "{} refused the request ({}): {}",
+            provider, status, text
+        ));
     }
 
     serde_json::from_str(&text)
@@ -898,15 +927,27 @@ mod tests {
             // Counts, but `/pulls` takes no `q` — its only pull request search is an issues
             // endpoint that answers no head branch, which a row cannot be built from.
             ("gitea", (true, true, false, true, true, true, false, false)),
-            ("forgejo", (true, true, false, true, true, true, false, false)),
+            (
+                "forgejo",
+                (true, true, false, true, true, true, false, false),
+            ),
             // `searches_pull_requests` is false pending a live check of BBQL's `title ~`, not
             // because Bitbucket cannot — see the comment on its row in the table.
-            ("bitbucket", (true, true, false, true, true, false, false, true)),
+            (
+                "bitbucket",
+                (true, true, false, true, true, false, false, true),
+            ),
             // Neither counts nor checks, which is what makes its rows arrive already answered
             // rather than sending the panel to ask per row for nothing.
-            ("azuredevops", (true, true, false, true, true, false, false, false)),
+            (
+                "azuredevops",
+                (true, true, false, true, true, false, false, false),
+            ),
             // Nothing at all, rather than an error on a timer, for a host nobody has taught us.
-            ("sourcehut", (false, false, false, false, false, false, false, false)),
+            (
+                "sourcehut",
+                (false, false, false, false, false, false, false, false),
+            ),
         ];
 
         for (provider, (lists, finds, searches, opens, reads, counts, enumerates, reports)) in
@@ -962,7 +1003,10 @@ mod tests {
     /// whatever the rest of the matrix is still doing.
     #[test]
     fn one_broken_check_makes_the_whole_row_failing() {
-        let check = |name: &str, status| PullRequestCheck { name: name.to_string(), status };
+        let check = |name: &str, status| PullRequestCheck {
+            name: name.to_string(),
+            status,
+        };
 
         assert_eq!(CiRollup::from_checks(&[]), CiRollup::Unknown);
         assert_eq!(
@@ -979,7 +1023,10 @@ mod tests {
             ]),
             CiRollup::Running
         );
-        assert_eq!(CiRollup::from_checks(&[check("build", CheckStatus::Passed)]), CiRollup::Passing);
+        assert_eq!(
+            CiRollup::from_checks(&[check("build", CheckStatus::Passed)]),
+            CiRollup::Passing
+        );
     }
 
     /// A cursor is opaque to whoever holds it, so a bad one has to be recoverable: an error here
@@ -1000,7 +1047,10 @@ mod tests {
     /// the next cursor be decided without a second request or a total to compare against.
     #[test]
     fn a_short_page_is_the_last_one() {
-        assert_eq!(next_offset_cursor(LIST_PAGE_SIZE, 0), Some(LIST_PAGE_SIZE.to_string()));
+        assert_eq!(
+            next_offset_cursor(LIST_PAGE_SIZE, 0),
+            Some(LIST_PAGE_SIZE.to_string())
+        );
         assert_eq!(
             next_offset_cursor(LIST_PAGE_SIZE, LIST_PAGE_SIZE),
             Some((LIST_PAGE_SIZE * 2).to_string())
@@ -1014,15 +1064,33 @@ mod tests {
     #[test]
     fn the_predicates_read_the_table() {
         assert!(supports_pull_request_list(&config("github", "github.com")));
-        assert!(finds_pull_request_by_branch(&config("azuredevops", "dev.azure.com")));
-        assert!(supports_pull_requests(&config("bitbucket", "bitbucket.org")));
+        assert!(finds_pull_request_by_branch(&config(
+            "azuredevops",
+            "dev.azure.com"
+        )));
+        assert!(supports_pull_requests(&config(
+            "bitbucket",
+            "bitbucket.org"
+        )));
         assert!(searches_pull_requests(&config("gitlab", "gitlab.com")));
         // The panel hides its search box on these two rather than degrading it to filtering the
         // page, which would make one control mean two different things.
-        assert!(!searches_pull_requests(&config("gitea", "gitea.example.com")));
-        assert!(!searches_pull_requests(&config("azuredevops", "dev.azure.com")));
-        assert!(!supports_pull_request_list(&config("sourcehut", "git.sr.ht")));
-        assert!(!finds_pull_request_by_branch(&config("sourcehut", "git.sr.ht")));
+        assert!(!searches_pull_requests(&config(
+            "gitea",
+            "gitea.example.com"
+        )));
+        assert!(!searches_pull_requests(&config(
+            "azuredevops",
+            "dev.azure.com"
+        )));
+        assert!(!supports_pull_request_list(&config(
+            "sourcehut",
+            "git.sr.ht"
+        )));
+        assert!(!finds_pull_request_by_branch(&config(
+            "sourcehut",
+            "git.sr.ht"
+        )));
         assert!(!supports_pull_requests(&config("sourcehut", "git.sr.ht")));
     }
 
@@ -1081,15 +1149,30 @@ mod tests {
         assert_eq!(head_ref("github").as_deref(), Some("refs/pull/42/head"));
         assert_eq!(head_ref("gitea").as_deref(), Some("refs/pull/42/head"));
         assert_eq!(head_ref("forgejo").as_deref(), Some("refs/pull/42/head"));
-        assert_eq!(head_ref("gitlab").as_deref(), Some("refs/merge-requests/42/head"));
-        assert_eq!(head_ref("bitbucket").as_deref(), Some("refs/pull-requests/42/from"));
+        assert_eq!(
+            head_ref("gitlab").as_deref(),
+            Some("refs/merge-requests/42/head")
+        );
+        assert_eq!(
+            head_ref("bitbucket").as_deref(),
+            Some("refs/pull-requests/42/from")
+        );
         // `refs/pull/42/merge` is a merge commit Azure computed, not the branch under review.
         assert_eq!(head_ref("azuredevops"), None);
         assert_eq!(head_ref("sourcehut"), None);
 
-        assert!(checks_out_fork_pull_requests(&config("github", "github.com")));
-        assert!(checks_out_fork_pull_requests(&config("gitlab", "gitlab.com")));
-        assert!(!checks_out_fork_pull_requests(&config("azuredevops", "dev.azure.com")));
+        assert!(checks_out_fork_pull_requests(&config(
+            "github",
+            "github.com"
+        )));
+        assert!(checks_out_fork_pull_requests(&config(
+            "gitlab",
+            "gitlab.com"
+        )));
+        assert!(!checks_out_fork_pull_requests(&config(
+            "azuredevops",
+            "dev.azure.com"
+        )));
     }
 
     /// A forge that will not say which repository a branch is in must be read as a fork, because
@@ -1098,7 +1181,10 @@ mod tests {
     #[test]
     fn a_repository_the_forge_did_not_name_reads_as_a_fork() {
         assert!(!is_cross_repository(Some("owner/repo"), Some("owner/repo")));
-        assert!(is_cross_repository(Some("contributor/repo"), Some("owner/repo")));
+        assert!(is_cross_repository(
+            Some("contributor/repo"),
+            Some("owner/repo")
+        ));
         assert!(is_cross_repository(None, Some("owner/repo")));
         assert!(is_cross_repository(Some("owner/repo"), None));
         assert!(is_cross_repository::<&str>(None, None));

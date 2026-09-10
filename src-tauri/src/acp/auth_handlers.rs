@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tauri::{Emitter, State};
-use maestro_protocol::{
-    AuthenticateRequest, AuthTerminalInputRequest, KillAuthTerminalRequest,
-    LogoutRequest, MaestroRpcMessage, ServerRequest, SpawnAuthTerminalRequest,
-};
 use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::transport_types::serialize_message;
 use crate::core::AppState;
+use maestro_protocol::{
+    AuthTerminalInputRequest, AuthenticateRequest, KillAuthTerminalRequest, LogoutRequest,
+    MaestroRpcMessage, ServerRequest, SpawnAuthTerminalRequest,
+};
+use std::sync::Arc;
+use tauri::{Emitter, State};
 
 fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
     match key {
@@ -59,7 +59,10 @@ pub async fn acp_authenticate(
         let server = servers
             .get(&connection)
             .ok_or_else(|| format!("No connection server for connection {:?}", connection))?;
-        (server.writer_tx.clone(), server.pending.authenticate.clone())
+        (
+            server.writer_tx.clone(),
+            server.pending.authenticate.clone(),
+        )
     };
 
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -98,8 +101,7 @@ pub async fn acp_authenticate(
             Err("Authentication timed out".to_string())
         }
         Ok(inner) => {
-            inner
-                .map_err(|_| "Authentication response channel dropped".to_string())??;
+            inner.map_err(|_| "Authentication response channel dropped".to_string())??;
             // Mark as authenticated in state.
             let mut map = app_state.acp.agent_auth_info.lock().await;
             if let Some(info) = map.get_mut(&(connection, agent_id)) {
@@ -154,8 +156,7 @@ pub async fn acp_logout(
             Err("Logout timed out".to_string())
         }
         Ok(inner) => {
-            inner
-                .map_err(|_| "Logout response channel dropped".to_string())??;
+            inner.map_err(|_| "Logout response channel dropped".to_string())??;
             let mut map = app_state.acp.agent_auth_info.lock().await;
             if let Some(info) = map.get_mut(&(connection, agent_id)) {
                 info.authenticated = false;
@@ -185,14 +186,13 @@ pub async fn acp_start_auth_terminal(
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
     let session_id = format!("session-{}", session_key);
 
-    let req = MaestroRpcMessage::Request(ServerRequest::SpawnAuthTerminal(
-        SpawnAuthTerminalRequest {
+    let req =
+        MaestroRpcMessage::Request(ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
             agent_id,
             method_id,
             terminal_id: terminal_id.clone(),
             session_id,
-        },
-    ));
+        }));
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)
@@ -227,9 +227,11 @@ pub async fn acp_send_auth_pty_input(
             .clone()
     };
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
-    let req = MaestroRpcMessage::Request(ServerRequest::AuthTerminalInput(
-        AuthTerminalInputRequest { terminal_id, data },
-    ));
+    let req =
+        MaestroRpcMessage::Request(ServerRequest::AuthTerminalInput(AuthTerminalInputRequest {
+            terminal_id,
+            data,
+        }));
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)
@@ -252,9 +254,10 @@ pub async fn acp_abort_auth_terminal(
             .clone()
     };
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
-    let req = MaestroRpcMessage::Request(ServerRequest::KillAuthTerminal(
-        KillAuthTerminalRequest { terminal_id },
-    ));
+    let req =
+        MaestroRpcMessage::Request(ServerRequest::KillAuthTerminal(KillAuthTerminalRequest {
+            terminal_id,
+        }));
     let bytes = serialize_message(&req)?;
     writer_tx
         .send(bytes)

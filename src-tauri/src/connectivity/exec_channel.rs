@@ -16,9 +16,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use maestro_protocol::exec::{
-    ExecCommand, ExecEvent, ExecStream, RequestId, EXEC_CHANNEL_ARG,
-};
+use maestro_protocol::exec::{ExecCommand, ExecEvent, ExecStream, RequestId, EXEC_CHANNEL_ARG};
 use maestro_protocol::write_frame;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
@@ -56,9 +54,17 @@ impl CommandOutput {
 /// remote ones — but it is served by a direct spawn, not a channel. See [`channel_for`].
 pub enum ExecTarget<'a> {
     Local,
-    Wsl { distro: &'a str },
-    Docker { cli: ContainerCli, container: &'a str },
-    Ssh { connection_id: i32, session: &'a RemoteSshSession },
+    Wsl {
+        distro: &'a str,
+    },
+    Docker {
+        cli: ContainerCli,
+        container: &'a str,
+    },
+    Ssh {
+        connection_id: i32,
+        session: &'a RemoteSshSession,
+    },
 }
 
 /// Identifies the host a channel serves, without the SSH session an [`ExecTarget`] carries, so it
@@ -78,9 +84,10 @@ impl<'a> ExecTarget<'a> {
         use crate::models::GitConnection;
         match conn {
             GitConnection::Local { .. } => ExecTarget::Local,
-            GitConnection::Remote { ssh, .. } => {
-                ExecTarget::Ssh { connection_id: ssh.connection_id(), session: ssh }
-            }
+            GitConnection::Remote { ssh, .. } => ExecTarget::Ssh {
+                connection_id: ssh.connection_id(),
+                session: ssh,
+            },
             GitConnection::Wsl { distro, .. } => ExecTarget::Wsl { distro },
             GitConnection::Docker { container_name, .. } => ExecTarget::Docker {
                 cli: ContainerCli::detect().unwrap_or(ContainerCli::Docker),
@@ -214,7 +221,11 @@ pub async fn run_with_stdin(
         return cold_spawn(target, cwd, program, args, command.stdin).await;
     }
 
-    let mut output = CommandOutput { stdout: Vec::new(), stderr: Vec::new(), exit_code: -1 };
+    let mut output = CommandOutput {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        exit_code: -1,
+    };
     let result = loop {
         match rx.recv().await {
             Some(ExecEvent::Chunk { stream, bytes, .. }) => match stream {
@@ -322,8 +333,14 @@ async fn start_child(mut command: tokio::process::Command) -> Result<Channel, St
         .spawn()
         .map_err(|e| format!("failed to start exec channel: {}", e))?;
 
-    let mut stdin = child.stdin.take().ok_or("exec channel stdin was not piped")?;
-    let stdout = child.stdout.take().ok_or("exec channel stdout was not piped")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("exec channel stdin was not piped")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("exec channel stdout was not piped")?;
 
     let (outgoing, mut to_send) = mpsc::channel::<Vec<u8>>(32);
     tokio::spawn(async move {
@@ -398,8 +415,11 @@ async fn start_over_ssh(session: &RemoteSshSession, launch: &str) -> Result<Chan
             }
             match read_half.wait().await {
                 Some(ChannelMsg::Data { data }) => buffer.extend_from_slice(&data),
-                Some(ChannelMsg::ExtendedData { .. }) | Some(ChannelMsg::WindowAdjusted { .. }) => {}
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | Some(ChannelMsg::ExitStatus { .. })
+                Some(ChannelMsg::ExtendedData { .. }) | Some(ChannelMsg::WindowAdjusted { .. }) => {
+                }
+                Some(ChannelMsg::Eof)
+                | Some(ChannelMsg::Close)
+                | Some(ChannelMsg::ExitStatus { .. })
                 | None => break,
                 _ => {}
             }
@@ -412,7 +432,9 @@ async fn start_over_ssh(session: &RemoteSshSession, launch: &str) -> Result<Chan
 
 fn deliver(pending: &Pending, event: ExecEvent) {
     let id = match &event {
-        ExecEvent::Chunk { id, .. } | ExecEvent::Exit { id, .. } | ExecEvent::Failed { id, .. } => *id,
+        ExecEvent::Chunk { id, .. } | ExecEvent::Exit { id, .. } | ExecEvent::Failed { id, .. } => {
+            *id
+        }
     };
     if let Ok(pending) = pending.lock() {
         if let Some(sink) = pending.get(&id) {
@@ -450,20 +472,29 @@ async fn cold_spawn(
             line = format!("cd {} && {}", shell_quote(cwd), line);
         }
         let result = match stdin {
-            Some(bytes) => session.execute_command_direct_with_stdin(&line, &bytes).await,
+            Some(bytes) => {
+                session
+                    .execute_command_direct_with_stdin(&line, &bytes)
+                    .await
+            }
             None => session.execute_command_direct(&line).await,
         };
         return match result {
-            Ok(stdout) => {
-                Ok(CommandOutput { stdout: stdout.into_bytes(), stderr: Vec::new(), exit_code: 0 })
-            }
+            Ok(stdout) => Ok(CommandOutput {
+                stdout: stdout.into_bytes(),
+                stderr: Vec::new(),
+                exit_code: 0,
+            }),
             // A non-zero exit is a result, not a transport failure — keep it shaped like one so
             // callers see the same thing on both paths.
-            Err(crate::connectivity::ssh::SshError::CommandExecutionError { exit_code, stderr })
-                if exit_code != -1 =>
-            {
-                Ok(CommandOutput { stdout: Vec::new(), stderr: stderr.into_bytes(), exit_code })
-            }
+            Err(crate::connectivity::ssh::SshError::CommandExecutionError {
+                exit_code,
+                stderr,
+            }) if exit_code != -1 => Ok(CommandOutput {
+                stdout: Vec::new(),
+                stderr: stderr.into_bytes(),
+                exit_code,
+            }),
             Err(e) => Err(format!("{:?}", e)),
         };
     }
@@ -506,15 +537,26 @@ async fn cold_spawn(
         }
         ExecTarget::Ssh { .. } => unreachable!("handled above"),
     };
-    command.stdout(Stdio::piped()).stderr(Stdio::piped()).no_console_window();
-    command.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .no_console_window();
+    command.stdin(if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
 
     let mut child = command
         .spawn()
         .map_err(|e| format!("failed to run {}: {}", program, e))?;
     if let (Some(bytes), Some(mut sink)) = (stdin.as_ref(), child.stdin.take()) {
-        sink.write_all(bytes).await.map_err(|e| format!("failed to write stdin: {}", e))?;
-        sink.flush().await.map_err(|e| format!("failed to flush stdin: {}", e))?;
+        sink.write_all(bytes)
+            .await
+            .map_err(|e| format!("failed to write stdin: {}", e))?;
+        sink.flush()
+            .await
+            .map_err(|e| format!("failed to flush stdin: {}", e))?;
         drop(sink);
     }
     let output = child

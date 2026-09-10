@@ -42,7 +42,8 @@ async fn fetch_image_with_auth(
 ) -> Result<Vec<u8>, String> {
     let client = crate::integration::build_http_client()?;
 
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(app_state, project_id).await?;
     let config: ProjectConfig =
         crate::core::read_maestro_json(&git_conn, crate::project::settings::SETTINGS_FILE).await;
     let ticketing = config.issue_tracking.as_ref();
@@ -50,19 +51,23 @@ async fn fetch_image_with_auth(
     let mut request = client.get(url);
 
     if let Some(tc) = ticketing {
-        if let Ok(creds) = super::issue_tracking_handlers::get_integration_creds(&tc.provider, app_state) {
+        if let Ok(creds) =
+            super::issue_tracking_handlers::get_integration_creds(&tc.provider, app_state)
+        {
             request = match tc.provider.as_str() {
                 "github" => request.header("Authorization", format!("Bearer {}", creds.token)),
                 "gitlab" => request.header("PRIVATE-TOKEN", &creds.token),
                 "jira_cloud" => {
                     let email = creds.email.as_deref().unwrap_or("");
                     let credentials = format!("{}:{}", email, creds.token);
-                    let auth = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+                    let auth =
+                        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
                     request.header("Authorization", format!("Basic {}", auth))
                 }
                 "azuredevops" => {
                     let credentials = format!(":{}", creds.token);
-                    let auth = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+                    let auth =
+                        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
                     request.header("Authorization", format!("Basic {}", auth))
                 }
                 "gitea" | "forgejo" => {
@@ -94,7 +99,8 @@ async fn fetch_jira_attachment(
     project_id: i32,
     attachment_id: &str,
 ) -> Result<Vec<u8>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(app_state, project_id).await?;
     let config: ProjectConfig =
         crate::core::read_maestro_json(&git_conn, crate::project::settings::SETTINGS_FILE).await;
     let ticketing = config

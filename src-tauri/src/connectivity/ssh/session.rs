@@ -1,20 +1,20 @@
+use crate::connectivity::ssh::auth::{authenticate_via_agent, expand_tilde, open_handle};
+use crate::connectivity::ssh::error::SshError;
+pub use crate::connectivity::ssh::history::SshPtyHandle;
+pub use crate::connectivity::ssh::pty::SshWriteOp;
+pub use crate::connectivity::ssh::types::{
+    ReconnectingPayload, SshAuthMethod, SshConnection, SshConnectionState,
+};
+use crate::connectivity::ssh::PasswordManager;
+use russh::client::{self, Handle};
+use russh::keys::PrivateKeyWithHashAlg;
+use russh::ChannelMsg;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use zeroize::Zeroizing;
-use russh::client::{self, Handle};
-use russh::ChannelMsg;
-use russh::keys::PrivateKeyWithHashAlg;
-use crate::connectivity::ssh::error::SshError;
-use crate::connectivity::ssh::PasswordManager;
-use crate::connectivity::ssh::auth::{authenticate_via_agent, expand_tilde, open_handle};
-pub use crate::connectivity::ssh::types::{
-    SshAuthMethod, SshConnection, SshConnectionState, ReconnectingPayload,
-};
-pub use crate::connectivity::ssh::history::SshPtyHandle;
-pub use crate::connectivity::ssh::pty::SshWriteOp;
 
 /// russh client handler — accepts all server keys (same behaviour as previous libssh2 code)
 pub(crate) struct SshClientHandler;
@@ -93,45 +93,62 @@ impl RemoteSshSession {
                             "No password found for {connection_string}"
                         ))
                     })?;
-                    *self.session_password.lock().await = Some(Zeroizing::new(mem_password.clone()));
+                    *self.session_password.lock().await =
+                        Some(Zeroizing::new(mem_password.clone()));
                     Zeroizing::new(mem_password)
                 };
 
                 handle
                     .authenticate_password(&username, pwd.as_str())
                     .await
-                    .map_err(|e| SshError::AuthenticationError(format!(
-                        "Password authentication failed: {}", e
-                    )))?
+                    .map_err(|e| {
+                        SshError::AuthenticationError(format!(
+                            "Password authentication failed: {}",
+                            e
+                        ))
+                    })?
             }
 
-            SshAuthMethod::KeyFile { path, save_passphrase } => {
+            SshAuthMethod::KeyFile {
+                path,
+                save_passphrase,
+            } => {
                 let expanded = expand_tilde(path);
                 let mem_passphrase = self.key_passphrase.lock().await.clone();
                 let passphrase = if mem_passphrase.is_some() {
                     mem_passphrase
                 } else if *save_passphrase {
-                    PasswordManager::get_passphrase(&expanded).ok().map(|p| p.to_string())
+                    PasswordManager::get_passphrase(&expanded)
+                        .ok()
+                        .map(|p| p.to_string())
                 } else {
                     None
                 };
 
                 if !Path::new(&expanded).exists() {
                     return Err(SshError::AuthenticationError(format!(
-                        "Key file not found on reconnect: '{}'", expanded
+                        "Key file not found on reconnect: '{}'",
+                        expanded
                     )));
                 }
 
                 let key = russh::keys::load_secret_key(Path::new(&expanded), passphrase.as_deref())
-                    .map_err(|e| SshError::AuthenticationError(format!(
-                        "Failed to load key '{}': {}", expanded, e
-                    )))?;
+                    .map_err(|e| {
+                        SshError::AuthenticationError(format!(
+                            "Failed to load key '{}': {}",
+                            expanded, e
+                        ))
+                    })?;
 
-                let hash_alg = handle.best_supported_rsa_hash()
+                let hash_alg = handle
+                    .best_supported_rsa_hash()
                     .await
-                    .map_err(|e| SshError::ConnectionError(format!(
-                        "Failed to query RSA hash algorithms: {}", e
-                    )))?
+                    .map_err(|e| {
+                        SshError::ConnectionError(format!(
+                            "Failed to query RSA hash algorithms: {}",
+                            e
+                        ))
+                    })?
                     .flatten();
 
                 handle
@@ -140,16 +157,19 @@ impl RemoteSshSession {
                         PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
                     )
                     .await
-                    .map_err(|e| SshError::AuthenticationError(format!(
-                        "Public key authentication failed for '{}' on reconnect: {}", expanded, e
-                    )))?
+                    .map_err(|e| {
+                        SshError::AuthenticationError(format!(
+                            "Public key authentication failed for '{}' on reconnect: {}",
+                            expanded, e
+                        ))
+                    })?
             }
 
             SshAuthMethod::Agent => {
                 let authenticated = authenticate_via_agent(&mut handle, &username).await?;
                 if !authenticated {
                     return Err(SshError::AuthenticationError(
-                        "SSH agent: no key was accepted by the server".to_string()
+                        "SSH agent: no key was accepted by the server".to_string(),
                     ));
                 }
                 // Return early — already confirmed authenticated
@@ -193,7 +213,9 @@ impl RemoteSshSession {
             fallback_path = path.clone();
             fallback_path.as_str()
         } else {
-            return Err(SshError::AuthenticationError("No key path provided".to_string()));
+            return Err(SshError::AuthenticationError(
+                "No key path provided".to_string(),
+            ));
         };
 
         let expanded = expand_tilde(path);
@@ -206,12 +228,12 @@ impl RemoteSshSession {
         }
 
         // Read the file to detect if it is a public key (user error)
-        let key_data = std::fs::read_to_string(&expanded)
-            .map_err(|e| SshError::AuthenticationError(format!(
-                "Cannot read key file '{}': {}", expanded, e
-            )))?;
+        let key_data = std::fs::read_to_string(&expanded).map_err(|e| {
+            SshError::AuthenticationError(format!("Cannot read key file '{}': {}", expanded, e))
+        })?;
 
-        if key_data.starts_with("ssh-") || key_data.starts_with("ecdsa-")
+        if key_data.starts_with("ssh-")
+            || key_data.starts_with("ecdsa-")
             || key_data.contains("BEGIN PUBLIC KEY")
         {
             return Err(SshError::AuthenticationError(
@@ -226,15 +248,16 @@ impl RemoteSshSession {
 
         // russh-keys handles all formats natively (OpenSSH ed25519, RSA PEM, ECDSA, …)
         let key = russh::keys::load_secret_key(Path::new(&expanded), passphrase.as_deref())
-            .map_err(|e| SshError::AuthenticationError(format!(
-                "Failed to load key '{}': {}", expanded, e
-            )))?;
+            .map_err(|e| {
+                SshError::AuthenticationError(format!("Failed to load key '{}': {}", expanded, e))
+            })?;
 
-        let hash_alg = handle.best_supported_rsa_hash()
+        let hash_alg = handle
+            .best_supported_rsa_hash()
             .await
-            .map_err(|e| SshError::ConnectionError(format!(
-                "Failed to query RSA hash algorithms: {}", e
-            )))?
+            .map_err(|e| {
+                SshError::ConnectionError(format!("Failed to query RSA hash algorithms: {}", e))
+            })?
             .flatten();
 
         let auth_result = handle
@@ -243,13 +266,17 @@ impl RemoteSshSession {
                 PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
             )
             .await
-            .map_err(|e| SshError::AuthenticationError(format!(
-                "Public key authentication failed for '{}': {}", expanded, e
-            )))?;
+            .map_err(|e| {
+                SshError::AuthenticationError(format!(
+                    "Public key authentication failed for '{}': {}",
+                    expanded, e
+                ))
+            })?;
 
         if !auth_result.success() {
             return Err(SshError::AuthenticationError(format!(
-                "Server did not grant access for '{}'", expanded
+                "Server did not grant access for '{}'",
+                expanded
             )));
         }
 
@@ -288,7 +315,10 @@ impl RemoteSshSession {
         };
         let output = crate::connectivity::exec_channel::run(&target, None, "sh", &["-c", cmd])
             .await
-            .map_err(|e| SshError::CommandExecutionError { exit_code: -1, stderr: e })?;
+            .map_err(|e| SshError::CommandExecutionError {
+                exit_code: -1,
+                stderr: e,
+            })?;
         finish_command(output)
     }
 
@@ -310,7 +340,10 @@ impl RemoteSshSession {
             Some(stdin_data.to_vec()),
         )
         .await
-        .map_err(|e| SshError::CommandExecutionError { exit_code: -1, stderr: e })?;
+        .map_err(|e| SshError::CommandExecutionError {
+            exit_code: -1,
+            stderr: e,
+        })?;
         finish_command(output)
     }
 
@@ -328,9 +361,9 @@ impl RemoteSshSession {
         let mut channel = {
             let open_result = {
                 let guard = self.handle.lock().await;
-                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                    "No active SSH session".to_string(),
-                ))?;
+                let handle = guard.as_ref().ok_or_else(|| {
+                    SshError::ConnectionError("No active SSH session".to_string())
+                })?;
                 handle.channel_open_session().await
             };
 
@@ -341,13 +374,17 @@ impl RemoteSshSession {
                     *self.state.lock().await = SshConnectionState::Disconnected;
                     self.reconnect_if_needed().await?;
                     let guard = self.handle.lock().await;
-                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                        "No active SSH session after reconnect".to_string(),
-                    ))?;
-                    handle
-                        .channel_open_session()
-                        .await
-                        .map_err(|e2| SshError::ConnectionError(format!("Failed to create channel after reconnect: {}", e2)))?
+                    let handle = guard.as_ref().ok_or_else(|| {
+                        SshError::ConnectionError(
+                            "No active SSH session after reconnect".to_string(),
+                        )
+                    })?;
+                    handle.channel_open_session().await.map_err(|e2| {
+                        SshError::ConnectionError(format!(
+                            "Failed to create channel after reconnect: {}",
+                            e2
+                        ))
+                    })?
                 }
             }
         };
@@ -383,7 +420,11 @@ impl RemoteSshSession {
         if exit_code != 0 {
             return Err(SshError::CommandExecutionError {
                 exit_code,
-                stderr: if stderr_buf.is_empty() { stdout } else { stderr_buf },
+                stderr: if stderr_buf.is_empty() {
+                    stdout
+                } else {
+                    stderr_buf
+                },
             });
         }
 
@@ -391,7 +432,11 @@ impl RemoteSshSession {
     }
 
     /// As [`Self::execute_command_direct`], piping `stdin_data` to the command's stdin.
-    pub(crate) async fn execute_command_direct_with_stdin(&self, cmd: &str, stdin_data: &[u8]) -> Result<String, SshError> {
+    pub(crate) async fn execute_command_direct_with_stdin(
+        &self,
+        cmd: &str,
+        stdin_data: &[u8],
+    ) -> Result<String, SshError> {
         if !self.is_connected().await {
             self.reconnect_if_needed().await?;
         }
@@ -399,9 +444,9 @@ impl RemoteSshSession {
         let mut channel = {
             let open_result = {
                 let guard = self.handle.lock().await;
-                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                    "No active SSH session".to_string(),
-                ))?;
+                let handle = guard.as_ref().ok_or_else(|| {
+                    SshError::ConnectionError("No active SSH session".to_string())
+                })?;
                 handle.channel_open_session().await
             };
 
@@ -411,13 +456,17 @@ impl RemoteSshSession {
                     *self.state.lock().await = SshConnectionState::Disconnected;
                     self.reconnect_if_needed().await?;
                     let guard = self.handle.lock().await;
-                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                        "No active SSH session after reconnect".to_string(),
-                    ))?;
-                    handle
-                        .channel_open_session()
-                        .await
-                        .map_err(|e| SshError::ConnectionError(format!("Failed to create channel after reconnect: {}", e)))?
+                    let handle = guard.as_ref().ok_or_else(|| {
+                        SshError::ConnectionError(
+                            "No active SSH session after reconnect".to_string(),
+                        )
+                    })?;
+                    handle.channel_open_session().await.map_err(|e| {
+                        SshError::ConnectionError(format!(
+                            "Failed to create channel after reconnect: {}",
+                            e
+                        ))
+                    })?
                 }
             }
         };
@@ -468,7 +517,11 @@ impl RemoteSshSession {
         if exit_code != 0 {
             return Err(SshError::CommandExecutionError {
                 exit_code,
-                stderr: if stderr_buf.is_empty() { stdout } else { stderr_buf },
+                stderr: if stderr_buf.is_empty() {
+                    stdout
+                } else {
+                    stderr_buf
+                },
             });
         }
 
@@ -479,16 +532,19 @@ impl RemoteSshSession {
     ///
     /// Unlike `execute_command` (which collects all output), this returns the raw channel so
     /// callers can use split() for concurrent stdin writes and stdout reads (e.g. ACP sessions).
-    pub async fn open_exec_channel(&self, cmd: &str) -> Result<russh::Channel<russh::client::Msg>, SshError> {
+    pub async fn open_exec_channel(
+        &self,
+        cmd: &str,
+    ) -> Result<russh::Channel<russh::client::Msg>, SshError> {
         if !self.is_connected().await {
             self.reconnect_if_needed().await?;
         }
 
         let channel = {
             let guard = self.handle.lock().await;
-            let handle = guard.as_ref().ok_or_else(|| {
-                SshError::ConnectionError("No active SSH session".to_string())
-            })?;
+            let handle = guard
+                .as_ref()
+                .ok_or_else(|| SshError::ConnectionError("No active SSH session".to_string()))?;
             handle.channel_open_session().await.map_err(|e| {
                 SshError::ConnectionError(format!("Failed to open SSH channel: {}", e))
             })?
@@ -518,9 +574,9 @@ impl RemoteSshSession {
         let channel = {
             let open_result = {
                 let guard = self.handle.lock().await;
-                let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                    "No active SSH session".to_string(),
-                ))?;
+                let handle = guard.as_ref().ok_or_else(|| {
+                    SshError::ConnectionError("No active SSH session".to_string())
+                })?;
                 handle.channel_open_session().await
             };
 
@@ -530,31 +586,30 @@ impl RemoteSshSession {
                     *self.state.lock().await = SshConnectionState::Disconnected;
                     self.reconnect_if_needed().await?;
                     let guard = self.handle.lock().await;
-                    let handle = guard.as_ref().ok_or_else(|| SshError::ConnectionError(
-                        "No active SSH session after reconnect".to_string(),
-                    ))?;
-                    handle
-                        .channel_open_session()
-                        .await
-                        .map_err(|e| SshError::ConnectionError(
-                            format!("Failed to create SFTP channel after reconnect: {}", e),
-                        ))?
+                    let handle = guard.as_ref().ok_or_else(|| {
+                        SshError::ConnectionError(
+                            "No active SSH session after reconnect".to_string(),
+                        )
+                    })?;
+                    handle.channel_open_session().await.map_err(|e| {
+                        SshError::ConnectionError(format!(
+                            "Failed to create SFTP channel after reconnect: {}",
+                            e
+                        ))
+                    })?
                 }
             }
         };
 
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| SshError::ConnectionError(
-                format!("Failed to request SFTP subsystem: {}", e),
-            ))?;
+        channel.request_subsystem(true, "sftp").await.map_err(|e| {
+            SshError::ConnectionError(format!("Failed to request SFTP subsystem: {}", e))
+        })?;
 
         russh_sftp::client::SftpSession::new(channel.into_stream())
             .await
-            .map_err(|e| SshError::ConnectionError(
-                format!("Failed to initialize SFTP session: {}", e),
-            ))
+            .map_err(|e| {
+                SshError::ConnectionError(format!("Failed to initialize SFTP session: {}", e))
+            })
     }
 
     /// Reconnect if needed with exponential backoff.
@@ -562,7 +617,12 @@ impl RemoteSshSession {
     pub(crate) async fn reconnect_if_needed(&self) -> Result<(), SshError> {
         // Hold state lock across check+transition so a concurrent caller sees Connecting and waits
         let mut state = self.state.lock().await;
-        let password = self.session_password.lock().await.as_ref().map(|p| p.to_string());
+        let password = self
+            .session_password
+            .lock()
+            .await
+            .as_ref()
+            .map(|p| p.to_string());
 
         match *state {
             SshConnectionState::Connected => Ok(()),
@@ -610,7 +670,10 @@ impl std::fmt::Debug for RemoteSshSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RemoteSshSession")
             .field("ssh_connection", &self.ssh_connection)
-            .field("reconnect_attempts", &self.reconnect_attempts.load(Ordering::SeqCst))
+            .field(
+                "reconnect_attempts",
+                &self.reconnect_attempts.load(Ordering::SeqCst),
+            )
             .finish()
     }
 }
@@ -627,6 +690,10 @@ fn finish_command(
     let stderr = output.stderr_string();
     Err(SshError::CommandExecutionError {
         exit_code: output.exit_code,
-        stderr: if stderr.is_empty() { output.stdout_string() } else { stderr },
+        stderr: if stderr.is_empty() {
+            output.stdout_string()
+        } else {
+            stderr
+        },
     })
 }

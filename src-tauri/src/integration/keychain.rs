@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use aes_gcm::{
-    Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
 };
-use rand::RngCore;
 use keyring::Entry;
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-use crate::models::integration::IntegrationCredentials;
 use crate::integration::token_manager::StoredToken;
+use crate::models::integration::IntegrationCredentials;
 
 /// Signals which storage backend served the operation.
 /// Used by TokenManager to emit the keyring-unavailable warning exactly once.
@@ -58,7 +58,10 @@ impl KeychainStore {
             .unwrap_or_default()
     }
 
-    fn write_registry(registry: &HashMap<String, Vec<String>>, app_data_dir: &Path) -> Result<(), String> {
+    fn write_registry(
+        registry: &HashMap<String, Vec<String>>,
+        app_data_dir: &Path,
+    ) -> Result<(), String> {
         let json = serde_json::to_string(registry)
             .map_err(|e| format!("Registry serialization failed: {}", e))?;
         std::fs::write(registry_path(app_data_dir), json)
@@ -90,8 +93,8 @@ impl KeychainStore {
         creds: &IntegrationCredentials,
         app_data_dir: &Path,
     ) -> Result<KeychainOutcome<()>, String> {
-        let json = serde_json::to_string(creds)
-            .map_err(|e| format!("Serialization failed: {}", e))?;
+        let json =
+            serde_json::to_string(creds).map_err(|e| format!("Serialization failed: {}", e))?;
         let entry = Entry::new(SERVICE, &integration_key(provider, id))
             .map_err(|e| format!("Keyring error: {}", e))?;
         let outcome = match entry.set_password(&json) {
@@ -157,8 +160,8 @@ impl KeychainStore {
     ) -> Result<(), String> {
         std::fs::create_dir_all(app_data_dir.join("tokens"))
             .map_err(|e| format!("Failed to create tokens directory: {}", e))?;
-        let plaintext = serde_json::to_vec(creds)
-            .map_err(|e| format!("Serialization failed: {}", e))?;
+        let plaintext =
+            serde_json::to_vec(creds).map_err(|e| format!("Serialization failed: {}", e))?;
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let key = Key::<Aes256Gcm>::from(key_bytes);
         let cipher = Aes256Gcm::new(&key);
@@ -170,8 +173,11 @@ impl KeychainStore {
             .map_err(|e| format!("Encryption failed: {}", e))?;
         let mut output = nonce.to_vec();
         output.extend_from_slice(&ciphertext);
-        std::fs::write(integration_file_path_for_id(provider, id, app_data_dir), &output)
-            .map_err(|e| format!("Failed to write integration file: {}", e))?;
+        std::fs::write(
+            integration_file_path_for_id(provider, id, app_data_dir),
+            &output,
+        )
+        .map_err(|e| format!("Failed to write integration file: {}", e))?;
         Ok(())
     }
 
@@ -180,7 +186,10 @@ impl KeychainStore {
         id: &str,
         app_data_dir: &Path,
     ) -> Result<Option<IntegrationCredentials>, String> {
-        Self::decrypt_integration_file(&integration_file_path_for_id(provider, id, app_data_dir), app_data_dir)
+        Self::decrypt_integration_file(
+            &integration_file_path_for_id(provider, id, app_data_dir),
+            app_data_dir,
+        )
     }
 
     // ── Legacy provider-keyed API (for one-time migration) ────────────────────
@@ -201,11 +210,15 @@ impl KeychainStore {
             }
             Err(keyring::Error::NoEntry) => {
                 // Try file fallback at old path: tokens/{provider}.enc
-                let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+                let legacy_path = app_data_dir
+                    .join("tokens")
+                    .join(format!("{}.enc", provider));
                 Self::decrypt_integration_file(&legacy_path, app_data_dir)
             }
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
-                let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+                let legacy_path = app_data_dir
+                    .join("tokens")
+                    .join(format!("{}.enc", provider));
                 Self::decrypt_integration_file(&legacy_path, app_data_dir)
             }
             Err(e) => Err(format!("Keyring error: {}", e)),
@@ -217,7 +230,9 @@ impl KeychainStore {
         if let Ok(entry) = Entry::new(SERVICE, &integration_key_legacy(provider)) {
             let _ = entry.delete_credential();
         }
-        let legacy_path = app_data_dir.join("tokens").join(format!("{}.enc", provider));
+        let legacy_path = app_data_dir
+            .join("tokens")
+            .join(format!("{}.enc", provider));
         let _ = std::fs::remove_file(&legacy_path);
     }
 
@@ -259,8 +274,8 @@ impl KeychainStore {
         token: &StoredToken,
         app_data_dir: &Path,
     ) -> Result<KeychainOutcome<()>, String> {
-        let json = serde_json::to_string(token)
-            .map_err(|e| format!("Serialization failed: {}", e))?;
+        let json =
+            serde_json::to_string(token).map_err(|e| format!("Serialization failed: {}", e))?;
         let entry = Entry::new(SERVICE, &username(project_id))
             .map_err(|e| format!("Keyring error: {}", e))?;
         match entry.set_password(&json) {
@@ -357,7 +372,9 @@ impl KeychainStore {
     }
 
     fn token_file_path(project_id: i32, app_data_dir: &Path) -> PathBuf {
-        app_data_dir.join("tokens").join(format!("{}.enc", project_id))
+        app_data_dir
+            .join("tokens")
+            .join(format!("{}.enc", project_id))
     }
 
     fn write_to_file(
@@ -367,8 +384,8 @@ impl KeychainStore {
     ) -> Result<(), String> {
         std::fs::create_dir_all(app_data_dir.join("tokens"))
             .map_err(|e| format!("Failed to create tokens directory: {}", e))?;
-        let plaintext = serde_json::to_vec(token)
-            .map_err(|e| format!("Serialization failed: {}", e))?;
+        let plaintext =
+            serde_json::to_vec(token).map_err(|e| format!("Serialization failed: {}", e))?;
         let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
         let key = Key::<Aes256Gcm>::from(key_bytes);
         let cipher = Aes256Gcm::new(&key);
@@ -385,10 +402,7 @@ impl KeychainStore {
         Ok(())
     }
 
-    fn read_from_file(
-        project_id: i32,
-        app_data_dir: &Path,
-    ) -> Result<Option<StoredToken>, String> {
+    fn read_from_file(project_id: i32, app_data_dir: &Path) -> Result<Option<StoredToken>, String> {
         let path = Self::token_file_path(project_id, app_data_dir);
         if !path.exists() {
             return Ok(None);
@@ -422,8 +436,7 @@ impl KeychainStore {
         if !path.exists() {
             return Ok(());
         }
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete token file: {}", e))
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete token file: {}", e))
     }
 }
 
@@ -457,8 +470,16 @@ mod tests {
     fn test_integration_file_roundtrip() {
         let dir = tempfile::tempdir().expect("tempdir");
         let creds = test_credentials("github");
-        KeychainStore::write_integration_to_file_by_id("github", "test-id-github", &creds, dir.path()).expect("write");
-        let result = KeychainStore::read_integration_from_file_by_id("github", "test-id-github", dir.path()).expect("read");
+        KeychainStore::write_integration_to_file_by_id(
+            "github",
+            "test-id-github",
+            &creds,
+            dir.path(),
+        )
+        .expect("write");
+        let result =
+            KeychainStore::read_integration_from_file_by_id("github", "test-id-github", dir.path())
+                .expect("read");
         let retrieved = result.expect("creds present");
         assert_eq!(retrieved.token, "test_token");
         assert_eq!(retrieved.display_name.as_deref(), Some("github_user"));
@@ -468,8 +489,16 @@ mod tests {
     fn test_integration_file_roundtrip_linear() {
         let dir = tempfile::tempdir().expect("tempdir");
         let creds = test_credentials("linear");
-        KeychainStore::write_integration_to_file_by_id("linear", "test-id-linear", &creds, dir.path()).expect("write");
-        let result = KeychainStore::read_integration_from_file_by_id("linear", "test-id-linear", dir.path()).expect("read");
+        KeychainStore::write_integration_to_file_by_id(
+            "linear",
+            "test-id-linear",
+            &creds,
+            dir.path(),
+        )
+        .expect("write");
+        let result =
+            KeychainStore::read_integration_from_file_by_id("linear", "test-id-linear", dir.path())
+                .expect("read");
         let retrieved = result.expect("creds present");
         assert_eq!(retrieved.token, "test_token");
         assert_eq!(retrieved.display_name.as_deref(), Some("linear_user"));
@@ -478,7 +507,9 @@ mod tests {
     #[test]
     fn test_integration_file_roundtrip_missing_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let result = KeychainStore::read_integration_from_file_by_id("github", "nonexistent-id", dir.path()).expect("no error on absent");
+        let result =
+            KeychainStore::read_integration_from_file_by_id("github", "nonexistent-id", dir.path())
+                .expect("no error on absent");
         assert!(result.is_none());
     }
 
@@ -486,16 +517,31 @@ mod tests {
     fn test_integration_file_roundtrip_corrupted_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("tokens")).unwrap();
-        std::fs::write(dir.path().join("tokens/github_some-id.enc"), b"corrupted_data_not_encrypted").unwrap();
-        let result = KeychainStore::read_integration_from_file_by_id("github", "some-id", dir.path()).expect("no error on corrupted");
+        std::fs::write(
+            dir.path().join("tokens/github_some-id.enc"),
+            b"corrupted_data_not_encrypted",
+        )
+        .unwrap();
+        let result =
+            KeychainStore::read_integration_from_file_by_id("github", "some-id", dir.path())
+                .expect("no error on corrupted");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_integration_key_format() {
-        assert_eq!(integration_key("github", "abc"), "maestro:integration:github:abc");
-        assert_eq!(integration_key("linear", "uuid-1"), "maestro:integration:linear:uuid-1");
-        assert_eq!(integration_key("jira_cloud", "uuid-2"), "maestro:integration:jira_cloud:uuid-2");
+        assert_eq!(
+            integration_key("github", "abc"),
+            "maestro:integration:github:abc"
+        );
+        assert_eq!(
+            integration_key("linear", "uuid-1"),
+            "maestro:integration:linear:uuid-1"
+        );
+        assert_eq!(
+            integration_key("jira_cloud", "uuid-2"),
+            "maestro:integration:jira_cloud:uuid-2"
+        );
     }
 
     #[test]
@@ -534,7 +580,11 @@ mod tests {
     fn test_file_roundtrip_corrupted_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("tokens")).unwrap();
-        std::fs::write(dir.path().join("tokens/1.enc"), b"corrupted_data_not_encrypted").unwrap();
+        std::fs::write(
+            dir.path().join("tokens/1.enc"),
+            b"corrupted_data_not_encrypted",
+        )
+        .unwrap();
         let result = KeychainStore::read_from_file(1, dir.path()).expect("no error on corrupted");
         assert!(result.is_none());
     }

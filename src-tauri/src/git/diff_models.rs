@@ -13,7 +13,9 @@ use specta::Type;
 #[specta(export)]
 pub enum DiffTarget {
     Head,
-    Commit { sha: String },
+    Commit {
+        sha: String,
+    },
     /// Everything this worktree has done since it diverged from `branch`.
     ///
     /// Resolved through `git merge-base`, and compared against the **working tree** rather than
@@ -22,8 +24,13 @@ pub enum DiffTarget {
     /// remote rather than the local branch, used two-dot semantics so commits the base gained
     /// after we branched showed up as reversed changes, and being a commit range could not see
     /// uncommitted work at all. Nothing ever constructed it.
-    BranchAll { branch: String },
-    CommitRange { from: String, to: String },
+    BranchAll {
+        branch: String,
+    },
+    CommitRange {
+        from: String,
+        to: String,
+    },
 }
 
 /// Return type for get_worktree_diff. Bundles the unified diff string with the

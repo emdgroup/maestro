@@ -1,6 +1,6 @@
+use super::remote;
 use crate::connectivity::exec_channel::{self, ExecTarget};
 use crate::models::GitConnection;
-use super::remote;
 
 /// Prefix on git error messages, kept per connection type because it is what users see when a
 /// git command fails and it says which machine failed it.
@@ -66,7 +66,15 @@ async fn run_git_in_dir_inner(
     ignore_exit_code: bool,
 ) -> Result<String, String> {
     let target = ExecTarget::of(conn);
-    run_git_on(&target, label_for(conn), abs_path, args, ignore_exit_code, None).await
+    run_git_on(
+        &target,
+        label_for(conn),
+        abs_path,
+        args,
+        ignore_exit_code,
+        None,
+    )
+    .await
 }
 
 /// Run a git command in a repository, wherever that repository lives.
@@ -120,13 +128,20 @@ pub async fn run_git_commands_lossy(
     if matches!(conn, GitConnection::Local { .. }) {
         let mut results = Vec::with_capacity(commands.len());
         for args in commands {
-            results.push(run_git_in_dir(conn, abs_path, args).await.unwrap_or_default());
+            results.push(
+                run_git_in_dir(conn, abs_path, args)
+                    .await
+                    .unwrap_or_default(),
+            );
         }
         return results;
     }
 
     let git_prefix = if matches!(conn, GitConnection::Wsl { .. }) {
-        format!("git -c http.sslVerify=false -C {}", remote::shell_quote(abs_path))
+        format!(
+            "git -c http.sslVerify=false -C {}",
+            remote::shell_quote(abs_path)
+        )
     } else {
         format!("git -C {}", remote::shell_quote(abs_path))
     };

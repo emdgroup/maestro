@@ -12,8 +12,8 @@ use crate::core::AppState;
 /// which EDR products flag as a reverse-shell pattern.
 #[cfg(windows)]
 fn resolve_windows_shell() -> String {
-    let program_files = std::env::var("ProgramFiles")
-        .unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string());
     let ps_dir = std::path::PathBuf::from(&program_files).join("PowerShell");
     if let Ok(entries) = std::fs::read_dir(&ps_dir) {
         let best = entries
@@ -72,9 +72,9 @@ pub async fn spawn_interactive_execution(
     task_id: Option<i32>,
     _task_description: Option<String>,
 ) -> Result<i32, String> {
-
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
-    let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let is_remote = project.is_remote();
 
     // Canonicalize only a path that is actually on this machine. A WSL or container path is not:
@@ -89,7 +89,10 @@ pub async fn spawn_interactive_execution(
     let worktree_abs_path: String = if let Some(wt_id) = worktree_id {
         // DB lookup path — skip git worktree list entirely when caller already knows the worktree ID
         let relative_path: String = {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let conn = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Lock failed: {}", e))?;
             conn.query_row(
                 "SELECT path FROM worktrees WHERE id = ?",
                 rusqlite::params![wt_id],
@@ -103,9 +106,9 @@ pub async fn spawn_interactive_execution(
         // be stale, and get_current_branch only returns the main-worktree HEAD (missing branches
         // in other worktrees).
         let git_worktrees = crate::git::list_worktrees(&git_conn).await?;
-        let existing_checkout = git_worktrees.into_iter().find(|wt| {
-            wt.branch.as_deref() == Some(branch.as_str())
-        });
+        let existing_checkout = git_worktrees
+            .into_iter()
+            .find(|wt| wt.branch.as_deref() == Some(branch.as_str()));
 
         // A terminal only ever attaches to a checkout that already exists — it must not create
         // one, so a branch without a worktree is an error the user resolves by making one.
@@ -121,10 +124,16 @@ pub async fn spawn_interactive_execution(
 
     // Step 2: Assign session key and optionally update task status.
     let now = chrono::Utc::now().to_rfc3339();
-    let log_id = app_state.pty.session_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let log_id = app_state
+        .pty
+        .session_counter
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     if let Some(tid) = task_id {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         // Only claim a task that is still queued — the user may have moved it since.
         //
         // A PTY has no separate readiness signal the way ACP does: by the time the process is
@@ -156,24 +165,31 @@ pub async fn spawn_interactive_execution(
             .connection_id
             .ok_or("Remote project has no connection_id")?;
         let ssh_session = app_state
-            .ssh.get_session(conn_id)
+            .ssh
+            .get_session(conn_id)
             .await
             .ok_or("SSH session not active. Connect to the remote host first")?;
 
-        let pty_handle = ssh_session
-            .spawn_remote_pty(80, 24, log_id)
-            .await?;
+        let pty_handle = ssh_session.spawn_remote_pty(80, 24, log_id).await?;
 
         // cd into the worktree directory and clear the screen.
         // Single-quote the path to prevent command injection.
         let escaped_path = worktree_abs_path.replace('\'', "'\\''");
         let init_cmd = format!("cd '{}' && clear\n", escaped_path);
-        pty_handle.write_tx
-            .send(crate::connectivity::ssh::SshWriteOp::Data(init_cmd.into_bytes()))
+        pty_handle
+            .write_tx
+            .send(crate::connectivity::ssh::SshWriteOp::Data(
+                init_cmd.into_bytes(),
+            ))
             .await
             .map_err(|e| format!("Failed to send init command to remote shell: {}", e))?;
 
-        app_state.ssh.pty_sessions.lock().await.insert(log_id, pty_handle);
+        app_state
+            .ssh
+            .pty_sessions
+            .lock()
+            .await
+            .insert(log_id, pty_handle);
     } else if let crate::models::GitConnection::Wsl { ref distro, .. } = git_conn {
         let shell = "wsl.exe".to_string();
         let args = vec![
@@ -187,22 +203,17 @@ pub async fn spawn_interactive_execution(
         let windows_cwd = std::env::var("USERPROFILE")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
-        let pty_session = crate::execution::spawn_agent_cli_pty(
-            log_id,
-            shell,
-            args,
-            windows_cwd,
-        )
-        .await?;
+        let pty_session =
+            crate::execution::spawn_agent_cli_pty(log_id, shell, args, windows_cwd).await?;
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(
-            log_id,
-            Arc::new(tokio::sync::Mutex::new(pty_session)),
-        );
+        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
         drop(sessions);
-    } else if let crate::models::GitConnection::Docker { ref container_name, .. } = git_conn {
+    } else if let crate::models::GitConnection::Docker {
+        ref container_name, ..
+    } = git_conn
+    {
         let cli = crate::connectivity::docker::ContainerCli::detect()?;
         let args = vec![
             "exec".to_string(),
@@ -234,20 +245,13 @@ pub async fn spawn_interactive_execution(
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| std::path::PathBuf::from(fallback))
         };
-        let pty_session = crate::execution::spawn_agent_cli_pty(
-            log_id,
-            cli.binary().to_string(),
-            args,
-            host_cwd,
-        )
-        .await?;
+        let pty_session =
+            crate::execution::spawn_agent_cli_pty(log_id, cli.binary().to_string(), args, host_cwd)
+                .await?;
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(
-            log_id,
-            Arc::new(tokio::sync::Mutex::new(pty_session)),
-        );
+        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
         drop(sessions);
     } else {
         #[cfg(windows)]
@@ -264,10 +268,7 @@ pub async fn spawn_interactive_execution(
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(
-            log_id,
-            Arc::new(tokio::sync::Mutex::new(pty_session)),
-        );
+        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
         drop(sessions);
     }
 

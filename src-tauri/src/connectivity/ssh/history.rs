@@ -1,6 +1,6 @@
+use crate::connectivity::ssh::pty::SshWriteOp;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
-use crate::connectivity::ssh::pty::SshWriteOp;
 
 /// Handle to a remote interactive SSH PTY session.
 ///

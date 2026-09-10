@@ -1,6 +1,6 @@
-use crate::models::issue_tracking::RemoteIssue;
-use crate::integration::token_manager::StoredToken;
 use super::normalize_instance_url;
+use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
 use base64::Engine as _;
 
 pub(crate) const AZDO_API_VERSION: &str = "7.0";
@@ -35,7 +35,10 @@ fn html_to_markdown(html: &str) -> String {
 /// Entra tokens and is not documented for a PAT.
 pub(crate) fn make_azdo_auth(token: &str) -> String {
     let credentials = format!(":{}", token);
-    format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes()))
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -128,7 +131,10 @@ pub async fn validate_and_store(
     let client = super::build_http_client()?;
 
     let response = client
-        .get(format!("{}/_apis/connectionData?api-version={}", base, AZDO_API_VERSION))
+        .get(format!(
+            "{}/_apis/connectionData?api-version={}",
+            base, AZDO_API_VERSION
+        ))
         .header("Authorization", auth)
         .send()
         .await
@@ -137,11 +143,19 @@ pub async fn validate_and_store(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+        let body_hint = if body.is_empty() {
+            String::new()
+        } else {
+            format!(" — {}", &body[..body.len().min(500)])
+        };
         if status.as_u16() == 401 {
             return Err("Azure DevOps: invalid or expired credentials".to_string());
         }
-        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+        return Err(format!(
+            "Azure DevOps: HTTP {}{}",
+            status.as_u16(),
+            body_hint
+        ));
     }
 
     let conn_data: AzdoConnectionDataResponse = response
@@ -192,7 +206,10 @@ pub async fn fetch_issues(
         escaped_project
     );
     let encoded_project = urlencoding::encode(project);
-    let wiql_url = format!("{}/{}/_apis/wit/wiql?api-version={}", base, encoded_project, AZDO_API_VERSION);
+    let wiql_url = format!(
+        "{}/{}/_apis/wit/wiql?api-version={}",
+        base, encoded_project, AZDO_API_VERSION
+    );
     let wiql_response = client
         .post(&wiql_url)
         .header("Authorization", auth.clone())
@@ -204,11 +221,19 @@ pub async fn fetch_issues(
     if !wiql_response.status().is_success() {
         let status = wiql_response.status();
         let body = wiql_response.text().await.unwrap_or_default();
-        let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+        let body_hint = if body.is_empty() {
+            String::new()
+        } else {
+            format!(" — {}", &body[..body.len().min(500)])
+        };
         if status.as_u16() == 401 {
             return Err("Azure DevOps: invalid or expired credentials".to_string());
         }
-        return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+        return Err(format!(
+            "Azure DevOps: HTTP {}{}",
+            status.as_u16(),
+            body_hint
+        ));
     }
 
     let wiql_result: WiqlResponse = wiql_response
@@ -223,14 +248,20 @@ pub async fn fetch_issues(
     }
 
     // Step 2: Batch fetch work item details in chunks of 200
-    let batch_url = format!("{}/{}/_apis/wit/workitemsbatch?api-version={}", base, encoded_project, AZDO_API_VERSION);
+    let batch_url = format!(
+        "{}/{}/_apis/wit/workitemsbatch?api-version={}",
+        base, encoded_project, AZDO_API_VERSION
+    );
     let mut results: Vec<RemoteIssue> = Vec::new();
 
     for chunk in ids.chunks(200) {
         let batch_response = client
             .post(&batch_url)
             .header("Authorization", auth.clone())
-            .json(&BatchRequest { ids: chunk, fields: WIQL_FIELDS })
+            .json(&BatchRequest {
+                ids: chunk,
+                fields: WIQL_FIELDS,
+            })
             .send()
             .await
             .map_err(|e| format!("Network error: {}", e))?;
@@ -238,11 +269,19 @@ pub async fn fetch_issues(
         if !batch_response.status().is_success() {
             let status = batch_response.status();
             let body = batch_response.text().await.unwrap_or_default();
-            let body_hint = if body.is_empty() { String::new() } else { format!(" — {}", &body[..body.len().min(500)]) };
+            let body_hint = if body.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", &body[..body.len().min(500)])
+            };
             if status.as_u16() == 401 {
                 return Err("Azure DevOps: invalid or expired credentials".to_string());
             }
-            return Err(format!("Azure DevOps: HTTP {}{}", status.as_u16(), body_hint));
+            return Err(format!(
+                "Azure DevOps: HTTP {}{}",
+                status.as_u16(),
+                body_hint
+            ));
         }
 
         let batch_result: BatchResponse = batch_response

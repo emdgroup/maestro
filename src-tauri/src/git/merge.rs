@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tauri::{Emitter, State};
+use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
+use crate::acp::ConnectionKey;
+use crate::core::{get_project_with_git_conn, AppState};
+use crate::models::{GitConnection, MergeResult, PullRequestCi};
+use crate::task::transition::{self, TaskTransition};
 use chrono::Utc;
 use rusqlite::Connection;
-use crate::models::{GitConnection, MergeResult, PullRequestCi};
-use crate::core::{AppState, get_project_with_git_conn};
-use crate::acp::ConnectionKey;
-use crate::task::transition::{self, TaskTransition};
-use super::exec::{run_git_in_dir, run_git_in_dir_lossy};
+use std::sync::Arc;
+use tauri::{Emitter, State};
 
 /// Squash merge a task branch into main using native Rust subprocess calls.
 ///
@@ -35,7 +35,12 @@ pub async fn squash_merge_to_base(
         .map_err(|e| format!("git checkout {} failed: {}", target_branch, e))?;
 
     // Step 2: squash merge (non-zero exit expected on conflicts)
-    let _ = run_git_in_dir_lossy(conn, repo_path, &["merge", branch_name, "--squash", "--no-commit"]).await;
+    let _ = run_git_in_dir_lossy(
+        conn,
+        repo_path,
+        &["merge", branch_name, "--squash", "--no-commit"],
+    )
+    .await;
 
     // Step 3: check for conflicts via git status --porcelain
     let status_stdout = run_git_in_dir(conn, repo_path, &["status", "--porcelain"])
@@ -71,9 +76,13 @@ pub async fn squash_merge_to_base(
     }
 
     // Step 5: commit with caller-provided message
-    run_git_in_dir(conn, repo_path, &["commit", "--no-verify", "-m", commit_message])
-        .await
-        .map_err(|e| format!("git commit failed: {}", e))?;
+    run_git_in_dir(
+        conn,
+        repo_path,
+        &["commit", "--no-verify", "-m", commit_message],
+    )
+    .await
+    .map_err(|e| format!("git commit failed: {}", e))?;
 
     // Step 6: return success
     Ok(MergeResult {
@@ -151,8 +160,19 @@ pub async fn resolve_commit_message(
     // LEFT JOIN, not JOIN: a task running in the repository directory has no worktree row, and this used
     // to fail outright — which left the approve dialog with an empty commit message and its
     // confirm button permanently disabled.
-    let (task_name, branch_name, base_branch, external_id, description, project_path, connection_key) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let (
+        task_name,
+        branch_name,
+        base_branch,
+        external_id,
+        description,
+        project_path,
+        connection_key,
+    ) = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT t.title, w.branch_name, t.base_branch, t.external_id, t.description, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id
              FROM tasks t
@@ -183,12 +203,15 @@ pub async fn resolve_commit_message(
 
     // A project that never customised its template has no file, which is not an error.
     let template_path = format!("{}/.maestro/commit-template.txt", project_path);
-    let template = match crate::core::git_connection_for(&app_state, project_path.clone(), connection_key).await {
-        Ok(conn) => crate::connectivity::files::read_text(&conn, &template_path)
+    let template =
+        match crate::core::git_connection_for(&app_state, project_path.clone(), connection_key)
             .await
-            .unwrap_or_else(|_| default_template.to_string()),
-        Err(_) => default_template.to_string(),
-    };
+        {
+            Ok(conn) => crate::connectivity::files::read_text(&conn, &template_path)
+                .await
+                .unwrap_or_else(|_| default_template.to_string()),
+            Err(_) => default_template.to_string(),
+        };
 
     let external_id_str = external_id.unwrap_or_default();
     let description_str = description
@@ -227,13 +250,15 @@ pub async fn approve_task_and_merge(
     include_untracked: bool,
     commit_message: String,
 ) -> Result<MergeResult, String> {
-
     // 1. Single query for task, worktree and project data. The worktree side is a LEFT JOIN: a
     // task running in the repository directory has no row there, and an inner join made approving one
     // fail with "Task, worktree, or project not found" — a dead end, since Review is where the
     // pipeline puts it.
     let (worktree, project_id, repo_path, base_branch) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT w.branch_name, w.path, w.id, t.project_id, p.path, t.base_branch
              FROM tasks t
@@ -250,14 +275,20 @@ pub async fn approve_task_and_merge(
                     (Some(branch_name), Some(path), Some(id)) => Some((branch_name, path, id)),
                     _ => None,
                 };
-                Ok((worktree, row.get::<_, i32>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?))
+                Ok((
+                    worktree,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
             },
         )
         .map_err(|e| format!("Task or project not found: {}", e))?
     };
 
     // 2. Resolve git connection for this project
-    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id).await
+    let (_project, git_conn) = get_project_with_git_conn(app_state.inner(), project_id)
+        .await
         .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
     // A task based on a remote ref stores `origin/main`, which is the right thing to *branch from*
@@ -288,15 +319,19 @@ pub async fn approve_task_and_merge(
     let full_worktree_path = format!("{}/{}", repo_path, worktree_rel_path);
 
     // 3a. Stage and commit modified tracked files (agents may modify without committing)
-    run_git_in_dir(&git_conn, &full_worktree_path, &["add", "-u"]).await
+    run_git_in_dir(&git_conn, &full_worktree_path, &["add", "-u"])
+        .await
         .map_err(|e| format!("Failed to stage modified files: {}", e))?;
 
     // 3b. Also stage untracked files if user opted in
     if include_untracked {
         let untracked_output = run_git_in_dir(
-            &git_conn, &full_worktree_path,
+            &git_conn,
+            &full_worktree_path,
             &["ls-files", "--others", "--exclude-standard"],
-        ).await.unwrap_or_default();
+        )
+        .await
+        .unwrap_or_default();
 
         let untracked_files: Vec<&str> = untracked_output
             .lines()
@@ -306,22 +341,29 @@ pub async fn approve_task_and_merge(
         if !untracked_files.is_empty() {
             let mut add_args = vec!["add", "--"];
             add_args.extend(untracked_files.iter().copied());
-            run_git_in_dir(&git_conn, &full_worktree_path, &add_args).await
+            run_git_in_dir(&git_conn, &full_worktree_path, &add_args)
+                .await
                 .map_err(|e| format!("Failed to stage untracked files: {}", e))?;
         }
     }
 
     // 3c. Commit everything staged (modified + untracked if included)
     let staged_output = run_git_in_dir(
-        &git_conn, &full_worktree_path,
+        &git_conn,
+        &full_worktree_path,
         &["diff", "--cached", "--name-only"],
-    ).await.unwrap_or_default();
+    )
+    .await
+    .unwrap_or_default();
 
     if !staged_output.trim().is_empty() {
         run_git_in_dir(
-            &git_conn, &full_worktree_path,
+            &git_conn,
+            &full_worktree_path,
             &["commit", "--no-verify", "-m", &commit_message],
-        ).await.map_err(|e| format!("Failed to commit changes: {}", e))?;
+        )
+        .await
+        .map_err(|e| format!("Failed to commit changes: {}", e))?;
     }
 
     // Push before landing, so a push that fails leaves the task in Review rather than reporting
@@ -334,7 +376,7 @@ pub async fn approve_task_and_merge(
         .await?;
         let Some(remote) = status.remote else {
             return Err(
-                "This project has no git remote, so there is nothing to push to.".to_string()
+                "This project has no git remote, so there is nothing to push to.".to_string(),
             );
         };
         crate::git::push_branch(&git_conn, &full_worktree_path, &remote, &branch_name).await?;
@@ -369,7 +411,10 @@ pub async fn approve_task_and_merge(
     // remote but still unmerged, which is what `ApprovedWithoutMerge` already means.
     if merge_strategy == "CommitOnly" || merge_strategy == "CommitAndPush" {
         {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let conn = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Lock failed: {}", e))?;
             transition::apply(&conn, task_id, TaskTransition::ApprovedWithoutMerge)?;
         }
         app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -382,12 +427,8 @@ pub async fn approve_task_and_merge(
     }
 
     // 4. Perform squash merge via git dispatcher (local, SSH, or WSL)
-    let merge_result = squash_merge_to_base(
-        &git_conn,
-        &branch_name,
-        &base_branch,
-        &commit_message,
-    ).await?;
+    let merge_result =
+        squash_merge_to_base(&git_conn, &branch_name, &base_branch, &commit_message).await?;
 
     if merge_result.success {
         // 4a. Merge succeeded - finalize (mark Done, cleanup worktree)
@@ -462,13 +503,13 @@ async fn open_pull_request_for_task(
         app_state,
     )
     .await
-        .ok_or_else(|| {
-            format!(
-                "No {} credentials are available, so the pull request cannot be opened. Connect \
+    .ok_or_else(|| {
+        format!(
+            "No {} credentials are available, so the pull request cannot be opened. Connect \
                  {} in Settings, or push the branch and open it yourself.",
-                config.provider, config.provider
-            )
-        })?;
+            config.provider, config.provider
+        )
+    })?;
 
     // Asked before the push rather than left to `create_pull_request` below. Both refuse the same
     // forges, but by the time that one answers the branch is already on the remote with nothing
@@ -486,7 +527,10 @@ async fn open_pull_request_for_task(
     crate::git::push_branch(git_conn, worktree_path, &remote, branch_name).await?;
 
     let (title, description) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT title, description FROM tasks WHERE id = ?",
             [task_id],
@@ -509,7 +553,10 @@ async fn open_pull_request_for_task(
     .await?;
 
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
             // `pull_request_ci` is cleared alongside, or a second pull request on the same task
             // would inherit the first one's verdict until the next sweep overwrote it.
@@ -553,7 +600,10 @@ pub async fn reconcile_pull_requests(
     };
 
     let waiting: Vec<(i32, i64)> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, pull_request_number FROM tasks \
@@ -607,7 +657,12 @@ pub async fn reconcile_pull_requests(
         let details = match fetch_pull_request(&target, number).await {
             Ok(details) => details,
             Err(e) => {
-                log::warn!("Could not read pull request #{} for task {}: {}", number, task_id, e);
+                log::warn!(
+                    "Could not read pull request #{} for task {}: {}",
+                    number,
+                    task_id,
+                    e
+                );
                 continue;
             }
         };
@@ -615,7 +670,10 @@ pub async fn reconcile_pull_requests(
         match details.state {
             PullRequestState::Open => {
                 let (ball, fix_rounds): (String, i32) = {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    let conn = app_state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("Lock failed: {}", e))?;
                     conn.query_row(
                         "SELECT ball, fix_rounds FROM tasks WHERE id = ?",
                         [task_id],
@@ -629,10 +687,17 @@ pub async fn reconcile_pull_requests(
                 // that turn ends in a push the next sweep should be reading anyway.
                 if ball == "External" && details.mergeable == Some(false) {
                     {
-                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                        let conn = app_state
+                            .db
+                            .lock()
+                            .map_err(|e| format!("Lock failed: {}", e))?;
                         transition::apply(&conn, task_id, TaskTransition::PullRequestConflicted)?;
                     }
-                    log::info!("Pull request #{} conflicts; task {} needs a rebase", number, task_id);
+                    log::info!(
+                        "Pull request #{} conflicts; task {} needs a rebase",
+                        number,
+                        task_id
+                    );
                     changed.push(task_id);
                     // CI is not asked. Fixing a build on a branch that cannot merge spends a round
                     // on work the rebase will invalidate, and `request_ci_fix` would refuse it
@@ -649,10 +714,17 @@ pub async fn reconcile_pull_requests(
                         continue;
                     }
                     {
-                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                        let conn = app_state
+                            .db
+                            .lock()
+                            .map_err(|e| format!("Lock failed: {}", e))?;
                         transition::apply(&conn, task_id, TaskTransition::PullRequestMergeable)?;
                     }
-                    log::info!("Pull request #{} merges again; task {} is back with the forge", number, task_id);
+                    log::info!(
+                        "Pull request #{} merges again; task {} is back with the forge",
+                        number,
+                        task_id
+                    );
                     changed.push(task_id);
                 }
 
@@ -665,7 +737,10 @@ pub async fn reconcile_pull_requests(
                 };
 
                 let touched = {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    let conn = app_state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("Lock failed: {}", e))?;
                     let fixing = match &ci {
                         CiState::Failing(checks) => {
                             request_ci_fix(&conn, task_id, number, checks, &ball, fix_rounds)?
@@ -681,7 +756,12 @@ pub async fn reconcile_pull_requests(
             }
             PullRequestState::Merged => {
                 if let Err(e) = land_merged_pull_request(app_state.inner(), task_id).await {
-                    log::warn!("Pull request #{} merged but task {} could not land: {}", number, task_id, e);
+                    log::warn!(
+                        "Pull request #{} merged but task {} could not land: {}",
+                        number,
+                        task_id,
+                        e
+                    );
                     continue;
                 }
                 changed.push(task_id);
@@ -694,12 +774,19 @@ pub async fn reconcile_pull_requests(
             // repeating the log line, and refetching the whole board through `changed`.
             PullRequestState::Closed => {
                 let news = {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                    let conn = app_state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("Lock failed: {}", e))?;
                     transition::apply_if_changed(&conn, task_id, TaskTransition::PullRequestClosed)?
                         .is_some()
                 };
                 if news {
-                    log::info!("Pull request #{} was closed without merging; task {} needs a decision", number, task_id);
+                    log::info!(
+                        "Pull request #{} was closed without merging; task {} needs a decision",
+                        number,
+                        task_id
+                    );
                     changed.push(task_id);
                 }
             }
@@ -750,7 +837,11 @@ fn record_pull_request_ci(
     ci: Option<PullRequestCi>,
 ) -> Result<bool, String> {
     let stored: Option<String> = conn
-        .query_row("SELECT pull_request_ci FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+        .query_row(
+            "SELECT pull_request_ci FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get(0),
+        )
         .map_err(|e| format!("Task {} not found: {}", task_id, e))?;
 
     let next = ci.map(PullRequestCi::as_str);
@@ -789,7 +880,11 @@ fn request_ci_fix(
     let report = format!(
         "CI failed on pull request #{}. Failing checks:\n\n{}",
         number,
-        checks.iter().map(|check| format!("- {}", check)).collect::<Vec<_>>().join("\n")
+        checks
+            .iter()
+            .map(|check| format!("- {}", check))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 
     crate::task::comments::append(
@@ -801,8 +896,11 @@ fn request_ci_fix(
         None,
         Some("AwaitingMerge"),
     )?;
-    conn.execute("UPDATE tasks SET fix_rounds = fix_rounds + 1 WHERE id = ?", [task_id])
-        .map_err(|e| format!("Could not count a fix round for task {}: {}", task_id, e))?;
+    conn.execute(
+        "UPDATE tasks SET fix_rounds = fix_rounds + 1 WHERE id = ?",
+        [task_id],
+    )
+    .map_err(|e| format!("Could not count a fix round for task {}: {}", task_id, e))?;
     transition::apply(conn, task_id, TaskTransition::CiFixRequested)?;
 
     log::info!(
@@ -824,7 +922,10 @@ fn request_ci_fix(
 /// which is right, because a fix that cannot be pushed is not a fix.
 pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<(), String> {
     let row = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT t.project_id, w.path, w.branch_name, p.path FROM tasks t \
              JOIN worktrees w ON w.task_id = t.id JOIN projects p ON p.id = t.project_id \
@@ -847,7 +948,9 @@ pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<()
     let status =
         crate::integration::code_hosting_handlers::code_hosting_status(app_state, project_id)
             .await?;
-    let remote = status.remote.ok_or_else(|| "The project has no remote to push to".to_string())?;
+    let remote = status
+        .remote
+        .ok_or_else(|| "The project has no remote to push to".to_string())?;
 
     crate::git::push_branch(
         &git_conn,
@@ -857,7 +960,10 @@ pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<()
     )
     .await?;
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     transition::apply(&conn, task_id, TaskTransition::CiFixPushed).map(|_| ())
 }
 
@@ -868,7 +974,10 @@ pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<()
 /// not ours — deleting it here would override a repository that keeps merged branches.
 async fn land_merged_pull_request(app_state: &Arc<AppState>, task_id: i32) -> Result<(), String> {
     let worktree = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT w.id, w.path, w.branch_name, p.path FROM worktrees w \
              JOIN projects p ON p.id = w.project_id WHERE w.task_id = ? LIMIT 1",
@@ -888,7 +997,10 @@ async fn land_merged_pull_request(app_state: &Arc<AppState>, task_id: i32) -> Re
     // A task can reach here with no worktree row — the user may have removed it while the PR was
     // open. The merge still happened, so the task still lands; there is simply nothing to clean up.
     let Some((worktree_id, worktree_rel_path, branch_name, repo_path)) = worktree else {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         return transition::apply(&conn, task_id, TaskTransition::PullRequestMerged).map(|_| ());
     };
 
@@ -926,21 +1038,29 @@ pub(crate) async fn finalize_successful_merge(
 
     // 1. Update task status to Done
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         transition::apply(&conn, task_id, landed)?;
     }
 
     // 2. Delete worktree from disk via git dispatcher (and DB on success)
     // Resolve git connection for this project
     let project_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT project_id FROM worktrees WHERE id = ?",
             rusqlite::params![worktree_id],
             |row| row.get::<_, i32>(0),
-        ).map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
+        )
+        .map_err(|e| format!("Worktree {} not found: {}", worktree_id, e))?
     };
-    let (_project, git_conn) = get_project_with_git_conn(app_state, project_id).await
+    let (_project, git_conn) = get_project_with_git_conn(app_state, project_id)
+        .await
         .map_err(|e| format!("Failed to get git connection: {}", e))?;
 
     match crate::git::delete_worktree(&git_conn, worktree_path).await {
@@ -949,12 +1069,22 @@ pub(crate) async fn finalize_successful_merge(
             // branch behind, and because the error went nowhere the only way to notice was to
             // compare the repository against what this function claims to do. git's own message is
             // the diagnosis, so it has to reach the log.
-            if let Err(e) = run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-D", branch_name]).await {
-                log::warn!("Merged task {} but could not delete branch {}: {}", task_id, branch_name, e);
+            if let Err(e) =
+                run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-D", branch_name]).await
+            {
+                log::warn!(
+                    "Merged task {} but could not delete branch {}: {}",
+                    task_id,
+                    branch_name,
+                    e
+                );
             }
             // Delete from database on successful cleanup
             {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.execute(
                     "DELETE FROM worktrees WHERE id = ?",
                     rusqlite::params![worktree_id],
@@ -965,7 +1095,12 @@ pub(crate) async fn finalize_successful_merge(
         // Left for `cleanup_zombie_worktrees` to retry, which is why this is not an error — but a
         // retry that keeps failing is indistinguishable from one that never ran unless it says so.
         Err(e) => {
-            log::warn!("Merged task {} but could not remove worktree {}: {}", task_id, worktree_path, e);
+            log::warn!(
+                "Merged task {} but could not remove worktree {}: {}",
+                task_id,
+                worktree_path,
+                e
+            );
         }
     }
 
@@ -1014,7 +1149,10 @@ pub(crate) async fn reject_merge_on_conflict(
     task_id: i32,
     conflicts: &[String],
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     let conflict_feedback = format!("Merge conflict detected:\n{}", conflicts.join("\n"));
 
@@ -1060,7 +1198,9 @@ mod tests {
         )
         .expect("insert approve row");
         let review_id: i32 = conn
-            .query_row("SELECT id FROM task_reviews WHERE task_id = 1", [], |r| r.get(0))
+            .query_row("SELECT id FROM task_reviews WHERE task_id = 1", [], |r| {
+                r.get(0)
+            })
             .expect("read review id");
         conn.execute(
             "INSERT INTO review_comments (review_id, file_path, comment, created_at) \
@@ -1069,8 +1209,14 @@ mod tests {
         )
         .expect("insert comment");
 
-        upsert_review_feedback(&conn, 1, "RequestChanges", "Merge conflict detected:\nsrc/main.rs", "2026-02-02")
-            .expect("upsert must not collide with the existing review");
+        upsert_review_feedback(
+            &conn,
+            1,
+            "RequestChanges",
+            "Merge conflict detected:\nsrc/main.rs",
+            "2026-02-02",
+        )
+        .expect("upsert must not collide with the existing review");
 
         let (id, decision, feedback): (i32, String, String) = conn
             .query_row(
@@ -1080,19 +1226,31 @@ mod tests {
             )
             .expect("review still present");
 
-        assert_eq!(id, review_id, "the row must be updated in place, not replaced");
+        assert_eq!(
+            id, review_id,
+            "the row must be updated in place, not replaced"
+        );
         assert_eq!(decision, "RequestChanges");
         assert!(feedback.contains("Merge conflict"));
 
         let comments: i32 = conn
-            .query_row("SELECT COUNT(*) FROM review_comments WHERE review_id = ?", [review_id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM review_comments WHERE review_id = ?",
+                [review_id],
+                |r| r.get(0),
+            )
             .expect("count comments");
-        assert_eq!(comments, 1, "per-file comments must survive — REPLACE would cascade them away");
+        assert_eq!(
+            comments, 1,
+            "per-file comments must survive — REPLACE would cascade them away"
+        );
 
         let rows: i32 = conn
-            .query_row("SELECT COUNT(*) FROM task_reviews WHERE task_id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM task_reviews WHERE task_id = 1",
+                [],
+                |r| r.get(0),
+            )
             .expect("count reviews");
         assert_eq!(rows, 1);
     }
@@ -1144,7 +1302,11 @@ mod tests {
         assert!(!record_pull_request_ci(&conn, 1, None).expect("record"));
 
         let stored: Option<String> = conn
-            .query_row("SELECT pull_request_ci FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row(
+                "SELECT pull_request_ci FROM tasks WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
             .expect("read back");
         assert_eq!(stored, None);
     }
@@ -1162,7 +1324,9 @@ mod tests {
         assert!(first.is_some(), "the pull request going away is news");
 
         let updated_at: String = conn
-            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .expect("read back");
 
         let second = transition::apply_if_changed(&conn, 1, TaskTransition::PullRequestClosed)
@@ -1170,7 +1334,9 @@ mod tests {
         assert!(second.is_none(), "finding it closed again is not");
 
         let after: String = conn
-            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT updated_at FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .expect("read back");
         assert_eq!(after, updated_at, "a poll must not count as an edit");
     }
@@ -1193,16 +1359,20 @@ mod tests {
         );
 
         let rounds: i32 = conn
-            .query_row("SELECT fix_rounds FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT fix_rounds FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .expect("read rounds");
         assert_eq!(rounds, 0, "a refusal must not count as a round");
 
         assert!(request_ci_fix(&conn, 1, 7, &checks, "External", 0).expect("fix"));
 
         let (rounds, ball): (i32, String) = conn
-            .query_row("SELECT fix_rounds, ball FROM tasks WHERE id = 1", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_row(
+                "SELECT fix_rounds, ball FROM tasks WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .expect("read task");
         assert_eq!(rounds, 1);
         assert_eq!(ball, "Agent", "the board starts the coder off the ball");
@@ -1215,7 +1385,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("ci entry");
-        assert!(report.contains("test"), "the failing check has to be named: {report}");
+        assert!(
+            report.contains("test"),
+            "the failing check has to be named: {report}"
+        );
     }
 
     fn git(repo: &Path, args: &[&str]) -> String {

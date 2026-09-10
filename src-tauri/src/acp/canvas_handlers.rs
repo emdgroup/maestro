@@ -5,7 +5,10 @@ use tauri::State;
 use crate::core::AppState;
 
 fn project_path(state: &AppState, project_id: i32) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+    let conn = state
+        .db
+        .lock()
+        .map_err(|e| format!("DB lock failed: {}", e))?;
     conn.query_row(
         "SELECT path FROM projects WHERE id = ?",
         [project_id],

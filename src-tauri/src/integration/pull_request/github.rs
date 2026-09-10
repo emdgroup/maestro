@@ -7,10 +7,11 @@
 use serde::Deserialize;
 
 use super::{
-    BranchPullRequest, CheckStatus, CiRollup, CiState, CreatedPullRequest, FoundPullRequest,
-    LIST_PAGE_SIZE, ListedPullRequest, ListedPullRequestDetail, PullRequestCheck, PullRequestDetail,
-    PullRequestPage, PullRequestState, PullRequestTarget, cursor_offset, header_total,
-    instance_base, next_offset_cursor, offset_page, owner_repo, read_json, summarise_checks,
+    cursor_offset, header_total, instance_base, next_offset_cursor, offset_page, owner_repo,
+    read_json, summarise_checks, BranchPullRequest, CheckStatus, CiRollup, CiState,
+    CreatedPullRequest, FoundPullRequest, ListedPullRequest, ListedPullRequestDetail,
+    PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
+    LIST_PAGE_SIZE,
 };
 use crate::integration::{build_http_client, normalize_instance_url};
 
@@ -197,7 +198,10 @@ fn to_check(run: &GitHubCheckRun) -> PullRequestCheck {
     } else {
         CheckStatus::Passed
     };
-    PullRequestCheck { name: run.name.clone(), status }
+    PullRequestCheck {
+        name: run.name.clone(),
+        status,
+    }
 }
 
 /// `None` for an entry the forge listed without naming its head branch.
@@ -208,9 +212,8 @@ fn to_check(run: &GitHubCheckRun) -> PullRequestCheck {
 fn list_entry_to_listed(entry: GitHubStyleListEntry) -> Option<ListedPullRequest> {
     let head = entry.head?;
     let base = entry.base;
-    let repo_name = |repo: &Option<GitHubRepoRef>| {
-        repo.as_ref().and_then(|repo| repo.full_name.clone())
-    };
+    let repo_name =
+        |repo: &Option<GitHubRepoRef>| repo.as_ref().and_then(|repo| repo.full_name.clone());
     let from_fork = super::is_cross_repository(
         repo_name(&head.repo),
         base.as_ref().and_then(|base| repo_name(&base.repo)),
@@ -251,7 +254,10 @@ pub(super) async fn list_github_family(
             // An old GitHub Enterprise, or a token whose scope its GraphQL endpoint refuses. REST
             // still lists, so the panel keeps working without the counts and the CI marks.
             Err(e) => {
-                log::debug!("[github] list query unavailable, falling back to REST: {}", e);
+                log::debug!(
+                    "[github] list query unavailable, falling back to REST: {}",
+                    e
+                );
                 // A search cannot degrade: REST would answer the unfiltered first page, which looks
                 // like a working search that found the wrong thing.
                 if search.is_some() {
@@ -305,7 +311,10 @@ pub(super) async fn list_github_family(
 
     let returned = entries.len();
     Ok(PullRequestPage {
-        items: entries.into_iter().filter_map(list_entry_to_listed).collect(),
+        items: entries
+            .into_iter()
+            .filter_map(list_entry_to_listed)
+            .collect(),
         // Counted before the filter above drops entries with no head branch: the cursor describes
         // the forge's position in its own list, not how many rows survived to be drawn.
         next_cursor: next_offset_cursor(returned, offset),
@@ -323,9 +332,15 @@ fn pick_branch_pull_request(mut entries: Vec<GitHubStyleListEntry>) -> Option<Fo
     if entries.is_empty() {
         return None;
     }
-    let index = entries.iter().position(|entry| entry.state == "open").unwrap_or(0);
+    let index = entries
+        .iter()
+        .position(|entry| entry.state == "open")
+        .unwrap_or(0);
     let entry = entries.swap_remove(index);
-    Some(FoundPullRequest { number: entry.number, url: entry.html_url })
+    Some(FoundPullRequest {
+        number: entry.number,
+        url: entry.html_url,
+    })
 }
 
 /// The pull request on one branch, for GitHub and for the Gitea/Forgejo API modelled on it.
@@ -385,7 +400,11 @@ pub(super) async fn find_github_family(
         entries
             .into_iter()
             .filter(|entry| {
-                entry.head.as_ref().and_then(|head| head.head_ref.as_deref()) == Some(branch)
+                entry
+                    .head
+                    .as_ref()
+                    .and_then(|head| head.head_ref.as_deref())
+                    == Some(branch)
             })
             .collect()
     };
@@ -407,7 +426,12 @@ pub(super) async fn create_github(
     let (owner, repo) = owner_repo(target.config)?;
 
     let response = build_http_client()?
-        .post(format!("{}/repos/{}/{}/pulls", github_api_base(target), owner, repo))
+        .post(format!(
+            "{}/repos/{}/{}/pulls",
+            github_api_base(target),
+            owner,
+            repo
+        ))
         .header("Authorization", format!("Bearer {}", target.token))
         .header("User-Agent", "maestro/1.0")
         .header("Accept", "application/vnd.github+json")
@@ -429,7 +453,13 @@ pub(super) async fn fetch_github(
     number: i64,
 ) -> Result<PullRequestDetail, String> {
     let (owner, repo) = owner_repo(target.config)?;
-    let url = format!("{}/repos/{}/{}/pulls/{}", github_api_base(target), owner, repo, number);
+    let url = format!(
+        "{}/repos/{}/{}/pulls/{}",
+        github_api_base(target),
+        owner,
+        repo,
+        number
+    );
     let response = build_http_client()?
         .get(url)
         .header("Authorization", format!("Bearer {}", target.token))
@@ -447,7 +477,9 @@ pub(super) async fn ci_github(
     number: i64,
     head_sha: Option<&str>,
 ) -> Result<CiState, String> {
-    Ok(summarise_checks(&checks_github(target, number, head_sha).await?))
+    Ok(summarise_checks(
+        &checks_github(target, number, head_sha).await?,
+    ))
 }
 
 /// One pull request's checks, from whichever API can answer in fewest requests.
@@ -490,19 +522,28 @@ async fn checks_github_rest(
     // one after the other this used to cost two round trips on every ten-second poll.
     let (runs_response, status_response) = tokio::join!(
         client
-            .get(format!("{}/repos/{}/{}/commits/{}/check-runs", api, owner, repo, sha))
+            .get(format!(
+                "{}/repos/{}/{}/commits/{}/check-runs",
+                api, owner, repo, sha
+            ))
             .header("Authorization", &auth)
             .header("User-Agent", "maestro/1.0")
             .send(),
         client
-            .get(format!("{}/repos/{}/{}/commits/{}/status", api, owner, repo, sha))
+            .get(format!(
+                "{}/repos/{}/{}/commits/{}/status",
+                api, owner, repo, sha
+            ))
             .header("Authorization", &auth)
             .header("User-Agent", "maestro/1.0")
             .send(),
     );
 
-    let runs: GitHubCheckRuns =
-        read_json(runs_response.map_err(|e| format!("Network error: {}", e))?, "GitHub").await?;
+    let runs: GitHubCheckRuns = read_json(
+        runs_response.map_err(|e| format!("Network error: {}", e))?,
+        "GitHub",
+    )
+    .await?;
     let mut checks: Vec<PullRequestCheck> = runs.check_runs.iter().map(to_check).collect();
 
     // A failure to read statuses must not lose the check runs we already have — an under-reported
@@ -626,7 +667,11 @@ enum GraphQlContext {
 /// and only a real failure conclusion counts as `Failed`.
 fn graphql_context_to_check(context: GraphQlContext) -> Option<PullRequestCheck> {
     match context {
-        GraphQlContext::CheckRun { name, status, conclusion } => {
+        GraphQlContext::CheckRun {
+            name,
+            status,
+            conclusion,
+        } => {
             let mapped = if status != "COMPLETED" {
                 CheckStatus::Running
             } else if matches!(
@@ -637,7 +682,10 @@ fn graphql_context_to_check(context: GraphQlContext) -> Option<PullRequestCheck>
             } else {
                 CheckStatus::Passed
             };
-            Some(PullRequestCheck { name, status: mapped })
+            Some(PullRequestCheck {
+                name,
+                status: mapped,
+            })
         }
         GraphQlContext::StatusContext { context, state } => {
             let mapped = match state.as_str() {
@@ -645,7 +693,10 @@ fn graphql_context_to_check(context: GraphQlContext) -> Option<PullRequestCheck>
                 "FAILURE" | "ERROR" => CheckStatus::Failed,
                 _ => CheckStatus::Running,
             };
-            Some(PullRequestCheck { name: context, status: mapped })
+            Some(PullRequestCheck {
+                name: context,
+                status: mapped,
+            })
         }
         GraphQlContext::Unknown => None,
     }
@@ -669,7 +720,12 @@ const ROLLUP_CONTEXTS: &str = r#"
 /// `commits(last: 1)` is how GraphQL names the head commit — there is no `headCommit` field on a
 /// pull request, and `headRefOid` alone would not carry the rollup hanging off the commit.
 fn head_commit_rollup() -> String {
-    ["commits(last: 1) { nodes { commit { oid ", ROLLUP_CONTEXTS, " } } }"].concat()
+    [
+        "commits(last: 1) { nodes { commit { oid ",
+        ROLLUP_CONTEXTS,
+        " } } }",
+    ]
+    .concat()
 }
 
 fn single_checks_query() -> String {
@@ -740,8 +796,11 @@ fn branch_status_query() -> String {
 /// hand. That is what makes this one request instead of two.
 fn graphql_to_checks(response: GraphQlResponse) -> Result<Vec<PullRequestCheck>, String> {
     if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
-        let joined =
-            errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
+        let joined = errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
         return Err(format!("GitHub refused the check query: {}", joined));
     }
 
@@ -765,14 +824,25 @@ fn graphql_to_checks(response: GraphQlResponse) -> Result<Vec<PullRequestCheck>,
 /// Written once because three queries select that shape, and a pull request read by two of them must
 /// not end up with two different check lists.
 fn head_commit_checks(commits: GraphQlCommits) -> (Option<String>, Vec<PullRequestCheck>) {
-    let Some(commit) = commits.nodes.into_iter().flatten().next().map(|node| node.commit) else {
+    let Some(commit) = commits
+        .nodes
+        .into_iter()
+        .flatten()
+        .next()
+        .map(|node| node.commit)
+    else {
         return (None, Vec::new());
     };
     let checks = commit
         .rollup
         .and_then(|rollup| rollup.contexts)
         .map(|contexts| {
-            contexts.nodes.into_iter().flatten().filter_map(graphql_context_to_check).collect()
+            contexts
+                .nodes
+                .into_iter()
+                .flatten()
+                .filter_map(graphql_context_to_check)
+                .collect()
         })
         .unwrap_or_default();
     (Some(commit.oid), checks)
@@ -781,7 +851,13 @@ fn head_commit_checks(commits: GraphQlCommits) -> (Option<String>, Vec<PullReque
 /// The head commit's sha and CI verdict, for the list query — which asks the rollup for its `state`
 /// instead of its contexts, and so learns the same verdict for a hundredth of the nodes.
 fn head_commit_verdict(commits: GraphQlCommits) -> (Option<String>, CiRollup) {
-    let Some(commit) = commits.nodes.into_iter().flatten().next().map(|node| node.commit) else {
+    let Some(commit) = commits
+        .nodes
+        .into_iter()
+        .flatten()
+        .next()
+        .map(|node| node.commit)
+    else {
         return (None, CiRollup::Unknown);
     };
     let state = commit.rollup.and_then(|rollup| rollup.state);
@@ -925,7 +1001,11 @@ fn branch_node_to_pull_request(node: GraphQlBranchNode) -> BranchPullRequest {
         },
         // A landed pull request's checks cannot change, and the card does not draw them, so the
         // rollup is dropped rather than carried — matching what the composed path asks for.
-        checks: if state == PullRequestState::Open { checks } else { Vec::new() },
+        checks: if state == PullRequestState::Open {
+            checks
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -959,8 +1039,11 @@ fn graphql_to_branch_pull_request(
     response: GraphQlBranchResponse,
 ) -> Result<Option<BranchPullRequest>, String> {
     if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
-        let joined =
-            errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
+        let joined = errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
         return Err(format!("GitHub refused the branch query: {}", joined));
     }
 
@@ -1214,13 +1297,17 @@ async fn list_github_graphql(
 
 fn graphql_to_page(response: GraphQlListResponse) -> Result<PullRequestPage, String> {
     if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
-        let joined =
-            errors.iter().map(|error| error.message.as_str()).collect::<Vec<_>>().join("; ");
+        let joined = errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
         return Err(format!("GitHub refused the list query: {}", joined));
     }
 
-    let data =
-        response.data.ok_or_else(|| "GitHub returned no data for the list query".to_string())?;
+    let data = response
+        .data
+        .ok_or_else(|| "GitHub returned no data for the list query".to_string())?;
 
     // The one place this query's cost is a measurement rather than an inference drawn from GitHub's
     // node formula. `trace` would hide it; `info` would print it on every poll.
@@ -1239,7 +1326,12 @@ fn graphql_to_page(response: GraphQlListResponse) -> Result<PullRequestPage, Str
 
     let page_info = connection.page_info;
     Ok(PullRequestPage {
-        items: connection.nodes.into_iter().flatten().filter_map(list_node_to_listed).collect(),
+        items: connection
+            .nodes
+            .into_iter()
+            .flatten()
+            .filter_map(list_node_to_listed)
+            .collect(),
         next_cursor: page_info
             .filter(|info| info.has_next_page)
             .and_then(|info| info.end_cursor),
@@ -1254,7 +1346,10 @@ fn to_status_check(status: &GitHubCommitStatus) -> PullRequestCheck {
         "failure" | "error" => CheckStatus::Failed,
         _ => CheckStatus::Running,
     };
-    PullRequestCheck { name: status.context.clone(), status: mapped }
+    PullRequestCheck {
+        name: status.context.clone(),
+        status: mapped,
+    }
 }
 
 pub(super) async fn create_gitea(
@@ -1321,7 +1416,10 @@ mod tests {
     fn listed(body: &str) -> Vec<ListedPullRequest> {
         let entries: Vec<GitHubStyleListEntry> =
             serde_json::from_str(body).expect("body should parse");
-        entries.into_iter().filter_map(list_entry_to_listed).collect()
+        entries
+            .into_iter()
+            .filter_map(list_entry_to_listed)
+            .collect()
     }
 
     fn checks(body: &str) -> Result<Vec<PullRequestCheck>, String> {
@@ -1398,16 +1496,33 @@ mod tests {
         assert_eq!(found.number, 164);
         assert_eq!(found.url, "https://github.com/o/r/pull/164");
         assert_eq!(found.detail.state, PullRequestState::Open);
-        assert_eq!(found.detail.title.as_deref(), Some("Notify when an agent finishes"));
-        assert_eq!(found.detail.head_ref.as_deref(), Some("maestro/great-lynx-58"));
+        assert_eq!(
+            found.detail.title.as_deref(),
+            Some("Notify when an agent finishes")
+        );
+        assert_eq!(
+            found.detail.head_ref.as_deref(),
+            Some("maestro/great-lynx-58")
+        );
         assert_eq!(found.detail.head_sha.as_deref(), Some("deadbeef"));
         assert_eq!(found.detail.additions, Some(1487));
         assert_eq!(found.detail.changed_files, Some(22));
-        assert_eq!(found.detail.commits, Some(2), "aliased past the rollup's own `commits`");
+        assert_eq!(
+            found.detail.commits,
+            Some(2),
+            "aliased past the rollup's own `commits`"
+        );
         assert_eq!(found.detail.mergeable, Some(true));
         assert_eq!(
-            found.checks.iter().map(|check| (check.name.as_str(), check.status)).collect::<Vec<_>>(),
-            vec![("build", CheckStatus::Running), ("cla/signed", CheckStatus::Passed)]
+            found
+                .checks
+                .iter()
+                .map(|check| (check.name.as_str(), check.status))
+                .collect::<Vec<_>>(),
+            vec![
+                ("build", CheckStatus::Running),
+                ("cla/signed", CheckStatus::Passed)
+            ]
         );
     }
 
@@ -1439,8 +1554,9 @@ mod tests {
     /// not an error, and not a card.
     #[test]
     fn a_branch_the_repository_has_no_pull_request_for_answers_none() {
-        let found = branch(r#"{"data":{"repository":{"open":{"nodes":[]},"latest":{"nodes":[]}}}}"#)
-            .expect("empty connections should parse");
+        let found =
+            branch(r#"{"data":{"repository":{"open":{"nodes":[]},"latest":{"nodes":[]}}}}"#)
+                .expect("empty connections should parse");
         assert!(found.is_none());
     }
 
@@ -1462,7 +1578,11 @@ mod tests {
     fn a_refused_branch_query_is_an_error_not_an_absent_pull_request() {
         let error = branch(r#"{"data":null,"errors":[{"message":"Resource not accessible"}]}"#)
             .expect_err("an errors array should not read as an empty answer");
-        assert!(error.contains("Resource not accessible"), "the forge's own words: {}", error);
+        assert!(
+            error.contains("Resource not accessible"),
+            "the forge's own words: {}",
+            error
+        );
     }
 
     /// The branch query has to select the same rollup the check queries do, or the session card and
@@ -1480,7 +1600,11 @@ mod tests {
         assert!(query.contains("latest: pullRequests"), "{}", query);
         // `commits` is spoken for by the rollup, so the count has to be aliased or GitHub rejects
         // the whole query for selecting one field twice with different arguments.
-        assert!(query.contains("commitCount: commits { totalCount }"), "{}", query);
+        assert!(
+            query.contains("commitCount: commits { totalCount }"),
+            "{}",
+            query
+        );
     }
 
     /// One query has to answer what two REST endpoints did. `statusCheckRollup` unions check runs
@@ -1503,7 +1627,10 @@ mod tests {
         .expect("a well-formed answer should parse");
 
         assert_eq!(
-            checks.iter().map(|check| (check.name.as_str(), check.status)).collect::<Vec<_>>(),
+            checks
+                .iter()
+                .map(|check| (check.name.as_str(), check.status))
+                .collect::<Vec<_>>(),
             vec![
                 ("build", CheckStatus::Failed),
                 ("e2e", CheckStatus::Running),
@@ -1521,7 +1648,10 @@ mod tests {
                  {"commits":{"nodes":[{"commit":{"oid":"c0ffee","statusCheckRollup":null}}]}}}}}"#,
         )
         .expect("a rollup-less pull request should parse");
-        assert!(checks.is_empty(), "no rollup is no checks, not a failure to read");
+        assert!(
+            checks.is_empty(),
+            "no rollup is no checks, not a failure to read"
+        );
     }
 
     /// A number the repository does not have answers `pullRequest: null`, which must read as no
@@ -1545,7 +1675,11 @@ mod tests {
     fn the_list_query_asks_for_a_verdict_and_never_for_the_check_names() {
         for query in [list_query(), search_query()] {
             assert!(query.contains("statusCheckRollup { state }"), "{}", query);
-            assert!(!query.contains("contexts"), "a hundred nodes per row: {}", query);
+            assert!(
+                !query.contains("contexts"),
+                "a hundred nodes per row: {}",
+                query
+            );
             assert!(!query.contains("... on CheckRun"), "{}", query);
             // Free scalars on nodes already paid for. Losing one puts a request per row back.
             for field in [
@@ -1560,7 +1694,11 @@ mod tests {
                 assert!(query.contains(field), "{} missing from {}", field, query);
             }
             // Without these the header cannot say "30 of 11,943" and there is no next page.
-            assert!(query.contains("pageInfo { hasNextPage endCursor }"), "{}", query);
+            assert!(
+                query.contains("pageInfo { hasNextPage endCursor }"),
+                "{}",
+                query
+            );
             assert!(query.contains("rateLimit { cost remaining }"), "{}", query);
         }
         // The list totals a connection, search totals its results; both are aliased to one name so
@@ -1609,7 +1747,11 @@ mod tests {
         )
         .expect("a well-formed page should parse");
 
-        assert_eq!(page.total, Some(11943), "the honest denominator in the header");
+        assert_eq!(
+            page.total,
+            Some(11943),
+            "the honest denominator in the header"
+        );
         assert_eq!(page.next_cursor.as_deref(), Some("Y3Vyc29yOjMw"));
         assert_eq!(page.items.len(), 1);
 
@@ -1620,7 +1762,9 @@ mod tests {
         assert_eq!(row.updated_at.as_deref(), Some("2026-09-04T11:00:00Z"));
         assert!(!row.from_fork, "a branch in the base repository");
 
-        let detail = row.detail.expect("GitHub answers the detail in the list request");
+        let detail = row
+            .detail
+            .expect("GitHub answers the detail in the list request");
         assert_eq!(detail.additions, Some(1487));
         assert_eq!(detail.changed_files, Some(22));
         assert_eq!(detail.ci, CiRollup::Failing);
@@ -1641,7 +1785,11 @@ mod tests {
                        "baseRefName":"main"{}}}]}}}}}}}}"#,
                 cross
             );
-            page(&body).expect("should parse").items.pop().expect("one row")
+            page(&body)
+                .expect("should parse")
+                .items
+                .pop()
+                .expect("one row")
         };
 
         assert!(row(r#","isCrossRepository":true"#).from_fork);
@@ -1668,7 +1816,10 @@ mod tests {
         assert_eq!(rows.len(), 3);
         assert!(!rows[0].from_fork);
         assert!(rows[1].from_fork);
-        assert!(rows[2].from_fork, "a head repository we cannot name is not one we can push at");
+        assert!(
+            rows[2].from_fork,
+            "a head repository we cannot name is not one we can push at"
+        );
     }
 
     /// `Some(detail)` is what stops the frontend asking per row. A repository with no CI at all still
@@ -1683,7 +1834,9 @@ mod tests {
         )
         .expect("a rollup-less row should parse");
 
-        let detail = page.items[0].detail.expect("asked and answered, not unasked");
+        let detail = page.items[0]
+            .detail
+            .expect("asked and answered, not unasked");
         assert_eq!(detail.ci, CiRollup::Unknown);
         assert_eq!(page.next_cursor, None, "no pageInfo is the last page");
         assert_eq!(page.total, None);
@@ -1704,7 +1857,11 @@ mod tests {
         )
         .expect("a mixed union should parse");
 
-        assert_eq!(page.items.len(), 1, "the empty member and the branchless row are dropped");
+        assert_eq!(
+            page.items.len(),
+            1,
+            "the empty member and the branchless row are dropped"
+        );
         assert_eq!(page.items[0].number, 9);
         assert_eq!(page.total, Some(3));
     }
@@ -1716,7 +1873,11 @@ mod tests {
     fn a_refused_query_is_an_error_despite_the_200() {
         let error = checks(r#"{"data":null,"errors":[{"message":"Resource not accessible"}]}"#)
             .expect_err("an errors array should not read as an empty answer");
-        assert!(error.contains("Resource not accessible"), "the forge's own words: {}", error);
+        assert!(
+            error.contains("Resource not accessible"),
+            "the forge's own words: {}",
+            error
+        );
 
         checks(r#"{"data":{"repository":null}}"#)
             .expect_err("a repository GitHub would not name is not an empty check list");
@@ -1767,8 +1928,14 @@ mod tests {
         assert_eq!(listed[0].head_branch, "maestro/great-lynx-58");
         assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
         assert_eq!(listed[0].head_sha.as_deref(), Some("deadbeef"));
-        assert_eq!(listed[0].created_at.as_deref(), Some("2026-09-02T09:00:00Z"));
-        assert_eq!(listed[0].updated_at.as_deref(), Some("2026-09-04T11:00:00Z"));
+        assert_eq!(
+            listed[0].created_at.as_deref(),
+            Some("2026-09-02T09:00:00Z")
+        );
+        assert_eq!(
+            listed[0].updated_at.as_deref(),
+            Some("2026-09-04T11:00:00Z")
+        );
         // REST carries no counts and no CI, so the row is *unasked* rather than answered — which is
         // what sends the frontend to the per-row command for this one and no other.
         assert!(listed[0].detail.is_none());
@@ -1779,8 +1946,10 @@ mod tests {
     /// head repository has been deleted.
     #[test]
     fn an_entry_with_no_head_branch_is_dropped() {
-        assert!(listed(r#"[{"number":1,"html_url":"u","state":"open","head":{"sha":"abc"}}]"#)
-            .is_empty());
+        assert!(
+            listed(r#"[{"number":1,"html_url":"u","state":"open","head":{"sha":"abc"}}]"#)
+                .is_empty()
+        );
         assert!(listed(r#"[{"number":1,"html_url":"u","state":"open"}]"#).is_empty());
     }
 
@@ -1809,7 +1978,10 @@ mod tests {
             details(r#"{"state":"closed","merged":false}"#).state,
             PullRequestState::Closed
         );
-        assert_eq!(details(r#"{"state":"open","merged":false}"#).state, PullRequestState::Open);
+        assert_eq!(
+            details(r#"{"state":"open","merged":false}"#).state,
+            PullRequestState::Open
+        );
     }
 
     /// GitHub computes the merge commit in the background and answers `null` until it has one,
@@ -1818,9 +1990,18 @@ mod tests {
     /// every freshly pushed pull request to the user.
     #[test]
     fn a_pull_request_the_forge_has_not_finished_thinking_about_is_neither() {
-        assert_eq!(details(r#"{"state":"open","mergeable":null}"#).mergeable, None);
-        assert_eq!(details(r#"{"state":"open","mergeable":false}"#).mergeable, Some(false));
-        assert_eq!(details(r#"{"state":"open","mergeable":true}"#).mergeable, Some(true));
+        assert_eq!(
+            details(r#"{"state":"open","mergeable":null}"#).mergeable,
+            None
+        );
+        assert_eq!(
+            details(r#"{"state":"open","mergeable":false}"#).mergeable,
+            Some(false)
+        );
+        assert_eq!(
+            details(r#"{"state":"open","mergeable":true}"#).mergeable,
+            Some(true)
+        );
 
         // Gitea omits both fields on older versions, and the sweep has to survive that rather
         // than fail the whole pass on a body it could otherwise read.
@@ -1829,7 +2010,9 @@ mod tests {
         assert_eq!(bare.head_sha, None);
 
         assert_eq!(
-            details(r#"{"state":"open","head":{"sha":"deadbeef"}}"#).head_sha.as_deref(),
+            details(r#"{"state":"open","head":{"sha":"deadbeef"}}"#)
+                .head_sha
+                .as_deref(),
             Some("deadbeef"),
             "the sha rides along so CI needs no second request"
         );
@@ -1851,11 +2034,26 @@ mod tests {
             context: context.into(),
             state: state.into(),
         };
-        assert_eq!(to_status_check(&status("license/cla", "success")).status, CheckStatus::Passed);
-        assert_eq!(to_status_check(&status("deploy", "failure")).status, CheckStatus::Failed);
-        assert_eq!(to_status_check(&status("deploy", "error")).status, CheckStatus::Failed);
-        assert_eq!(to_status_check(&status("deploy", "pending")).status, CheckStatus::Running);
-        assert_eq!(to_status_check(&status("license/cla", "success")).name, "license/cla");
+        assert_eq!(
+            to_status_check(&status("license/cla", "success")).status,
+            CheckStatus::Passed
+        );
+        assert_eq!(
+            to_status_check(&status("deploy", "failure")).status,
+            CheckStatus::Failed
+        );
+        assert_eq!(
+            to_status_check(&status("deploy", "error")).status,
+            CheckStatus::Failed
+        );
+        assert_eq!(
+            to_status_check(&status("deploy", "pending")).status,
+            CheckStatus::Running
+        );
+        assert_eq!(
+            to_status_check(&status("license/cla", "success")).name,
+            "license/cla"
+        );
     }
 
     /// The combined-status body omits `statuses` entirely on a repository that has none, and that
@@ -1890,7 +2088,10 @@ mod tests {
 
         let bare = details(r#"{"state":"open"}"#);
         assert_eq!(bare.changed_files, None);
-        assert_eq!(bare.title, None, "a missing title must not become an empty one");
+        assert_eq!(
+            bare.title, None,
+            "a missing title must not become an empty one"
+        );
         assert_eq!(bare.mergeable, None, "a missing flag is not a conflict");
     }
 

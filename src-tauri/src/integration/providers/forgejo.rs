@@ -1,5 +1,5 @@
-use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
 
 #[derive(serde::Deserialize)]
 struct ForgejoUserResponse {
@@ -21,7 +21,7 @@ struct ForgejoLabel {
     name: String,
 }
 
-use super::{normalize_instance_url, extract_type_from_labels};
+use super::{extract_type_from_labels, normalize_instance_url};
 
 /// Validate a Forgejo API token, save the IssueTrackingConfig, and store the token.
 /// Returns the authenticated Forgejo login name on success.

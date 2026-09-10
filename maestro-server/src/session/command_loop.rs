@@ -1,20 +1,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
 use acp::schema::v1::{
-    CancelNotification, CloseSessionRequest,
-    PromptRequest, PromptResponse, SessionConfigId,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
-    SessionConfigValueId, SetSessionConfigOptionRequest,
-    SetSessionModeRequest, StopReason,
+    CancelNotification, CloseSessionRequest, PromptRequest, PromptResponse, SessionConfigId,
+    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionConfigValueId,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
 };
+use agent_client_protocol as acp;
 use maestro_protocol::{
-    ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage,
-    ModeInfo as ProtocolModeInfo, ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo,
-    ServerResponse, SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState, SetModeOkResponse,
-    TurnEnded,
+    ConfigOptionUpdatedResponse, ErrorResponse, MaestroRpcMessage, ModeInfo as ProtocolModeInfo,
+    ModelInfo as ProtocolModelInfo, PromptCapabilitiesInfo, ServerResponse,
+    SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
+    SetModeOkResponse, TurnEnded,
 };
 use tokio::sync::{mpsc, Mutex};
 
@@ -37,7 +34,10 @@ pub(crate) async fn handle_prompt_result(
         }
         .to_string(),
         Err(e) => {
-            crate::send_diag("error", format!("[prompt] ACP error for session {session_id}: {e}"));
+            crate::send_diag(
+                "error",
+                format!("[prompt] ACP error for session {session_id}: {e}"),
+            );
             if e.code == acp::schema::v1::ErrorCode::AuthRequired {
                 "auth_required"
             } else {
@@ -52,7 +52,6 @@ pub(crate) async fn handle_prompt_result(
     }));
     let _ = send_response(stdout, &msg).await;
 }
-
 
 pub(crate) fn convert_acp_modes(
     acp_modes: Option<&acp::schema::v1::SessionModeState>,
@@ -79,7 +78,9 @@ pub(crate) fn serialize_config_options(options: &[SessionConfigOption]) -> Vec<s
 }
 
 /// Used on session load when the agent provides config_options but no legacy models field.
-pub(crate) fn models_from_config_options(config_options: &[SessionConfigOption]) -> Option<ProtocolSessionModelState> {
+pub(crate) fn models_from_config_options(
+    config_options: &[SessionConfigOption],
+) -> Option<ProtocolSessionModelState> {
     let model_opt = config_options.iter().find(|o| o.id.0.as_ref() == "model")?;
     let SessionConfigKind::Select(select) = &model_opt.kind else {
         return None;
@@ -112,7 +113,9 @@ pub(crate) fn models_from_config_options(config_options: &[SessionConfigOption])
 }
 
 /// Used on session load when the agent provides config_options but no legacy modes field.
-pub(crate) fn modes_from_config_options(config_options: &[SessionConfigOption]) -> Option<ProtocolSessionModeState> {
+pub(crate) fn modes_from_config_options(
+    config_options: &[SessionConfigOption],
+) -> Option<ProtocolSessionModeState> {
     let mode_opt = config_options.iter().find(|o| o.id.0.as_ref() == "mode")?;
     let SessionConfigKind::Select(select) = &mode_opt.kind else {
         return None;
@@ -144,9 +147,14 @@ pub(crate) fn modes_from_config_options(config_options: &[SessionConfigOption]) 
     })
 }
 
-pub(crate) fn extract_prompt_capabilities(response: &acp::schema::v1::InitializeResponse) -> PromptCapabilitiesInfo {
+pub(crate) fn extract_prompt_capabilities(
+    response: &acp::schema::v1::InitializeResponse,
+) -> PromptCapabilitiesInfo {
     PromptCapabilitiesInfo {
-        embedded_context: response.agent_capabilities.prompt_capabilities.embedded_context,
+        embedded_context: response
+            .agent_capabilities
+            .prompt_capabilities
+            .embedded_context,
         image: response.agent_capabilities.prompt_capabilities.image,
         audio: response.agent_capabilities.prompt_capabilities.audio,
     }
@@ -170,7 +178,8 @@ pub(crate) async fn run_command_loop(
             SessionCommand::CloseSession => {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    cx.send_request(CloseSessionRequest::new(session_id.to_string())).block_task(),
+                    cx.send_request(CloseSessionRequest::new(session_id.to_string()))
+                        .block_task(),
                 )
                 .await;
                 if let Some(ref router) = router {
@@ -179,7 +188,10 @@ pub(crate) async fn run_command_loop(
                 return;
             }
             SessionCommand::Prompt(content) => {
-                crate::send_diag("info", format!("[prompt] turn started session={}", maestro_sid));
+                crate::send_diag(
+                    "info",
+                    format!("[prompt] turn started session={}", maestro_sid),
+                );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
@@ -197,17 +209,22 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
-                    let _ = send_response(&so_err, &MaestroRpcMessage::Response(
-                        ServerResponse::TurnEnded(TurnEnded {
+                    let _ = send_response(
+                        &so_err,
+                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
-                        }),
-                    )).await;
+                        })),
+                    )
+                    .await;
                     break;
                 }
             }
             SessionCommand::PromptStructured(blocks) => {
-                crate::send_diag("info", format!("[prompt] turn started session={}", maestro_sid));
+                crate::send_diag(
+                    "info",
+                    format!("[prompt] turn started session={}", maestro_sid),
+                );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
                 let sid = maestro_sid.clone();
@@ -229,12 +246,14 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
-                    let _ = send_response(&so_err, &MaestroRpcMessage::Response(
-                        ServerResponse::TurnEnded(TurnEnded {
+                    let _ = send_response(
+                        &so_err,
+                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "error".to_string(),
-                        }),
-                    )).await;
+                        })),
+                    )
+                    .await;
                     break;
                 }
             }
@@ -249,13 +268,19 @@ pub(crate) async fn run_command_loop(
                         "warn",
                         format!("[prompt] cancel with no turn in flight session={maestro_sid} — resending TurnEnded"),
                     );
-                    if let Err(e) = send_response(&so, &MaestroRpcMessage::Response(
-                        ServerResponse::TurnEnded(TurnEnded {
+                    if let Err(e) = send_response(
+                        &so,
+                        &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
                             session_id: maestro_sid.clone(),
                             stop_reason: "cancelled".to_string(),
-                        }),
-                    )).await {
-                        crate::send_diag("error", format!("[prompt] failed to resend TurnEnded: {e}"));
+                        })),
+                    )
+                    .await
+                    {
+                        crate::send_diag(
+                            "error",
+                            format!("[prompt] failed to resend TurnEnded: {e}"),
+                        );
                     }
                 }
             }
@@ -317,12 +342,12 @@ pub(crate) async fn run_command_loop(
                                     mode_id,
                                 },
                             )),
-                            Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(
-                                ErrorResponse {
+                            Err(e) => {
+                                MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
                                     message: format!("SetMode failed: {}", e),
                                     session_id: None,
-                                },
-                            )),
+                                }))
+                            }
                         }
                     }
                     Err(e) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
@@ -365,4 +390,3 @@ pub(crate) async fn run_command_loop(
         router.unregister(&session_id.to_string()).await;
     }
 }
-

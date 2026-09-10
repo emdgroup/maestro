@@ -15,7 +15,10 @@ pub(crate) static DIAG_TX: std::sync::OnceLock<DiagSender> = std::sync::OnceLock
 /// Send a diagnostic event to Tauri. No-op until the main loop is running.
 pub(crate) fn send_diag(level: &str, msg: impl Into<String>) {
     if let Some(tx) = DIAG_TX.get() {
-        let _ = tx.send(DiagnosticPayload { level: level.into(), message: msg.into() });
+        let _ = tx.send(DiagnosticPayload {
+            level: level.into(),
+            message: msg.into(),
+        });
     }
 }
 
@@ -33,7 +36,11 @@ pub(crate) async fn resolve_agent_spawn_params(
                     a.spawn_cmd, a.spawn_args
                 ),
             );
-            Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()))
+            Some((
+                a.spawn_cmd.clone(),
+                a.spawn_args.clone(),
+                a.spawn_env.clone(),
+            ))
         }
         None => {
             send_diag("error", format!("[spawn] agent not found: {agent_id:?}"));

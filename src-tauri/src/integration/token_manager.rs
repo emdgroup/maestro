@@ -157,7 +157,10 @@ mod tests {
         let manager = TokenManager::new();
         let arc1 = manager.get_or_create_lock(1);
         let arc2 = manager.get_or_create_lock(1);
-        assert!(Arc::ptr_eq(&arc1, &arc2), "same project_id must return the same Arc");
+        assert!(
+            Arc::ptr_eq(&arc1, &arc2),
+            "same project_id must return the same Arc"
+        );
     }
 
     #[test]
@@ -165,7 +168,10 @@ mod tests {
         let manager = TokenManager::new();
         let arc1 = manager.get_or_create_lock(1);
         let arc2 = manager.get_or_create_lock(2);
-        assert!(!Arc::ptr_eq(&arc1, &arc2), "different project_ids must return different Arcs");
+        assert!(
+            !Arc::ptr_eq(&arc1, &arc2),
+            "different project_ids must return different Arcs"
+        );
     }
 
     #[test]
@@ -196,7 +202,11 @@ mod tests {
         handle.join().unwrap();
 
         let seen = order.lock().unwrap().clone();
-        assert_eq!(seen, vec![1, 2], "second caller must not proceed before first releases lock");
+        assert_eq!(
+            seen,
+            vec![1, 2],
+            "second caller must not proceed before first releases lock"
+        );
     }
 
     #[test]

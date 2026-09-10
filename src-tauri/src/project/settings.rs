@@ -1,9 +1,9 @@
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+use crate::core::AppState;
+use crate::models::{GitConnection, ProjectConfig};
+use chrono::Utc;
 use std::sync::Arc;
 use tauri::State;
-use chrono::Utc;
-use crate::core::AppState;
-use crate::core::project_storage::{read_maestro_json, write_maestro_json};
-use crate::models::{GitConnection, ProjectConfig};
 
 pub const SETTINGS_FILE: &str = "settings.json";
 
@@ -177,7 +177,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp directory");
         let conn = local_conn(&dir);
 
-        let applied = mutate_project_config(&conn, |_| false).await.expect("no-op mutation");
+        let applied = mutate_project_config(&conn, |_| false)
+            .await
+            .expect("no-op mutation");
         assert!(!applied);
         assert!(!dir.path().join(".maestro").join(SETTINGS_FILE).exists());
 
@@ -187,10 +189,12 @@ mod tests {
         })
         .await
         .expect("write the agent");
-        let after_write = std::fs::read(dir.path().join(".maestro").join(SETTINGS_FILE))
-            .expect("read settings");
+        let after_write =
+            std::fs::read(dir.path().join(".maestro").join(SETTINGS_FILE)).expect("read settings");
 
-        let applied = mutate_project_config(&conn, |_| false).await.expect("no-op mutation");
+        let applied = mutate_project_config(&conn, |_| false)
+            .await
+            .expect("no-op mutation");
         assert!(!applied);
         assert_eq!(
             std::fs::read(dir.path().join(".maestro").join(SETTINGS_FILE)).expect("re-read"),

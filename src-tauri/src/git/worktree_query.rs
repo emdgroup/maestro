@@ -2,8 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::State;
 
-use crate::models::{WorktreeWithStatus, AheadBehind, is_maestro_created_worktree, DiffTarget, WorktreeDiffResult, WorktreeDiffStats, DirtyStatus, CommitInfo};
 use crate::core::AppState;
+use crate::models::{
+    is_maestro_created_worktree, AheadBehind, CommitInfo, DiffTarget, DirtyStatus,
+    WorktreeDiffResult, WorktreeDiffStats, WorktreeWithStatus,
+};
 
 /// Everything one worktree's git state contributes to its card, gathered in a single round trip.
 #[derive(Default)]
@@ -65,7 +68,9 @@ async fn newest_changed_file_at(
         else {
             continue;
         };
-        newest = Some(newest.map_or(modified, |current: std::time::SystemTime| current.max(modified)));
+        newest = Some(newest.map_or(modified, |current: std::time::SystemTime| {
+            current.max(modified)
+        }));
     }
     newest.map(chrono::DateTime::<chrono::Utc>::from)
 }
@@ -92,7 +97,12 @@ async fn git_info_for(
         // `diff HEAD`, not a bare `diff`: the latter is the unstaged half only, so a worktree
         // whose changes had all been staged reported "+0 -0" while its file count said otherwise.
         vec!["diff".into(), "HEAD".into(), "--shortstat".into()],
-        vec!["rev-list".into(), "--left-right".into(), "--count".into(), "HEAD...@{u}".into()],
+        vec![
+            "rev-list".into(),
+            "--left-right".into(),
+            "--count".into(),
+            "HEAD...@{u}".into(),
+        ],
         // Date and subject from one `log`, split on the newline between them. The subject rides
         // along because the pull request dialog defaults its title to it, and asking separately
         // would be another interop spawn per worktree on a ten-second poll.
@@ -102,7 +112,11 @@ async fn git_info_for(
         // Local ref before the remote one, the same order `resolve_divergence_point` uses: a
         // worktree is created from a local ref, and a repository with no remote has no
         // `<remote>/<base>` at all. A `base` that is already qualified resolves on the first.
-        commands.push(vec!["rev-list".into(), "--count".into(), format!("{}..HEAD", base)]);
+        commands.push(vec![
+            "rev-list".into(),
+            "--count".into(),
+            format!("{}..HEAD", base),
+        ]);
         commands.push(vec![
             "rev-list".into(),
             "--count".into(),
@@ -136,7 +150,10 @@ async fn git_info_for(
     let (last_commit_raw, last_commit_subject) = match log_raw.split_once('\n') {
         Some((date, subject)) => {
             let subject = subject.trim();
-            (date.to_string(), (!subject.is_empty()).then(|| subject.to_string()))
+            (
+                date.to_string(),
+                (!subject.is_empty()).then(|| subject.to_string()),
+            )
         }
         // A repository with no commits at all prints nothing, and a `%s` that came back empty
         // leaves no newline to split on.
@@ -163,7 +180,10 @@ async fn git_info_for(
     .map(|when| when.to_rfc3339());
 
     let info = WorktreeGitInfo {
-        changed_files_count: status_output.lines().filter(|line| !line.is_empty()).count() as u32,
+        changed_files_count: status_output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .count() as u32,
         diff_stat: (!diff_stat_raw.trim().is_empty()).then(|| diff_stat_raw.trim().to_string()),
         ahead_behind: ahead_behind_raw
             .trim()
@@ -191,15 +211,21 @@ pub async fn list_worktrees_with_status(
 ) -> Result<Vec<WorktreeWithStatus>, String> {
     // Resolve project and git connection (local vs remote SSH)
     let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
             crate::models::Project::from_row,
         ).map_err(|e| format!("Project {} not found: {}", project_id, e))?
     };
-    let git_conn = crate::core::get_git_connection(&project, &app_state).await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local { path: repo_path.clone() });
+    let git_conn = crate::core::get_git_connection(&project, &app_state)
+        .await
+        .unwrap_or_else(|_| crate::models::GitConnection::Local {
+            path: repo_path.clone(),
+        });
 
     // Step 1: Get on-disk worktrees
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
@@ -219,7 +245,10 @@ pub async fn list_worktrees_with_status(
     }
 
     let db_rows: Vec<DbWorktreeRow> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at, w.base_branch,
                     t.title AS task_name
@@ -271,8 +300,14 @@ pub async fn list_worktrees_with_status(
                 let base_branch = db_map.get(&wt.path).and_then(|row| row.base_branch.clone());
                 let remote = remote.clone();
                 tokio::spawn(async move {
-                    git_info_for(&conn, &wt_path, branch.as_deref(), base_branch.as_deref(), &remote)
-                        .await
+                    git_info_for(
+                        &conn,
+                        &wt_path,
+                        branch.as_deref(),
+                        base_branch.as_deref(),
+                        &remote,
+                    )
+                    .await
                 })
             })
             .collect();
@@ -322,7 +357,10 @@ pub async fn list_worktrees_with_status(
                 task_id: db_row.task_id,
                 // Read from git, not the DB: a checkout inside the worktree moves it off the
                 // branch recorded at creation. Detached HEAD keeps the recorded name.
-                branch_name: wt.branch.clone().unwrap_or_else(|| db_row.branch_name.clone()),
+                branch_name: wt
+                    .branch
+                    .clone()
+                    .unwrap_or_else(|| db_row.branch_name.clone()),
                 path: format!("{}/{}", repo_path, db_row.path),
                 changed_files_count,
                 created_at: Some(db_row.created_at.clone()),
@@ -376,20 +414,21 @@ pub async fn list_worktrees_with_status(
         .collect();
 
     if !unmatched_db_ids.is_empty() {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         for id in &unmatched_db_ids {
             let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]);
         }
     }
 
     // Sort by created_at descending (None goes last)
-    result.sort_by(|a, b| {
-        match (&b.created_at, &a.created_at) {
-            (Some(b_ts), Some(a_ts)) => b_ts.cmp(a_ts),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.path.cmp(&b.path),
-        }
+    result.sort_by(|a, b| match (&b.created_at, &a.created_at) {
+        (Some(b_ts), Some(a_ts)) => b_ts.cmp(a_ts),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.path.cmp(&b.path),
     });
 
     Ok(result)
@@ -507,23 +546,27 @@ pub async fn get_worktree_diff(
     worktree_path: String,
     diff_target: DiffTarget,
 ) -> Result<WorktreeDiffResult, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     let diff_output = match &diff_target {
         DiffTarget::Head => {
             crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "HEAD"]).await?
         }
         DiffTarget::Commit { sha } => {
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha]).await?
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha])
+                .await?
         }
         DiffTarget::BranchAll { branch } => {
             let remote = crate::git::remote::project_remote(&app_state, project_id).await;
             let base = resolve_divergence_point(&git_conn, &worktree_path, branch, &remote).await?;
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &base]).await?
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &base])
+                .await?
         }
         DiffTarget::CommitRange { from, to } => {
             let range = format!("{}..{}", from, to);
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range]).await?
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range])
+                .await?
         }
     };
 
@@ -547,7 +590,10 @@ pub async fn get_worktree_diff(
     let total_untracked = all_untracked.len();
     let untracked_truncated = total_untracked > MAX_UNTRACKED_FILES;
     let untracked_files = if untracked_truncated {
-        all_untracked.into_iter().take(MAX_UNTRACKED_FILES).collect()
+        all_untracked
+            .into_iter()
+            .take(MAX_UNTRACKED_FILES)
+            .collect()
     } else {
         all_untracked
     };
@@ -574,7 +620,8 @@ pub async fn get_worktree_diff_stats(
     worktree_path: String,
     diff_target: DiffTarget,
 ) -> Result<WorktreeDiffStats, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let remote = crate::git::remote::project_remote(&app_state, project_id).await;
     diff_stats_in(&git_conn, &worktree_path, &diff_target, &remote).await
 }
@@ -599,7 +646,9 @@ pub async fn diff_stats_in(
             let base = resolve_divergence_point(git_conn, worktree_path, branch, remote).await?;
             vec!["diff".into(), "--stat".into(), base]
         }
-        DiffTarget::CommitRange { from, to } => vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)],
+        DiffTarget::CommitRange { from, to } => {
+            vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)]
+        }
     };
     let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
 
@@ -617,19 +666,37 @@ pub async fn diff_stats_in(
         for part in summary.split(',') {
             let part = part.trim();
             if part.contains("file") {
-                file_count = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+                file_count = part
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
             } else if part.contains("insertion") {
-                insertions = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+                insertions = part
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
             } else if part.contains("deletion") {
-                deletions = part.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(0);
+                deletions = part
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
             }
         }
     }
 
-    let untracked_count =
-        untracked_files_for(git_conn, worktree_path, diff_target).await.len() as u32;
+    let untracked_count = untracked_files_for(git_conn, worktree_path, diff_target)
+        .await
+        .len() as u32;
 
-    Ok(WorktreeDiffStats { file_count, insertions, deletions, untracked_count })
+    Ok(WorktreeDiffStats {
+        file_count,
+        insertions,
+        deletions,
+        untracked_count,
+    })
 }
 
 impl WorktreeDiffStats {
@@ -650,9 +717,11 @@ pub async fn check_worktree_dirty(
     project_id: i32,
     worktree_path: String,
 ) -> Result<DirtyStatus, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let output = crate::git::run_git_in_dir(&git_conn, &worktree_path, &["status", "--porcelain"]).await?;
+    let output =
+        crate::git::run_git_in_dir(&git_conn, &worktree_path, &["status", "--porcelain"]).await?;
 
     let mut modified_count: u32 = 0;
     let mut untracked_count: u32 = 0;
@@ -664,7 +733,10 @@ pub async fn check_worktree_dirty(
         }
     }
 
-    Ok(DirtyStatus { modified_count, untracked_count })
+    Ok(DirtyStatus {
+        modified_count,
+        untracked_count,
+    })
 }
 
 // ============================================================================
@@ -679,11 +751,16 @@ pub async fn get_worktree_commits(
     worktree_path: String,
     base_branch: String,
 ) -> Result<Vec<CommitInfo>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     let merge_base = crate::git::run_git_in_dir(
-        &git_conn, &worktree_path, &["merge-base", &base_branch, "HEAD"],
-    ).await.unwrap_or_default();
+        &git_conn,
+        &worktree_path,
+        &["merge-base", &base_branch, "HEAD"],
+    )
+    .await
+    .unwrap_or_default();
 
     let range = if merge_base.trim().is_empty() {
         format!("{}..HEAD", base_branch)
@@ -695,7 +772,9 @@ pub async fn get_worktree_commits(
         &git_conn,
         &worktree_path,
         &["log", "--format=%H %cI %s", &range],
-    ).await.unwrap_or_default();
+    )
+    .await
+    .unwrap_or_default();
 
     Ok(parse_commit_log(&log_output))
 }
@@ -731,7 +810,8 @@ pub async fn get_untracked_file_content(
     worktree_path: String,
     file_path: String,
 ) -> Result<String, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     crate::git::run_git_in_dir_lossy(
         &git_conn,
         &worktree_path,
@@ -769,7 +849,8 @@ pub async fn get_file_content_at_base(
     diff_target: DiffTarget,
     file_path: String,
 ) -> Result<Option<String>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let remote = crate::git::remote::project_remote(&app_state, project_id).await;
     let base = base_rev_for(&git_conn, &worktree_path, &diff_target, &remote).await?;
     Ok(file_content_at(&git_conn, &worktree_path, &base, &file_path).await)
@@ -887,11 +968,15 @@ mod tests {
         let connection = GitConnection::Local {
             path: repo.to_string_lossy().into_owned(),
         };
-        let resolved = resolve_divergence_point(&connection, &repo.to_string_lossy(), "main", "origin")
-            .await
-            .expect("a local branch with no remote must still resolve");
+        let resolved =
+            resolve_divergence_point(&connection, &repo.to_string_lossy(), "main", "origin")
+                .await
+                .expect("a local branch with no remote must still resolve");
 
-        assert_eq!(resolved, divergence, "must be the merge base, not the branch tip");
+        assert_eq!(
+            resolved, divergence,
+            "must be the merge base, not the branch tip"
+        );
         assert_ne!(resolved, main_tip);
     }
 
@@ -911,11 +996,20 @@ mod tests {
         let connection = GitConnection::Local {
             path: repo.to_string_lossy().into_owned(),
         };
-        let error = resolve_divergence_point(&connection, &repo.to_string_lossy(), "no-such-branch", "origin")
-            .await
-            .expect_err("an unknown branch must not silently resolve");
+        let error = resolve_divergence_point(
+            &connection,
+            &repo.to_string_lossy(),
+            "no-such-branch",
+            "origin",
+        )
+        .await
+        .expect_err("an unknown branch must not silently resolve");
 
-        assert!(error.contains("no-such-branch"), "error should name the branch: {}", error);
+        assert!(
+            error.contains("no-such-branch"),
+            "error should name the branch: {}",
+            error
+        );
     }
 
     /// A repository with one commit on `main` and one on `task`, so every `DiffTarget` variant has
@@ -956,22 +1050,32 @@ mod tests {
             async move { base_rev_for(&connection, &path, &target, "origin").await }
         };
 
-        assert_eq!(resolve(DiffTarget::Head).await.expect("HEAD resolves"), "HEAD");
         assert_eq!(
-            resolve(DiffTarget::Commit { sha: base.clone() }).await.expect("a sha resolves"),
+            resolve(DiffTarget::Head).await.expect("HEAD resolves"),
+            "HEAD"
+        );
+        assert_eq!(
+            resolve(DiffTarget::Commit { sha: base.clone() })
+                .await
+                .expect("a sha resolves"),
             base
         );
         assert_eq!(
-            resolve(DiffTarget::BranchAll { branch: "main".to_string() })
-                .await
-                .expect("a branch resolves through its merge base"),
+            resolve(DiffTarget::BranchAll {
+                branch: "main".to_string()
+            })
+            .await
+            .expect("a branch resolves through its merge base"),
             base
         );
         // The range's pre-image is `from`, not `to` — reversing them would expand to the wrong side.
         assert_eq!(
-            resolve(DiffTarget::CommitRange { from: base.clone(), to: tip })
-                .await
-                .expect("a range resolves"),
+            resolve(DiffTarget::CommitRange {
+                from: base.clone(),
+                to: tip
+            })
+            .await
+            .expect("a range resolves"),
             base
         );
     }
@@ -998,13 +1102,24 @@ mod tests {
         };
 
         assert_eq!(untracked(DiffTarget::Head).await, expected);
-        assert_eq!(untracked(DiffTarget::Commit { sha: base.clone() }).await, expected);
         assert_eq!(
-            untracked(DiffTarget::BranchAll { branch: "main".to_string() }).await,
+            untracked(DiffTarget::Commit { sha: base.clone() }).await,
+            expected
+        );
+        assert_eq!(
+            untracked(DiffTarget::BranchAll {
+                branch: "main".to_string()
+            })
+            .await,
             expected
         );
         assert!(
-            untracked(DiffTarget::CommitRange { from: base, to: tip }).await.is_empty(),
+            untracked(DiffTarget::CommitRange {
+                from: base,
+                to: tip
+            })
+            .await
+            .is_empty(),
             "a commit range ends at a commit and cannot contain a file git has never seen"
         );
     }
@@ -1023,16 +1138,26 @@ mod tests {
 
         std::fs::write(repo.join("scratch.txt"), "never added\n").expect("write untracked file");
 
-        let good = diff_stats_in(&connection, &path, &DiffTarget::Commit { sha: base }, "origin")
-            .await
-            .expect("a reachable start commit produces stats");
+        let good = diff_stats_in(
+            &connection,
+            &path,
+            &DiffTarget::Commit { sha: base },
+            "origin",
+        )
+        .await
+        .expect("a reachable start commit produces stats");
         assert_eq!(good.file_count, 2, "a.txt and added.txt changed since base");
         assert_eq!(good.untracked_count, 1);
 
         let orphaned = "0123456789012345678901234567890123456789".to_string();
-        let error = diff_stats_in(&connection, &path, &DiffTarget::Commit { sha: orphaned }, "origin")
-            .await
-            .expect_err("an unreachable start commit must not report as no changes");
+        let error = diff_stats_in(
+            &connection,
+            &path,
+            &DiffTarget::Commit { sha: orphaned },
+            "origin",
+        )
+        .await
+        .expect_err("an unreachable start commit must not report as no changes");
         assert!(!error.is_empty(), "the git failure should carry a message");
     }
 
@@ -1063,7 +1188,10 @@ mod tests {
 
         let (_, info) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
         let stat = info.diff_stat.expect("a staged change is still a change");
-        assert!(stat.contains("insertion"), "staged insertions must be counted, got {stat:?}");
+        assert!(
+            stat.contains("insertion"),
+            "staged insertions must be counted, got {stat:?}"
+        );
     }
 
     /// The commit count is what the card shows as the work done here, so it must be measured
@@ -1076,7 +1204,8 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, info) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        let (_, info) =
+            git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1), "one commit since main");
 
         // main gaining a commit of its own must not change how much work this branch has.
@@ -1086,11 +1215,15 @@ mod tests {
         git(repo, &["commit", "-m", "main moves on"]);
         git(repo, &["checkout", "task"]);
 
-        let (_, info) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        let (_, info) =
+            git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
         assert_eq!(info.commit_count, Some(1));
 
         let (_, info) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
-        assert_eq!(info.commit_count, None, "nothing to count against without a base branch");
+        assert_eq!(
+            info.commit_count, None,
+            "nothing to count against without a base branch"
+        );
     }
 
     /// A forge deleting the head branch when it merges prunes the remote-tracking ref, and from
@@ -1118,8 +1251,12 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        let (_, pushed) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
-        assert!(!pushed.upstream_gone, "a branch level with its upstream is not gone");
+        let (_, pushed) =
+            git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        assert!(
+            !pushed.upstream_gone,
+            "a branch level with its upstream is not gone"
+        );
         assert!(pushed.ahead_behind.is_some());
         // The commands after it must still land on their own outputs.
         assert_eq!(pushed.commit_count, Some(1));
@@ -1127,14 +1264,19 @@ mod tests {
         git(&repo, &["push", "origin", "--delete", "task"]);
         git(&repo, &["fetch", "--prune"]);
 
-        let (_, gone) = git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
-        assert!(gone.upstream_gone, "the upstream was deleted under the branch");
+        let (_, gone) =
+            git_info_for(&connection, &path, Some("task"), Some("main"), "origin").await;
+        assert!(
+            gone.upstream_gone,
+            "the upstream was deleted under the branch"
+        );
         assert!(gone.ahead_behind.is_none(), "`@{{u}}` no longer resolves");
         assert_eq!(gone.commit_count, Some(1));
 
         // A branch that has simply never been pushed prints nothing, which must not read as gone.
         git(&repo, &["checkout", "-b", "unpushed"]);
-        let (_, never) = git_info_for(&connection, &path, Some("unpushed"), Some("main"), "origin").await;
+        let (_, never) =
+            git_info_for(&connection, &path, Some("unpushed"), Some("main"), "origin").await;
         assert!(!never.upstream_gone);
         assert!(never.ahead_behind.is_none());
     }
@@ -1149,11 +1291,15 @@ mod tests {
         let connection = GitConnection::Local { path: path.clone() };
 
         let (_, clean) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
-        let committed = clean.last_activity_at.expect("a clean worktree still has a last commit");
+        let committed = clean
+            .last_activity_at
+            .expect("a clean worktree still has a last commit");
 
         std::fs::write(repo.join("a.txt"), "edited after the commit\n").expect("edit file");
         let (_, dirty) = git_info_for(&connection, &path, Some("task"), None, "origin").await;
-        let edited = dirty.last_activity_at.expect("a dirty worktree reports its newest edit");
+        let edited = dirty
+            .last_activity_at
+            .expect("a dirty worktree reports its newest edit");
 
         assert!(
             parse_rfc3339(&edited) >= parse_rfc3339(&committed),
@@ -1172,7 +1318,10 @@ mod tests {
         let content = file_content_at(&connection, &path, &base, "a.txt")
             .await
             .expect("the file exists at the base commit");
-        assert_eq!(content, "one\ntwo\nthree\n", "must be the blob at the base, not HEAD's");
+        assert_eq!(
+            content, "one\ntwo\nthree\n",
+            "must be the blob at the base, not HEAD's"
+        );
     }
 
     /// A file added on the branch has no pre-image, and neither does a rename's post-image path.
@@ -1185,7 +1334,13 @@ mod tests {
         let path = repo.to_string_lossy().into_owned();
         let connection = GitConnection::Local { path: path.clone() };
 
-        assert!(file_content_at(&connection, &path, &base, "added.txt").await.is_none());
-        assert!(file_content_at(&connection, &path, &base, "never-existed.txt").await.is_none());
+        assert!(file_content_at(&connection, &path, &base, "added.txt")
+            .await
+            .is_none());
+        assert!(
+            file_content_at(&connection, &path, &base, "never-existed.txt")
+                .await
+                .is_none()
+        );
     }
 }

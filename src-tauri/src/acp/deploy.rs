@@ -21,11 +21,11 @@ pub struct DeployResult {
 /// constructing download URLs and when naming locally-cached binaries.
 pub(crate) fn asset_filename(triple: &str) -> String {
     match triple {
-        "x86_64-unknown-linux-gnu"  => "maestro-server-linux-x86_64".to_string(),
+        "x86_64-unknown-linux-gnu" => "maestro-server-linux-x86_64".to_string(),
         "aarch64-unknown-linux-gnu" => "maestro-server-linux-arm64".to_string(),
-        "aarch64-apple-darwin"      => "maestro-server-macos-arm64".to_string(),
-        "x86_64-pc-windows-msvc"    => "maestro-server-windows-x86_64.exe".to_string(),
-        other                       => format!("maestro-server-{}", other),
+        "aarch64-apple-darwin" => "maestro-server-macos-arm64".to_string(),
+        "x86_64-pc-windows-msvc" => "maestro-server-windows-x86_64.exe".to_string(),
+        other => format!("maestro-server-{}", other),
     }
 }
 
@@ -41,9 +41,9 @@ fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
         (os, arch) if os.contains("NT") => {
             Err(format!("Unsupported Windows architecture: {}", arch))
         }
-        (_, "x86_64")                 => Ok("x86_64-unknown-linux-gnu"),
+        (_, "x86_64") => Ok("x86_64-unknown-linux-gnu"),
         (_, "aarch64") | (_, "arm64") => Ok("aarch64-unknown-linux-gnu"),
-        (_, other)                    => Err(format!("Unsupported remote architecture: {}", other)),
+        (_, other) => Err(format!("Unsupported remote architecture: {}", other)),
     }
 }
 
@@ -51,9 +51,9 @@ fn triple_for_remote(os: &str, arch: &str) -> Result<&'static str, String> {
 /// Used for container and WSL remotes, which are always Linux.
 fn linux_triple_for_arch(arch: &str) -> Result<&'static str, String> {
     match arch {
-        "x86_64"            => Ok("x86_64-unknown-linux-gnu"),
+        "x86_64" => Ok("x86_64-unknown-linux-gnu"),
         "aarch64" | "arm64" => Ok("aarch64-unknown-linux-gnu"),
-        other               => Err(format!("Unsupported remote architecture: {}", other)),
+        other => Err(format!("Unsupported remote architecture: {}", other)),
     }
 }
 
@@ -302,9 +302,9 @@ pub async fn ensure_wsl_server(
     };
 
     let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
-    .await
-    .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
-    .map_err(|e| format!("WSL deploy process failed: {}", e))?;
+        .await
+        .map_err(|_| format!("WSL deploy timed out for distro {}", distro))?
+        .map_err(|e| format!("WSL deploy process failed: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
@@ -418,9 +418,9 @@ pub async fn ensure_container_server(
     };
 
     let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
-    .await
-    .map_err(|_| format!("Container deploy timed out for {}", container_name))?
-    .map_err(|e| format!("Container deploy process failed: {}", e))?;
+        .await
+        .map_err(|_| format!("Container deploy timed out for {}", container_name))?
+        .map_err(|e| format!("Container deploy process failed: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(

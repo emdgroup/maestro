@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tauri::State;
-use crate::core::AppState;
+use super::crud::register_project_in_db;
 use crate::acp::ConnectionKey;
 use crate::connectivity::exec_channel::{run_on, ExecTarget};
 use crate::connectivity::files;
+use crate::core::AppState;
 use crate::git::exec::git_prefix_args;
 use crate::models::GitConnection;
-use super::crud::register_project_in_db;
+use std::sync::Arc;
+use tauri::State;
 
 /// Resolve the three optional connection columns the project-creation IPC commands carry into
 /// the connection every operation below runs through.
@@ -43,8 +43,14 @@ pub async fn git_init_project(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<(), String> {
-    let conn =
-        connection_at(&app_state, &path, connection_id, wsl_connection_id, docker_connection_id).await?;
+    let conn = connection_at(
+        &app_state,
+        &path,
+        connection_id,
+        wsl_connection_id,
+        docker_connection_id,
+    )
+    .await?;
     if inside_work_tree(&conn, &path).await {
         return Ok(());
     }
@@ -57,7 +63,10 @@ async fn inside_work_tree(conn: &GitConnection, path: &str) -> bool {
     let mut argv = git_prefix_args(&ExecTarget::of(conn)).to_vec();
     argv.extend_from_slice(&["-C", path, "rev-parse", "--is-inside-work-tree"]);
     // A transport error or a host with no git installed both mean "not a repository" here.
-    run_on(conn, None, "git", &argv).await.map(|out| out.success()).unwrap_or(false)
+    run_on(conn, None, "git", &argv)
+        .await
+        .map(|out| out.success())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -69,7 +78,14 @@ pub async fn check_is_git_repo(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<bool, String> {
-    is_git_repo(&app_state, path, connection_id, wsl_connection_id, docker_connection_id).await
+    is_git_repo(
+        &app_state,
+        path,
+        connection_id,
+        wsl_connection_id,
+        docker_connection_id,
+    )
+    .await
 }
 
 /// Non-IPC form of [`check_is_git_repo`], so callers that already hold an `AppState` can gate
@@ -81,8 +97,14 @@ pub async fn is_git_repo(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<bool, String> {
-    let conn =
-        connection_at(app_state, &path, connection_id, wsl_connection_id, docker_connection_id).await?;
+    let conn = connection_at(
+        app_state,
+        &path,
+        connection_id,
+        wsl_connection_id,
+        docker_connection_id,
+    )
+    .await?;
     Ok(inside_work_tree(&conn, &path).await)
 }
 
@@ -94,7 +116,9 @@ async fn build_provider_auth_header(
 
     // GitHub supports a fallback to the `gh` CLI token when no keychain entry exists.
     let token_result = if provider == "github" {
-        match crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state) {
+        match crate::integration::issue_tracking_handlers::get_integration_creds(
+            provider, app_state,
+        ) {
             Ok(creds) => Ok(creds.token),
             Err(_) => crate::integration::github::try_gh_cli_token()
                 .await
@@ -113,7 +137,9 @@ async fn build_provider_auth_header(
         }
         "gitlab" => format!("Authorization: Bearer {}", token_result?),
         "bitbucket" => {
-            let creds = crate::integration::issue_tracking_handlers::get_integration_creds(provider, app_state)?;
+            let creds = crate::integration::issue_tracking_handlers::get_integration_creds(
+                provider, app_state,
+            )?;
             match creds.instance_url {
                 Some(_) => format!("Authorization: Bearer {}", creds.token),
                 // `x-bitbucket-api-token-auth` is Atlassian's documented static username for git
@@ -151,7 +177,8 @@ pub async fn clone_project(
     docker_connection_id: Option<i32>,
     provider: Option<String>,
 ) -> Result<crate::models::Project, String> {
-    let connection_key = ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
+    let connection_key =
+        ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     let auth_header = match provider.as_deref() {
         Some(provider_key) if url.starts_with("http://") || url.starts_with("https://") => {
             build_provider_auth_header(provider_key, &app_state).await?
@@ -159,9 +186,14 @@ pub async fn clone_project(
         _ => None,
     };
 
-    let conn =
-        connection_at(&app_state, &target_path, connection_id, wsl_connection_id, docker_connection_id)
-            .await?;
+    let conn = connection_at(
+        &app_state,
+        &target_path,
+        connection_id,
+        wsl_connection_id,
+        docker_connection_id,
+    )
+    .await?;
 
     // The header carries a credential, so it goes as its own argv entry rather than into a
     // shell string where quoting is the only thing keeping it intact.
@@ -193,7 +225,8 @@ pub async fn create_new_project(
     wsl_connection_id: Option<i32>,
     docker_connection_id: Option<i32>,
 ) -> Result<crate::models::Project, String> {
-    let connection_key = ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
+    let connection_key =
+        ConnectionKey::from_all_ids(connection_id, wsl_connection_id, docker_connection_id);
     // Build full path string (works for both local and remote — remote paths are POSIX)
     let full_path_str = format!("{}/{}", parent_dir.trim_end_matches('/'), folder_name);
 
@@ -207,10 +240,18 @@ pub async fn create_new_project(
     .await?;
 
     if files::dir_exists(&conn, &full_path_str).await {
-        return Err("Directory already exists. Choose a different path or use Select Existing.".to_string());
+        return Err(
+            "Directory already exists. Choose a different path or use Select Existing.".to_string(),
+        );
     }
     files::create_dir_all(&conn, &full_path_str).await?;
     git(&conn, &["init", "-b", "main", &full_path_str], "git init").await?;
 
-    register_project_in_db(app_state.inner(), &full_path_str, &folder_name, connection_key).await
+    register_project_in_db(
+        app_state.inner(),
+        &full_path_str,
+        &folder_name,
+        connection_key,
+    )
+    .await
 }

@@ -237,7 +237,9 @@ pub async fn query_install_skills_via_server(
         "Connection not initialized. Run preflight first.",
         |s| s.pending.install_skills.clone(),
         "InstallSkills already in progress",
-        MaestroRpcMessage::Request(ServerRequest::InstallSkills(InstallSkillsRequest { skills })),
+        MaestroRpcMessage::Request(ServerRequest::InstallSkills(InstallSkillsRequest {
+            skills,
+        })),
         150,
         "InstallSkills via connection server timed out after 150s",
     )
@@ -314,10 +316,17 @@ pub async fn spawn_connection_server(
                 remember_server_path(ExecHost::Ssh(ssh.connection_id()), server_path);
             }
             #[cfg(windows)]
-            TransportTarget::Wsl { distro, server_path } => {
+            TransportTarget::Wsl {
+                distro,
+                server_path,
+            } => {
                 remember_server_path(ExecHost::Wsl((*distro).to_string()), server_path);
             }
-            TransportTarget::Docker { container_name, server_path, .. } => {
+            TransportTarget::Docker {
+                container_name,
+                server_path,
+                ..
+            } => {
                 remember_server_path(ExecHost::Docker((*container_name).to_string()), server_path);
             }
         }

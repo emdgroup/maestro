@@ -1,10 +1,10 @@
-pub mod github;
-pub mod gitlab;
+pub mod azure_devops;
 pub mod forgejo;
 pub mod gitea;
-pub mod linear;
+pub mod github;
+pub mod gitlab;
 pub mod jira_cloud;
-pub mod azure_devops;
+pub mod linear;
 
 // ponytail: heuristic — scoped labels like "kind/bug", "type/feature" are the Forgejo/Gitea
 // convention for exclusive classification; extract the suffix as the display type

@@ -1,8 +1,8 @@
 //! Canvas fence extraction for ACP session message streams.
 
+use crate::acp::transport::{SessionModeState, SessionModelState};
 use std::sync::Arc;
 use tauri::Emitter;
-use crate::acp::transport::{SessionModelState, SessionModeState};
 
 const CANVAS_FENCE_OPEN: &str = "```maestro-canvas\n";
 
@@ -28,7 +28,10 @@ impl Default for CanvasFenceExtractor {
 
 impl CanvasFenceExtractor {
     pub fn new() -> Self {
-        Self { buffer: String::new(), in_fence: false }
+        Self {
+            buffer: String::new(),
+            in_fence: false,
+        }
     }
 
     /// Feed a new text chunk. Returns the text that should be forwarded as a normal message
@@ -116,7 +119,11 @@ fn find_canvas_fence_close(buffer: &str) -> Option<(usize, usize)> {
     if buffer.starts_with("```") {
         let after = 3;
         if after >= buffer.len() || buffer.as_bytes()[after] == b'\n' {
-            let rest = if after < buffer.len() { after + 1 } else { after };
+            let rest = if after < buffer.len() {
+                after + 1
+            } else {
+                after
+            };
             return Some((0, rest));
         }
     }
@@ -127,7 +134,11 @@ fn find_canvas_fence_close(buffer: &str) -> Option<(usize, usize)> {
         let after = abs + 4;
         if after >= buffer.len() || buffer.as_bytes()[after] == b'\n' {
             // body = buffer[..abs], rest starts after the closing "\n```[\n]"
-            let rest = if after < buffer.len() { after + 1 } else { after };
+            let rest = if after < buffer.len() {
+                after + 1
+            } else {
+                after
+            };
             return Some((abs, rest));
         }
         // "```" followed by something else (e.g. "```json") — not our close marker
@@ -145,9 +156,7 @@ fn is_valid_canvas_payload(value: &serde_json::Value) -> bool {
 }
 
 /// Serialize a payload for the replay buffer, logging and yielding `None` on failure.
-fn to_raw_replay_payload(
-    payload: &serde_json::Value,
-) -> Option<Box<serde_json::value::RawValue>> {
+fn to_raw_replay_payload(payload: &serde_json::Value) -> Option<Box<serde_json::value::RawValue>> {
     match serde_json::value::to_raw_value(payload) {
         Ok(raw) => Some(raw),
         Err(e) => {
@@ -298,7 +307,10 @@ mod tests {
     fn mixed_text_and_fence() {
         let mut ex = CanvasFenceExtractor::new();
         let json = canvas_create_json("s3");
-        let input = format!("Before text.\n```maestro-canvas\n{}\n```\nAfter text.", json);
+        let input = format!(
+            "Before text.\n```maestro-canvas\n{}\n```\nAfter text.",
+            json
+        );
         let (text, msgs) = ex.process_chunk(&input);
         assert!(text.contains("Before text."));
         assert!(text.contains("After text."));
@@ -320,7 +332,8 @@ mod tests {
     fn multiple_fences_in_one_chunk() {
         let mut ex = CanvasFenceExtractor::new();
         let j1 = canvas_create_json("m1");
-        let j2 = r#"{"sessionUpdate":"canvas_data","surfaceId":"m1","path":"/rows","value":[]}"#.to_string();
+        let j2 = r#"{"sessionUpdate":"canvas_data","surfaceId":"m1","path":"/rows","value":[]}"#
+            .to_string();
         let input = format!(
             "```maestro-canvas\n{}\n```\n```maestro-canvas\n{}\n```\n",
             j1, j2

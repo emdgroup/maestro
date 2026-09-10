@@ -209,7 +209,11 @@ pub async fn get_home_dir(distro: &str) -> Result<String, String> {
 /// share — still accepted, but not worth spreading further.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn unc_fallback(distro: &str, path: &str) -> String {
-    format!(r"\\wsl.localhost\{}\{}", distro, path.trim_start_matches('/').replace('/', "\\"))
+    format!(
+        r"\\wsl.localhost\{}\{}",
+        distro,
+        path.trim_start_matches('/').replace('/', "\\")
+    )
 }
 
 /// The Windows path naming the same file as `path` inside `distro`.
@@ -287,8 +291,7 @@ fn decode_wsl_output(bytes: &[u8]) -> Result<String, String> {
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
-        return String::from_utf16(&utf16)
-            .map_err(|e| format!("UTF-16 decode error: {e}"));
+        return String::from_utf16(&utf16).map_err(|e| format!("UTF-16 decode error: {e}"));
     }
     // Fall back to UTF-8 (strip BOM if present)
     let text = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -296,7 +299,8 @@ fn decode_wsl_output(bytes: &[u8]) -> Result<String, String> {
     } else {
         std::str::from_utf8(bytes)
     };
-    text.map(|s| s.to_string()).map_err(|e| format!("UTF-8 decode error: {e}"))
+    text.map(|s| s.to_string())
+        .map_err(|e| format!("UTF-8 decode error: {e}"))
 }
 
 /// Parse the output of `wsl.exe --list --verbose`.
@@ -326,7 +330,11 @@ fn parse_distro_list(text: &str) -> Vec<WslDistro> {
                 _ => WslDistroState::Stopped,
             };
             let version = parts[2].parse::<u8>().unwrap_or(2);
-            Some(WslDistro { name, state, version })
+            Some(WslDistro {
+                name,
+                state,
+                version,
+            })
         })
         .collect()
 }
@@ -349,7 +357,10 @@ mod tests {
     /// keeping it would produce a doubled backslash and an unresolvable path.
     #[test]
     fn unc_fallback_does_not_leave_an_empty_first_component() {
-        assert_eq!(unc_fallback("Debian", "/tmp"), r"\\wsl.localhost\Debian\tmp");
+        assert_eq!(
+            unc_fallback("Debian", "/tmp"),
+            r"\\wsl.localhost\Debian\tmp"
+        );
         assert!(!unc_fallback("Debian", "//tmp").contains(r"\\tmp"));
     }
 }

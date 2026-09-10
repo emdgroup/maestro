@@ -12,7 +12,8 @@ pub async fn list_forgejo_repos(
     app_state: State<'_, Arc<AppState>>,
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("forgejo", &app_state)?;
+    let creds =
+        crate::integration::issue_tracking_handlers::get_integration_creds("forgejo", &app_state)?;
     let instance_url = creds
         .instance_url
         .as_deref()
@@ -47,7 +48,11 @@ pub async fn list_forgejo_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
+        .map(|r| RepoOption {
+            name: r.name,
+            description: r.description,
+            clone_url: r.clone_url,
+        })
         .collect())
 }
 
@@ -58,7 +63,8 @@ pub async fn list_gitea_repos(
     app_state: State<'_, Arc<AppState>>,
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("gitea", &app_state)?;
+    let creds =
+        crate::integration::issue_tracking_handlers::get_integration_creds("gitea", &app_state)?;
     let instance_url = creds
         .instance_url
         .as_deref()
@@ -93,6 +99,10 @@ pub async fn list_gitea_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
+        .map(|r| RepoOption {
+            name: r.name,
+            description: r.description,
+            clone_url: r.clone_url,
+        })
         .collect())
 }

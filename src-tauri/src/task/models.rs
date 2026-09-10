@@ -13,8 +13,7 @@ use std::str::FromStr;
 /// execute_requested_at(29), pull_request_url(30), pull_request_number(31), review_rounds(32),
 /// fix_rounds(33), pull_request_ci(34), profile_overrides(35), workspace_worktree_id(36),
 /// workspace_branch_mode(37), workspace_branch(38)
-pub const TASK_SELECT: &str =
-    "SELECT id, project_id, title, description, status, priority, \
+pub const TASK_SELECT: &str = "SELECT id, project_id, title, description, status, priority, \
      base_branch, archived_at, external_id, is_imported, import_source, skills, \
      model_override, mcp_allowlist, skills_override, labels, \
      external_url, external_updated_at, created_at, updated_at, \
@@ -223,8 +222,14 @@ impl Task {
             project_id: row.get(1)?,
             title: row.get(2)?,
             description: row.get(3)?,
-            status: row.get::<_, String>(4)?.parse().unwrap_or(TaskStatus::Planning),
-            priority: row.get::<_, String>(5)?.parse().unwrap_or(TaskPriority::Medium),
+            status: row
+                .get::<_, String>(4)?
+                .parse()
+                .unwrap_or(TaskStatus::Planning),
+            priority: row
+                .get::<_, String>(5)?
+                .parse()
+                .unwrap_or(TaskPriority::Medium),
             base_branch: row.get::<_, String>(6)?,
             archived_at: row.get(7)?,
             external_id: row.get(8)?,
@@ -232,9 +237,17 @@ impl Task {
             import_source: row.get(10)?,
             skills: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
             model_override: row.get(12)?,
-            mcp_allowlist: row.get::<_, Option<String>>(13)?.and_then(|s| serde_json::from_str(&s).ok()),
-            skills_override: row.get::<_, Option<String>>(14)?.and_then(|s| serde_json::from_str(&s).ok()),
-            labels: serde_json::from_str(&row.get::<_, String>(15).unwrap_or_else(|_| "[]".to_string())).unwrap_or_default(),
+            mcp_allowlist: row
+                .get::<_, Option<String>>(13)?
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            skills_override: row
+                .get::<_, Option<String>>(14)?
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            labels: serde_json::from_str(
+                &row.get::<_, String>(15)
+                    .unwrap_or_else(|_| "[]".to_string()),
+            )
+            .unwrap_or_default(),
             external_url: row.get(16)?,
             external_updated_at: row.get(17)?,
             created_at: row.get(18)?,
@@ -255,20 +268,28 @@ impl Task {
             agent_id: row.get(22)?,
             permission_mode_override: row.get(23)?,
             execution_start_sha: row.get(24)?,
-            phase: row.get::<_, Option<String>>(25)?.and_then(|s| s.parse().ok()),
-            phase_status: row.get::<_, Option<String>>(26)?.and_then(|s| s.parse().ok()),
+            phase: row
+                .get::<_, Option<String>>(25)?
+                .and_then(|s| s.parse().ok()),
+            phase_status: row
+                .get::<_, Option<String>>(26)?
+                .and_then(|s| s.parse().ok()),
             ball: row
                 .get::<_, String>(27)
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(TaskBall::None),
-            completion: row.get::<_, Option<String>>(28)?.and_then(|s| s.parse().ok()),
+            completion: row
+                .get::<_, Option<String>>(28)?
+                .and_then(|s| s.parse().ok()),
             execute_requested_at: row.get(29)?,
             pull_request_url: row.get(30)?,
             pull_request_number: row.get(31)?,
             review_rounds: row.get(32)?,
             fix_rounds: row.get(33)?,
-            pull_request_ci: row.get::<_, Option<String>>(34)?.and_then(|s| s.parse().ok()),
+            pull_request_ci: row
+                .get::<_, Option<String>>(34)?
+                .and_then(|s| s.parse().ok()),
             profile_overrides: row.get(35)?,
         })
     }
@@ -405,7 +426,10 @@ impl TaskPhase {
     /// the permission path in particular — has only this to go on. Mirrors
     /// `AgentRole::is_read_only`, and the two must agree.
     pub fn is_read_only(self) -> bool {
-        matches!(self, TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview)
+        matches!(
+            self,
+            TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview
+        )
     }
 }
 

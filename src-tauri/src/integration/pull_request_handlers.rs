@@ -13,14 +13,14 @@ use specta::Type;
 use tauri::State;
 
 use crate::core::AppState;
-use crate::integration::code_hosting_handlers::{CodeHostingRung, code_hosting_status};
+use crate::integration::code_hosting_handlers::{code_hosting_status, CodeHostingRung};
 use crate::integration::issue_tracking_handlers::find_integration;
 use crate::integration::pull_request::{
-    CheckStatus, CiRollup, ListedPullRequest, ListedPullRequestDetail, PullRequestCheck,
-    PullRequestState, PullRequestTarget, create_pull_request,
-    fetch_branch_pull_request as fetch_branch_pull_request_on_forge, fetch_row_detail,
-    finds_pull_request_by_branch, list_open_pull_requests, preferred_credential_base,
-    supports_pull_request_list, supports_pull_requests,
+    create_pull_request, fetch_branch_pull_request as fetch_branch_pull_request_on_forge,
+    fetch_row_detail, finds_pull_request_by_branch, list_open_pull_requests,
+    preferred_credential_base, supports_pull_request_list, supports_pull_requests, CheckStatus,
+    CiRollup, ListedPullRequest, ListedPullRequestDetail, PullRequestCheck, PullRequestState,
+    PullRequestTarget,
 };
 
 /// What became of a pull request, for the panel.
@@ -169,7 +169,14 @@ pub struct BranchPullRequestInfo {
 async fn resolve_target(
     app_state: &Arc<AppState>,
     project_id: i32,
-) -> Result<(crate::models::project::ProjectCodeHostingConfig, String, Option<String>), String> {
+) -> Result<
+    (
+        crate::models::project::ProjectCodeHostingConfig,
+        String,
+        Option<String>,
+    ),
+    String,
+> {
     let status = code_hosting_status(app_state, project_id).await?;
     let Some(config) = status.config else {
         return Err(match status.rung {
@@ -180,15 +187,19 @@ async fn resolve_target(
         });
     };
 
-    let integration =
-        find_integration(&config.provider, &config.host, preferred_credential_base(&config).as_deref(), app_state)
-            .await
-            .ok_or_else(|| {
-                format!(
-                    "No {} credentials are available. Connect {} in Settings.",
-                    config.provider, config.provider
-                )
-            })?;
+    let integration = find_integration(
+        &config.provider,
+        &config.host,
+        preferred_credential_base(&config).as_deref(),
+        app_state,
+    )
+    .await
+    .ok_or_else(|| {
+        format!(
+            "No {} credentials are available. Connect {} in Settings.",
+            config.provider, config.provider
+        )
+    })?;
 
     Ok((config, integration.token, integration.instance_url))
 }
@@ -254,7 +265,11 @@ pub async fn list_project_pull_requests(
     cursor: Option<String>,
     search: Option<String>,
 ) -> Result<PullRequestPageInfo, String> {
-    let empty = PullRequestPageInfo { items: Vec::new(), next_cursor: None, total: None };
+    let empty = PullRequestPageInfo {
+        items: Vec::new(),
+        next_cursor: None,
+        total: None,
+    };
 
     let Ok((config, token, instance_url)) = resolve_target(app_state.inner(), project_id).await
     else {
@@ -265,17 +280,27 @@ pub async fn list_project_pull_requests(
         return Ok(empty);
     }
 
-    let target =
-        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+    let target = PullRequestTarget {
+        config: &config,
+        instance_url: instance_url.as_deref(),
+        token: &token,
+    };
 
     // A blank box is not a search. Passing one through would ask GitHub for `is:pr is:open` with a
     // trailing space and rank by relevance, quietly reordering the list the moment the user clears
     // what they typed.
-    let term = search.as_deref().map(str::trim).filter(|term| !term.is_empty());
+    let term = search
+        .as_deref()
+        .map(str::trim)
+        .filter(|term| !term.is_empty());
 
     let page = list_open_pull_requests(&target, cursor.as_deref(), term).await?;
     Ok(PullRequestPageInfo {
-        items: page.items.into_iter().map(to_project_pull_request).collect(),
+        items: page
+            .items
+            .into_iter()
+            .map(to_project_pull_request)
+            .collect(),
         next_cursor: page.next_cursor,
         total: page.total,
     })
@@ -299,10 +324,15 @@ pub async fn fetch_pull_request_row_detail(
     head_sha: Option<String>,
 ) -> Result<PullRequestRowDetail, String> {
     let (config, token, instance_url) = resolve_target(app_state.inner(), project_id).await?;
-    let target =
-        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+    let target = PullRequestTarget {
+        config: &config,
+        instance_url: instance_url.as_deref(),
+        token: &token,
+    };
 
-    Ok(to_row_detail(fetch_row_detail(&target, number, head_sha.as_deref()).await?))
+    Ok(to_row_detail(
+        fetch_row_detail(&target, number, head_sha.as_deref()).await?,
+    ))
 }
 
 /// The whole session card for one branch: which pull request, what state, and its checks.
@@ -334,8 +364,11 @@ pub async fn fetch_branch_pull_request(
         return Ok(None);
     }
 
-    let target =
-        PullRequestTarget { config: &config, instance_url: instance_url.as_deref(), token: &token };
+    let target = PullRequestTarget {
+        config: &config,
+        instance_url: instance_url.as_deref(),
+        token: &token,
+    };
 
     let Some(found) = fetch_branch_pull_request_on_forge(&target, &branch).await? else {
         return Ok(None);

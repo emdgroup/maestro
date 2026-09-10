@@ -98,7 +98,10 @@ pub async fn exists(conn: &GitConnection, path: &str) -> bool {
     if is_local(conn) {
         return std::path::Path::new(path).exists();
     }
-    run_on(conn, None, "test", &["-e", path]).await.map(|out| out.success()).unwrap_or(false)
+    run_on(conn, None, "test", &["-e", path])
+        .await
+        .map(|out| out.success())
+        .unwrap_or(false)
 }
 
 /// Whether `path` is an existing directory on the connection's host, distinguishing "no" from
@@ -114,11 +117,15 @@ pub async fn try_dir_exists(conn: &GitConnection, path: &str) -> Result<bool, St
         // unregistered distro exits 1 too on some builds but a stopped container exits 125/126,
         // and `docker exec` on a dead daemon exits 1 from the CLI itself. Treat only a clean 1
         // as an answer, because the caller deletes rows on the strength of it.
-        1 if !output.stderr.is_empty() => {
-            Err(format!("could not check {path}: {}", output.stderr_string()))
-        }
+        1 if !output.stderr.is_empty() => Err(format!(
+            "could not check {path}: {}",
+            output.stderr_string()
+        )),
         1 => Ok(false),
-        code => Err(format!("could not check {path}: exit {code} {}", output.stderr_string())),
+        code => Err(format!(
+            "could not check {path}: exit {code} {}",
+            output.stderr_string()
+        )),
     }
 }
 
@@ -136,7 +143,10 @@ pub async fn create_dir_all(conn: &GitConnection, path: &str) -> Result<(), Stri
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to create {path}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to create {path}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -160,9 +170,14 @@ pub async fn contents(
         return filesystem_handlers::local_contents(path.to_string(), include_hidden).await;
     }
     let (dirs, files) = parse_listing(&listing(conn, path).await?, include_hidden);
-    let mut result: Vec<FileEntry> =
-        dirs.into_iter().map(|name| FileEntry { name, is_dir: true }).collect();
-    result.extend(files.into_iter().map(|name| FileEntry { name, is_dir: false }));
+    let mut result: Vec<FileEntry> = dirs
+        .into_iter()
+        .map(|name| FileEntry { name, is_dir: true })
+        .collect();
+    result.extend(files.into_iter().map(|name| FileEntry {
+        name,
+        is_dir: false,
+    }));
     Ok(result)
 }
 
@@ -177,8 +192,11 @@ pub async fn workspace_files(
     }
     // `.git` stays out even with hidden entries asked for: its object store alone would exhaust
     // MAX_WORKSPACE_FILES and leave no room for the files the picker exists to find.
-    let hidden_pruning =
-        if include_hidden { "-not -path '*/.git/*'" } else { "-not -path '*/.*'" };
+    let hidden_pruning = if include_hidden {
+        "-not -path '*/.git/*'"
+    } else {
+        "-not -path '*/.*'"
+    };
     let listing = script(
         conn,
         &format!(
@@ -319,7 +337,10 @@ pub async fn write_text(conn: &GitConnection, path: &str, contents: &str) -> Res
     if let Err(e) = run_on(conn, None, "rm", &["-f", &temp_path]).await {
         log::warn!("could not remove {temp_path} after a failed write: {e}");
     }
-    Err(format!("Failed to write {path}: {}", output.stderr_string()))
+    Err(format!(
+        "Failed to write {path}: {}",
+        output.stderr_string()
+    ))
 }
 
 /// Create an empty file, refusing to truncate one that is already there.
@@ -341,7 +362,10 @@ pub async fn create_file(conn: &GitConnection, path: &str) -> Result<(), String>
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to create {path}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to create {path}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -356,7 +380,10 @@ pub async fn create_directory(conn: &GitConnection, path: &str) -> Result<(), St
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to create {path}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to create {path}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -374,7 +401,10 @@ pub async fn rename_path(conn: &GitConnection, from: &str, to: &str) -> Result<(
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to rename {from}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to rename {from}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -393,7 +423,10 @@ pub async fn delete_path(conn: &GitConnection, path: &str, recursive: bool) -> R
     if output.success() {
         Ok(())
     } else {
-        Err(format!("Failed to delete {path}: {}", output.stderr_string()))
+        Err(format!(
+            "Failed to delete {path}: {}",
+            output.stderr_string()
+        ))
     }
 }
 
@@ -417,7 +450,12 @@ pub async fn list_contents(
     path: String,
     include_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
-    contents(&connect(&app_state, connection, path.clone()).await?, &path, include_hidden).await
+    contents(
+        &connect(&app_state, connection, path.clone()).await?,
+        &path,
+        include_hidden,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -428,8 +466,12 @@ pub async fn list_workspace_files(
     path: String,
     include_hidden: bool,
 ) -> Result<Vec<String>, String> {
-    workspace_files(&connect(&app_state, connection, path.clone()).await?, &path, include_hidden)
-        .await
+    workspace_files(
+        &connect(&app_state, connection, path.clone()).await?,
+        &path,
+        include_hidden,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -460,7 +502,12 @@ pub async fn write_file(
     path: String,
     contents: String,
 ) -> Result<(), String> {
-    write_text(&connect(&app_state, connection, path.clone()).await?, &path, &contents).await
+    write_text(
+        &connect(&app_state, connection, path.clone()).await?,
+        &path,
+        &contents,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -491,7 +538,12 @@ pub async fn rename_file(
     from: String,
     to: String,
 ) -> Result<(), String> {
-    rename_path(&connect(&app_state, connection, from.clone()).await?, &from, &to).await
+    rename_path(
+        &connect(&app_state, connection, from.clone()).await?,
+        &from,
+        &to,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -502,7 +554,12 @@ pub async fn delete_file(
     path: String,
     recursive: bool,
 ) -> Result<(), String> {
-    delete_path(&connect(&app_state, connection, path.clone()).await?, &path, recursive).await
+    delete_path(
+        &connect(&app_state, connection, path.clone()).await?,
+        &path,
+        recursive,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -553,8 +610,15 @@ mod tests {
     #[test]
     fn the_temporary_is_a_sibling_of_its_destination() {
         let temp = temp_sibling("/srv/app/config.json");
-        assert!(temp.starts_with("/srv/app/config.json."), "{temp} left its directory");
+        assert!(
+            temp.starts_with("/srv/app/config.json."),
+            "{temp} left its directory"
+        );
         assert!(temp.ends_with(".tmp"), "{temp} is not marked temporary");
-        assert_ne!(temp, temp_sibling("/srv/app/config.json"), "two writes must not collide");
+        assert_ne!(
+            temp,
+            temp_sibling("/srv/app/config.json"),
+            "two writes must not collide"
+        );
     }
 }
