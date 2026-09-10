@@ -1,11 +1,11 @@
 //! External file attachment preparation for ACP sessions.
 
-use std::sync::Arc;
-use tauri::State;
+use crate::acp::ConnectionKey;
+use crate::core::AppState;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use crate::core::AppState;
-use crate::acp::ConnectionKey;
+use std::sync::Arc;
+use tauri::State;
 
 const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 const SCALE_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -138,7 +138,10 @@ pub async fn validate_attachment(
         None
     };
 
-    Ok(AttachmentValidation { size_bytes, rejection })
+    Ok(AttachmentValidation {
+        size_bytes,
+        rejection,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -152,7 +155,11 @@ pub struct PreparedAttachment {
 /// Where an attachment lands on the far side. Shared by every connection type so an agent finds
 /// attachments in one place however the project is reached.
 fn attachments_dir(cwd: &str, log_id: i32) -> String {
-    format!("{}/.maestro/attachments/{}", cwd.trim_end_matches('/'), log_id)
+    format!(
+        "{}/.maestro/attachments/{}",
+        cwd.trim_end_matches('/'),
+        log_id
+    )
 }
 
 /// Create the destination directory and copy into it in one command, so a copy costs one round
@@ -211,17 +218,15 @@ pub async fn prepare_external_attachments(
                 "uri": uri,
             })
         } else {
-            let mime = mime_for_extension(&file.path)
-                .map(str::to_string);
+            let mime = mime_for_extension(&file.path).map(str::to_string);
 
             let uri = match &connection_key {
                 ConnectionKey::Ssh { id: conn_id } => {
                     let conn_id = *conn_id;
-                    let session = app_state
-                        .ssh
-                        .get_session(conn_id)
-                        .await
-                        .ok_or_else(|| format!("No active SSH session for connection {conn_id}"))?;
+                    let session =
+                        app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
+                            format!("No active SSH session for connection {conn_id}")
+                        })?;
 
                     let attachments_dir = attachments_dir(&cwd, log_id);
                     session
@@ -248,12 +253,16 @@ pub async fn prepare_external_attachments(
                 // means something on its side.
                 ConnectionKey::Wsl { id: wsl_id } => {
                     let distro = {
-                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                        let conn = app_state
+                            .db
+                            .lock()
+                            .map_err(|e| format!("Lock failed: {e}"))?;
                         conn.query_row(
                             "SELECT distro_name FROM wsl_connections WHERE id = ?",
                             [*wsl_id],
                             |row| row.get::<_, String>(0),
-                        ).map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
+                        )
+                        .map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
                     };
 
                     // The host's drives are already mounted inside the distro, so this copies
@@ -283,12 +292,16 @@ pub async fn prepare_external_attachments(
                 }
                 ConnectionKey::Docker { id: docker_id } => {
                     let container_name = {
-                        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+                        let conn = app_state
+                            .db
+                            .lock()
+                            .map_err(|e| format!("Lock failed: {e}"))?;
                         conn.query_row(
                             "SELECT container_name FROM docker_connections WHERE id = ?",
                             [*docker_id],
                             |row| row.get::<_, String>(0),
-                        ).map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?
+                        )
+                        .map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?
                     };
                     let cli = crate::connectivity::docker::ContainerCli::detect()?;
 
@@ -396,8 +409,9 @@ pub async fn save_clipboard_image(
         .as_millis();
     let random_suffix: u32 = rand::random();
 
-    let tmp_path = std::env::temp_dir()
-        .join(format!("maestro-clipboard-{timestamp}-{random_suffix}.{ext}"));
+    let tmp_path = std::env::temp_dir().join(format!(
+        "maestro-clipboard-{timestamp}-{random_suffix}.{ext}"
+    ));
 
     tokio::fs::write(&tmp_path, &bytes)
         .await

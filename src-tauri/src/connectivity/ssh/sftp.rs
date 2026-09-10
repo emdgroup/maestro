@@ -63,9 +63,10 @@ pub async fn upload_file(
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
     loop {
-        let bytes_read = local_file.read(&mut buffer).await.map_err(|e| {
-            SshError::ConnectionError(format!("Local read failed: {}", e))
-        })?;
+        let bytes_read = local_file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| SshError::ConnectionError(format!("Local read failed: {}", e)))?;
 
         if bytes_read == 0 {
             break;
@@ -78,6 +79,9 @@ pub async fn upload_file(
 
         bytes_transferred += bytes_read as u64;
 
+        // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
+        // webview that has gone away would turn one transfer into thousands of identical warnings.
+        // The transfer itself still succeeds or fails on its own errors above.
         let _ = app_handle.emit(
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {
@@ -114,7 +118,10 @@ pub async fn download_file(
     let sftp = session.open_sftp_session().await?;
 
     let remote_metadata = sftp.metadata(remote_path).await.map_err(|e| {
-        SshError::ConnectionError(format!("Failed to stat remote file '{}': {}", remote_path, e))
+        SshError::ConnectionError(format!(
+            "Failed to stat remote file '{}': {}",
+            remote_path, e
+        ))
     })?;
     let total_bytes = remote_metadata.size.unwrap_or(0);
 
@@ -147,9 +154,10 @@ pub async fn download_file(
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
     loop {
-        let bytes_read = remote_file.read(&mut buffer).await.map_err(|e| {
-            SshError::ConnectionError(format!("Remote read failed: {}", e))
-        })?;
+        let bytes_read = remote_file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| SshError::ConnectionError(format!("Remote read failed: {}", e)))?;
 
         if bytes_read == 0 {
             break;
@@ -162,6 +170,9 @@ pub async fn download_file(
 
         bytes_transferred += bytes_read as u64;
 
+        // Deliberately not logged, unlike the other emit sites: this fires once per buffer, so a
+        // webview that has gone away would turn one transfer into thousands of identical warnings.
+        // The transfer itself still succeeds or fails on its own errors above.
         let _ = app_handle.emit(
             &format!("sftp://transfer-progress/{}", transfer_id),
             FileTransferProgress {

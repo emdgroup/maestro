@@ -1,27 +1,32 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
-use acp::schema::ProtocolVersion;
 use acp::schema::v1::{
     ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
     DeleteSessionRequest, Implementation, InitializeRequest, KillTerminalRequest,
     KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer, NewSessionRequest,
     ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, TerminalExitStatus,
-    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse,
+    RequestPermissionResponse, SessionNotification, TerminalExitStatus, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
-use agent_client_protocol_schema::v1::{AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities};
+use acp::schema::ProtocolVersion;
+use agent_client_protocol as acp;
+use agent_client_protocol_schema::v1::{
+    AuthCapabilities, AuthMethod, ElicitationCapabilities, ElicitationFormCapabilities,
+};
 use maestro_protocol::{
-    AUTH_REQUIRED_ERROR, AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo,
-    SESSION_LOAD_FAILED_ERROR, ServerResponse, SessionListEntry,
-    SessionModeState as ProtocolSessionModeState,
-    SessionModelState as ProtocolSessionModelState,
+    AuthMethodInfo, ErrorResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerResponse,
+    SessionListEntry, SessionModeState as ProtocolSessionModeState,
+    SessionModelState as ProtocolSessionModelState, AUTH_REQUIRED_ERROR, SESSION_LOAD_FAILED_ERROR,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+use super::command_loop::{
+    convert_acp_modes, extract_prompt_capabilities, models_from_config_options,
+    modes_from_config_options, run_command_loop, serialize_config_options,
+};
+use super::handlers::{configure_acp_builder, ConnectionHandlers};
 use crate::agent;
 use crate::mcp_config::McpTransportSupport;
 use crate::send_response;
@@ -29,12 +34,6 @@ use crate::sessions::{
     ActiveSession, AgentCapabilities, AgentConnection, AgentConnectionHandle, SessionCommand,
     SharedSessionState,
 };
-use super::command_loop::{
-    convert_acp_modes, extract_prompt_capabilities,
-    models_from_config_options, modes_from_config_options, run_command_loop,
-    serialize_config_options,
-};
-use super::handlers::{configure_acp_builder, ConnectionHandlers};
 
 pub(crate) struct SpawnResult {
     pub(crate) session: ActiveSession,
@@ -72,21 +71,18 @@ async fn mcp_servers_for(cwd: &str, support: McpTransportSupport) -> Vec<McpServ
 }
 
 /// Resolve the project's extra workspace roots and report what was dropped and why.
-async fn additional_directories_for(
-    raw: &[String],
-    supported: bool,
-) -> Vec<std::path::PathBuf> {
+async fn additional_directories_for(raw: &[String], supported: bool) -> Vec<std::path::PathBuf> {
     let home = crate::workspace_roots::home_dir();
-    let (dirs, skipped) = crate::workspace_roots::resolve_additional_directories(
-        raw,
-        supported,
-        home.as_deref(),
-    );
+    let (dirs, skipped) =
+        crate::workspace_roots::resolve_additional_directories(raw, supported, home.as_deref());
     for reason in &skipped {
         crate::send_diag("warn", format!("[roots] skipped {reason}"));
     }
     if !dirs.is_empty() {
-        crate::send_diag("info", format!("[roots] {} additional workspace root(s)", dirs.len()));
+        crate::send_diag(
+            "info",
+            format!("[roots] {} additional workspace root(s)", dirs.len()),
+        );
     }
     dirs
 }
@@ -160,7 +156,10 @@ pub(crate) async fn create_session_on_connection(
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
-    crate::send_diag("info", format!("[session] session/new maestro_id={maestro_session_id}"));
+    crate::send_diag(
+        "info",
+        format!("[session] session/new maestro_id={maestro_session_id}"),
+    );
     let mcp_servers = mcp_servers_for(cwd, conn.capabilities.mcp_transports).await;
     let roots = additional_directories_for(
         additional_directories,
@@ -195,11 +194,19 @@ pub(crate) async fn create_session_on_connection(
         }
     };
 
-    let models = session_response.config_options.as_deref().and_then(models_from_config_options);
-    let modes = session_response.config_options.as_deref()
+    let models = session_response
+        .config_options
+        .as_deref()
+        .and_then(models_from_config_options);
+    let modes = session_response
+        .config_options
+        .as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(session_response.modes.as_ref()));
-    let config_options = session_response.config_options.as_deref().map(serialize_config_options);
+    let config_options = session_response
+        .config_options
+        .as_deref()
+        .map(serialize_config_options);
     let session_id = session_response.session_id.clone();
     let acp_session_id_str = session_id.to_string();
 
@@ -223,22 +230,29 @@ pub(crate) async fn create_session_on_connection(
 
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id.clone();
-    let prompt_capabilities = conn
-        .capabilities
-        .prompt_capabilities
-        .clone()
-        .unwrap_or(PromptCapabilitiesInfo {
-            embedded_context: false,
-            image: false,
-            audio: false,
-        });
+    let prompt_capabilities =
+        conn.capabilities
+            .prompt_capabilities
+            .clone()
+            .unwrap_or(PromptCapabilitiesInfo {
+                embedded_context: false,
+                image: false,
+                audio: false,
+            });
     let supports_session_list = conn.capabilities.supports_session_list;
     let supports_session_load = conn.capabilities.supports_session_load;
     let supports_session_close = conn.capabilities.supports_session_close;
     let supports_session_delete = conn.capabilities.supports_session_delete;
 
     let router = Arc::clone(&conn.router);
-    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
+    let task = tokio::spawn(run_command_loop(
+        cmd_rx,
+        cx,
+        session_id,
+        so,
+        sid,
+        Some(Arc::clone(&router)),
+    ));
 
     Ok(SpawnResult {
         session: ActiveSession {
@@ -279,7 +293,16 @@ pub(crate) async fn load_session_on_connection(
     cwd: &str,
     additional_directories: &[String],
     stdout: Arc<Mutex<tokio::io::Stdout>>,
-) -> Result<Option<(ActiveSession, Option<ProtocolSessionModelState>, Option<ProtocolSessionModeState>, PromptCapabilitiesInfo, Option<Vec<serde_json::Value>>)>, ()> {
+) -> Result<
+    Option<(
+        ActiveSession,
+        Option<ProtocolSessionModelState>,
+        Option<ProtocolSessionModeState>,
+        PromptCapabilitiesInfo,
+        Option<Vec<serde_json::Value>>,
+    )>,
+    (),
+> {
     let cx = conn.connection.clone();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
@@ -295,21 +318,23 @@ pub(crate) async fn load_session_on_connection(
     // Register the route before sending the request so that history notifications
     // emitted during session/load are routed correctly instead of being dropped.
     conn.router
-        .register(resume_session_id.clone(), maestro_session_id.clone(), session_state)
+        .register(
+            resume_session_id.clone(),
+            maestro_session_id.clone(),
+            session_state,
+        )
         .await;
 
-    let load_req = LoadSessionRequest::new(
-        resume_session_id.clone(),
-        std::path::PathBuf::from(cwd),
-    )
-    .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await)
-    .additional_directories(
-        additional_directories_for(
-            additional_directories,
-            conn.capabilities.supports_additional_directories,
-        )
-        .await,
-    );
+    let load_req =
+        LoadSessionRequest::new(resume_session_id.clone(), std::path::PathBuf::from(cwd))
+            .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await)
+            .additional_directories(
+                additional_directories_for(
+                    additional_directories,
+                    conn.capabilities.supports_additional_directories,
+                )
+                .await,
+            );
     let load_response = match cx.send_request(load_req).block_task().await {
         Ok(r) => r,
         Err(e) => {
@@ -336,29 +361,49 @@ pub(crate) async fn load_session_on_connection(
             return if connection_alive { Ok(None) } else { Err(()) };
         }
     };
-    crate::send_diag("info", format!("[session] session/load maestro_id={maestro_session_id} resume={resume_session_id}"));
+    crate::send_diag(
+        "info",
+        format!(
+            "[session] session/load maestro_id={maestro_session_id} resume={resume_session_id}"
+        ),
+    );
 
-    let models = load_response.config_options.as_deref().and_then(models_from_config_options);
-    let modes = load_response.config_options.as_deref()
+    let models = load_response
+        .config_options
+        .as_deref()
+        .and_then(models_from_config_options);
+    let modes = load_response
+        .config_options
+        .as_deref()
         .and_then(modes_from_config_options)
         .or_else(|| convert_acp_modes(load_response.modes.as_ref()));
-    let config_options = load_response.config_options.as_deref().map(serialize_config_options);
+    let config_options = load_response
+        .config_options
+        .as_deref()
+        .map(serialize_config_options);
     let session_id = acp::schema::v1::SessionId::new(resume_session_id.clone());
 
-    let prompt_capabilities = conn
-        .capabilities
-        .prompt_capabilities
-        .clone()
-        .unwrap_or(PromptCapabilitiesInfo {
-            embedded_context: false,
-            image: false,
-            audio: false,
-        });
+    let prompt_capabilities =
+        conn.capabilities
+            .prompt_capabilities
+            .clone()
+            .unwrap_or(PromptCapabilitiesInfo {
+                embedded_context: false,
+                image: false,
+                audio: false,
+            });
 
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id;
     let router = Arc::clone(&conn.router);
-    let task = tokio::spawn(run_command_loop(cmd_rx, cx, session_id, so, sid, Some(Arc::clone(&router))));
+    let task = tokio::spawn(run_command_loop(
+        cmd_rx,
+        cx,
+        session_id,
+        so,
+        sid,
+        Some(Arc::clone(&router)),
+    ));
 
     Ok(Some((
         ActiveSession {
@@ -391,21 +436,21 @@ pub(crate) async fn pre_initialize_agent(
     cwd: &str,
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 ) -> Option<AgentConnection> {
-    let mut child =
-        match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = send_response(
-                    &stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: e,
-                        session_id: None,
-                    })),
-                )
-                .await;
-                return None;
-            }
-        };
+    let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = send_response(
+                &stdout,
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message: e,
+                    session_id: None,
+                })),
+            )
+            .await;
+            return None;
+        }
+    };
 
     let child_stdin = child.stdin.take().expect("child stdin must be piped");
     let child_stdout = child.stdout.take().expect("child stdout must be piped");
@@ -538,9 +583,15 @@ pub(crate) async fn pre_initialize_agent(
             .unwrap_or_default();
         if let Err(ref e) = result {
             if acp::is_incoming_transport_closed(e) {
-                crate::send_diag("info", format!("[agent] ACP connection closed (EOF){exit_msg}"));
+                crate::send_diag(
+                    "info",
+                    format!("[agent] ACP connection closed (EOF){exit_msg}"),
+                );
             } else {
-                crate::send_diag("error", format!("[agent] ACP connection closed with error{exit_msg}: {e}"));
+                crate::send_diag(
+                    "error",
+                    format!("[agent] ACP connection closed with error{exit_msg}: {e}"),
+                );
             }
         } else {
             crate::send_diag("info", format!("[agent] ACP connection closed{exit_msg}"));
@@ -559,7 +610,10 @@ pub(crate) async fn pre_initialize_agent(
         Ok(Err(e)) => {
             let _ = send_response(
                 &stdout,
-                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse { message: e, session_id: None })),
+                &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                    message: e,
+                    session_id: None,
+                })),
             )
             .await;
             None

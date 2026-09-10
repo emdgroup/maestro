@@ -31,7 +31,10 @@ impl TaskHolds {
             Ok(mut held) => {
                 held.insert(task_id, Instant::now() + ttl);
             }
-            Err(_) => log::warn!("[holds] hold map poisoned; task {} will not be held", task_id),
+            Err(_) => log::warn!(
+                "[holds] hold map poisoned; task {} will not be held",
+                task_id
+            ),
         }
     }
 
@@ -63,7 +66,9 @@ impl TaskHolds {
         let now = Instant::now();
         held.retain(|_, expires_at| *expires_at > now);
 
-        ids.into_iter().filter(|id| !held.contains_key(id)).collect()
+        ids.into_iter()
+            .filter(|id| !held.contains_key(id))
+            .collect()
     }
 }
 

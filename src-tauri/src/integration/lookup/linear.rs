@@ -11,6 +11,7 @@ use crate::integration::linear::LinearTeam;
 pub async fn list_linear_teams(
     app_state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<LinearTeam>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("linear", &app_state)?;
+    let creds =
+        crate::integration::issue_tracking_handlers::get_integration_creds("linear", &app_state)?;
     crate::integration::linear::list_teams(&creds.token).await
 }

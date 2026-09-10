@@ -3,16 +3,18 @@ use std::time::Duration;
 use tauri::State;
 use tokio::sync::oneshot;
 
-use crate::core::AppState;
+use crate::acp::transport::{FileReadRequest, FileSearchRequest, MaestroRpcMessage, ServerRequest};
 use crate::acp::ConnectionKey;
-use crate::acp::transport::{MaestroRpcMessage, ServerRequest, FileSearchRequest, FileReadRequest};
 use crate::connectivity::files::BINARY_LIMIT;
+use crate::core::AppState;
 
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 async fn session_file_rpc<T>(
     app_state: &AppState,
     log_id: i32,
-    pending_field: impl Fn(&crate::acp::AcpProcess) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
+    pending_field: impl Fn(
+        &crate::acp::AcpProcess,
+    ) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
     build_request: impl FnOnce(&str) -> MaestroRpcMessage,
 ) -> Result<T, String> {
     let (cwd, pending) = {
@@ -24,7 +26,9 @@ async fn session_file_rpc<T>(
     };
     let (tx, rx) = oneshot::channel();
     {
-        *pending.lock().map_err(|_| "pending channel lock poisoned".to_string())? = Some(tx);
+        *pending
+            .lock()
+            .map_err(|_| "pending channel lock poisoned".to_string())? = Some(tx);
     }
     crate::acp::write_to_acp_session(app_state, log_id, &build_request(&cwd)).await?;
     tokio::time::timeout(Duration::from_secs(15), rx)
@@ -41,13 +45,18 @@ pub async fn search_session_files(
     query: String,
     limit: Option<u32>,
 ) -> Result<Vec<String>, String> {
-    session_file_rpc(&app_state, log_id, |s| &s.pending_file_search, |cwd| {
-        MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
-            cwd: cwd.to_string(),
-            query,
-            limit,
-        }))
-    })
+    session_file_rpc(
+        &app_state,
+        log_id,
+        |s| &s.pending_file_search,
+        |cwd| {
+            MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
+                cwd: cwd.to_string(),
+                query,
+                limit,
+            }))
+        },
+    )
     .await
 }
 
@@ -58,12 +67,17 @@ pub async fn read_session_file(
     log_id: i32,
     relative_path: String,
 ) -> Result<String, String> {
-    session_file_rpc(&app_state, log_id, |s| &s.pending_file_read, |cwd| {
-        MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
-            cwd: cwd.to_string(),
-            relative_path,
-        }))
-    })
+    session_file_rpc(
+        &app_state,
+        log_id,
+        |s| &s.pending_file_read,
+        |cwd| {
+            MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
+                cwd: cwd.to_string(),
+                relative_path,
+            }))
+        },
+    )
     .await
 }
 
@@ -99,7 +113,8 @@ pub async fn read_session_file_binary(
         // SSH keeps its own path for the sftp cache: an image in the stream is re-read on every
         // render, and re-downloading it each time is what the cache exists to avoid.
         ConnectionKey::Ssh { id: conn_id } => {
-            let cache_dir = app_state.app_data_dir
+            let cache_dir = app_state
+                .app_data_dir
                 .join("working_file_cache")
                 .join(log_id.to_string());
 

@@ -1,5 +1,5 @@
-use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
 
 // ── Response structs ────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ struct LinearIssue {
     #[serde(rename = "updatedAt")]
     updated_at: Option<String>,
     labels: LabelConnection,
-    priority: Option<i32>,   // 0=null, 1=Urgent, 2=High, 3=Medium, 4=Low
+    priority: Option<i32>, // 0=null, 1=Urgent, 2=High, 3=Medium, 4=Low
     #[serde(rename = "issueType")]
     issue_type: Option<LinearIssueType>,
 }
@@ -113,9 +113,10 @@ pub async fn validate_and_store(
     _project_path: &str,
     app_state: &crate::core::AppState,
 ) -> Result<String, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
-    let response = post_graphql_query(&client, api_key, VIEWER_QUERY, serde_json::Value::Null).await?;
+    let response =
+        post_graphql_query(&client, api_key, VIEWER_QUERY, serde_json::Value::Null).await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -164,7 +165,7 @@ pub async fn validate_and_store(
 
 /// Fetch all teams in the Linear workspace for the given API key.
 pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = post_graphql_query(&client, token, TEAMS_QUERY, serde_json::Value::Null).await?;
 
@@ -199,11 +200,8 @@ pub async fn list_teams(token: &str) -> Result<Vec<LinearTeam>, String> {
 }
 
 /// Fetch open issues from Linear, optionally filtered to a specific team.
-pub async fn fetch_issues(
-    token: &str,
-    team_id: Option<&str>,
-) -> Result<Vec<RemoteIssue>, String> {
-    let client = super::build_http_client()?;
+pub async fn fetch_issues(token: &str, team_id: Option<&str>) -> Result<Vec<RemoteIssue>, String> {
+    let client = super::http_client()?;
 
     let response = match team_id {
         None => {
@@ -333,15 +331,19 @@ mod tests {
         let resp: graphql_client::Response<IssuesResponseData> =
             serde_json::from_str(json).unwrap();
         let nodes = resp.data.unwrap().issues.nodes;
-        let labels: Vec<String> = nodes[0].labels.nodes.iter().map(|l| l.name.clone()).collect();
+        let labels: Vec<String> = nodes[0]
+            .labels
+            .nodes
+            .iter()
+            .map(|l| l.name.clone())
+            .collect();
         assert_eq!(labels, vec!["bug", "urgent"]);
     }
 
     #[test]
     fn test_teams_response_deserialization() {
         let json = r#"{"data":{"teams":{"nodes":[{"id":"t1","name":"Engineering","key":"ENG"}]}}}"#;
-        let resp: graphql_client::Response<TeamsResponseData> =
-            serde_json::from_str(json).unwrap();
+        let resp: graphql_client::Response<TeamsResponseData> = serde_json::from_str(json).unwrap();
         let nodes = resp.data.unwrap().teams.nodes;
         assert_eq!(nodes[0].name, "Engineering");
         assert_eq!(nodes[0].key, "ENG");

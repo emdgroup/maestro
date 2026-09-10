@@ -50,6 +50,29 @@ cargo test            # Run Rust tests (see below on Windows)
 cargo check           # Check compilation without building
 ```
 
+Formatting is a workspace-level concern, so it runs from the repo root rather than `src-tauri/`,
+and has scripts alongside the frontend's `format`/`format:fix` so both halves are driven the same
+way:
+
+```bash
+bun run format:rust       # Check formatting with rustfmt
+bun run format:rust:fix   # Fix formatting with rustfmt
+```
+
+There is no `rustfmt.toml`: the settings are stock rustfmt, and the absence of a config file is
+what keeps them that way. The tree was reformatted wholesale once, in `613fcabf`, after having
+drifted to 1349 unformatted hunks across 148 of 161 files — run `format:rust` before pushing so
+that does not have to happen twice. CI runs both scripts, so neither half can drift again.
+
+**`.oxfmtrc.json` ignores what release-please writes.** `CHANGELOG.md`,
+`.release-please-manifest.json` and `src-tauri/tauri.conf.json` are machine-written on every
+release and cannot be kept formatted. The config file lists only `$.version` as an extra-file
+path for `tauri.conf.json`, which reads like a targeted edit, but release-please's JSON updater
+parses the whole document and re-serializes it with `JSON.stringify(data, null, 2)` — the 0.24.0
+release expanded two single-line arrays that way. Formatting any of the three lasts until the next
+release and then turns the release pull request red, which is why they are ignored rather than
+fixed. `src/types/bindings.ts` is on that list for the same reason: a generator owns it.
+
 **On Windows, `cargo test` does not work — use this instead:**
 
 ```bash

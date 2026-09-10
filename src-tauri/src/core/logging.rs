@@ -100,10 +100,15 @@ pub fn install<R: Runtime>(
         .max_file_size(MAX_FILE_SIZE)
         .rotation_strategy(ROTATION)
         .split(app)
-        .map_err(|e| format!("Failed to open the log directory {}: {}", directory.display(), e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to open the log directory {}: {}",
+                directory.display(),
+                e
+            )
+        })?;
 
-    log::set_boxed_logger(logger)
-        .map_err(|e| format!("A logger is already installed: {}", e))?;
+    log::set_boxed_logger(logger).map_err(|e| format!("A logger is already installed: {}", e))?;
     set_level(level);
 
     if ACTIVE_DIRECTORY.set(directory.to_path_buf()).is_err() {
@@ -201,7 +206,10 @@ mod tests {
     #[test]
     fn every_offered_level_parses() {
         for level in LOG_LEVELS {
-            assert!(parse_level(level).is_some(), "{level} is offered but does not parse");
+            assert!(
+                parse_level(level).is_some(),
+                "{level} is offered but does not parse"
+            );
         }
     }
 
@@ -217,7 +225,11 @@ mod tests {
         for stored in ["error", "debug", "trace"] {
             let expected = effective_level(Some(stored));
             assert_eq!(apply_stored_level(Some(stored)), expected);
-            assert_eq!(log::max_level(), expected, "the global gate must follow the setting");
+            assert_eq!(
+                log::max_level(),
+                expected,
+                "the global gate must follow the setting"
+            );
         }
 
         set_level(restore);

@@ -1,12 +1,11 @@
+use crate::connectivity::docker::{ContainerCli, DockerConnection, DockerContainer};
+use crate::core::AppState;
 use std::sync::Arc;
 use tauri::State;
-use crate::core::AppState;
-use crate::connectivity::docker::{ContainerCli, DockerConnection, DockerContainer};
 
 fn detect_cli() -> Result<ContainerCli, String> {
     ContainerCli::detect()
 }
-
 
 // The docker helpers in connectivity/docker.rs stay synchronous because git/acp
 // modules also call them from worker threads; here they must not run on the main
@@ -42,7 +41,10 @@ pub async fn get_docker_home(container_name: String) -> Result<String, String> {
 /// List entries in a container directory.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_docker_directories(container_name: String, path: String) -> Result<Vec<String>, String> {
+pub async fn list_docker_directories(
+    container_name: String,
+    path: String,
+) -> Result<Vec<String>, String> {
     let cli = detect_cli()?;
     crate::connectivity::docker::list_directories(&cli, &container_name, &path).await
 }
@@ -89,7 +91,10 @@ pub async fn save_docker_connection(
     display_name: Option<String>,
 ) -> Result<DockerConnection, String> {
     let now = chrono::Utc::now().to_rfc3339();
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
     conn.execute(
         "INSERT INTO docker_connections (container_name, image_name, display_name, last_used_at, created_at)
          VALUES (?1, ?2, ?3, ?4, ?4)
@@ -108,8 +113,13 @@ pub async fn save_docker_connection(
 /// List all saved container connections from the database.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_docker_connections(app_state: State<'_, Arc<AppState>>) -> Result<Vec<DockerConnection>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+pub async fn list_docker_connections(
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<Vec<DockerConnection>, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
     let mut stmt = conn
         .prepare("SELECT id, container_name, image_name, display_name, last_used_at, created_at FROM docker_connections ORDER BY last_used_at DESC")
         .map_err(|e| format!("DB prepare failed: {e}"))?;
@@ -120,4 +130,3 @@ pub async fn list_docker_connections(app_state: State<'_, Arc<AppState>>) -> Res
         .map_err(|e| format!("DB row failed: {e}"))?;
     Ok(rows)
 }
-

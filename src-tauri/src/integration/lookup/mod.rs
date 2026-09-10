@@ -45,7 +45,11 @@ pub(crate) async fn fetch_all_pages<T: serde::de::DeserializeOwned>(
             .map_err(|e| format!("Network error: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("{} API error {}", provider_name, response.status().as_u16()));
+            return Err(format!(
+                "{} API error {}",
+                provider_name,
+                response.status().as_u16()
+            ));
         }
 
         let items: Vec<T> = response
@@ -66,11 +70,9 @@ pub(crate) async fn fetch_all_pages<T: serde::de::DeserializeOwned>(
 pub(crate) async fn get_github_token(app_state: &AppState) -> Result<String, String> {
     match crate::integration::issue_tracking_handlers::get_integration_creds("github", app_state) {
         Ok(creds) => Ok(creds.token),
-        Err(_) => {
-            crate::integration::github::try_gh_cli_token()
-                .await
-                .ok_or_else(|| "No GitHub credentials found".to_string())
-        }
+        Err(_) => crate::integration::github::try_gh_cli_token()
+            .await
+            .ok_or_else(|| "No GitHub credentials found".to_string()),
     }
 }
 
@@ -78,10 +80,13 @@ pub(crate) async fn get_github_token(app_state: &AppState) -> Result<String, Str
 pub(crate) async fn get_gitlab_creds(app_state: &AppState) -> Result<(String, String), String> {
     match crate::integration::issue_tracking_handlers::get_integration_creds("gitlab", app_state) {
         Ok(creds) => {
-            let instance_url = creds
-                .instance_url
-                .ok_or_else(|| "GitLab: instance_url missing from stored credentials".to_string())?;
-            Ok((creds.token, crate::integration::normalize_instance_url(&instance_url)))
+            let instance_url = creds.instance_url.ok_or_else(|| {
+                "GitLab: instance_url missing from stored credentials".to_string()
+            })?;
+            Ok((
+                creds.token,
+                crate::integration::normalize_instance_url(&instance_url),
+            ))
         }
         Err(_) => {
             let (token, instance_url, _) = crate::integration::gitlab::try_glab_cli_credentials()

@@ -13,6 +13,7 @@
 
 mod agent;
 mod agent_restart;
+mod auth;
 mod command_ext;
 mod dispatch;
 mod exec_channel;
@@ -41,7 +42,8 @@ use maestro_protocol::{
 use tokio::sync::Mutex;
 
 use agent_restart::handle_agent_restart;
-use dispatch::{dispatch_message, AuthTerminalState};
+use auth::AuthTerminalState;
+use dispatch::dispatch_message;
 use sessions::{ActiveSession, AgentConnectionMap, SessionMap, SharedAgentConnections};
 
 // Re-export so that `crate::send_response` and `crate::send_diag` still resolve

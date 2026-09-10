@@ -18,7 +18,9 @@ use crate::core::AppState;
 /// moving because three reviews are open looks identical to one that is broken.
 async fn occupied_slots(app_state: &Arc<AppState>, connection: ConnectionKey) -> i32 {
     let acp = app_state.acp.sessions.lock().await;
-    acp.values().filter(|p| p.task_id.is_some() && p.connection_key == connection).count() as i32
+    acp.values()
+        .filter(|p| p.task_id.is_some() && p.connection_key == connection)
+        .count() as i32
 }
 
 /// The connection a project runs on, and the limit in force there.
@@ -36,7 +38,10 @@ async fn capacity_for_project(
     use crate::execution::capacity::{available_memory_mb, resolve_capacity, ConcurrencyMode};
 
     let (connection, settings) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let connection = conn
             .query_row(
                 "SELECT connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
@@ -53,7 +58,11 @@ async fn capacity_for_project(
     if settings.concurrency_mode == ConcurrencyMode::Hard {
         return Ok((
             connection,
-            resolve_capacity(settings.concurrency_mode, settings.max_concurrent_agents, None),
+            resolve_capacity(
+                settings.concurrency_mode,
+                settings.max_concurrent_agents,
+                None,
+            ),
         ));
     }
 
@@ -63,7 +72,11 @@ async fn capacity_for_project(
     };
     Ok((
         connection,
-        resolve_capacity(settings.concurrency_mode, settings.max_concurrent_agents, available_mb),
+        resolve_capacity(
+            settings.concurrency_mode,
+            settings.max_concurrent_agents,
+            available_mb,
+        ),
     ))
 }
 
@@ -138,15 +151,24 @@ pub async fn request_task_execution(
     let used = occupied_slots(&app_state, connection).await;
 
     if used < capacity.slots {
-        return Ok(ExecuteDecision { verdict: ExecuteVerdict::Start, reason: capacity.reason });
+        return Ok(ExecuteDecision {
+            verdict: ExecuteVerdict::Start,
+            reason: capacity.reason,
+        });
     }
 
     if capacity.mode == crate::execution::capacity::ConcurrencyMode::Auto {
-        return Ok(ExecuteDecision { verdict: ExecuteVerdict::Warn, reason: capacity.reason });
+        return Ok(ExecuteDecision {
+            verdict: ExecuteVerdict::Warn,
+            reason: capacity.reason,
+        });
     }
 
     let stamped = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
 
         apply_if_status(
             &conn,
@@ -172,12 +194,18 @@ pub async fn request_task_execution(
     };
 
     if stamped == 0 {
-        return Ok(ExecuteDecision { verdict: ExecuteVerdict::Start, reason: capacity.reason });
+        return Ok(ExecuteDecision {
+            verdict: ExecuteVerdict::Start,
+            reason: capacity.reason,
+        });
     }
 
     app_state.app_handle.emit("tasks-changed", ()).ok();
 
-    Ok(ExecuteDecision { verdict: ExecuteVerdict::Deferred, reason: capacity.reason })
+    Ok(ExecuteDecision {
+        verdict: ExecuteVerdict::Deferred,
+        reason: capacity.reason,
+    })
 }
 
 /// The tasks the scheduler may start, best first.
@@ -214,7 +242,9 @@ fn queue_candidates(
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let ids = stmt
-        .query_map(rusqlite::params![project_id, include_undeferred], |row| row.get(0))
+        .query_map(rusqlite::params![project_id, include_undeferred], |row| {
+            row.get(0)
+        })
         .map_err(|e| format!("Failed to query ready tasks: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
@@ -240,7 +270,10 @@ pub async fn drain_ready_queue(
     // anything at all, which is about the user's way of working rather than about any one host.
     // Load it in a block so the sync MutexGuard drops before the async lock below.
     let auto_mode = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::core::settings::load_settings(&conn)
             .map_err(|e| format!("Failed to load settings: {}", e))?
             .auto_mode
@@ -250,7 +283,10 @@ pub async fn drain_ready_queue(
     // SSH for a remote one — and a drain fires on every board event. Asking a remote box how much
     // memory it has in order to schedule an empty queue is a cost paid for nothing.
     let candidates = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         queue_candidates(&conn, project_id, auto_mode)?
     };
 
@@ -279,7 +315,10 @@ pub async fn drain_ready_queue(
         return Ok(vec![]);
     }
 
-    Ok(candidates.into_iter().take(slots_available as usize).collect())
+    Ok(candidates
+        .into_iter()
+        .take(slots_available as usize)
+        .collect())
 }
 
 #[cfg(test)]
@@ -363,7 +402,10 @@ mod tests {
         defer(&conn, 2, "2026-01-06T10:00:00Z");
 
         assert_eq!(queue_candidates(&conn, 1, false).unwrap(), vec![2]);
-        assert!(queue_candidates(&conn, 2, false).unwrap().is_empty(), "another project's queue");
+        assert!(
+            queue_candidates(&conn, 2, false).unwrap().is_empty(),
+            "another project's queue"
+        );
     }
 
     /// A claimed task keeps its column. Without the phase guard the drain picks it again on the
@@ -372,13 +414,9 @@ mod tests {
     fn a_task_already_being_spawned_is_not_a_candidate() {
         let conn = db();
         queued(&conn, 1, "High", "2026-01-01");
-        crate::task::transition::claim_for_execution(
-            &conn,
-            1,
-            &[crate::models::TaskStatus::Queue],
-        )
-        .unwrap()
-        .expect("claim");
+        crate::task::transition::claim_for_execution(&conn, 1, &[crate::models::TaskStatus::Queue])
+            .unwrap()
+            .expect("claim");
 
         assert!(queue_candidates(&conn, 1, true).unwrap().is_empty());
     }

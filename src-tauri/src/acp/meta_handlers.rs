@@ -1,12 +1,14 @@
-use std::sync::Arc;
-use tauri::State;
-use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::sync::Arc;
+use tauri::Emitter;
+use tauri::State;
 
-use crate::core::AppState;
 use crate::acp::transport::{SessionDeleteRequest, SessionListRequest};
-use crate::models::worktree::{ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult};
+use crate::core::AppState;
+use crate::models::worktree::{
+    ActiveSessionInfo, ExecutionMode, SessionListEntryDto, SessionListResult,
+};
 
 // Re-export attachment types and handlers (including macro-generated tauri/specta symbols)
 // so ipc/mod.rs glob import still resolves them.
@@ -31,7 +33,11 @@ pub async fn get_acp_session_meta(
         let session = sessions
             .get(&session_key)
             .ok_or_else(|| format!("No ACP session for key {}", session_key))?;
-        (session.cwd.clone(), session.project_id, session.session_start_sha.clone())
+        (
+            session.cwd.clone(),
+            session.project_id,
+            session.session_start_sha.clone(),
+        )
     };
 
     // A rebase, amend or reset can leave the start commit unreachable, and `git diff <sha>`
@@ -39,12 +45,19 @@ pub async fn get_acp_session_meta(
     // an uncommitted-only diff, which it labels as such.
     let session_start_sha = match (start_sha, project_id) {
         (Some(sha), Some(project_id)) => {
-            let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+            let (_project, git_conn) =
+                crate::core::get_project_with_git_conn(&app_state, project_id).await?;
             let rev = format!("{}^{{commit}}", sha);
             match crate::git::run_git_in_dir(&git_conn, &cwd, &["cat-file", "-e", &rev]).await {
                 Ok(_) => Some(sha),
                 Err(e) => {
-                    log::warn!("Session {} start commit {} unreachable in {}: {}", session_key, sha, cwd, e);
+                    log::warn!(
+                        "Session {} start commit {} unreachable in {}: {}",
+                        session_key,
+                        sha,
+                        cwd,
+                        e
+                    );
                     None
                 }
             }
@@ -52,7 +65,11 @@ pub async fn get_acp_session_meta(
         (start_sha, _) => start_sha,
     };
 
-    Ok(AcpSessionMeta { cwd, project_id, session_start_sha })
+    Ok(AcpSessionMeta {
+        cwd,
+        project_id,
+        session_start_sha,
+    })
 }
 
 /// Branch currently checked out in the worktree containing `cwd`. The longest matching path wins:
@@ -137,11 +154,15 @@ pub async fn get_active_sessions(
     // channel, so it costs a message on an open pipe rather than a `wsl.exe` or `docker exec`
     // start. With no sessions there is nothing to refresh and the query stays purely in-memory.
     if !sessions.is_empty() {
-        if let Ok((_project, git_conn)) = crate::core::get_project_with_git_conn(&app_state, project_id).await {
+        if let Ok((_project, git_conn)) =
+            crate::core::get_project_with_git_conn(&app_state, project_id).await
+        {
             match crate::git::list_worktrees(&git_conn).await {
                 Ok(worktrees) => {
                     for session in &mut sessions {
-                        let Some(cwd) = session_cwds.get(&session.session_key) else { continue };
+                        let Some(cwd) = session_cwds.get(&session.session_key) else {
+                            continue;
+                        };
                         if let Some(branch) = branch_for_cwd(&worktrees, cwd) {
                             session.branch_name = Some(branch);
                         }
@@ -167,25 +188,35 @@ pub async fn list_acp_sessions(
 ) -> Result<SessionListResult, String> {
     let resp = crate::acp::query_session_list_via_server(
         connection,
-        SessionListRequest { agent_id: agent_id.clone(), cwd: cwd.clone(), cursor },
+        SessionListRequest {
+            agent_id: agent_id.clone(),
+            cwd: cwd.clone(),
+            cursor,
+        },
         &app_state,
     )
     .await?;
     let supports_session_delete = resp.supports_session_delete;
     let (mut entries, next_cursor): (Vec<SessionListEntryDto>, Option<String>) = (
-        resp.sessions.into_iter().map(|e| SessionListEntryDto {
-            session_id: e.session_id,
-            title: e.title,
-            updated_at: e.updated_at,
-            folder: None,
-        }).collect(),
+        resp.sessions
+            .into_iter()
+            .map(|e| SessionListEntryDto {
+                session_id: e.session_id,
+                title: e.title,
+                updated_at: e.updated_at,
+                folder: None,
+            })
+            .collect(),
         resp.next_cursor,
     );
 
     // Folded in here rather than exposed as its own command: this handler already knows the
     // project, so the folder rides along on the reply the history modal is already waiting for.
     let project_location = {
-        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock failed: {}", e))?;
         conn.query_row(
             "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
@@ -212,7 +243,10 @@ pub async fn list_acp_sessions(
     }
 
     let aliases = {
-        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock failed: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT acp_session_id, display_name FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2"
         ).map_err(|e| format!("DB prepare failed: {}", e))?;
@@ -234,7 +268,10 @@ pub async fn list_acp_sessions(
 
     if next_cursor.is_none() && !aliases.is_empty() {
         let known_ids: Vec<String> = entries.iter().map(|e| e.session_id.clone()).collect();
-        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock failed: {}", e))?;
         if !known_ids.is_empty() {
             let placeholders = (0..known_ids.len())
                 .map(|i| format!("?{}", i + 3))
@@ -257,11 +294,15 @@ pub async fn list_acp_sessions(
             conn.execute(
                 "DELETE FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2",
                 rusqlite::params![project_id, agent_id],
-            ).map_err(|e| format!("Prune aliases failed: {}", e))?;
+            )
+            .map_err(|e| format!("Prune aliases failed: {}", e))?;
         }
     }
 
-    Ok(SessionListResult { sessions: entries, supports_session_delete })
+    Ok(SessionListResult {
+        sessions: entries,
+        supports_session_delete,
+    })
 }
 
 #[tauri::command]
@@ -275,7 +316,11 @@ pub async fn delete_acp_session(
 ) -> Result<(), String> {
     crate::acp::query_session_delete_via_server(
         connection,
-        SessionDeleteRequest { agent_id, session_id, cwd },
+        SessionDeleteRequest {
+            agent_id,
+            session_id,
+            cwd,
+        },
         &app_state,
     )
     .await
@@ -291,15 +336,26 @@ pub async fn rename_acp_session(
     display_name: String,
 ) -> Result<(), String> {
     {
-        let conn = app_state.db.lock().map_err(|e| format!("DB lock failed: {}", e))?;
-        crate::acp::manager::upsert_session_alias(&conn, project_id, &agent_id, &acp_session_id, &display_name)
-            .map_err(|e| format!("Upsert alias failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock failed: {}", e))?;
+        crate::acp::manager::upsert_session_alias(
+            &conn,
+            project_id,
+            &agent_id,
+            &acp_session_id,
+            &display_name,
+        )
+        .map_err(|e| format!("Upsert alias failed: {}", e))?;
     }
 
     {
         let mut sessions = app_state.acp.sessions.lock().await;
         for proc in sessions.values_mut() {
-            let matches = proc.acp_session_id.lock()
+            let matches = proc
+                .acp_session_id
+                .lock()
                 .map(|g| g.as_deref() == Some(&acp_session_id))
                 .unwrap_or(false);
             if matches {
@@ -317,7 +373,9 @@ pub async fn rename_acp_session(
 async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
     let (model_id, mode_id, config_options, prompt_capabilities) = {
         let sessions = app_state.acp.sessions.lock().await;
-        let Some(session) = sessions.get(&log_id) else { return };
+        let Some(session) = sessions.get(&log_id) else {
+            return;
+        };
         (
             session.current_model_id.lock().ok().and_then(|m| m.clone()),
             session.current_mode_id.lock().ok().and_then(|m| m.clone()),
@@ -327,13 +385,24 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
     };
 
     let find_opt = |id: &str| -> Option<&serde_json::Value> {
-        config_options.iter().find(|o| o.get("id").and_then(|v| v.as_str()) == Some(id))
+        config_options
+            .iter()
+            .find(|o| o.get("id").and_then(|v| v.as_str()) == Some(id))
     };
 
     if let Some(model_opt) = find_opt("model") {
-        let options = model_opt.get("options").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]);
+        let options = model_opt
+            .get("options")
+            .and_then(|v| v.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
         let current = model_id.unwrap_or_else(|| {
-            options.first().and_then(|v| v.get("value")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+            options
+                .first()
+                .and_then(|v| v.get("value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
         });
         let payload = serde_json::json!({
             "current_model_id": current,
@@ -342,12 +411,23 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state.app_handle.emit(&format!("acp://session-models/{}", log_id), &payload);
+        let _ = app_state
+            .app_handle
+            .emit(&format!("acp://session-models/{}", log_id), &payload);
     }
     if let Some(mode_opt) = find_opt("mode") {
-        let options = mode_opt.get("options").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]);
+        let options = mode_opt
+            .get("options")
+            .and_then(|v| v.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
         let current = mode_id.unwrap_or_else(|| {
-            options.first().and_then(|v| v.get("value")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+            options
+                .first()
+                .and_then(|v| v.get("value"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
         });
         let payload = serde_json::json!({
             "current_mode_id": current,
@@ -356,10 +436,13 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
                 "name": v.get("name").and_then(|s| s.as_str()).unwrap_or(""),
             })).collect::<Vec<_>>(),
         });
-        let _ = app_state.app_handle.emit(&format!("acp://session-modes/{}", log_id), &payload);
+        let _ = app_state
+            .app_handle
+            .emit(&format!("acp://session-modes/{}", log_id), &payload);
     }
     if let Some(capabilities) = prompt_capabilities {
-        let _ = app_state.app_handle.emit(
+        crate::core::emit_or_log(
+            &app_state.app_handle,
             &format!("acp://session-capabilities/{}", log_id),
             &capabilities,
         );
@@ -374,9 +457,7 @@ pub async fn drain_acp_replay(
 ) -> Result<(), String> {
     let replay_arc = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions
-            .get(&log_id)
-            .map(|s| Arc::clone(&s.replay_buffer))
+        sessions.get(&log_id).map(|s| Arc::clone(&s.replay_buffer))
     };
     let Some(replay_arc) = replay_arc else {
         return Ok(());
@@ -389,24 +470,31 @@ pub async fn drain_acp_replay(
     };
     let is_initialized = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id)
+        sessions
+            .get(&log_id)
             .and_then(|s| s.initialized.lock().ok().map(|g| *g))
             .unwrap_or(false)
     };
     if let Some(events) = buffered {
         for payload in events {
-            let _ = app_state.app_handle.emit(&format!("acp://session-update/{}", log_id), &payload);
+            let _ = app_state
+                .app_handle
+                .emit(&format!("acp://session-update/{}", log_id), &payload);
         }
         if is_initialized {
             emit_init_events_from_session(log_id, &app_state).await;
-            let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
+            let _ = app_state
+                .app_handle
+                .emit(&format!("acp://replay-drained/{}", log_id), ());
         }
     } else if is_initialized {
         // Buffer already consumed (no replay buffer for new sessions, or drained before
         // panel mounted). Emit replay-drained so late-mounting panels complete
         // initialization instead of waiting for the 15 s stale timeout.
         emit_init_events_from_session(log_id, &app_state).await;
-        let _ = app_state.app_handle.emit(&format!("acp://replay-drained/{}", log_id), ());
+        let _ = app_state
+            .app_handle
+            .emit(&format!("acp://replay-drained/{}", log_id), ());
     }
     Ok(())
 }

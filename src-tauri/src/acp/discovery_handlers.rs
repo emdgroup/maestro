@@ -83,7 +83,7 @@ pub async fn preflight_connection(
                         "No active SSH session for connection_id {}. Connect first.",
                         conn_id
                     )
-                    })?;
+                })?;
                 let deploy_lock = {
                     let mut locks = app_state.acp.deploy_locks.lock().await;
                     locks
@@ -275,7 +275,7 @@ pub async fn preflight_connection(
 
     let tool_results =
         crate::acp::query_check_tools_via_server(connection_key, tools_to_check, &app_state)
-        .await
+            .await
             .unwrap_or_else(|_| CheckToolsResponse {
                 results: Vec::new(),
             });
@@ -358,13 +358,13 @@ pub async fn preflight_connection(
         cache.insert(
             connection_key,
             AgentDiscoveryCacheEntry {
-            result: AgentDiscoveryResult {
-                maestro_server_available: true,
-                agents: agents.clone(),
-                error: None,
-            },
-            maestro_server_path,
-            fetched_at: std::time::Instant::now(),
+                result: AgentDiscoveryResult {
+                    maestro_server_available: true,
+                    agents: agents.clone(),
+                    error: None,
+                },
+                maestro_server_path,
+                fetched_at: std::time::Instant::now(),
             },
         );
     }
@@ -475,7 +475,7 @@ pub async fn detect_project_agents(
 ) -> Result<Vec<ProjectAgentMatch>, String> {
     let response =
         crate::acp::manager::query_detect_project_agents_via_server(connection, cwd, &app_state)
-    .await?;
+            .await?;
 
     Ok(response
         .agents
@@ -500,11 +500,11 @@ pub(crate) async fn fetch_and_filter_agents(
 
     let detected =
         crate::acp::manager::query_detect_installed_via_server(connection_key, app_state)
-        .await
-        .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
-            agents: Vec::new(),
-            all_checked_ids: Vec::new(),
-        });
+            .await
+            .unwrap_or_else(|_| maestro_protocol::DetectInstalledAgentsResponse {
+                agents: Vec::new(),
+                all_checked_ids: Vec::new(),
+            });
 
     let detected_tool_names: std::collections::HashMap<String, String> = detected
         .agents
@@ -619,8 +619,8 @@ pub async fn prefetch_agent_discovery(
                             agents: Vec::new(),
                             error: None,
                         },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: None,
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
                 return;
@@ -648,8 +648,8 @@ pub async fn prefetch_agent_discovery(
                         agents,
                         error,
                     },
-                maestro_server_path: Some(path),
-                fetched_at: std::time::Instant::now(),
+                    maestro_server_path: Some(path),
+                    fetched_at: std::time::Instant::now(),
                 },
             );
         }
@@ -672,8 +672,8 @@ pub async fn prefetch_agent_discovery(
                             agents,
                             error,
                         },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: None,
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
                 return;
@@ -697,8 +697,8 @@ pub async fn prefetch_agent_discovery(
                     match crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
                         .await
                     {
-                    Ok(r) => r.path,
-                    Err(_) => {
+                        Ok(r) => r.path,
+                        Err(_) => {
                             app_state.acp.discovery_cache.lock().await.insert(
                                 wsl_key,
                                 AgentDiscoveryCacheEntry {
@@ -707,13 +707,13 @@ pub async fn prefetch_agent_discovery(
                                         agents: Vec::new(),
                                         error: None,
                                     },
-                            maestro_server_path: None,
-                            fetched_at: std::time::Instant::now(),
+                                    maestro_server_path: None,
+                                    fetched_at: std::time::Instant::now(),
                                 },
                             );
-                        return;
-                    }
-                };
+                            return;
+                        }
+                    };
                 if crate::acp::spawn_connection_server(
                     wsl_key,
                     crate::acp::TransportTarget::Wsl {
@@ -737,8 +737,8 @@ pub async fn prefetch_agent_discovery(
                             agents,
                             error,
                         },
-                    maestro_server_path: Some(maestro_path),
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: Some(maestro_path),
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
             }
@@ -753,8 +753,8 @@ pub async fn prefetch_agent_discovery(
                             agents: Vec::new(),
                             error: None,
                         },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: None,
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
             }
@@ -770,8 +770,8 @@ pub async fn prefetch_agent_discovery(
                             agents: Vec::new(),
                             error: None,
                         },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: None,
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
                 return;
@@ -795,8 +795,8 @@ pub async fn prefetch_agent_discovery(
                         agents,
                         error,
                     },
-                maestro_server_path: None,
-                fetched_at: std::time::Instant::now(),
+                    maestro_server_path: None,
+                    fetched_at: std::time::Instant::now(),
                 },
             );
         }
@@ -819,8 +819,8 @@ pub async fn prefetch_agent_discovery(
                             agents,
                             error,
                         },
-                    maestro_server_path: None,
-                    fetched_at: std::time::Instant::now(),
+                        maestro_server_path: None,
+                        fetched_at: std::time::Instant::now(),
                     },
                 );
                 return;
@@ -849,8 +849,8 @@ pub async fn prefetch_agent_discovery(
                                 agents: Vec::new(),
                                 error: None,
                             },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
+                            maestro_server_path: None,
+                            fetched_at: std::time::Instant::now(),
                         },
                     );
                     return;
@@ -873,8 +873,8 @@ pub async fn prefetch_agent_discovery(
                                 agents: Vec::new(),
                                 error: None,
                             },
-                        maestro_server_path: None,
-                        fetched_at: std::time::Instant::now(),
+                            maestro_server_path: None,
+                            fetched_at: std::time::Instant::now(),
                         },
                     );
                     return;
@@ -904,8 +904,8 @@ pub async fn prefetch_agent_discovery(
                         agents,
                         error,
                     },
-                maestro_server_path: Some(maestro_path),
-                fetched_at: std::time::Instant::now(),
+                    maestro_server_path: Some(maestro_path),
+                    fetched_at: std::time::Instant::now(),
                 },
             );
         }

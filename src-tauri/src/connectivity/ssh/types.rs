@@ -1,6 +1,6 @@
+use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::Result as SqliteResult;
 use rusqlite::ToSql;
-use rusqlite::types::{FromSql, FromSqlResult, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -9,14 +9,14 @@ use specta::Type;
 #[specta(export)]
 pub struct SshConnection {
     pub id: i32,
-    pub connection_string: String,  // e.g., "user@host:22"
+    pub connection_string: String, // e.g., "user@host:22"
     pub username: String,
     pub host: String,
     pub port: u16,
-    pub auth_method: SshAuthMethod,  // Serialized SshAuthMethod
-    pub display_name: Option<String>,  // User-friendly name
-    pub last_used_at: String,  // ISO 8601
-    pub created_at: String,    // ISO 8601
+    pub auth_method: SshAuthMethod,   // Serialized SshAuthMethod
+    pub display_name: Option<String>, // User-friendly name
+    pub last_used_at: String,         // ISO 8601
+    pub created_at: String,           // ISO 8601
 }
 
 /// SSH authentication method configuration
@@ -32,7 +32,7 @@ pub enum SshAuthMethod {
     Agent,
     /// Authenticate using password (stored in OS keyring)
     #[serde(rename = "Password")]
-    Password { save_password: bool }
+    Password { save_password: bool },
 }
 
 /// SSH connection state machine
@@ -67,13 +67,17 @@ impl FromSql for SshAuthMethod {
 
         if json.is_empty() {
             return Err(rusqlite::types::FromSqlError::Other(
-                "SshAuthMethod cannot be deserialized from empty string".into()
+                "SshAuthMethod cannot be deserialized from empty string".into(),
             ));
         }
 
         serde_json::from_str(json).map_err(|e| {
             rusqlite::types::FromSqlError::Other(
-                format!("Failed to deserialize SshAuthMethod from JSON: '{}'. Error: {}", json, e).into()
+                format!(
+                    "Failed to deserialize SshAuthMethod from JSON: '{}'. Error: {}",
+                    json, e
+                )
+                .into(),
             )
         })
     }

@@ -160,9 +160,15 @@ pub(crate) fn spawn_reader_task(
             ) {
                 if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
-                        let _ = crate::acp::session_ops::upsert_session_alias(
+                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
                             &conn, pid, &agent_id, &native_id, name,
-                        );
+                        ) {
+                            log::warn!(
+                                "Could not record the session alias for {}: {}",
+                                native_id,
+                                e
+                            );
+                        }
                     }
                 }
                 // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
@@ -262,16 +268,20 @@ async fn resolve_turn_end(
         let Ok(conn) = app_state.db.lock() else {
             return;
         };
-        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
-            .unwrap_or(None)
+        conn.query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
+            row.get(0)
+        })
+        .unwrap_or(None)
     };
 
     // Three of the four roles write nothing, so asking whether the repository changed cannot say
     // anything about whether they finished — and asking anyway is actively wrong: a clean tree
     // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
     // proposal.
-    let writes =
-        matches!(phase.as_deref(), Some("Implementing") | Some("Rework") | Some("AwaitingMerge"));
+    let writes = matches!(
+        phase.as_deref(),
+        Some("Implementing") | Some("Rework") | Some("AwaitingMerge")
+    );
 
     // A declared completion used to skip this call, on the grounds that the agent was believed
     // either way. It no longer is: an agent that declares itself done having changed nothing goes
@@ -286,7 +296,12 @@ async fn resolve_turn_end(
         None
     };
 
-    let outcome = classify_turn(stop_reason, declared_complete, has_changes, user_interrupted);
+    let outcome = classify_turn(
+        stop_reason,
+        declared_complete,
+        has_changes,
+        user_interrupted,
+    );
 
     // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
     // so it routes past `TurnCompleted` entirely.
@@ -296,14 +311,24 @@ async fn resolve_turn_end(
     if phase.as_deref() == Some("AwaitingMerge") && outcome == TurnOutcome::Complete {
         if let Err(e) = crate::git::merge::push_ci_fix(app_state, task_id).await {
             log::error!("Could not push the CI fix for task {}: {}", task_id, e);
-            let Ok(conn) = app_state.db.lock() else { return };
-            let _ = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed);
+            let Ok(conn) = app_state.db.lock() else {
+                return;
+            };
+            if let Err(e) = transition::apply_if_active(&conn, task_id, TaskTransition::PhaseFailed)
+            {
+                // The push already failed and was reported above. Failing to record that leaves
+                // the task showing as running with nothing behind it, which the user cannot act
+                // on and no later sweep corrects.
+                log::error!("Could not mark task {} as failed: {}", task_id, e);
+            }
         }
         return;
     }
 
     let event = if phase.as_deref() == Some("SelfReview") && outcome == TurnOutcome::Complete {
-        let Ok(conn) = app_state.db.lock() else { return };
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
         review_verdict_event(&conn, task_id, &closing_message)
     } else {
         match outcome {
@@ -356,7 +381,10 @@ async fn resolve_turn_end(
 
     if changed {
         app_state.app_handle.emit("tasks-changed", ()).ok();
-        app_state.app_handle.emit("task-comments-changed", task_id).ok();
+        app_state
+            .app_handle
+            .emit("task-comments-changed", task_id)
+            .ok();
     }
 }
 
@@ -417,7 +445,11 @@ fn review_verdict_event(
     }
 
     let rounds: i32 = conn
-        .query_row("SELECT review_rounds FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+        .query_row(
+            "SELECT review_rounds FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get(0),
+        )
         .unwrap_or(REVIEW_ROUND_CAP);
 
     // The backstop rather than the primary guard: `reviewer_should_run` already refuses to start a
@@ -522,14 +554,14 @@ pub(crate) async fn is_task_project_git_repo(
 ) -> bool {
     let result: Option<ProjectLocationRow> =
         app_state.db.lock().ok().and_then(|conn| {
-        conn.query_row(
+            conn.query_row(
             "SELECT p.id, p.path, p.connection_id, p.wsl_connection_id, p.docker_connection_id \
              FROM tasks t JOIN projects p ON t.project_id = p.id \
              WHERE t.id = ?",
             [task_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         ).ok()
-    });
+        });
 
     let Some((project_id, path, connection_id, wsl_connection_id, docker_connection_id)) = result
     else {
@@ -635,37 +667,37 @@ async fn try_auto_approve_permission(
         .and_then(|opts| {
             opts.iter()
                 .find_map(|opt| {
-                let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                if kind == "allow_always" {
+                    let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                    if kind == "allow_always" {
                         return opt
                             .get("optionId")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                }
-                None
-            })
+                    }
+                    None
+                })
                 .or_else(|| {
                     opts.iter().find_map(|opt| {
-                let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                if kind == "allow_once" {
+                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                        if kind == "allow_once" {
                             return opt
                                 .get("optionId")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
-                }
-                None
+                        }
+                        None
                     })
                 })
                 .or_else(|| {
                     opts.iter().find_map(|opt| {
-                let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                if kind.contains("allow") {
+                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
+                        if kind.contains("allow") {
                             return opt
                                 .get("optionId")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
-                }
-                None
+                        }
+                        None
                     })
                 })
         });
@@ -684,35 +716,6 @@ async fn try_auto_approve_permission(
     true
 }
 
-/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
-///
-/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
-/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
-/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
-/// read-only role write access — a live run had the *planner* implement its own task, tests and
-/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
-/// reread its plan, polish it and ask again, so the gate never opens.
-///
-/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
-/// the session that produced it has no further part to play: a project can put a different agent
-/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
-/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
-/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
-/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
-///
-/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
-/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
-/// many days pass before someone looks at the gate — and still able to be prompted into
-/// implementing the work it was supposed to only describe.
-///
-/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
-/// asked whether the session was currently held in `plan`, which is a question the host cannot
-/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
-/// `current_mode_update` the agent chose to send. The plan in the payload is the better
-/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
-/// reviewer running in `default` asking for permission to write still reaches the user as the real
-/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
-/// vocabulary.
 /// File a read-only role's deliverable and move the task on from it.
 ///
 /// Split out from `try_conclude_plan_mode_phase` for the ordinary reason: everything above it in
@@ -752,6 +755,35 @@ fn conclude_read_only_phase(
     crate::task::transition::apply_if_active(conn, task_id, event)
 }
 
+/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
+///
+/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
+/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
+/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
+/// read-only role write access — a live run had the *planner* implement its own task, tests and
+/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
+/// reread its plan, polish it and ask again, so the gate never opens.
+///
+/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
+/// the session that produced it has no further part to play: a project can put a different agent
+/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
+/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
+/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
+/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
+///
+/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
+/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
+/// many days pass before someone looks at the gate — and still able to be prompted into
+/// implementing the work it was supposed to only describe.
+///
+/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
+/// asked whether the session was currently held in `plan`, which is a question the host cannot
+/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
+/// `current_mode_update` the agent chose to send. The plan in the payload is the better
+/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
+/// reviewer running in `default` asking for permission to write still reaches the user as the real
+/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
+/// vocabulary.
 async fn try_conclude_plan_mode_phase(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
@@ -774,9 +806,13 @@ async fn try_conclude_plan_mode_phase(
     };
 
     let recorded = {
-        let Ok(conn) = app_state.db.lock() else { return false };
+        let Ok(conn) = app_state.db.lock() else {
+            return false;
+        };
         let phase: Option<String> = conn
-            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
+            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
+                row.get(0)
+            })
             .unwrap_or(None);
 
         let read_only_phase = phase
@@ -800,7 +836,10 @@ async fn try_conclude_plan_mode_phase(
         // Recover, with the finished plan sitting unreachable behind it.
         Ok(Some(_)) => {
             app_state.app_handle.emit("tasks-changed", ()).ok();
-            app_state.app_handle.emit("task-comments-changed", task_id).ok();
+            app_state
+                .app_handle
+                .emit("task-comments-changed", task_id)
+                .ok();
         }
         Ok(None) => return false,
         Err(e) => {
@@ -942,7 +981,10 @@ fn handle_server_message(
                 // After stripping, so the marker never reaches the outcome thread either.
                 crate::acp::completion::track_closing_message(
                     &payload,
-                    payload.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()),
+                    payload
+                        .get("content")
+                        .and_then(|c| c.get("text"))
+                        .and_then(|t| t.as_str()),
                     closing_message,
                 );
                 emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
@@ -1209,17 +1251,17 @@ pub(crate) async fn update_session_from_response(
             if upd.payload.get("sessionUpdate").and_then(|v| v.as_str())
                 == Some("config_option_update") =>
         {
-                if let Some(options_val) = upd.payload.get("configOptions") {
+            if let Some(options_val) = upd.payload.get("configOptions") {
                 if let Ok(options) =
                     serde_json::from_value::<Vec<serde_json::Value>>(options_val.clone())
                 {
-                        let mut sessions = app_state.acp.sessions.lock().await;
-                        if let Some(session) = sessions.get_mut(&log_id) {
-                            session.config_options = options;
-                        }
+                    let mut sessions = app_state.acp.sessions.lock().await;
+                    if let Some(session) = sessions.get_mut(&log_id) {
+                        session.config_options = options;
                     }
                 }
             }
+        }
         _ => {}
     }
 }
@@ -1288,22 +1330,22 @@ async fn handle_shared_server_message(
             let sessions = app_state.acp.sessions.lock().await;
             sessions.get(&log_id).map(|s| {
                 (
-                Arc::clone(&s.current_model_id),
-                Arc::clone(&s.current_mode_id),
-                Arc::clone(&s.pending_file_search),
-                Arc::clone(&s.pending_file_read),
-                Arc::clone(&s.acp_session_id),
-                Arc::clone(&s.replay_buffer),
-                Arc::clone(&s.initialized),
-                Arc::clone(&s.canvas_extractor),
-                Arc::clone(&s.completion_filter),
-                Arc::clone(&s.declared_complete),
-                Arc::clone(&s.user_interrupted),
-                Arc::clone(&s.closing_message),
-                s.session_name.clone(),
-                s.agent_id_meta.clone(),
-                s.project_id,
-                s.task_id,
+                    Arc::clone(&s.current_model_id),
+                    Arc::clone(&s.current_mode_id),
+                    Arc::clone(&s.pending_file_search),
+                    Arc::clone(&s.pending_file_read),
+                    Arc::clone(&s.acp_session_id),
+                    Arc::clone(&s.replay_buffer),
+                    Arc::clone(&s.initialized),
+                    Arc::clone(&s.canvas_extractor),
+                    Arc::clone(&s.completion_filter),
+                    Arc::clone(&s.declared_complete),
+                    Arc::clone(&s.user_interrupted),
+                    Arc::clone(&s.closing_message),
+                    s.session_name.clone(),
+                    s.agent_id_meta.clone(),
+                    s.project_id,
+                    s.task_id,
                 )
             })
         };
@@ -1392,8 +1434,8 @@ async fn handle_shared_server_message(
                         };
                         app_handle
                             .emit(
-                            &format!("acp://auth-state-changed/{}", conn_key_id),
-                            &serde_json::json!({ "agentId": agent_id }),
+                                &format!("acp://auth-state-changed/{}", conn_key_id),
+                                &serde_json::json!({ "agentId": agent_id }),
                             )
                             .ok();
                     }
@@ -1432,13 +1474,19 @@ async fn handle_shared_server_message(
             if let Some(native_id) = native_id {
                 if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
                     if let Ok(conn) = app_state.db.lock() {
-                        let _ = crate::acp::session_ops::upsert_session_alias(
+                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
                             &conn,
                             project_id_val,
                             &agent_id,
                             &native_id,
                             name,
-                        );
+                        ) {
+                            log::warn!(
+                                "Could not record the session alias for {}: {}",
+                                native_id,
+                                e
+                            );
+                        }
                     }
                 }
                 // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
@@ -1483,10 +1531,10 @@ async fn handle_shared_server_message(
                 .agents
                 .into_iter()
                 .map(|a| crate::acp::registry::DiscoveredAgent {
-                id: a.id,
-                name: a.name,
-                icon: a.icon,
-                spawn_deps: a.spawn_deps,
+                    id: a.id,
+                    name: a.name,
+                    icon: a.icon,
+                    spawn_deps: a.spawn_deps,
                 })
                 .collect();
             log::debug!(
@@ -1588,11 +1636,11 @@ async fn handle_shared_server_message(
                     .auth_methods
                     .iter()
                     .map(|m| crate::acp::session_types::AuthMethodDto {
-                    id: m.id.clone(),
-                    name: m.name.clone(),
-                    description: m.description.clone(),
-                    method_type: m.method_type.clone(),
-                    args: m.args.clone(),
+                        id: m.id.clone(),
+                        name: m.name.clone(),
+                        description: m.description.clone(),
+                        method_type: m.method_type.clone(),
+                        args: m.args.clone(),
                     })
                     .collect(),
                 supports_logout: resp.supports_auth_logout,
@@ -1636,8 +1684,8 @@ async fn handle_shared_server_message(
             };
             app_handle
                 .emit(
-                &format!("acp://auth-pty-exit/{}", conn_key_id),
-                &serde_json::json!({ "exit_code": exit.exit_code }),
+                    &format!("acp://auth-pty-exit/{}", conn_key_id),
+                    &serde_json::json!({ "exit_code": exit.exit_code }),
                 )
                 .ok();
             if exit.exit_code == Some(0) {
@@ -1649,8 +1697,8 @@ async fn handle_shared_server_message(
                 }
                 app_handle
                     .emit(
-                    &format!("acp://auth-state-changed/{}", conn_key_id),
-                    &serde_json::json!({ "agentId": exit.agent_id }),
+                        &format!("acp://auth-state-changed/{}", conn_key_id),
+                        &serde_json::json!({ "agentId": exit.agent_id }),
                     )
                     .ok();
             }
@@ -1720,7 +1768,7 @@ async fn handle_shared_server_message(
                     .collect()
             };
             for lid in log_ids {
-                let _ = app_handle.emit(&format!("acp://diagnostic/{}", lid), &diag);
+                crate::core::emit_or_log(app_handle, &format!("acp://diagnostic/{}", lid), &diag);
             }
             // Connection-scoped event so the auth modal can receive output even when the
             // session that triggered auth was discarded before the modal opened.
@@ -1945,7 +1993,10 @@ pub(crate) fn spawn_shared_reader_task(
                         log::warn!("[acp] connection stale for {connection_key:?}: {secs_since}s since last ping");
                         if let Err(e) = app_handle.emit(
                             "acp://connection-stale",
-                            ConnectionQuiet { connection: connection_key, quiet_for_secs: secs_since },
+                            ConnectionQuiet {
+                                connection: connection_key,
+                                quiet_for_secs: secs_since,
+                            },
                         ) {
                             log::warn!("[acp] emit connection-stale failed: {e}");
                         }
@@ -1954,7 +2005,9 @@ pub(crate) fn spawn_shared_reader_task(
                         log::info!("[acp] connection responding again for {connection_key:?}");
                         if let Err(e) = app_handle.emit(
                             "acp://connection-live",
-                            ConnectionEvent { connection: connection_key },
+                            ConnectionEvent {
+                                connection: connection_key,
+                            },
                         ) {
                             log::warn!("[acp] emit connection-live failed: {e}");
                         }
@@ -1995,7 +2048,7 @@ pub(crate) fn spawn_shared_reader_task(
                 continue;
             }
             handle_shared_server_message(msg, connection_key, &app_handle, &app_state, &pending)
-            .await;
+                .await;
         }
 
         watchdog_alive.store(false, Ordering::Relaxed);
@@ -2020,7 +2073,9 @@ pub(crate) fn spawn_shared_reader_task(
             log::warn!("[acp] connection server ended for {connection_key:?}");
             if let Err(e) = app_handle.emit(
                 "acp://connection-lost",
-                ConnectionEvent { connection: connection_key },
+                ConnectionEvent {
+                    connection: connection_key,
+                },
             ) {
                 log::warn!("[acp] emit connection-lost failed: {e}");
             }
@@ -2197,8 +2252,10 @@ mod tests {
     }
 
     fn rounds_on(conn: &rusqlite::Connection) -> i32 {
-        conn.query_row("SELECT review_rounds FROM tasks WHERE id = 1", [], |row| row.get(0))
-            .expect("read rounds")
+        conn.query_row("SELECT review_rounds FROM tasks WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .expect("read rounds")
     }
 
     /// Both routes a reviewer can finish by — its turn ending, and the plan-mode exit request it
@@ -2211,7 +2268,11 @@ mod tests {
         let event = review_verdict_event(&conn, 1, "CHANGES REQUESTED\n\nThe null check is gone.");
 
         assert_eq!(event, TaskTransition::ReviewRejected);
-        assert_eq!(rounds_on(&conn), 1, "the decision to spend a round is taken here");
+        assert_eq!(
+            rounds_on(&conn),
+            1,
+            "the decision to spend a round is taken here"
+        );
     }
 
     /// Approval is free: it ends the loop rather than going round again, so counting it would
@@ -2245,7 +2306,11 @@ mod tests {
             TaskTransition::ReviewFinished,
             "and the next one escalates instead"
         );
-        assert_eq!(rounds_on(&conn), REVIEW_ROUND_CAP, "an escalation is not a round");
+        assert_eq!(
+            rounds_on(&conn),
+            REVIEW_ROUND_CAP,
+            "an escalation is not a round"
+        );
     }
 
     /// A reviewer in plan mode delivers through `ExitPlanMode`, and its payload is a plan rather
@@ -2285,10 +2350,18 @@ mod tests {
         )
         .expect("apply");
 
-        assert!(moved.is_some(), "the task must move; the caller closes the session either way");
+        assert!(
+            moved.is_some(),
+            "the task must move; the caller closes the session either way"
+        );
         let (status, phase, phase_status, ball) = state_of(&conn);
         assert_eq!(
-            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            (
+                status.as_str(),
+                phase.as_deref(),
+                phase_status.as_deref(),
+                ball.as_str()
+            ),
             ("InProgress", Some("Rework"), Some("Waiting"), "Agent"),
             "a rejected review is a handoff back to a coder, not a gate"
         );
@@ -2309,8 +2382,11 @@ mod tests {
     #[test]
     fn a_planner_still_delivers_its_plan_to_the_gate() {
         let conn = under_review(0);
-        conn.execute("UPDATE tasks SET status = 'InProgress', phase = 'Drafting' WHERE id = 1", [])
-            .expect("move to drafting");
+        conn.execute(
+            "UPDATE tasks SET status = 'InProgress', phase = 'Drafting' WHERE id = 1",
+            [],
+        )
+        .expect("move to drafting");
 
         conclude_read_only_phase(&conn, 1, Some("Drafting"), "1. Fix it\n2. Test it")
             .expect("apply")
@@ -2318,7 +2394,12 @@ mod tests {
 
         let (status, phase, phase_status, ball) = state_of(&conn);
         assert_eq!(
-            (status.as_str(), phase.as_deref(), phase_status.as_deref(), ball.as_str()),
+            (
+                status.as_str(),
+                phase.as_deref(),
+                phase_status.as_deref(),
+                ball.as_str()
+            ),
             ("InProgress", Some("PlanReview"), Some("Waiting"), "User")
         );
         assert_eq!(rounds_on(&conn), 0, "a plan is not a review round");

@@ -97,7 +97,10 @@ mod tests {
     fn empty_input_asks_nothing_of_the_agent() {
         let (dirs, skipped) = resolve_additional_directories(&[], false, None);
         assert!(dirs.is_empty());
-        assert!(skipped.is_empty(), "an unsupporting agent with no roots is not worth a warning");
+        assert!(
+            skipped.is_empty(),
+            "an unsupporting agent with no roots is not worth a warning"
+        );
     }
 
     #[test]
@@ -156,11 +159,8 @@ mod tests {
     #[test]
     fn a_path_that_does_not_exist_is_reported_here_not_by_the_agent() {
         let missing = std::env::temp_dir().join("maestro-definitely-absent-4a3b");
-        let (dirs, skipped) = resolve_additional_directories(
-            &[missing.to_string_lossy().into_owned()],
-            true,
-            None,
-        );
+        let (dirs, skipped) =
+            resolve_additional_directories(&[missing.to_string_lossy().into_owned()], true, None);
         assert!(dirs.is_empty());
         assert!(skipped[0].contains("not a directory"), "{skipped:?}");
     }
@@ -177,11 +177,8 @@ mod tests {
 
     #[test]
     fn one_bad_root_does_not_drop_the_others() {
-        let (dirs, skipped) = resolve_additional_directories(
-            &[real_dir(), "relative".to_string()],
-            true,
-            None,
-        );
+        let (dirs, skipped) =
+            resolve_additional_directories(&[real_dir(), "relative".to_string()], true, None);
         assert_eq!(dirs.len(), 1);
         assert_eq!(skipped.len(), 1);
     }

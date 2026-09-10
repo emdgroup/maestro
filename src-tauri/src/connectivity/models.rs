@@ -1,7 +1,7 @@
 use crate::connectivity::ssh::RemoteSshSession;
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::sync::Arc;
 
 /// Represents the connection context for git operations
 /// Routes operations to either local, remote (SSH), WSL, or Docker execution

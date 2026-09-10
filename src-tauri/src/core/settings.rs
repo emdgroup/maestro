@@ -1,6 +1,9 @@
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::models::{AgentStreamWidth, AppSettings, ActivityVisibility, ConnectionCapacitySettings, EnterKeyBehavior, NewProjectColor, TerminalColorMode};
+use crate::models::{
+    ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,
+    EnterKeyBehavior, NewProjectColor, TerminalColorMode,
+};
 
 /// Load application settings from the database
 ///
@@ -12,7 +15,8 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .prepare("SELECT key, value FROM settings ORDER BY key")
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
-    let mut settings_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut settings_map: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     let settings_iter = stmt
         .query_map([], |row| {
@@ -23,8 +27,7 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .map_err(|e| format!("Failed to query settings: {}", e))?;
 
     for result in settings_iter {
-        let (key, value) = result
-            .map_err(|e| format!("Failed to read setting: {}", e))?;
+        let (key, value) = result.map_err(|e| format!("Failed to read setting: {}", e))?;
         settings_map.insert(key, value);
     }
 
@@ -55,7 +58,10 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .and_then(|v| v.parse::<ActivityVisibility>().ok())
         .unwrap_or_default();
 
-    let accent_color = settings_map.get("accent_color").filter(|v| !v.is_empty()).cloned();
+    let accent_color = settings_map
+        .get("accent_color")
+        .filter(|v| !v.is_empty())
+        .cloned();
 
     let new_project_color = settings_map
         .get("new_project_color")
@@ -110,17 +116,30 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
         .filter(|v| !v.is_empty())
         .map(|v| v == "true");
 
-    let markdown_edit_layout =
-        settings_map.get("markdown_edit_layout").filter(|v| !v.is_empty()).cloned();
+    let markdown_edit_layout = settings_map
+        .get("markdown_edit_layout")
+        .filter(|v| !v.is_empty())
+        .cloned();
 
     // Blank stays None, which the frontend reads as on — collapsing it to Some(false) would turn
     // the sync off for everyone who has never touched the toggle.
-    let markdown_scroll_sync =
-        settings_map.get("markdown_scroll_sync").filter(|v| !v.is_empty()).map(|v| v == "true");
+    let markdown_scroll_sync = settings_map
+        .get("markdown_scroll_sync")
+        .filter(|v| !v.is_empty())
+        .map(|v| v == "true");
 
-    let ui_scale = settings_map.get("ui_scale").filter(|v| !v.is_empty()).cloned();
-    let log_level = settings_map.get("log_level").filter(|v| !v.is_empty()).cloned();
-    let log_directory = settings_map.get("log_directory").filter(|v| !v.is_empty()).cloned();
+    let ui_scale = settings_map
+        .get("ui_scale")
+        .filter(|v| !v.is_empty())
+        .cloned();
+    let log_level = settings_map
+        .get("log_level")
+        .filter(|v| !v.is_empty())
+        .cloned();
+    let log_directory = settings_map
+        .get("log_directory")
+        .filter(|v| !v.is_empty())
+        .cloned();
 
     Ok(AppSettings {
         theme_preference,
@@ -152,7 +171,6 @@ pub fn load_settings(conn: &Connection) -> Result<AppSettings, String> {
 /// Serializes AppSettings to key-value pairs and performs INSERT OR REPLACE
 /// into the settings table.
 pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<(), String> {
-
     // Build key-value pairs for simple string fields
     let auto_mode_str = if settings.auto_mode { "true" } else { "false" };
     let thinking_vis = settings.thinking_visibility.to_string();
@@ -162,14 +180,34 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
     let terminal_color_mode_str = settings.terminal_color_mode.to_string();
     let enter_key_behavior_str = settings.enter_key_behavior.to_string();
     let agent_stream_width_str = settings.agent_stream_width.to_string();
-    let auto_update_str = if settings.auto_update { "true" } else { "false" };
+    let auto_update_str = if settings.auto_update {
+        "true"
+    } else {
+        "false"
+    };
     let ui_scale_str = settings.ui_scale.as_deref().unwrap_or("").to_string();
     let log_level_str = settings.log_level.as_deref().unwrap_or("").to_string();
     let log_directory_str = settings.log_directory.as_deref().unwrap_or("").to_string();
-    let notify_on_done_str = if settings.notify_on_done { "true" } else { "false" };
-    let notify_on_input_needed_str = if settings.notify_on_input_needed { "true" } else { "false" };
-    let notify_on_failure_str = if settings.notify_on_failure { "true" } else { "false" };
-    let native_window_frame_str = if settings.native_window_frame { "true" } else { "false" };
+    let notify_on_done_str = if settings.notify_on_done {
+        "true"
+    } else {
+        "false"
+    };
+    let notify_on_input_needed_str = if settings.notify_on_input_needed {
+        "true"
+    } else {
+        "false"
+    };
+    let notify_on_failure_str = if settings.notify_on_failure {
+        "true"
+    } else {
+        "false"
+    };
+    let native_window_frame_str = if settings.native_window_frame {
+        "true"
+    } else {
+        "false"
+    };
     // Empty for None, so "never chosen" round trips as None rather than as an explicit off.
     let reduce_motion_str = match settings.reduce_motion {
         Some(true) => "true",
@@ -182,7 +220,10 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         None => "",
     };
     let pairs: Vec<(&str, &str)> = vec![
-        ("theme_preference", settings.theme_preference.as_deref().unwrap_or("system")),
+        (
+            "theme_preference",
+            settings.theme_preference.as_deref().unwrap_or("system"),
+        ),
         ("auto_mode", auto_mode_str),
         ("thinking_visibility", thinking_vis.as_str()),
         ("tool_call_visibility", tool_call_vis.as_str()),
@@ -200,7 +241,10 @@ pub fn save_settings(conn: &mut Connection, settings: &AppSettings) -> Result<()
         ("notify_on_failure", notify_on_failure_str),
         ("native_window_frame", native_window_frame_str),
         ("reduce_motion", reduce_motion_str),
-        ("markdown_edit_layout", settings.markdown_edit_layout.as_deref().unwrap_or("")),
+        (
+            "markdown_edit_layout",
+            settings.markdown_edit_layout.as_deref().unwrap_or(""),
+        ),
         ("markdown_scroll_sync", markdown_scroll_sync_str),
         ("updated_at", settings.updated_at.as_str()),
     ];
@@ -321,7 +365,10 @@ mod tests {
         assert_eq!(loaded.theme_preference, settings.theme_preference);
         assert_eq!(loaded.log_level, settings.log_level);
         assert_eq!(loaded.log_directory, settings.log_directory);
-        assert_eq!(loaded.new_project_color, crate::models::NewProjectColor::Global);
+        assert_eq!(
+            loaded.new_project_color,
+            crate::models::NewProjectColor::Global
+        );
         assert!(!loaded.notify_on_done);
         assert!(loaded.notify_on_input_needed);
         assert!(!loaded.notify_on_failure);
@@ -344,14 +391,20 @@ mod tests {
 
         save_settings(
             &mut conn,
-            &AppSettings { reduce_motion: Some(false), ..AppSettings::default() },
+            &AppSettings {
+                reduce_motion: Some(false),
+                ..AppSettings::default()
+            },
         )
         .unwrap();
         assert_eq!(load_settings(&conn).unwrap().reduce_motion, Some(false));
 
         save_settings(
             &mut conn,
-            &AppSettings { reduce_motion: Some(true), ..AppSettings::default() },
+            &AppSettings {
+                reduce_motion: Some(true),
+                ..AppSettings::default()
+            },
         )
         .unwrap();
         assert_eq!(load_settings(&conn).unwrap().reduce_motion, Some(true));
@@ -393,17 +446,29 @@ mod tests {
 
         save_settings(
             &mut conn,
-            &AppSettings { markdown_scroll_sync: Some(false), ..AppSettings::default() },
+            &AppSettings {
+                markdown_scroll_sync: Some(false),
+                ..AppSettings::default()
+            },
         )
         .unwrap();
-        assert_eq!(load_settings(&conn).unwrap().markdown_scroll_sync, Some(false));
+        assert_eq!(
+            load_settings(&conn).unwrap().markdown_scroll_sync,
+            Some(false)
+        );
 
         save_settings(
             &mut conn,
-            &AppSettings { markdown_scroll_sync: Some(true), ..AppSettings::default() },
+            &AppSettings {
+                markdown_scroll_sync: Some(true),
+                ..AppSettings::default()
+            },
         )
         .unwrap();
-        assert_eq!(load_settings(&conn).unwrap().markdown_scroll_sync, Some(true));
+        assert_eq!(
+            load_settings(&conn).unwrap().markdown_scroll_sync,
+            Some(true)
+        );
     }
 
     /// An unparseable stored value must fall back to the default rather than erroring, matching
@@ -420,7 +485,10 @@ mod tests {
         .unwrap();
 
         let loaded = load_settings(&conn).unwrap();
-        assert_eq!(loaded.new_project_color, crate::models::NewProjectColor::Auto);
+        assert_eq!(
+            loaded.new_project_color,
+            crate::models::NewProjectColor::Auto
+        );
     }
 
     /// The whole point of the per-connection table: two hosts hold two different limits, and
@@ -468,9 +536,13 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::core::initialize_schema(&conn).unwrap();
 
-        let loaded = load_connection_capacity(&conn, crate::acp::ConnectionKey::Wsl { id: 1 }).unwrap();
+        let loaded =
+            load_connection_capacity(&conn, crate::acp::ConnectionKey::Wsl { id: 1 }).unwrap();
 
-        assert_eq!(loaded.concurrency_mode, crate::execution::capacity::ConcurrencyMode::Auto);
+        assert_eq!(
+            loaded.concurrency_mode,
+            crate::execution::capacity::ConcurrencyMode::Auto
+        );
         assert_eq!(loaded.max_concurrent_agents, 3);
     }
 
@@ -490,7 +562,10 @@ mod tests {
 
         let loaded = load_connection_capacity(&conn, crate::acp::ConnectionKey::Local).unwrap();
 
-        assert_eq!(loaded.concurrency_mode, crate::execution::capacity::ConcurrencyMode::Auto);
+        assert_eq!(
+            loaded.concurrency_mode,
+            crate::execution::capacity::ConcurrencyMode::Auto
+        );
         // The number is still the stored one — only the unreadable field falls back.
         assert_eq!(loaded.max_concurrent_agents, 5);
     }

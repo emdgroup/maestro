@@ -1,7 +1,7 @@
-use tokio::process::Command as TokioCommand;
 use crate::command_ext::NoConsoleWindow;
-use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
+use tokio::process::Command as TokioCommand;
 
 #[derive(serde::Deserialize)]
 struct GitLabUserResponse {
@@ -33,7 +33,10 @@ fn gitlab_issue_type_display(raw: &str) -> String {
     raw.split('_')
         .map(|word| {
             let mut chars = word.chars();
-            chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+            chars
+                .next()
+                .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+                .unwrap_or_default()
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -80,11 +83,16 @@ fn parse_glab_auth_status(output: &str) -> Option<(String, Option<String>, Optio
         }
 
         // Hostname: first non-indented, non-empty line (status lines are indented with spaces).
-        if hostname.is_none() && !line.starts_with(' ') && !line.starts_with('\t')
-            && !trimmed.starts_with('✓') && !trimmed.starts_with('✗') && !trimmed.starts_with('#') {
-                hostname = Some(trimmed.to_string());
-                continue;
-            }
+        if hostname.is_none()
+            && !line.starts_with(' ')
+            && !line.starts_with('\t')
+            && !trimmed.starts_with('✓')
+            && !trimmed.starts_with('✗')
+            && !trimmed.starts_with('#')
+        {
+            hostname = Some(trimmed.to_string());
+            continue;
+        }
 
         // Token: line containing "Token:"
         if let Some(pos) = trimmed.find("Token:") {
@@ -140,10 +148,14 @@ pub async fn resolve_project_id(
     token: &str,
 ) -> Result<i64, String> {
     let base = normalize_instance_url(instance_url);
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
-        .get(format!("{}/api/v4/projects/{}", base, urlencoding::encode(project_path)))
+        .get(format!(
+            "{}/api/v4/projects/{}",
+            base,
+            urlencoding::encode(project_path)
+        ))
         .header("PRIVATE-TOKEN", token)
         .send()
         .await
@@ -179,7 +191,7 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let user_response = client
         .get(format!("{}/api/v4/user", base))
@@ -228,7 +240,7 @@ pub async fn fetch_issues(
 ) -> Result<Vec<RemoteIssue>, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "{}/api/v4/projects/{}/issues?state=opened&per_page=100",
@@ -263,9 +275,9 @@ pub async fn fetch_issues(
             RemoteIssue {
                 external_id: format!("gitlab:{}/{}", project_id, issue.iid),
                 title: issue.title,
-                body: issue.description.map(|desc| {
-                    normalize_gitlab_upload_urls(&desc, &project_base)
-                }),
+                body: issue
+                    .description
+                    .map(|desc| normalize_gitlab_upload_urls(&desc, &project_base)),
                 url: issue.web_url,
                 labels: issue.labels,
                 updated_at: issue.updated_at,
@@ -355,7 +367,10 @@ mod tests {
     #[test]
     fn test_extract_project_base_from_web_url() {
         assert_eq!(
-            extract_project_base_from_web_url("https://gitlab.com/mygroup/myproject/-/issues/7", "https://gitlab.com"),
+            extract_project_base_from_web_url(
+                "https://gitlab.com/mygroup/myproject/-/issues/7",
+                "https://gitlab.com"
+            ),
             "https://gitlab.com/mygroup/myproject"
         );
     }
@@ -403,7 +418,10 @@ mod tests {
         assert!(result.is_some());
         let (token, instance_url, _) = result.unwrap();
         assert_eq!(token, "glpat-selfhosted");
-        assert_eq!(instance_url, Some("https://gitlab.mycompany.com".to_string()));
+        assert_eq!(
+            instance_url,
+            Some("https://gitlab.mycompany.com".to_string())
+        );
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use maestro_protocol::{
-    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, DetectedAgentInfo, ProjectAgentMarker,
+    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, DetectedAgentInfo,
+    ProjectAgentMarker,
 };
 
 struct AgentDetectionEntry {
@@ -201,25 +202,25 @@ fn home_dir() -> Option<PathBuf> {
 
 /// Returns the set of agent IDs that have their tool installed on this host.
 pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
-    let binaries: Vec<&'static str> = DETECTION_TABLE
-        .iter()
-        .filter_map(|e| e.binary)
-        .collect();
+    let binaries: Vec<&'static str> = DETECTION_TABLE.iter().filter_map(|e| e.binary).collect();
 
     // Batch all `which` calls in one shell invocation to minimize fork overhead.
     let binary_results = batch_which(&binaries).await;
 
     let home = home_dir();
 
-    let checks: Vec<_> = DETECTION_TABLE.iter().map(|entry| {
-        let binary_result = entry.binary.map(|b| {
-            binary_results.get(b).cloned().unwrap_or(None)
-        });
-        let config_dir = entry.config_dir.and_then(|d| {
-            home.as_ref().map(|h| h.join(d))
-        });
-        (entry, binary_result, config_dir)
-    }).collect();
+    let checks: Vec<_> = DETECTION_TABLE
+        .iter()
+        .map(|entry| {
+            let binary_result = entry
+                .binary
+                .map(|b| binary_results.get(b).cloned().unwrap_or(None));
+            let config_dir = entry
+                .config_dir
+                .and_then(|d| home.as_ref().map(|h| h.join(d)));
+            (entry, binary_result, config_dir)
+        })
+        .collect();
 
     let mut agents = Vec::new();
     for (entry, binary_result, config_dir_path) in checks {
@@ -250,8 +251,14 @@ pub async fn detect_installed_agents() -> DetectInstalledAgentsResponse {
         }
     }
 
-    let all_checked_ids = DETECTION_TABLE.iter().map(|e| e.agent_id.to_string()).collect();
-    DetectInstalledAgentsResponse { agents, all_checked_ids }
+    let all_checked_ids = DETECTION_TABLE
+        .iter()
+        .map(|e| e.agent_id.to_string())
+        .collect();
+    DetectInstalledAgentsResponse {
+        agents,
+        all_checked_ids,
+    }
 }
 
 /// Returns agent IDs with project-level markers found in `cwd`.
@@ -284,7 +291,9 @@ pub async fn detect_project_agents(cwd: &str) -> DetectProjectAgentsResponse {
 /// Resolve each binary to its absolute path.
 /// Checks PATH first, then well-known installation directories.
 /// Returns a map of binary name → resolved path (None if not found).
-async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'static str, Option<String>> {
+async fn batch_which(
+    binaries: &[&'static str],
+) -> std::collections::HashMap<&'static str, Option<String>> {
     let mut result = std::collections::HashMap::new();
     if binaries.is_empty() {
         return result;
@@ -318,7 +327,11 @@ async fn batch_which(binaries: &[&'static str]) -> std::collections::HashMap<&'s
         })
         .collect();
 
-    for (binary, path) in futures::future::join_all(handles).await.into_iter().flatten() {
+    for (binary, path) in futures::future::join_all(handles)
+        .await
+        .into_iter()
+        .flatten()
+    {
         result.insert(binary, path);
     }
     result

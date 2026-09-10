@@ -1,16 +1,15 @@
 //! Low-level ACP transport primitives: frame parsing, serialization, and read/write sources.
 
+use crate::acp::transport::{
+    read_message, write_message, MaestroRpcMessage, ServerRequest, ServerResponse,
+};
+use russh::ChannelMsg;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStdin;
-use russh::ChannelMsg;
-use crate::acp::transport::{
-    MaestroRpcMessage, ServerResponse, ServerRequest,
-    read_message, write_message,
-};
 
 pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, String> {
-    let json_bytes = serde_json::to_vec(msg)
-        .map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
+    let json_bytes =
+        serde_json::to_vec(msg).map_err(|e| format!("Failed to serialize ACP message: {}", e))?;
     if !matches!(msg, MaestroRpcMessage::Request(ServerRequest::Pong { .. })) {
         if let Ok(json) = std::str::from_utf8(&json_bytes) {
             log::trace!("[acp] >> {json}");
@@ -27,8 +26,13 @@ pub(crate) fn serialize_message(msg: &MaestroRpcMessage) -> Result<Vec<u8>, Stri
 /// ACP sessions. Encapsulates the per-transport framing differences so the handshake and
 /// reader task can share a single implementation.
 pub(crate) enum AcpReadSource {
-    Local { reader: BufReader<tokio::process::ChildStdout> },
-    Remote { read_half: russh::ChannelReadHalf, msg_buf: Vec<u8> },
+    Local {
+        reader: BufReader<tokio::process::ChildStdout>,
+    },
+    Remote {
+        read_half: russh::ChannelReadHalf,
+        msg_buf: Vec<u8>,
+    },
 }
 
 impl AcpReadSource {
@@ -80,18 +84,16 @@ impl AcpReadSource {
 
 /// Read one framed response and verify it is HandshakeOk. Times out after 10 seconds.
 pub(crate) async fn perform_handshake(source: &mut AcpReadSource) -> Result<(), String> {
-    let hs_resp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        source.next_message(),
-    )
-    .await
-    .map_err(|_| "maestro-server handshake timed out".to_string())?;
+    let hs_resp = tokio::time::timeout(std::time::Duration::from_secs(10), source.next_message())
+        .await
+        .map_err(|_| "maestro-server handshake timed out".to_string())?;
 
     match hs_resp {
         Some(MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))) => Ok(()),
-        Some(MaestroRpcMessage::Response(ServerResponse::Error(error))) => {
-            Err(format!("maestro-server handshake rejected: {}", error.message))
-        }
+        Some(MaestroRpcMessage::Response(ServerResponse::Error(error))) => Err(format!(
+            "maestro-server handshake rejected: {}",
+            error.message
+        )),
         _ => Err("maestro-server did not respond with HandshakeOk".to_string()),
     }
 }

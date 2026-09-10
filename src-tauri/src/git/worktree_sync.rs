@@ -71,8 +71,7 @@ pub async fn push_worktree_branch(
 ) -> Result<(), String> {
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let remote =
-        resolve_existing_remote(&app_state, project_id, &git_conn, &project.path).await?;
+    let remote = resolve_existing_remote(&app_state, project_id, &git_conn, &project.path).await?;
 
     crate::git::push_branch(&git_conn, &worktree_path, &remote, &branch_name)
         .await
@@ -137,7 +136,12 @@ pub async fn fetch_project_remote(
             .last_remote_fetch
             .lock()
             .map_err(|e| format!("Lock failed: {}", e))?;
-        if !should_fetch(last_fetch.get(&project_id).copied(), now, force, AUTO_FETCH_INTERVAL) {
+        if !should_fetch(
+            last_fetch.get(&project_id).copied(),
+            now,
+            force,
+            AUTO_FETCH_INTERVAL,
+        ) {
             return Ok(());
         }
         // Recorded before the fetch rather than after, so a slow or hung one does not let every
@@ -150,7 +154,11 @@ pub async fn fetch_project_remote(
         .await
         .unwrap_or_default();
     if crate::git::remote::url_for_remote(&listed, &remote).is_none() {
-        log::debug!("project {} has no '{}' remote to fetch from", project_id, remote);
+        log::debug!(
+            "project {} has no '{}' remote to fetch from",
+            project_id,
+            remote
+        );
         return Ok(());
     }
 
@@ -183,8 +191,7 @@ pub async fn pull_worktree_branch(
 ) -> Result<(), String> {
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let remote =
-        resolve_existing_remote(&app_state, project_id, &git_conn, &project.path).await?;
+    let remote = resolve_existing_remote(&app_state, project_id, &git_conn, &project.path).await?;
 
     crate::git::run_git_in_dir(&git_conn, &worktree_path, &["fetch", &remote])
         .await
@@ -250,9 +257,18 @@ mod tests {
         let old = now - std::time::Duration::from_secs(120);
 
         assert!(should_fetch(None, now, false, interval), "never fetched");
-        assert!(!should_fetch(Some(recent), now, false, interval), "inside the window");
-        assert!(should_fetch(Some(old), now, false, interval), "outside the window");
-        assert!(should_fetch(Some(recent), now, true, interval), "the user pressed refresh");
+        assert!(
+            !should_fetch(Some(recent), now, false, interval),
+            "inside the window"
+        );
+        assert!(
+            should_fetch(Some(old), now, false, interval),
+            "outside the window"
+        );
+        assert!(
+            should_fetch(Some(recent), now, true, interval),
+            "the user pressed refresh"
+        );
     }
 
     /// Credential and connectivity failures are git's to explain: it names the host, the protocol

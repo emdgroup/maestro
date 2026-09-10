@@ -1,4 +1,4 @@
 pub mod handlers;
 pub mod models;
 
-pub use models::{AppSettings, ActivityVisibility, EnterKeyBehavior, TerminalColorMode};
+pub use models::{ActivityVisibility, AppSettings, EnterKeyBehavior, TerminalColorMode};

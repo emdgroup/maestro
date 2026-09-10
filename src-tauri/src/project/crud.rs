@@ -1,11 +1,11 @@
+use crate::acp::ConnectionKey;
+use crate::core::{project_storage, AppState};
+use crate::models::Project;
+use chrono::Utc;
+use rusqlite::params;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
-use chrono::Utc;
-use rusqlite::params;
-use crate::models::Project;
-use crate::core::{AppState, project_storage};
-use crate::acp::ConnectionKey;
 
 /// Register a project in the database (check-or-insert) and initialize .maestro folder.
 /// Returns the full Project row.
@@ -20,7 +20,10 @@ pub(crate) async fn register_project_in_db(
     let wsl_connection_id = connection_key.wsl_id();
     let docker_connection_id = connection_key.docker_id();
     let project_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],
@@ -42,7 +45,10 @@ pub(crate) async fn register_project_in_db(
     init_project_storage(app_state, path, connection_key).await;
 
     // Read back full project row
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     conn.query_row(
         "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
         params![project_id],
@@ -108,7 +114,10 @@ fn fetch_projects_from_db(
 #[tauri::command]
 #[specta::specta]
 pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
         .prepare("SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects ORDER BY last_opened DESC NULLS LAST")
@@ -126,10 +135,16 @@ pub fn get_projects(app_state: State<Arc<AppState>>) -> Result<Vec<Project>, Str
 /// Get list of all projects per connection
 #[tauri::command]
 #[specta::specta]
-pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connection_key: ConnectionKey) -> Result<Vec<Project>, String> {
+pub async fn get_connection_projects(
+    app_state: State<'_, Arc<AppState>>,
+    connection_key: ConnectionKey,
+) -> Result<Vec<Project>, String> {
     // ── Step 1: fetch projects (db lock acquired and released in this block) ─
     let projects: Vec<Project> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         fetch_projects_from_db(&conn, connection_key)?
         // conn drops here — lock released before async work below
     };
@@ -139,14 +154,20 @@ pub async fn get_connection_projects(app_state: State<'_, Arc<AppState>>, connec
 
     // ── Step 3: delete stale projects and return filtered list ───────────────
     if !stale_ids.is_empty() {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         for id in &stale_ids {
             conn.execute("DELETE FROM projects WHERE id = ?", [id])
                 .map_err(|e| e.to_string())?;
         }
     }
 
-    Ok(projects.into_iter().filter(|p| !stale_ids.contains(&p.id)).collect())
+    Ok(projects
+        .into_iter()
+        .filter(|p| !stale_ids.contains(&p.id))
+        .collect())
 }
 
 /// Returns the IDs of projects whose paths no longer exist.
@@ -166,7 +187,8 @@ async fn collect_stale_project_ids(
     for project in projects {
         // A transport failure is not evidence the directory is gone — only a `test -d` that
         // actually ran and said no. Keeping the project is the recoverable mistake.
-        if let Ok(present) = crate::connectivity::files::try_dir_exists(&conn, &project.path).await {
+        if let Ok(present) = crate::connectivity::files::try_dir_exists(&conn, &project.path).await
+        {
             if !present {
                 stale.push(project.id);
             }
@@ -182,7 +204,10 @@ pub fn get_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     // Try to find existing project
     let existing: Result<Project, _> = conn.query_row(
@@ -220,7 +245,10 @@ pub async fn open_project(
     // Scoped so the database guard is released before any await: a `MutexGuard` held across one
     // would make this future non-Send and Tauri will not accept it.
     let project: Project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [&project_id],
@@ -233,7 +261,10 @@ pub async fn open_project(
     app_state.acquire_project_lock(project_id)?;
 
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE projects SET last_opened = ? WHERE id = ?",
@@ -248,12 +279,18 @@ pub async fn open_project(
     match crate::core::get_git_connection(&project, &app_state).await {
         Ok(git_conn) => {
             if let Err(e) = project_storage::ensure_project_storage(&git_conn).await {
-                log::warn!("[project] initializing .maestro for {} failed: {e}", project.path);
+                log::warn!(
+                    "[project] initializing .maestro for {} failed: {e}",
+                    project.path
+                );
             }
         }
         // Opening a project must not depend on its host being reachable — the picker shows it
         // either way, and the files are written on the next open.
-        Err(e) => log::warn!("[project] no connection to initialize .maestro for {}: {e}", project.path),
+        Err(e) => log::warn!(
+            "[project] no connection to initialize .maestro for {}: {e}",
+            project.path
+        ),
     }
 
     Ok(project)
@@ -267,7 +304,9 @@ pub async fn open_project(
 /// task ends its own sessions as its transport closes.
 #[tauri::command]
 #[specta::specta]
-pub async fn release_active_project_lock(app_state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn release_active_project_lock(
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     app_state.release_active_project_lock();
     app_state.acp.connection_servers.lock().await.clear();
     Ok(())
@@ -277,10 +316,7 @@ pub async fn release_active_project_lock(app_state: State<'_, Arc<AppState>>) ->
 /// Used by the project picker to show visual lock indicators before the user clicks.
 #[tauri::command]
 #[specta::specta]
-pub fn check_project_locks(
-    app_state: State<'_, Arc<AppState>>,
-    project_ids: Vec<i32>,
-) -> Vec<i32> {
+pub fn check_project_locks(app_state: State<'_, Arc<AppState>>, project_ids: Vec<i32>) -> Vec<i32> {
     // The project this instance already holds is skipped rather than probed. `is_project_locked`
     // asks the OS by opening a second handle and trying to lock it, which our own lock blocks just
     // as another process's would — so the probe cannot tell "someone else has it" from "I have it".
@@ -302,14 +338,14 @@ pub fn check_project_locks(
 /// remove project by id
 #[tauri::command]
 #[specta::specta]
-pub fn delete_project(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+pub fn delete_project(app_state: State<'_, Arc<AppState>>, project_id: i32) -> Result<(), String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
-    conn.execute("DELETE FROM projects WHERE id = ?",[project_id])
+    conn.execute("DELETE FROM projects WHERE id = ?", [project_id])
         .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -321,11 +357,17 @@ pub fn remove_projects_by_connection_id(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
-    conn.execute("DELETE FROM projects WHERE connection_id = ?",[connection_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM projects WHERE connection_id = ?",
+        [connection_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -345,7 +387,10 @@ pub async fn create_project(
     // NOTE: This older handler has similar logic to register_project_in_db but also
     // updates last_opened via get_project(). Could be unified in a future cleanup.
     let project_id = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let existing: Option<i32> = conn.query_row(
             "SELECT id FROM projects WHERE path = ? AND connection_id IS ? AND wsl_connection_id IS ? AND docker_connection_id IS ?",
             params![path, connection_id, wsl_connection_id, docker_connection_id],
@@ -384,11 +429,11 @@ async fn init_project_storage(
     path: &str,
     connection_key: ConnectionKey,
 ) {
-    let result = match crate::core::git_connection_for(app_state, path.to_string(), connection_key).await
-    {
-        Ok(conn) => project_storage::ensure_project_storage(&conn).await,
-        Err(e) => Err(e),
-    };
+    let result =
+        match crate::core::git_connection_for(app_state, path.to_string(), connection_key).await {
+            Ok(conn) => project_storage::ensure_project_storage(&conn).await,
+            Err(e) => Err(e),
+        };
     if let Err(e) = result {
         log::warn!("[project] initializing .maestro for {path} failed: {e}");
     }
@@ -397,8 +442,8 @@ async fn init_project_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
     use crate::core::schema::initialize_schema;
+    use rusqlite::Connection;
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

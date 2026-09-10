@@ -1,6 +1,6 @@
+use crate::core::AppState;
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use crate::core::AppState;
 
 /// List git branches and the current branch for a project
 ///
@@ -14,7 +14,10 @@ pub async fn list_project_branches(
 ) -> Result<(crate::git::BranchList, String), String> {
     // Look up the project to get its path
     let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
@@ -26,15 +29,21 @@ pub async fn list_project_branches(
     // Uses get_git_connection directly (not get_project_with_git_conn) because
     // branch listing should fall back to local path when SSH is disconnected,
     // rather than failing entirely.
-    let git_conn = crate::core::get_git_connection(&project, &app_state).await
-        .unwrap_or_else(|_| crate::models::GitConnection::Local { path: project.path.clone() });
+    let git_conn = crate::core::get_git_connection(&project, &app_state)
+        .await
+        .unwrap_or_else(|_| crate::models::GitConnection::Local {
+            path: project.path.clone(),
+        });
 
     let remote = crate::git::remote::project_remote(&app_state, project_id).await;
     let (branches, current_branch) = tokio::join!(
         crate::git::list_branches(&git_conn, &remote),
         crate::git::get_current_branch(&git_conn),
     );
-    let branches = branches.unwrap_or_else(|_| crate::git::BranchList { local: vec![], remote: vec![] });
+    let branches = branches.unwrap_or_else(|_| crate::git::BranchList {
+        local: vec![],
+        remote: vec![],
+    });
     let current_branch = current_branch.unwrap_or_else(|_| "main".to_string());
 
     Ok((branches, current_branch))
@@ -82,7 +91,8 @@ pub async fn interrupt_task(
     // never rewritten, leaving the interrupted session listed as live against a worktree that the
     // `discard_task_workspace` below had already deleted.
     if let Some(log_id) = acp_log_id {
-        let (project_id, _) = crate::acp::session_handlers::tear_down_session(&app_state, log_id).await;
+        let (project_id, _) =
+            crate::acp::session_handlers::tear_down_session(&app_state, log_id).await;
         // Before the fallible work below, not after: the entry is stale the moment the session is
         // torn down, so an early return must not be what decides whether it gets rewritten.
         if let Some(project_id) = project_id {
@@ -108,7 +118,10 @@ pub async fn interrupt_task(
 
     // Session teardown is done — acquire sync DB mutex now to update task status.
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply(
             &conn,
             task_id,
@@ -166,11 +179,13 @@ pub async fn send_task_to_review(
     // Sending work to review by hand is still asking for it to be reviewed, so a project with a
     // review agent gets one here too. Doing otherwise would make the button a way of skipping the
     // reviewer, which nothing on it says it is.
-    let reviewer_pending =
-        crate::acp::reader_task::reviewer_should_run(&app_state, task_id).await;
+    let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, task_id).await;
 
     let task = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply(
             &conn,
             task_id,
@@ -205,13 +220,20 @@ pub fn mark_task_execution_started(
     use crate::models::TaskStatus;
 
     let task = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         // InProgress is here only for the plan gate: `claim_for_execution` refuses any phase but
         // the gate's, so this cannot start a task an agent is already working on.
         crate::task::transition::claim_for_execution(
             &conn,
             task_id,
-            &[TaskStatus::Planning, TaskStatus::Queue, TaskStatus::InProgress],
+            &[
+                TaskStatus::Planning,
+                TaskStatus::Queue,
+                TaskStatus::InProgress,
+            ],
         )?
     };
 
@@ -239,7 +261,10 @@ pub fn mark_task_session_ready(
     role: crate::project::profiles::AgentRole,
 ) -> Result<Option<crate::models::Task>, String> {
     let task = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply_if_spawning(
             &conn,
             task_id,
@@ -267,10 +292,17 @@ pub fn release_task_execution_claim(
 ) -> Result<Option<crate::models::Task>, String> {
     use crate::task::transition::TaskTransition;
 
-    let event = if failed { TaskTransition::PhaseFailed } else { TaskTransition::SpawnAborted };
+    let event = if failed {
+        TaskTransition::PhaseFailed
+    } else {
+        TaskTransition::SpawnAborted
+    };
 
     let task = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::task::transition::apply_if_spawning(&conn, task_id, event)?
     };
 
@@ -289,7 +321,9 @@ pub fn release_task_execution_claim(
 #[tauri::command]
 #[specta::specta]
 pub fn hold_task(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    app_state.task_holds.hold(task_id, crate::task::holds::HOLD_TTL);
+    app_state
+        .task_holds
+        .hold(task_id, crate::task::holds::HOLD_TTL);
     Ok(())
 }
 
@@ -304,7 +338,10 @@ pub fn hold_task(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<()
 #[specta::specta]
 pub fn release_task_hold(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
     app_state.task_holds.release(task_id);
-    app_state.app_handle.emit("task-hold-released", task_id).ok();
+    app_state
+        .app_handle
+        .emit("task-hold-released", task_id)
+        .ok();
     Ok(())
 }
 
@@ -325,12 +362,18 @@ pub fn close_refinement(
     accept: bool,
 ) -> Result<crate::models::Task, String> {
     let task = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
 
         if accept {
             let proposal = crate::task::comments::latest_of_kind(&conn, task_id, "proposal")?
                 .ok_or("This task has no proposal to accept")?;
-            let body = proposal.body.clone().ok_or("This task has no proposal to accept")?;
+            let body = proposal
+                .body
+                .clone()
+                .ok_or("This task has no proposal to accept")?;
 
             conn.execute(
                 "UPDATE tasks SET description = ? WHERE id = ?",

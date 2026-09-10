@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-use maestro_protocol::{ToolCheckResult, ToolPathSource};
 use crate::command_ext::NoConsoleWindow;
+use maestro_protocol::{ToolCheckResult, ToolPathSource};
+use std::path::{Path, PathBuf};
 
 pub(crate) async fn check_tool(tool: String) -> ToolCheckResult {
     let mut configured_path = match crate::tool_config::get(&tool) {

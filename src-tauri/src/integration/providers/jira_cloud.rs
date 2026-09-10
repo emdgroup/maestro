@@ -1,6 +1,6 @@
-use crate::models::issue_tracking::RemoteIssue;
-use crate::integration::token_manager::StoredToken;
 use super::normalize_instance_url;
+use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
 use base64::Engine as _;
 
 #[derive(serde::Deserialize)]
@@ -44,7 +44,10 @@ struct JiraIssueFields {
 
 fn make_basic_auth(email: &str, api_token: &str) -> String {
     let credentials = format!("{}:{}", email, api_token);
-    format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes()))
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes())
+    )
 }
 
 fn extract_body(description: Option<serde_json::Value>) -> Option<String> {
@@ -63,7 +66,7 @@ pub async fn validate_and_store(
     let base = normalize_instance_url(site_url);
     let auth = make_basic_auth(email, api_token);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get(format!("{}/rest/api/3/myself", base))
@@ -90,7 +93,8 @@ pub async fn validate_and_store(
         .await
         .map_err(|e| format!("Failed to parse Jira Cloud response: {}", e))?;
 
-    let display_name = user.display_name
+    let display_name = user
+        .display_name
         .or(user.email_address)
         .unwrap_or_else(|| "unknown".to_string());
 
@@ -119,7 +123,7 @@ pub async fn fetch_issues(
     let base = normalize_instance_url(site_url);
     let auth = make_basic_auth(email, api_token);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let safe_key = project_key.replace('"', "\\\"");
     let jql = format!(
@@ -173,13 +177,17 @@ pub async fn fetch_issues(
                 url,
                 labels: issue.fields.labels,
                 updated_at: issue.fields.updated,
-                priority: issue.fields.priority.as_ref().and_then(|p| match p.name.as_str() {
-                    "Highest" => Some("Urgent".to_string()),
-                    "High" => Some("High".to_string()),
-                    "Medium" => Some("Medium".to_string()),
-                    "Low" | "Lowest" => Some("Low".to_string()),
-                    _ => None,
-                }),
+                priority: issue
+                    .fields
+                    .priority
+                    .as_ref()
+                    .and_then(|p| match p.name.as_str() {
+                        "Highest" => Some("Urgent".to_string()),
+                        "High" => Some("High".to_string()),
+                        "Medium" => Some("Medium".to_string()),
+                        "Low" | "Lowest" => Some("Low".to_string()),
+                        _ => None,
+                    }),
                 issue_type: issue.fields.issuetype.map(|t| t.name),
             }
         })

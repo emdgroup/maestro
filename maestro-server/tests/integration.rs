@@ -22,16 +22,18 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use maestro_protocol::{
-    HandshakeRequest, MaestroRpcMessage, ServerRequest, ServerResponse,
-    SpawnRequest, PromptRequest, CancelRequest, PermissionResponse, ListAgentsRequest,
-    PROTOCOL_VERSION,
+    CancelRequest, HandshakeRequest, ListAgentsRequest, MaestroRpcMessage, PermissionResponse,
+    PromptRequest, ServerRequest, ServerResponse, SpawnRequest, PROTOCOL_VERSION,
 };
 
 fn server_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("workspace root")
-        .join(format!("target/debug/maestro-server{}", std::env::consts::EXE_SUFFIX))
+        .join(format!(
+            "target/debug/maestro-server{}",
+            std::env::consts::EXE_SUFFIX
+        ))
 }
 
 fn write_msg(writer: &mut impl Write, msg: &MaestroRpcMessage) {
@@ -99,7 +101,10 @@ fn do_handshake(stdin: &mut impl Write, stdout: &mut impl Read) {
     );
     let resp = read_msg(stdout);
     assert!(
-        matches!(resp, MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))),
+        matches!(
+            resp,
+            MaestroRpcMessage::Response(ServerResponse::HandshakeOk(_))
+        ),
         "expected HandshakeOk, got: {}",
         serde_json::to_string(&resp).unwrap()
     );
@@ -114,12 +119,15 @@ fn test_spawn_unknown_agent_returns_error() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: "nonexistent-acp-agent-xyz-12345".to_string(),
-        session_id: "session-1".to_string(),
-        cwd: "/tmp".to_string(),
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+            agent_id: "nonexistent-acp-agent-xyz-12345".to_string(),
+            session_id: "session-1".to_string(),
+            cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-    })));
+        })),
+    );
 
     let resp = read_msg(stdout);
     match resp {
@@ -134,7 +142,10 @@ fn test_spawn_unknown_agent_returns_error() {
                 e.message
             );
         }
-        other => panic!("expected Error response, got: {}", serde_json::to_string(&other).unwrap()),
+        other => panic!(
+            "expected Error response, got: {}",
+            serde_json::to_string(&other).unwrap()
+        ),
     }
 
     let _ = child.kill();
@@ -153,24 +164,33 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
     do_handshake(stdin, stdout);
 
     // Step 1: failed spawn — consume Error
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: "no-such-agent".to_string(),
-        session_id: "session-99".to_string(),
-        cwd: "/tmp".to_string(),
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+            agent_id: "no-such-agent".to_string(),
+            session_id: "session-99".to_string(),
+            cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-    })));
+        })),
+    );
     let spawn_resp = read_msg(stdout);
     assert!(
-        matches!(spawn_resp, MaestroRpcMessage::Response(ServerResponse::Error(_))),
+        matches!(
+            spawn_resp,
+            MaestroRpcMessage::Response(ServerResponse::Error(_))
+        ),
         "expected Error from failed spawn, got: {}",
         serde_json::to_string(&spawn_resp).unwrap()
     );
 
     // Step 2: prompt on the never-registered session
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
-        session_id: "session-99".to_string(),
-        content: serde_json::Value::String("hello world".to_string()),
-    })));
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+            session_id: "session-99".to_string(),
+            content: serde_json::Value::String("hello world".to_string()),
+        })),
+    );
     let prompt_resp = read_msg(stdout);
     match prompt_resp {
         MaestroRpcMessage::Response(ServerResponse::Error(e)) => {
@@ -200,18 +220,26 @@ fn test_permit_response_unknown_session_produces_no_output() {
         let stdin = child.stdin.as_mut().unwrap();
         let stdout = child.stdout.as_mut().unwrap();
         do_handshake(stdin, stdout);
-        write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-            session_id: "session-never".to_string(),
-            request_id: "perm-001".to_string(),
-            option_id: Some("default".into()),
-        })));
+        write_msg(
+            stdin,
+            &MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+                session_id: "session-never".to_string(),
+                request_id: "perm-001".to_string(),
+                option_id: Some("default".into()),
+            })),
+        );
         // Drop stdin here (end of scope) — causes server to receive EOF and exit
     }
     drop(child.stdin.take());
 
     // Read all stdout until EOF (server has exited)
     let mut output = Vec::new();
-    child.stdout.as_mut().unwrap().read_to_end(&mut output).expect("drain stdout");
+    child
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_to_end(&mut output)
+        .expect("drain stdout");
     let _ = child.wait();
 
     assert!(
@@ -230,14 +258,22 @@ fn test_cancel_unknown_session_produces_no_output() {
         let stdin = child.stdin.as_mut().unwrap();
         let stdout = child.stdout.as_mut().unwrap();
         do_handshake(stdin, stdout);
-        write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
-            session_id: "session-ghost".to_string(),
-        })));
+        write_msg(
+            stdin,
+            &MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+                session_id: "session-ghost".to_string(),
+            })),
+        );
     }
     drop(child.stdin.take());
 
     let mut output = Vec::new();
-    child.stdout.as_mut().unwrap().read_to_end(&mut output).expect("drain stdout");
+    child
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_to_end(&mut output)
+        .expect("drain stdout");
     let _ = child.wait();
 
     assert!(
@@ -258,20 +294,26 @@ fn test_protocol_framing_large_prompt_payload() {
     do_handshake(stdin, stdout);
 
     // Consume spawn error first
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
-        agent_id: "no-agent".to_string(),
-        session_id: "session-large".to_string(),
-        cwd: "/tmp".to_string(),
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+            agent_id: "no-agent".to_string(),
+            session_id: "session-large".to_string(),
+            cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-    })));
+        })),
+    );
     let _ = read_msg(stdout);
 
     // 64 KB prompt
     let large_content = serde_json::Value::String("x".repeat(64 * 1024));
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
-        session_id: "session-large".to_string(),
-        content: large_content,
-    })));
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
+            session_id: "session-large".to_string(),
+            content: large_content,
+        })),
+    );
 
     let resp = read_msg(stdout);
     assert!(
@@ -305,7 +347,10 @@ fn test_list_agents_returns_ok_response() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})));
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
+    );
 
     let resp = read_msg(stdout);
     println!("response: {}", serde_json::to_string_pretty(&resp).unwrap());
@@ -360,7 +405,10 @@ fn test_list_agents_includes_user_defined_custom_agents() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    write_msg(stdin, &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})));
+    write_msg(
+        stdin,
+        &MaestroRpcMessage::Request(ServerRequest::ListAgents(ListAgentsRequest {})),
+    );
 
     let resp = read_msg(stdout);
     match resp {

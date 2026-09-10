@@ -1,22 +1,20 @@
 //! ACP session lifecycle operations: spawn, load, write, and restore sessions.
 
+use crate::acp::connection_server::spawn_connection_server;
+use crate::acp::reader_task::spawn_reader_task;
+use crate::acp::session_types::{
+    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionRequest,
+    TaskMetadata, TransportTarget,
+};
+use crate::acp::transport::{MaestroRpcMessage, ServerRequest, SessionLoadRequest, SpawnRequest};
+#[cfg(windows)]
+use crate::acp::transport_setup::open_wsl_transport;
+use crate::acp::transport_setup::{open_local_transport, open_remote_transport};
+use crate::acp::transport_types::{serialize_message, write_to_acp_session_raw};
 use std::sync::Arc;
 use tauri::Emitter;
 use tokio::io::BufWriter;
 use tokio::process::ChildStdin;
-use crate::acp::transport::{
-    MaestroRpcMessage, ServerRequest, SpawnRequest, SessionLoadRequest,
-};
-use crate::acp::transport_types::{serialize_message, write_to_acp_session_raw};
-use crate::acp::transport_setup::{open_local_transport, open_remote_transport};
-#[cfg(windows)]
-use crate::acp::transport_setup::open_wsl_transport;
-use crate::acp::session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, SessionRequest,
-    TaskMetadata, TransportTarget, RestorableSession,
-};
-use crate::acp::reader_task::spawn_reader_task;
-use crate::acp::connection_server::spawn_connection_server;
 use tokio::sync::oneshot;
 
 pub fn upsert_session_alias(
@@ -94,7 +92,12 @@ pub async fn try_spawn_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
+    req.app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .insert(req.log_id, acp_process);
 
     // Register before sending so a fast SpawnOk can always be routed to this session.
     if writer_tx.send(bytes).await.is_err() {
@@ -119,27 +122,51 @@ async fn launch_cold_session(
         TransportTarget::Local => {
             let (mut stdin_writer, source, child) = open_local_transport(&req.app_state).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
-            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
+            (
+                AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))),
+                source,
+                Some(child),
+            )
         }
         TransportTarget::Remote { ssh, server_path } => {
             let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
             let bytes = serialize_message(initial_msg)?;
-            write_tx
-                .send(bytes)
-                .await
-                .map_err(|_| format!("Failed to queue {} for remote channel", remote_error_label))?;
+            write_tx.send(bytes).await.map_err(|_| {
+                format!("Failed to queue {} for remote channel", remote_error_label)
+            })?;
             (AcpTransportWriter::RemoteSsh(write_tx), source, None)
         }
         #[cfg(windows)]
-        TransportTarget::Wsl { distro, server_path } => {
+        TransportTarget::Wsl {
+            distro,
+            server_path,
+        } => {
             let (mut stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
-            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
+            (
+                AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))),
+                source,
+                Some(child),
+            )
         }
-        TransportTarget::Docker { cli, container_name, server_path } => {
-            let (mut stdin_writer, source, child) = crate::acp::transport_setup::open_container_transport(cli, container_name, server_path).await?;
+        TransportTarget::Docker {
+            cli,
+            container_name,
+            server_path,
+        } => {
+            let (mut stdin_writer, source, child) =
+                crate::acp::transport_setup::open_container_transport(
+                    cli,
+                    container_name,
+                    server_path,
+                )
+                .await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
-            (AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))), source, Some(child))
+            (
+                AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))),
+                source,
+                Some(child),
+            )
         }
     };
 
@@ -163,7 +190,12 @@ async fn launch_cold_session(
         Arc::clone(&req.app_state),
     );
 
-    req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
+    req.app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .insert(req.log_id, acp_process);
     spawn_reader_task(source, cancel_rx, ctx);
 
     Ok(())
@@ -247,8 +279,12 @@ pub async fn write_to_acp_session(
         }
         WriterHandle::Channel(tx) => {
             let bytes = serialize_message(msg)?;
-            tx.send(bytes).await
-                .map_err(|_| format!("ACP session write failed: channel closed for log_id {}", log_id))
+            tx.send(bytes).await.map_err(|_| {
+                format!(
+                    "ACP session write failed: channel closed for log_id {}",
+                    log_id
+                )
+            })
         }
     }
 }
@@ -267,13 +303,13 @@ pub async fn resolve_remote_context(
         .get(&crate::acp::ConnectionKey::Ssh { id: conn_id })
         .and_then(|e| e.maestro_server_path.clone())
         .ok_or_else(|| {
-            format!("maestro-server path not cached for connection {conn_id}. Reconnect to refresh.")
+            format!(
+                "maestro-server path not cached for connection {conn_id}. Reconnect to refresh."
+            )
         })?;
-    let ssh = app_state
-        .ssh
-        .get_session(conn_id)
-        .await
-        .ok_or_else(|| format!("No active SSH session for connection_id {conn_id}. Connect first."))?;
+    let ssh = app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
+        format!("No active SSH session for connection_id {conn_id}. Connect first.")
+    })?;
     Ok((ssh, maestro_path))
 }
 
@@ -312,7 +348,10 @@ pub async fn try_session_load_via_connection_server(
             agent_id: req.agent_id.clone(),
             project_id: req.project_id,
             connection_key: req.connection_key,
-            task: TaskMetadata { task_id: req.task_id, ..TaskMetadata::default() },
+            task: TaskMetadata {
+                task_id: req.task_id,
+                ..TaskMetadata::default()
+            },
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
@@ -320,7 +359,12 @@ pub async fn try_session_load_via_connection_server(
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
-    req.app_state.acp.sessions.lock().await.insert(req.log_id, acp_process);
+    req.app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .insert(req.log_id, acp_process);
 
     if writer_tx.send(bytes).await.is_err() {
         req.app_state.acp.sessions.lock().await.remove(&req.log_id);
@@ -340,9 +384,13 @@ pub async fn restore_acp_sessions(
 
     spawn_connection_server(
         crate::acp::ConnectionKey::Ssh { id: connection_id },
-        TransportTarget::Remote { ssh: &ssh, server_path: &server_path },
+        TransportTarget::Remote {
+            ssh: &ssh,
+            server_path: &server_path,
+        },
         app_state,
-    ).await?;
+    )
+    .await?;
 
     let sessions: Vec<RestorableSession> = app_state
         .acp
@@ -354,7 +402,9 @@ pub async fn restore_acp_sessions(
 
     for s in &sessions {
         let Some(acp_session_id) = &s.acp_session_id else {
-            let _ = app_state.app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+            let _ = app_state
+                .app_handle
+                .emit(&format!("acp://session-ended/{}", s.log_id), ());
             continue;
         };
 
@@ -376,7 +426,9 @@ pub async fn restore_acp_sessions(
         match try_session_load_via_connection_server(acp_session_id, &req).await {
             Ok(true) => {}
             _ => {
-                let _ = app_state.app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+                let _ = app_state
+                    .app_handle
+                    .emit(&format!("acp://session-ended/{}", s.log_id), ());
             }
         }
     }

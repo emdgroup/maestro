@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use agent_client_protocol as acp;
 use acp::schema::v1::{
-    CreateTerminalRequest, CreateTerminalResponse, PermissionOptionId,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification,
+    CreateTerminalRequest, CreateTerminalResponse, PermissionOptionId, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification,
 };
+use agent_client_protocol as acp;
 use agent_client_protocol_schema::v1::{CreateElicitationRequest, CreateElicitationResponse};
 use maestro_protocol::{
     ElicitationRequest as MaestroElicitationRequest, MaestroRpcMessage,
@@ -40,7 +40,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let h = _h.clone();
-                    move |request: RequestPermissionRequest, responder: acp::Responder<RequestPermissionResponse>, cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: RequestPermissionRequest,
+                          responder: acp::Responder<RequestPermissionResponse>,
+                          cx: acp::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_permission(request, responder, cx).await }
                     }
@@ -60,7 +62,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let h = _h.clone();
-                    move |request: CreateTerminalRequest, responder: acp::Responder<CreateTerminalResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: CreateTerminalRequest,
+                          responder: acp::Responder<CreateTerminalResponse>,
+                          _cx: acp::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_create_terminal(request, responder).await }
                     }
@@ -70,16 +74,19 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let terms = Arc::clone(&_terms);
-                    move |request: TerminalOutputRequest, responder: acp::Responder<TerminalOutputResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: TerminalOutputRequest,
+                          responder: acp::Responder<TerminalOutputResponse>,
+                          _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
                             let terminals = terms.lock().await;
-                            let handle = terminals.get(&terminal_id_str).ok_or_else(|| {
-                                acp::Error::new(-32603, "unknown terminal")
-                            })?;
+                            let handle = terminals
+                                .get(&terminal_id_str)
+                                .ok_or_else(|| acp::Error::new(-32603, "unknown terminal"))?;
                             let output = handle.output_buf.lock().await.contents();
-                            let truncated = handle.truncated.load(std::sync::atomic::Ordering::Relaxed);
+                            let truncated =
+                                handle.truncated.load(std::sync::atomic::Ordering::Relaxed);
                             let exit_status =
                                 handle.exit_status.lock().await.as_ref().map(|info| {
                                     TerminalExitStatus::new()
@@ -98,7 +105,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let terms = Arc::clone(&_terms);
-                    move |request: ReleaseTerminalRequest, responder: acp::Responder<ReleaseTerminalResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: ReleaseTerminalRequest,
+                          responder: acp::Responder<ReleaseTerminalResponse>,
+                          _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -112,7 +121,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let terms = Arc::clone(&_terms);
-                    move |request: WaitForTerminalExitRequest, responder: acp::Responder<WaitForTerminalExitResponse>, cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: WaitForTerminalExitRequest,
+                          responder: acp::Responder<WaitForTerminalExitResponse>,
+                          cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -135,7 +146,8 @@ macro_rules! configure_acp_builder {
                                     let status = TerminalExitStatus::new()
                                         .exit_code(exit_info.exit_code)
                                         .signal(exit_info.signal.clone());
-                                    return responder.respond(WaitForTerminalExitResponse::new(status));
+                                    return responder
+                                        .respond(WaitForTerminalExitResponse::new(status));
                                 }
                             }
                             cx.spawn(async move {
@@ -146,7 +158,8 @@ macro_rules! configure_acp_builder {
                                         let status = TerminalExitStatus::new()
                                             .exit_code(exit_info.exit_code)
                                             .signal(exit_info.signal.clone());
-                                        let _ = responder.respond(WaitForTerminalExitResponse::new(status));
+                                        let _ = responder
+                                            .respond(WaitForTerminalExitResponse::new(status));
                                         return Ok(());
                                     }
                                 }
@@ -160,7 +173,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let terms = Arc::clone(&_terms);
-                    move |request: KillTerminalRequest, responder: acp::Responder<KillTerminalResponse>, _cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: KillTerminalRequest,
+                          responder: acp::Responder<KillTerminalResponse>,
+                          _cx: acp::ConnectionTo<acp::Agent>| {
                         let terms = terms.clone();
                         async move {
                             let terminal_id_str = request.terminal_id.to_string();
@@ -179,7 +194,9 @@ macro_rules! configure_acp_builder {
             .on_receive_request(
                 {
                     let h = _h.clone();
-                    move |request: acp::UntypedMessage, responder: acp::Responder<serde_json::Value>, cx: acp::ConnectionTo<acp::Agent>| {
+                    move |request: acp::UntypedMessage,
+                          responder: acp::Responder<serde_json::Value>,
+                          cx: acp::ConnectionTo<acp::Agent>| {
                         let h = h.clone();
                         async move { h.handle_elicitation(request, responder, cx).await }
                     }
@@ -227,8 +244,8 @@ impl ConnectionHandlers {
         );
         let (tx, rx) = oneshot::channel::<Option<String>>();
 
-        let payload = serde_json::to_value(&request)
-            .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+        let payload =
+            serde_json::to_value(&request).map_err(|e| acp::Error::new(-32603, e.to_string()))?;
         let msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(
             MaestroPermissionRequest {
                 session_id: maestro_sid,
@@ -241,13 +258,17 @@ impl ConnectionHandlers {
         send_response(&self.stdout, &msg)
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
-        state.pending_permissions.lock().await.insert(request_id, tx);
+        state
+            .pending_permissions
+            .lock()
+            .await
+            .insert(request_id, tx);
 
         cx.spawn(async move {
             let outcome = match rx.await {
-                Ok(Some(id)) => RequestPermissionOutcome::Selected(
-                    SelectedPermissionOutcome::new(PermissionOptionId::new(id)),
-                ),
+                Ok(Some(id)) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                    PermissionOptionId::new(id),
+                )),
                 Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
             };
             let _ = responder.respond(RequestPermissionResponse::new(outcome));
@@ -256,10 +277,7 @@ impl ConnectionHandlers {
         Ok(())
     }
 
-    pub async fn handle_notification(
-        &self,
-        notification: SessionNotification,
-    ) -> acp::Result<()> {
+    pub async fn handle_notification(&self, notification: SessionNotification) -> acp::Result<()> {
         let acp_sid = notification.session_id.to_string();
         let maestro_sid = self
             .router
@@ -314,8 +332,9 @@ impl ConnectionHandlers {
             );
         }
         let elicitation: CreateElicitationRequest =
-            serde_json::from_value(request.params().clone())
-                .map_err(|e| acp::Error::new(-32602, format!("invalid elicitation request: {e}")))?;
+            serde_json::from_value(request.params().clone()).map_err(|e| {
+                acp::Error::new(-32602, format!("invalid elicitation request: {e}"))
+            })?;
 
         let acp_sid = match elicitation.scope() {
             agent_client_protocol_schema::v1::ElicitationScope::Session(scope) => {
@@ -354,20 +373,30 @@ impl ConnectionHandlers {
         send_response(&self.stdout, &msg)
             .await
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
-        state.pending_elicitations.lock().await.insert(request_id, tx);
+        state
+            .pending_elicitations
+            .lock()
+            .await
+            .insert(request_id, tx);
 
         cx.spawn(async move {
             let response = match rx.await {
                 Ok(r) => r,
                 Err(_) => {
-                    let _ = responder.respond_with_error(acp::Error::new(-32603, "elicitation channel closed"));
+                    let _ = responder
+                        .respond_with_error(acp::Error::new(-32603, "elicitation channel closed"));
                     return Ok(());
                 }
             };
             match serde_json::from_value::<CreateElicitationResponse>(response.clone()) {
-                Ok(_) => { let _ = responder.respond(response); }
+                Ok(_) => {
+                    let _ = responder.respond(response);
+                }
                 Err(e) => {
-                    let _ = responder.respond_with_error(acp::Error::new(-32603, format!("invalid elicitation response: {e}")));
+                    let _ = responder.respond_with_error(acp::Error::new(
+                        -32603,
+                        format!("invalid elicitation response: {e}"),
+                    ));
                 }
             }
             Ok(())

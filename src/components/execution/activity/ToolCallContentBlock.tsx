@@ -32,7 +32,7 @@ export class ContentErrorBoundary extends Component<
  * heading, `$` becomes KaTeX. Only text an agent deliberately fenced is treated
  * as markdown.
  *
- * ponytail: an opening fence at line start is the whole test — no matching
+ * An opening fence at line start is the whole test — no matching
  * close, no streaming-aware state. Output that merely *contains* a fence line
  * (a grep over a markdown file) renders as markdown; tighten to a matched pair
  * if that shows up in practice.

@@ -1,10 +1,10 @@
+use chrono::Utc;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use chrono::Utc;
 
-use crate::models::{Worktree, WORKTREE_DIR};
 use crate::core::AppState;
+use crate::models::{Worktree, WORKTREE_DIR};
 
 /// Canonicalize a local repository path, resolving symlinks and relative segments.
 ///
@@ -14,13 +14,16 @@ use crate::core::AppState;
 /// `CreateProcess` as a working directory. Worktree paths are assembled as `{repo}/{relative}`
 /// strings, so the prefix has to come back off.
 ///
-/// ponytail: stripping the prefix also gives up long-path support past 260 chars; add the
+/// Stripping the prefix also gives up long-path support past 260 chars; add the
 /// length guard the `dunce` crate uses if that ever bites.
 pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
     let canonical = std::path::Path::new(path)
         .canonicalize()
         .map_err(|e| {
-            format!("Invalid repository path '{}': {}. Ensure the project directory exists.", path, e)
+            format!(
+                "Invalid repository path '{}': {}. Ensure the project directory exists.",
+                path, e
+            )
         })?
         .to_string_lossy()
         .to_string();
@@ -137,7 +140,8 @@ pub async fn create_worktree(
     pull_request: Option<i64>,
 ) -> Result<Worktree, String> {
     // Resolve project and git connection (local vs remote SSH)
-    let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     // A task created in a non-git project still submits `NewWorktree`, so this is reachable from
     // normal use and has to fail with something a user can act on.
     if !crate::project::git_ops::is_git_repo(
@@ -149,7 +153,9 @@ pub async fn create_worktree(
     )
     .await?
     {
-        return Err("This project is not a git repository, so worktrees are unavailable.".to_string());
+        return Err(
+            "This project is not a git repository, so worktrees are unavailable.".to_string(),
+        );
     }
 
     // Only for a path on this machine: everywhere else `git worktree add` creates the parents
@@ -178,11 +184,22 @@ pub async fn create_worktree(
             // would match no worktree git ever reports.
             let branch_name = match &checkout {
                 Some(checkout) => checkout.create(&git_conn, &relative_path).await?,
-                None => crate::git::create_worktree(&git_conn, &base_branch, &relative_path, new_branch_name.as_deref()).await?,
+                None => {
+                    crate::git::create_worktree(
+                        &git_conn,
+                        &base_branch,
+                        &relative_path,
+                        new_branch_name.as_deref(),
+                    )
+                    .await?
+                }
             };
 
             let worktree_id = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.execute(
                     "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     rusqlite::params![project_id, task_id, &branch_name, &base_branch, &relative_path, &now],
@@ -200,11 +217,14 @@ pub async fn create_worktree(
         // as in-flight: `list_worktrees_with_status` prunes rows no on-disk worktree matches, and
         // skips empty-path rows for exactly this reason.
         //
-        // ponytail: a crash between the INSERT and the UPDATE leaks a path-less row that nothing
+        // A crash between the INSERT and the UPDATE leaks a path-less row that nothing
         // reaps. Reap empty-path rows older than a few minutes on project open if that shows up.
         None => {
             let worktree_id = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.execute(
                     "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, NULL, ?, ?, '', ?)",
                     rusqlite::params![project_id, &base_branch, &base_branch, &now],
@@ -228,22 +248,37 @@ pub async fn create_worktree(
             let created = match &checkout {
                 Some(checkout) => checkout.create(&git_conn, &relative_path).await,
                 None => {
-                    crate::git::create_worktree(&git_conn, &base_branch, &relative_path, requested_branch.as_deref()).await
+                    crate::git::create_worktree(
+                        &git_conn,
+                        &base_branch,
+                        &relative_path,
+                        requested_branch.as_deref(),
+                    )
+                    .await
                 }
             };
 
             let branch_name = match created {
                 Ok(name) => name,
                 Err(e) => {
-                    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![worktree_id])
-                        .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
+                    let conn = app_state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("Lock failed: {}", e))?;
+                    conn.execute(
+                        "DELETE FROM worktrees WHERE id = ?",
+                        rusqlite::params![worktree_id],
+                    )
+                    .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
                     return Err(e);
                 }
             };
 
             {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.execute(
                     "UPDATE worktrees SET branch_name = ?, path = ? WHERE id = ?",
                     rusqlite::params![&branch_name, &relative_path, worktree_id],
@@ -284,7 +319,10 @@ pub async fn claim_worktree_for_task(
     worktree_id: i32,
 ) -> Result<Worktree, String> {
     let worktree = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
 
         conn.execute(
             "UPDATE worktrees SET task_id = NULL WHERE task_id = ? AND id != ?",
@@ -344,10 +382,18 @@ pub async fn delete_worktree(
     delete_branch: bool,
 ) -> Result<(), String> {
     // Resolve project and git connection (local vs remote SSH)
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    // Call git worktree remove via dispatcher (best effort — don't fail if already gone)
-    let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+    // Best effort: a worktree already gone from disk is the outcome this asks for, and the DB row
+    // below is removed either way so the card does not outlive it.
+    if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree_path).await {
+        log::warn!(
+            "Could not remove the git worktree at {}: {}",
+            worktree_path,
+            e
+        );
+    }
 
     // The fetch refspec a pull request checkout added exists to serve this worktree, so it goes
     // with it — each one left behind is a ref every later `git fetch` on the project pays for.
@@ -359,15 +405,25 @@ pub async fn delete_worktree(
 
     // Optionally delete the branch (best-effort, non-fatal)
     if delete_branch {
-        let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await;
+        let _ =
+            crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name])
+                .await;
         let remote = crate::git::remote::project_remote(&app_state, project_id).await;
         crate::git::prune_remote_refs(&git_conn, &remote).await;
     }
 
     // Delete DB row if id provided (orphans have no DB row)
     if let Some(id) = worktree_id {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let _ = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]);
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        // Not fatal: the git worktree is already gone, so failing here leaves a row pointing at
+        // nothing rather than losing anything. `list_worktrees_with_status` reaps it on the next
+        // poll — but silently, so this is the only place the failure is visible.
+        if let Err(e) = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]) {
+            log::warn!("Could not delete worktree row {}: {}", id, e);
+        }
     }
 
     app_state.app_handle.emit("worktrees-changed", ()).ok();
@@ -407,20 +463,35 @@ async fn reason_to_keep(
     worktree_path: &str,
     branch_name: &str,
 ) -> Result<Option<String>, String> {
-    let status = crate::git::run_git_in_dir(git_conn, worktree_path, &["status", "--porcelain"]).await?;
+    let status =
+        crate::git::run_git_in_dir(git_conn, worktree_path, &["status", "--porcelain"]).await?;
     if !status.trim().is_empty() {
-        log::debug!("keeping worktree {}: working tree not clean\n{}", worktree_path, status);
+        log::debug!(
+            "keeping worktree {}: working tree not clean\n{}",
+            worktree_path,
+            status
+        );
         return Ok(Some("it has uncommitted changes".to_string()));
     }
 
     let containing = crate::git::run_git_in_dir(
         git_conn,
         worktree_path,
-        &["branch", "--all", "--contains", "HEAD", "--format=%(refname:short)"],
+        &[
+            "branch",
+            "--all",
+            "--contains",
+            "HEAD",
+            "--format=%(refname:short)",
+        ],
     )
     .await?;
     if !branch_has_no_own_commits(&containing, branch_name) {
-        log::debug!("keeping worktree {}: only {} contains its tip", worktree_path, branch_name);
+        log::debug!(
+            "keeping worktree {}: only {} contains its tip",
+            worktree_path,
+            branch_name
+        );
         return Ok(Some("its branch has commits of its own".to_string()));
     }
 
@@ -438,13 +509,20 @@ pub async fn cleanup_worktree_if_clean(
     branch_name: String,
     worktree_id: Option<i32>,
 ) -> Result<Option<String>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     // "Reuse workspace" lets a second session share this directory; closing the first must not
     // delete it out from under the second.
     let running = running_session_cwds(&app_state).await;
-    if running.iter().any(|cwd| path_is_within(cwd, &worktree_path)) {
-        log::debug!("keeping worktree {}: a session is running in it", worktree_path);
+    if running
+        .iter()
+        .any(|cwd| path_is_within(cwd, &worktree_path))
+    {
+        log::debug!(
+            "keeping worktree {}: a session is running in it",
+            worktree_path
+        );
         return Ok(Some("another session is running in it".to_string()));
     }
 
@@ -456,7 +534,10 @@ pub async fn cleanup_worktree_if_clean(
     crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await?;
 
     if let Some(id) = worktree_id {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id])
             .map_err(|e| format!("Failed to delete worktree row: {}", e))?;
     }
@@ -494,10 +575,14 @@ pub async fn live_session_cwds(
         project.docker_connection_id,
     );
     live_cwds.extend(
-        crate::project::session_state::read_session_snapshots(app_state, &project.path, connection_key)
-            .await
-            .into_iter()
-            .map(|snapshot| snapshot.cwd),
+        crate::project::session_state::read_session_snapshots(
+            app_state,
+            &project.path,
+            connection_key,
+        )
+        .await
+        .into_iter()
+        .map(|snapshot| snapshot.cwd),
     );
     live_cwds
 }
@@ -533,7 +618,12 @@ async fn sweep_leftover_worktree_dirs(
     };
 
     while let Ok(Some(entry)) = entries.next_entry().await {
-        if !entry.file_type().await.map(|kind| kind.is_dir()).unwrap_or(false) {
+        if !entry
+            .file_type()
+            .await
+            .map(|kind| kind.is_dir())
+            .unwrap_or(false)
+        {
             continue;
         }
         let relative = format!("{}/{}", WORKTREE_DIR, entry.file_name().to_string_lossy());
@@ -549,8 +639,14 @@ async fn sweep_leftover_worktree_dirs(
             log::debug!("keeping leftover {}: a session is running in it", abs_path);
             continue;
         }
-        if tokio::fs::metadata(format!("{}/.git", abs_path)).await.is_ok() {
-            log::warn!("keeping leftover {}: git does not list it but it still has a .git", abs_path);
+        if tokio::fs::metadata(format!("{}/.git", abs_path))
+            .await
+            .is_ok()
+        {
+            log::warn!(
+                "keeping leftover {}: git does not list it but it still has a .git",
+                abs_path
+            );
             continue;
         }
 
@@ -574,21 +670,31 @@ pub async fn cleanup_zombie_worktrees(
 ) -> Result<i32, String> {
     // Query DB for zombie candidates — lock is released after this block
     let candidates: Vec<(i32, String, String)> = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        let mut stmt = conn.prepare(
-            "SELECT w.id, w.path, w.branch_name
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT w.id, w.path, w.branch_name
              FROM worktrees w
              LEFT JOIN tasks t ON t.id = w.task_id
              WHERE w.project_id = ?1
-               AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))"
-        ).map_err(|e| format!("Failed to prepare query: {}", e))?;
+               AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
-        let rows: Vec<(i32, String, String)> = stmt.query_map(rusqlite::params![project_id], |row| {
-            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-        })
-        .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        let rows: Vec<(i32, String, String)> = stmt
+            .query_map(rusqlite::params![project_id], |row| {
+                Ok((
+                    row.get::<_, i32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
         rows
     }; // Mutex lock released here
 
@@ -600,7 +706,8 @@ pub async fn cleanup_zombie_worktrees(
     // on disk, and a leftover directory has no row precisely because the row was already removed.
 
     // Resolve project and git connection (local vs remote SSH)
-    let (project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     let live_cwds = live_session_cwds(&app_state, &project).await;
 
@@ -643,9 +750,17 @@ pub async fn cleanup_zombie_worktrees(
     // Uses `git branch -d` (safe delete): git refuses to delete branches with unmerged
     // commits, so branches with actual work are preserved automatically.
     for (_, relative_path, branch_name) in &to_delete {
-        let _ = crate::git::delete_worktree(&git_conn, relative_path).await;
+        if let Err(e) = crate::git::delete_worktree(&git_conn, relative_path).await {
+            log::warn!(
+                "Could not remove the git worktree at {}: {}",
+                relative_path,
+                e
+            );
+        }
 
-        let _ = crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", branch_name]).await;
+        let _ =
+            crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", branch_name])
+                .await;
     }
 
     // Once for the batch, not once per worktree — it goes to the network.
@@ -658,7 +773,10 @@ pub async fn cleanup_zombie_worktrees(
     let deleted = if !to_delete.is_empty() {
         let ids: Vec<i32> = to_delete.iter().map(|(id, _, _)| *id).collect();
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         let sql = format!("DELETE FROM worktrees WHERE id IN ({})", placeholders);
         let params = rusqlite::params_from_iter(ids.iter());
         conn.execute(&sql, params).unwrap_or(0) as i32
@@ -682,37 +800,48 @@ pub async fn cleanup_zombie_worktrees(
 ///
 /// The branch is deleted with `-D`, not `-d`: the whole point is to discard unmerged work, so a
 /// safe delete would refuse in exactly the case this is called for.
-pub async fn discard_task_workspace(
-    app_state: &Arc<AppState>,
-    task_id: i32,
-) -> Result<(), String> {
+pub async fn discard_task_workspace(app_state: &Arc<AppState>, task_id: i32) -> Result<(), String> {
     // Gather worktree and task info while holding the lock briefly
     let (worktree_info, execution_start_sha, project_id) = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
 
         // Query associated worktree
-        let wt: Option<(i32, String, String)> = conn.query_row(
-            "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
-            rusqlite::params![task_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).ok();
+        let wt: Option<(i32, String, String)> = conn
+            .query_row(
+                "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
+                rusqlite::params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
 
         // Get execution_start_sha and project_id from task
-        let (sha, pid): (Option<String>, i32) = conn.query_row(
-            "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
-            rusqlite::params![task_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        ).map_err(|e| format!("Failed to read task: {}", e))?;
+        let (sha, pid): (Option<String>, i32) = conn
+            .query_row(
+                "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
+                rusqlite::params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| format!("Failed to read task: {}", e))?;
 
         (wt, sha, pid)
     };
 
     // Perform async git cleanup outside the DB lock
     if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
-        let (_project, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
+        let (_project, git_conn) =
+            crate::core::get_project_with_git_conn(app_state, project_id).await?;
 
-        // Remove worktree from disk (best effort)
-        let _ = crate::git::delete_worktree(&git_conn, &worktree_path).await;
+        // Best effort: already gone from disk is the outcome this asks for.
+        if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree_path).await {
+            log::warn!(
+                "Could not remove the git worktree at {}: {}",
+                worktree_path,
+                e
+            );
+        }
 
         // Delete branch (best effort)
         let _ = crate::git::run_git_in_dir_lossy(
@@ -724,7 +853,10 @@ pub async fn discard_task_workspace(
 
         // Delete worktree DB row
         {
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let conn = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Lock failed: {}", e))?;
             conn.execute(
                 "DELETE FROM worktrees WHERE id = ?",
                 rusqlite::params![worktree_id],
@@ -751,11 +883,15 @@ pub async fn discard_task_workspace(
 
     // Clear execution_start_sha now that cleanup is done
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.execute(
             "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
             rusqlite::params![task_id],
-        ).ok();
+        )
+        .ok();
     }
 
     Ok(())
@@ -902,7 +1038,8 @@ async fn fill_unmerged_branch_stats(
         .collect();
     let command_refs: Vec<&[&str]> = commands.iter().map(|args| args.as_slice()).collect();
 
-    let outputs = crate::git::run_git_commands_lossy(git_conn, git_conn.path(), &command_refs).await;
+    let outputs =
+        crate::git::run_git_commands_lossy(git_conn, git_conn.path(), &command_refs).await;
 
     for (position, &index) in unmerged.iter().enumerate() {
         candidates[index].commits = outputs
@@ -930,7 +1067,8 @@ pub async fn list_prunable_branches(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Vec<PrunableBranch>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
     let remote = crate::git::remote::project_remote(&app_state, project_id).await;
     // Trailing slash omitted so `for-each-ref` treats it as a namespace, matching the two
     // literals beside it; the strict prefix check lives in `prunable_maestro_branches`.
@@ -948,7 +1086,13 @@ pub async fn list_prunable_branches(
             ],
             // The predicate `git branch -d` itself applies: with no upstream on any of these
             // branches, it falls back to asking whether HEAD contains them.
-            &["for-each-ref", "--format=%(refname)", "--merged", "HEAD", "refs/heads/maestro"],
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                "--merged",
+                "HEAD",
+                "refs/heads/maestro",
+            ],
             &["worktree", "list", "--porcelain"],
         ],
     )
@@ -982,7 +1126,8 @@ pub async fn prune_branches(
     branches: Vec<String>,
     force: bool,
 ) -> Result<Vec<String>, String> {
-    let (_project, git_conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
     let checked_out: HashSet<String> = crate::git::list_worktrees(&git_conn)
         .await?
@@ -1005,7 +1150,13 @@ pub async fn prune_branches(
             log::debug!("[git] keeping {branch}: checked out in a worktree");
             continue;
         }
-        match crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", delete_flag, branch]).await {
+        match crate::git::run_git_in_dir(
+            &git_conn,
+            git_conn.path(),
+            &["branch", delete_flag, branch],
+        )
+        .await
+        {
             Ok(_) => deleted.push(branch.clone()),
             Err(e) => log::warn!("[git] could not delete {branch}: {e}"),
         }
@@ -1023,7 +1174,8 @@ mod tests {
         prunable_maestro_branches, sweep_leftover_worktree_dirs,
     };
     use crate::models::{
-        is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task, WORKTREE_DIR,
+        is_maestro_created_worktree, worktree_path_for_session, worktree_path_for_task,
+        WORKTREE_DIR,
     };
 
     #[test]
@@ -1033,24 +1185,38 @@ mod tests {
         // A hand-made worktree, and the pre-id name-based session path — both must read as
         // user-made so cleanup leaves them alone.
         assert!(!is_maestro_created_worktree("../scratch"));
-        assert!(!is_maestro_created_worktree(".maestro/worktrees/maestro/hardy-anchor"));
+        assert!(!is_maestro_created_worktree(
+            ".maestro/worktrees/maestro/hardy-anchor"
+        ));
     }
 
     #[test]
     fn live_session_cwd_matches_its_worktree() {
         let worktree = "/repo/.maestro/worktrees/session-3";
         assert!(path_is_within(worktree, worktree));
-        assert!(path_is_within("/repo/.maestro/worktrees/session-3/", worktree));
-        assert!(path_is_within("/repo/.maestro/worktrees/session-3/src", worktree));
+        assert!(path_is_within(
+            "/repo/.maestro/worktrees/session-3/",
+            worktree
+        ));
+        assert!(path_is_within(
+            "/repo/.maestro/worktrees/session-3/src",
+            worktree
+        ));
         // A prefix that is not a path boundary is a different worktree, not a child.
-        assert!(!path_is_within("/repo/.maestro/worktrees/session-30", worktree));
+        assert!(!path_is_within(
+            "/repo/.maestro/worktrees/session-30",
+            worktree
+        ));
         assert!(!path_is_within("/repo", worktree));
     }
 
     #[test]
     fn own_commits_detected_from_containing_branches() {
         // Branch tip still shared with main — nothing was committed on it.
-        assert!(branch_has_no_own_commits("maestro/foo\nmain\n", "maestro/foo"));
+        assert!(branch_has_no_own_commits(
+            "maestro/foo\nmain\n",
+            "maestro/foo"
+        ));
         // Only the branch itself contains the tip — it holds work.
         assert!(!branch_has_no_own_commits("maestro/foo\n", "maestro/foo"));
         assert!(!branch_has_no_own_commits("", "maestro/foo"));
@@ -1108,7 +1274,10 @@ mod tests {
         );
 
         let held = prunable_maestro_branches(all_refs, "", &HashSet::new(), "fork");
-        assert!(held.is_empty(), "the branch is on `fork`, so nothing is prunable");
+        assert!(
+            held.is_empty(),
+            "the branch is on `fork`, so nothing is prunable"
+        );
 
         // The same refs judged against `origin`, which holds nothing: the branch looks orphaned.
         let orphaned = prunable_maestro_branches(all_refs, "", &HashSet::new(), "origin");
@@ -1124,7 +1293,8 @@ mod tests {
         );
         let merged_refs = "refs/heads/maestro/kind-heath-19\n";
 
-        let candidates = prunable_maestro_branches(all_refs, merged_refs, &HashSet::new(), "origin");
+        let candidates =
+            prunable_maestro_branches(all_refs, merged_refs, &HashSet::new(), "origin");
         assert_eq!(candidates.len(), 2);
         assert!(candidates[0].merged);
         assert_eq!(candidates[0].last_commit_at, "2026-08-20T09:30:00+02:00");
@@ -1143,11 +1313,19 @@ mod tests {
         let repo = temp.path().to_string_lossy().replace('\\', "/");
         let worktrees = format!("{}/{}", repo, WORKTREE_DIR);
 
-        for name in ["session-1", "session-2", "session-3", "session-4", "task-5", "scratch"] {
+        for name in [
+            "session-1",
+            "session-2",
+            "session-3",
+            "session-4",
+            "task-5",
+            "scratch",
+        ] {
             std::fs::create_dir_all(format!("{}/{}", worktrees, name)).expect("create dir");
         }
         // A real worktree git has simply not been asked about yet.
-        std::fs::write(format!("{}/session-2/.git", worktrees), "gitdir: elsewhere").expect("write");
+        std::fs::write(format!("{}/session-2/.git", worktrees), "gitdir: elsewhere")
+            .expect("write");
         // Not empty, but still a leftover: git deletes the `.git` file before the tree, so a
         // partial removal leaves content behind without one.
         std::fs::write(format!("{}/task-5/README.md", worktrees), "left over").expect("write");
@@ -1156,10 +1334,20 @@ mod tests {
         let live_cwds = vec![format!("{}/{}/session-4/src", repo, WORKTREE_DIR)];
         sweep_leftover_worktree_dirs(&repo, &registered, &live_cwds).await;
 
-        let survives = |name: &str| std::path::Path::new(&format!("{}/{}", worktrees, name)).exists();
-        assert!(!survives("session-1"), "an unregistered, unused, .git-less directory is dead");
-        assert!(!survives("task-5"), "leftover content does not make it live");
-        assert!(survives("session-2"), "a directory with a .git is a worktree");
+        let survives =
+            |name: &str| std::path::Path::new(&format!("{}/{}", worktrees, name)).exists();
+        assert!(
+            !survives("session-1"),
+            "an unregistered, unused, .git-less directory is dead"
+        );
+        assert!(
+            !survives("task-5"),
+            "leftover content does not make it live"
+        );
+        assert!(
+            survives("session-2"),
+            "a directory with a .git is a worktree"
+        );
         assert!(survives("session-3"), "git still lists it");
         assert!(survives("session-4"), "a session is working inside it");
         assert!(survives("scratch"), "not a name maestro creates");

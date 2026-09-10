@@ -1,7 +1,7 @@
-use tokio::process::Command as TokioCommand;
 use crate::command_ext::NoConsoleWindow;
-use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
+use tokio::process::Command as TokioCommand;
 
 #[derive(serde::Deserialize)]
 struct GitHubUserResponse {
@@ -44,7 +44,11 @@ pub async fn try_gh_cli_display_name() -> Option<String> {
         return None;
     }
     let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Try to retrieve an auth token from the gh CLI. Never returns Err — returns None
@@ -84,14 +88,12 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let resolved_token = match token {
         Some(t) => t,
-        None => try_gh_cli_token()
-            .await
-            .ok_or_else(|| {
-                "GitHub: gh CLI not available or not authenticated. Provide a PAT.".to_string()
-            })?,
+        None => try_gh_cli_token().await.ok_or_else(|| {
+            "GitHub: gh CLI not available or not authenticated. Provide a PAT.".to_string()
+        })?,
     };
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get("https://api.github.com/user")
@@ -140,7 +142,7 @@ pub async fn fetch_issues(
     repo: &str,
     token: &str,
 ) -> Result<Vec<RemoteIssue>, String> {
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "https://api.github.com/repos/{}/{}/issues?state=open&per_page=100",

@@ -1,8 +1,8 @@
+use crate::core::AppState;
+use crate::models::TaskAttachment;
+use chrono::Utc;
 use std::sync::Arc;
 use tauri::State;
-use chrono::Utc;
-use crate::models::TaskAttachment;
-use crate::core::AppState;
 
 /// Get attachments for a task
 #[tauri::command]
@@ -11,7 +11,10 @@ pub fn list_task_attachments(
     app_state: State<Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<TaskAttachment>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let mut stmt = conn
         .prepare(
             "SELECT id, task_id, filename, file_path, file_size, created_at \
@@ -49,7 +52,10 @@ pub fn add_task_attachment(
     let file_size = std::fs::metadata(&file_path)
         .map(|m| m.len() as i64)
         .unwrap_or(0);
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO task_attachments (task_id, filename, file_path, file_size, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -58,7 +64,14 @@ pub fn add_task_attachment(
     .map_err(|e| e.to_string())?;
 
     let id = conn.last_insert_rowid() as i32;
-    Ok(TaskAttachment { id, task_id, filename, file_path, file_size, created_at: now })
+    Ok(TaskAttachment {
+        id,
+        task_id,
+        filename,
+        file_path,
+        file_size,
+        created_at: now,
+    })
 }
 
 /// Remove an attachment record by id
@@ -68,7 +81,10 @@ pub fn delete_task_attachment(
     app_state: State<Arc<AppState>>,
     attachment_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     conn.execute("DELETE FROM task_attachments WHERE id = ?", [attachment_id])
         .map_err(|e| e.to_string())?;
     Ok(())

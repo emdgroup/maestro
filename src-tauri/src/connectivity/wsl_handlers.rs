@@ -1,7 +1,7 @@
+use crate::connectivity::wsl::{WslConnection, WslDistro};
+use crate::core::AppState;
 use std::sync::Arc;
 use tauri::State;
-use crate::core::AppState;
-use crate::connectivity::wsl::{WslConnection, WslDistro};
 
 /// List installed WSL distros. Returns empty vec on non-Windows.
 #[tauri::command]
@@ -80,7 +80,10 @@ pub async fn save_wsl_connection(
     display_name: Option<String>,
 ) -> Result<WslConnection, String> {
     let now = chrono::Utc::now().to_rfc3339();
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
     conn.execute(
         "INSERT INTO wsl_connections (distro_name, display_name, last_used_at, created_at)
          VALUES (?1, ?2, ?3, ?3)
@@ -109,17 +112,17 @@ pub async fn delete_wsl_connection(
     app_state: State<'_, Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
     conn.execute(
         "DELETE FROM projects WHERE wsl_connection_id = ?",
         [connection_id],
     )
     .map_err(|e| format!("Failed to remove projects: {e}"))?;
     let rows_deleted = conn
-        .execute(
-            "DELETE FROM wsl_connections WHERE id = ?",
-            [connection_id],
-        )
+        .execute("DELETE FROM wsl_connections WHERE id = ?", [connection_id])
         .map_err(|e| format!("Failed to delete WSL connection: {e}"))?;
     if rows_deleted == 0 {
         return Err(format!("WSL connection {connection_id} not found"));
@@ -130,19 +133,26 @@ pub async fn delete_wsl_connection(
 /// List all saved WSL connections from the database.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_wsl_connections(app_state: State<'_, Arc<AppState>>) -> Result<Vec<WslConnection>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {e}"))?;
+pub async fn list_wsl_connections(
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<Vec<WslConnection>, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?;
     let mut stmt = conn
         .prepare("SELECT id, distro_name, display_name, last_used_at, created_at FROM wsl_connections ORDER BY last_used_at DESC")
         .map_err(|e| format!("DB prepare failed: {e}"))?;
     let rows = stmt
-        .query_map([], |row| Ok(WslConnection {
-            id: row.get(0)?,
-            distro_name: row.get(1)?,
-            display_name: row.get(2)?,
-            last_used_at: row.get(3)?,
-            created_at: row.get(4)?,
-        }))
+        .query_map([], |row| {
+            Ok(WslConnection {
+                id: row.get(0)?,
+                distro_name: row.get(1)?,
+                display_name: row.get(2)?,
+                last_used_at: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
         .map_err(|e| format!("DB query failed: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("DB row failed: {e}"))?;

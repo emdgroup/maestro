@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use russh::ChannelMsg;
 use crate::connectivity::ssh::history::{append_to_history, SshPtyHandle};
 use crate::connectivity::ssh::session::RemoteSshSession;
+use russh::ChannelMsg;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// Operation sent to the SSH PTY writer task
 pub enum SshWriteOp {
@@ -23,15 +23,15 @@ impl RemoteSshSession {
         log_id: i32,
     ) -> Result<SshPtyHandle, String> {
         if !self.is_connected().await {
-            self.reconnect_if_needed().await.map_err(|e| e.to_string())?;
+            self.reconnect_if_needed()
+                .await
+                .map_err(|e| e.to_string())?;
         }
 
         // Open a dedicated SSH channel for this PTY session
         let channel = {
             let guard = self.handle.lock().await;
-            let h = guard
-                .as_ref()
-                .ok_or("No active SSH session")?;
+            let h = guard.as_ref().ok_or("No active SSH session")?;
             h.channel_open_session()
                 .await
                 .map_err(|e| format!("Failed to open SSH channel: {}", e))?
@@ -56,7 +56,8 @@ impl RemoteSshSession {
 
         // History buffer: accumulates session output with ANSI clear-screen trimming and 512 KB cap.
         // attach_terminal replays from pos=0 for live sessions and reads the DB for dead sessions.
-        let history: Arc<tokio::sync::Mutex<String>> = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let history: Arc<tokio::sync::Mutex<String>> =
+            Arc::new(tokio::sync::Mutex::new(String::new()));
         let notify: Arc<tokio::sync::Notify> = Arc::new(tokio::sync::Notify::new());
         let process_ended: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
         // Cumulative front-drain counter: incremented only by the 512 KB cap path, never by
@@ -158,6 +159,14 @@ impl RemoteSshSession {
             notify_writer.notify_one();
         });
 
-        Ok(SshPtyHandle { log_id, write_tx, history, notify, process_ended, total_drained, clear_screen_count })
+        Ok(SshPtyHandle {
+            log_id,
+            write_tx,
+            history,
+            notify,
+            process_ended,
+            total_drained,
+            clear_screen_count,
+        })
     }
 }

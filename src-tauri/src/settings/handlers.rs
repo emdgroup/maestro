@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::core::{logging, AppState};
 use crate::models::{AppSettings, ConnectionCapacitySettings};
 use crate::settings::models::LogLocation;
-use crate::core::{logging, AppState};
 
 #[tauri::command]
 #[specta::specta]
@@ -40,7 +40,11 @@ pub fn apply_window_frame(app: &AppHandle, native_frame: bool) {
         Ok(current) if current == native_frame => {}
         Ok(_) => {
             if let Err(e) = window.set_decorations(native_frame) {
-                log::warn!("Failed to set window decorations to {}: {}", native_frame, e);
+                log::warn!(
+                    "Failed to set window decorations to {}: {}",
+                    native_frame,
+                    e
+                );
             }
         }
         Err(e) => log::warn!("Failed to read the window decoration state: {}", e),
@@ -55,19 +59,22 @@ pub fn apply_window_frame(_app: &AppHandle, _native_frame: bool) {}
 #[tauri::command]
 #[specta::specta]
 pub fn get_settings(app_state: State<Arc<AppState>>) -> Result<AppSettings, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     crate::core::settings::load_settings(&conn).map_err(|e| e.to_string())
 }
 
 /// Save application settings to the database
 #[tauri::command]
 #[specta::specta]
-pub fn save_settings(
-    app_state: State<Arc<AppState>>,
-    settings: AppSettings,
-) -> Result<(), String> {
+pub fn save_settings(app_state: State<Arc<AppState>>, settings: AppSettings) -> Result<(), String> {
     {
-        let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let mut conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::core::settings::save_settings(&mut conn, &settings).map_err(|e| e.to_string())?;
     }
 
@@ -91,7 +98,10 @@ pub fn get_connection_capacity(
     app_state: State<Arc<AppState>>,
     connection: crate::acp::ConnectionKey,
 ) -> Result<ConnectionCapacitySettings, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     crate::core::settings::load_connection_capacity(&conn, connection)
 }
 
@@ -103,7 +113,10 @@ pub fn save_connection_capacity(
     settings: ConnectionCapacitySettings,
 ) -> Result<(), String> {
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::core::settings::save_connection_capacity(&conn, connection, &settings)?;
     }
 
@@ -117,7 +130,10 @@ pub fn save_connection_capacity(
 #[tauri::command]
 #[specta::specta]
 pub fn get_log_levels() -> Vec<String> {
-    logging::LOG_LEVELS.iter().map(|level| level.to_string()).collect()
+    logging::LOG_LEVELS
+        .iter()
+        .map(|level| level.to_string())
+        .collect()
 }
 
 /// Where logs are being written, and where they will be written next launch.
@@ -131,7 +147,10 @@ pub fn get_log_directory(
     app_state: State<Arc<AppState>>,
 ) -> Result<LogLocation, String> {
     let configured = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         crate::core::settings::load_settings(&conn)?.log_directory
     };
     let resolved = logging::current_log_dir(&app, configured.as_deref())?;

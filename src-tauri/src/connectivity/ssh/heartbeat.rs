@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
 
-use super::session::{RemoteSshSession, SshConnectionState, ReconnectingPayload};
+use super::session::{ReconnectingPayload, RemoteSshSession, SshConnectionState};
 use crate::connectivity::ssh::error::is_transient_error;
 
 /// Clean up all SSH PTY sessions associated with a given connection_id.
@@ -73,10 +73,8 @@ pub fn spawn_heartbeat_task(
                 break;
             }
 
-            let probe = tokio::time::timeout(
-                Duration::from_secs(8),
-                session.execute_command("true"),
-            ).await;
+            let probe =
+                tokio::time::timeout(Duration::from_secs(8), session.execute_command("true")).await;
             match probe {
                 Ok(Ok(_)) => {
                     session.reconnect_attempts.store(0, Ordering::SeqCst);
@@ -85,7 +83,7 @@ pub fn spawn_heartbeat_task(
                     break;
                 }
                 _ => {
-                    let _ = app_handle.emit("ssh-connection-lost", connection_id);
+                    crate::core::emit_or_log(&app_handle, "ssh-connection-lost", connection_id);
                     cleanup_pty_sessions_for_connection(&app_state, connection_id).await;
                     *session.state.lock().await = SshConnectionState::Reconnecting;
 
@@ -94,11 +92,15 @@ pub fn spawn_heartbeat_task(
                     let mut reconnected = false;
 
                     for attempt in 1..=max_attempts {
-                        let _ = app_handle.emit("ssh-reconnecting", ReconnectingPayload {
-                            connection_id,
-                            attempt,
-                            max_attempts,
-                        });
+                        crate::core::emit_or_log(
+                            &app_handle,
+                            "ssh-reconnecting",
+                            ReconnectingPayload {
+                                connection_id,
+                                attempt,
+                                max_attempts,
+                            },
+                        );
 
                         let delay = Duration::from_secs(RETRY_DELAYS_SECS[attempt - 1]);
                         tokio::time::sleep(delay).await;
@@ -110,30 +112,43 @@ pub fn spawn_heartbeat_task(
                             }
                         }
 
-                        let password = session.session_password.lock().await.as_ref().map(|p| p.to_string());
+                        let password = session
+                            .session_password
+                            .lock()
+                            .await
+                            .as_ref()
+                            .map(|p| p.to_string());
                         if let Ok(()) = session.connect(password).await {
-                            let _ = app_handle.emit("ssh-reconnected", connection_id);
+                            crate::core::emit_or_log(&app_handle, "ssh-reconnected", connection_id);
                             reconnected = true;
 
                             let restore_state = Arc::clone(&app_state);
                             let restore_handle = app_handle.clone();
                             tokio::spawn(async move {
-                                if crate::acp::restore_acp_sessions(connection_id, &restore_state).await.is_err() {
-                                    let remaining: Vec<crate::acp::RestorableSession> = restore_state
-                                        .acp
-                                        .restorable_sessions
-                                        .lock()
-                                        .await
-                                        .remove(&connection_id)
-                                        .unwrap_or_default();
+                                if crate::acp::restore_acp_sessions(connection_id, &restore_state)
+                                    .await
+                                    .is_err()
+                                {
+                                    let remaining: Vec<crate::acp::RestorableSession> =
+                                        restore_state
+                                            .acp
+                                            .restorable_sessions
+                                            .lock()
+                                            .await
+                                            .remove(&connection_id)
+                                            .unwrap_or_default();
                                     for s in remaining {
-                                        let _ = restore_state.app_handle.emit(
-                                            &format!("acp://session-ended/{}", s.log_id), ()
-                                        );
+                                        let _ = restore_state
+                                            .app_handle
+                                            .emit(&format!("acp://session-ended/{}", s.log_id), ());
                                     }
                                     restore_state.app_handle.emit("sessions-changed", ()).ok();
                                 }
-                                let _ = restore_handle.emit("acp-sessions-restored", connection_id);
+                                crate::core::emit_or_log(
+                                    &restore_handle,
+                                    "acp-sessions-restored",
+                                    connection_id,
+                                );
                             });
 
                             break;
@@ -150,12 +165,17 @@ pub fn spawn_heartbeat_task(
                             .unwrap_or_default();
                         let had_restorable = !remaining.is_empty();
                         for s in remaining {
-                            let _ = app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+                            let _ =
+                                app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
                         }
                         if had_restorable {
                             app_state.app_handle.emit("sessions-changed", ()).ok();
                         }
-                        let _ = app_handle.emit("ssh-connection-failed", connection_id);
+                        crate::core::emit_or_log(
+                            &app_handle,
+                            "ssh-connection-failed",
+                            connection_id,
+                        );
                         *session.state.lock().await = SshConnectionState::Disconnected;
                         break;
                     }

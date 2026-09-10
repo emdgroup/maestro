@@ -131,13 +131,7 @@ pub fn record_unfinished(conn: &Connection, task_id: i32, phase: Option<&str>, m
     record_as(conn, task_id, "outcome", phase, message)
 }
 
-fn record_as(
-    conn: &Connection,
-    task_id: i32,
-    kind: &str,
-    phase: Option<&str>,
-    message: &str,
-) {
+fn record_as(conn: &Connection, task_id: i32, kind: &str, phase: Option<&str>, message: &str) {
     let trimmed = message.trim();
     if trimmed.is_empty() {
         return;
@@ -172,7 +166,10 @@ pub fn list_task_comments(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
 ) -> Result<Vec<TaskComment>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let mut stmt = conn
         .prepare(
             "SELECT id, task_id, kind, author, body, external_ref, phase, created_at \
@@ -206,11 +203,25 @@ pub fn add_task_note(
     }
 
     let comment = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
-        append(&conn, task_id, "note", "user", Some(body.trim()), None, None)?
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        append(
+            &conn,
+            task_id,
+            "note",
+            "user",
+            Some(body.trim()),
+            None,
+            None,
+        )?
     };
 
-    app_state.app_handle.emit("task-comments-changed", task_id).ok();
+    app_state
+        .app_handle
+        .emit("task-comments-changed", task_id)
+        .ok();
     Ok(comment)
 }
 
@@ -255,8 +266,16 @@ mod tests {
         assert_eq!(inline.body.as_deref(), Some("done"));
         assert_eq!(inline.external_ref, None);
 
-        let referenced =
-            append(&conn, task_id, "plan", "agent", None, Some("blob://1"), None).unwrap();
+        let referenced = append(
+            &conn,
+            task_id,
+            "plan",
+            "agent",
+            None,
+            Some("blob://1"),
+            None,
+        )
+        .unwrap();
         assert_eq!(referenced.body, None);
         assert_eq!(referenced.external_ref.as_deref(), Some("blob://1"));
     }
@@ -273,9 +292,16 @@ mod tests {
         assert_eq!(kinds(&conn, task_id), vec!["outcome".to_string()]);
 
         let body: String = conn
-            .query_row("SELECT body FROM task_comments WHERE task_id = ?", [task_id], |r| r.get(0))
+            .query_row(
+                "SELECT body FROM task_comments WHERE task_id = ?",
+                [task_id],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(body, "finished", "surrounding whitespace should not be stored");
+        assert_eq!(
+            body, "finished",
+            "surrounding whitespace should not be stored"
+        );
     }
 
     /// `kind_for_phase` answers "what does this role deliver", which is the wrong question for a
@@ -303,9 +329,11 @@ mod tests {
 
             // Where it happened is still worth keeping; only what it counts as changes.
             let stored: Option<String> = conn
-                .query_row("SELECT phase FROM task_comments WHERE task_id = ?", [task_id], |r| {
-                    r.get(0)
-                })
+                .query_row(
+                    "SELECT phase FROM task_comments WHERE task_id = ?",
+                    [task_id],
+                    |r| r.get(0),
+                )
                 .unwrap();
             assert_eq!(stored.as_deref(), Some(phase));
         }
@@ -318,10 +346,31 @@ mod tests {
     fn entries_accumulate_rather_than_replacing() {
         let (conn, task_id) = db_with_task();
 
-        append(&conn, task_id, "verdict", "agent", Some("first pass"), None, None).unwrap();
-        append(&conn, task_id, "verdict", "agent", Some("second pass"), None, None).unwrap();
+        append(
+            &conn,
+            task_id,
+            "verdict",
+            "agent",
+            Some("first pass"),
+            None,
+            None,
+        )
+        .unwrap();
+        append(
+            &conn,
+            task_id,
+            "verdict",
+            "agent",
+            Some("second pass"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        assert_eq!(kinds(&conn, task_id), vec!["verdict".to_string(), "verdict".to_string()]);
+        assert_eq!(
+            kinds(&conn, task_id),
+            vec!["verdict".to_string(), "verdict".to_string()]
+        );
     }
 
     /// The exception. Re-running a refiner is not a second event, it is the same question asked
@@ -338,11 +387,19 @@ mod tests {
 
         assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan"]);
         assert_eq!(
-            latest_of_kind(&conn, task_id, "proposal").unwrap().unwrap().body.unwrap(),
+            latest_of_kind(&conn, task_id, "proposal")
+                .unwrap()
+                .unwrap()
+                .body
+                .unwrap(),
             "second attempt"
         );
         assert_eq!(
-            latest_of_kind(&conn, task_id, "plan").unwrap().unwrap().body.unwrap(),
+            latest_of_kind(&conn, task_id, "plan")
+                .unwrap()
+                .unwrap()
+                .body
+                .unwrap(),
             "second plan"
         );
     }
@@ -358,7 +415,10 @@ mod tests {
         record_outcome(&conn, task_id, Some("SelfReview"), "looks right");
         record_outcome(&conn, task_id, Some("Implementing"), "done");
 
-        assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan", "verdict", "outcome"]);
+        assert_eq!(
+            kinds(&conn, task_id),
+            vec!["proposal", "plan", "verdict", "outcome"]
+        );
     }
 
     /// A gate reads its entry by kind, so entries of other kinds landing in between — a user note,
@@ -369,7 +429,16 @@ mod tests {
         let (conn, task_id) = db_with_task();
 
         record_outcome(&conn, task_id, Some("Refining"), "first attempt");
-        append(&conn, task_id, "note", "user", Some("not quite"), None, None).unwrap();
+        append(
+            &conn,
+            task_id,
+            "note",
+            "user",
+            Some("not quite"),
+            None,
+            None,
+        )
+        .unwrap();
         record_outcome(&conn, task_id, Some("Refining"), "second attempt");
 
         let latest = latest_of_kind(&conn, task_id, "proposal").unwrap().unwrap();
@@ -379,6 +448,8 @@ mod tests {
     #[test]
     fn a_task_with_no_entry_of_that_kind_reports_none() {
         let (conn, task_id) = db_with_task();
-        assert!(latest_of_kind(&conn, task_id, "proposal").unwrap().is_none());
+        assert!(latest_of_kind(&conn, task_id, "proposal")
+            .unwrap()
+            .is_none());
     }
 }

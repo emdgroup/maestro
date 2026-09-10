@@ -10,11 +10,11 @@
 use serde::Deserialize;
 
 use super::{
-    CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest, PullRequestDetail,
-    PullRequestPage, PullRequestState, PullRequestTarget, cursor_offset, next_offset_cursor,
+    cursor_offset, next_offset_cursor, CreatedPullRequest, FoundPullRequest, ListedPullRequest,
+    PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget, LIST_PAGE_SIZE,
 };
-use crate::integration::azure_devops::{AZDO_API_VERSION, make_azdo_auth, normalize_azdo_org_url};
-use crate::integration::build_http_client;
+use crate::integration::azure_devops::{make_azdo_auth, normalize_azdo_org_url, AZDO_API_VERSION};
+use crate::integration::http_client;
 
 /// Which shape of Azure DevOps URL a remote is. The host decides, never the credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,9 +49,9 @@ fn azure_devops_flavour(host: &str) -> AzureDevOpsFlavour {
         "dev.azure.com" | "ssh.dev.azure.com" => AzureDevOpsFlavour::Cloud,
         "vs-ssh.visualstudio.com" => AzureDevOpsFlavour::LegacyCloudSsh,
         _ => match host.strip_suffix(".visualstudio.com") {
-            Some(organization) if !organization.is_empty() => {
-                AzureDevOpsFlavour::LegacyCloud { organization: organization.to_string() }
-            }
+            Some(organization) if !organization.is_empty() => AzureDevOpsFlavour::LegacyCloud {
+                organization: organization.to_string(),
+            },
             _ => AzureDevOpsFlavour::Server,
         },
     }
@@ -84,7 +84,10 @@ fn azure_devops_coordinates(
     let segments: Vec<&str> = project_path.split('/').filter(|s| !s.is_empty()).collect();
 
     let unreadable = || {
-        format!("Could not work out the Azure DevOps project and repository from the remote path `{}`.", project_path)
+        format!(
+            "Could not work out the Azure DevOps project and repository from the remote path `{}`.",
+            project_path
+        )
     };
 
     // `_git` appears in HTTPS remotes only. Everything before the project is organization or
@@ -93,7 +96,10 @@ fn azure_devops_coordinates(
     {
         Some(marker) => {
             let repository = segments.get(marker + 1).ok_or_else(unreadable)?;
-            let project = marker.checked_sub(1).and_then(|i| segments.get(i)).ok_or_else(unreadable)?;
+            let project = marker
+                .checked_sub(1)
+                .and_then(|i| segments.get(i))
+                .ok_or_else(unreadable)?;
             (&segments[..marker.saturating_sub(1)], *project, *repository)
         }
         None => {
@@ -114,9 +120,15 @@ fn azure_devops_coordinates(
     let (base, organization) = match &flavour {
         AzureDevOpsFlavour::Cloud => {
             let organization = prefix.last().ok_or_else(|| {
-                format!("The Azure DevOps remote path `{}` names no organization.", project_path)
+                format!(
+                    "The Azure DevOps remote path `{}` names no organization.",
+                    project_path
+                )
             })?;
-            (format!("https://dev.azure.com/{}", organization), Some((*organization).to_string()))
+            (
+                format!("https://dev.azure.com/{}", organization),
+                Some((*organization).to_string()),
+            )
         }
         AzureDevOpsFlavour::LegacyCloud { organization } => (
             format!("https://{}.visualstudio.com", organization),
@@ -124,7 +136,10 @@ fn azure_devops_coordinates(
         ),
         AzureDevOpsFlavour::LegacyCloudSsh => {
             let organization = prefix.last().ok_or_else(|| {
-                format!("The Azure DevOps remote path `{}` names no organization.", project_path)
+                format!(
+                    "The Azure DevOps remote path `{}` names no organization.",
+                    project_path
+                )
             })?;
             (
                 format!("https://{}.visualstudio.com", organization),
@@ -158,7 +173,9 @@ fn azure_devops_coordinates(
 /// `None` for a path this cannot read, and for an on-premises remote — where the base comes from
 /// the credential in the first place, so there is nothing to prefer it by.
 pub(super) fn preferred_base(host: &str, project_path: &str) -> Option<String> {
-    azure_devops_coordinates(host, project_path, None).ok().map(|coordinates| coordinates.base)
+    azure_devops_coordinates(host, project_path, None)
+        .ok()
+        .map(|coordinates| coordinates.base)
 }
 
 /// Refuse a credential that answered for a different organization or a different server.
@@ -276,7 +293,8 @@ fn azure_devops_details(pr: AzureDevOpsPullRequestState) -> PullRequestDetail {
     PullRequestDetail::from_state(
         azure_devops_state(&pr.status),
         azure_devops_mergeable(pr.merge_status.as_deref()),
-        pr.last_merge_source_commit.and_then(|commit| commit.commit_id),
+        pr.last_merge_source_commit
+            .and_then(|commit| commit.commit_id),
     )
 }
 
@@ -315,12 +333,7 @@ struct AzureDevOpsCreatedPullRequest {
     pull_request_id: i64,
 }
 
-fn azure_devops_create_body(
-    title: &str,
-    body: &str,
-    head: &str,
-    base: &str,
-) -> serde_json::Value {
+fn azure_devops_create_body(title: &str, body: &str, head: &str, base: &str) -> serde_json::Value {
     serde_json::json!({
         "title": title,
         "description": body,
@@ -367,13 +380,10 @@ async fn azure_devops_repository_id(
     coordinates: &AzureDevOpsCoordinates,
     token: &str,
 ) -> Result<String, String> {
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}?api-version={}",
-            coordinates.base,
-            coordinates.project,
-            coordinates.repository,
-            AZDO_API_VERSION
+            coordinates.base, coordinates.project, coordinates.repository, AZDO_API_VERSION
         ))
         .header("Authorization", make_azdo_auth(token))
         .send()
@@ -436,7 +446,9 @@ struct AzureDevOpsListPage {
 
 /// Azure DevOps names branches by full ref where a worktree row carries the bare name.
 fn strip_refs_heads(name: String) -> String {
-    name.strip_prefix("refs/heads/").map(str::to_string).unwrap_or(name)
+    name.strip_prefix("refs/heads/")
+        .map(str::to_string)
+        .unwrap_or(name)
 }
 
 /// `None` for an entry with no source ref: that is the field a worktree is matched on.
@@ -456,7 +468,9 @@ fn list_entry_to_listed(
         head_branch: strip_refs_heads(entry.source_ref_name?),
         base_branch: entry.target_ref_name.map(strip_refs_heads),
         created_at: entry.creation_date,
-        head_sha: entry.last_merge_source_commit.and_then(|commit| commit.commit_id),
+        head_sha: entry
+            .last_merge_source_commit
+            .and_then(|commit| commit.commit_id),
         // Azure DevOps has no "last updated" on a pull request — `creationDate` and `closedDate`
         // are the only timestamps the resource carries — so a row here is invalidated by its head
         // commit moving and by nothing else.
@@ -496,7 +510,7 @@ pub(super) async fn list_azure_devops(
     credential_matches_coordinates(&coordinates, target.instance_url)?;
     let offset = cursor_offset(cursor);
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests\
              ?searchCriteria.status=active&$top={}&$skip={}&api-version={}",
@@ -546,7 +560,7 @@ pub(super) async fn find_azure_devops(
     )?;
     credential_matches_coordinates(&coordinates, target.instance_url)?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests\
              ?searchCriteria.sourceRefName=refs/heads/{}&searchCriteria.status=all\
@@ -577,8 +591,10 @@ fn pick_azure_devops(mut entries: Vec<AzureDevOpsListEntry>) -> Option<AzureDevO
     if entries.is_empty() {
         return None;
     }
-    let index =
-        entries.iter().position(|entry| entry.status.as_deref() == Some("active")).unwrap_or(0);
+    let index = entries
+        .iter()
+        .position(|entry| entry.status.as_deref() == Some("active"))
+        .unwrap_or(0);
     Some(entries.swap_remove(index))
 }
 
@@ -589,19 +605,19 @@ pub(super) async fn create_azure_devops(
     title: &str,
     body: &str,
 ) -> Result<CreatedPullRequest, String> {
-    let coordinates =
-        azure_devops_coordinates(&target.config.host, &target.config.project_path, target.instance_url)?;
+    let coordinates = azure_devops_coordinates(
+        &target.config.host,
+        &target.config.project_path,
+        target.instance_url,
+    )?;
     credential_matches_coordinates(&coordinates, target.instance_url)?;
 
     let repository_id = azure_devops_repository_id(&coordinates, target.token).await?;
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(format!(
             "{}/{}/_apis/git/repositories/{}/pullrequests?api-version={}",
-            coordinates.base,
-            coordinates.project,
-            repository_id,
-            AZDO_API_VERSION
+            coordinates.base, coordinates.project, repository_id, AZDO_API_VERSION
         ))
         .header("Authorization", make_azdo_auth(target.token))
         .json(&azure_devops_create_body(title, body, head, base))
@@ -630,12 +646,10 @@ pub(super) async fn fetch_azure_devops(
 
     // A pull request id is unique per organization, so this needs no repository — which is
     // exactly why the credential has to have been checked against the organization first.
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/_apis/git/pullrequests/{}?api-version={}",
-            coordinates.base,
-            number,
-            AZDO_API_VERSION
+            coordinates.base, number, AZDO_API_VERSION
         ))
         .header("Authorization", make_azdo_auth(target.token))
         .send()
@@ -669,7 +683,10 @@ mod tests {
         )
         .expect("body should parse");
 
-        assert_eq!(pick_azure_devops(page.value).map(|entry| entry.pull_request_id), Some(164));
+        assert_eq!(
+            pick_azure_devops(page.value).map(|entry| entry.pull_request_id),
+            Some(164)
+        );
     }
 
     /// With nothing active, the most recent is better than nothing — "merged last week" is still
@@ -681,7 +698,10 @@ mod tests {
         )
         .expect("body should parse");
 
-        assert_eq!(pick_azure_devops(page.value).map(|entry| entry.pull_request_id), Some(161));
+        assert_eq!(
+            pick_azure_devops(page.value).map(|entry| entry.pull_request_id),
+            Some(161)
+        );
     }
 
     /// A branch with no pull request is `None`, not an error — the card is simply absent, and an
@@ -694,7 +714,10 @@ mod tests {
     fn azdo_listed(body: &str) -> Vec<ListedPullRequest> {
         let page: AzureDevOpsListPage = serde_json::from_str(body).expect("body should parse");
         let coordinates = coordinates("dev.azure.com", "fabrikam/MyProject/_git/MyRepo");
-        page.value.into_iter().filter_map(|e| list_entry_to_listed(e, &coordinates)).collect()
+        page.value
+            .into_iter()
+            .filter_map(|e| list_entry_to_listed(e, &coordinates))
+            .collect()
     }
 
     /// Azure is the one forge here whose fork rows cannot be checked out at all — it publishes no
@@ -716,10 +739,17 @@ mod tests {
             azdo_listed(&body).pop().expect("one row").from_fork
         };
 
-        assert!(!from_fork(""), "nothing said, and nothing can be checked out either way");
+        assert!(
+            !from_fork(""),
+            "nothing said, and nothing can be checked out either way"
+        );
         assert!(from_fork(r#","forkSource":{"name":"refs/heads/patch-1"}"#));
-        assert!(from_fork(r#","sourceRepository":{"id":"aaa"},"repository":{"id":"bbb"}"#));
-        assert!(!from_fork(r#","sourceRepository":{"id":"aaa"},"repository":{"id":"aaa"}"#));
+        assert!(from_fork(
+            r#","sourceRepository":{"id":"aaa"},"repository":{"id":"bbb"}"#
+        ));
+        assert!(!from_fork(
+            r#","sourceRepository":{"id":"aaa"},"repository":{"id":"aaa"}"#
+        ));
     }
 
     /// Azure DevOps names branches by full ref, where a worktree row carries the bare name.
@@ -810,7 +840,10 @@ mod tests {
             Some("https://tfs.corp.example/tfs/DefaultCollection"),
         )
         .expect("path should parse");
-        assert_eq!(on_prem.base, "https://tfs.corp.example/tfs/DefaultCollection");
+        assert_eq!(
+            on_prem.base,
+            "https://tfs.corp.example/tfs/DefaultCollection"
+        );
         assert_eq!(on_prem.organization, None);
         assert_eq!(on_prem.project, "MyProject");
         assert_eq!(on_prem.repository, "MyRepo");
@@ -861,7 +894,10 @@ mod tests {
 
         let wrong = credential_matches_coordinates(&ours, Some("https://dev.azure.com/otherorg"))
             .expect_err("another organization must be refused");
-        assert!(wrong.contains("myorg"), "the message has to name the organization needed");
+        assert!(
+            wrong.contains("myorg"),
+            "the message has to name the organization needed"
+        );
 
         assert!(credential_matches_coordinates(&ours, None).is_err());
 
@@ -898,7 +934,10 @@ mod tests {
     #[test]
     fn azure_devops_returns_no_browser_url_so_we_build_one() {
         assert_eq!(
-            azure_devops_web_url(&coordinates("dev.azure.com", "myorg/MyProject/_git/MyRepo"), 22),
+            azure_devops_web_url(
+                &coordinates("dev.azure.com", "myorg/MyProject/_git/MyRepo"),
+                22
+            ),
             "https://dev.azure.com/myorg/MyProject/_git/MyRepo/pullrequest/22"
         );
         assert_eq!(
@@ -951,8 +990,19 @@ mod tests {
         assert_eq!(azure_devops_mergeable(Some("succeeded")), Some(true));
         assert_eq!(azure_devops_mergeable(Some("CONFLICTS")), Some(false));
 
-        for status in ["queued", "notSet", "rejectedByPolicy", "failure", "something-new"] {
-            assert_eq!(azure_devops_mergeable(Some(status)), None, "{} is not an answer", status);
+        for status in [
+            "queued",
+            "notSet",
+            "rejectedByPolicy",
+            "failure",
+            "something-new",
+        ] {
+            assert_eq!(
+                azure_devops_mergeable(Some(status)),
+                None,
+                "{} is not an answer",
+                status
+            );
         }
         assert_eq!(azure_devops_mergeable(None), None);
     }
@@ -965,7 +1015,10 @@ mod tests {
         let details = azdo_details(
             r#"{"status":"active","mergeStatus":"succeeded","lastMergeSourceCommit":{"commitId":"b60280bc6e62e2f880f1b63c1e24987664d3bda3"}}"#,
         );
-        assert_eq!(details.head_sha.as_deref(), Some("b60280bc6e62e2f880f1b63c1e24987664d3bda3"));
+        assert_eq!(
+            details.head_sha.as_deref(),
+            Some("b60280bc6e62e2f880f1b63c1e24987664d3bda3")
+        );
         assert_eq!(details.state, PullRequestState::Open);
         assert_eq!(details.mergeable, Some(true));
 
@@ -978,8 +1031,7 @@ mod tests {
     /// meets only after their branch has already been pushed to the remote.
     #[test]
     fn azure_devops_wants_the_branch_spelled_as_a_ref() {
-        let body =
-            azure_devops_create_body("Add the thing", "Because.", "maestro/task-12", "main");
+        let body = azure_devops_create_body("Add the thing", "Because.", "maestro/task-12", "main");
 
         assert_eq!(body["sourceRefName"], "refs/heads/maestro/task-12");
         assert_eq!(body["targetRefName"], "refs/heads/main");
@@ -997,7 +1049,10 @@ mod tests {
             "<!DOCTYPE html><html>Sign in</html>",
         )
         .expect("a 203 is the documented shape of this failure");
-        assert!(sign_in.contains("Code (Read & Write)"), "the message must name the scope");
+        assert!(
+            sign_in.contains("Code (Read & Write)"),
+            "the message must name the scope"
+        );
 
         assert!(
             azure_devops_scope_error(reqwest::StatusCode::OK, "  <html>Sign in</html>").is_some(),

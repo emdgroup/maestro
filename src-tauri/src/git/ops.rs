@@ -1,5 +1,5 @@
-use crate::models::GitConnection;
 use super::exec::{run_git_commands_lossy, run_git_in_dir, run_git_in_dir_lossy};
+use crate::models::GitConnection;
 
 #[derive(serde::Serialize, specta::Type)]
 pub struct BranchList {
@@ -41,7 +41,9 @@ pub async fn local_branch_for(conn: &GitConnection, base: &str) -> Option<String
         vec!["rev-parse", "--verify", "--quiet", &remote_ref],
     ];
     let as_slices: Vec<&[&str]> = probes.iter().map(Vec::as_slice).collect();
-    let mut outputs = run_git_commands_lossy(conn, conn.path(), &as_slices).await.into_iter();
+    let mut outputs = run_git_commands_lossy(conn, conn.path(), &as_slices)
+        .await
+        .into_iter();
 
     let local_exists = !outputs.next().unwrap_or_default().trim().is_empty();
     let remote_exists = !outputs.next().unwrap_or_default().trim().is_empty();
@@ -65,8 +67,12 @@ pub async fn create_worktree(
     new_branch: Option<&str>,
 ) -> Result<String, String> {
     if let Some(nb) = new_branch {
-        run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, "-b", nb, branch])
-            .await?;
+        run_git_in_dir(
+            conn,
+            conn.path(),
+            &["worktree", "add", worktree_name, "-b", nb, branch],
+        )
+        .await?;
         return Ok(nb.to_string());
     }
 
@@ -74,13 +80,26 @@ pub async fn create_worktree(
         run_git_in_dir(
             conn,
             conn.path(),
-            &["worktree", "add", "--track", "-b", &local, worktree_name, branch],
+            &[
+                "worktree",
+                "add",
+                "--track",
+                "-b",
+                &local,
+                worktree_name,
+                branch,
+            ],
         )
         .await?;
         return Ok(local);
     }
 
-    run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, branch]).await?;
+    run_git_in_dir(
+        conn,
+        conn.path(),
+        &["worktree", "add", worktree_name, branch],
+    )
+    .await?;
     Ok(branch.to_string())
 }
 
@@ -157,7 +176,12 @@ pub async fn create_pull_request_worktree(
         .await
         .unwrap_or_default();
     if !configured.lines().any(|line| line.trim() == refspec) {
-        run_git_in_dir(conn, conn.path(), &["config", "--add", &fetch_key, &refspec]).await?;
+        run_git_in_dir(
+            conn,
+            conn.path(),
+            &["config", "--add", &fetch_key, &refspec],
+        )
+        .await?;
     }
 
     run_git_in_dir(conn, conn.path(), &["fetch", "--no-tags", remote, &refspec]).await?;
@@ -167,17 +191,32 @@ pub async fn create_pull_request_worktree(
     // show a user who asked to open a pull request.
     let head_of_branch = format!("refs/heads/{}", branch);
     let probe = ["rev-parse", "--verify", "--quiet", &head_of_branch];
-    let existing = run_git_in_dir_lossy(conn, conn.path(), &probe).await.unwrap_or_default();
+    let existing = run_git_in_dir_lossy(conn, conn.path(), &probe)
+        .await
+        .unwrap_or_default();
 
     if existing.trim().is_empty() {
         run_git_in_dir(
             conn,
             conn.path(),
-            &["worktree", "add", "--track", "-b", &branch, worktree_name, &tracking],
+            &[
+                "worktree",
+                "add",
+                "--track",
+                "-b",
+                &branch,
+                worktree_name,
+                &tracking,
+            ],
         )
         .await?;
     } else {
-        run_git_in_dir(conn, conn.path(), &["worktree", "add", worktree_name, &branch]).await?;
+        run_git_in_dir(
+            conn,
+            conn.path(),
+            &["worktree", "add", worktree_name, &branch],
+        )
+        .await?;
     }
 
     let merge_key = format!("branch.{}.merge", branch);
@@ -195,9 +234,17 @@ pub async fn create_pull_request_worktree(
 /// worktree. `--unset` matches on a value regex, so the refspec is escaped as one.
 pub async fn forget_pull_request_refspec(conn: &GitConnection, remote: &str, number: i64) {
     let fetch_key = format!("remote.{}.fetch", remote);
-    let pattern = format!("^\\+refs/.*:refs/remotes/{}/pr/{}$", regex_escape(remote), number);
-    if let Err(e) =
-        run_git_in_dir_lossy(conn, conn.path(), &["config", "--unset", &fetch_key, &pattern]).await
+    let pattern = format!(
+        "^\\+refs/.*:refs/remotes/{}/pr/{}$",
+        regex_escape(remote),
+        number
+    );
+    if let Err(e) = run_git_in_dir_lossy(
+        conn,
+        conn.path(),
+        &["config", "--unset", &fetch_key, &pattern],
+    )
+    .await
     {
         log::debug!("[git] leaving the fetch refspec for pull request {number} in place: {e}");
     }
@@ -209,11 +256,17 @@ pub async fn forget_pull_request_refspec(conn: &GitConnection, remote: &str, num
 /// escaping the rest costs nothing and keeps a name we did not anticipate from matching more
 /// refspecs than its own.
 fn regex_escape(value: &str) -> String {
-    const META: [char; 14] =
-        ['.', '+', '*', '?', '[', ']', '(', ')', '{', '}', '^', '$', '|', '\\'];
+    const META: [char; 14] = [
+        '.', '+', '*', '?', '[', ']', '(', ')', '{', '}', '^', '$', '|', '\\',
+    ];
     value
         .chars()
-        .flat_map(|c| META.contains(&c).then_some('\\').into_iter().chain(std::iter::once(c)))
+        .flat_map(|c| {
+            META.contains(&c)
+                .then_some('\\')
+                .into_iter()
+                .chain(std::iter::once(c))
+        })
         .collect()
 }
 
@@ -230,12 +283,13 @@ fn regex_escape(value: &str) -> String {
 /// about a directory. `cleanup_zombie_worktrees` sweeps the leftover on the next project open.
 ///
 /// Pair this with [`prune_remote_refs`] once the caller is done removing worktrees.
-pub async fn delete_worktree(
-    conn: &GitConnection,
-    worktree_name: &str,
-) -> Result<(), String> {
-    let Err(git_error) =
-        run_git_in_dir(conn, conn.path(), &["worktree", "remove", worktree_name, "--force"]).await
+pub async fn delete_worktree(conn: &GitConnection, worktree_name: &str) -> Result<(), String> {
+    let Err(git_error) = run_git_in_dir(
+        conn,
+        conn.path(),
+        &["worktree", "remove", worktree_name, "--force"],
+    )
+    .await
     else {
         return Ok(());
     };
@@ -379,7 +433,12 @@ pub async fn list_branches(conn: &GitConnection, remote: &str) -> Result<BranchL
     let raw = run_git_in_dir(
         conn,
         conn.path(),
-        &["for-each-ref", "--format=%(refname)", "refs/heads", &remote_namespace],
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            &remote_namespace,
+        ],
     )
     .await?;
     Ok(parse_branch_list(raw.lines(), remote))
@@ -405,7 +464,8 @@ pub async fn list_worktrees(conn: &GitConnection) -> Result<Vec<ParsedWorktree>,
 }
 
 pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
-    output.split("\n\n")
+    output
+        .split("\n\n")
         .filter(|block| !block.trim().is_empty())
         .map(|block| {
             let mut path = String::new();
@@ -425,7 +485,12 @@ pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
                 }
             }
 
-            ParsedWorktree { path, branch, head, is_prunable }
+            ParsedWorktree {
+                path,
+                branch,
+                head,
+                is_prunable,
+            }
         })
         .collect()
 }
@@ -439,7 +504,10 @@ pub fn parse_worktree_list(output: &str) -> Vec<ParsedWorktree> {
 ///
 /// `<remote>/HEAD` is dropped — it is a symbolic pointer at the remote's default branch, which
 /// is already listed under its own name.
-pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>, remote_name: &str) -> BranchList {
+pub fn parse_branch_list<'a>(
+    lines: impl Iterator<Item = &'a str>,
+    remote_name: &str,
+) -> BranchList {
     let remote_prefix = format!("refs/remotes/{}/", remote_name);
     let mut local: Vec<String> = Vec::new();
     let mut remote: Vec<String> = Vec::new();
@@ -468,7 +536,7 @@ pub fn parse_branch_list<'a>(lines: impl Iterator<Item = &'a str>, remote_name: 
 mod tests {
     use super::{
         parse_branch_list, pull_request_branch, pull_request_of_branch, pull_request_refspec,
-        remove_dir_with_retries, removable_worktree_dir,
+        removable_worktree_dir, remove_dir_with_retries,
     };
 
     /// The branch name is a contract with the Worktrees panel, which matches its rows against it
@@ -493,10 +561,12 @@ mod tests {
         assert_eq!(refspec, "+refs/pull/326/head:refs/remotes/origin/pr/326");
 
         // A remote that is not `origin`, and a forge that spells the ref differently.
-        let (tracking, refspec) =
-            pull_request_refspec("upstream", 7, "refs/merge-requests/7/head");
+        let (tracking, refspec) = pull_request_refspec("upstream", 7, "refs/merge-requests/7/head");
         assert_eq!(tracking, "refs/remotes/upstream/pr/7");
-        assert_eq!(refspec, "+refs/merge-requests/7/head:refs/remotes/upstream/pr/7");
+        assert_eq!(
+            refspec,
+            "+refs/merge-requests/7/head:refs/remotes/upstream/pr/7"
+        );
     }
 
     /// The two lists must be exactly `refs/heads/*` and `refs/remotes/<remote>/*`.
@@ -519,7 +589,10 @@ mod tests {
 
         let branches = parse_branch_list(refs.lines(), "origin");
 
-        assert_eq!(branches.local, vec!["maestro/kind-canyon-49", "main", "rebuild-worktree-card"]);
+        assert_eq!(
+            branches.local,
+            vec!["maestro/kind-canyon-49", "main", "rebuild-worktree-card"]
+        );
         assert_eq!(
             branches.remote,
             vec![
@@ -559,15 +632,33 @@ mod tests {
         let repo = r"C:\Users\me\proj";
         let expected = Some("C:/Users/me/proj/.maestro/worktrees/session-22".to_string());
 
-        assert_eq!(removable_worktree_dir(repo, ".maestro/worktrees/session-22"), expected);
-        assert_eq!(removable_worktree_dir(repo, r"C:\Users\me\proj\.maestro\worktrees\session-22"), expected);
-        assert_eq!(removable_worktree_dir(repo, "C:/Users/me/proj/.maestro/worktrees/session-22"), expected);
-        assert_eq!(removable_worktree_dir("/home/me/proj", ".maestro/worktrees/task-3"), Some("/home/me/proj/.maestro/worktrees/task-3".to_string()));
+        assert_eq!(
+            removable_worktree_dir(repo, ".maestro/worktrees/session-22"),
+            expected
+        );
+        assert_eq!(
+            removable_worktree_dir(repo, r"C:\Users\me\proj\.maestro\worktrees\session-22"),
+            expected
+        );
+        assert_eq!(
+            removable_worktree_dir(repo, "C:/Users/me/proj/.maestro/worktrees/session-22"),
+            expected
+        );
+        assert_eq!(
+            removable_worktree_dir("/home/me/proj", ".maestro/worktrees/task-3"),
+            Some("/home/me/proj/.maestro/worktrees/task-3".to_string())
+        );
 
         // A worktree the user made by hand, and one outside the repository entirely.
         assert_eq!(removable_worktree_dir(repo, "scratch"), None);
-        assert_eq!(removable_worktree_dir(repo, "C:/elsewhere/.maestro/worktrees/session-1"), None);
-        assert_eq!(removable_worktree_dir(repo, "../.maestro/worktrees/session-1"), None);
+        assert_eq!(
+            removable_worktree_dir(repo, "C:/elsewhere/.maestro/worktrees/session-1"),
+            None
+        );
+        assert_eq!(
+            removable_worktree_dir(repo, "../.maestro/worktrees/session-1"),
+            None
+        );
     }
 
     /// The retry loop must still treat "already gone" as done rather than spending the full
@@ -580,9 +671,16 @@ mod tests {
 
         let path = target.to_string_lossy().to_string();
         let started = std::time::Instant::now();
-        remove_dir_with_retries(&path).await.expect("remove existing");
+        remove_dir_with_retries(&path)
+            .await
+            .expect("remove existing");
         assert!(!target.exists());
-        remove_dir_with_retries(&path).await.expect("remove missing");
-        assert!(started.elapsed() < super::WORKTREE_REMOVAL_BACKOFF, "no retry was needed");
+        remove_dir_with_retries(&path)
+            .await
+            .expect("remove missing");
+        assert!(
+            started.elapsed() < super::WORKTREE_REMOVAL_BACKOFF,
+            "no retry was needed"
+        );
     }
 }

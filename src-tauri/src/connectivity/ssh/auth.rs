@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use std::time::Duration;
-use russh::client::{self, Handle};
-use russh::keys::agent::client::AgentClient;
 use crate::connectivity::ssh::error::SshError;
 use crate::connectivity::ssh::session::SshClientHandler;
+use russh::client::{self, Handle};
+use russh::keys::agent::client::AgentClient;
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Expand a leading `~` to the user's home directory
 pub(crate) fn expand_tilde(path: &str) -> String {
@@ -16,7 +16,10 @@ pub(crate) fn expand_tilde(path: &str) -> String {
 }
 
 /// Open a russh connection (TCP + SSH handshake) to the configured host
-pub(crate) async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClientHandler>, SshError> {
+pub(crate) async fn open_handle(
+    host: &str,
+    port: u16,
+) -> Result<Handle<SshClientHandler>, SshError> {
     let config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(300)),
         keepalive_interval: Some(Duration::from_secs(30)),
@@ -29,12 +32,10 @@ pub(crate) async fn open_handle(host: &str, port: u16) -> Result<Handle<SshClien
         client::connect(config, addr.as_str(), SshClientHandler),
     )
     .await
-    .map_err(|_| SshError::ConnectionError(format!(
-        "Connection to {}:{} timed out", host, port
-    )))?
-    .map_err(|e| SshError::ConnectionError(format!(
-        "Failed to connect to {}:{}: {}", host, port, e
-    )))
+    .map_err(|_| SshError::ConnectionError(format!("Connection to {}:{} timed out", host, port)))?
+    .map_err(|e| {
+        SshError::ConnectionError(format!("Failed to connect to {}:{}: {}", host, port, e))
+    })
 }
 
 /// Authenticate via SSH agent (platform-specific)
@@ -44,23 +45,24 @@ pub(crate) async fn authenticate_via_agent(
 ) -> Result<bool, SshError> {
     #[cfg(unix)]
     {
-        let mut agent = AgentClient::connect_env()
-            .await
-            .map_err(|e| SshError::AuthenticationError(
-                format!("SSH agent connect failed: {}", e)
-            ))?;
-        let identities = agent.request_identities()
-            .await
-            .map_err(|e| SshError::AuthenticationError(
-                format!("Failed to list agent keys: {}", e)
-            ))?;
+        let mut agent = AgentClient::connect_env().await.map_err(|e| {
+            SshError::AuthenticationError(format!("SSH agent connect failed: {}", e))
+        })?;
+        let identities = agent.request_identities().await.map_err(|e| {
+            SshError::AuthenticationError(format!("Failed to list agent keys: {}", e))
+        })?;
         for pubkey in &identities {
             let result = handle
-                .authenticate_publickey_with(username, pubkey.public_key().into_owned(), None, &mut agent)
+                .authenticate_publickey_with(
+                    username,
+                    pubkey.public_key().into_owned(),
+                    None,
+                    &mut agent,
+                )
                 .await
-                .map_err(|e| SshError::AuthenticationError(
-                    format!("Agent authentication failed: {:?}", e)
-                ))?;
+                .map_err(|e| {
+                    SshError::AuthenticationError(format!("Agent authentication failed: {:?}", e))
+                })?;
             if result.success() {
                 return Ok(true);
             }
@@ -73,22 +75,28 @@ pub(crate) async fn authenticate_via_agent(
         // Connect to the Windows OpenSSH agent via its named pipe
         let pipe = tokio::net::windows::named_pipe::ClientOptions::new()
             .open(r"\\.\pipe\openssh-ssh-agent")
-            .map_err(|e| SshError::AuthenticationError(
-                format!("Failed to connect to Windows SSH agent pipe: {}", e)
-            ))?;
+            .map_err(|e| {
+                SshError::AuthenticationError(format!(
+                    "Failed to connect to Windows SSH agent pipe: {}",
+                    e
+                ))
+            })?;
         let mut agent = AgentClient::connect(pipe);
-        let identities = agent.request_identities()
-            .await
-            .map_err(|e| SshError::AuthenticationError(
-                format!("Failed to list agent keys: {}", e)
-            ))?;
+        let identities = agent.request_identities().await.map_err(|e| {
+            SshError::AuthenticationError(format!("Failed to list agent keys: {}", e))
+        })?;
         for pubkey in &identities {
             let result = handle
-                .authenticate_publickey_with(username, pubkey.public_key().into_owned(), None, &mut agent)
+                .authenticate_publickey_with(
+                    username,
+                    pubkey.public_key().into_owned(),
+                    None,
+                    &mut agent,
+                )
                 .await
-                .map_err(|e| SshError::AuthenticationError(
-                    format!("Agent authentication failed: {:?}", e)
-                ))?;
+                .map_err(|e| {
+                    SshError::AuthenticationError(format!("Agent authentication failed: {:?}", e))
+                })?;
             if result.success() {
                 return Ok(true);
             }
@@ -99,7 +107,7 @@ pub(crate) async fn authenticate_via_agent(
     #[cfg(not(any(unix, windows)))]
     {
         Err(SshError::AuthenticationError(
-            "SSH agent authentication is not supported on this platform".to_string()
+            "SSH agent authentication is not supported on this platform".to_string(),
         ))
     }
 }

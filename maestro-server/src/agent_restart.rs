@@ -32,9 +32,14 @@ pub(crate) async fn handle_agent_restart(
         .iter()
         .filter(|(_, s)| s.agent_id == dead_agent_id)
         .filter_map(|(sid, s)| {
-            s.cleanup
-                .as_ref()
-                .map(|c| (sid.clone(), c.acp_session_id.clone(), s.cwd.clone(), s.additional_directories.clone()))
+            s.cleanup.as_ref().map(|c| {
+                (
+                    sid.clone(),
+                    c.acp_session_id.clone(),
+                    s.cwd.clone(),
+                    s.additional_directories.clone(),
+                )
+            })
         })
         .collect();
 
@@ -123,5 +128,8 @@ pub(crate) async fn handle_agent_restart(
         }
     }
 
-    agent_connections.lock().await.insert(dead_agent_id, new_conn);
+    agent_connections
+        .lock()
+        .await
+        .insert(dead_agent_id, new_conn);
 }

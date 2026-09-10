@@ -43,10 +43,18 @@ impl TaskState {
 
     /// Parked at Done, recording how it got there.
     fn done(completion: Option<TaskCompletion>) -> Self {
-        TaskState { completion, ..TaskState::parked(TaskStatus::Done) }
+        TaskState {
+            completion,
+            ..TaskState::parked(TaskStatus::Done)
+        }
     }
 
-    fn active(status: TaskStatus, phase: TaskPhase, phase_status: PhaseStatus, ball: TaskBall) -> Self {
+    fn active(
+        status: TaskStatus,
+        phase: TaskPhase,
+        phase_status: PhaseStatus,
+        ball: TaskBall,
+    ) -> Self {
         TaskState {
             status,
             phase: Some(phase),
@@ -96,7 +104,11 @@ pub enum TaskTransition {
     /// `reviewer_pending` says a review agent should look at the work before the user does. It is
     /// an input rather than something `resolve` can decide, because it depends on the project's
     /// profiles and on how many rounds the loop has already spent.
-    TurnCompleted { is_git_repo: bool, has_changes: Option<bool>, reviewer_pending: bool },
+    TurnCompleted {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
     /// The review agent finished and the task goes to the human gate.
     ///
     /// One event for approval and for hitting the round cap, because they leave the task in the
@@ -250,7 +262,9 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::ReviewFinished => TaskState::active(Review, Approval, Waiting, Ball::User),
 
-        TaskTransition::ReviewRejected => TaskState::active(InProgress, Rework, Waiting, Ball::Agent),
+        TaskTransition::ReviewRejected => {
+            TaskState::active(InProgress, Rework, Waiting, Ball::Agent)
+        }
 
         // The same two destinations `TurnCompleted` gives these phases, reached by the other route
         // a read-only role can finish by. Anything else keeps its state: the event is only ever
@@ -262,7 +276,11 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             _ => current,
         },
 
-        TaskTransition::TurnCompleted { is_git_repo, has_changes, reviewer_pending } => match current.phase {
+        TaskTransition::TurnCompleted {
+            is_git_repo,
+            has_changes,
+            reviewer_pending,
+        } => match current.phase {
             // A planner ending its turn has produced a plan, not an implementation. The gate is
             // inside In Progress — it is not the Review column, which reviews a diff.
             Some(Drafting) => TaskState::active(InProgress, PlanReview, Waiting, Ball::User),
@@ -297,9 +315,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         }
 
         // A conflict is a failure the user has to resolve, not a fresh rework request.
-        TaskTransition::MergeConflict => {
-            TaskState::active(InProgress, Rework, Failed, Ball::User)
-        }
+        TaskTransition::MergeConflict => TaskState::active(InProgress, Rework, Failed, Ball::User),
 
         TaskTransition::Merged => TaskState::done(Some(TaskCompletion::Merged)),
 
@@ -574,7 +590,11 @@ mod tests {
     /// writable, which is the wrong way round — hence pinning the whole set rather than a sample.
     #[test]
     fn exactly_the_three_read_only_phases_are_read_only() {
-        for phase in [TaskPhase::Refining, TaskPhase::Drafting, TaskPhase::SelfReview] {
+        for phase in [
+            TaskPhase::Refining,
+            TaskPhase::Drafting,
+            TaskPhase::SelfReview,
+        ] {
             assert!(phase.is_read_only(), "{phase:?} should be read-only");
         }
         for phase in [
@@ -595,10 +615,10 @@ mod tests {
     /// and a drift between them would strand one route at a gate the other does not use.
     #[test]
     fn a_delivered_artifact_reaches_the_same_gate_a_finished_turn_would() {
-        for (phase, status) in [(TaskPhase::Drafting, TaskStatus::InProgress), (
-            TaskPhase::Refining,
-            TaskStatus::Planning,
-        )] {
+        for (phase, status) in [
+            (TaskPhase::Drafting, TaskStatus::InProgress),
+            (TaskPhase::Refining, TaskStatus::Planning),
+        ] {
             let running = TaskState::active(status, phase, PhaseStatus::Running, TaskBall::Agent);
             let delivered = resolve(TaskTransition::ArtifactDelivered, running);
             let finished = resolve(
@@ -624,11 +644,22 @@ mod tests {
     /// fourth read-only phase added later would land in exactly the same hole.
     #[test]
     fn every_read_only_phase_is_either_a_gate_or_deliberately_not_one() {
-        for phase in [TaskPhase::Refining, TaskPhase::Drafting, TaskPhase::SelfReview] {
-            assert!(phase.is_read_only(), "{phase:?} must be read-only for this test to mean anything");
+        for phase in [
+            TaskPhase::Refining,
+            TaskPhase::Drafting,
+            TaskPhase::SelfReview,
+        ] {
+            assert!(
+                phase.is_read_only(),
+                "{phase:?} must be read-only for this test to mean anything"
+            );
 
-            let running =
-                TaskState::active(TaskStatus::InProgress, phase, PhaseStatus::Running, TaskBall::Agent);
+            let running = TaskState::active(
+                TaskStatus::InProgress,
+                phase,
+                PhaseStatus::Running,
+                TaskBall::Agent,
+            );
             let delivered = resolve(TaskTransition::ArtifactDelivered, running);
 
             if phase == TaskPhase::SelfReview {
@@ -673,7 +704,11 @@ mod tests {
             (TaskPhase::AwaitingMerge, AgentRole::Coder),
         ];
         for (phase, role) in pairs {
-            assert_eq!(phase.is_read_only(), role.is_read_only(), "{phase:?} vs {role:?}");
+            assert_eq!(
+                phase.is_read_only(),
+                role.is_read_only(),
+                "{phase:?} vs {role:?}"
+            );
         }
     }
 
@@ -687,7 +722,12 @@ mod tests {
     }
 
     fn spawning(status: TaskStatus) -> TaskState {
-        TaskState::active(status, TaskPhase::Spawning, PhaseStatus::Running, TaskBall::Agent)
+        TaskState::active(
+            status,
+            TaskPhase::Spawning,
+            PhaseStatus::Running,
+            TaskBall::Agent,
+        )
     }
 
     /// The claim must not move the card. Announcing In Progress before a session exists is what
@@ -702,7 +742,10 @@ mod tests {
 
     #[test]
     fn session_ready_hands_the_ball_to_the_agent_in_progress() {
-        let next = resolve(TaskTransition::SessionReady(AgentRole::Coder), spawning(TaskStatus::Queue));
+        let next = resolve(
+            TaskTransition::SessionReady(AgentRole::Coder),
+            spawning(TaskStatus::Queue),
+        );
         assert_eq!(next, implementing());
     }
 
@@ -712,10 +755,26 @@ mod tests {
     #[test]
     fn each_role_lands_in_its_own_column_and_phase() {
         let expected = [
-            (AgentRole::Refiner, TaskStatus::Planning, TaskPhase::Refining),
-            (AgentRole::Planner, TaskStatus::InProgress, TaskPhase::Drafting),
-            (AgentRole::Coder, TaskStatus::InProgress, TaskPhase::Implementing),
-            (AgentRole::Reviewer, TaskStatus::Review, TaskPhase::SelfReview),
+            (
+                AgentRole::Refiner,
+                TaskStatus::Planning,
+                TaskPhase::Refining,
+            ),
+            (
+                AgentRole::Planner,
+                TaskStatus::InProgress,
+                TaskPhase::Drafting,
+            ),
+            (
+                AgentRole::Coder,
+                TaskStatus::InProgress,
+                TaskPhase::Implementing,
+            ),
+            (
+                AgentRole::Reviewer,
+                TaskStatus::Review,
+                TaskPhase::SelfReview,
+            ),
         ];
 
         for (role, status, phase) in expected {
@@ -777,7 +836,10 @@ mod tests {
 
     #[test]
     fn manual_move_clears_pipeline_activity() {
-        let next = resolve(TaskTransition::ManualMove(TaskStatus::Queue), implementing());
+        let next = resolve(
+            TaskTransition::ManualMove(TaskStatus::Queue),
+            implementing(),
+        );
         assert_eq!(next, TaskState::parked(TaskStatus::Queue));
     }
 
@@ -809,7 +871,11 @@ mod tests {
     #[test]
     fn turn_completed_routes_on_whether_there_is_a_repo() {
         let with_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: Some(true),
+                reviewer_pending: false,
+            },
             implementing(),
         );
         assert_eq!(
@@ -824,7 +890,11 @@ mod tests {
 
         // No repository means none of the completion qualifiers describe anything real.
         let without_repo = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: false, has_changes: None, reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: false,
+                has_changes: None,
+                reviewer_pending: false,
+            },
             implementing(),
         );
         assert_eq!(without_repo, TaskState::parked(TaskStatus::Done));
@@ -836,7 +906,11 @@ mod tests {
     #[test]
     fn a_turn_that_changed_nothing_completes_as_no_changes() {
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(false), reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: Some(false),
+                reviewer_pending: false,
+            },
             implementing(),
         );
         assert_eq!(next.status, TaskStatus::Done);
@@ -848,7 +922,11 @@ mod tests {
     #[test]
     fn an_unanswerable_change_check_routes_to_review() {
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: None,
+                reviewer_pending: false,
+            },
             implementing(),
         );
         assert_eq!(next.status, TaskStatus::Review);
@@ -866,7 +944,11 @@ mod tests {
         );
 
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: Some(true),
+                reviewer_pending: false,
+            },
             drafting,
         );
         assert_eq!(
@@ -892,7 +974,11 @@ mod tests {
         );
 
         let next = resolve(
-            TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
+            TaskTransition::TurnCompleted {
+                is_git_repo: true,
+                has_changes: None,
+                reviewer_pending: false,
+            },
             refining,
         );
         assert_eq!(
@@ -921,7 +1007,10 @@ mod tests {
             TaskBall::User,
         );
 
-        assert_eq!(resolve(TaskTransition::ReworkRequested, from_review), expected);
+        assert_eq!(
+            resolve(TaskTransition::ReworkRequested, from_review),
+            expected
+        );
     }
 
     /// A conflict differs from ordinary rework only in that it is a failure, which is what puts
@@ -967,7 +1056,10 @@ mod tests {
     fn the_two_approve_paths_are_distinguishable_in_done() {
         for (event, completion) in [
             (TaskTransition::Merged, TaskCompletion::Merged),
-            (TaskTransition::ApprovedWithoutMerge, TaskCompletion::LocalOnly),
+            (
+                TaskTransition::ApprovedWithoutMerge,
+                TaskCompletion::LocalOnly,
+            ),
         ] {
             let next = resolve(event, implementing());
             assert_eq!(next.status, TaskStatus::Done, "for {:?}", event);
@@ -1079,7 +1171,10 @@ mod tests {
         assert_eq!(pushed.ball, TaskBall::External);
 
         // An ordinary coder is unaffected.
-        let fresh = resolve(TaskTransition::SessionReady(AgentRole::Coder), implementing());
+        let fresh = resolve(
+            TaskTransition::SessionReady(AgentRole::Coder),
+            implementing(),
+        );
         assert_eq!(fresh.status, TaskStatus::InProgress);
         assert_eq!(fresh.phase, Some(TaskPhase::Implementing));
     }
@@ -1158,17 +1253,28 @@ mod tests {
             claim_for_execution(conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
                 .unwrap()
                 .expect("claim");
-            apply_if_spawning(conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
-                .unwrap()
-                .expect("session ready");
+            apply_if_spawning(
+                conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap()
+            .expect("session ready");
         }
 
         #[test]
         fn apply_persists_every_lifecycle_field() {
             let (conn, task_id) = db_with_task();
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
-            let task =
-                apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap().unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .unwrap();
+            let task = apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap()
+            .unwrap();
 
             assert_eq!(task.status, TaskStatus::InProgress);
             assert_eq!(task.phase, Some(TaskPhase::Implementing));
@@ -1194,12 +1300,23 @@ mod tests {
         #[test]
         fn apply_if_status_refuses_a_task_that_moved_on() {
             let (conn, task_id) = db_with_task();
-            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::ManualMove(TaskStatus::Planning),
+            )
+            .unwrap();
 
             let claimed = claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap();
 
-            assert!(claimed.is_none(), "a task no longer queued must not be claimed");
-            assert_eq!(read_state(&conn, task_id).unwrap().status, TaskStatus::Planning);
+            assert!(
+                claimed.is_none(),
+                "a task no longer queued must not be claimed"
+            );
+            assert_eq!(
+                read_state(&conn, task_id).unwrap().status,
+                TaskStatus::Planning
+            );
         }
 
         /// Execute is offered from both Planning and Queue, so the ACP claim accepts either —
@@ -1221,7 +1338,10 @@ mod tests {
             let (conn, task_id) = db_with_task();
             apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Done)).unwrap();
             let claimed = claim_for_execution(&conn, task_id, &allowed).unwrap();
-            assert!(claimed.is_none(), "a task that moved elsewhere must not be claimed");
+            assert!(
+                claimed.is_none(),
+                "a task that moved elsewhere must not be claimed"
+            );
         }
 
         /// Two Execute clicks, or a click racing the auto-mode drain, must build one session.
@@ -1231,9 +1351,13 @@ mod tests {
             let (conn, task_id) = db_with_task();
             let allowed = [TaskStatus::Planning, TaskStatus::Queue];
 
-            assert!(claim_for_execution(&conn, task_id, &allowed).unwrap().is_some());
+            assert!(claim_for_execution(&conn, task_id, &allowed)
+                .unwrap()
+                .is_some());
             assert!(
-                claim_for_execution(&conn, task_id, &allowed).unwrap().is_none(),
+                claim_for_execution(&conn, task_id, &allowed)
+                    .unwrap()
+                    .is_none(),
                 "a second claim on a spawning task must be refused"
             );
         }
@@ -1242,14 +1366,25 @@ mod tests {
         #[test]
         fn a_late_spawn_cannot_move_a_task_that_left() {
             let (conn, task_id) = db_with_task();
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .unwrap();
 
-            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::ManualMove(TaskStatus::Planning),
+            )
+            .unwrap();
             let before = read_state(&conn, task_id).unwrap();
 
-            assert!(apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
-                .unwrap()
-                .is_none());
+            assert!(apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder)
+            )
+            .unwrap()
+            .is_none());
             assert_eq!(read_state(&conn, task_id).unwrap(), before);
         }
 
@@ -1258,15 +1393,31 @@ mod tests {
         #[test]
         fn a_failed_spawn_can_be_claimed_again() {
             let (conn, task_id) = db_with_task();
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
-            apply_if_spawning(&conn, task_id, TaskTransition::PhaseFailed).unwrap().unwrap();
-            assert_eq!(read_state(&conn, task_id).unwrap().phase_status, Some(PhaseStatus::Failed));
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::PhaseFailed)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                read_state(&conn, task_id).unwrap().phase_status,
+                Some(PhaseStatus::Failed)
+            );
 
             let retried = claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap();
             assert!(retried.is_some(), "a failed spawn must be retryable");
-            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::Queue));
+            assert_eq!(
+                read_state(&conn, task_id).unwrap(),
+                spawning(TaskStatus::Queue)
+            );
 
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap().unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap()
+            .unwrap();
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
         }
 
@@ -1275,22 +1426,41 @@ mod tests {
         #[test]
         fn a_task_at_the_plan_gate_can_be_claimed() {
             let (conn, task_id) = db_with_task();
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Planner))
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
                 .unwrap()
                 .unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Planner),
+            )
+            .unwrap()
+            .unwrap();
             apply(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: None,
+                    reviewer_pending: false,
+                },
             )
             .unwrap();
-            assert_eq!(read_state(&conn, task_id).unwrap().phase, Some(TaskPhase::PlanReview));
+            assert_eq!(
+                read_state(&conn, task_id).unwrap().phase,
+                Some(TaskPhase::PlanReview)
+            );
 
             let claimed = claim_for_execution(&conn, task_id, &[TaskStatus::InProgress]).unwrap();
 
-            assert!(claimed.is_some(), "the plan gate must hand off to the coder");
-            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::InProgress));
+            assert!(
+                claimed.is_some(),
+                "the plan gate must hand off to the coder"
+            );
+            assert_eq!(
+                read_state(&conn, task_id).unwrap(),
+                spawning(TaskStatus::InProgress)
+            );
         }
 
         /// Every handoff the board performs has to be claimable, and the reviewer's proves the
@@ -1311,8 +1481,16 @@ mod tests {
                     TaskPhase::SelfReview,
                     TaskStatus::Review,
                 ),
-                (TaskTransition::ReviewRejected, TaskPhase::Rework, TaskStatus::InProgress),
-                (TaskTransition::CiFixRequested, TaskPhase::AwaitingMerge, TaskStatus::Review),
+                (
+                    TaskTransition::ReviewRejected,
+                    TaskPhase::Rework,
+                    TaskStatus::InProgress,
+                ),
+                (
+                    TaskTransition::CiFixRequested,
+                    TaskPhase::AwaitingMerge,
+                    TaskStatus::Review,
+                ),
             ];
 
             for (event, phase, status) in handoffs {
@@ -1363,11 +1541,18 @@ mod tests {
                 .expect("the red-build handoff must be claimable");
             // The claim keeps the column and drops the phase. The column is what survives to say
             // where this came from.
-            assert_eq!(read_state(&conn, task_id).unwrap(), spawning(TaskStatus::Review));
+            assert_eq!(
+                read_state(&conn, task_id).unwrap(),
+                spawning(TaskStatus::Review)
+            );
 
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
-                .unwrap()
-                .unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap()
+            .unwrap();
 
             assert_eq!(
                 read_state(&conn, task_id).unwrap(),
@@ -1393,9 +1578,13 @@ mod tests {
             claim_for_execution(&conn, task_id, &[TaskStatus::Planning, TaskStatus::Queue])
                 .unwrap()
                 .expect("a rejected review is a handoff");
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder))
-                .unwrap()
-                .unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap()
+            .unwrap();
 
             assert_eq!(read_state(&conn, task_id).unwrap(), implementing());
         }
@@ -1416,9 +1605,14 @@ mod tests {
                 },
             )
             .unwrap();
-            assert_eq!(read_state(&conn, task_id).unwrap().phase, Some(TaskPhase::Approval));
+            assert_eq!(
+                read_state(&conn, task_id).unwrap().phase,
+                Some(TaskPhase::Approval)
+            );
 
-            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Review]).unwrap().is_none());
+            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Review])
+                .unwrap()
+                .is_none());
         }
 
         /// The retry exception must not widen into "any task with a phase can be re-claimed" —
@@ -1427,12 +1621,24 @@ mod tests {
         fn a_task_with_a_live_phase_cannot_be_claimed() {
             let (conn, task_id) = db_with_task();
             start_execution(&conn, task_id);
-            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Queue)).unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::ManualMove(TaskStatus::Queue),
+            )
+            .unwrap();
             apply(&conn, task_id, TaskTransition::ExecutionStarted).unwrap();
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Coder)).unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Coder),
+            )
+            .unwrap();
 
             // Now InProgress/Implementing — not in `expected`, and not spawning either.
-            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().is_none());
+            assert!(claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .is_none());
         }
 
         fn request_marker(conn: &Connection, task_id: i32) -> Option<String> {
@@ -1460,7 +1666,9 @@ mod tests {
             let (conn, task_id) = db_with_task();
             defer(&conn, task_id);
 
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .unwrap();
 
             assert_eq!(request_marker(&conn, task_id), None);
         }
@@ -1471,7 +1679,12 @@ mod tests {
             let (conn, task_id) = db_with_task();
             defer(&conn, task_id);
 
-            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::ManualMove(TaskStatus::Planning),
+            )
+            .unwrap();
 
             assert_eq!(request_marker(&conn, task_id), None);
         }
@@ -1483,9 +1696,13 @@ mod tests {
             let (conn, task_id) = db_with_task();
             defer(&conn, task_id);
 
-            claim_for_execution(&conn, task_id, &[TaskStatus::Queue]).unwrap().unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Queue])
+                .unwrap()
+                .unwrap();
             defer(&conn, task_id);
-            apply_if_spawning(&conn, task_id, TaskTransition::SpawnAborted).unwrap().unwrap();
+            apply_if_spawning(&conn, task_id, TaskTransition::SpawnAborted)
+                .unwrap()
+                .unwrap();
 
             assert!(request_marker(&conn, task_id).is_some());
         }
@@ -1502,7 +1719,11 @@ mod tests {
             let applied = apply_if_active(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: false,
+                },
             )
             .unwrap();
 
@@ -1515,16 +1736,31 @@ mod tests {
         #[test]
         fn a_turn_ending_in_planning_still_applies() {
             let (conn, task_id) = db_with_task();
-            apply(&conn, task_id, TaskTransition::ManualMove(TaskStatus::Planning)).unwrap();
-            claim_for_execution(&conn, task_id, &[TaskStatus::Planning]).unwrap().unwrap();
-            apply_if_spawning(&conn, task_id, TaskTransition::SessionReady(AgentRole::Refiner))
+            apply(
+                &conn,
+                task_id,
+                TaskTransition::ManualMove(TaskStatus::Planning),
+            )
+            .unwrap();
+            claim_for_execution(&conn, task_id, &[TaskStatus::Planning])
                 .unwrap()
                 .unwrap();
+            apply_if_spawning(
+                &conn,
+                task_id,
+                TaskTransition::SessionReady(AgentRole::Refiner),
+            )
+            .unwrap()
+            .unwrap();
 
             let applied = apply_if_active(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: None, reviewer_pending: false },
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: None,
+                    reviewer_pending: false,
+                },
             )
             .unwrap();
 
@@ -1546,8 +1782,12 @@ mod tests {
             start_execution(&conn, task_id);
             apply(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
 
-            let second = apply_if_changed(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
-            assert!(second.is_none(), "repeating a blocked write must be skipped");
+            let second =
+                apply_if_changed(&conn, task_id, TaskTransition::AwaitingUserInput).unwrap();
+            assert!(
+                second.is_none(),
+                "repeating a blocked write must be skipped"
+            );
         }
 
         #[test]
@@ -1563,7 +1803,11 @@ mod tests {
             apply(
                 &conn,
                 task_id,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: false,
+                },
             )
             .unwrap();
             let before = read_state(&conn, task_id).unwrap();
@@ -1573,7 +1817,10 @@ mod tests {
 
         #[test]
         fn a_dying_session_fails_a_running_or_blocked_phase() {
-            for setup in [TaskTransition::SessionReady(AgentRole::Coder), TaskTransition::AwaitingUserInput] {
+            for setup in [
+                TaskTransition::SessionReady(AgentRole::Coder),
+                TaskTransition::AwaitingUserInput,
+            ] {
                 let (conn, task_id) = db_with_task();
                 start_execution(&conn, task_id);
                 apply(&conn, task_id, setup).unwrap();
@@ -1584,7 +1831,11 @@ mod tests {
                 let state = read_state(&conn, task_id).unwrap();
                 assert_eq!(state.phase_status, Some(PhaseStatus::Failed));
                 assert_eq!(state.ball, TaskBall::User);
-                assert_eq!(state.status, TaskStatus::InProgress, "the card must not move");
+                assert_eq!(
+                    state.status,
+                    TaskStatus::InProgress,
+                    "the card must not move"
+                );
             }
         }
 
@@ -1594,7 +1845,11 @@ mod tests {
             for terminal in [
                 TaskTransition::Merged,
                 TaskTransition::Stopped,
-                TaskTransition::TurnCompleted { is_git_repo: true, has_changes: Some(true), reviewer_pending: false },
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: false,
+                },
             ] {
                 let (conn, task_id) = db_with_task();
                 start_execution(&conn, task_id);

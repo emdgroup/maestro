@@ -56,7 +56,11 @@ pub enum ReviewVerdict {
 /// parse must not be able to spend another coder round on the strength of a guess, and the gate
 /// is where an unreviewed task would have gone anyway.
 pub fn classify_verdict(reply: &str) -> ReviewVerdict {
-    let first_line = reply.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("");
+    let first_line = reply
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
     // Tolerates the decorations agents reach for — `**CHANGES REQUESTED**`, `## Changes requested`,
     // a trailing colon — without accepting the phrase buried in a paragraph.
     let normalised: String = first_line
@@ -81,7 +85,10 @@ mod verdict_tests {
 
     #[test]
     fn reads_the_verdict_off_the_first_line() {
-        assert_eq!(classify_verdict("APPROVED\n\nLooks good."), ReviewVerdict::Approved);
+        assert_eq!(
+            classify_verdict("APPROVED\n\nLooks good."),
+            ReviewVerdict::Approved
+        );
         assert_eq!(
             classify_verdict("CHANGES REQUESTED\n\nThe null check is missing."),
             ReviewVerdict::ChangesRequested
@@ -97,7 +104,12 @@ mod verdict_tests {
             "changes requested:\n\nwhy",
             "\n\n  CHANGES REQUESTED  \nwhy",
         ] {
-            assert_eq!(classify_verdict(reply), ReviewVerdict::ChangesRequested, "for {:?}", reply);
+            assert_eq!(
+                classify_verdict(reply),
+                ReviewVerdict::ChangesRequested,
+                "for {:?}",
+                reply
+            );
         }
     }
 
@@ -111,7 +123,12 @@ mod verdict_tests {
             "The code looks fine but changes requested for the tests.",
             "Summary\n\nCHANGES REQUESTED",
         ] {
-            assert_eq!(classify_verdict(reply), ReviewVerdict::Approved, "for {:?}", reply);
+            assert_eq!(
+                classify_verdict(reply),
+                ReviewVerdict::Approved,
+                "for {:?}",
+                reply
+            );
         }
     }
 }
@@ -460,31 +477,55 @@ mod tests {
 
         #[test]
         fn an_agent_that_says_it_is_done_is_believed() {
-            assert_eq!(classify_turn("end_turn", true, Some(false), false), TurnOutcome::Complete);
-            assert_eq!(classify_turn("end_turn", true, Some(true), false), TurnOutcome::Complete);
-            assert_eq!(classify_turn("end_turn", true, None, false), TurnOutcome::Complete);
+            assert_eq!(
+                classify_turn("end_turn", true, Some(false), false),
+                TurnOutcome::Complete
+            );
+            assert_eq!(
+                classify_turn("end_turn", true, Some(true), false),
+                TurnOutcome::Complete
+            );
+            assert_eq!(
+                classify_turn("end_turn", true, None, false),
+                TurnOutcome::Complete
+            );
         }
 
         /// The bug this whole module exists for: a turn that ended with a question, not work.
         #[test]
         fn a_turn_that_changed_nothing_is_a_stall_not_a_completion() {
-            assert_eq!(classify_turn("end_turn", false, Some(false), false), TurnOutcome::Stalled);
+            assert_eq!(
+                classify_turn("end_turn", false, Some(false), false),
+                TurnOutcome::Stalled
+            );
         }
 
         #[test]
         fn a_turn_that_changed_something_still_completes() {
-            assert_eq!(classify_turn("end_turn", false, Some(true), false), TurnOutcome::Complete);
+            assert_eq!(
+                classify_turn("end_turn", false, Some(true), false),
+                TurnOutcome::Complete
+            );
         }
 
         /// No repository means no evidence, so behave as the code did before the diff check.
         #[test]
         fn without_a_repository_a_turn_ending_completes() {
-            assert_eq!(classify_turn("end_turn", false, None, false), TurnOutcome::Complete);
+            assert_eq!(
+                classify_turn("end_turn", false, None, false),
+                TurnOutcome::Complete
+            );
         }
 
         #[test]
         fn bad_stop_reasons_fail_the_phase() {
-            for reason in ["refusal", "max_tokens", "max_turn_requests", "error", "unknown"] {
+            for reason in [
+                "refusal",
+                "max_tokens",
+                "max_turn_requests",
+                "error",
+                "unknown",
+            ] {
                 assert_eq!(
                     classify_turn(reason, false, Some(true), false),
                     TurnOutcome::Failed,
@@ -496,19 +537,31 @@ mod tests {
         /// A stop reason we have never seen must surface, not vanish.
         #[test]
         fn an_unrecognised_stop_reason_fails_rather_than_being_ignored() {
-            assert_eq!(classify_turn("something_new", false, Some(true), false), TurnOutcome::Failed);
+            assert_eq!(
+                classify_turn("something_new", false, Some(true), false),
+                TurnOutcome::Failed
+            );
         }
 
         #[test]
         fn stop_reasons_owned_elsewhere_are_left_alone() {
-            assert_eq!(classify_turn("cancelled", false, Some(true), false), TurnOutcome::Ignore);
-            assert_eq!(classify_turn("auth_required", false, Some(true), false), TurnOutcome::Ignore);
+            assert_eq!(
+                classify_turn("cancelled", false, Some(true), false),
+                TurnOutcome::Ignore
+            );
+            assert_eq!(
+                classify_turn("auth_required", false, Some(true), false),
+                TurnOutcome::Ignore
+            );
         }
 
         /// A declared completion must not override a refusal — the turn still failed.
         #[test]
         fn the_marker_does_not_rescue_a_failed_turn() {
-            assert_eq!(classify_turn("refusal", true, Some(true), false), TurnOutcome::Failed);
+            assert_eq!(
+                classify_turn("refusal", true, Some(true), false),
+                TurnOutcome::Failed
+            );
         }
 
         /// The bug: a user who joined a session and pressed stop watched the board start the next
@@ -532,7 +585,10 @@ mod tests {
         /// meant to hold.
         #[test]
         fn an_interrupt_outranks_a_declared_completion() {
-            assert_eq!(classify_turn("end_turn", true, Some(true), true), TurnOutcome::Ignore);
+            assert_eq!(
+                classify_turn("end_turn", true, Some(true), true),
+                TurnOutcome::Ignore
+            );
         }
     }
 

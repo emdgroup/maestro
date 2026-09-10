@@ -18,7 +18,11 @@ use tokio::sync::Mutex;
 use crate::command_ext::NoConsoleWindow;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    serve(tokio::io::stdin(), Arc::new(Mutex::new(tokio::io::stdout()))).await
+    serve(
+        tokio::io::stdin(),
+        Arc::new(Mutex::new(tokio::io::stdout())),
+    )
+    .await
 }
 
 /// The channel loop, over any pair of streams so it can be driven in tests.
@@ -54,7 +58,11 @@ async fn execute<W: AsyncWrite + Unpin + Send + 'static>(
         let mut builder = tokio::process::Command::new(&command.program);
         builder
             .args(&command.args)
-            .stdin(if command.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdin(if command.stdin.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
@@ -70,7 +78,10 @@ async fn execute<W: AsyncWrite + Unpin + Send + 'static>(
             Err(e) => {
                 send(
                     &output,
-                    &ExecEvent::Failed { id, message: format!("{}: {}", command.program, e) },
+                    &ExecEvent::Failed {
+                        id,
+                        message: format!("{}: {}", command.program, e),
+                    },
                 )
                 .await;
                 return;
@@ -88,10 +99,20 @@ async fn execute<W: AsyncWrite + Unpin + Send + 'static>(
 
     let mut readers = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        readers.push(tokio::spawn(forward(id, ExecStream::Stdout, stdout, Arc::clone(&output))));
+        readers.push(tokio::spawn(forward(
+            id,
+            ExecStream::Stdout,
+            stdout,
+            Arc::clone(&output),
+        )));
     }
     if let Some(stderr) = child.stderr.take() {
-        readers.push(tokio::spawn(forward(id, ExecStream::Stderr, stderr, Arc::clone(&output))));
+        readers.push(tokio::spawn(forward(
+            id,
+            ExecStream::Stderr,
+            stderr,
+            Arc::clone(&output),
+        )));
     }
 
     let status = child.wait().await;
@@ -101,8 +122,14 @@ async fn execute<W: AsyncWrite + Unpin + Send + 'static>(
     }
 
     let event = match status {
-        Ok(status) => ExecEvent::Exit { id, code: status.code().unwrap_or(-1) },
-        Err(e) => ExecEvent::Failed { id, message: format!("wait failed: {}", e) },
+        Ok(status) => ExecEvent::Exit {
+            id,
+            code: status.code().unwrap_or(-1),
+        },
+        Err(e) => ExecEvent::Failed {
+            id,
+            message: format!("wait failed: {}", e),
+        },
     };
     send(&output, &event).await;
 }
@@ -118,7 +145,15 @@ async fn forward<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         match source.read(&mut buffer).await {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                send(&output, &ExecEvent::Chunk { id, stream, bytes: buffer[..n].to_vec() }).await;
+                send(
+                    &output,
+                    &ExecEvent::Chunk {
+                        id,
+                        stream,
+                        bytes: buffer[..n].to_vec(),
+                    },
+                )
+                .await;
             }
         }
     }
@@ -172,7 +207,12 @@ mod tests {
     fn text_of(events: &[ExecEvent], id: RequestId, want: ExecStream) -> String {
         let mut collected = Vec::new();
         for event in events {
-            if let ExecEvent::Chunk { id: chunk_id, stream, bytes } = event {
+            if let ExecEvent::Chunk {
+                id: chunk_id,
+                stream,
+                bytes,
+            } = event
+            {
                 if *chunk_id == id && *stream == want {
                     collected.extend_from_slice(bytes);
                 }
@@ -192,12 +232,19 @@ mod tests {
     #[tokio::test]
     async fn the_channel_loop_reads_frames_and_answers_them() {
         let mut input = Vec::new();
-        for command in [command(10, "git", &["--version"]), command(11, "git", &["--version"])] {
-            write_frame(&mut input, &command).await.expect("encode command");
+        for command in [
+            command(10, "git", &["--version"]),
+            command(11, "git", &["--version"]),
+        ] {
+            write_frame(&mut input, &command)
+                .await
+                .expect("encode command");
         }
 
         let output = Arc::new(Mutex::new(Cursor::new(Vec::new())));
-        serve(Cursor::new(input), Arc::clone(&output)).await.expect("serve");
+        serve(Cursor::new(input), Arc::clone(&output))
+            .await
+            .expect("serve");
 
         let bytes = output.lock().await.get_ref().clone();
         let mut cursor = Cursor::new(bytes);
@@ -218,7 +265,11 @@ mod tests {
         // arrive tagged rather than in order.
         let events = run_all(vec![
             command(1, "git", &["--version"]),
-            command(2, "git", &["config", "--get", "--default", "second", "maestro.test"]),
+            command(
+                2,
+                "git",
+                &["config", "--get", "--default", "second", "maestro.test"],
+            ),
         ])
         .await;
 
@@ -230,7 +281,12 @@ mod tests {
 
     #[tokio::test]
     async fn stderr_and_exit_code_are_reported_separately() {
-        let events = run_all(vec![command(3, "git", &["rev-parse", "--verify", "no-such-ref"])]).await;
+        let events = run_all(vec![command(
+            3,
+            "git",
+            &["rev-parse", "--verify", "no-such-ref"],
+        )])
+        .await;
 
         assert_eq!(text_of(&events, 3, ExecStream::Stdout), "");
         assert!(!text_of(&events, 3, ExecStream::Stderr).is_empty());
@@ -267,9 +323,17 @@ mod tests {
     async fn output_larger_than_one_chunk_is_split_and_reassembles_in_order() {
         // Driven through `forward` directly rather than a child process: producing half a
         // megabyte portably from a command line is awkward, and the chunking is what matters.
-        let payload: Vec<u8> = (0..EXEC_CHUNK_SIZE * 2 + 17).map(|i| (i % 251) as u8).collect();
+        let payload: Vec<u8> = (0..EXEC_CHUNK_SIZE * 2 + 17)
+            .map(|i| (i % 251) as u8)
+            .collect();
         let output = Arc::new(Mutex::new(Cursor::new(Vec::new())));
-        forward(6, ExecStream::Stdout, Cursor::new(payload.clone()), Arc::clone(&output)).await;
+        forward(
+            6,
+            ExecStream::Stdout,
+            Cursor::new(payload.clone()),
+            Arc::clone(&output),
+        )
+        .await;
 
         let bytes = output.lock().await.get_ref().clone();
         let mut cursor = Cursor::new(bytes);
@@ -278,7 +342,10 @@ mod tests {
             events.push(event);
         }
 
-        assert!(events.len() > 2, "payload should have needed more than one chunk");
+        assert!(
+            events.len() > 2,
+            "payload should have needed more than one chunk"
+        );
         let mut reassembled = Vec::new();
         for event in &events {
             match event {

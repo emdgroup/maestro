@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::fs;
 use std::io;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
-use specta::Type;
 
 use crate::connectivity::docker_handlers::run_blocking;
 use crate::connectivity::files::{BINARY_LIMIT, TEXT_LIMIT};
@@ -26,8 +26,8 @@ pub(crate) async fn local_contents(
         if !dir_path.is_dir() {
             return Err(format!("Not a directory: {}", path));
         }
-        let entries = fs::read_dir(dir_path)
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let entries =
+            fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
         let mut dirs: Vec<String> = Vec::new();
         let mut files: Vec<String> = Vec::new();
         for entry in entries.flatten() {
@@ -46,8 +46,17 @@ pub(crate) async fn local_contents(
         }
         dirs.sort();
         files.sort();
-        let mut result: Vec<FileEntry> = dirs.into_iter().map(|n| FileEntry { name: n, is_dir: true }).collect();
-        result.extend(files.into_iter().map(|n| FileEntry { name: n, is_dir: false }));
+        let mut result: Vec<FileEntry> = dirs
+            .into_iter()
+            .map(|n| FileEntry {
+                name: n,
+                is_dir: true,
+            })
+            .collect();
+        result.extend(files.into_iter().map(|n| FileEntry {
+            name: n,
+            is_dir: false,
+        }));
         Ok(result)
     })
     .await
@@ -170,8 +179,8 @@ pub(crate) async fn local_directories(path: String) -> Result<Vec<String>, Strin
         }
 
         // Read directory entries
-        let entries = fs::read_dir(dir_path)
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let entries =
+            fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
         // Filter for directories only
         let mut directories: Vec<String> = Vec::new();
@@ -265,7 +274,10 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
             .output()
         {
             if output.status.success() {
-                let color_name = String::from_utf8_lossy(&output.stdout).trim().trim_matches('\'').to_string();
+                let color_name = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .trim_matches('\'')
+                    .to_string();
 
                 // GNOME accent colors mapping (GNOME 42+)
                 let rgb = match color_name.as_str() {
@@ -297,7 +309,7 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        use windows::UI::ViewManagement::{UISettings, UIColorType};
+        use windows::UI::ViewManagement::{UIColorType, UISettings};
 
         // Use Windows.UI.ViewManagement.UISettings to get system accent color
         // This is the official Microsoft-recommended API
@@ -334,7 +346,9 @@ pub fn get_system_accent_color() -> Result<Vec<u8>, String> {
 #[specta::specta]
 pub fn open_path_native(app: tauri::AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -347,4 +361,3 @@ pub async fn get_file_size(path: String) -> Result<u64, String> {
     })
     .await
 }
-

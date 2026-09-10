@@ -1,5 +1,5 @@
-use crate::models::issue_tracking::RemoteIssue;
 use crate::integration::token_manager::StoredToken;
+use crate::models::issue_tracking::RemoteIssue;
 
 #[derive(serde::Deserialize)]
 struct GiteaUserResponse {
@@ -21,7 +21,7 @@ struct GiteaLabel {
     name: String,
 }
 
-use super::{normalize_instance_url, extract_type_from_labels};
+use super::{extract_type_from_labels, normalize_instance_url};
 
 /// Validate a Gitea API token, save the IssueTrackingConfig, and store the token.
 /// Returns the authenticated Gitea login name on success.
@@ -36,7 +36,7 @@ pub async fn validate_and_store(
 ) -> Result<String, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let response = client
         .get(format!("{}/api/v1/user", base))
@@ -94,7 +94,7 @@ pub async fn fetch_issues(
 ) -> Result<Vec<RemoteIssue>, String> {
     let base = normalize_instance_url(instance_url);
 
-    let client = super::build_http_client()?;
+    let client = super::http_client()?;
 
     let url = format!(
         "{}/api/v1/repos/{}/{}/issues?state=open&type=issues&limit=50",

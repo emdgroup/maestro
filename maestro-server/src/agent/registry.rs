@@ -270,7 +270,10 @@ mod tests {
         assert_eq!(added.len(), 1, "custom agents duplicated across merges");
         assert_eq!(added[0].id, "ollama-claude-acp");
         assert_eq!(
-            added[0].spawn_env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            added[0]
+                .spawn_env
+                .get("ANTHROPIC_BASE_URL")
+                .map(String::as_str),
             Some("http://x")
         );
         assert_eq!(
@@ -281,7 +284,10 @@ mod tests {
 
         super::merge_custom_agents(&mut agents, &[]);
         assert_eq!(
-            agents.iter().map(|agent| agent.id.clone()).collect::<Vec<_>>(),
+            agents
+                .iter()
+                .map(|agent| agent.id.clone())
+                .collect::<Vec<_>>(),
             bundled_ids,
             "removing the file must leave exactly the bundled agents"
         );
@@ -298,10 +304,7 @@ mod tests {
 
     // Test filename extraction only; which resolution depends on PATH in the test environment.
     fn extract_filename(raw_cmd: &str) -> &str {
-        raw_cmd
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(raw_cmd)
+        raw_cmd.rsplit(['/', '\\']).next().unwrap_or(raw_cmd)
     }
 
     #[test]

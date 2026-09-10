@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use crate::core::AppState;
-use crate::core::project_storage::{read_maestro_json, write_maestro_json};
 use crate::acp::ConnectionKey;
+use crate::core::project_storage::{read_maestro_json, write_maestro_json};
+use crate::core::AppState;
 use crate::models::GitConnection;
+use std::sync::Arc;
 
 const STATE_FILE: &str = "state.json";
 
@@ -64,7 +64,10 @@ fn relative_to_project(project_path: &str, cwd: &str) -> Option<String> {
 /// Called fire-and-forget via tokio::spawn after session spawn/cancel.
 /// The folder each session runs in is recorded alongside it, because Session History needs it.
 pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project_id: i32) {
-    if app_state.is_closing.load(std::sync::atomic::Ordering::Relaxed) {
+    if app_state
+        .is_closing
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
         return;
     }
 
@@ -86,7 +89,10 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
         let sessions = app_state.acp.sessions.lock().await;
         let mut snapshots: Vec<crate::project::models::SessionSnapshot> = vec![];
         let mut folders: Vec<crate::project::models::SessionFolder> = vec![];
-        for proc in sessions.values().filter(|proc| proc.project_id == Some(project_id)) {
+        for proc in sessions
+            .values()
+            .filter(|proc| proc.project_id == Some(project_id))
+        {
             let Some(acp_session_id) = proc.acp_session_id.lock().ok().and_then(|id| id.clone())
             else {
                 continue;
@@ -118,8 +124,7 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
     let mut project_state = read_project_state(&app_state, &project_path, connection_key).await;
     for folder in folders {
         match project_state.session_folders.iter_mut().find(|existing| {
-            existing.agent_id == folder.agent_id
-                && existing.acp_session_id == folder.acp_session_id
+            existing.agent_id == folder.agent_id && existing.acp_session_id == folder.acp_session_id
         }) {
             // Re-record rather than skip: a session reopened elsewhere now lives elsewhere.
             Some(existing) => *existing = folder,
@@ -130,7 +135,6 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
 
     write_project_state(&app_state, &project_path, connection_key, &project_state).await;
 }
-
 
 /// Read `.maestro/state.json` for a project and return stored session snapshots without clearing.
 /// Returns an empty vec if state.json is missing, unreadable, or has no sessions.
@@ -176,7 +180,10 @@ pub(crate) fn spawn_session_restores(
         let app_state = Arc::clone(&app_state);
         tokio::spawn(async move {
             let task_id = snapshot.task_id;
-            let session_name = snapshot.session_name.clone().unwrap_or_else(|| "unnamed".into());
+            let session_name = snapshot
+                .session_name
+                .clone()
+                .unwrap_or_else(|| "unnamed".into());
             let restored = crate::acp::session_handlers::restore_acp_session(
                 &app_state,
                 snapshot.agent_id,
@@ -187,7 +194,8 @@ pub(crate) fn spawn_session_restores(
                 Some(project_id),
                 snapshot.branch_name,
                 snapshot.task_id,
-            ).await;
+            )
+            .await;
 
             // A restore that cannot succeed — agent uninstalled, worktree deleted, auth expired,
             // remote host unreachable — used to be discarded, leaving the task claiming an agent
@@ -226,16 +234,28 @@ mod tests {
     /// stored as something that resolves elsewhere on the next machine.
     #[test]
     fn session_folders_are_stored_relative_to_the_project() {
-        assert_eq!(relative_to_project("/home/me/proj", "/home/me/proj"), Some(String::new()));
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/proj"),
+            Some(String::new())
+        );
         assert_eq!(
             relative_to_project("/home/me/proj/", "/home/me/proj/.maestro/worktrees/task-7"),
             Some(".maestro/worktrees/task-7".to_string())
         );
         assert_eq!(
-            relative_to_project("C:\\dev\\proj", "C:\\dev\\proj\\.maestro\\worktrees\\task-7"),
+            relative_to_project(
+                "C:\\dev\\proj",
+                "C:\\dev\\proj\\.maestro\\worktrees\\task-7"
+            ),
             Some(".maestro/worktrees/task-7".to_string())
         );
-        assert_eq!(relative_to_project("/home/me/proj", "/home/me/elsewhere"), None);
-        assert_eq!(relative_to_project("/home/me/proj", "/home/me/proj-two"), None);
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/elsewhere"),
+            None
+        );
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/proj-two"),
+            None
+        );
     }
 }

@@ -42,8 +42,12 @@ pub fn parse_remote_url(url: &str) -> Option<ParsedRemote> {
         }
     };
 
-    let host_part = host_part.rsplit_once('@').map_or(host_part, |(_user, host)| host);
-    let host = host_part.split_once(':').map_or(host_part, |(host, _port)| host);
+    let host_part = host_part
+        .rsplit_once('@')
+        .map_or(host_part, |(_user, host)| host);
+    let host = host_part
+        .split_once(':')
+        .map_or(host_part, |(host, _port)| host);
     let host = host.trim_start_matches("www.").to_ascii_lowercase();
 
     let path = path.trim_matches('/');
@@ -54,7 +58,10 @@ pub fn parse_remote_url(url: &str) -> Option<ParsedRemote> {
         return None;
     }
 
-    Some(ParsedRemote { host, path: path.to_string() })
+    Some(ParsedRemote {
+        host,
+        path: path.to_string(),
+    })
 }
 
 /// Pick the URL of the most likely "upstream" remote out of `git remote -v` output,
@@ -99,7 +106,9 @@ pub fn redact_remote_url(url: &str) -> String {
 pub fn remote_names(remote_v_output: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     for line in remote_v_output.lines() {
-        let Some(name) = line.split_whitespace().next() else { continue };
+        let Some(name) = line.split_whitespace().next() else {
+            continue;
+        };
         if !names.iter().any(|seen| seen == name) {
             names.push(name.to_string());
         }
@@ -130,7 +139,9 @@ pub fn pick_remote(remote_v_output: &str) -> Option<(String, String)> {
 
     for line in remote_v_output.lines() {
         let mut parts = line.split_whitespace();
-        let (Some(name), Some(url)) = (parts.next(), parts.next()) else { continue };
+        let (Some(name), Some(url)) = (parts.next(), parts.next()) else {
+            continue;
+        };
         let entry = (name.to_string(), url.to_string());
         match name {
             "origin" => return Some(entry),
@@ -178,7 +189,8 @@ pub fn forget_project_remote(app_state: &AppState, project_id: i32) {
 }
 
 async fn resolve_project_remote(app_state: &AppState, project_id: i32) -> String {
-    let Ok((project, git_conn)) = crate::core::get_project_with_git_conn(app_state, project_id).await
+    let Ok((project, git_conn)) =
+        crate::core::get_project_with_git_conn(app_state, project_id).await
     else {
         return DEFAULT_REMOTE.to_string();
     };
@@ -313,7 +325,10 @@ fork\tgit@github.com:someone/repo.git (push)
             redact_remote_url("https://user:p@ss@gitlab.com/group/repo.git"),
             "https://gitlab.com/group/repo.git"
         );
-        assert_eq!(redact_remote_url("ssh://git@git.example.com:2222/owner/repo.git"), "ssh://git.example.com:2222/owner/repo.git");
+        assert_eq!(
+            redact_remote_url("ssh://git@git.example.com:2222/owner/repo.git"),
+            "ssh://git.example.com:2222/owner/repo.git"
+        );
     }
 
     /// A URL with nothing to hide has to come back byte for byte, or what Settings shows stops
@@ -352,7 +367,10 @@ upstream\thttps://github.com/upstream/repo.git (push)
 origin\tgit@github.com:me/repo.git (fetch)
 origin\tgit@github.com:me/repo.git (push)
 ";
-        assert_eq!(pick_remote_url(output).as_deref(), Some("git@github.com:me/repo.git"));
+        assert_eq!(
+            pick_remote_url(output).as_deref(),
+            Some("git@github.com:me/repo.git")
+        );
 
         let no_origin = "\
 upstream\thttps://github.com/upstream/repo.git (fetch)
@@ -364,7 +382,10 @@ fork\thttps://github.com/fork/repo.git (fetch)
         );
 
         let neither = "fork\thttps://github.com/fork/repo.git (fetch)\n";
-        assert_eq!(pick_remote_url(neither).as_deref(), Some("https://github.com/fork/repo.git"));
+        assert_eq!(
+            pick_remote_url(neither).as_deref(),
+            Some("https://github.com/fork/repo.git")
+        );
 
         assert_eq!(pick_remote_url(""), None);
     }
@@ -377,7 +398,10 @@ fork\thttps://github.com/fork/repo.git (fetch)
 ";
         assert_eq!(
             pick_remote(output),
-            Some(("upstream".into(), "https://github.com/upstream/repo.git".into()))
+            Some((
+                "upstream".into(),
+                "https://github.com/upstream/repo.git".into()
+            ))
         );
     }
 

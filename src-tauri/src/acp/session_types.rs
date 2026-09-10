@@ -2,7 +2,8 @@
 
 use crate::acp::canvas::CanvasFenceExtractor;
 use crate::acp::transport::{
-    CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse, ToolCheckResult,
+    CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse,
+    ToolCheckResult,
 };
 use maestro_protocol::{
     DetectInstalledAgentsResponse, DetectProjectAgentsResponse, InstallSkillsResponse,
@@ -328,8 +329,9 @@ impl AcpProcess {
         ));
         let declared_complete = Arc::new(AtomicBool::new(false));
         let user_interrupted = Arc::new(AtomicBool::new(false));
-        let closing_message =
-            Arc::new(std::sync::Mutex::new(super::completion::ClosingMessage::default()));
+        let closing_message = Arc::new(std::sync::Mutex::new(
+            super::completion::ClosingMessage::default(),
+        ));
         let ctx = ReaderTaskContext {
             log_id,
             app_handle,

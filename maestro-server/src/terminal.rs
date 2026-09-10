@@ -1,13 +1,11 @@
+use crate::command_ext::NoConsoleWindow;
 use std::collections::HashMap;
 use std::process::Stdio;
-use crate::command_ext::NoConsoleWindow;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use acp::schema::v1::{CreateTerminalRequest, CreateTerminalResponse, TerminalId};
 use agent_client_protocol as acp;
-use acp::schema::v1::{
-    CreateTerminalRequest, CreateTerminalResponse, TerminalId,
-};
 use maestro_protocol::{MaestroRpcMessage, ServerResponse, TerminalOutput};
 use tokio::sync::{mpsc, Mutex, Notify};
 
@@ -50,7 +48,10 @@ pub(crate) async fn handle_create_terminal(
         }
     }
 
-    let terminal_id = format!("term-{}", terminal_counter.fetch_add(1, Ordering::Relaxed) + 1);
+    let terminal_id = format!(
+        "term-{}",
+        terminal_counter.fetch_add(1, Ordering::Relaxed) + 1
+    );
 
     // T-42-02: Use Command::new(program).args(args) — never shell strings
     let mut cmd = tokio::process::Command::new(&args.command);

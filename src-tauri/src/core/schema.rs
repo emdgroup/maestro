@@ -299,8 +299,7 @@ pub fn backup_before_migration(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since_epoch| since_epoch.as_secs())
         .unwrap_or(0);
-    let backup_path =
-        db_path.with_file_name(format!("{file_name}.bak-v{current_version}-{stamp}"));
+    let backup_path = db_path.with_file_name(format!("{file_name}.bak-v{current_version}-{stamp}"));
 
     // VACUUM INTO refuses to write an existing file.
     if backup_path.exists() {
@@ -349,7 +348,8 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
         conn.execute_batch(SCHEMA_V28_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
-        conn.execute_batch(r#"
+        conn.execute_batch(
+            r#"
             PRAGMA foreign_keys = OFF;
             DROP TABLE IF EXISTS task_attachments;
             DROP TABLE IF EXISTS session_aliases;
@@ -366,7 +366,8 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             DROP TABLE IF EXISTS ssh_connections;
             DROP TABLE IF EXISTS settings;
             PRAGMA foreign_keys = ON;
-        "#)?;
+        "#,
+        )?;
         conn.execute_batch(SCHEMA_V28_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
@@ -381,10 +382,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
         return Ok(());
     }
 
-    conn.execute(
-        &format!("PRAGMA user_version = {}", SCHEMA_VERSION),
-        [],
-    )?;
+    conn.execute(&format!("PRAGMA user_version = {}", SCHEMA_VERSION), [])?;
 
     Ok(())
 }
@@ -446,7 +444,10 @@ fn migrate_to_v28(conn: &Connection) -> SqlResult<()> {
 /// name being generated from the task at spawn time exactly as before.
 fn migrate_to_v27(conn: &Connection) -> SqlResult<()> {
     for (name, definition) in [
-        ("workspace_branch_mode", "workspace_branch_mode TEXT NOT NULL DEFAULT 'Create'"),
+        (
+            "workspace_branch_mode",
+            "workspace_branch_mode TEXT NOT NULL DEFAULT 'Create'",
+        ),
         ("workspace_branch", "workspace_branch TEXT"),
     ] {
         let column_exists: bool = conn.query_row(
@@ -637,7 +638,9 @@ mod tests {
 
         // Verify tables exist
         let tables: Vec<String> = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )
             .unwrap()
             .query_map([], |row| row.get(0))
             .unwrap()
@@ -657,7 +660,10 @@ mod tests {
         assert!(tables.contains(&"wsl_connections".to_string()));
         assert!(tables.contains(&"session_aliases".to_string()));
         assert!(tables.contains(&"task_attachments".to_string()));
-        assert!(!tables.contains(&"execution_logs".to_string()), "execution_logs removed in V13");
+        assert!(
+            !tables.contains(&"execution_logs".to_string()),
+            "execution_logs removed in V13"
+        );
 
         // Verify foreign keys are enabled
         let fk_enabled: u32 = conn
@@ -683,12 +689,30 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        assert!(worktree_columns.contains(&"task_id".to_string()), "task_id column should exist");
-        assert!(worktree_columns.contains(&"git_status".to_string()), "git_status column should exist");
-        assert!(worktree_columns.contains(&"base_branch".to_string()), "base_branch column should exist");
-        assert!(!worktree_columns.contains(&"status".to_string()), "status column should NOT exist");
-        assert!(!worktree_columns.contains(&"leased_at".to_string()), "leased_at column should NOT exist");
-        assert!(!worktree_columns.contains(&"returned_at".to_string()), "returned_at column should NOT exist");
+        assert!(
+            worktree_columns.contains(&"task_id".to_string()),
+            "task_id column should exist"
+        );
+        assert!(
+            worktree_columns.contains(&"git_status".to_string()),
+            "git_status column should exist"
+        );
+        assert!(
+            worktree_columns.contains(&"base_branch".to_string()),
+            "base_branch column should exist"
+        );
+        assert!(
+            !worktree_columns.contains(&"status".to_string()),
+            "status column should NOT exist"
+        );
+        assert!(
+            !worktree_columns.contains(&"leased_at".to_string()),
+            "leased_at column should NOT exist"
+        );
+        assert!(
+            !worktree_columns.contains(&"returned_at".to_string()),
+            "returned_at column should NOT exist"
+        );
 
         // Verify tasks table has V17 columns
         let task_columns: Vec<String> = conn
@@ -745,7 +769,10 @@ mod tests {
 
         let result = initialize_schema(&conn);
 
-        assert!(result.is_err(), "a newer schema version must not be accepted");
+        assert!(
+            result.is_err(),
+            "a newer schema version must not be accepted"
+        );
         let message = result.unwrap_err();
         assert!(
             message.contains("newer version of Maestro"),
@@ -780,7 +807,10 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(surviving, 1, "migrating from v22 must not drop project rows");
+        assert_eq!(
+            surviving, 1,
+            "migrating from v22 must not drop project rows"
+        );
         assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
     }
 
@@ -815,14 +845,20 @@ mod tests {
 
         // Unrelated settings are not collateral.
         let auto_mode: String = conn
-            .query_row("SELECT value FROM settings WHERE key = 'auto_mode'", [], |row| row.get(0))
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'auto_mode'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(auto_mode, "true");
 
         // Nothing is carried across: a connection starts at the default, which estimates from
         // memory rather than inheriting the fixed 8 the user had.
         let seeded: i64 = conn
-            .query_row("SELECT COUNT(*) FROM connection_settings", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM connection_settings", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(seeded, 0);
     }
@@ -900,11 +936,21 @@ mod tests {
 
         assert_eq!(
             row(1),
-            ("InProgress".into(), Some("Implementing".into()), Some("Running".into()), "Agent".into())
+            (
+                "InProgress".into(),
+                Some("Implementing".into()),
+                Some("Running".into()),
+                "Agent".into()
+            )
         );
         assert_eq!(
             row(2),
-            ("Review".into(), Some("Approval".into()), Some("Waiting".into()), "User".into())
+            (
+                "Review".into(),
+                Some("Approval".into()),
+                Some("Waiting".into()),
+                "User".into()
+            )
         );
         assert_eq!(row(3), ("Planning".into(), None, None, "None".into()));
         // Rewritten to Planning by the repeated cleanup, then backfilled as a parked task.
@@ -1034,7 +1080,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row.0, "Create");
-        assert_eq!(row.1, None, "a NULL name is what keeps the name generated at spawn");
+        assert_eq!(
+            row.1, None,
+            "a NULL name is what keeps the name generated at spawn"
+        );
 
         // Re-running the migration on an already-migrated database must be a no-op, not an error.
         conn.execute("PRAGMA user_version = 26", []).unwrap();
@@ -1052,10 +1101,8 @@ mod tests {
 
     #[test]
     fn test_backup_written_only_when_migration_is_pending() {
-        let dir = std::env::temp_dir().join(format!(
-            "maestro-schema-backup-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("maestro-schema-backup-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("maestro.db");
         let _ = std::fs::remove_file(&db_path);
@@ -1073,7 +1120,11 @@ mod tests {
 
         assert!(backup.exists(), "backup file should be on disk");
         assert!(
-            backup.file_name().unwrap().to_string_lossy().contains("bak-v22"),
+            backup
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("bak-v22"),
             "backup name should record the version it came from: {}",
             backup.display()
         );

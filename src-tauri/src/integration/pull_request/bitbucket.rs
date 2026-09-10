@@ -8,11 +8,11 @@
 use serde::Deserialize;
 
 use super::{
-    CiState, CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest,
-    PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget, cursor_offset,
-    next_offset_cursor, offset_page, read_json,
+    cursor_offset, next_offset_cursor, offset_page, read_json, CiState, CreatedPullRequest,
+    FoundPullRequest, ListedPullRequest, PullRequestDetail, PullRequestPage, PullRequestState,
+    PullRequestTarget, LIST_PAGE_SIZE,
 };
-use crate::integration::{build_http_client, normalize_instance_url};
+use crate::integration::{http_client, normalize_instance_url};
 
 /// Which Bitbucket a target refers to. Cloud and Server share a provider name and nothing else.
 enum BitbucketDeployment {
@@ -90,10 +90,16 @@ fn bitbucket_web_url(
 ) -> String {
     match deployment {
         BitbucketDeployment::Cloud => {
-            format!("https://bitbucket.org/{}/{}/pull-requests/{}", project, repository, number)
+            format!(
+                "https://bitbucket.org/{}/{}/pull-requests/{}",
+                project, repository, number
+            )
         }
         BitbucketDeployment::Server(base) => {
-            format!("{}/projects/{}/repos/{}/pull-requests/{}", base, project, repository, number)
+            format!(
+                "{}/projects/{}/repos/{}/pull-requests/{}",
+                base, project, repository, number
+            )
         }
     }
 }
@@ -154,7 +160,9 @@ fn bitbucket_cloud_details(pr: BitbucketCloudPullRequestState) -> PullRequestDet
         None,
         // Abbreviated to 12 characters by Cloud, unlike every other forge here. Fine to hand
         // straight back to Bitbucket's own commit endpoints, but never compare it to a full sha.
-        pr.source.and_then(|source| source.commit).map(|commit| commit.hash),
+        pr.source
+            .and_then(|source| source.commit)
+            .map(|commit| commit.hash),
     )
 }
 
@@ -196,7 +204,10 @@ fn summarise_bitbucket_builds(statuses: &[BitbucketBuildStatus]) -> CiState {
     if statuses.is_empty() {
         return CiState::Unknown;
     }
-    if statuses.iter().any(|status| status.state.eq_ignore_ascii_case("INPROGRESS")) {
+    if statuses
+        .iter()
+        .any(|status| status.state.eq_ignore_ascii_case("INPROGRESS"))
+    {
         return CiState::Pending;
     }
 
@@ -211,7 +222,10 @@ fn summarise_bitbucket_builds(statuses: &[BitbucketBuildStatus]) -> CiState {
         return CiState::Failing(failed);
     }
 
-    if statuses.iter().all(|status| status.state.eq_ignore_ascii_case("SUCCESSFUL")) {
+    if statuses
+        .iter()
+        .all(|status| status.state.eq_ignore_ascii_case("SUCCESSFUL"))
+    {
         CiState::Passing
     } else {
         CiState::Unknown
@@ -318,7 +332,10 @@ fn cloud_list_entry_to_listed(
     let source = entry.source?;
     let destination = entry.destination;
     let from_fork = super::is_cross_repository(
-        source.repository.as_ref().and_then(|repo| repo.full_name.clone()),
+        source
+            .repository
+            .as_ref()
+            .and_then(|repo| repo.full_name.clone()),
         destination
             .as_ref()
             .and_then(|destination| destination.repository.as_ref())
@@ -333,7 +350,9 @@ fn cloud_list_entry_to_listed(
             .unwrap_or_else(|| fallback_url.to_string()),
         title: entry.title,
         head_branch: source.branch.and_then(|branch| branch.name)?,
-        base_branch: destination.and_then(|d| d.branch).and_then(|branch| branch.name),
+        base_branch: destination
+            .and_then(|d| d.branch)
+            .and_then(|branch| branch.name),
         created_at: entry.created_on,
         head_sha: source.commit.map(|commit| commit.hash),
         updated_at: entry.updated_on,
@@ -416,7 +435,10 @@ fn server_list_entry_to_listed(
     let to_ref = entry.to_ref;
     let from_fork = super::is_cross_repository(
         from_ref.repository.as_ref().and_then(|repo| repo.id),
-        to_ref.as_ref().and_then(|to_ref| to_ref.repository.as_ref()).and_then(|repo| repo.id),
+        to_ref
+            .as_ref()
+            .and_then(|to_ref| to_ref.repository.as_ref())
+            .and_then(|repo| repo.id),
     );
     Some(ListedPullRequest {
         number: entry.id,
@@ -446,7 +468,7 @@ pub(super) async fn list_bitbucket(
 ) -> Result<PullRequestPage, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
     let offset = cursor_offset(cursor);
 
@@ -532,7 +554,7 @@ pub(super) async fn find_bitbucket(
 ) -> Result<Option<FoundPullRequest>, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
 
     match &deployment {
@@ -551,8 +573,10 @@ pub(super) async fn find_bitbucket(
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let page: BitbucketCloudPage = read_json(response, "Bitbucket").await?;
-            Ok(pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
-                FoundPullRequest {
+            Ok(pick_bitbucket(
+                page.values,
+                |entry| entry.state.clone(),
+                |entry| FoundPullRequest {
                     number: entry.id,
                     url: entry
                         .links
@@ -561,8 +585,8 @@ pub(super) async fn find_bitbucket(
                         .unwrap_or_else(|| {
                             bitbucket_web_url(&deployment, project, repository, entry.id)
                         }),
-                }
-            }))
+                },
+            ))
         }
         BitbucketDeployment::Server(instance) => {
             let response = client
@@ -580,12 +604,14 @@ pub(super) async fn find_bitbucket(
                 .await
                 .map_err(|e| format!("Network error: {}", e))?;
             let page: BitbucketServerPage = read_json(response, "Bitbucket").await?;
-            Ok(pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
-                FoundPullRequest {
+            Ok(pick_bitbucket(
+                page.values,
+                |entry| entry.state.clone(),
+                |entry| FoundPullRequest {
                     number: entry.id,
                     url: bitbucket_web_url(&deployment, project, repository, entry.id),
-                }
-            }))
+                },
+            ))
         }
     }
 }
@@ -656,7 +682,11 @@ fn bitbucket_cloud_created(
         .and_then(|links| links.html)
         .map(|html| html.href)
         .unwrap_or_else(|| fallback_url.to_string());
-    CreatedPullRequest { number: created.id, url, head_sha: None }
+    CreatedPullRequest {
+        number: created.id,
+        url,
+        head_sha: None,
+    }
 }
 
 fn bitbucket_server_created(
@@ -668,7 +698,11 @@ fn bitbucket_server_created(
         .and_then(|links| links.self_links.into_iter().flatten().next())
         .map(|link| link.href)
         .unwrap_or_else(|| fallback_url.to_string());
-    CreatedPullRequest { number: created.id, url, head_sha: None }
+    CreatedPullRequest {
+        number: created.id,
+        url,
+        head_sha: None,
+    }
 }
 
 pub(super) async fn create_bitbucket(
@@ -698,7 +732,7 @@ pub(super) async fn create_bitbucket(
         ),
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .post(url)
         .header("Authorization", format!("Bearer {}", target.token))
         .json(&payload)
@@ -729,7 +763,7 @@ pub(super) async fn fetch_bitbucket(
 ) -> Result<PullRequestDetail, String> {
     let deployment = bitbucket_deployment(&target.config.host, target.instance_url)?;
     let (project, repository) = bitbucket_repository_path(&target.config.project_path)?;
-    let client = build_http_client()?;
+    let client = http_client()?;
     let auth = format!("Bearer {}", target.token);
 
     match &deployment {
@@ -792,7 +826,7 @@ pub(super) async fn ci_bitbucket(
         ),
     };
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("Authorization", format!("Bearer {}", target.token))
         .send()
@@ -828,9 +862,14 @@ mod tests {
         )
         .expect("body should parse");
 
-        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
-            FoundPullRequest { number: entry.id, url: String::new() }
-        });
+        let found = pick_bitbucket(
+            page.values,
+            |entry| entry.state.clone(),
+            |entry| FoundPullRequest {
+                number: entry.id,
+                url: String::new(),
+            },
+        );
         assert_eq!(found.map(|found| found.number), Some(164));
     }
 
@@ -846,9 +885,14 @@ mod tests {
         )
         .expect("body should parse");
 
-        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
-            FoundPullRequest { number: entry.id, url: String::new() }
-        });
+        let found = pick_bitbucket(
+            page.values,
+            |entry| entry.state.clone(),
+            |entry| FoundPullRequest {
+                number: entry.id,
+                url: String::new(),
+            },
+        );
         assert_eq!(found.map(|found| found.number), Some(164));
     }
 
@@ -860,18 +904,28 @@ mod tests {
             serde_json::from_str(r#"{"values":[{"id":161,"title":"Done","state":"MERGED"}]}"#)
                 .expect("body should parse");
 
-        let found = pick_bitbucket(page.values, |entry| entry.state.clone(), |entry| {
-            FoundPullRequest { number: entry.id, url: String::new() }
-        });
+        let found = pick_bitbucket(
+            page.values,
+            |entry| entry.state.clone(),
+            |entry| FoundPullRequest {
+                number: entry.id,
+                url: String::new(),
+            },
+        );
         assert_eq!(found.map(|found| found.number), Some(161));
     }
 
     /// A branch with no pull request is `None`, not an error — the card is simply absent.
     #[test]
     fn a_branch_with_no_pull_request_is_not_an_error() {
-        let found = pick_bitbucket(Vec::<BitbucketCloudListEntry>::new(), |_| String::new(), |_| {
-            FoundPullRequest { number: 0, url: String::new() }
-        });
+        let found = pick_bitbucket(
+            Vec::<BitbucketCloudListEntry>::new(),
+            |_| String::new(),
+            |_| FoundPullRequest {
+                number: 0,
+                url: String::new(),
+            },
+        );
         assert!(found.is_none());
     }
 
@@ -882,10 +936,16 @@ mod tests {
     #[test]
     fn a_bitbucket_server_remote_hides_its_project_key_behind_scm() {
         // Cloud, and Server over SSH, both arrive as a plain pair.
-        assert_eq!(bitbucket_repository_path("workspace/repo"), Ok(("workspace", "repo")));
+        assert_eq!(
+            bitbucket_repository_path("workspace/repo"),
+            Ok(("workspace", "repo"))
+        );
         assert_eq!(bitbucket_repository_path("PROJ/repo"), Ok(("PROJ", "repo")));
 
-        assert_eq!(bitbucket_repository_path("scm/PROJ/repo"), Ok(("PROJ", "repo")));
+        assert_eq!(
+            bitbucket_repository_path("scm/PROJ/repo"),
+            Ok(("PROJ", "repo"))
+        );
         assert_eq!(
             bitbucket_repository_path("bitbucket/scm/PROJ/repo"),
             Ok(("PROJ", "repo")),
@@ -975,7 +1035,10 @@ mod tests {
         };
         let owner = r#","repository":{"full_name":"owner/repo"}"#;
         assert!(!cloud(owner, owner));
-        assert!(cloud(r#","repository":{"full_name":"contributor/repo"}"#, owner));
+        assert!(cloud(
+            r#","repository":{"full_name":"contributor/repo"}"#,
+            owner
+        ));
         assert!(cloud("", owner), "unanswered must read as a fork");
 
         let server = |from: &str, to: &str| {
@@ -987,9 +1050,18 @@ mod tests {
             );
             server_listed(&body).pop().expect("one row").from_fork
         };
-        assert!(!server(r#","repository":{"id":7}"#, r#","repository":{"id":7}"#));
-        assert!(server(r#","repository":{"id":9}"#, r#","repository":{"id":7}"#));
-        assert!(server("", r#","repository":{"id":7}"#), "unanswered must read as a fork");
+        assert!(!server(
+            r#","repository":{"id":7}"#,
+            r#","repository":{"id":7}"#
+        ));
+        assert!(server(
+            r#","repository":{"id":9}"#,
+            r#","repository":{"id":7}"#
+        ));
+        assert!(
+            server("", r#","repository":{"id":7}"#),
+            "unanswered must read as a fork"
+        );
     }
 
     /// Cloud nests the branch two levels down and takes the browser URL from the entry itself.
@@ -1031,15 +1103,24 @@ mod tests {
                  "toRef":{"displayId":"main","id":"refs/heads/main"}}]}"#,
         );
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].head_branch, "feature", "the bare name, not the ref");
+        assert_eq!(
+            listed[0].head_branch, "feature",
+            "the bare name, not the ref"
+        );
         assert_eq!(listed[0].base_branch.as_deref(), Some("main"));
         assert_eq!(
             listed[0].head_sha.as_deref(),
             Some("babecafebabecafebabecafebabecafebabecafe")
         );
-        assert_eq!(listed[0].url, "https://bb.corp/projects/PROJ/repos/repo/pull-requests/7");
+        assert_eq!(
+            listed[0].url,
+            "https://bb.corp/projects/PROJ/repos/repo/pull-requests/7"
+        );
         assert!(
-            listed[0].created_at.as_deref().is_some_and(|at| at.starts_with("2026-")),
+            listed[0]
+                .created_at
+                .as_deref()
+                .is_some_and(|at| at.starts_with("2026-")),
             "epoch millis have to become RFC 3339: {:?}",
             listed[0].created_at
         );
@@ -1058,17 +1139,32 @@ mod tests {
     /// closed one is on GitHub. Reading it as still open would leave the task waiting forever.
     #[test]
     fn a_declined_pull_request_is_not_one_still_open() {
-        assert_eq!(cloud_details(r#"{"state":"OPEN"}"#).state, PullRequestState::Open);
-        assert_eq!(cloud_details(r#"{"state":"MERGED"}"#).state, PullRequestState::Merged);
-        assert_eq!(cloud_details(r#"{"state":"DECLINED"}"#).state, PullRequestState::Closed);
+        assert_eq!(
+            cloud_details(r#"{"state":"OPEN"}"#).state,
+            PullRequestState::Open
+        );
+        assert_eq!(
+            cloud_details(r#"{"state":"MERGED"}"#).state,
+            PullRequestState::Merged
+        );
+        assert_eq!(
+            cloud_details(r#"{"state":"DECLINED"}"#).state,
+            PullRequestState::Closed
+        );
         assert_eq!(
             cloud_details(r#"{"state":"SUPERSEDED"}"#).state,
             PullRequestState::Closed,
             "undocumented, but it will never merge either"
         );
-        assert_eq!(server_details(r#"{"state":"DECLINED"}"#).state, PullRequestState::Closed);
+        assert_eq!(
+            server_details(r#"{"state":"DECLINED"}"#).state,
+            PullRequestState::Closed
+        );
 
-        assert_eq!(cloud_details(r#"{"state":"merged"}"#).state, PullRequestState::Merged);
+        assert_eq!(
+            cloud_details(r#"{"state":"merged"}"#).state,
+            PullRequestState::Merged
+        );
         assert_eq!(
             cloud_details(r#"{"state":"SOMETHING_NEW"}"#).state,
             PullRequestState::Open,
@@ -1081,14 +1177,18 @@ mod tests {
     /// has to tolerate `None` rather than treat it as a conflict.
     #[test]
     fn the_two_bitbuckets_hide_the_head_commit_in_different_places() {
-        let cloud = cloud_details(r#"{"state":"OPEN","source":{"commit":{"hash":"310ca98b14f0"}}}"#);
+        let cloud =
+            cloud_details(r#"{"state":"OPEN","source":{"commit":{"hash":"310ca98b14f0"}}}"#);
         assert_eq!(cloud.head_sha.as_deref(), Some("310ca98b14f0"));
         assert_eq!(cloud.mergeable, None);
 
         let server = server_details(
             r#"{"state":"OPEN","fromRef":{"latestCommit":"ef8755f06ee4b28c96a847a95cb8ec8ed6ddd1ca"}}"#,
         );
-        assert_eq!(server.head_sha.as_deref(), Some("ef8755f06ee4b28c96a847a95cb8ec8ed6ddd1ca"));
+        assert_eq!(
+            server.head_sha.as_deref(),
+            Some("ef8755f06ee4b28c96a847a95cb8ec8ed6ddd1ca")
+        );
         assert_eq!(server.mergeable, None);
 
         assert_eq!(cloud_details(r#"{"state":"OPEN"}"#).head_sha, None);
@@ -1114,26 +1214,44 @@ mod tests {
     /// Review that `reconcile_pull_requests` can never pick up — worse than a synthesised URL.
     #[test]
     fn a_pull_request_that_exists_is_never_thrown_away_over_a_missing_link() {
-        let cloud = cloud_created(r#"{"id":7,"links":{"html":{"href":"https://bitbucket.org/w/r/pull-requests/7"}}}"#);
+        let cloud = cloud_created(
+            r#"{"id":7,"links":{"html":{"href":"https://bitbucket.org/w/r/pull-requests/7"}}}"#,
+        );
         assert_eq!(cloud.number, 7);
         assert_eq!(cloud.url, "https://bitbucket.org/w/r/pull-requests/7");
 
-        assert_eq!(cloud_created(r#"{"id":7}"#).url, "https://fallback.example/pr");
-        assert_eq!(cloud_created(r#"{"id":7}"#).number, 7, "the id still has to survive");
+        assert_eq!(
+            cloud_created(r#"{"id":7}"#).url,
+            "https://fallback.example/pr"
+        );
+        assert_eq!(
+            cloud_created(r#"{"id":7}"#).number,
+            7,
+            "the id still has to survive"
+        );
 
         let server = server_created(
             r#"{"id":9,"links":{"self":[{"href":"https://bb.corp/projects/P/repos/r/pull-requests/9"}]}}"#,
         );
         assert_eq!(server.number, 9);
-        assert_eq!(server.url, "https://bb.corp/projects/P/repos/r/pull-requests/9");
+        assert_eq!(
+            server.url,
+            "https://bb.corp/projects/P/repos/r/pull-requests/9"
+        );
 
         assert_eq!(
             server_created(r#"{"id":9,"links":{"self":[null]}}"#).url,
             "https://fallback.example/pr",
             "Atlassian's own published examples contain this shape"
         );
-        assert_eq!(server_created(r#"{"id":9,"links":{"self":[]}}"#).url, "https://fallback.example/pr");
-        assert_eq!(server_created(r#"{"id":9}"#).url, "https://fallback.example/pr");
+        assert_eq!(
+            server_created(r#"{"id":9,"links":{"self":[]}}"#).url,
+            "https://fallback.example/pr"
+        );
+        assert_eq!(
+            server_created(r#"{"id":9}"#).url,
+            "https://fallback.example/pr"
+        );
     }
 
     fn build(state: &str, key: &str, name: Option<&str>) -> BitbucketBuildStatus {

@@ -6,11 +6,12 @@
 use serde::Deserialize;
 
 use super::{
-    CheckStatus, CiState, CreatedPullRequest, FoundPullRequest, LIST_PAGE_SIZE, ListedPullRequest,
-    PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
     cursor_offset, header_total, instance_base, next_offset_cursor, offset_page, read_json,
+    CheckStatus, CiState, CreatedPullRequest, FoundPullRequest, ListedPullRequest,
+    PullRequestCheck, PullRequestDetail, PullRequestPage, PullRequestState, PullRequestTarget,
+    LIST_PAGE_SIZE,
 };
-use crate::integration::build_http_client;
+use crate::integration::http_client;
 
 #[derive(Deserialize)]
 struct GitLabMergeRequest {
@@ -98,8 +99,11 @@ pub(super) async fn create_gitlab(
     // is why `project_path` is kept rather than just owner/repo.
     let project = urlencoding::encode(&target.config.project_path);
 
-    let response = build_http_client()?
-        .post(format!("{}/api/v4/projects/{}/merge_requests", instance, project))
+    let response = http_client()?
+        .post(format!(
+            "{}/api/v4/projects/{}/merge_requests",
+            instance, project
+        ))
         .header("PRIVATE-TOKEN", target.token)
         .json(&serde_json::json!({
             "source_branch": head,
@@ -112,7 +116,11 @@ pub(super) async fn create_gitlab(
         .map_err(|e| format!("Network error: {}", e))?;
 
     let created: GitLabMergeRequest = read_json(response, "GitLab").await?;
-    Ok(CreatedPullRequest { number: created.iid, url: created.web_url, head_sha: None })
+    Ok(CreatedPullRequest {
+        number: created.iid,
+        url: created.web_url,
+        head_sha: None,
+    })
 }
 
 pub(super) async fn fetch_gitlab(
@@ -125,7 +133,7 @@ pub(super) async fn fetch_gitlab(
         urlencoding::encode(&target.config.project_path),
         number
     );
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("PRIVATE-TOKEN", target.token)
         .send()
@@ -206,7 +214,7 @@ pub(super) async fn list_gitlab(
         url.push_str(&format!("&in=title&search={}", urlencoding::encode(term)));
     }
 
-    let response = build_http_client()?
+    let response = http_client()?
         .get(url)
         .header("PRIVATE-TOKEN", target.token)
         .send()
@@ -220,7 +228,10 @@ pub(super) async fn list_gitlab(
 
     let returned = entries.len();
     Ok(PullRequestPage {
-        items: entries.into_iter().filter_map(list_entry_to_listed).collect(),
+        items: entries
+            .into_iter()
+            .filter_map(list_entry_to_listed)
+            .collect(),
         next_cursor: next_offset_cursor(returned, offset),
         total,
     })
@@ -241,7 +252,7 @@ pub(super) async fn find_gitlab(
     );
 
     let mut entries: Vec<GitLabListEntry> = read_json(
-        build_http_client()?
+        http_client()?
             .get(url)
             .header("PRIVATE-TOKEN", target.token)
             .send()
@@ -256,9 +267,15 @@ pub(super) async fn find_gitlab(
     }
     // Opened wins over merged or closed, whatever order GitLab returned them in — the card is about
     // what is happening now, not what happened three weeks ago.
-    let index = entries.iter().position(|entry| entry.state == "opened").unwrap_or(0);
+    let index = entries
+        .iter()
+        .position(|entry| entry.state == "opened")
+        .unwrap_or(0);
     let entry = entries.swap_remove(index);
-    Ok(Some(FoundPullRequest { number: entry.iid, url: entry.web_url }))
+    Ok(Some(FoundPullRequest {
+        number: entry.iid,
+        url: entry.web_url,
+    }))
 }
 
 /// GitLab answers at the pipeline level, not the job level, so there is exactly one "check" here
@@ -274,14 +291,17 @@ pub(super) async fn checks_gitlab(
         CiState::Pending => CheckStatus::Running,
         CiState::Unknown => return Ok(Vec::new()),
     };
-    Ok(vec![PullRequestCheck { name: "pipeline".to_string(), status }])
+    Ok(vec![PullRequestCheck {
+        name: "pipeline".to_string(),
+        status,
+    }])
 }
 
 pub(super) async fn ci_gitlab(
     target: &PullRequestTarget<'_>,
     number: i64,
 ) -> Result<CiState, String> {
-    let response = build_http_client()?
+    let response = http_client()?
         .get(format!(
             "{}/api/v4/projects/{}/merge_requests/{}",
             instance_base(target),
@@ -297,7 +317,11 @@ pub(super) async fn ci_gitlab(
         Some(status) => match status.as_str() {
             "success" => CiState::Passing,
             "failed" | "canceled" => CiState::Failing(vec![format!("pipeline {}", status)]),
-            "running" | "pending" | "created" | "waiting_for_resource" | "preparing"
+            "running"
+            | "pending"
+            | "created"
+            | "waiting_for_resource"
+            | "preparing"
             | "scheduled" => CiState::Pending,
             _ => CiState::Unknown,
         },
@@ -311,7 +335,10 @@ mod tests {
 
     fn listed(body: &str) -> Vec<ListedPullRequest> {
         let entries: Vec<GitLabListEntry> = serde_json::from_str(body).expect("body should parse");
-        entries.into_iter().filter_map(list_entry_to_listed).collect()
+        entries
+            .into_iter()
+            .filter_map(list_entry_to_listed)
+            .collect()
     }
 
     /// GitLab names the branches at the top level rather than nesting them, and calls the number
@@ -350,7 +377,9 @@ mod tests {
             listed(&body).pop().expect("one row").from_fork
         };
 
-        assert!(!from_fork(r#","source_project_id":7,"target_project_id":7"#));
+        assert!(!from_fork(
+            r#","source_project_id":7,"target_project_id":7"#
+        ));
         assert!(from_fork(r#","source_project_id":9,"target_project_id":7"#));
         assert!(!from_fork(r#","source_project_id":7,"project_id":7"#));
         assert!(from_fork(r#","source_project_id":9,"project_id":7"#));

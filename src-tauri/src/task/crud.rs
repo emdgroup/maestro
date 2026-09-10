@@ -1,20 +1,23 @@
+use crate::core::AppState;
+use crate::models::{BranchMode, Task, TaskStatus, WorkspaceMode, TASK_SELECT};
+use crate::task::transition::{self, TaskTransition};
+use chrono::Utc;
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use chrono::Utc;
-use crate::models::{BranchMode, Task, TaskStatus, WorkspaceMode, TASK_SELECT};
-use crate::core::AppState;
-use crate::task::transition::{self, TaskTransition};
 
 /// Get list of all tasks for a project
 #[tauri::command]
 #[specta::specta]
-pub fn get_tasks(
-    app_state: State<Arc<AppState>>,
-    project_id: i32,
-) -> Result<Vec<Task>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+pub fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
-    let query = format!("{} WHERE project_id = ? ORDER BY created_at DESC", TASK_SELECT);
+    let query = format!(
+        "{} WHERE project_id = ? ORDER BY created_at DESC",
+        TASK_SELECT
+    );
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
 
     let tasks = stmt
@@ -52,14 +55,18 @@ fn create_task_impl(
 
     let description = description.and_then(|d| {
         let trimmed = d.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     });
 
     let now = Utc::now().to_rfc3339();
-    let skills_json = serde_json::to_string(&skills)
-        .map_err(|e| format!("JSON serialization failed: {}", e))?;
-    let labels_json = serde_json::to_string(&labels)
-        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    let skills_json =
+        serde_json::to_string(&skills).map_err(|e| format!("JSON serialization failed: {}", e))?;
+    let labels_json =
+        serde_json::to_string(&labels).map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     conn.execute(
         "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
@@ -67,7 +74,12 @@ fn create_task_impl(
          workspace_branch_mode, workspace_branch, model_override, labels, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
-            project_id, &title, &description, &skills_json, "Planning", &base_branch,
+            project_id,
+            &title,
+            &description,
+            &skills_json,
+            "Planning",
+            &base_branch,
             &agent_id,
             priority.as_deref().unwrap_or("Medium"),
             auto_approve,
@@ -86,7 +98,8 @@ fn create_task_impl(
             },
             &model_override,
             &labels_json,
-            &now, &now
+            &now,
+            &now
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -123,7 +136,10 @@ pub fn create_task(
     app_state: State<Arc<AppState>>,
     request: CreateTaskRequest,
 ) -> Result<Task, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let task = create_task_impl(
         &conn,
         request.project_id,
@@ -178,7 +194,10 @@ pub fn update_task(
     updates: UpdateTaskRequest,
 ) -> Result<Task, String> {
     let task = {
-        let mut conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let mut conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         update_task_impl(&mut conn, task_id, updates)?
     };
     app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -193,7 +212,9 @@ fn update_task_impl(
     let now = Utc::now().to_rfc3339();
 
     // Build SET clause dynamically from non-None fields, wrapped in a transaction
-    let tx = conn.transaction().map_err(|e| format!("Transaction failed: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Transaction failed: {}", e))?;
 
     let mut set_parts: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -290,7 +311,8 @@ fn update_task_impl(
 
     // Read back inside the same transaction before committing — avoids re-locking the mutex
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = tx.query_row(&query, [task_id], Task::from_row)
+    let task = tx
+        .query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
@@ -301,11 +323,11 @@ fn update_task_impl(
 /// Cancel a task: sets status=Cancelled and archived_at in one statement
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_task(
-    app_state: State<Arc<AppState>>,
-    task_id: i32,
-) -> Result<Task, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+pub fn cancel_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<Task, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     // Archive first so the transition's read-back returns the finished row.
@@ -323,11 +345,11 @@ pub fn cancel_task(
 /// Archive a task by setting its archived_at timestamp
 #[tauri::command]
 #[specta::specta]
-pub fn archive_task(
-    app_state: State<Arc<AppState>>,
-    task_id: i32,
-) -> Result<Task, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+pub fn archive_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<Task, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     conn.execute(
@@ -337,7 +359,8 @@ pub fn archive_task(
     .map_err(|e| e.to_string())?;
 
     let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn.query_row(&query, [task_id], Task::from_row)
+    let task = conn
+        .query_row(&query, [task_id], Task::from_row)
         .map_err(|e| e.to_string())?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(task)
@@ -347,7 +370,10 @@ pub fn archive_task(
 #[tauri::command]
 #[specta::specta]
 pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])
         .map_err(|e| e.to_string())?;
     app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -373,7 +399,10 @@ pub fn set_task_profile_overrides(
     overrides: std::collections::HashMap<String, String>,
 ) -> Result<(), String> {
     {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         store_profile_overrides(&conn, task_id, &overrides)?;
     }
     app_state.app_handle.emit("tasks-changed", ()).ok();
@@ -411,7 +440,10 @@ pub fn update_task_settings(
     task_id: i32,
     settings: crate::models::TaskConfigRequest,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     let mcp_allowlist_value = settings
@@ -440,8 +472,8 @@ pub fn update_task_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
     use crate::core::schema::initialize_schema;
+    use rusqlite::Connection;
 
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -469,20 +501,35 @@ mod tests {
         let conn = test_db();
         let project_id = insert_project(&conn);
         let task = create_task_impl(
-            &conn, project_id, "Valid Task Name".to_string(),
+            &conn,
+            project_id,
+            "Valid Task Name".to_string(),
             None,
-            vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            vec![],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap();
-        assert!(task.profile_overrides.is_none(), "a new task defers to the project");
+        assert!(
+            task.profile_overrides.is_none(),
+            "a new task defers to the project"
+        );
 
         let overrides = HashMap::from([("Reviewer".to_string(), "strict-reviewer".to_string())]);
         store_profile_overrides(&conn, task.id, &overrides).unwrap();
 
         let query = format!("{} WHERE id = ?", crate::models::TASK_SELECT);
-        let stored: crate::models::Task =
-            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        let stored: crate::models::Task = conn
+            .query_row(&query, [task.id], crate::models::Task::from_row)
+            .unwrap();
         let parsed: HashMap<String, String> =
             serde_json::from_str(stored.profile_overrides.as_deref().unwrap()).unwrap();
         assert_eq!(parsed, overrides);
@@ -490,8 +537,9 @@ mod tests {
         // Clearing the last override returns the task to "the project decides", which has to be
         // NULL rather than "{}" or two values would mean the same thing.
         store_profile_overrides(&conn, task.id, &HashMap::new()).unwrap();
-        let cleared: crate::models::Task =
-            conn.query_row(&query, [task.id], crate::models::Task::from_row).unwrap();
+        let cleared: crate::models::Task = conn
+            .query_row(&query, [task.id], crate::models::Task::from_row)
+            .unwrap();
         assert_eq!(cleared.profile_overrides, None);
     }
 
@@ -500,10 +548,21 @@ mod tests {
         let conn = test_db();
         let project_id = insert_project(&conn);
         let err = create_task_impl(
-            &conn, project_id, "ab".to_string(),
+            &conn,
+            project_id,
+            "ab".to_string(),
             Some("valid description here".to_string()),
-            vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            vec![],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap_err();
         assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
@@ -514,10 +573,21 @@ mod tests {
         let conn = test_db();
         let project_id = insert_project(&conn);
         let task = create_task_impl(
-            &conn, project_id, "Valid Task Name".to_string(),
+            &conn,
+            project_id,
+            "Valid Task Name".to_string(),
             None,
-            vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            vec![],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -529,11 +599,21 @@ mod tests {
         let conn = test_db();
         let project_id = insert_project(&conn);
         let task = create_task_impl(
-            &conn, project_id,
+            &conn,
+            project_id,
             "Valid Task Name".to_string(),
             Some("This is a valid description.".to_string()),
-            vec!["rust".to_string()], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            vec!["rust".to_string()],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(task.title, "Valid Task Name");
@@ -546,18 +626,33 @@ mod tests {
         let conn = test_db();
         let project_id = insert_project(&conn);
         let task = create_task_impl(
-            &conn, project_id,
+            &conn,
+            project_id,
             "Task to Delete".to_string(),
             Some("This task will be deleted.".to_string()),
-            vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            vec![],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap();
 
-        conn.execute("DELETE FROM tasks WHERE id = ?", [task.id]).unwrap();
+        conn.execute("DELETE FROM tasks WHERE id = ?", [task.id])
+            .unwrap();
 
         let count: i32 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?", [task.id], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE id = ?",
+                [task.id],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
     }
@@ -565,9 +660,21 @@ mod tests {
     fn archived_task(conn: &Connection) -> i32 {
         let project_id = insert_project(conn);
         let task = create_task_impl(
-            conn, project_id, "Archived task".to_string(), None,
-            vec![], vec![], "main".to_string(),
-            None, None, false, WorkspaceMode::NewWorktree, None, BranchMode::Create, None, None,
+            conn,
+            project_id,
+            "Archived task".to_string(),
+            None,
+            vec![],
+            vec![],
+            "main".to_string(),
+            None,
+            None,
+            false,
+            WorkspaceMode::NewWorktree,
+            None,
+            BranchMode::Create,
+            None,
+            None,
         )
         .unwrap();
         conn.execute(
@@ -579,12 +686,19 @@ mod tests {
     }
 
     fn archived_at(conn: &Connection, task_id: i32) -> Option<String> {
-        conn.query_row("SELECT archived_at FROM tasks WHERE id = ?", [task_id], |row| row.get(0))
-            .unwrap()
+        conn.query_row(
+            "SELECT archived_at FROM tasks WHERE id = ?",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     fn move_to(status: &str) -> UpdateTaskRequest {
-        UpdateTaskRequest { status: Some(status.to_string()), ..Default::default() }
+        UpdateTaskRequest {
+            status: Some(status.to_string()),
+            ..Default::default()
+        }
     }
 
     /// Done is the only column filtered on `archived_at`, so an archived task moved back onto the

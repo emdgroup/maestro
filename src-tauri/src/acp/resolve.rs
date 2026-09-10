@@ -24,7 +24,10 @@ pub fn resolve_server_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         let name = "maestro-server.exe";
         #[cfg(not(windows))]
         let name = "maestro-server";
-        let p = std::path::Path::new(&home).join(".local").join("bin").join(name);
+        let p = std::path::Path::new(&home)
+            .join(".local")
+            .join("bin")
+            .join(name);
         if p.exists() {
             return Ok(p);
         }
@@ -40,6 +43,5 @@ pub fn resolve_server_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    which::which("maestro-server")
-        .map_err(|e| format!("maestro-server not found: {}", e))
+    which::which("maestro-server").map_err(|e| format!("maestro-server not found: {}", e))
 }

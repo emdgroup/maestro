@@ -25,7 +25,11 @@ impl fmt::Display for SshError {
             SshError::AuthenticationError(msg) => write!(f, "SSH Authentication Error: {}", msg),
             SshError::PermissionError(msg) => write!(f, "SSH Permission Error: {}", msg),
             SshError::CommandExecutionError { exit_code, stderr } => {
-                write!(f, "SSH Command Failed (exit code {}): {}", exit_code, stderr)
+                write!(
+                    f,
+                    "SSH Command Failed (exit code {}): {}",
+                    exit_code, stderr
+                )
             }
             SshError::HostKeyError(msg) => write!(f, "SSH Host Key Error: {}", msg),
             SshError::UnknownError(msg) => write!(f, "SSH Error: {}", msg),
@@ -44,8 +48,6 @@ pub fn is_transient_error(error: &SshError) -> bool {
 pub fn is_permanent_error(error: &SshError) -> bool {
     matches!(
         error,
-        SshError::AuthenticationError(_)
-            | SshError::PermissionError(_)
-            | SshError::HostKeyError(_)
+        SshError::AuthenticationError(_) | SshError::PermissionError(_) | SshError::HostKeyError(_)
     )
 }

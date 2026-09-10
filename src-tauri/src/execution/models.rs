@@ -45,7 +45,7 @@ pub struct AheadBehind {
 pub struct Worktree {
     pub id: i32,
     pub project_id: i32,
-    pub task_id: Option<i32>,       // nullable — None for manually created worktrees
+    pub task_id: Option<i32>, // nullable — None for manually created worktrees
     pub branch_name: String,
     pub base_branch: Option<String>, // origin branch this worktree was created from
     pub path: String,
@@ -57,18 +57,18 @@ pub struct Worktree {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct WorktreeWithStatus {
-    pub id: Option<i32>,                 // None if orphan (on-disk but no DB row)
+    pub id: Option<i32>, // None if orphan (on-disk but no DB row)
     pub project_id: Option<i32>,
     pub task_id: Option<i32>,
     pub branch_name: String,
     pub path: String,
-    pub changed_files_count: u32,        // number of changed + untracked files; 0 if clean
+    pub changed_files_count: u32, // number of changed + untracked files; 0 if clean
     pub created_at: Option<String>,
-    pub task_name: Option<String>,       // from tasks table join
-    pub is_zombie: bool,                 // task_id IS NULL AND path matches agent convention
-    pub is_orphan: bool,                 // on-disk but not in DB
-    pub diff_stat: Option<String>,       // raw output of `git diff HEAD --shortstat`; None if clean
-    pub base_branch: Option<String>,     // origin branch persisted at worktree creation time
+    pub task_name: Option<String>,         // from tasks table join
+    pub is_zombie: bool,                   // task_id IS NULL AND path matches agent convention
+    pub is_orphan: bool,                   // on-disk but not in DB
+    pub diff_stat: Option<String>, // raw output of `git diff HEAD --shortstat`; None if clean
+    pub base_branch: Option<String>, // origin branch persisted at worktree creation time
     pub ahead_behind: Option<AheadBehind>, // ahead/behind counts vs upstream tracking branch
     /// Commits this worktree's branch has that its base branch does not — the work done here.
     /// `None` when there is no base branch to count against, or it no longer resolves.

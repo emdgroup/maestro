@@ -39,9 +39,7 @@ pub async fn attach_remote_stream_listener(
 ///
 /// # Returns
 /// Result indicating successful process termination
-pub async fn stop_remote_stream(
-    handle: &RemoteProcessHandle,
-) -> Result<(), String> {
+pub async fn stop_remote_stream(handle: &RemoteProcessHandle) -> Result<(), String> {
     // Kill the remote process — the poll loop in attach_remote_stream_listener
     // will detect the process exit and stop naturally.
     crate::execution::remote::kill_remote_process(handle).await

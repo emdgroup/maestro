@@ -943,10 +943,10 @@ mod tests {
     fn roundtrip_permission_request() {
         let msg =
             MaestroRpcMessage::Response(ServerResponse::PermissionRequest(PermissionRequest {
-            session_id: "sess-1".to_string(),
-            request_id: "perm-42".to_string(),
-            payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
-        }));
+                session_id: "sess-1".to_string(),
+                request_id: "perm-42".to_string(),
+                payload: serde_json::json!({"tool": "write_file", "path": "/tmp/foo.txt"}),
+            }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1193,19 +1193,19 @@ mod tests {
     fn roundtrip_pre_initialize_ok() {
         let msg =
             MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(PreInitializeResponse {
-            agent_id: "claude-acp".to_string(),
-            prompt_capabilities: Some(PromptCapabilitiesInfo {
-                embedded_context: true,
-                image: false,
-                audio: false,
-            }),
-            supports_session_list: true,
-            supports_session_load: true,
-            supports_session_close: false,
-            supports_session_delete: false,
-            auth_methods: vec![],
-            supports_auth_logout: false,
-        }));
+                agent_id: "claude-acp".to_string(),
+                prompt_capabilities: Some(PromptCapabilitiesInfo {
+                    embedded_context: true,
+                    image: false,
+                    audio: false,
+                }),
+                supports_session_list: true,
+                supports_session_load: true,
+                supports_session_close: false,
+                supports_session_delete: false,
+                auth_methods: vec![],
+                supports_auth_logout: false,
+            }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1215,10 +1215,10 @@ mod tests {
     fn roundtrip_agent_connection_lost() {
         let msg =
             MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(AgentConnectionLost {
-            agent_id: "claude-acp".to_string(),
-            reason: "agent process exited unexpectedly".to_string(),
-            affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
-        }));
+                agent_id: "claude-acp".to_string(),
+                reason: "agent process exited unexpectedly".to_string(),
+                affected_session_ids: vec!["session-1".to_string(), "session-2".to_string()],
+            }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
@@ -1238,22 +1238,22 @@ mod tests {
     fn roundtrip_detect_installed_agents_ok() {
         let msg = MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(
             DetectInstalledAgentsResponse {
-            agents: vec![
-                DetectedAgentInfo {
-                    agent_id: "claude-acp".to_string(),
-                    tool_name: "Claude Code".to_string(),
-                    binary_found: true,
-                    binary_path: Some("/usr/local/bin/claude".to_string()),
-                    config_dir_found: true,
-                },
-                DetectedAgentInfo {
-                    agent_id: "github-copilot-cli".to_string(),
-                    tool_name: "GitHub Copilot".to_string(),
-                    binary_found: false,
-                    binary_path: None,
-                    config_dir_found: true,
-                },
-            ],
+                agents: vec![
+                    DetectedAgentInfo {
+                        agent_id: "claude-acp".to_string(),
+                        tool_name: "Claude Code".to_string(),
+                        binary_found: true,
+                        binary_path: Some("/usr/local/bin/claude".to_string()),
+                        config_dir_found: true,
+                    },
+                    DetectedAgentInfo {
+                        agent_id: "github-copilot-cli".to_string(),
+                        tool_name: "GitHub Copilot".to_string(),
+                        binary_found: false,
+                        binary_path: None,
+                        config_dir_found: true,
+                    },
+                ],
                 all_checked_ids: vec![
                     "claude-acp".to_string(),
                     "github-copilot-cli".to_string(),
@@ -1270,7 +1270,7 @@ mod tests {
     fn roundtrip_detect_project_agents_request() {
         let msg = MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(
             DetectProjectAgentsRequest {
-            cwd: "/home/user/project".to_string(),
+                cwd: "/home/user/project".to_string(),
             },
         ));
         let json = serde_json::to_string(&msg).unwrap();
@@ -1313,7 +1313,7 @@ mod tests {
                     agent_id: "claude-acp".to_string(),
                     markers_found: vec!["CLAUDE.md".to_string(), ".claude/".to_string()],
                 }],
-                },
+            },
         ));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();

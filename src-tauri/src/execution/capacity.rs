@@ -152,8 +152,9 @@ pub async fn available_memory_mb(conn: &crate::models::GitConnection) -> Option<
         return Some(local_available_memory_mb());
     }
 
-    let output =
-        crate::connectivity::exec_channel::run_on(conn, None, "cat", &["/proc/meminfo"]).await.ok()?;
+    let output = crate::connectivity::exec_channel::run_on(conn, None, "cat", &["/proc/meminfo"])
+        .await
+        .ok()?;
 
     if !output.success() {
         return None;
@@ -227,8 +228,16 @@ mod tests {
     fn an_unmeasurable_host_falls_back_to_the_fixed_limit() {
         let capacity = resolve_capacity(ConcurrencyMode::Auto, 3, None);
         assert_eq!(capacity.slots, 3);
-        assert_eq!(capacity.mode, ConcurrencyMode::Hard, "the UI must not claim this was measured");
-        assert!(capacity.reason.contains("could not be read"), "{}", capacity.reason);
+        assert_eq!(
+            capacity.mode,
+            ConcurrencyMode::Hard,
+            "the UI must not claim this was measured"
+        );
+        assert!(
+            capacity.reason.contains("could not be read"),
+            "{}",
+            capacity.reason
+        );
     }
 
     /// A queue that stopped moving has to say why, or it looks broken.
@@ -236,7 +245,11 @@ mod tests {
     fn no_capacity_explains_itself() {
         let capacity = resolve_capacity(ConcurrencyMode::Auto, 3, Some(1200));
         assert_eq!(capacity.slots, 0);
-        assert!(capacity.reason.contains("1.2 GB free"), "{}", capacity.reason);
+        assert!(
+            capacity.reason.contains("1.2 GB free"),
+            "{}",
+            capacity.reason
+        );
     }
 
     /// A negative stored value would otherwise become a negative slot count and read as
@@ -256,7 +269,10 @@ mod tests {
                        Buffers:          123456 kB\n";
 
         assert_eq!(parse_mem_available_kb(meminfo), Some(5242880));
-        assert_eq!(slots_for_memory(parse_mem_available_kb(meminfo).unwrap() / 1024), 10);
+        assert_eq!(
+            slots_for_memory(parse_mem_available_kb(meminfo).unwrap() / 1024),
+            10
+        );
     }
 
     /// `sysinfo` reports bytes, `/proc/meminfo` reports kB, and this function returns MB — three
@@ -283,6 +299,9 @@ mod tests {
     fn meminfo_parsing_reports_nothing_it_cannot_read() {
         assert_eq!(parse_mem_available_kb(""), None);
         assert_eq!(parse_mem_available_kb("MemFree: 204532 kB\n"), None);
-        assert_eq!(parse_mem_available_kb("MemAvailable:    not-a-number kB\n"), None);
+        assert_eq!(
+            parse_mem_available_kb("MemAvailable:    not-a-number kB\n"),
+            None
+        );
     }
 }

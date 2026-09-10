@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
 
-use crate::core::AppState;
 use crate::core::connection::get_project_with_git_conn;
 use crate::core::project_storage::read_maestro_json;
+use crate::core::AppState;
 use crate::git::remote::{
-    pick_remote, parse_remote_url, redact_remote_url, url_for_remote, ParsedRemote,
+    parse_remote_url, pick_remote, redact_remote_url, url_for_remote, ParsedRemote,
 };
 use crate::git::run_git_in_dir_lossy;
 use crate::integration::issue_tracking_handlers::{find_integration, provider_for_host};
@@ -126,7 +126,11 @@ pub async fn save_project_code_hosting_config(
     mutate_project_config(&conn, |config| {
         // Clearing is an explicit "not here", so it also opts out of detection — otherwise the
         // next status call would put it straight back.
-        config.code_hosting_auto_detect = if code_hosting.is_none() { Some(false) } else { None };
+        config.code_hosting_auto_detect = if code_hosting.is_none() {
+            Some(false)
+        } else {
+            None
+        };
         config.code_hosting = code_hosting;
         true
     })
@@ -288,10 +292,16 @@ pub async fn code_hosting_status(
     // `None` rather than the project's base: this only asks whether anything is connected, and
     // reporting `NotConnected` for a project whose credential the approve path would go on to find
     // would hide the pull request option over a question that was never asked here.
-    let connected = find_integration(&provider, &remote.host, None, app_state).await.is_some();
+    let connected = find_integration(&provider, &remote.host, None, app_state)
+        .await
+        .is_some();
 
     Ok(CodeHostingStatus {
-        rung: if connected { CodeHostingRung::Ready } else { CodeHostingRung::NotConnected },
+        rung: if connected {
+            CodeHostingRung::Ready
+        } else {
+            CodeHostingRung::NotConnected
+        },
         landing_mode,
         remote: Some(remote_name),
         remote_url: Some(remote_url),
@@ -304,8 +314,9 @@ pub async fn code_hosting_status(
             crate::integration::pull_request::checks_out_fork_pull_requests(&config),
         forge_finds_pull_request_by_branch:
             crate::integration::pull_request::finds_pull_request_by_branch(&config),
-        forge_searches_pull_requests:
-            crate::integration::pull_request::searches_pull_requests(&config),
+        forge_searches_pull_requests: crate::integration::pull_request::searches_pull_requests(
+            &config,
+        ),
         forge_enumerates_checks: crate::integration::pull_request::enumerates_checks(&config),
         config: Some(config),
         applied,
@@ -317,7 +328,10 @@ mod tests {
     use super::*;
 
     fn remote(host: &str, path: &str) -> ParsedRemote {
-        ParsedRemote { host: host.to_string(), path: path.to_string() }
+        ParsedRemote {
+            host: host.to_string(),
+            path: path.to_string(),
+        }
     }
 
     #[test]

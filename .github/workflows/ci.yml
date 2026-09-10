@@ -50,9 +50,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
+
+      # Through the script rather than `cargo fmt` directly, so CI and the command
+      # contributors run locally cannot drift apart. Needs no `bun install`.
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun run format:rust
 
       - run: cargo check --workspace --all-targets
 

@@ -12,14 +12,15 @@ pub async fn list_forgejo_repos(
     app_state: State<'_, Arc<AppState>>,
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("forgejo", &app_state)?;
+    let creds =
+        crate::integration::issue_tracking_handlers::get_integration_creds("forgejo", &app_state)?;
     let instance_url = creds
         .instance_url
         .as_deref()
         .ok_or_else(|| "Forgejo: instance_url missing from stored credentials".to_string())?;
     let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",
@@ -47,7 +48,11 @@ pub async fn list_forgejo_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
+        .map(|r| RepoOption {
+            name: r.name,
+            description: r.description,
+            clone_url: r.clone_url,
+        })
         .collect())
 }
 
@@ -58,14 +63,15 @@ pub async fn list_gitea_repos(
     app_state: State<'_, Arc<AppState>>,
     owner: String,
 ) -> Result<Vec<RepoOption>, String> {
-    let creds = crate::integration::issue_tracking_handlers::get_integration_creds("gitea", &app_state)?;
+    let creds =
+        crate::integration::issue_tracking_handlers::get_integration_creds("gitea", &app_state)?;
     let instance_url = creds
         .instance_url
         .as_deref()
         .ok_or_else(|| "Gitea: instance_url missing from stored credentials".to_string())?;
     let base = crate::integration::normalize_instance_url(instance_url);
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let auth = format!("token {}", creds.token);
     let base_url = format!(
         "{}/api/v1/users/{}/repos?sort=updated",
@@ -93,6 +99,10 @@ pub async fn list_gitea_repos(
 
     Ok(repos
         .into_iter()
-        .map(|r| RepoOption { name: r.name, description: r.description, clone_url: r.clone_url })
+        .map(|r| RepoOption {
+            name: r.name,
+            description: r.description,
+            clone_url: r.clone_url,
+        })
         .collect())
 }

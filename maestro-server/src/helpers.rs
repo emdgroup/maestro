@@ -15,7 +15,40 @@ pub(crate) static DIAG_TX: std::sync::OnceLock<DiagSender> = std::sync::OnceLock
 /// Send a diagnostic event to Tauri. No-op until the main loop is running.
 pub(crate) fn send_diag(level: &str, msg: impl Into<String>) {
     if let Some(tx) = DIAG_TX.get() {
-        let _ = tx.send(DiagnosticPayload { level: level.into(), message: msg.into() });
+        let _ = tx.send(DiagnosticPayload {
+            level: level.into(),
+            message: msg.into(),
+        });
+    }
+}
+
+/// An error to send back to the host, with no session to attribute it to.
+pub(crate) fn error_response(message: String) -> MaestroRpcMessage {
+    MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+        message,
+        session_id: None,
+    }))
+}
+
+/// Drop a failed agent connection, unless it has already been replaced.
+///
+/// The identity check is the point. Every caller reaches here after awaiting an ACP call that
+/// failed, and in that window the entry under `agent_id` may already have been evicted and a fresh
+/// connection spawned in its place — removing by key alone would throw away a working connection
+/// because an older one died. `Arc::ptr_eq` on the router answers "is this still the same
+/// connection I was talking to", which is the question actually being asked.
+pub(crate) async fn evict_if_same_connection(
+    agent_connections: &SharedAgentConnections,
+    agent_id: &str,
+    router: &Arc<crate::sessions::SessionRouter>,
+) {
+    let mut connections = agent_connections.lock().await;
+    if connections
+        .get(agent_id)
+        .map(|c| Arc::ptr_eq(&c.router, router))
+        .unwrap_or(false)
+    {
+        connections.remove(agent_id);
     }
 }
 
@@ -33,7 +66,11 @@ pub(crate) async fn resolve_agent_spawn_params(
                     a.spawn_cmd, a.spawn_args
                 ),
             );
-            Some((a.spawn_cmd.clone(), a.spawn_args.clone(), a.spawn_env.clone()))
+            Some((
+                a.spawn_cmd.clone(),
+                a.spawn_args.clone(),
+                a.spawn_env.clone(),
+            ))
         }
         None => {
             send_diag("error", format!("[spawn] agent not found: {agent_id:?}"));

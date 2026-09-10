@@ -8,4 +8,7 @@ pub mod profiles;
 pub mod session_state;
 pub mod settings;
 
-pub use models::{Project, ProjectStatus, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, SessionSnapshot, TaskSnapshot, WorktreeSnapshot, now_rfc3339};
+pub use models::{
+    now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, ProjectStatus,
+    SessionSnapshot, TaskSnapshot, WorktreeSnapshot,
+};

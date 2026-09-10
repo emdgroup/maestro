@@ -1,12 +1,12 @@
+use chrono::Utc;
 use std::sync::Arc;
 use tauri::State;
-use chrono::Utc;
 
-use crate::models::{ConnectionStatus};
-use crate::core::AppState;
-use crate::project::handlers::remove_projects_by_connection_id;
-use crate::connectivity::ssh::{RemoteSshSession, PasswordManager, spawn_heartbeat_task};
 use crate::connectivity::ssh::session::{SshAuthMethod, SshConnection};
+use crate::connectivity::ssh::{spawn_heartbeat_task, PasswordManager, RemoteSshSession};
+use crate::core::AppState;
+use crate::models::ConnectionStatus;
+use crate::project::handlers::remove_projects_by_connection_id;
 
 /// Store SSH session in AppState, update DB timestamps, and kick off a background
 /// remote-agent availability check so the result is ready before the user opens a dialog.
@@ -18,7 +18,10 @@ async fn finalize_ssh_connection(
 ) -> Result<(), String> {
     app_state.ssh.set_session(connection_id, session).await;
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
     let now = Utc::now().to_rfc3339();
 
     match auth_method_update {
@@ -32,7 +35,8 @@ async fn finalize_ssh_connection(
             conn.execute(
                 "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
                 rusqlite::params![&now, &now, connection_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
     }
     drop(conn);
@@ -43,10 +47,11 @@ async fn finalize_ssh_connection(
 /// Get all saved SSH connections
 #[tauri::command]
 #[specta::specta]
-pub fn list_ssh_connections(
-    app_state: State<Arc<AppState>>,
-) -> Result<Vec<SshConnection>, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+pub fn list_ssh_connections(app_state: State<Arc<AppState>>) -> Result<Vec<SshConnection>, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     let mut stmt = conn
         .prepare("SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections ORDER BY last_used_at DESC")
@@ -68,7 +73,10 @@ pub fn get_ssh_connection(
     connection_id: i32,
     app_state: State<Arc<AppState>>,
 ) -> Result<SshConnection, String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     let connection = conn.query_row(
         "SELECT id, connection_string, username, host, port, auth_method, display_name, last_used_at, created_at FROM ssh_connections WHERE id = ?",
@@ -102,7 +110,8 @@ pub fn create_ssh_connection(
         if host_port.len() != 2 {
             return Err("Invalid format. Use: user@host:port or user@host".to_string());
         }
-        let port = host_port[1].parse::<u16>()
+        let port = host_port[1]
+            .parse::<u16>()
             .map_err(|_| "Invalid port number".to_string())?;
         (host_port[0].to_string(), port)
     } else {
@@ -113,7 +122,10 @@ pub fn create_ssh_connection(
         return Err("Invalid host".to_string());
     }
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     let now = Utc::now().to_rfc3339();
 
@@ -158,7 +170,10 @@ pub async fn connect_ssh_without_credentials(
     if let Some(existing_session) = app_state.ssh.get_session(connection_id).await {
         if existing_session.is_connected().await {
             // Reuse live session — update last_used_at
-            let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+            let conn = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Lock failed: {}", e))?;
             let now = Utc::now().to_rfc3339();
             conn.execute(
                 "UPDATE ssh_connections SET last_used_at = ?, updated_at = ? WHERE id = ?",
@@ -178,7 +193,10 @@ pub async fn connect_ssh_without_credentials(
 
     // Create SSH session and attempt connection
     let session = RemoteSshSession::new(connection);
-    session.connect(None).await.map_err(|e| format!("SSH connection failed: {}", e))?;
+    session
+        .connect(None)
+        .await
+        .map_err(|e| format!("SSH connection failed: {}", e))?;
 
     finalize_ssh_connection(app_state.inner(), connection_id, session, None).await?;
 
@@ -213,16 +231,28 @@ pub async fn connect_ssh_with_password(
         PasswordManager::store_password(&connection.host, &connection.username, password.clone())
             .map_err(|e| format!("Failed to save password: {}", e))?;
     } else {
-        app_state.ssh.set_password(connection_id, password.clone()).await;
+        app_state
+            .ssh
+            .set_password(connection_id, password.clone())
+            .await;
     };
 
     connection.auth_method = SshAuthMethod::Password { save_password };
 
     // Create SSH session and attempt connection
     let session = RemoteSshSession::new(connection.clone());
-    session.connect(Some(password)).await.map_err(|e| format!("SSH connection failed: {}", e))?;
+    session
+        .connect(Some(password))
+        .await
+        .map_err(|e| format!("SSH connection failed: {}", e))?;
 
-    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
+    finalize_ssh_connection(
+        app_state.inner(),
+        connection_id,
+        session,
+        Some(&connection.auth_method),
+    )
+    .await?;
 
     if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
@@ -249,10 +279,18 @@ pub async fn connect_ssh_with_agent(
     connection.auth_method = SshAuthMethod::Agent;
 
     let session = RemoteSshSession::new(connection.clone());
-    session.connect(None).await
+    session
+        .connect(None)
+        .await
         .map_err(|e| format!("SSH agent authentication failed: {}", e))?;
 
-    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
+    finalize_ssh_connection(
+        app_state.inner(),
+        connection_id,
+        session,
+        Some(&connection.auth_method),
+    )
+    .await?;
 
     if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
@@ -279,17 +317,24 @@ pub async fn connect_ssh_with_key(
     let mut connection = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
-    connection.auth_method = SshAuthMethod::KeyFile { path: key_path.clone(), save_passphrase };
+    connection.auth_method = SshAuthMethod::KeyFile {
+        path: key_path.clone(),
+        save_passphrase,
+    };
 
     // If no passphrase was provided, try loading it from the OS keyring
     let passphrase = if passphrase.is_none() {
-        PasswordManager::get_passphrase(&key_path).ok().map(|p| p.to_string())
+        PasswordManager::get_passphrase(&key_path)
+            .ok()
+            .map(|p| p.to_string())
     } else {
         passphrase
     };
 
     let session = RemoteSshSession::new(connection.clone());
-    session.connect_with_key(Some(key_path.clone()), passphrase.clone()).await
+    session
+        .connect_with_key(Some(key_path.clone()), passphrase.clone())
+        .await
         .map_err(|e| e.to_string())?;
 
     // Persist passphrase to OS keyring after successful auth
@@ -300,7 +345,13 @@ pub async fn connect_ssh_with_key(
         }
     }
 
-    finalize_ssh_connection(app_state.inner(), connection_id, session, Some(&connection.auth_method)).await?;
+    finalize_ssh_connection(
+        app_state.inner(),
+        connection_id,
+        session,
+        Some(&connection.auth_method),
+    )
+    .await?;
 
     if let Some(s) = app_state.ssh.get_session(connection_id).await {
         spawn_heartbeat_task(
@@ -321,26 +372,34 @@ pub fn delete_ssh_connection(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-
     // Get connection details before deleting (for keyring cleanup)
-    let SshConnection {host, username, auth_method, ..} = get_ssh_connection(connection_id, app_state.clone())
+    let SshConnection {
+        host,
+        username,
+        auth_method,
+        ..
+    } = get_ssh_connection(connection_id, app_state.clone())
         .map_err(|e| format!("Connection not found: {}", e))?;
 
     remove_projects_by_connection_id(app_state.clone(), connection_id)
         .map_err(|e| format!("Could not remove projects: {}", e))?;
 
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     // Delete from database
-    conn.execute(
-        "DELETE FROM ssh_connections WHERE id = ?",
-        [connection_id],
-    )
-    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM ssh_connections WHERE id = ?", [connection_id])
+        .map_err(|e| e.to_string())?;
 
     // Clean up keyring entries (ignore errors)
     let _ = PasswordManager::delete_password(&host, &username);
-    if let SshAuthMethod::KeyFile { path, save_passphrase: true } = auth_method {
+    if let SshAuthMethod::KeyFile {
+        path,
+        save_passphrase: true,
+    } = auth_method
+    {
         let _ = PasswordManager::delete_passphrase(&path);
     }
 
@@ -354,7 +413,10 @@ pub fn forget_saved_password(
     app_state: State<Arc<AppState>>,
     connection_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     // Get connection details before deleting (for keyring cleanup)
     let (host, username): (String, String) = conn
@@ -379,7 +441,10 @@ pub fn rename_ssh_connection(
     connection_id: i32,
     display_name: String,
 ) -> Result<(), String> {
-    let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -392,7 +457,6 @@ pub fn rename_ssh_connection(
     Ok(())
 }
 
-
 /// Get the current connection status for a connection
 #[tauri::command]
 #[specta::specta]
@@ -403,7 +467,11 @@ pub async fn get_ssh_connection_status(
     // Active session alive → connected
     if let Some(s) = state.ssh.get_session(connection_id).await {
         if s.is_connected().await {
-            return Ok(ConnectionStatus { connection_id, connected: true, disconnected_reason: None });
+            return Ok(ConnectionStatus {
+                connection_id,
+                connected: true,
+                disconnected_reason: None,
+            });
         }
     }
 
@@ -423,7 +491,10 @@ pub async fn get_ssh_connection_status(
     Ok(ConnectionStatus {
         connection_id,
         connected: reachable,
-        disconnected_reason: if !reachable { Some("Host unreachable".into()) } else { None },
+        disconnected_reason: if !reachable {
+            Some("Host unreachable".into())
+        } else {
+            None
+        },
     })
 }
-

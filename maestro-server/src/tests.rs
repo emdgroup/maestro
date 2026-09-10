@@ -5,9 +5,8 @@
 //! manual verification documented in VALIDATION.md.
 
 use maestro_protocol::{
-    MaestroRpcMessage, PermissionRequest as ProtocolPermissionRequest, PermissionResponse,
-    ServerRequest, ServerResponse, SessionUpdate, TerminalOutput,
-    read_message, write_message,
+    read_message, write_message, MaestroRpcMessage, PermissionRequest as ProtocolPermissionRequest,
+    PermissionResponse, ServerRequest, ServerResponse, SessionUpdate, TerminalOutput,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -28,7 +27,10 @@ async fn test_permit_response_roundtrip() {
 
     // JSON serde roundtrip
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("permit_response"), "JSON must contain 'permit_response' type tag");
+    assert!(
+        json.contains("permit_response"),
+        "JSON must contain 'permit_response' type tag"
+    );
     let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
     assert_eq!(msg, back);
 
@@ -40,11 +42,12 @@ async fn test_permit_response_roundtrip() {
     assert_eq!(msg, framed_back);
 
     // Also test option_id=None (cancelled)
-    let msg_cancel = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
-        session_id: "sess-2".to_string(),
-        request_id: "perm-99".to_string(),
-        option_id: None,
-    }));
+    let msg_cancel =
+        MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
+            session_id: "sess-2".to_string(),
+            request_id: "perm-99".to_string(),
+            option_id: None,
+        }));
     let json_cancel = serde_json::to_string(&msg_cancel).unwrap();
     let back_cancel: MaestroRpcMessage = serde_json::from_str(&json_cancel).unwrap();
     assert_eq!(msg_cancel, back_cancel);
@@ -119,7 +122,9 @@ async fn test_terminal_output_frame() {
     }
 
     // Test with ANSI escape codes (real terminal output)
-    let ansi_bytes = vec![0x1b, 0x5b, 0x33, 0x32, 0x6d, b'O', b'K', 0x1b, 0x5b, 0x30, 0x6d];
+    let ansi_bytes = vec![
+        0x1b, 0x5b, 0x33, 0x32, 0x6d, b'O', b'K', 0x1b, 0x5b, 0x30, 0x6d,
+    ];
     let msg_ansi = MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
         session_id: "sess-2".to_string(),
         terminal_id: "term-2".to_string(),

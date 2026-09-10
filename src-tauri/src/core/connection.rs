@@ -1,19 +1,19 @@
-use rusqlite::{Connection, params};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
-use std::collections::HashMap;
-use zeroize::Zeroizing;
-use tauri::AppHandle;
 use crate::project::lock as project_lock;
+use rusqlite::{params, Connection};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use tauri::AppHandle;
+use zeroize::Zeroizing;
 
-use crate::acp::{AcpProcess, ConnectionServer, RestorableSession, ConnectionKey};
-use crate::acp::session_types::AgentAuthInfo;
 use crate::acp::registry::AgentDiscoveryCacheEntry;
-use crate::core::schema::{initialize_schema};
-use crate::execution::PtySession;
+use crate::acp::session_types::AgentAuthInfo;
+use crate::acp::{AcpProcess, ConnectionKey, ConnectionServer, RestorableSession};
 use crate::connectivity::ssh::{RemoteSshSession, SshPtyHandle};
-use crate::models::{Project, GitConnection};
+use crate::core::schema::initialize_schema;
+use crate::execution::PtySession;
+use crate::models::{GitConnection, Project};
 
 /// Initialize the SQLite database
 ///
@@ -35,8 +35,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     }
 
     // Open or create database
-    let conn = Connection::open(&db_path)
-        .map_err(|e| format!("Failed to open database: {}", e))?;
+    let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?;
 
     // Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON;", [])
@@ -54,8 +53,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
     crate::core::schema::backup_before_migration(&conn, &db_path)?;
 
     // Initialize schema
-    initialize_schema(&conn)
-        .map_err(|e| format!("Failed to initialize schema: {}", e))?;
+    initialize_schema(&conn).map_err(|e| format!("Failed to initialize schema: {}", e))?;
 
     Ok(conn)
 }
@@ -84,7 +82,10 @@ impl SshState {
     }
 
     pub async fn set_password(&self, connection_id: i32, password: String) {
-        self.passwords.lock().await.insert(connection_id, Zeroizing::new(password));
+        self.passwords
+            .lock()
+            .await
+            .insert(connection_id, Zeroizing::new(password));
     }
 }
 
@@ -231,31 +232,48 @@ pub async fn git_connection_for(
     match connection_key {
         ConnectionKey::Local => Ok(GitConnection::Local { path }),
         ConnectionKey::Ssh { id } => {
-            let ssh_session = app_state.ssh.get_session(id).await
+            let ssh_session = app_state
+                .ssh
+                .get_session(id)
+                .await
                 .ok_or("SSH session not initialized for remote project")?;
-            Ok(GitConnection::Remote { ssh: Arc::new(ssh_session), remote_path: path })
+            Ok(GitConnection::Remote {
+                ssh: Arc::new(ssh_session),
+                remote_path: path,
+            })
         }
         ConnectionKey::Wsl { id } => {
             let distro = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.query_row(
                     "SELECT distro_name FROM wsl_connections WHERE id = ?",
                     [id],
                     |row| row.get::<_, String>(0),
-                ).map_err(|e| format!("WSL connection {} not found: {}", id, e))?
+                )
+                .map_err(|e| format!("WSL connection {} not found: {}", id, e))?
             };
             Ok(GitConnection::Wsl { distro, path })
         }
         ConnectionKey::Docker { id } => {
             let container_name = {
-                let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
                 conn.query_row(
                     "SELECT container_name FROM docker_connections WHERE id = ?",
                     [id],
                     |row| row.get::<_, String>(0),
-                ).map_err(|e| format!("Docker connection {} not found: {}", id, e))?
+                )
+                .map_err(|e| format!("Docker connection {} not found: {}", id, e))?
             };
-            Ok(GitConnection::Docker { container_name, path })
+            Ok(GitConnection::Docker {
+                container_name,
+                path,
+            })
         }
     }
 }
@@ -282,7 +300,10 @@ pub async fn get_project_with_git_conn(
     project_id: i32,
 ) -> Result<(Project, GitConnection), String> {
     let project = {
-        let conn = app_state.db.lock().map_err(|e| format!("Lock failed: {}", e))?;
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
         conn.query_row(
             "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],

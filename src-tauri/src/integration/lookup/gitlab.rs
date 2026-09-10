@@ -13,7 +13,7 @@ pub async fn list_gitlab_projects(
 ) -> Result<Vec<GitLabProjectOption>, String> {
     let (token, base) = super::get_gitlab_creds(&app_state).await?;
 
-    let client = crate::integration::build_http_client()?;
+    let client = crate::integration::http_client()?;
     let base_url = format!(
         "{}/api/v4/projects?membership=true&order_by=last_activity_at",
         base
