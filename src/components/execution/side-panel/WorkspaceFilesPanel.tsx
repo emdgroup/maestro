@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect } from "react";
 import {
   PanelLeft,
   ExternalLink,
@@ -17,9 +17,7 @@ import {
   Unlink2,
   TriangleAlert,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils.ts";
-import { api } from "@/lib/tauri-utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { Button } from "@/ui/button";
 import { Spinner } from "@/ui/spinner";
@@ -43,36 +41,23 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "@/ui/dropdown-menu";
-import {
-  connectionQueryKeys,
-  useReadFile,
-  useReadFileBinary,
-  useWriteFile,
-  useCreateFile,
-  useCreateDirectory,
-  useRenamePath,
-  useDeletePath,
-  useListDirContents,
-} from "@/services/connection.service";
+import { useReadFile, useReadFileBinary } from "@/services/connection.service";
 import { binaryMimeForExtension } from "@/components/execution/activity/fileTypeUtils";
-import { LazyFileTree, type FileTreeAction, type FileTreeTarget } from "./LazyFileTree";
+import { LazyFileTree } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
 import { WorkspaceFileContent } from "./WorkspaceFileContent";
 import { FileEditor } from "./FileEditor";
 import { FileNameDialog } from "./FileNameDialog";
 import {
   canEditFile,
-  decideSave,
   filePollInterval,
   folderLabel,
-  parseMarkdownEditLayout,
-  resolveMarkdownLayout,
-  MIN_SPLIT_PANE_PX,
   type MarkdownEditLayout,
 } from "./file-edit-utils";
-import { useScrollSync } from "./useScrollSync";
+import { useFileDraft } from "./useFileDraft";
+import { useFileTreeState } from "./useFileTreeState";
+import { useMarkdownLayout } from "./useMarkdownLayout";
 import { ToolbarButton } from "./ToolbarButton";
-import { useSettings, useSaveSettings } from "@/services/settings.service";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ReviewLayout } from "@/components/execution/diff/ReviewLayout";
 import { useReviewPanelLayout } from "@/components/execution/diff/useReviewPanelLayout";
@@ -110,10 +95,6 @@ const MARKDOWN_LAYOUTS: ReadonlyArray<{
   { value: "preview", Icon: Eye, label: "Preview only" },
 ];
 
-type NameDialogState =
-  | { kind: "new-file" | "new-folder"; parentAbsolutePath: string; siblings: string[] }
-  | { kind: "rename"; target: FileTreeTarget };
-
 export function WorkspaceFilesPanel({
   workspacePath,
   connection,
@@ -123,56 +104,44 @@ export function WorkspaceFilesPanel({
   isProcessing = false,
   onDirtyChange,
 }: WorkspaceFilesPanelProps) {
-  const [selected, setSelected] = useState<string | null>(initialPath ?? null);
-  const [showHidden, setShowHidden] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const openTransfer = useFileTransfer();
   const downloadTransfer = useFileTransfer();
-  const treeRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
   // The same layout the Changes tab uses in this very panel: a resizable column where there is
   // room, a floating overlay where there is not. That measurement is what the pin used to be doing
   // by hand. Its own storage prefix, or toggling the list here would toggle it there too.
   const panel = useReviewPanelLayout("files");
 
-  // Edit mode. `baseline` is what the file held when editing started and is what a save compares
-  // against to notice the agent writing underneath; `draft` is the buffer. `docEpoch` is bumped
-  // whenever the editor has to take the document again — reloading after a conflict.
-  const [mode, setMode] = useState<"view" | "edit">("view");
-  const [baseline, setBaseline] = useState("");
-  const [draft, setDraft] = useState("");
-  const [docEpoch, setDocEpoch] = useState(0);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<{ onDisk: string } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [discardPrompt, setDiscardPrompt] = useState<
-    { reason: "leave" } | { reason: "select"; next: string } | null
-  >(null);
-
-  const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<FileTreeTarget | null>(null);
-  /** `null` is the workspace root. Drives the tree highlight and the header's create buttons. */
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const targetFolder = selectedFolder ?? workspacePath;
-  const targetLabel = folderLabel(targetFolder, workspacePath);
-  // Only to give the header's create buttons their collision check. It shares the cache entry the
-  // tree already mounts for that directory, so while the list is open it costs no extra request;
-  // while it is closed the buttons are not mounted either, and an empty path disables the query.
-  const { data: targetEntries } = useListDirContents(
+  const tree = useFileTreeState({
     connection,
-    panel.panelOpen ? targetFolder : "",
+    workspacePath,
+    panelOpen: panel.panelOpen,
+    isActive,
+    initialPath,
+  });
+  const {
+    selected,
+    setSelected,
     showHidden,
-  );
-  const targetSiblings = useMemo(() => (targetEntries ?? []).map((e) => e.name), [targetEntries]);
-
-  const writeFile = useWriteFile();
-  const createFile = useCreateFile();
-  const createDirectory = useCreateDirectory();
-  const renamePath = useRenamePath();
-  const deletePath = useDeletePath();
-
-  const isDirty = mode === "edit" && draft !== baseline;
+    setShowHidden,
+    expandedFolders,
+    setExpandedFolders,
+    selectedFolder,
+    setSelectedFolder,
+    treeRef,
+    targetLabel,
+    namePending,
+    deletePending,
+    nameDialog,
+    setNameDialog,
+    deleteTarget,
+    setDeleteTarget,
+    handleRefresh,
+    handleTreeAction,
+    createInTarget,
+    handleNameConfirm,
+    handleDeleteConfirm,
+  } = tree;
 
   // A file link in the stream can point outside the project — an agent reads
   // config from a home directory, a log from /tmp — and `handleOpenFile` hands
@@ -186,6 +155,28 @@ export function WorkspaceFilesPanel({
     : null;
   const fileDir = fullPath ? fullPath.replace(/\/[^/]+$/, "") : undefined;
   const binaryMime = selected ? binaryMimeForExtension(selected) : undefined;
+
+  // Above the read query, which reads `mode` from its poll interval.
+  const {
+    mode,
+    draft,
+    setDraft,
+    docEpoch,
+    saveError,
+    conflict,
+    setConflict,
+    saving,
+    isDirty,
+    discardPrompt,
+    setDiscardPrompt,
+    discardDraft,
+    enterEdit,
+    leaveEdit,
+    handleSave,
+    handleOverwrite,
+    handleReloadFromDisk,
+  } = useFileDraft({ connection, fullPath, onDirtyChange });
+
   const {
     data: content,
     isLoading: contentLoading,
@@ -207,46 +198,6 @@ export function WorkspaceFilesPanel({
     }
   }, [isActive, fullPath, binaryMime, mode, refetch]);
 
-  // Through a ref so the parent can pass an inline callback bound to this tab's id without
-  // re-firing the report on every render.
-  const onDirtyChangeRef = useRef(onDirtyChange);
-  useEffect(() => {
-    onDirtyChangeRef.current = onDirtyChange;
-  });
-  useEffect(() => {
-    onDirtyChangeRef.current?.(isDirty);
-  }, [isDirty]);
-
-  // Moving to another file must not leave edit mode pointing at a path that is no longer the one
-  // being edited. Adjusted during render rather than from an effect — this is state reacting to a
-  // changed input, the same shape `useSidePanelTabs` uses for its settled diff count.
-  const [editingPath, setEditingPath] = useState(fullPath);
-  if (editingPath !== fullPath) {
-    setEditingPath(fullPath);
-    setMode("view");
-    setSaveError(null);
-    setConflict(null);
-  }
-
-  // Invalidate all cached dir listings for this connection when tab regains focus.
-  // Only mounted queries (root + expanded dirs) will actually refetch.
-  useEffect(() => {
-    if (!isActive) return;
-    void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
-    });
-  }, [isActive, queryClient, connection]);
-
-  useEffect(() => {
-    if (!panel.panelOpen || !selected) return;
-    const id = setTimeout(() => {
-      treeRef.current
-        ?.querySelector(".selected-file-item")
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }, 50);
-    return () => clearTimeout(id);
-  }, [panel.panelOpen, selected]);
-
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
   const editable = canEditFile({ fileName: selected, binaryMime, error: contentError, content });
   const isMarkdown = selected?.toLowerCase().endsWith(".md") ?? false;
@@ -257,163 +208,25 @@ export function WorkspaceFilesPanel({
   const showsEditorSurface =
     (mode === "edit" && fullPath != null) || (mode === "view" && editable && !isMarkdown);
 
-  // The markdown layout is a working preference, not a per-file one, so it lives in app settings
-  // and survives a restart. Held locally as well so the toggle responds on the click rather than
-  // after the write round-trips; the render-time adjustment below adopts the stored value when it
-  // arrives, or when another window changes it.
-  const { data: appSettings } = useSettings();
-  const saveSettings = useSaveSettings({ successToast: false });
-  const storedLayout = parseMarkdownEditLayout(appSettings?.markdown_edit_layout);
-  const [layout, setLayout] = useState<MarkdownEditLayout>(storedLayout);
-  const [seenStoredLayout, setSeenStoredLayout] = useState(storedLayout);
-  if (seenStoredLayout !== storedLayout) {
-    setSeenStoredLayout(storedLayout);
-    setLayout(storedLayout);
-  }
+  const {
+    chooseLayout,
+    effectiveLayout,
+    splitFits,
+    scrollSync,
+    chooseScrollSync,
+    editAreaRef,
+    setEditorScroller,
+    setPreviewScroller,
+  } = useMarkdownLayout({ isMarkdown, showsEditorSurface });
 
-  // Unset means on: the sync is the point of the split view, so it has to be the default a user
-  // who has never touched the toggle gets.
-  const storedScrollSync = appSettings?.markdown_scroll_sync ?? true;
-  const [scrollSync, setScrollSync] = useState(storedScrollSync);
-  const [seenStoredScrollSync, setSeenStoredScrollSync] = useState(storedScrollSync);
-  if (seenStoredScrollSync !== storedScrollSync) {
-    setSeenStoredScrollSync(storedScrollSync);
-    setScrollSync(storedScrollSync);
-  }
-
-  function chooseScrollSync(next: boolean) {
-    setScrollSync(next);
-    if (appSettings) {
-      saveSettings.mutate({ ...appSettings, markdown_scroll_sync: next });
-    }
-  }
-  // Two unreadable columns are worse than one readable one, so the split collapses below the
-  // width where it earns its place. Measured before paint, so a user whose stored layout is split
-  // never sees a frame of the other one.
-  const editAreaRef = useRef<HTMLDivElement>(null);
-  const [editAreaWidth, setEditAreaWidth] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const element = editAreaRef.current;
-    if (!element) return;
-    setEditAreaWidth(element.offsetWidth);
-    const observer = new ResizeObserver(([entry]) => {
-      setEditAreaWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [showsEditorSurface]);
-
-  const effectiveLayout = resolveMarkdownLayout({
-    layout,
-    isMarkdown,
-    availableWidth: editAreaWidth,
-  });
-  // Matches `resolveMarkdownLayout`: unmeasured and not-yet-laid-out both count as fitting, or the
-  // button would be disabled for the frame before a hidden tab is shown.
-  const splitFits =
-    editAreaWidth === null || editAreaWidth <= 0 || editAreaWidth >= MIN_SPLIT_PANE_PX * 2;
-
-  // State rather than refs: both elements are created by their children, after this component's
-  // effects would have run, so the sync has to re-render to pick them up.
-  const [editorScroller, setEditorScroller] = useState<HTMLElement | null>(null);
-  const [previewScroller, setPreviewScroller] = useState<HTMLDivElement | null>(null);
-  useScrollSync(effectiveLayout === "split" && scrollSync, editorScroller, previewScroller);
-
-  function chooseLayout(next: MarkdownEditLayout) {
-    setLayout(next);
-    if (appSettings) {
-      saveSettings.mutate({ ...appSettings, markdown_edit_layout: next });
-    }
-  }
-
-  /** The tree and the mutations speak absolute paths; `selected` is relative to the workspace. */
-  function toSelection(absolutePath: string): string {
-    const prefix = `${workspacePath}/`;
-    return absolutePath.startsWith(prefix) ? absolutePath.slice(prefix.length) : absolutePath;
-  }
-
-  function handleRefresh() {
-    void queryClient.invalidateQueries({
-      queryKey: [...connectionQueryKeys.fileBrowser(), "dir", connection],
-    });
-  }
-
+  // Bridges the two hooks: which file is open is the tree's business, but whether leaving the
+  // current one is allowed to happen without asking is the draft's.
   function handleSelectFile(next: string) {
     if (isDirty) {
       setDiscardPrompt({ reason: "select", next });
       return;
     }
     setSelected(next);
-  }
-
-  function enterEdit() {
-    if (content == null) return;
-    setBaseline(content);
-    setDraft(content);
-    setDocEpoch((e) => e + 1);
-    setSaveError(null);
-    setMode("edit");
-  }
-
-  function leaveEdit() {
-    if (isDirty) {
-      setDiscardPrompt({ reason: "leave" });
-      return;
-    }
-    setMode("view");
-    setSaveError(null);
-    void refetch();
-  }
-
-  async function commit(contents: string) {
-    if (!fullPath) return;
-    await writeFile.mutateAsync({ connection, path: fullPath, contents });
-    setBaseline(contents);
-    setSaveError(null);
-  }
-
-  async function handleSave() {
-    // `disabled` on a base-ui `TooltipTrigger` becomes `data-trigger-disabled`, not the DOM
-    // attribute, so the button stays clickable and the guard has to live here. Saving a clean
-    // buffer would otherwise raise a conflict dialog over an edit the user never made.
-    if (!fullPath || saving || !isDirty) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const onDisk = await api.readFile(connection, fullPath);
-      const decision = decideSave({ baseline, draft, onDisk });
-      if (decision.kind === "unchanged") {
-        setBaseline(draft);
-      } else if (decision.kind === "conflict") {
-        setConflict({ onDisk });
-      } else {
-        await commit(draft);
-      }
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleOverwrite() {
-    setConflict(null);
-    setSaving(true);
-    try {
-      await commit(draft);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleReloadFromDisk(onDisk: string) {
-    setConflict(null);
-    setBaseline(onDisk);
-    setDraft(onDisk);
-    setDocEpoch((e) => e + 1);
-    setSaveError(null);
   }
 
   async function handleOpen() {
@@ -441,68 +254,6 @@ export function WorkspaceFilesPanel({
       action: () => downloadFileToFolder(connection, fullPath, transferId),
       describeDone: (dest) => (dest === null ? null : `Saved to ${dest}`),
     });
-  }
-
-  function handleTreeAction(action: FileTreeAction) {
-    if (action.type === "delete") setDeleteTarget(action.target);
-    else if (action.type === "rename") setNameDialog({ kind: "rename", target: action.target });
-    else
-      setNameDialog({
-        kind: action.type,
-        parentAbsolutePath: action.parentAbsolutePath,
-        siblings: action.siblings,
-      });
-  }
-
-  // The mutations already raise a toast through `createErrorToastHandler`, so a failure here only
-  // has to leave the dialog open with the name still in it — and be caught, or the rejection
-  // escapes the `void` at the call site as an unhandled one.
-  async function handleNameConfirm(name: string) {
-    if (!nameDialog) return;
-    try {
-      if (nameDialog.kind === "rename") {
-        const { target } = nameDialog;
-        const to = `${target.parentAbsolutePath}/${name}`;
-        await renamePath.mutateAsync({ connection, from: target.absolutePath, to });
-        // Following the rename keeps the open file open rather than blanking the pane. Only the
-        // exact file matters — a renamed ancestor directory is not tracked here.
-        if (selected != null && toSelection(target.absolutePath) === selected) {
-          setSelected(toSelection(to));
-        }
-      } else {
-        const path = `${nameDialog.parentAbsolutePath}/${name}`;
-        if (nameDialog.kind === "new-file") {
-          await createFile.mutateAsync({ connection, path });
-          setSelected(toSelection(path));
-        } else {
-          await createDirectory.mutateAsync({ connection, path });
-        }
-      }
-      setNameDialog(null);
-    } catch {
-      // Reported by the mutation's own error handler.
-    }
-  }
-
-  async function handleDeleteConfirm() {
-    if (!deleteTarget) return;
-    try {
-      await deletePath.mutateAsync({
-        connection,
-        path: deleteTarget.absolutePath,
-        recursive: deleteTarget.isDir,
-      });
-      if (selected != null && toSelection(deleteTarget.absolutePath) === selected) {
-        setSelected(null);
-      }
-      setDeleteTarget(null);
-    } catch {
-      // Reported by the mutation's own error handler.
-    }
-  }
-
-  function createInTarget(kind: "new-file" | "new-folder") {
-    setNameDialog({ kind, parentAbsolutePath: targetFolder, siblings: targetSiblings });
   }
 
   /**
@@ -854,7 +605,11 @@ export function WorkspaceFilesPanel({
                   label={isDirty ? "Discard" : "Close"}
                   tooltip={isDirty ? "Discard unsaved changes" : "Close the editor"}
                   disabled={saving}
-                  onClick={leaveEdit}
+                  // Refetched only when it actually left — a dirty buffer raises the discard
+                  // prompt instead, and reading over an undecided edit would be worse than stale.
+                  onClick={() => {
+                    if (leaveEdit()) void refetch();
+                  }}
                 >
                   <X className="size-3.5" />
                 </ToolbarButton>
@@ -862,7 +617,11 @@ export function WorkspaceFilesPanel({
             ) : (
               <>
                 {editable && (
-                  <ToolbarButton label="Edit" tooltip="Edit this file" onClick={enterEdit}>
+                  <ToolbarButton
+                    label="Edit"
+                    tooltip="Edit this file"
+                    onClick={() => enterEdit(content)}
+                  >
                     <FilePen className="size-3.5" />
                   </ToolbarButton>
                 )}
@@ -958,9 +717,7 @@ export function WorkspaceFilesPanel({
             <AlertDialogAction
               onClick={() => {
                 const prompt = discardPrompt;
-                setDiscardPrompt(null);
-                setMode("view");
-                setSaveError(null);
+                discardDraft();
                 if (prompt?.reason === "select") setSelected(prompt.next);
               }}
             >
@@ -995,7 +752,7 @@ export function WorkspaceFilesPanel({
               nameDialog.target.siblings.filter((s) => s !== nameDialog.target.name)
             : (nameDialog?.siblings ?? [])
         }
-        pending={renamePath.isPending || createFile.isPending || createDirectory.isPending}
+        pending={namePending}
         onConfirm={(name) => void handleNameConfirm(name)}
         onClose={() => setNameDialog(null)}
       />
@@ -1003,7 +760,7 @@ export function WorkspaceFilesPanel({
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open && !deletePath.isPending) setDeleteTarget(null);
+          if (!open && !deletePending) setDeleteTarget(null);
         }}
       >
         <AlertDialogContent>
@@ -1018,12 +775,9 @@ export function WorkspaceFilesPanel({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletePath.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deletePath.isPending}
-              onClick={() => void handleDeleteConfirm()}
-            >
-              {deletePath.isPending && <Spinner className="w-3.5 h-3.5" />}
+            <AlertDialogCancel disabled={deletePending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={deletePending} onClick={() => void handleDeleteConfirm()}>
+              {deletePending && <Spinner className="w-3.5 h-3.5" />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
