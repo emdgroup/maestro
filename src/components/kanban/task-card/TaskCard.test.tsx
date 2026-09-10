@@ -423,6 +423,40 @@ describe("TaskCard execute affordance", () => {
 });
 
 /**
+ * One button fills the row; two split it evenly. happy-dom does no layout, so the invariant is
+ * asserted where it actually lives — every direct child of the row is a `flex-1` item.
+ *
+ * The way this breaks is not obvious: a tooltip on a *disabled* button needs a wrapper element,
+ * because a disabled button emits no pointer events, and that wrapper silently becomes the flex
+ * item in the button's place. Refine and a deferred Execute are the two that need one, and both
+ * shrank to their content width until the wrapper was given `flex-1` as well.
+ */
+describe("TaskCard footer proportions", () => {
+  const footerItems = (label: string) => {
+    const row = screen.getByText(label).closest("div.flex.gap-1");
+    expect(row).not.toBeNull();
+    return Array.from(row!.children);
+  };
+
+  it("gives each of Planning's two buttons an equal share", () => {
+    renderCard({ status: "Planning" });
+    const items = footerItems("Refine");
+
+    expect(items).toHaveLength(2);
+    for (const item of items) expect(item.className).toContain("flex-1");
+  });
+
+  it("lets a lone button fill the row, tooltip wrapper or not", () => {
+    // A deferred task keeps Execute but wraps it, to explain why pressing it may not start now.
+    renderCard({ status: "Queue", execute_requested_at: "2026-08-01T00:00:00Z" });
+    const items = footerItems("Execute");
+
+    expect(items).toHaveLength(1);
+    expect(items[0].className).toContain("flex-1");
+  });
+});
+
+/**
  * A claimed task keeps its column, so `Spawning` is the only thing that distinguishes a task
  * waiting to start from one already starting. The card has to say which.
  */

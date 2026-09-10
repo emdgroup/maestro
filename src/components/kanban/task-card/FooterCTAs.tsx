@@ -91,6 +91,15 @@ export function FooterCTAs({
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
 
+  /*
+    A disabled button emits no pointer events, so base-ui's tooltip never fires on one and the
+    trigger has to be a wrapper the pointer can reach. That wrapper then becomes the flex item in
+    place of the button, so it needs `base`'s `flex-1` too — without it the span shrinks to its
+    content and its sibling takes the rest of the row, which is what made Refine narrower than
+    Agents. Buttons rendered as the trigger directly carry `flex-1` through `base` already.
+  */
+  const tooltipWrapper = "inline-flex flex-1";
+
   // Debounced by 2s: `sessions-changed` and `tasks-changed` do not arrive together, so mid-spawn a
   // task reads as InProgress with no session behind it and would flash "session lost".
   const isSessionLost = task.status === "InProgress" && !hasActiveSession;
@@ -185,7 +194,7 @@ export function FooterCTAs({
             answer to a question the user had not asked, on a project whose real problem is that no
             role has a profile yet. */}
         <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex" />}>
+          <TooltipTrigger render={<span className={tooltipWrapper} />}>
             <Button
               onClick={(e) => {
                 e.stopPropagation();
@@ -268,7 +277,7 @@ export function FooterCTAs({
           executeButton
         ) : (
           <Tooltip>
-            <TooltipTrigger render={<span className="inline-flex" />}>
+            <TooltipTrigger render={<span className={tooltipWrapper} />}>
               {executeButton}
             </TooltipTrigger>
             <TooltipContent>{executeHint}</TooltipContent>
