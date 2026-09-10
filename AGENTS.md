@@ -379,7 +379,12 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ### Import Conventions
 
 - Direct imports; barrel `index.ts` files removed from all domain dirs
-- Path aliases: `@/*` → `src/*`, `@/hooks` → `src/utils/hooks`, `@/lib` → `src/utils/helpers` (e.g. `@/lib/ui-utils`), `@/ui` → `src/components/ui/*`
+- Path aliases: `@/*` → `src/*`, `@/hooks/*` → `src/utils/hooks/*`, `@/lib/*` → `src/utils/helpers/*` (e.g. `@/lib/utils`), `@/ui/*` → `src/components/ui/*`
+- **Write the short form.** The three targeted aliases all sit under `src/`, so the long spelling
+  (`@/utils/helpers/…`, `@/components/ui/…`, `@/utils/hooks/…`) resolves too — and two spellings
+  for one path means every search for a module's importers needs two patterns. Omit the file
+  extension as well: `@/lib/utils`, not `@/lib/utils.ts`. `no-restricted-imports` in
+  `.oxlintrc.json` enforces both.
 
 ### Naming
 
