@@ -1,4 +1,12 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [".claude/*", "sidecar/*", ".planning/*", "src/types/bindings.ts"]
+  "ignorePatterns": [
+    ".claude/*",
+    "sidecar/*",
+    ".planning/*",
+    "src/types/bindings.ts",
+    "CHANGELOG.md",
+    ".release-please-manifest.json",
+    "src-tauri/tauri.conf.json"
+  ]
 }
