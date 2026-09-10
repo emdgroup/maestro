@@ -137,6 +137,7 @@
     "fast-uri": "^3.1.5",
     "ip-address": "^10.4.0",
     "js-yaml": "^4.3.1",
+    "lightningcss": "^1.33.0",
     "nanoid": "^3.3.17"
   }
 }
