@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/emdgroup/maestro/compare/v0.24.0...v0.25.0) (2026-09-10)
+
+
+### Features
+
+* **tasks:** let a task skip the planning or review stage ([#357](https://github.com/emdgroup/maestro/issues/357)) ([25b119a](https://github.com/emdgroup/maestro/commit/25b119aba769ed842453104a2302afe73ea24980))
+
+
+### Bug Fixes
+
+* **settings:** never offer a pipeline profile a value its agent lacks ([#355](https://github.com/emdgroup/maestro/issues/355)) ([38b27ea](https://github.com/emdgroup/maestro/commit/38b27ea6469434e207b89a48c179450d10bd2eca))
+
 ## [0.24.0](https://github.com/emdgroup/maestro/compare/v0.23.0...v0.24.0) (2026-09-09)
 
 ### Features
