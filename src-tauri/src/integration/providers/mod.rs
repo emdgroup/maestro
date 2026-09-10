@@ -6,7 +6,7 @@ pub mod gitlab;
 pub mod jira_cloud;
 pub mod linear;
 
-// ponytail: heuristic — scoped labels like "kind/bug", "type/feature" are the Forgejo/Gitea
+// Heuristic — scoped labels like "kind/bug", "type/feature" are the Forgejo/Gitea
 // convention for exclusive classification; extract the suffix as the display type
 pub(super) fn extract_type_from_labels(labels: &[String]) -> Option<String> {
     const SCOPES: &[&str] = &["kind/", "type/", "category/"];

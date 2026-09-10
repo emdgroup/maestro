@@ -29,12 +29,12 @@ pub async fn squash_merge_to_base(
 ) -> Result<MergeResult, String> {
     let repo_path = conn.path();
 
-    // Step 1: checkout target branch
     run_git_in_dir(conn, repo_path, &["checkout", target_branch])
         .await
         .map_err(|e| format!("git checkout {} failed: {}", target_branch, e))?;
 
-    // Step 2: squash merge (non-zero exit expected on conflicts)
+    // A non-zero exit is the expected outcome on conflicts, so the result is read from the
+    // working tree below rather than from the status of this call.
     let _ = run_git_in_dir_lossy(
         conn,
         repo_path,
@@ -42,13 +42,11 @@ pub async fn squash_merge_to_base(
     )
     .await;
 
-    // Step 3: check for conflicts via git status --porcelain
     let status_stdout = run_git_in_dir(conn, repo_path, &["status", "--porcelain"])
         .await
         .map_err(|e| format!("git status failed: {}", e))?;
     let conflicts = parse_conflict_files(&status_stdout);
 
-    // Step 4a: conflicts detected — clean up staged conflict markers and return.
     // Squash merges don't create MERGE_HEAD so `merge --abort` is a no-op here;
     // `reset --hard HEAD` is the correct way to restore the index and working tree.
     if !conflicts.is_empty() {
@@ -61,9 +59,9 @@ pub async fn squash_merge_to_base(
         });
     }
 
-    // Step 4b: nothing staged — branches may already be identical.
-    // Use diff --cached to check staged content specifically (git status --porcelain
-    // includes pre-existing unstaged modifications which would give a false positive).
+    // Nothing staged means the branches may already be identical. `diff --cached` rather than the
+    // porcelain status above, which also counts pre-existing unstaged modifications and would
+    // report content to merge where there is none.
     let staged_output = run_git_in_dir(conn, repo_path, &["diff", "--cached", "--name-only"])
         .await
         .map_err(|e| format!("git diff --cached failed: {}", e))?;
@@ -75,7 +73,6 @@ pub async fn squash_merge_to_base(
         ));
     }
 
-    // Step 5: commit with caller-provided message
     run_git_in_dir(
         conn,
         repo_path,
@@ -84,7 +81,6 @@ pub async fn squash_merge_to_base(
     .await
     .map_err(|e| format!("git commit failed: {}", e))?;
 
-    // Step 6: return success
     Ok(MergeResult {
         success: true,
         task_status: "Done".to_string(),

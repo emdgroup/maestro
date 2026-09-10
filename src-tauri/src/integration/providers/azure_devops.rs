@@ -185,9 +185,11 @@ pub async fn validate_and_store(
     Ok(display_name)
 }
 
-/// Fetch open work items from an Azure DevOps project using a two-step WIQL + batch approach.
-/// Step 1: POST WIQL query to get work item IDs.
-/// Step 2: POST to workitemsbatch in chunks of 200 to get full details.
+/// Fetch open work items from an Azure DevOps project.
+///
+/// Two requests because the API offers no single one: WIQL answers with work item ids and nothing
+/// else, so the details come from a second POST to `workitemsbatch`. That endpoint caps a batch at
+/// 200 ids, which is where the chunking comes from.
 pub async fn fetch_issues(
     org_url: &str,
     project: &str,
@@ -198,8 +200,7 @@ pub async fn fetch_issues(
 
     let client = super::http_client()?;
 
-    // Step 1: WIQL — get list of work item IDs
-    // Single-quote escaping: WIQL uses '' to escape ' within string literals.
+    // WIQL escapes a single quote inside a string literal by doubling it.
     let escaped_project = project.replace('\'', "''");
     let wiql_query = format!(
         "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{}' AND [System.State] <> 'Closed'",
@@ -247,7 +248,6 @@ pub async fn fetch_issues(
         return Ok(vec![]);
     }
 
-    // Step 2: Batch fetch work item details in chunks of 200
     let batch_url = format!(
         "{}/{}/_apis/wit/workitemsbatch?api-version={}",
         base, encoded_project, AZDO_API_VERSION

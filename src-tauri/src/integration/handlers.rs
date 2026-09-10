@@ -573,7 +573,8 @@ async fn validate_credentials(
                     let base = normalize_instance_url(url);
                     let bearer = format!("Bearer {}", token);
 
-                    // Step 1: /plugins/servlet/applinks/whoami → authenticated username
+                    // The display-name endpoint is keyed by username, which only `whoami`
+                    // reports — hence two calls rather than one.
                     let whoami_response = client
                         .get(format!("{}/plugins/servlet/applinks/whoami", base))
                         .header("Authorization", &bearer)
@@ -599,7 +600,6 @@ async fn validate_credentials(
                         return Err("bitbucket: could not determine authenticated user".to_string());
                     }
 
-                    // Step 2: get display name from user details
                     let user_response = client
                         .get(format!("{}/rest/api/latest/users/{}", base, username))
                         .header("Authorization", &bearer)

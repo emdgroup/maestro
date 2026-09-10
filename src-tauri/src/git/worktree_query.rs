@@ -227,12 +227,10 @@ pub async fn list_worktrees_with_status(
             path: repo_path.clone(),
         });
 
-    // Step 1: Get on-disk worktrees
+    // Unfiltered on purpose: the main worktree at the repo root is included so it can be picked
+    // in the spawn dialog.
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;
 
-    // Step 2: No filter — include main worktree (repo root) so it appears in the spawn dialog.
-
-    // Step 3: Query DB for all worktrees for this project, enriched with task/execution info
     struct DbWorktreeRow {
         id: i32,
         project_id: i32,
@@ -276,7 +274,8 @@ pub async fn list_worktrees_with_status(
         rows
     };
 
-    // Step 4: Build a HashMap<abs_path, DB row> keyed by absolute path
+    // Keyed by absolute path because that is what git reports; the rows store a path relative to
+    // the repo root, so it is the row that has to be rewritten to match, not the other way round.
     let db_map: HashMap<String, &DbWorktreeRow> = db_rows
         .iter()
         .map(|row| {
@@ -285,7 +284,6 @@ pub async fn list_worktrees_with_status(
         })
         .collect();
 
-    // Step 5: Run parallel git status + diff --shortstat + rev-list per on-disk worktree (local AND remote)
     let mut git_info: HashMap<String, WorktreeGitInfo> = HashMap::new();
     {
         // Resolved once for the whole batch. This query refetches every ten seconds, and the
@@ -319,7 +317,6 @@ pub async fn list_worktrees_with_status(
         }
     }
 
-    // Step 6: Build WorktreeWithStatus vec
     // Track which DB paths were matched by an on-disk worktree
     let mut matched_db_ids: HashSet<i32> = HashSet::new();
     let mut result: Vec<WorktreeWithStatus> = Vec::new();
@@ -404,7 +401,7 @@ pub async fn list_worktrees_with_status(
         }
     }
 
-    // Step 7: Auto-delete DB rows not matched by any on-disk worktree.
+    // Auto-delete DB rows not matched by any on-disk worktree.
     // An empty path is a `create_worktree` reservation whose git worktree is still being created:
     // it cannot match anything on disk yet, and its id is already held by the caller.
     let unmatched_db_ids: Vec<i32> = db_rows

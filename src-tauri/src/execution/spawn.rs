@@ -122,7 +122,6 @@ pub async fn spawn_interactive_execution(
         repo_path.clone()
     };
 
-    // Step 2: Assign session key and optionally update task status.
     let now = chrono::Utc::now().to_rfc3339();
     let log_id = app_state
         .pty
@@ -159,7 +158,6 @@ pub async fn spawn_interactive_execution(
         }
     }
 
-    // Step 3: Spawn PTY session — local or remote depending on project type
     if is_remote {
         let conn_id = project
             .connection_id

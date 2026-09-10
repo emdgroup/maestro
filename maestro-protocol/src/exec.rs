@@ -70,7 +70,7 @@ pub enum ExecEvent {
 
 // Bytes ride as base64 rather than as a JSON array of numbers, which costs about four bytes per
 // byte. base64 costs a third more than the raw bytes and keeps the frame a plain JSON document.
-// ponytail: if that third ever matters, give chunks their own raw binary frame kind.
+// If that third ever matters, give chunks their own raw binary frame kind.
 mod base64_bytes {
     use serde::{Deserialize, Deserializer, Serializer};
 

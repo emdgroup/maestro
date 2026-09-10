@@ -124,7 +124,7 @@ export function useUpdater() {
   }
 
   async function downloadPackage(version: string) {
-    // ponytail: open browser URL — browser handles progress, destination, resume
+    // Open browser URL — browser handles progress, destination, resume
     const url = `https://github.com/emdgroup/maestro/releases/download/v${version}/Maestro_linux_x86_64.deb`;
     await openUrl(url);
   }

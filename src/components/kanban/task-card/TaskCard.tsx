@@ -344,7 +344,7 @@ function FooterCTAs({
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
 
-  // ponytail: 2s debounce avoids flashing "session lost" during spawn race between sessions-changed and tasks-changed
+  // 2s debounce avoids flashing "session lost" during spawn race between sessions-changed and tasks-changed
   const isSessionLost = task.status === "InProgress" && !activeSession;
   const [sessionLostStable, setSessionLostStable] = useState(false);
   // The debounce only ever raises the flag, so a session that is no longer lost cannot

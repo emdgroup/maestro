@@ -14,7 +14,7 @@ use crate::models::{Worktree, WORKTREE_DIR};
 /// `CreateProcess` as a working directory. Worktree paths are assembled as `{repo}/{relative}`
 /// strings, so the prefix has to come back off.
 ///
-/// ponytail: stripping the prefix also gives up long-path support past 260 chars; add the
+/// Stripping the prefix also gives up long-path support past 260 chars; add the
 /// length guard the `dunce` crate uses if that ever bites.
 pub fn canonicalize_repo_path(path: &str) -> Result<String, String> {
     let canonical = std::path::Path::new(path)
@@ -217,7 +217,7 @@ pub async fn create_worktree(
         // as in-flight: `list_worktrees_with_status` prunes rows no on-disk worktree matches, and
         // skips empty-path rows for exactly this reason.
         //
-        // ponytail: a crash between the INSERT and the UPDATE leaks a path-less row that nothing
+        // A crash between the INSERT and the UPDATE leaks a path-less row that nothing
         // reaps. Reap empty-path rows older than a few minutes on project open if that shows up.
         None => {
             let worktree_id = {

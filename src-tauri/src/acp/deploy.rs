@@ -91,7 +91,7 @@ pub async fn ensure_remote_server(
 ) -> Result<DeployResult, String> {
     emit_status(app_handle, connection_id, "checking", None);
 
-    // Phase 1: Unix probe — works on Linux, macOS, and MSYS2/Git Bash on Windows.
+    // The Unix probe covers Linux, macOS, and MSYS2/Git Bash on Windows.
     // Try both binary names: uname -s is unknown before the probe succeeds, so we
     // cannot know ahead of time whether the Windows .exe variant is installed.
     let unix_probe = format!(
@@ -104,7 +104,7 @@ pub async fn ensure_remote_server(
         name = REMOTE_BINARY_NAME,
     );
 
-    // Phase 2: Windows PowerShell probe — used when the Unix probe fails entirely
+    // The PowerShell probe is the fallback for when the Unix one fails entirely
     // (i.e. the SSH default shell is PowerShell or cmd.exe, neither of which has uname).
     // Encoded as base64 UTF-16LE via -EncodedCommand to avoid all shell-quoting issues
     // regardless of whether the outer shell is cmd.exe or PowerShell.
