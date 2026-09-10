@@ -647,10 +647,43 @@ pub async fn reconcile_pull_requests(
         token: &integration.token,
     };
 
+    // Asked for all at once rather than one after another. This is the sweep's only unconditional
+    // request per task, it runs every three minutes over every open pull request in the project,
+    // and each one is independent — serialised, the sweep cost one network round trip per task.
+    //
+    // Only the reads fan out. The decisions below stay on this thread, in the order the tasks came
+    // out of the database, so that concurrency cannot reorder a transition against another.
+    let lookups: Vec<_> = waiting
+        .iter()
+        .map(|&(task_id, number)| {
+            let config = config.clone();
+            let instance_url = integration.instance_url.clone();
+            let token = integration.token.clone();
+            tokio::spawn(async move {
+                let target = PullRequestTarget {
+                    config: &config,
+                    instance_url: instance_url.as_deref(),
+                    token: &token,
+                };
+                (task_id, number, fetch_pull_request(&target, number).await)
+            })
+        })
+        .collect();
+
+    let mut fetched = Vec::with_capacity(lookups.len());
+    for lookup in lookups {
+        match lookup.await {
+            Ok(result) => fetched.push(result),
+            // The task panicked or was cancelled. Nothing is known about that pull request, which
+            // is the same position a failed request leaves us in: try again on the next sweep.
+            Err(e) => log::warn!("A pull request lookup did not finish: {}", e),
+        }
+    }
+
     let mut changed = Vec::new();
     let mut landed = false;
-    for (task_id, number) in waiting {
-        let details = match fetch_pull_request(&target, number).await {
+    for (task_id, number, lookup) in fetched {
+        let details = match lookup {
             Ok(details) => details,
             Err(e) => {
                 log::warn!(
