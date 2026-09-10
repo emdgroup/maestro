@@ -1,11 +1,13 @@
-import { useRef, useEffect, useState } from "react";
+import { memo, useRef, useEffect, useState } from "react";
 import { Task, TaskStatus, TaskPhase, PhaseStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
+import {
+  useBoardActionsContext,
+  useTaskSession,
+  useTaskWorktree,
+} from "@/contexts/BoardActionsContext";
 import { Button, buttonVariants } from "@/ui/button";
-import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { useTaskHold } from "@/hooks/useTaskHold";
-import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
-import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import { ProposalGate } from "./ProposalGate";
 import { PlanGate } from "./PlanGate";
 import { TaskProfilesDialog } from "./TaskProfilesDialog";
@@ -15,8 +17,7 @@ import {
   useSendTaskToReviewMutation,
 } from "@/services/task.service";
 import { useRecoverTaskSessionMutation } from "@/services/execution.service";
-import { useWorktreesQuery, useDeleteWorktreeMutation } from "@/services/worktree.service";
-import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.service";
+import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
@@ -797,8 +798,8 @@ function FooterCTAs({
   return null;
 }
 
-export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
-  const { projectId, projectPath, connection } = useKanban();
+function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
+  const { projectId } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
   const navigate = useNavigate();
   const { openReview, clearAuthRequired, setAuthTerminalIdle, clearPendingAuthRetry } =
@@ -814,39 +815,21 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
   const [proposalOpen, setProposalOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
-  const {
-    execute: handleExecute,
-    isExecuting,
-    dirtyDialogOpen,
-    dirtyModifiedCount,
-    dirtyUntrackedCount,
-    onDirtyChoice,
-    onDirtyCancel,
-    agentPickerTask,
-    onAgentPicked,
-    onAgentPickerCancel,
-  } = useExecuteTask(projectId, projectPath, connection);
+  // The board's, not the card's: one instance of `useExecuteTask` and one of each list query serve
+  // every card, and the two dialogs `execute` drives are mounted once by the provider.
+  const { execute: handleExecute, executingTaskId, canRefine } = useBoardActionsContext();
+  const isExecuting = executingTaskId === task.id;
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
   const archiveTask = useArchiveTaskMutation();
   const deleteWorktree = useDeleteWorktreeMutation();
-  // Only read for the unmerged-archive confirmation below. The same query key the board already
-  // holds, so this subscribes to a cached list rather than fetching one per card.
-  const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath);
-  const taskWorktree = (worktrees ?? []).find((w) => w.task_id === task.id) ?? null;
+  // Only read for the unmerged-archive confirmation below.
+  const taskWorktree = useTaskWorktree(task.id);
   const recoverSession = useRecoverTaskSessionMutation();
-  // Same query key the profiles dialog uses, so every card on the board shares one fetch.
-  const { data: profilesDocument } = useAgentProfilesQuery(projectId);
-  const defaultAgent = useProjectSettings(projectId).data?.default_agent ?? null;
-  // A Refiner profile is how a project opts into refinement; a project default agent is the
-  // fallback `useExecuteTask` applies when no profile names one. With neither, there is nothing to
-  // start.
-  const canRefine =
-    (profilesDocument?.profiles ?? []).some((p) => p.role === "Refiner") || !!defaultAgent;
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
-  const activeSession = useTaskActiveSession(task.id, projectId);
+  const activeSession = useTaskSession(task.id);
   const activityInfo = useSessionActivity(activeSession?.session_key);
   // Read from the task rather than from live session activity, so it survives a reload. The
   // activity line below stays live: it is finer-grained than the phase and still worth having.
@@ -1054,23 +1037,6 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
           }}
         />
       )}
-      <DirtyWorktreeDialog
-        open={dirtyDialogOpen}
-        modifiedCount={dirtyModifiedCount}
-        untrackedCount={dirtyUntrackedCount}
-        onChoice={onDirtyChoice}
-        onCancel={onDirtyCancel}
-      />
-      {/* Rendered here because this is the caller that passes `canPickAgent` — the state is only
-          ever set for a caller that promised to show this. */}
-      {agentPickerTask && (
-        <AgentPickerModal
-          open
-          task={agentPickerTask}
-          proceed={onAgentPicked}
-          onClose={onAgentPickerCancel}
-        />
-      )}
       <ProposalGate task={task} open={proposalOpen} onOpenChange={setProposalOpen} />
       <PlanGate
         task={task}
@@ -1200,3 +1166,10 @@ export function TaskCard({ task, index, dndGroup }: TaskCardProps) {
     </>
   );
 }
+
+/// Memoized because the board renders one of these per task and `tasks` is refetched whole.
+///
+/// Worth it only now that the card holds no cross-card subscription of its own: while it mounted
+/// the session list itself, every ten-second poll re-rendered every card from the inside and no
+/// prop comparison could have stopped it.
+export const TaskCard = memo(TaskCardImpl);

@@ -118,7 +118,10 @@ export function useExecuteTask(
   const markExecutionStarted = useMarkTaskExecutionStartedMutation();
   const markSessionReady = useMarkTaskSessionReadyMutation();
   const releaseClaim = useReleaseTaskExecutionClaimMutation();
-  const [isExecuting, setIsExecuting] = useState(false);
+  // Which task is mid-spawn, not merely that one is. The board shares a single instance of this
+  // hook across every card, so a bare boolean would disable Execute on all of them while any one
+  // task started.
+  const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
   const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
@@ -328,7 +331,7 @@ export function useExecuteTask(
       return;
     }
 
-    setIsExecuting(true);
+    setExecutingTaskId(task.id);
     let logId: number | null = null;
     // Set once the task owns a live session; until then any exit has to hand the claim back.
     let claimHandedOver = false;
@@ -731,7 +734,10 @@ export function useExecuteTask(
           .mutateAsync({ taskId: task.id, failed: spawnFailed })
           .catch((err) => console.error("Failed to release the execution claim:", err));
       }
-      setIsExecuting(false);
+      // Only if this task is still the one showing as starting. The queue drain runs `execute`
+      // for a batch, so a later spawn can already have claimed the flag by the time this one
+      // unwinds — clearing unconditionally would take the badge off the card that still has it.
+      setExecutingTaskId((current) => (current === task.id ? null : current));
     }
   };
 
@@ -753,7 +759,10 @@ export function useExecuteTask(
 
   return {
     execute,
-    isExecuting,
+    /// The task mid-spawn, for a caller rendering more than one card off one instance of this hook.
+    executingTaskId,
+    /// The same fact for the callers that only ever drive one task.
+    isExecuting: executingTaskId !== null,
     dirtyDialogOpen: dirtyState !== null,
     dirtyModifiedCount: dirtyState?.modifiedCount ?? 0,
     dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,

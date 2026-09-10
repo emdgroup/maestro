@@ -16,19 +16,27 @@ const activeSession = vi.hoisted(() => ({ current: null as { session_key: number
 
 const execute = vi.hoisted(() => vi.fn());
 
-vi.mock("@/hooks/useExecuteTask", () => ({
-  useExecuteTask: () => ({
+/// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
+/// be rendered with and without one.
+const taskWorktree = vi.hoisted(() => ({
+  current: null as { id: number; task_id: number; path: string; branch_name: string } | null,
+}));
+
+/// The other half of what decides whether Refine is offered, now answered once for the board
+/// rather than recomputed per card.
+const canRefine = vi.hoisted(() => ({ current: true }));
+
+/// The board's shared state. Everything here used to be mounted inside the card itself; the mocks
+/// honour their task-id argument rather than ignoring it, so a card that declines to look one of
+/// them up gets null instead of having the omission papered over.
+vi.mock("@/contexts/BoardActionsContext", () => ({
+  useBoardActionsContext: () => ({
     execute,
-    isExecuting: false,
-    dirtyDialogOpen: false,
-    dirtyModifiedCount: 0,
-    dirtyUntrackedCount: 0,
-    onDirtyChoice: vi.fn(),
-    onDirtyCancel: vi.fn(),
+    executingTaskId: null,
+    canRefine: canRefine.current,
   }),
-  // Honours the taskId argument rather than ignoring it, so that a card which declines to look a
-  // session up gets null — otherwise this mock would paper over exactly the bug it guards.
-  useTaskActiveSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
+  useTaskSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
+  useTaskWorktree: (taskId: number | null) => (taskId === null ? null : taskWorktree.current),
 }));
 
 /// Captures what the card sends, and lets a test decide what the backend answered.
@@ -71,29 +79,18 @@ vi.mock("@/services/execution.service", () => ({
 /// even for the cards that never open it.
 const setProfileOverrides = vi.hoisted(() => vi.fn());
 
-/// The project's roles. Swapped per test, because whether any role has a profile is what decides
-/// if the card can offer Refine at all.
+/// The project's roles, read by the override dialog rather than by the card.
 const profiles = vi.hoisted(() => ({ current: [] as Array<{ id: string; role: string }> }));
-
-/// The other half of what makes Refine startable: a project default agent stands in when no
-/// profile names one. It lives in the project's settings, which is the only place that holds it.
-const defaultAgent = vi.hoisted(() => ({ current: null as string | null }));
 
 vi.mock("@/services/project.service", () => ({
   useAgentProfilesQuery: () => ({ data: { profiles: profiles.current, defaults: {} } }),
   useSaveAgentProfilesMutation: () => ({ mutateAsync: vi.fn() }),
-  useProjectSettings: () => ({ data: { default_agent: defaultAgent.current } }),
+  useProjectSettings: () => ({ data: { default_agent: null } }),
 }));
 
-/// The worktree a task left behind, if any — swapped per test so the unmerged-archive dialog can
-/// be rendered with and without one.
-const worktrees = vi.hoisted(() => ({
-  current: [] as Array<{ id: number; task_id: number; path: string; branch_name: string }>,
-}));
 const deleteWorktree = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/worktree.service", () => ({
-  useWorktreesQuery: () => ({ data: worktrees.current }),
   useDeleteWorktreeMutation: () => ({ mutate: deleteWorktree }),
 }));
 
@@ -156,10 +153,10 @@ function renderCard(overrides: Partial<Task> = {}) {
 
 beforeEach(() => {
   activeSession.current = null;
-  worktrees.current = [];
+  taskWorktree.current = null;
+  canRefine.current = true;
   comments.current = [];
   profiles.current = [{ id: "refiner-1", role: "Refiner" }];
-  defaultAgent.current = null;
   execute.mockClear();
   archive.mockClear();
   closeRefinement.mockClear();
@@ -519,7 +516,7 @@ describe("TaskCard archiving unmerged work", () => {
   });
 
   it("names the branch and the worktree still holding the work", async () => {
-    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    taskWorktree.current = { id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" };
     renderCard(localOnly);
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
@@ -529,7 +526,7 @@ describe("TaskCard archiving unmerged work", () => {
   });
 
   it("archives without touching anything when asked to keep it", async () => {
-    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    taskWorktree.current = { id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" };
     renderCard(localOnly);
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
@@ -542,7 +539,7 @@ describe("TaskCard archiving unmerged work", () => {
   /// The commits are the unmerged work this dialog exists to protect. Removing the checkout
   /// reclaims disk; deleting the branch would destroy exactly what the warning is about.
   it("keeps the branch when removing the worktree", async () => {
-    worktrees.current = [{ id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" }];
+    taskWorktree.current = { id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "7-fix-cleanup" };
     renderCard(localOnly);
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
@@ -597,9 +594,11 @@ describe("TaskCard refinement", () => {
   /// The button used to be live on a project that had configured nothing, and pressing it produced
   /// a toast about the default agent — an answer to a question the user had not asked, on a
   /// project whose actual problem is that no role has a profile.
+  ///
+  /// What makes `canRefine` false is the board's to work out, and is covered in
+  /// `BoardActionsContext.test.tsx`. This pins what the card does with the answer.
   it("does not offer Refine when nothing can run it", async () => {
-    profiles.current = [];
-    defaultAgent.current = null;
+    canRefine.current = false;
     renderCard({ status: "Planning" });
 
     const refine = screen.getByRole("button", { name: /refine/i });
@@ -607,16 +606,6 @@ describe("TaskCard refinement", () => {
 
     await userEvent.click(refine);
     expect(execute).not.toHaveBeenCalled();
-  });
-
-  /// A project that predates profiles configures one agent and expects everything to use it, so
-  /// gating purely on the Refiner profile would take Refine away from it.
-  it("offers Refine with no Refiner profile but a project default agent", () => {
-    profiles.current = [];
-    defaultAgent.current = "claude-acp";
-    renderCard({ status: "Planning" });
-
-    expect(screen.getByRole("button", { name: /refine/i })).toBeEnabled();
   });
 
   /// Sharpening a ticket the scheduler may pick up mid-sentence is editing something already on

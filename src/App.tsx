@@ -23,6 +23,7 @@ import {
 import { useProjectSettings } from "@/services/project.service";
 import { PAGE_TRANSITION_DURATION, PAGE_TRANSITION_EASING } from "@/utils/constants/animations";
 import { KanbanProvider } from "@/contexts/KanbanContext";
+import { BoardActionsProvider } from "@/contexts/BoardActionsContext";
 import { connectionKeyFromProject } from "@/lib/connection-utils";
 import { TooltipProvider } from "@/ui/tooltip";
 import { cn } from "@/lib/utils.ts";
@@ -301,7 +302,9 @@ function App() {
                   connection={connection}
                   onTaskClick={NOOP}
                 >
-                  <KanbanView />
+                  <BoardActionsProvider>
+                    <KanbanView />
+                  </BoardActionsProvider>
                 </KanbanProvider>
               </Suspense>
             </motion.div>

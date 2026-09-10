@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, useMemo, ReactNode } from "react";
 import type { ConnectionKey, Task } from "@/types/bindings";
 
 interface KanbanContextValue {
@@ -25,11 +25,14 @@ export function KanbanProvider({
   connection,
   onTaskClick,
 }: KanbanProviderProps) {
-  return (
-    <KanbanContext.Provider value={{ projectId, projectPath, connection, onTaskClick }}>
-      {children}
-    </KanbanContext.Provider>
+  // Memoized because this provider sits under `App`: a fresh object literal here would make every
+  // App render a context change, and so a re-render of every card on the board.
+  const value = useMemo(
+    () => ({ projectId, projectPath, connection, onTaskClick }),
+    [projectId, projectPath, connection, onTaskClick],
   );
+
+  return <KanbanContext.Provider value={value}>{children}</KanbanContext.Provider>;
 }
 
 export function useKanban() {
