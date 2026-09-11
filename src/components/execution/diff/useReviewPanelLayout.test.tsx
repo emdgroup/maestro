@@ -92,7 +92,7 @@ function resizeTo(width: number) {
  * The hook wired up the way a host wires it. The ref has to be on a node before the layout effect
  * runs, or nothing is ever observed — which is what rules `renderHook` out here.
  */
-function Harness({ dragTo = 480 }: { dragTo?: number }) {
+function Harness({ dragTo = 480, startOpen = false }: { dragTo?: number; startOpen?: boolean }) {
   const {
     containerRef,
     layout,
@@ -101,7 +101,7 @@ function Harness({ dragTo = 480 }: { dragTo?: number }) {
     commitSidebarWidth,
     panelOpen,
     setPanelOpen,
-  } = useReviewPanelLayout();
+  } = useReviewPanelLayout("review", startOpen);
   return (
     <div
       ref={containerRef}
@@ -148,6 +148,20 @@ describe("useReviewPanelLayout", () => {
 
     resizeTo(1000);
     expect(state().layout).toBe("overlay");
+    expect(state().open).toBe("false");
+  });
+
+  // A Files tab opened without a file: the list is all it has to show, so the overlay's closed
+  // default does not apply to that first measurement — but a stored dismissal still does later.
+  it("keeps a start-open host's panel up in the overlay layout", async () => {
+    localStorage.setItem("review:panelOpen", "false");
+    render(<Harness startOpen />);
+    resizeTo(1000);
+    expect(state().layout).toBe("overlay");
+    expect(state().open).toBe("true");
+
+    await press("close");
+    resizeTo(1400);
     expect(state().open).toBe("false");
   });
 

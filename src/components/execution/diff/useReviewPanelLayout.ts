@@ -74,12 +74,18 @@ export function readPanelOpen(keyPrefix = "review"): boolean {
  *
  * `keyPrefix` namespaces the stored width and open state. Hosts showing the same list share the
  * default; a host showing a different list passes its own.
+ *
+ * `startOpen` overrides both the stored state and the overlay's closed default for the first
+ * measurement only — for a host that opens with nothing else to show, such as a Files tab opened
+ * without a file. It is not recorded, so the user's own preference survives it.
  */
-export function useReviewPanelLayout(keyPrefix = "review") {
+export function useReviewPanelLayout(keyPrefix = "review", startOpen = false) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<ReviewPanelLayout>("fixed");
   const [sidebarWidth, setWidth] = useState(() => readSidebarWidth(keyPrefix));
-  const [panelOpen, setOpen] = useState(() => readPanelOpen(keyPrefix));
+  const [panelOpen, setOpen] = useState(() => startOpen || readPanelOpen(keyPrefix));
+  // Consumed by the first measurement below, so only that one frame ignores the rules.
+  const startOpenRef = useRef(startOpen);
   // Mirrors `layout` for the callbacks below, which must not re-create on every flip.
   const layoutRef = useRef<ReviewPanelLayout>("fixed");
   const draggedWidth = useRef(sidebarWidth);
@@ -98,6 +104,10 @@ export function useReviewPanelLayout(keyPrefix = "review") {
       if (!next || next === layoutRef.current) return;
       layoutRef.current = next;
       setLayout(next);
+      if (startOpenRef.current) {
+        startOpenRef.current = false;
+        return;
+      }
       // The floating panel covers the diff it is meant to navigate, so it opens on demand and
       // starts closed. The inline one is a column the user chose to keep, so it comes back the
       // way they left it.
