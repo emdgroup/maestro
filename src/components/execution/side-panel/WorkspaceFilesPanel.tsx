@@ -110,7 +110,9 @@ export function WorkspaceFilesPanel({
   // The same layout the Changes tab uses in this very panel: a resizable column where there is
   // room, a floating overlay where there is not. That measurement is what the pin used to be doing
   // by hand. Its own storage prefix, or toggling the list here would toggle it there too.
-  const panel = useReviewPanelLayout("files");
+  // A tab opened without a file has nothing but "No file selected" to show, so the list starts
+  // open there — including in the overlay layout, which otherwise starts dismissed.
+  const panel = useReviewPanelLayout("files", !initialPath);
 
   const tree = useFileTreeState({
     connection,
