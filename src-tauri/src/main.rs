@@ -160,6 +160,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
+    fix_path_env::fix().expect("failed to fix PATH");
+
     // Generate TypeScript bindings in debug builds
     let builder = maestro_lib::create_builder();
 
