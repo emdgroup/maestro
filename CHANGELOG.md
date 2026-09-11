@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.1](https://github.com/emdgroup/maestro/compare/v0.25.0...v0.25.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **files:** open the file list in an empty Files tab ([#359](https://github.com/emdgroup/maestro/issues/359)) ([d57b752](https://github.com/emdgroup/maestro/commit/d57b752dfdce8e5d36cbfc450bd631899ee75102))
+* **sync-path:** sync the application path with the shell ([#358](https://github.com/emdgroup/maestro/issues/358)) ([a85f7e3](https://github.com/emdgroup/maestro/commit/a85f7e30b87f71d996d6aa9f831397aa0ee366ee))
+
 ## [0.25.0](https://github.com/emdgroup/maestro/compare/v0.24.0...v0.25.0) (2026-09-10)
 
 
