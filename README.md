@@ -223,7 +223,9 @@ Three Rust crates in a Cargo workspace:
 ---
 
 ## Special thanks
-Maestro talks to every agent it supports over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), an open standard from [Zed Industries](https://zed.dev/) ([agentclientprotocol](https://github.com/zed-industries/agent-client-protocol)). One protocol is why adding an agent is a registry entry rather than a bespoke integration, and why an agent Maestro has never heard of works through [`custom-agents.json`](#add-a-custom-agent). Thanks to the ACP maintainers and to the agent authors who ship ACP support.
+Maestro talks to every agent it supports over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), an open standard from [Zed Industries](https://zed.dev/) ([agentclientprotocol](https://github.com/zed-industries/agent-client-protocol)). 
+This one protocol is the sole reason that Maestro can exist !
+Thanks to the ACP maintainers and to the agent authors who ship ACP support.
 ---
 
 ## License
