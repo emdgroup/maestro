@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/emdgroup/maestro/compare/v0.25.1...v0.26.0) (2026-09-12)
+
+
+### Features
+
+* **diff:** show sizes and image previews for binary files ([#364](https://github.com/emdgroup/maestro/issues/364)) ([ee03c7a](https://github.com/emdgroup/maestro/commit/ee03c7a2ca5d909ef4a04f6e232e385add706cf6))
+
+
+### Bug Fixes
+
+* **dev:** keep HMR working when the dev server runs from a worktree ([#361](https://github.com/emdgroup/maestro/issues/361)) ([d8a1579](https://github.com/emdgroup/maestro/commit/d8a1579aad43f2016b738abe916b60c1919932fe))
+
 ## [0.25.1](https://github.com/emdgroup/maestro/compare/v0.25.0...v0.25.1) (2026-09-11)
 
 
