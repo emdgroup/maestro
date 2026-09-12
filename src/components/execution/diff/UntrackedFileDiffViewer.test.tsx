@@ -3,9 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 
 const untrackedContent = vi.fn();
+const binaryInfo = vi.fn();
 
 vi.mock("@/services/worktree.service", () => ({
   useUntrackedFileContentQuery: (...args: unknown[]) => untrackedContent(...args),
+  useBinaryFileInfoQuery: (...args: unknown[]) => binaryInfo(...args),
 }));
 
 // Stubbed to a marker: what is under test is which branch this component takes, not what the
@@ -21,25 +23,40 @@ const BINARY =
 const TEXT =
   "diff --git a/dev/null b/src/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1,1 @@\n+export const a = 1;\n";
 
-function renderFor(data: string | undefined, isLoading = false) {
+function renderFor(data: string | undefined, isLoading = false, filePath = "src/blob.bin") {
   untrackedContent.mockReturnValue({ data, isLoading });
   return render(
     <UntrackedFileDiffViewer
       projectId={1}
       worktreePath="/w"
-      filePath="src/blob.bin"
+      filePath={filePath}
       showHeader={false}
     />,
   );
 }
 
-beforeEach(() => untrackedContent.mockReset());
+beforeEach(() => {
+  untrackedContent.mockReset();
+  binaryInfo.mockReturnValue({ data: undefined, isLoading: false });
+});
 
 describe("UntrackedFileDiffViewer", () => {
   // The empty frame this replaces read as a broken card rather than as "nothing to read here".
   it("explains a binary file instead of rendering an empty diff", () => {
     renderFor(BINARY);
     expect(screen.getByText("Binary file. There is no line-by-line diff to show.")).toBeTruthy();
+  });
+
+  // An image is the one binary a reviewer can actually read, so it gets shown rather than described.
+  it("shows the image itself for a new picture", () => {
+    binaryInfo.mockReturnValue({
+      data: { old_size: 0, new_size: 59_699, preview: "AAAA" },
+      isLoading: false,
+    });
+    renderFor(BINARY.replace(/blob\.bin/g, "logo.png"), false, "src/logo.png");
+    expect(screen.getByRole("img").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    expect(screen.getByText("58.3 KB")).toBeTruthy();
+    expect(screen.queryByText(/no line-by-line diff/)).toBeNull();
   });
 
   it("still renders the diff for a file that has one", () => {

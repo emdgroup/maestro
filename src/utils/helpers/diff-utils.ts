@@ -129,6 +129,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
   // Set when the header describes a change that carries no hunks (rename, binary,
   // mode bits). Without it those files never reach the UI at all.
   let currentNote: string | null = null;
+  let currentBinary = false;
   // The file's path at the diff's base, taken from the `---` header rather than assumed equal to
   // `currentFile`, which is the post-image name.
   let currentOldPath: string | null = null;
@@ -155,6 +156,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       hunks: currentHunkLines.length > 0 ? [currentHunkLines.join("\n") + "\n"] : [],
       status: currentStatus,
       ...(currentNote ? { note: currentNote } : {}),
+      ...(currentBinary ? { binary: true } : {}),
       ...(currentOldPath ? { oldPath: currentOldPath } : {}),
     });
   };
@@ -171,6 +173,7 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
       inHunk = false;
       currentStatus = "M";
       currentNote = null;
+      currentBinary = false;
       currentOldPath = null;
     }
     // Detect new/deleted file mode before the first hunk
@@ -187,7 +190,10 @@ export function parseDiffString(diffString: string): DiffFileWithName[] {
     } else if (!inHunk && (line.startsWith("Binary files ") || line === "GIT binary patch")) {
       // Phrased for the reader, not the parser: this is what the file's card shows in place of a
       // diff, and "Binary file" on its own reads as a truncated heading rather than an answer.
+      // Only reached when nothing better is available — a host that can size the blobs, or show
+      // the image, uses the `binary` flag and replaces this entirely.
       currentNote = "Binary file. There is no line-by-line diff to show.";
+      currentBinary = true;
     } else if (!inHunk && line.startsWith("old mode ")) {
       currentNote = "File mode changed";
     }

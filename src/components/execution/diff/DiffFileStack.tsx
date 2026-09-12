@@ -4,6 +4,7 @@ import { type PendingComment } from "./DiffViewer";
 import { ExpandableDiffViewer } from "./ExpandableDiffViewer";
 import { UntrackedFileDiffViewer } from "./UntrackedFileDiffViewer";
 import { ReviewFileCard, fileNote } from "./ReviewFileCard";
+import { BinaryDiffStats, BinaryFileBody } from "./BinaryFileView";
 import { useCommentNavigation } from "./useCommentNavigation";
 import { LoadDiffPrompt } from "./LoadDiffPrompt";
 import { diffLineCount, planEagerBodies, UNKNOWN_FILE_LINES } from "./body-budget";
@@ -467,12 +468,18 @@ export function DiffFileStack({
         items.map((item, index) => {
           const key = displayItemPath(item);
           const hunks = item.kind === "diff" ? item.file.hunks : [];
+          // A binary file has no diff to budget for and no note to fall back to until its sizes
+          // arrive, so it takes over both slots the card would otherwise fill from the hunks.
+          const binary = item.kind === "diff" && item.file.binary === true;
+          const note = item.kind === "diff" ? fileNote(item.file) : undefined;
+          const binaryProps = { projectId, worktreePath: cwd, diffTarget, path: key };
           return (
             <ReviewFileCard
               key={key}
               ref={(el) => registerSection(key, el)}
               path={key}
               hunks={hunks}
+              stats={binary ? <BinaryDiffStats {...binaryProps} /> : undefined}
               viewed={viewedFiles.has(key)}
               onToggleViewed={() => onToggleViewed(key)}
               expanded={!collapsedFiles.has(key)}
@@ -480,10 +487,12 @@ export function DiffFileStack({
               focused={index === selectedIndex}
               onSelect={() => onSelectedIndexChange(index)}
               onOpenFile={onOpenFile ? () => onOpenFile(key) : undefined}
-              note={item.kind === "diff" ? fileNote(item.file) : undefined}
+              note={binary ? undefined : note}
               fileComment={fileCommentFor(key)}
             >
-              {!(eagerBodies.has(key) || requestedBodies.has(key)) ? (
+              {binary ? (
+                <BinaryFileBody {...binaryProps} note={note ?? ""} />
+              ) : !(eagerBodies.has(key) || requestedBodies.has(key)) ? (
                 <LoadDiffPrompt lines={diffLineCount(hunks)} onLoad={() => requestBody(key)} />
               ) : item.kind === "diff" ? (
                 <ExpandableDiffViewer

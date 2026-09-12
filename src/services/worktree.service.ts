@@ -96,6 +96,36 @@ export function useFileContentAtBaseQuery(
 }
 
 /**
+ * The sizes of a binary file's two sides, and its bytes when `wantPreview` asks for them.
+ *
+ * `diffTarget` null means an untracked file — one that is in no revision and so is sized against
+ * `/dev/null`. `wantPreview` is the caller's decision because it costs the whole file over IPC:
+ * only something that will actually render the bytes should ask for them.
+ */
+export function useBinaryFileInfoQuery(
+  projectId: number | null,
+  worktreePath: string | null,
+  diffTarget: DiffTarget | null,
+  filePath: string | null,
+  wantPreview: boolean,
+) {
+  return useQuery({
+    queryKey: [
+      ...worktreeQueryKeys.base,
+      "binary-info",
+      worktreePath ?? "",
+      diffTarget,
+      filePath,
+      wantPreview,
+    ] as const,
+    queryFn: () =>
+      api.getBinaryFileInfo(projectId!, worktreePath!, diffTarget, filePath!, wantPreview),
+    enabled: projectId != null && worktreePath != null && filePath != null,
+    staleTime: 30000,
+  });
+}
+
+/**
  * Query hook for fetching worktree diff (unified diff string).
  * Uses project_id + absolute worktree path — no DB lookup needed.
  */

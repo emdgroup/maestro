@@ -131,6 +131,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::rename_ssh_connection,
         crate::ipc::get_untracked_file_content,
         crate::ipc::get_file_content_at_base,
+        crate::ipc::get_binary_file_info,
         crate::ipc::check_worktree_dirty,
         crate::ipc::get_worktree_commits,
         crate::ipc::stash_worktree,

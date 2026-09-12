@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::core::AppState;
 use crate::models::{
-    is_maestro_created_worktree, AheadBehind, CommitInfo, DiffTarget, DirtyStatus,
+    is_maestro_created_worktree, AheadBehind, BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus,
     WorktreeDiffResult, WorktreeDiffStats, WorktreeWithStatus,
 };
 
@@ -503,6 +503,27 @@ async fn base_rev_for(
     }
 }
 
+/// The `git diff` arguments that select what a `DiffTarget` compares, with no output options.
+///
+/// Shared so that anything asking a second question about the same diff — the stat summary, one
+/// file's size — cannot end up comparing something else than the diff the reader is looking at.
+async fn diff_args_for(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+    remote: &str,
+) -> Result<Vec<String>, String> {
+    Ok(match diff_target {
+        DiffTarget::Head => vec!["diff".into(), "HEAD".into()],
+        DiffTarget::Commit { sha } => vec!["diff".into(), sha.clone()],
+        DiffTarget::BranchAll { branch } => vec![
+            "diff".into(),
+            resolve_divergence_point(git_conn, worktree_path, branch, remote).await?,
+        ],
+        DiffTarget::CommitRange { from, to } => vec!["diff".into(), format!("{}..{}", from, to)],
+    })
+}
+
 /// Whether a `DiffTarget` compares against the working tree, and so whether untracked files are
 /// part of what it shows.
 ///
@@ -641,17 +662,8 @@ pub async fn diff_stats_in(
     // Must resolve the same way `get_worktree_diff` does, or the stats and the diff disagree —
     // and these stats are what the turn-ended handler uses to decide whether an agent changed
     // anything at all.
-    let stat_args: Vec<String> = match diff_target {
-        DiffTarget::Head => vec!["diff".into(), "--stat".into(), "HEAD".into()],
-        DiffTarget::Commit { sha } => vec!["diff".into(), "--stat".into(), sha.clone()],
-        DiffTarget::BranchAll { branch } => {
-            let base = resolve_divergence_point(git_conn, worktree_path, branch, remote).await?;
-            vec!["diff".into(), "--stat".into(), base]
-        }
-        DiffTarget::CommitRange { from, to } => {
-            vec!["diff".into(), "--stat".into(), format!("{}..{}", from, to)]
-        }
-    };
+    let mut stat_args = diff_args_for(git_conn, worktree_path, diff_target, remote).await?;
+    stat_args.push("--stat".into());
     let stat_args_ref: Vec<&str> = stat_args.iter().map(String::as_str).collect();
 
     // Propagated rather than defaulted: a rebase, amend or reset orphans the session's start
@@ -871,6 +883,118 @@ async fn file_content_at(
         .await
         .ok()?;
     (content.len() <= MAX_BLOB_BYTES).then_some(content)
+}
+
+// ============================================================================
+// get_binary_file_info — sizes, and an image, for a file git gives no hunks for
+// ============================================================================
+
+/// Pull the two blob sizes out of `git diff --stat` output.
+///
+/// A binary file's row reads ` assets/logo.png | Bin 0 -> 58329 bytes`, which is the only place
+/// git volunteers a size without being handed an object id. The name is deliberately not matched:
+/// `--stat` abbreviates long paths, and the caller has already restricted the diff to one file.
+fn parse_bin_stat(stat_output: &str) -> (u32, u32) {
+    for line in stat_output.lines() {
+        let Some(sizes) = line.split(" | Bin ").nth(1) else {
+            continue;
+        };
+        let mut fields = sizes.split_whitespace();
+        let old_size = fields.next().and_then(|n| n.parse().ok());
+        let new_size = fields.nth(1).and_then(|n| n.parse().ok());
+        if let (Some(old_size), Some(new_size)) = (old_size, new_size) {
+            return (old_size, new_size);
+        }
+    }
+    (0, 0)
+}
+
+/// What to show for a file git describes as binary: how big each side is, and — for an image —
+/// the bytes themselves.
+///
+/// `diff_target` is `None` for an untracked file, which is in no revision and so is sized the same
+/// way its diff is produced, against `/dev/null`.
+///
+/// The preview is the *working tree* copy, so it is only fetched for a target that reaches the
+/// working tree; against a commit range the post-image is a blob that may be nothing like what is
+/// on disk, and showing the wrong picture is worse than showing none. A read that fails — the file
+/// past the binary limit, or gone — costs the preview, not the sizes.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_binary_file_info(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    worktree_path: String,
+    diff_target: Option<DiffTarget>,
+    file_path: String,
+    want_preview: bool,
+) -> Result<BinaryFileInfo, String> {
+    let (_project, git_conn) =
+        crate::core::get_project_with_git_conn(&app_state, project_id).await?;
+
+    let stat_output = match &diff_target {
+        Some(target) => {
+            let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+            let mut args = diff_args_for(&git_conn, &worktree_path, target, &remote).await?;
+            args.push("--stat".into());
+            args.push("--".into());
+            args.push(file_path.clone());
+            let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+            crate::git::run_git_in_dir(&git_conn, &worktree_path, &args_ref).await?
+        }
+        // `--no-index` exits 1 whenever the two sides differ, which for a new file is always.
+        None => {
+            crate::git::run_git_in_dir_lossy(
+                &git_conn,
+                &worktree_path,
+                &["diff", "--stat", "--no-index", "/dev/null", &file_path],
+            )
+            .await?
+        }
+    };
+    let (old_size, new_size) = parse_bin_stat(&stat_output);
+
+    let on_disk = diff_target.as_ref().is_none_or(includes_working_tree);
+    let preview = if want_preview && new_size > 0 && on_disk {
+        let full_path = format!("{}/{}", worktree_path.trim_end_matches('/'), file_path);
+        match crate::connectivity::files::read_binary(&git_conn, &full_path).await {
+            Ok(encoded) => Some(encoded),
+            Err(e) => {
+                log::debug!("No preview for {file_path}: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(BinaryFileInfo {
+        old_size,
+        new_size,
+        preview,
+    })
+}
+
+#[cfg(test)]
+mod bin_stat_tests {
+    use super::parse_bin_stat;
+
+    #[test]
+    fn reads_both_sides_of_a_binary_row() {
+        let output = " assets/logo.png | Bin 0 -> 58329 bytes\n 1 file changed, 0 insertions(+), 0 deletions(-)\n";
+        assert_eq!(parse_bin_stat(output), (0, 58329));
+        assert_eq!(
+            parse_bin_stat(" a.bin | Bin 7340032 -> 0 bytes\n"),
+            (7340032, 0)
+        );
+    }
+
+    /// A text file's row carries no `Bin` clause, and neither does an empty diff.
+    #[test]
+    fn ignores_rows_without_sizes() {
+        assert_eq!(parse_bin_stat(" src/main.rs | 12 ++++++------\n"), (0, 0));
+        assert_eq!(parse_bin_stat(""), (0, 0));
+    }
 }
 
 #[cfg(test)]
