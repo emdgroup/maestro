@@ -15,21 +15,13 @@
 > [!WARNING]
 > Maestro is under active development. Features may be heavily modified or removed without notice, and the UI changes frequently between releases.
 
-<p align="center"><img src="docs/assets/maestro-workflow.webp" alt="Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro" width="960" /></p>
+<p align="center"><img src="docs/assets/workflow.webp" alt="Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro" width="960" /></p>
 
 ---
 
-Drop tasks onto a Kanban board and give each one its own coding agent and terminal. With Git enabled, tasks can also run in isolated worktrees so agents work in parallel without clobbering each other's changes. When an agent finishes, review the diff hunk by hunk and commit what you want — all without leaving the app.
+Maestro is a desktop app that runs coding agents against your repositories. Tasks live on a Kanban board. Each one moves through refinement, planning, implementation and review, and a different agent can own each stage. Implementation happens in its own git worktree, so several tasks run at once without touching each other's files. You watch every session live, comment on the diff, and decide how the work lands: merge it, push it, or open a pull request.
 
-## Product tour
-
-Maestro keeps the full agent workflow in one place:
-
-1. **Plan** — turn work into focused tasks on the Kanban board
-2. **Run in parallel** — give every task an agent and an isolated git worktree
-3. **Stay informed** — follow terminal output, agent activity, and changed files live
-4. **Review precisely** — inspect and stage changes at hunk level
-5. **Ship deliberately** — commit only the changes you approve
+Maestro brings no agent of its own. It drives the one you already use — Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, OpenCode, goose, Cline and thirty-odd others that speak the [Agent Client Protocol](https://agentclientprotocol.com/) — on your laptop, on a server over SSH, in WSL, or in a container.
 
 ---
 
@@ -40,136 +32,153 @@ Maestro keeps the full agent workflow in one place:
 | macOS — Apple Silicon (M1/M2/M3/M4) | [Maestro_macos_aarch64.dmg](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_macos_aarch64.dmg)                             |
 | Linux — x86_64                      | [Maestro_linux_x86_64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_linux_x86_64.AppImage) ✓ recommended       |
 | Linux — x86_64 (no auto-update)     | [Maestro_linux_x86_64.deb](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_linux_x86_64.deb)                               |
-| Linux — arm64                       | [Maestro_linux_aarch64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_linux_aarch64.AppImage)                   |
+| Linux — arm64                       | [Maestro_linux_aarch64.AppImage](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_linux_aarch64.AppImage) ✓ recommended     |
 | Windows — x86_64                    | [Maestro_windows_x86_64-setup.exe](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_windows_x86_64-setup.exe) ✓ recommended |
-| Windows — x86_64 (MSI)              | [Maestro_windows_x86_64.msi](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_windows_x86_64.msi)                           |
+| Windows — x86_64 (no auto-update)   | [Maestro_windows_x86_64.msi](https://github.com/emdgroup/maestro/releases/latest/download/Maestro_windows_x86_64.msi)                           |
 
-The `.dmg`, `.AppImage`, and `.exe` installers include automatic in-app updates. The `.deb` package does not — Maestro will prompt you to download the new version when one is available.
+The `.dmg`, `.AppImage` and `-setup.exe` builds update themselves in-app. The `.deb` and `.msi` do not: Maestro tells you when a new version exists and you download it.
+
+**No Maestro account is required.** There is no Maestro service to register for or sign in to.
 
 ---
 
 ## Before you start
 
-**No Maestro account is required.** Install the app and use it directly — there is no Maestro service to register for or sign in to.
+### A coding agent
 
-### Set up a coding agent
+Install and authenticate the agent you want to use before pointing Maestro at it. Maestro launches it, but the subscription, model access and usage charges stay with the agent's provider. Some agents launch through `npx` or `uvx` rather than a standalone binary, so depending on your choice you may also need [Node.js](https://docs.npmjs.com/cli/v11/commands/npx) or [uv](https://docs.astral.sh/uv/guides/tools/).
 
-Maestro orchestrates coding agents but does not provide an agent account or model access. Install and authenticate the agent of your choice before using it with Maestro. Supported agents include Claude Code, Codex, OpenCode, Gemini CLI, Goose, Cline, and other [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) agents.
+The agent picker lists the agents bundled in Maestro's registry. For one it does not ship — a local model behind Ollama, an in-house ACP adapter, a listed agent with a different endpoint — add it in `~/.maestro/custom-agents.json`. Run `/maestro-custom-agents` in any agent session and the agent writes the file for you, or follow [docs/custom-agents.md](docs/custom-agents.md).
 
-Some agents are launched through `npx` or `uvx` rather than a standalone executable. Depending on your chosen agent, you may also need:
+### Git, ideally
 
-- [`npx`](https://docs.npmjs.com/cli/v11/commands/npx), included with Node.js and npm
-- [`uvx`](https://docs.astral.sh/uv/guides/tools/), included with uv
+Maestro runs in a plain folder, but the workflow below assumes a git repository. Git is what makes worktrees, parallel tasks, the diff review and the merge, push and pull-request actions possible. Without it, agents edit the folder directly and finished tasks go straight to **Done**.
 
-Agent authentication, subscriptions, model availability, and usage charges are managed by the agent's provider, not by Maestro.
+### Where secrets live
 
-### Add a custom agent
-
-Maestro's picker lists agents from a registry bundled in the app. To add one it does not ship — a local model served through Ollama or another Anthropic-compatible gateway, an in-house ACP adapter, or a second profile of a listed agent pointed at a different endpoint — put your own entries in `~/.maestro/custom-agents.json` (`%USERPROFILE%\.maestro\custom-agents.json` on Windows).
-
-**With an agent.** Run `/maestro-custom-agents` in any agent session — inside Maestro or in a terminal. Maestro installs that skill on every machine it connects to, so the agent knows the format: it asks what you want to add and writes the file for you. It is a slash command, so it never fires on its own.
-
-**By hand.** One entry per agent, each with an `id`, a `name` and exactly one launch method:
-
-```json
-{
-  "agents": [
-    {
-      "id": "ollama-claude-acp",
-      "name": "Claude Code (Ollama)",
-      "distribution": {
-        "npx": {
-          "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
-          "env": {
-            "ANTHROPIC_BASE_URL": "http://localhost:11434",
-            "ANTHROPIC_AUTH_TOKEN": "ollama",
-            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
-          }
-        }
-      }
-    }
-  ]
-}
-```
-
-That example is worth reading even if your agent is a different one: it adds nothing new to your machine. It is the same Claude Code ACP package Maestro already ships, launched with a different environment — Ollama's endpoint instead of Anthropic's, and gateway model discovery on so Maestro's model selector lists the models you have pulled locally. Your normal Claude Code entry keeps working alongside it.
-
-The other launch methods are `"uvx": { "package": "..." }` and `"binary": { "<platform>": { "cmd": "..." } }`, where `<platform>` is one of `darwin-aarch64`, `darwin-x86_64`, `linux-aarch64`, `linux-x86_64`, `windows-x86_64`, `windows-aarch64` and `cmd` is a name on your `PATH` or an absolute path. All three accept optional `args`. Only `npx` accepts `env` — under `uvx` and `binary` it is ignored, so an agent that needs environment variables either goes through `npx` or reads them from a wrapper script named as `cmd`.
-
-A few things to know:
-
-- The file belongs to the machine that **runs** the agent. For a project on an SSH host, in WSL, or in a container, write it in that machine's home directory, not on your laptop.
-- Custom agents are additive. An `id` that collides with a bundled agent is ignored rather than replacing it.
-- Maestro trusts that a custom agent is installed, so a wrong package or command shows up as a failure when you start a session with it, not as a missing entry in the picker.
-- A new entry reaches the picker within about five minutes, or immediately if you restart Maestro.
-- The file is plain text in your home directory. Treat any API key you put in `env` accordingly.
-
-### Git is optional, but recommended
-
-Maestro can run agents in a regular folder without Git. For the complete workflow, use a Git repository: Git enables isolated worktrees, parallel agents without overlapping changes, inline diff review, hunk-level staging, and commits from Maestro.
-
-Without Git, agents work directly in the selected folder and completed tasks move directly to **Done** instead of **Review**.
-
-### Credentials stay local
-
-Maestro does not store remote connection or tool integration credentials in its SQLite database. When you choose to save them, SSH passwords, SSH key passphrases, and integration credentials are stored in your operating system's keychain. Coding-agent credentials remain managed by the agent itself.
-
-If the OS keychain is unavailable, Maestro can store integration credentials in an encrypted local file and displays a warning. SSH secrets are not persisted through this fallback.
+Maestro keeps no remote or integration credentials in its database. SSH passwords, key passphrases and issue-tracker or code-hosting tokens go into your operating system's keychain when you choose to save them. If the keychain is unavailable, integration tokens fall back to an encrypted local file with a visible warning; SSH secrets are never stored that way. Your agent's own credentials are the agent's business, not Maestro's.
 
 ---
 
-## Quick start
+## How a task moves
 
-1. Install and authenticate your preferred coding agent
-2. Open Maestro and select a local folder or Git repository
-3. Create a task on the Kanban board — add a title and instructions
-4. Pick an agent and model, then click **Run**
-5. Watch the live terminal and activity feed as it works
-6. In a Git repository, review the diff, stage what you want, and commit in one click
+Every task crosses the board left to right: **Planning → Queue → In progress → Review → Done**. Each stage can have its own agent, model and permissions, configured once per project as an _agent profile_ (Settings → Agents). Stages without a profile are skipped, and any task can skip Planning or Review individually from its **Agents** button.
+
+<img src="docs/assets/board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
+
+### Planning
+
+A new task is a title and a description. Pull one in from your issue tracker, or write it by hand. If the description is thin, press **Refine**: a read-only Refiner agent reads the repository and proposes a better one, which you accept or discard. Nothing runs until you move the card.
+
+### Queue
+
+Drag a card to Queue and Maestro starts it as soon as there is room. **Auto** starts everything eligible; **Manual** starts only tasks you deferred yourself. Room is measured per connection, either from free memory or as a fixed number of agents, and a session parked in Review still holds its slot until you deal with it.
+
+### In progress
+
+If the project has a Planner profile, the Planner runs first, read-only, and stops at the plan gate. You can annotate the plan passage by passage, send the notes back for another round, or start implementing. Approving starts a fresh Coder session with the plan text.
+
+The Coder gets a workspace of its own. The default is a new worktree on a new branch; you can instead point a task at the repository directory or reuse a worktree another task left behind. Two tasks running at once are two worktrees, so neither sees the other's edits.
+
+While it runs you see the full session: every tool call, permission prompt and question in the stream, and a side panel beside it.
+
+<img src="docs/assets/session.webp" alt="A running Maestro session showing the agent activity feed, its tool calls, and the changed files panel" width="960" />
+
+The side panel is a tab strip. Some tabs open themselves when the agent produces something, the rest you add:
+
+- **Overview** and **Plan**: what the task is, and the plan when a Planner wrote one, with passage-level annotations.
+- **Changes**: the diff so far, updating as the agent edits.
+- **Files**: the workspace tree with an editor. Change a file yourself, create one, show hidden files, open it in your OS or download it.
+- **Terminal**: a shell in the workspace, as many as you want.
+- **Subagents** and **Artifacts**: nested agents the main one spawned, and files it handed back.
+- **Canvas**: see below.
+
+<img src="docs/assets/side-panel-files.webp" alt="The Files tab of the side panel with store.ts open in the editor next to the agent stream" width="960" />
+
+The canvas is where an agent shows work instead of describing it. Maestro installs the `maestro-output` skill on every connection, and with it an agent renders tables, charts, dashboards and real UI controls in your theme. Click a component or drag a rectangle over it to attach a note, and the note goes back to the agent anchored to what you pointed at.
+
+<img src="docs/assets/side-panel-canvas.webp" alt="The Canvas tab showing stat cards, a bar chart and a table the agent rendered for the repository" width="960" />
+
+The stream itself renders more than text. Mermaid diagrams, SVG, images, KaTeX and chemical structures all draw inline, so an answer can be a flowchart or a formula rather than a description of one.
+
+<img src="docs/assets/rendering.webp" alt="One agent reply in the stream rendering a Mermaid flowchart, an SVG figure, a generated PNG, a KaTeX equation, a caffeine molecule from SMILES and a table" width="960" />
+
+**Abandon** on a running card tears down the session, deletes the worktree and its branch, and puts the task back in Planning as if it had never run.
+
+### Review
+
+When the Coder's turn ends with changes, the task moves to Review. If the project has a Reviewer profile, that agent goes first: read-only, with your project's review instructions, and it may send the work back to the Coder for rework up to three times without you.
+
+Then it is your turn. The diff opens unified or split, expands context from any hunk header, and takes comments on a line or a range of lines. **Rework** sends those comments back to the Coder as one prompt. **Approve** asks how the work should land. The push and pull-request choices appear once the project has a remote:
+
+| Choice                     | Result                                                                   |
+| -------------------------- | ------------------------------------------------------------------------ |
+| Commit + Merge             | Merged into the base branch, worktree removed, task Done                 |
+| Commit only                | Committed on its branch, task Done                                       |
+| Commit + Push              | Pushed to the remote unmerged, task Done                                 |
+| Commit + Open pull request | Pushed and opened on the forge; the task stays in Review until it merges |
+
+A reviewer that can write is not a reviewer, so every role except the Coder runs under a permission mode that refuses writes. That is enforced by the agent's session mode, not by a prompt asking nicely.
+
+<img src="docs/assets/review.webp" alt="Maestro diff viewer showing two hunks of an agent's change" width="960" />
+
+### Done
+
+A task is Done with a record of how: merged, merged through a pull request, committed locally, or finished with no changes.
 
 ---
 
-## Features
+## Around the board
 
-### Parallel agents, zero conflicts
+### Worktrees and pull requests
 
-<img src="docs/assets/kanban-board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
+The Worktrees view lists every worktree of the project with what is using it, how far it is ahead of or behind its upstream, and the pull request on its branch. Push and pull are one click on those counts. Open pull requests are listed alongside, so you can start a session on any of them, including one from a contributor's fork. Stale `maestro/` branches are pruned from here too.
 
-In a Git repository, each task can run in its own worktree. Agents work independently — no branch conflicts and no clobbering each other's changes. Run multiple agents concurrently, limited by your machine, remote host, and provider limits.
+<img src="docs/assets/workspaces.webp" alt="The Workspaces view listing the project's worktrees with their line counts and a Prune branches button" width="960" />
 
-### Live visibility
+### Connections
 
-<img src="docs/assets/live-execution.webp" alt="A running Maestro session showing the agent activity feed, its tool calls, and the changed files panel" width="960" />
+| Connection | Where the agent runs                                          | Authentication                                   |
+| ---------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| Local      | Your machine                                                  | —                                                |
+| SSH        | A remote Linux host                                           | Key, key with passphrase, password, or SSH agent |
+| WSL        | A distro on your Windows machine; stopped distros are started | —                                                |
+| Container  | A running Docker, Podman or nerdctl container on your machine | —                                                |
 
-Live terminal output, a structured activity feed, and a file tree — all updating in real time. You see exactly what every agent is doing at every step.
+Maestro deploys its own small server binary to the remote on first use, so the remote needs nothing but the agent. Connections are added from the start screen, before a project is chosen.
 
-### Surgical diff review
+<img src="docs/assets/connections.webp" alt="Maestro's start screen listing a Local connection and a WSL distro, with an Add connection button" width="960" />
 
-<img src="docs/assets/diff-review.webp" alt="Maestro diff viewer showing two hunks of an agent's change with per-hunk staging controls" width="960" />
+### Integrations
 
-When an agent finishes in a Git repository, you get an inline diff viewer with hunk-level staging. Accept what you want, revert what you don't, commit in one click.
+Issue tracking brings work in; code hosting sends it out. Each is configured per project.
 
-### Remote execution
+| Provider     | Import issues | Open pull requests                          |
+| ------------ | ------------- | ------------------------------------------- |
+| GitHub       | ✓             | ✓                                           |
+| GitLab       | ✓             | ✓                                           |
+| Gitea        | ✓             | ✓                                           |
+| Forgejo      | ✓             | ✓                                           |
+| Azure DevOps | ✓             | ✓                                           |
+| Bitbucket    | —             | ✓ (no CI status or pull-request search yet) |
+| Jira Cloud   | ✓             | —                                           |
+| Linear       | ✓             | —                                           |
 
-Connect Maestro to a remote Linux server over SSH, or to a WSL distro on Windows. Agents execute on the remote machine while you work locally. Password, key, and passphrase auth all supported.
+Import is one way: an imported task carries its ticket key, but Maestro does not write status back to the tracker. Credentials are added once, on the start screen's Integrations tab, and every project can then pick a provider.
 
-### Pull from your issue tracker
+<img src="docs/assets/integrations.webp" alt="The Add integration panel listing Jira Cloud, Bitbucket, GitHub, GitLab, Gitea, Forgejo, Azure DevOps and Linear" width="960" />
 
-<!-- Still to capture: docs/assets/issue-import.webp — needs a tracker connection, see docs/presentation-assets.md -->
+### Settings
 
-Sync tasks directly from GitHub Issues or Jira. Import a ticket, add instructions, hand it to an agent.
+Settings open before a project does, from the sidebar. Project pages cover git and code hosting, issue tracking, agent profiles and the project's own accent colour. App pages cover appearance (theme, scale, reduced motion, terminal colours, and whether to keep the system title bar), running-agent limits per connection, desktop notifications when an agent finishes, needs you or fails, and diagnostics with the log level and directory. Everything saves as you change it.
 
-### Your agents, your models
-
-Use your preferred ACP-compatible coding agent and pick the model per task. Configure MCP allowlists while agent authentication and billing stay with the provider. Maestro stays out of the way. Agents it does not ship — a local model behind Ollama, an in-house adapter — go in [`custom-agents.json`](#add-a-custom-agent).
+<img src="docs/assets/settings-agents.webp" alt="The Agents settings page: installed agents with the default marked, and one profile slot per pipeline role" width="960" />
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branch conventions, and PR guidelines.
-
-For README screenshots and the short product demo, follow the [presentation asset guide](docs/presentation-assets.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branch conventions and PR guidelines, and [`AGENTS.md`](AGENTS.md) for the architecture walkthrough. README screenshots are captured from a real build; see the [presentation asset guide](docs/presentation-assets.md).
 
 ### Tech stack
 
@@ -187,41 +196,29 @@ For README screenshots and the short product demo, follow the [presentation asse
 ### Development commands
 
 ```bash
-# Frontend
-bun dev              # Vite dev server only (localhost:5173)
-bun build            # TypeScript check + production build
-bun lint             # oxlint
-bun lint:fix         # Auto-fix lint issues
-bun format           # Check formatting (oxfmt)
-bun format:fix       # Fix formatting
+bun run tauri:dev            # Full dev mode (Tauri + Vite), data in .maestro/dev-data
+bun run dev                  # Vite dev server only (localhost:5173)
+bun run build                # TypeScript check + production build
+bun run test                 # Vitest unit tests (bun run test <pattern> for one file)
+bun run test:e2e             # Build the real binary and drive it with WebdriverIO (needs a display)
+bun run lint                 # oxlint
+bun run format               # oxfmt check; format:fix to apply
+bun run format:rust          # rustfmt check; format:rust:fix to apply
+bun run tauri:gen            # Regenerate TypeScript bindings from Rust models
+bun run tauri build          # Production bundle
 
-# Testing
-bun test             # Vitest unit tests
-bun test <pattern>   # Single test file
-
-# Rust backend
-cd src-tauri && cargo build
-cd src-tauri && cargo test
-cd src-tauri && cargo check
-
-# Tauri
-bun tauri:dev        # Full dev mode (Tauri + Vite)
-bun tauri:gen        # Regenerate TypeScript bindings from Rust models
-bun tauri build      # Production bundle
-
-# Cross-compile for Windows from Linux
-bun tauri build --debug --runner cargo-xwin --target x86_64-pc-windows-msvc
+cd src-tauri && cargo test   # Rust tests; on Windows: MAESTRO_TEST_MANIFEST=1 cargo test --lib
 ```
+
+Use `bun run <script>`, not `bun <script>`: `bun test` and `bun build` are Bun's own commands, not this project's.
 
 ### Architecture
 
 Three Rust crates in a Cargo workspace:
 
-- **`src-tauri`** — Tauri backend: IPC command handlers, SQLite DB, SSH tunneling, PTY management, ACP session coordination.
-- **`maestro-server`** — Agent runtime sidecar, automatically deployed at runtime.
-- **`maestro-protocol`** — Shared ACP protocol types.
-
-See [`AGENTS.md`](AGENTS.md) for a full architecture walkthrough.
+- **`src-tauri`** — Tauri backend: IPC command handlers, SQLite, SSH, PTY management, ACP session coordination. Organised by domain, not by layer.
+- **`maestro-server`** — Agent runtime sidecar, deployed to each connection at runtime.
+- **`maestro-protocol`** — Shared message types between the two.
 
 ---
 
