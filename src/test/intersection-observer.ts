@@ -54,11 +54,13 @@ class StubIntersectionObserver implements IntersectionObserver {
   emit(targets: Element[], isIntersecting: boolean) {
     const watched = targets.filter((t) => this.targets.has(t));
     if (watched.length === 0) return;
-    const entries = watched.map((target): Entry => ({
-      target,
-      isIntersecting,
-      intersectionRatio: isIntersecting ? 1 : 0,
-    }));
+    const entries = watched.map(
+      (target): Entry => ({
+        target,
+        isIntersecting,
+        intersectionRatio: isIntersecting ? 1 : 0,
+      }),
+    );
     this.callback(entries as IntersectionObserverEntry[], this);
   }
 

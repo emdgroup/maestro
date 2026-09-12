@@ -64,17 +64,19 @@ function turn(n: number, isStreaming: boolean): ActivityItem[] {
   return [
     { type: "userMessage", item: { id: `u-${n}`, content: `ask ${n}`, sentAt: n } },
     { type: "thinking", item: { id: `t-${n}`, text: `thinking ${n}`, isStreaming: false } },
-    ...(["a", "b"] as const).map((suffix): ActivityItem => ({
-      type: "toolCall",
-      item: {
-        toolCallId: `tc-${n}${suffix}`,
-        title: `read ${n}${suffix}`,
-        kind: "read",
-        status: "completed",
-        content: [],
-        locations: [],
-      },
-    })),
+    ...(["a", "b"] as const).map(
+      (suffix): ActivityItem => ({
+        type: "toolCall",
+        item: {
+          toolCallId: `tc-${n}${suffix}`,
+          title: `read ${n}${suffix}`,
+          kind: "read",
+          status: "completed",
+          content: [],
+          locations: [],
+        },
+      }),
+    ),
     {
       type: "message",
       item: { id: `m-${n}`, text: `answer ${n}`, isStreaming, messageId: `msg-${n}` },
