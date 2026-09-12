@@ -377,7 +377,7 @@ installed onto every connection alongside `maestro-output`, and interviews the u
 It carries `disable-model-invocation: true`, so it only runs when the user types
 `/maestro-custom-agents` — writing to a file outside the project on a model's own initiative is not
 something to do behind the user's back. Its schema documentation and Ollama recipe are user-facing
-and mirrored in the README; keep both in step with `resolve_spawn`.
+and mirrored in `docs/custom-agents.md`; keep both in step with `resolve_spawn`.
 
 ### Project-Local Storage (`.maestro/`)
 
