@@ -60,6 +60,20 @@ pub struct WorktreeDiffStats {
     pub untracked_count: u32,
 }
 
+/// What can be said about a file git refuses to diff line by line.
+///
+/// The sizes are the two blobs' byte counts, which is the only thing resembling a `+`/`-` count a
+/// binary change has. Either is zero where that side does not exist — an addition or a deletion.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct BinaryFileInfo {
+    pub old_size: u32,
+    pub new_size: u32,
+    /// The working-tree copy, base64-encoded, for showing an image rather than describing it.
+    /// `None` when it was not asked for, cannot exist, or is past the binary read limit.
+    pub preview: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct DirtyStatus {

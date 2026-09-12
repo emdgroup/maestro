@@ -3,6 +3,7 @@ import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString, computeFileStats } from "@/lib/diff-utils";
 import { DiffViewer, type PendingComment } from "./DiffViewer";
 import { fileNote } from "./ReviewFileCard";
+import { BinaryFileBody } from "./BinaryFileView";
 import { LoadDiffPrompt } from "./LoadDiffPrompt";
 import { diffLineCount, MAX_EAGER_FILE_LINES } from "./body-budget";
 import { useUntrackedFileContentQuery } from "@/services/worktree.service";
@@ -92,7 +93,15 @@ export function UntrackedFileDiffViewer({
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto">
-        {note ? (
+        {diffFile?.binary && filePath ? (
+          <BinaryFileBody
+            projectId={projectId}
+            worktreePath={worktreePath}
+            diffTarget={null}
+            path={filePath}
+            note={note ?? ""}
+          />
+        ) : note ? (
           <div className="px-3 py-6 text-xs text-center text-muted-foreground">{note}</div>
         ) : tooLarge ? (
           <LoadDiffPrompt

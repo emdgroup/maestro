@@ -1327,6 +1327,26 @@ async getFileContentAtBase(projectId: number, worktreePath: string, diffTarget: 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * What to show for a file git describes as binary: how big each side is, and — for an image —
+ * the bytes themselves.
+ * 
+ * `diff_target` is `None` for an untracked file, which is in no revision and so is sized the same
+ * way its diff is produced, against `/dev/null`.
+ * 
+ * The preview is the *working tree* copy, so it is only fetched for a target that reaches the
+ * working tree; against a commit range the post-image is a blob that may be nothing like what is
+ * on disk, and showing the wrong picture is worse than showing none. A read that fails — the file
+ * past the binary limit, or gone — costs the preview, not the sizes.
+ */
+async getBinaryFileInfo(projectId: number, worktreePath: string, diffTarget: DiffTarget | null, filePath: string, wantPreview: boolean) : Promise<Result<BinaryFileInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_binary_file_info", { projectId, worktreePath, diffTarget, filePath, wantPreview }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async checkWorktreeDirty(projectId: number, worktreePath: string) : Promise<Result<DirtyStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_worktree_dirty", { projectId, worktreePath }) };
@@ -2634,6 +2654,18 @@ export type AzureDevOpsProjectOption = { id: string; name: string; description: 
  * An Azure DevOps git repository option for clone combobox display.
  */
 export type AzureDevOpsRepoOption = { id: string; name: string; project_name: string; clone_url: string | null }
+/**
+ * What can be said about a file git refuses to diff line by line.
+ * 
+ * The sizes are the two blobs' byte counts, which is the only thing resembling a `+`/`-` count a
+ * binary change has. Either is zero where that side does not exist — an addition or a deletion.
+ */
+export type BinaryFileInfo = { old_size: number; new_size: number; 
+/**
+ * The working-tree copy, base64-encoded, for showing an image rather than describing it.
+ * `None` when it was not asked for, cannot exist, or is past the binary read limit.
+ */
+preview: string | null }
 /**
  * A Bitbucket Server/DC project option for project key dropdown.
  */

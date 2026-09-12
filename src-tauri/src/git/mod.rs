@@ -12,7 +12,9 @@ pub mod worktree_query;
 pub mod worktree_staging;
 pub mod worktree_sync;
 
-pub use diff_models::{CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult, WorktreeDiffStats};
+pub use diff_models::{
+    BinaryFileInfo, CommitInfo, DiffTarget, DirtyStatus, WorktreeDiffResult, WorktreeDiffStats,
+};
 pub use review_models::{
     MergeResult, ReviewComment, ReviewCommentEntry, ReviewDecision, ReviewFeedback, ReviewResult,
     SaveReviewRequest, TaskReviewWithComments,

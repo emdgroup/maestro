@@ -54,6 +54,8 @@ interface ReviewFileCardProps {
   path: string;
   /** Raw hunks; the card derives +/- itself. Empty for an untracked file. */
   hunks: string[];
+  /** Rendered in place of the derived +/- counts, for a change that cannot be counted in lines. */
+  stats?: React.ReactNode;
   viewed: boolean;
   onToggleViewed: () => void;
   expanded: boolean;
@@ -88,6 +90,7 @@ interface ReviewFileCardProps {
 export function ReviewFileCard({
   path,
   hunks,
+  stats,
   viewed,
   onToggleViewed,
   expanded,
@@ -159,7 +162,7 @@ export function ReviewFileCard({
           ) : (
             <span className="text-xs font-mono truncate text-foreground/80 flex-1">{path}</span>
           )}
-          <DiffStats hunks={hunks} />
+          {stats ?? <DiffStats hunks={hunks} />}
           <CopyPathButton path={path} />
           {fileComment && (
             <Tooltip>
