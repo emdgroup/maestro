@@ -223,6 +223,7 @@ Three Rust crates in a Cargo workspace:
 ---
 
 ## Special thanks
+
 Maestro talks to every agent it supports over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), an open standard from [Zed Industries](https://zed.dev/) ([agentclientprotocol](https://github.com/zed-industries/agent-client-protocol)). 
 This one protocol is the sole reason that Maestro can exist !
 Thanks to the ACP maintainers and to the agent authors who ship ACP support.
