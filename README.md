@@ -21,7 +21,7 @@
 
 Maestro is a desktop app that runs coding agents against your repositories. Tasks live on a Kanban board. Each one moves through refinement, planning, implementation and review, and a different agent can own each stage. Implementation happens in its own git worktree, so several tasks run at once without touching each other's files. You watch every session live, comment on the diff, and decide how the work lands: merge it, push it, or open a pull request.
 
-Maestro brings no agent of its own. It drives the one you already use — Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, OpenCode, goose, Cline and thirty-odd others that speak the [Agent Client Protocol](https://agentclientprotocol.com/) — on your laptop, on a server over SSH, in WSL, or in a container.
+Maestro brings no agent of its own. It drives the one you already use (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, OpenCode, goose, Cline and many others that support the [Agent Client Protocol](https://agentclientprotocol.com/) — on your laptop, on a server over SSH, in WSL, or in a container.
 
 ---
 
@@ -220,6 +220,10 @@ Three Rust crates in a Cargo workspace:
 - **`maestro-server`** — Agent runtime sidecar, deployed to each connection at runtime.
 - **`maestro-protocol`** — Shared message types between the two.
 
+---
+
+## Special thanks
+Maestro talks to every agent it supports over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/), an open standard from [Zed Industries](https://zed.dev/) ([agentclientprotocol](https://github.com/zed-industries/agent-client-protocol)). One protocol is why adding an agent is a registry entry rather than a bespoke integration, and why an agent Maestro has never heard of works through [`custom-agents.json`](#add-a-custom-agent). Thanks to the ACP maintainers and to the agent authors who ship ACP support.
 ---
 
 ## License
