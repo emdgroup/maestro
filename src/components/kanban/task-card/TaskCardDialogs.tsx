@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
+import { isTaskStuck } from "./FooterCTAs";
 import type { Task, WorktreeWithStatus } from "@/types/bindings";
 import type { AuthRequiredEntry } from "@/store/boardStore";
 
@@ -29,6 +30,7 @@ export interface DialogActions {
   onArchive: () => void;
   onArchiveAndRemoveWorktree: (worktree: WorktreeWithStatus) => void;
   onForceReview: () => void;
+  onSendToReview: () => void;
   onAuthSuccess: () => void;
   onAuthRetry: () => void;
 }
@@ -130,8 +132,23 @@ export function TaskCardDialogs({
               intact, as though it had never run. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          {/* Three actions, so the same stacked footer the archive dialog needs. */}
+          <AlertDialogFooter className="sm:flex-col-reverse">
             <AlertDialogCancel>Keep working</AlertDialogCancel>
+            {/* The card's footer has two slots and the run's own controls fill them, so this is
+                where a stuck run offers the other way out: keep what it produced and move on.
+                Only from In Progress — a refinement being stopped has no work to send anywhere. */}
+            {task.status === "InProgress" && isTaskStuck(task) && (
+              <AlertDialogAction
+                variant="outline"
+                onClick={() => {
+                  onClose();
+                  actions.onSendToReview();
+                }}
+              >
+                Keep the work and send it to review
+              </AlertDialogAction>
+            )}
             {/* `AlertDialogAction` is a plain button — only `AlertDialogCancel` renders through
                 base-ui's `Close`, so an action that does not close the dialog itself leaves it up
                 over a task it has already abandoned. Same for the dialogs above and below. */}

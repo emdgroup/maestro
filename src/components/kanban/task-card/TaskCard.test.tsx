@@ -321,35 +321,52 @@ describe("TaskCard pipeline treatment", () => {
  * The escape hatch for a task neither completion signal moved on. It must not be offered while
  * the agent is still working, or it invites sending half-finished work to review.
  */
+/**
+ * A card footer carries at most two controls, and on a stuck run the agent's own controls fill
+ * both — so the escape hatch moved into the abandon confirmation, where "keep the work" is the
+ * alternative to destroying it. Blocked is the exception: there the footer offers it directly,
+ * because Respond and Review are the only two things that state has to say.
+ */
+const SEND_ON = "Keep the work and send it to review";
+
+/** Opens the abandon confirmation from a card's footer. */
+async function openAbandonDialog() {
+  await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
+}
+
 describe("TaskCard send-to-review escape hatch", () => {
-  it("is offered when the agent has stopped and is waiting", () => {
+  it("is offered when the agent has stopped and is waiting", async () => {
+    activeSession.current = { session_key: 1 };
     renderCard({ phase: "Implementing", phase_status: "Waiting", ball: "User" });
-    expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
+    await openAbandonDialog();
+    expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
   });
 
-  it("is offered when the phase failed", () => {
+  it("is offered when the phase failed", async () => {
+    activeSession.current = { session_key: 1 };
     renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
-    expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
+    await openAbandonDialog();
+    expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
   });
 
-  it("is hidden while the agent is running", () => {
+  it("is hidden while the agent is running", async () => {
+    activeSession.current = { session_key: 1 };
     renderCard({ phase: "Implementing", phase_status: "Running", ball: "Agent" });
-    expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
+    await openAbandonDialog();
+    expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
   });
 
-  /**
-   * A dead session is exactly when the work may be finished and only the session gone, so the
-   * "Session lost" branch must not swallow the escape hatch — it used to return before the
-   * button was even constructed.
-   */
-  it("survives the session-lost branch", async () => {
-    renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
-    // The branch is gated on a 2s debounce; the button must be present either side of it.
+  /** The agent is waiting on an answer, so the footer's two slots are Review and Respond. */
+  it("stays on the footer while the agent is blocked", () => {
+    activeSession.current = { session_key: 1 };
+    renderCard({ phase: "Implementing", phase_status: "Blocked", ball: "User" });
     expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
   });
 
-  it("is hidden outside In Progress", () => {
+  it("is hidden outside In Progress", async () => {
+    activeSession.current = { session_key: 1 };
     renderCard({ status: "Review", phase: "Approval", phase_status: "Waiting", ball: "User" });
+    expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
   });
 });
@@ -369,8 +386,10 @@ describe("TaskCard empty-review confirmation", () => {
 
   it("asks first when the backend reports nothing to review", async () => {
     const user = userEvent.setup();
+    activeSession.current = { session_key: 1 };
     renderCard(stuck);
-    await user.click(screen.getByRole("button", { name: "Send to review" }));
+    await openAbandonDialog();
+    await user.click(screen.getByRole("button", { name: SEND_ON }));
 
     expect(sendToReview.mutate).toHaveBeenCalledWith({ taskId: 7 });
     expect(await screen.findByText("Nothing to review")).toBeInTheDocument();
@@ -378,8 +397,10 @@ describe("TaskCard empty-review confirmation", () => {
 
   it("forces on confirmation", async () => {
     const user = userEvent.setup();
+    activeSession.current = { session_key: 1 };
     renderCard(stuck);
-    await user.click(screen.getByRole("button", { name: "Send to review" }));
+    await openAbandonDialog();
+    await user.click(screen.getByRole("button", { name: SEND_ON }));
     await user.click(await screen.findByText("Review anyway"));
 
     expect(sendToReview.mutate).toHaveBeenLastCalledWith({ taskId: 7, force: true });
@@ -388,10 +409,23 @@ describe("TaskCard empty-review confirmation", () => {
   it("does not ask when the task actually moved", async () => {
     sendToReview.result = makeTask({ status: "Review" });
     const user = userEvent.setup();
+    activeSession.current = { session_key: 1 };
     renderCard(stuck);
-    await user.click(screen.getByRole("button", { name: "Send to review" }));
+    await openAbandonDialog();
+    await user.click(screen.getByRole("button", { name: SEND_ON }));
 
     expect(screen.queryByText("Nothing to review")).not.toBeInTheDocument();
+  });
+
+  /** Abandoning is what the dialog is for; taking the other door must not also destroy the run. */
+  it("does not abandon when the work is kept", async () => {
+    const user = userEvent.setup();
+    activeSession.current = { session_key: 1 };
+    renderCard(stuck);
+    await openAbandonDialog();
+    await user.click(screen.getByRole("button", { name: SEND_ON }));
+
+    expect(interrupt.mutate).not.toHaveBeenCalled();
   });
 });
 
