@@ -2335,6 +2335,25 @@ async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | n
 }
 },
 /**
+ * End the review agent's pass and hand the task to the human gate.
+ * 
+ * The same transition an approving verdict applies, so the reviewer is not started again: the
+ * round count is untouched and `reviewer_should_run` is never consulted. Going through
+ * `send_task_to_review` instead would recompute it and send the task straight back to
+ * `SelfReview`.
+ * 
+ * Returns `None` when the task has already left `SelfReview` — the verdict landed while the user
+ * was pressing the button, and it must not be dragged back to a gate it has passed.
+ */
+async endSelfReview(taskId: number) : Promise<Result<Task | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("end_self_review", { taskId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Claims a task for execution, before anything is spawned.
  * 
  * The claim is the start of the spawn, not the end of it. The task keeps its column and takes the

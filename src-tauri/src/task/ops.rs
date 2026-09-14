@@ -201,6 +201,48 @@ pub async fn send_task_to_review(
     Ok(Some(task))
 }
 
+/// End the review agent's pass and hand the task to the human gate.
+///
+/// The same transition an approving verdict applies, so the reviewer is not started again: the
+/// round count is untouched and `reviewer_should_run` is never consulted. Going through
+/// `send_task_to_review` instead would recompute it and send the task straight back to
+/// `SelfReview`.
+///
+/// Returns `None` when the task has already left `SelfReview` — the verdict landed while the user
+/// was pressing the button, and it must not be dragged back to a gate it has passed.
+#[tauri::command]
+#[specta::specta]
+pub fn end_self_review(
+    app_state: State<'_, Arc<AppState>>,
+    task_id: i32,
+) -> Result<Option<crate::models::Task>, String> {
+    let task = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+
+        let phase: Option<String> = conn
+            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
+                row.get(0)
+            })
+            .map_err(|e| format!("Failed to read task {} phase: {}", task_id, e))?;
+
+        if phase.as_deref() != Some("SelfReview") {
+            return Ok(None);
+        }
+
+        crate::task::transition::apply(
+            &conn,
+            task_id,
+            crate::task::transition::TaskTransition::ReviewFinished,
+        )?
+    };
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(Some(task))
+}
+
 /// Claims a task for execution, before anything is spawned.
 ///
 /// The claim is the start of the spawn, not the end of it. The task keeps its column and takes the

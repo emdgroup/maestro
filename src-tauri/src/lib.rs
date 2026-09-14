@@ -228,6 +228,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::proxy_image,
         crate::ipc::interrupt_task,
         crate::ipc::send_task_to_review,
+        crate::ipc::end_self_review,
         crate::ipc::mark_task_execution_started,
         crate::ipc::mark_task_session_ready,
         crate::ipc::close_refinement,

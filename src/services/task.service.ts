@@ -563,6 +563,22 @@ export function useSendTaskToReviewMutation() {
 }
 
 /**
+ * Mutation hook for ending the review agent's pass and opening the human review gate.
+ *
+ * Resolves to `null` when the task had already left `SelfReview` by the time it ran.
+ */
+export function useEndSelfReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: number) => api.endSelfReview(taskId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+    },
+    onError: createErrorToastHandler("Failed to end the review"),
+  });
+}
+
+/**
  * The task's outcome thread, oldest entry first.
  *
  * Refetches on `task-comments-changed`, which the backend emits when a phase records its closing
