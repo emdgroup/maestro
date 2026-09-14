@@ -104,6 +104,7 @@ pub async fn get_active_sessions(
                 started_at: proc.started_at.clone(),
                 task_id: proc.task_id,
                 task_name: proc.task_name.clone(),
+                task_role: proc.task_role.clone(),
                 branch_name: proc.branch_name.clone(),
                 acp_session_id: native_id,
                 cwd: proc.cwd.clone(),
@@ -132,6 +133,8 @@ pub async fn get_active_sessions(
                 started_at: meta.started_at.clone(),
                 task_id: meta.task_id,
                 task_name: meta.task_name.clone(),
+                // A shell runs no role, even when opened on a task's worktree.
+                task_role: None,
                 branch_name: meta.branch_name.clone(),
                 acp_session_id: None,
                 cwd: meta.cwd.clone(),

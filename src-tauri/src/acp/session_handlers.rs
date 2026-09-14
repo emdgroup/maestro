@@ -30,6 +30,7 @@ pub async fn spawn_acp_session(
     worktree_branch: Option<String>,
     task_id: Option<i32>,
     task_name: Option<String>,
+    role: Option<crate::project::profiles::SessionRole>,
 ) -> Result<SpawnSessionResult, String> {
     let connection_id = connection.ssh_id();
     let wsl_connection_id = connection.wsl_id();
@@ -148,6 +149,7 @@ pub async fn spawn_acp_session(
             task_name: task_name.clone(),
             branch_name: branch_name.clone(),
             session_start_sha: session_start_sha.clone(),
+            role: role.clone(),
         },
         &req,
     )
@@ -186,6 +188,7 @@ pub async fn spawn_acp_session(
                     task_name: task_name.clone(),
                     branch_name,
                     session_start_sha,
+                    role: role.clone(),
                 },
                 &req,
             )
@@ -245,6 +248,7 @@ pub async fn spawn_acp_session(
                             task_name: task_name.clone(),
                             branch_name,
                             session_start_sha,
+                            role: role.clone(),
                         },
                         &req,
                     )
@@ -264,6 +268,7 @@ pub async fn spawn_acp_session(
                         task_name,
                         branch_name,
                         session_start_sha,
+                        role,
                     },
                     &req,
                 )

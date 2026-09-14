@@ -431,6 +431,9 @@ export function useExecuteTask(
         worktreeBranch: branchName ?? null,
         taskId: task.id,
         taskName: task.title,
+        // The profile resolved before the spawn, not the one re-resolved against the agent's
+        // capabilities below: they name the same profile, and this is the only one in hand yet.
+        role: { role, profile_id: roleProfile?.profile_id ?? null },
       });
       logId = spawnResult.log_id;
 

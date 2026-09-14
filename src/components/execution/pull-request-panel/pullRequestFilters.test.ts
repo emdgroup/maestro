@@ -56,6 +56,7 @@ function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo 
     started_at: "",
     task_id: null,
     task_name: null,
+    task_role: null,
     branch_name: null,
     acp_session_id: null,
     cwd: "C:/repo/.maestro/worktrees/session-58",
