@@ -13,6 +13,7 @@ import { Button } from "@/ui/button";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   useCancelTaskMutation,
   useDeleteTaskMutation,
   useAddTaskAttachmentMutation,
+  useTaskCommentsQuery,
 } from "@/services/task.service";
 import { useSelectedProject, useIsGitRepo } from "@/store/projectStore";
 import { useNavigationActions } from "@/store/navigationStore";
@@ -94,6 +96,8 @@ interface TaskDraft {
   labels: string[];
 }
 
+type Tab = "details" | "outcome";
+
 interface TaskDetailModalProps {
   taskId: number | null;
 }
@@ -114,6 +118,16 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const addAttachment = useAddTaskAttachmentMutation();
   const addAttachmentRef = useRef(addAttachment);
   addAttachmentRef.current = addAttachment;
+
+  // Same query key `OutcomeThread` uses, so the count on the tab costs no extra call.
+  const { data: comments = [] } = useTaskCommentsQuery(taskId ?? undefined);
+
+  const [tab, setTab] = useState<Tab>("details");
+
+  // A different task opens onto Details, whatever tab the last one was left on.
+  useEffect(() => {
+    setTab("details");
+  }, [taskId]);
 
   const { setActiveTaskId } = useNavigationActions();
 
@@ -256,7 +270,10 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     >
       <DialogContent
         showCloseButton={false}
-        className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
+        // Fixed rather than sized to content: with the body in tabs, `w-fit`/`max-h` resized and
+        // re-centred the whole dialog on every tab click, because the two panels do not measure
+        // the same. The description is `flex-1`, so the fixed height is spent on it.
+        className="sm:w-160 sm:max-w-[90vw] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
         {task === null ? (
           <div className="flex flex-col items-center justify-center gap-4 py-16">
@@ -303,95 +320,116 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
             </DialogHeader>
 
             {/* Body */}
-            <div className="flex-1 flex flex-col min-h-0 px-6 py-4 gap-4">
-              <div className="shrink-0">
-                <EditableField
-                  value={draft.title}
-                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
-                  isEditable={isEditable ?? false}
-                  placeholder="Add a title..."
-                  className="text-xl font-semibold"
-                />
-              </div>
+            <Tabs
+              value={tab}
+              onValueChange={(v) => setTab(v as Tab)}
+              className="flex-1 min-h-0 px-6 py-4 gap-4"
+            >
+              <TabsList variant="line" className="shrink-0">
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="outcome">
+                  Outcome{comments.length > 0 ? ` (${comments.length})` : ""}
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Description + attachment */}
-              <DescriptionWithAttachments
-                value={draft.description}
-                onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
-                isEditable={isEditable ?? false}
-                isDragging={isDragging}
-                onPickFiles={pickFiles}
-                placeholder="Add a description..."
-              />
-
-              {/* Labels */}
-              {draft.labels.length > 0 && (
-                <div className="flex flex-wrap gap-1 shrink-0">
-                  {draft.labels.map((label) => (
-                    <IssueTypeChip
-                      key={label}
-                      type={label}
-                      onRemove={
-                        isEditable
-                          ? () =>
-                              markDirtySetDraft((d) => ({
-                                ...d,
-                                labels: d.labels.filter((l) => l !== label),
-                              }))
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Workspace */}
-              {isGitRepo && (
+              {/* `keepMounted`, on both panels, because the editors here commit on blur: an
+                  unmounted panel never blurs, so a tab click mid-edit would drop what was typed. */}
+              <TabsContent value="details" keepMounted className="flex flex-col min-h-0 gap-4">
                 <div className="shrink-0">
-                  <WorkspaceSelector
-                    mode={draft.workspaceMode}
-                    onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
-                    baseBranch={draft.baseBranch}
-                    onBaseBranchChange={(b) => markDirtySetDraft((d) => ({ ...d, baseBranch: b }))}
-                    branchMode={draft.branchMode}
-                    onBranchModeChange={(m) => markDirtySetDraft((d) => ({ ...d, branchMode: m }))}
-                    branchSuffix={draft.branchSuffix}
-                    onBranchSuffixChange={(s) =>
-                      markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
-                    }
-                    generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
-                      MAESTRO_BRANCH_PREFIX,
-                      "",
-                    )}
-                    worktrees={worktrees ?? []}
-                    repoPath={selectedProject?.path ?? ""}
-                    selectedWorktreeId={draft.workspaceWorktreeId}
-                    onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
-                      markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
-                    }
-                    claimsOwnership
-                    ownerTaskId={task.id}
-                    readOnly={!isEditable}
+                  <EditableField
+                    value={draft.title}
+                    onSave={(v) => markDirtySetDraft((d) => ({ ...d, title: v }))}
+                    isEditable={isEditable ?? false}
+                    placeholder="Add a title..."
+                    className="text-xl font-semibold"
                   />
                 </div>
-              )}
 
-              {/* Metadata pills */}
-              <div className="shrink-0 space-y-3 pt-2 border-t border-border">
-                <TaskMetadataPills
-                  priority={draft.priority}
-                  onPriorityChange={
-                    isEditable
-                      ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
-                      : undefined
-                  }
+                {/* Description + attachment */}
+                <DescriptionWithAttachments
+                  value={draft.description}
+                  onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
+                  isEditable={isEditable ?? false}
+                  isDragging={isDragging}
+                  onPickFiles={pickFiles}
+                  placeholder="Add a description..."
                 />
-              </div>
+
+                {/* Labels */}
+                {draft.labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 shrink-0">
+                    {draft.labels.map((label) => (
+                      <IssueTypeChip
+                        key={label}
+                        type={label}
+                        onRemove={
+                          isEditable
+                            ? () =>
+                                markDirtySetDraft((d) => ({
+                                  ...d,
+                                  labels: d.labels.filter((l) => l !== label),
+                                }))
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Workspace */}
+                {isGitRepo && (
+                  <div className="shrink-0">
+                    <WorkspaceSelector
+                      mode={draft.workspaceMode}
+                      onModeChange={(m) => markDirtySetDraft((d) => ({ ...d, workspaceMode: m }))}
+                      baseBranch={draft.baseBranch}
+                      onBaseBranchChange={(b) =>
+                        markDirtySetDraft((d) => ({ ...d, baseBranch: b }))
+                      }
+                      branchMode={draft.branchMode}
+                      onBranchModeChange={(m) =>
+                        markDirtySetDraft((d) => ({ ...d, branchMode: m }))
+                      }
+                      branchSuffix={draft.branchSuffix}
+                      onBranchSuffixChange={(s) =>
+                        markDirtySetDraft((d) => ({ ...d, branchSuffix: s }))
+                      }
+                      generatedBranchSuffix={taskBranchName(task.id, task.title).replace(
+                        MAESTRO_BRANCH_PREFIX,
+                        "",
+                      )}
+                      worktrees={worktrees ?? []}
+                      repoPath={selectedProject?.path ?? ""}
+                      selectedWorktreeId={draft.workspaceWorktreeId}
+                      onSelectedWorktreeChange={(wt: WorktreeWithStatus | null) =>
+                        markDirtySetDraft((d) => ({ ...d, workspaceWorktreeId: wt?.id ?? null }))
+                      }
+                      claimsOwnership
+                      ownerTaskId={task.id}
+                      readOnly={!isEditable}
+                    />
+                  </div>
+                )}
+
+                {/* Metadata pills */}
+                <div className="shrink-0 space-y-3 pt-2 border-t border-border">
+                  <TaskMetadataPills
+                    priority={draft.priority}
+                    onPriorityChange={
+                      isEditable
+                        ? (p) => markDirtySetDraft((d) => ({ ...d, priority: p }))
+                        : undefined
+                    }
+                  />
+                </div>
+              </TabsContent>
 
               {/* The only record a Done or archived task has: once the session closes, its
                   transcript is gone and this is what remains. */}
-              <OutcomeThread taskId={task.id} />
-            </div>
+              <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
+                <OutcomeThread taskId={task.id} />
+              </TabsContent>
+            </Tabs>
 
             {/* Footer */}
             <div className="border-t border-border px-6 py-3 flex items-center gap-2 shrink-0">

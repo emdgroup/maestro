@@ -83,19 +83,13 @@ export function OutcomeThread({ taskId }: { taskId: number }) {
   };
 
   return (
-    // Capped and scrolled rather than sized to its content. An entry is a whole plan or a whole
-    // refined description, and letting the thread take the height it wants starved the description
-    // above it — which is `flex-1`, so it is the one that gives — down to a single clipped line,
-    // and ran the last entry underneath the footer.
-    <div className="shrink-0 flex flex-col min-h-0 max-h-72 gap-3 pt-3 border-t border-border">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground shrink-0">
-        Outcome
-      </h3>
-
+    // Fills its tab panel. It no longer shares a column with the description, so it needs neither
+    // the height cap that used to ration the two nor a heading of its own — the tab is the heading.
+    <div className="flex-1 flex flex-col min-h-0 gap-3">
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="flex-1 text-sm text-muted-foreground">Loading…</p>
       ) : comments.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="flex-1 text-sm text-muted-foreground">
           Nothing recorded yet. An agent's closing message lands here when a phase finishes.
         </p>
       ) : (
