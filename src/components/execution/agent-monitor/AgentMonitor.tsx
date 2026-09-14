@@ -215,6 +215,7 @@ const SessionRow = memo(function SessionRow({
           <Button
             variant="ghost"
             size="icon-sm"
+            aria-label="Close session"
             className="text-muted-foreground hover:text-foreground"
             onClick={(e) => {
               e.stopPropagation();
@@ -261,6 +262,7 @@ export function AgentMonitor({
   connection,
 }: AgentMonitorProps) {
   const { state } = useSidebar();
+  const [railExpanded, setRailExpanded] = useState(false);
   const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
   const [renamingKey, setRenamingKey] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -454,6 +456,10 @@ export function AgentMonitor({
       <div
         data-state={state}
         data-collapsible={state === "collapsed" ? "icon" : ""}
+        onTransitionEnd={(e) => {
+          if (e.propertyName === "width") setRailExpanded(e.currentTarget.matches(":hover"));
+        }}
+        onMouseLeave={() => setRailExpanded(false)}
         className="group session-sidebar flex flex-col bg-card shrink-0 overflow-hidden transition-[width] duration-220 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]"
       >
         <SidebarContent className="gap-0">
@@ -469,7 +475,7 @@ export function AgentMonitor({
                 session={session}
                 isSelected={session.session_key === selectedSessionKey}
                 onSelect={onSelect}
-                onClose={onClose}
+                onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
                 agentIcons={agentIcons}
                 agentNames={agentNames}
               />
