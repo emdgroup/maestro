@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.26.0](https://github.com/emdgroup/maestro/compare/v0.25.1...v0.26.0) (2026-09-14)
+
+
+### Features
+
+* **diff:** show sizes and image previews for binary files ([#364](https://github.com/emdgroup/maestro/issues/364)) ([ee03c7a](https://github.com/emdgroup/maestro/commit/ee03c7a2ca5d909ef4a04f6e232e385add706cf6))
+* **sessions:** show which task role a session is running ([#368](https://github.com/emdgroup/maestro/issues/368)) ([b3fe263](https://github.com/emdgroup/maestro/commit/b3fe263badcb6db0cacc31673eeb49b04cca39db))
+* **tasks:** let the user end an agent review and take it over ([#366](https://github.com/emdgroup/maestro/issues/366)) ([83182e1](https://github.com/emdgroup/maestro/commit/83182e1fb75795e096b17c5fcd944d6b7f34ec6e))
+* **tasks:** split the task detail modal into Details and Outcome tabs ([#370](https://github.com/emdgroup/maestro/issues/370)) ([780766d](https://github.com/emdgroup/maestro/commit/780766d8f66c44f24d40a6e95be1ea75f89db86e))
+
+
+### Bug Fixes
+
+* **activity:** render images an agent writes in the stream ([#372](https://github.com/emdgroup/maestro/issues/372)) ([2a28575](https://github.com/emdgroup/maestro/commit/2a28575ccaa95dd2435126d3d67c820d308d9126))
+* **agents:** hold the session close button until the rail finishes expanding ([#375](https://github.com/emdgroup/maestro/issues/375)) ([9764090](https://github.com/emdgroup/maestro/commit/97640907551374d2b27afcf65500fa95fdacd891))
+* **dev:** keep HMR working when the dev server runs from a worktree ([#361](https://github.com/emdgroup/maestro/issues/361)) ([d8a1579](https://github.com/emdgroup/maestro/commit/d8a1579aad43f2016b738abe916b60c1919932fe))
+* **files:** open a file:// link from an agent message on Windows ([#371](https://github.com/emdgroup/maestro/issues/371)) ([6c8993a](https://github.com/emdgroup/maestro/commit/6c8993ab52b664f4f0afc3aad5c437443d7ec738))
+* **kanban:** keep the card footer to two controls ([#367](https://github.com/emdgroup/maestro/issues/367)) ([6c96ac9](https://github.com/emdgroup/maestro/commit/6c96ac941bfd57aedd7a2dbad069d7a3532425ed))
+* **kanban:** lift the task card off the column and stop the activity text pulsing ([#373](https://github.com/emdgroup/maestro/issues/373)) ([88cf39b](https://github.com/emdgroup/maestro/commit/88cf39bc8277794f9037312853bf6dc464a5d935))
+* **kanban:** widen the task detail modal now that its body sits in tabs ([#377](https://github.com/emdgroup/maestro/issues/377)) ([0c79222](https://github.com/emdgroup/maestro/commit/0c79222ee22e8c8f18b67bd6f110c53bcf522fd7))
+* **review:** clear a file's viewed mark when its diff changes ([#374](https://github.com/emdgroup/maestro/issues/374)) ([5f8d976](https://github.com/emdgroup/maestro/commit/5f8d976ea5492ce8dd5ad090c32968eed3fcc1eb))
+* **session-history:** list sessions from deleted worktrees and unspawned agents ([#376](https://github.com/emdgroup/maestro/issues/376)) ([97c4a4d](https://github.com/emdgroup/maestro/commit/97c4a4da2a5a67c10f425631d5dc491fade3ea98))
+
 ## [0.25.1](https://github.com/emdgroup/maestro/compare/v0.25.0...v0.25.1) (2026-09-11)
 
 
