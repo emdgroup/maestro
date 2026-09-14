@@ -32,6 +32,7 @@ export interface FooterActions {
   onStop: () => void;
   onJoin: () => void;
   onReview: () => void;
+  onEndSelfReview: () => void;
   onArchive: () => void;
   onLogin: () => void;
   onRecover: () => void;
@@ -49,6 +50,7 @@ interface FooterCTAsProps {
   isAuthRequired: boolean;
   isRecovering: boolean;
   isSendingToReview: boolean;
+  isEndingSelfReview: boolean;
 }
 
 export function FooterCTAs({
@@ -59,6 +61,7 @@ export function FooterCTAs({
   isAuthRequired,
   isRecovering,
   isSendingToReview,
+  isEndingSelfReview,
   actions: {
     onExecute,
     onRefine,
@@ -68,6 +71,7 @@ export function FooterCTAs({
     onStop,
     onJoin,
     onReview,
+    onEndSelfReview,
     onArchive,
     onLogin,
     onRecover,
@@ -476,19 +480,48 @@ export function FooterCTAs({
   }
 
   if (task.status === "Review") {
+    // A review agent is reading the diff — queued, running or stopped to ask something. Offering
+    // the human gate here would put two reviews on one diff and leave the verdict landing on top
+    // of whatever the user decided, so the only thing on offer is ending the agent's pass. A
+    // failed reviewer falls through: nothing is working, so the user is the review.
+    const selfReviewing = task.phase === "SelfReview" && task.phase_status !== "Failed";
+
     return (
       <div className="flex gap-1 mt-1.5">
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReview();
-          }}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-        >
-          <ScanEye className="w-2.5 h-2.5" />
-          Review
-        </Button>
+        {selfReviewing ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEndSelfReview();
+                  }}
+                  disabled={isEndingSelfReview}
+                  variant="ghost"
+                  aria-label="Stop review"
+                  className={cn(base, "h-auto")}
+                />
+              }
+            >
+              <Square className="w-2.5 h-2.5 fill-current" />
+              Stop review
+            </TooltipTrigger>
+            <TooltipContent>Stop the review agent and review this yourself</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onReview();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          >
+            <ScanEye className="w-2.5 h-2.5" />
+            Review
+          </Button>
+        )}
         {hasActiveSession && (
           <Button
             onClick={(e) => {

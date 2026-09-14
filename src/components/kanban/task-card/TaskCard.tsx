@@ -24,8 +24,12 @@ import {
   useInterruptTaskMutation,
   useArchiveTaskMutation,
   useSendTaskToReviewMutation,
+  useEndSelfReviewMutation,
 } from "@/services/task.service";
-import { useRecoverTaskSessionMutation } from "@/services/execution.service";
+import {
+  useRecoverTaskSessionMutation,
+  useCancelActiveSessionMutation,
+} from "@/services/execution.service";
 import { useDeleteWorktreeMutation } from "@/services/worktree.service";
 import { useNavigationActions, useNavigate } from "@/store/navigationStore";
 import { useBoardStore, useBoardActions, useAuthRequiredTask } from "@/store/boardStore";
@@ -260,11 +264,13 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const isExecuting = executingTaskId === task.id;
   const interruptTask = useInterruptTaskMutation();
   const sendToReview = useSendTaskToReviewMutation();
+  const endSelfReview = useEndSelfReviewMutation();
   const archiveTask = useArchiveTaskMutation();
   const deleteWorktree = useDeleteWorktreeMutation();
   // Only read for the unmerged-archive confirmation below.
   const taskWorktree = useTaskWorktree(task.id);
   const recoverSession = useRecoverTaskSessionMutation();
+  const cancelSession = useCancelActiveSessionMutation();
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
@@ -404,6 +410,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
           isAuthRequired={!!authRequired}
           isRecovering={recoverSession.isPending}
           isSendingToReview={sendToReview.isPending}
+          isEndingSelfReview={endSelfReview.isPending}
           actions={{
             // The one Execute the user presses themselves, and so the only one that asks whether
             // the host has room. The auth retries below are continuations of a start that already
@@ -419,6 +426,17 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             onStop: () => setDialog("abandon"),
             onJoin: () => navigate({ agentId: String(task.id) }),
             onReview: () => openReview(task.id),
+            // The session goes first: cancelling is reported as an interrupted turn, which resolves
+            // to no transition at all, so it cannot land on top of the gate this then opens.
+            onEndSelfReview: () => {
+              if (activeSession) {
+                cancelSession.mutate({
+                  sessionKey: activeSession.session_key,
+                  executionMode: activeSession.execution_mode,
+                });
+              }
+              endSelfReview.mutate(task.id);
+            },
             // Every other completion is finished business. `LocalOnly` is the one that leaves
             // something behind, so archiving it silently would put unmerged work out of sight.
             onArchive: () =>

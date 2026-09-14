@@ -75,10 +75,16 @@ vi.mock("@/services/task.service", () => ({
     },
     isPending: false,
   }),
+  useEndSelfReviewMutation: () => ({ mutate: endSelfReview, isPending: false }),
 }));
+
+/** Ending the agent's review closes its session as well as opening the human gate. */
+const endSelfReview = vi.hoisted(() => vi.fn());
+const cancelSession = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/execution.service", () => ({
   useRecoverTaskSessionMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelActiveSessionMutation: () => ({ mutate: cancelSession, isPending: false }),
 }));
 
 /**
@@ -197,6 +203,8 @@ beforeEach(() => {
   deleteWorktree.mockClear();
   sendToReview.mutate.mockClear();
   sendToReview.result = null;
+  endSelfReview.mockClear();
+  cancelSession.mockClear();
   interrupt.mutate.mockClear();
   openUrl.mockClear();
   setActiveTaskId.mockClear();
@@ -351,6 +359,47 @@ describe("TaskCard send-to-review escape hatch", () => {
   it("is hidden outside In Progress", () => {
     renderCard({ status: "Review", phase: "Approval", phase_status: "Waiting", ball: "User" });
     expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Two reviews on one diff is the thing to avoid: a verdict landing while the user is deciding
+ * would overwrite whatever they chose. So the human gate is not on offer until the agent's pass
+ * has been ended.
+ */
+describe("TaskCard while a review agent is reading the diff", () => {
+  const selfReviewing: Partial<Task> = {
+    status: "Review",
+    phase: "SelfReview",
+    phase_status: "Running",
+    ball: "Agent",
+  };
+
+  it("offers stopping the review instead of the review itself", () => {
+    renderCard(selfReviewing);
+    expect(screen.getByRole("button", { name: "Stop review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Review$/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the button while the reviewer is still queued", () => {
+    renderCard({ ...selfReviewing, phase_status: "Waiting" });
+    expect(screen.getByRole("button", { name: "Stop review" })).toBeInTheDocument();
+  });
+
+  it("closes the session and opens the human gate", async () => {
+    activeSession.current = { session_key: 42, execution_mode: "acp" } as never;
+    const user = userEvent.setup();
+    renderCard(selfReviewing);
+    await user.click(screen.getByRole("button", { name: "Stop review" }));
+
+    expect(cancelSession).toHaveBeenCalledWith({ sessionKey: 42, executionMode: "acp" });
+    expect(endSelfReview).toHaveBeenCalledWith(7);
+  });
+
+  it("hands the review back once the reviewer has failed", () => {
+    renderCard({ ...selfReviewing, phase_status: "Failed", ball: "User" });
+    expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop review" })).not.toBeInTheDocument();
   });
 });
 
