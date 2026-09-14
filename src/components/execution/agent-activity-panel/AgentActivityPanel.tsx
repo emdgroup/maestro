@@ -23,7 +23,7 @@ import {
 import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/types";
 import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
-import { toPosixPath } from "@/lib/path-utils";
+import { fileUriToPath, toPosixPath } from "@/lib/path-utils";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
@@ -436,7 +436,7 @@ export function AgentActivityPanel({
       // Tool calls report Windows paths with backslashes and an arbitrarily cased
       // drive letter, so compare on a normalised copy — a missed prefix would send
       // an absolute path to a panel that resolves everything against the workspace.
-      const abs = toPosixPath(uri.startsWith("file://") ? uri.slice(7) : uri);
+      const abs = fileUriToPath(uri);
       const base = toPosixPath(workspacePath).replace(/\/+$/, "");
       const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
       addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs);
