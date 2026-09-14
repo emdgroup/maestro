@@ -1,8 +1,9 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { useReviewChangesData } from "./useReviewChangesData";
 import { ReviewChangesPanelCompact } from "./ReviewChangesPanelCompact";
 import { toPanelFiles } from "@/components/execution/diff/useReviewItems";
+import { useViewedFiles } from "@/components/execution/diff/useViewedFiles";
 import { displayItemPath } from "@/types/review";
 import type { Annotation } from "@/store/annotationStore";
 
@@ -31,16 +32,6 @@ export function ReviewChangesPanel({
 }: ReviewChangesPanelProps) {
   const [diffViewMode, setDiffViewMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
-  const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
-
-  const toggleViewed = useCallback((fileName: string) => {
-    setViewedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileName)) next.delete(fileName);
-      else next.add(fileName);
-      return next;
-    });
-  }, []);
 
   const {
     projectId,
@@ -53,6 +44,8 @@ export function ReviewChangesPanel({
     truncationInfo,
     scope,
   } = useReviewChangesData({ sessionKey, isActive, onDiffStats });
+
+  const { viewedFiles, toggleViewed } = useViewedFiles(allDisplayItems);
 
   // The caller's requested file can only be resolved once the async diff has arrived, and
   // must be applied exactly once so it never overrides a later click. Both are expressed
