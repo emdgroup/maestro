@@ -108,7 +108,7 @@ export function KanbanColumn({
       <div
         ref={ref}
         className={cn(
-          "flex-1 overflow-y-auto p-3 transition-all duration-150",
+          "flex-1 overflow-y-auto p-3 bg-muted/20 dark:bg-transparent transition-all duration-150",
           isHighlighted && getDropTargetClass(status),
         )}
       >

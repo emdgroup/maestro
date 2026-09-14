@@ -38,7 +38,11 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { useSessionActivity, type SessionActivityInfo } from "@/store/sessionActivityStore";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
-import { ACTIVITY_TEXT, ElapsedTime } from "@/components/execution/shared/activityStatus";
+import {
+  ACTIVITY_DOT,
+  ACTIVITY_TEXT,
+  ElapsedTime,
+} from "@/components/execution/shared/activityStatus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface TaskCardProps {
@@ -192,6 +196,7 @@ function ActivityLine({ activityInfo }: { activityInfo: SessionActivityInfo | un
   const { status, label, stateChangedAt } = activityInfo;
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
+      <span className={cn("size-1.5 rounded-full shrink-0", ACTIVITY_DOT[status])} />
       <span className={cn("font-bold shrink-0", ACTIVITY_TEXT[status])}>
         {status.toUpperCase()}
       </span>
@@ -319,14 +324,9 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     <>
       <div
         ref={ref}
-        // The border is deliberately neutral. It used to repeat the column's own colour, which
-        // said nothing the card's position did not already say, and it spent the one piece of
-        // colour the card has: with an amber border in an amber column, an amber "waiting" ring
-        // and an amber "blocked" glow were indistinguishable from each other and from the card
-        // itself. Status is the column; the border belongs to the pipeline state.
         className={cn(
-          "rounded-lg border border-border p-2.5 mb-2 flex flex-col transition-all",
-          "hover:shadow-md",
+          "rounded-lg border border-border bg-card shadow-xs p-2.5 mb-2 flex flex-col transition-all",
+          "hover:shadow-md hover:border-foreground/40 hover:-translate-y-px",
           task.phase_status && PHASE_STATUS_RING[task.phase_status],
           isDragging && "opacity-30 border-dashed",
           isDraggable && !isDragging ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
