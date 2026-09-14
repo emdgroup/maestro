@@ -26,48 +26,66 @@ type Stdout = Arc<Mutex<tokio::io::Stdout>>;
 
 /// List the sessions an agent has on disk for a working directory.
 ///
+/// Starts the agent when it is not already connected — only the project's default agent is
+/// pre-initialized at prime time, so answering "no connection, no sessions" left every other
+/// agent listing empty forever.
+///
 /// Returns `false` only when stdout is broken, which is the caller's signal to stop.
 pub(crate) async fn list(
     req: maestro_protocol::SessionListRequest,
     agent_connections: &SharedAgentConnections,
+    agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
     stdout: &Stdout,
 ) -> bool {
-    let conn_handle = agent_connections
-        .lock()
-        .await
-        .get(&req.agent_id)
-        .map(AgentConnectionHandle::from);
-
-    // An agent with no connection has nothing to list, which is an empty answer rather than an
-    // error: the picker asks this before anything has been spawned.
-    let Some(conn_handle) = conn_handle else {
-        return send_response(
-            stdout,
-            &MaestroRpcMessage::Response(ServerResponse::SessionListOk(SessionListOkResponse {
-                sessions: vec![],
-                next_cursor: None,
-                supports_session_delete: false,
-            })),
+    // Resolved before offloading: `agents_with_spawn` is borrowed from the dispatch loop and
+    // cannot be moved into the task.
+    let Some((cmd, args, env)) =
+        resolve_agent_spawn_params(&req.agent_id, agents_with_spawn, stdout).await
+    else {
+        return true;
+    };
+    let stdout_task = Arc::clone(stdout);
+    let agent_connections_task = Arc::clone(agent_connections);
+    // Offloaded so the dispatch loop keeps answering while the agent process starts.
+    tokio::spawn(async move {
+        // `pre_initialize_agent` reports its own failure to the host, so a `None` here must not be
+        // answered with an empty list — that would read as "no sessions" rather than an error.
+        let conn_handle = ensure_and_get_connection(
+            &req.agent_id,
+            &agent_connections_task,
+            &cmd,
+            &args,
+            &env,
+            &req.cwd,
+            &stdout_task,
         )
-        .await
-        .is_ok();
-    };
+        .await;
+        let Some(conn_handle) = conn_handle else {
+            return;
+        };
 
-    let supports_session_delete = conn_handle.capabilities.supports_session_delete;
-    let response = match session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await {
-        Ok((sessions, next_cursor)) => {
-            MaestroRpcMessage::Response(ServerResponse::SessionListOk(SessionListOkResponse {
-                sessions,
-                next_cursor,
-                supports_session_delete,
-            }))
-        }
-        Err(e) => {
-            evict_if_same_connection(agent_connections, &req.agent_id, &conn_handle.router).await;
-            error_response(e)
-        }
-    };
-    send_response(stdout, &response).await.is_ok()
+        let supports_session_delete = conn_handle.capabilities.supports_session_delete;
+        let response = match session_list_on_connection(&conn_handle, &req.cwd, req.cursor).await {
+            Ok((sessions, next_cursor)) => {
+                MaestroRpcMessage::Response(ServerResponse::SessionListOk(SessionListOkResponse {
+                    sessions,
+                    next_cursor,
+                    supports_session_delete,
+                }))
+            }
+            Err(e) => {
+                evict_if_same_connection(
+                    &agent_connections_task,
+                    &req.agent_id,
+                    &conn_handle.router,
+                )
+                .await;
+                error_response(e)
+            }
+        };
+        send_response(&stdout_task, &response).await.ok();
+    });
+    true
 }
 
 /// Resume a session the agent already has, and register it with the dispatch loop.

@@ -364,7 +364,8 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
-            return session::requests::list(req, agent_connections, stdout).await;
+            return session::requests::list(req, agent_connections, agents_with_spawn, stdout)
+                .await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {

@@ -87,32 +87,89 @@ async fn additional_directories_for(raw: &[String], supported: bool) -> Vec<std:
     dirs
 }
 
+/// Cap on `next_cursor` follow-ups, so a misbehaving agent cannot loop forever.
+const SESSION_LIST_MAX_PAGES: usize = 20;
+
+/// Compares strings rather than the filesystem: the paths of deleted worktrees must still match.
+fn path_is_within(root: &str, candidate: &std::path::Path) -> bool {
+    fn normalize(s: &str) -> String {
+        let s = s.replace('\\', "/");
+        let trimmed = s.trim_end_matches('/');
+        let trimmed = if trimmed.is_empty() { &s } else { trimmed };
+        if cfg!(windows) {
+            trimmed.to_lowercase()
+        } else {
+            trimmed.to_string()
+        }
+    }
+    let root = normalize(root);
+    let candidate = normalize(&candidate.to_string_lossy());
+    if !candidate.starts_with(&root) {
+        return false;
+    }
+    // `…/maestro` must not swallow `…/maestro-server`.
+    matches!(candidate[root.len()..].chars().next(), None | Some('/'))
+}
+
 /// List sessions using an already-initialized connection (fast path for `SessionList`).
+///
+/// `cwd` is filtered here, not forwarded: the agent resolves it against a live `git worktree
+/// list`, which hides every session whose worktree Maestro has since deleted.
 pub(crate) async fn session_list_on_connection(
     conn: &AgentConnectionHandle,
     cwd: &str,
     cursor: Option<String>,
 ) -> Result<(Vec<SessionListEntry>, Option<String>), String> {
     let cx = conn.connection.clone();
-    let mut req = ListSessionsRequest::new().cwd(std::path::PathBuf::from(cwd));
-    if let Some(c) = cursor {
-        req = req.cursor(c);
+    let mut entries: Vec<SessionListEntry> = Vec::new();
+    let mut cursor = cursor;
+    for _ in 0..SESSION_LIST_MAX_PAGES {
+        let mut req = ListSessionsRequest::new();
+        if let Some(c) = cursor {
+            req = req.cursor(c);
+        }
+        let resp = cx
+            .send_request(req)
+            .block_task()
+            .await
+            .map_err(|e| format!("session/list failed: {}", e))?;
+        entries.extend(
+            resp.sessions
+                .into_iter()
+                .filter(|s| path_is_within(cwd, &s.cwd))
+                .map(|s| SessionListEntry {
+                    session_id: s.session_id.to_string(),
+                    title: s.title,
+                    updated_at: s.updated_at,
+                }),
+        );
+        cursor = resp.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
     }
-    let resp = cx
-        .send_request(req)
-        .block_task()
-        .await
-        .map_err(|e| format!("session/list failed: {}", e))?;
-    let entries: Vec<SessionListEntry> = resp
-        .sessions
-        .into_iter()
-        .map(|s| SessionListEntry {
-            session_id: s.session_id.to_string(),
-            title: s.title,
-            updated_at: s.updated_at,
-        })
-        .collect();
-    Ok((entries, resp.next_cursor))
+
+    // An agent that only lists when given a `cwd` keeps working as it did before.
+    if entries.is_empty() {
+        let resp = cx
+            .send_request(ListSessionsRequest::new().cwd(std::path::PathBuf::from(cwd)))
+            .block_task()
+            .await
+            .map_err(|e| format!("session/list failed: {}", e))?;
+        entries = resp
+            .sessions
+            .into_iter()
+            .map(|s| SessionListEntry {
+                session_id: s.session_id.to_string(),
+                title: s.title,
+                updated_at: s.updated_at,
+            })
+            .collect();
+    }
+
+    // Entries now come from several project directories and nothing downstream orders them.
+    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok((entries, None))
 }
 
 /// Close a session using an already-initialized connection (fast path for `SessionClose`).
@@ -629,5 +686,53 @@ pub(crate) async fn pre_initialize_agent(
             .await;
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_is_within;
+    use std::path::Path;
+
+    const ROOT: &str = r"C:\Users\me\maestro";
+
+    #[test]
+    fn root_itself_matches() {
+        assert!(path_is_within(ROOT, Path::new(r"C:\Users\me\maestro")));
+        assert!(path_is_within(ROOT, Path::new(r"C:\Users\me\maestro\")));
+    }
+
+    #[test]
+    fn worktree_child_matches() {
+        assert!(path_is_within(
+            ROOT,
+            Path::new(r"C:\Users\me\maestro\.maestro\worktrees\session-100")
+        ));
+    }
+
+    #[test]
+    fn sibling_with_shared_prefix_is_rejected() {
+        assert!(!path_is_within(
+            ROOT,
+            Path::new(r"C:\Users\me\maestro-server")
+        ));
+        assert!(!path_is_within(ROOT, Path::new(r"C:\Users\me\other")));
+    }
+
+    #[test]
+    fn mixed_separators_match() {
+        assert!(path_is_within(
+            "C:/Users/me/maestro",
+            Path::new(r"C:\Users\me\maestro\src")
+        ));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn case_differing_drive_letter_matches() {
+        assert!(path_is_within(
+            ROOT,
+            Path::new(r"c:\users\me\Maestro\src-tauri")
+        ));
     }
 }
