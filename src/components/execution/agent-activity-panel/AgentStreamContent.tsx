@@ -5,7 +5,7 @@ import type { AgentSectionItem, GroupedDisplayItem } from "../activity/utils";
 import type { ToolCallItem, AvailableCommand } from "../activity/types";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/services/settings.service";
-import React, { memo, useRef } from "react";
+import React, { memo, useMemo, useRef } from "react";
 import {
   MessageScroller,
   MessageScrollerViewport,
@@ -13,7 +13,7 @@ import {
   MessageScrollerItem,
   useMessageScroller,
 } from "@/ui/message-scroller";
-import { OpenFileContext, CommandsContext } from "../activity/MarkdownBlock";
+import { OpenFileContext, CommandsContext, ImageProxyContext } from "../activity/MarkdownBlock";
 
 /* Keys the scroller itself treats as scroll input. */
 const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
@@ -107,6 +107,10 @@ interface AgentStreamContentProps {
   bottomPadding?: number;
   onAuthLogin?: () => void;
   commands: AvailableCommand[];
+  /** Project the images in this stream are proxied through. Omitted: images stay unproxied. */
+  projectId?: number;
+  /** The session's own cwd — see the image-proxy contract below. */
+  workspacePath?: string;
 }
 
 export function AgentStreamContent({
@@ -117,6 +121,8 @@ export function AgentStreamContent({
   bottomPadding,
   onAuthLogin,
   commands,
+  projectId,
+  workspacePath,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -162,59 +168,82 @@ export function AgentStreamContent({
     if (SCROLL_KEYS.has(e.key)) markGesture();
   };
 
+  /*
+    Every markdown body in the stream — agent message, thinking block, tool output, the user's
+    own — renders under one image-proxy context, so an image resolves the same way wherever it
+    appears and a message that finishes streaming does not swap renderers mid-flight.
+
+    The contract for `baseDir`: a relative src is resolved against the *session's* workspace,
+    not the project root. An agent writing `![shot](.maestro/shots/x.png)` means relative to its
+    own cwd, and an isolated task's cwd is `<project>/.maestro/worktrees/<name>`. Absolute posix
+    paths and http(s) go to the proxy untouched. `file://` and `C:/…` srcs never reach here —
+    markdown-sanitize allows only http, https and data protocols on img.
+
+    Memoized because it feeds `MarkdownBlock`'s components object: a fresh value each render
+    would re-create it and defeat the memo bail-outs below. The proxy fetch itself is cached by
+    `useProxyImageQuery` on (projectId, path), so a re-render never re-fetches either way.
+  */
+  const imageProxy = useMemo(
+    () =>
+      projectId !== undefined ? { projectId, baseDir: workspacePath || undefined } : undefined,
+    [projectId, workspacePath],
+  );
+
   return (
     <OpenFileContext.Provider value={onOpenFile}>
-      <CommandsContext.Provider value={commands}>
-        <MessageScroller className="absolute inset-0">
-          {/*
+      <ImageProxyContext.Provider value={imageProxy}>
+        <CommandsContext.Provider value={commands}>
+          <MessageScroller className="absolute inset-0">
+            {/*
             Reserve the scrollbar's width whether or not it is showing — the content is
             centred, so a scrollbar appearing mid-stream would otherwise nudge every
             message sideways.
           */}
-          <MessageScrollerViewport
-            className="overflow-x-hidden [scrollbar-gutter:stable]"
-            onScroll={handleScroll}
-            onWheel={handleWheel}
-            onTouchMove={markGesture}
-            onKeyDown={handleKeyDown}
-          >
-            <MessageScrollerContent
-              className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
-              style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
+            <MessageScrollerViewport
+              className="overflow-x-hidden [scrollbar-gutter:stable]"
+              onScroll={handleScroll}
+              onWheel={handleWheel}
+              onTouchMove={markGesture}
+              onKeyDown={handleKeyDown}
             >
-              {agentSections.map((section) => {
-                if (section.type === "standalone") {
-                  const gi = section.item;
-                  if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-                  const msgId = gi.item.item.id;
+              <MessageScrollerContent
+                className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
+                style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
+              >
+                {agentSections.map((section) => {
+                  if (section.type === "standalone") {
+                    const gi = section.item;
+                    if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+                    const msgId = gi.item.item.id;
+                    return (
+                      <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
+                        <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                      </MessageScrollerItem>
+                    );
+                  }
+
+                  // Derived here rather than in the row because it is also the React key, which
+                  // has to be on the element this callback returns.
+                  const sectionKey = getItemKey(section.items[0]);
+
                   return (
-                    <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
-                      <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
-                    </MessageScrollerItem>
+                    <AgentSectionRow
+                      key={sectionKey}
+                      section={section}
+                      sectionKey={sectionKey}
+                      toolCallMap={toolCallMap}
+                      livePlanToolCallId={livePlanToolCallId}
+                      thinkingHidden={thinkingHidden}
+                      toolCallsHidden={toolCallsHidden}
+                      onAuthLogin={onAuthLogin}
+                    />
                   );
-                }
-
-                // Derived here rather than in the row because it is also the React key, which
-                // has to be on the element this callback returns.
-                const sectionKey = getItemKey(section.items[0]);
-
-                return (
-                  <AgentSectionRow
-                    key={sectionKey}
-                    section={section}
-                    sectionKey={sectionKey}
-                    toolCallMap={toolCallMap}
-                    livePlanToolCallId={livePlanToolCallId}
-                    thinkingHidden={thinkingHidden}
-                    toolCallsHidden={toolCallsHidden}
-                    onAuthLogin={onAuthLogin}
-                  />
-                );
-              })}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-        </MessageScroller>
-      </CommandsContext.Provider>
+                })}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+          </MessageScroller>
+        </CommandsContext.Provider>
+      </ImageProxyContext.Provider>
     </OpenFileContext.Provider>
   );
 }

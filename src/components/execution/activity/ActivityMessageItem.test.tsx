@@ -11,7 +11,16 @@ vi.mock("@/lib/shiki-highlighter", () => ({
 vi.mock("@/providers/ThemeProvider", () => ({ useTheme: () => ({ theme: "dark" }) }));
 vi.mock("katex/dist/katex.min.css", () => ({}));
 
+const proxy = vi.hoisted(() => ({ calls: [] as Array<[number, string]> }));
+vi.mock("@/services/task.service", () => ({
+  useProxyImageQuery: (projectId: number, filePath: string) => {
+    if (filePath) proxy.calls.push([projectId, filePath]);
+    return { data: filePath ? "data:image/png;base64,UFJPWFk=" : null, isPending: false };
+  },
+}));
+
 import { ActivityMessageItem, getCompleteBlocksText } from "./ActivityMessageItem";
+import { ImageProxyContext } from "./MarkdownBlock";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
 import type { MessageItem } from "./types";
 
@@ -360,5 +369,31 @@ describe("table sorting", () => {
 
     const rows = screen.getAllByRole("row").slice(1);
     expect(rows[0].textContent).toContain("Alice");
+  });
+});
+
+describe("agent message images", () => {
+  it("proxies a relative image against the session workspace, not the project root", () => {
+    proxy.calls.length = 0;
+    const { container } = render(
+      <ImageProxyContext.Provider value={{ projectId: 7, baseDir: "/repo/.maestro/worktrees/wt" }}>
+        <ActivityMessageItem message={makeMessage("![shot](.maestro/shots/details.png)")} />
+      </ImageProxyContext.Provider>,
+    );
+
+    expect(proxy.calls).toEqual([[7, "/repo/.maestro/worktrees/wt/.maestro/shots/details.png"]]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,UFJPWFk=",
+    );
+  });
+
+  it("leaves the image unproxied with no context", () => {
+    proxy.calls.length = 0;
+    const { container } = render(
+      <ActivityMessageItem message={makeMessage("![shot](.maestro/shots/details.png)")} />,
+    );
+
+    expect(proxy.calls).toEqual([]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(".maestro/shots/details.png");
   });
 });

@@ -675,6 +675,8 @@ export function AgentActivityPanel({
                 onOpenFile={handleOpenFile}
                 bottomPadding={composeBarHeight}
                 commands={availableCommands}
+                projectId={selectedProject?.id}
+                workspacePath={workspacePath}
                 onAuthLogin={hasAuthError || hasPreSpawnAuthError ? handleAuthLogin : undefined}
               />
             )}

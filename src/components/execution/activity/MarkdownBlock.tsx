@@ -278,20 +278,26 @@ export const MarkdownBlock = memo(function MarkdownBlock({
   /** Highlight `/command` tokens. Opt-in: only user messages send commands. */
   slashCommands?: boolean;
 }) {
-  const components = useMemo(() => {
-    if (!projectId) return MARKDOWN_COMPONENTS;
-    return { ...MARKDOWN_COMPONENTS, img: ProxiedImage };
-  }, [projectId]);
+  // A block with no projectId of its own still proxies images when it renders inside a
+  // provider — the agent stream, or a nested ```markdown fence. Deriving the img swap from
+  // the resolved context rather than from the prop is what keeps the two from disagreeing:
+  // a plain <img> under a live provider is a broken-image icon, since a webview cannot load
+  // a disk path.
+  const ambientCtx = useContext(ImageProxyContext);
+  const ctxValue = useMemo(
+    () => (projectId !== undefined ? { projectId, baseDir } : ambientCtx),
+    [projectId, baseDir, ambientCtx],
+  );
+
+  const components = useMemo(
+    () => (ctxValue ? { ...MARKDOWN_COMPONENTS, img: ProxiedImage } : MARKDOWN_COMPONENTS),
+    [ctxValue],
+  );
 
   const rehypePlugins = useMemo(
     () =>
       slashCommands ? [...MARKDOWN_PLUGINS.rehype!, rehypeSlashCommands] : MARKDOWN_PLUGINS.rehype,
     [slashCommands],
-  );
-
-  const ctxValue = useMemo(
-    () => (projectId !== undefined ? { projectId, baseDir } : undefined),
-    [projectId, baseDir],
   );
 
   // Frontmatter is only valid at offset 0, so it comes off the untouched text
