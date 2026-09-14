@@ -40,13 +40,13 @@ const defaultProps = {
   connection: { type: "local" as const },
 };
 
-function renderMonitor(props: Parameters<typeof AgentMonitor>[0]) {
+function renderMonitor(props: Parameters<typeof AgentMonitor>[0], open = true) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
-      <SidebarProvider>
+      <SidebarProvider open={open}>
         <AgentMonitor {...props} />
       </SidebarProvider>
     </QueryClientProvider>,
@@ -68,6 +68,27 @@ describe("AgentMonitor session-type icon (SPAWN-03)", () => {
       sessions: [{ ...baseSession, execution_mode: "pty" }],
     });
     expect(document.querySelector(".pr-avatar-icon svg")).toBeInTheDocument();
+  });
+
+  it("hides the close button while the sidebar rail is collapsed", () => {
+    const { queryByLabelText } = renderMonitor(
+      {
+        ...defaultProps,
+        sessions: [{ ...baseSession, execution_mode: "pty" as const }],
+        onClose: vi.fn(),
+      },
+      false,
+    );
+    expect(queryByLabelText("Close session")).not.toBeInTheDocument();
+  });
+
+  it("shows the close button when the sidebar is expanded", () => {
+    const { queryByLabelText } = renderMonitor({
+      ...defaultProps,
+      sessions: [{ ...baseSession, execution_mode: "pty" as const }],
+      onClose: vi.fn(),
+    });
+    expect(queryByLabelText("Close session")).toBeInTheDocument();
   });
 
   it("renders terminal icon for execution_mode 'pty' without agent_id", () => {
