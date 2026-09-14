@@ -79,13 +79,19 @@ export function useReviewItems({
   selectedIndex,
   stackRef,
 }: ReviewItemsInput) {
+  // Kept apart from the searched list because the viewed marks are tracked against every file in
+  // the diff, including the ones a search is currently hiding.
+  const allItems = useMemo(
+    () => buildDisplayItems(diffFiles, untrackedFiles),
+    [diffFiles, untrackedFiles],
+  );
+
   const items = useMemo(() => {
-    const ordered = buildDisplayItems(diffFiles, untrackedFiles);
     const query = search.trim().toLowerCase();
     return query
-      ? ordered.filter((item) => displayItemPath(item).toLowerCase().includes(query))
-      : ordered;
-  }, [diffFiles, untrackedFiles, search]);
+      ? allItems.filter((item) => displayItemPath(item).toLowerCase().includes(query))
+      : allItems;
+  }, [allItems, search]);
 
   const panelFiles = useMemo(() => toPanelFiles(items), [items]);
 
@@ -101,5 +107,5 @@ export function useReviewItems({
   const selected = selectedIndex === null ? undefined : items[selectedIndex];
   const selectedPath = selected ? displayItemPath(selected) : null;
 
-  return { items, panelFiles, selectFile, selectedPath };
+  return { items, allItems, panelFiles, selectFile, selectedPath };
 }

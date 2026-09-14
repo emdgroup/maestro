@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useActiveTab } from "@/store/navigationStore";
 import { DiffModeEnum } from "@git-diff-view/react";
 import { parseDiffString } from "@/lib/diff-utils";
@@ -9,6 +9,7 @@ import { ReviewLayout, FilePanelToggle } from "./ReviewLayout";
 import { ScopeSelector } from "./ScopeSelector";
 import { scopeToDiffTarget, type DiffScope } from "./scope";
 import { useReviewItems, fileCountFrom } from "./useReviewItems";
+import { useViewedFiles } from "./useViewedFiles";
 import { useReviewPanelLayout } from "./useReviewPanelLayout";
 import {
   useWorktreeDiffQuery,
@@ -57,18 +58,8 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const [fileSearch, setFileSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [scope, setScope] = useState<DiffScope>(() => defaultScope(worktree));
-  const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const stackRef = useRef<DiffFileStackHandle>(null);
   const panel = useReviewPanelLayout();
-
-  const toggleViewed = useCallback((fileName: string) => {
-    setViewedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileName)) next.delete(fileName);
-      else next.add(fileName);
-      return next;
-    });
-  }, []);
 
   const worktreePath = worktree?.path ?? null;
   const baseBranch = worktree?.base_branch ?? null;
@@ -137,13 +128,15 @@ export function WorktreeDiffPanel({ worktree, projectId, onClose }: WorktreeDiff
   const diffFiles = useMemo(() => (diffText ? parseDiffString(diffText) : []), [diffText]);
   const untrackedFiles = useMemo(() => diffQuery.data?.untracked_files ?? [], [diffQuery.data]);
 
-  const { items, panelFiles, selectFile, selectedPath } = useReviewItems({
+  const { items, allItems, panelFiles, selectFile, selectedPath } = useReviewItems({
     diffFiles,
     untrackedFiles,
     search: fileSearch,
     selectedIndex: selectedFileIndex,
     stackRef,
   });
+
+  const { viewedFiles, toggleViewed } = useViewedFiles(allItems);
 
   if (worktree === null) return null;
 

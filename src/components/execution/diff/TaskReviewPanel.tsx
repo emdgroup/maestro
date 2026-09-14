@@ -11,6 +11,7 @@ import { ReviewLayout, FilePanelToggle } from "./ReviewLayout";
 import { ScopeSelector } from "./ScopeSelector";
 import { scopeToDiffTarget, type DiffScope } from "./scope";
 import { useReviewItems, fileCountFrom } from "./useReviewItems";
+import { useViewedFiles } from "./useViewedFiles";
 import { useReviewPanelLayout } from "./useReviewPanelLayout";
 import { ReworkModal, ApproveModal, DiscardModal } from "./ReviewConfirmModals";
 import { buildReviewFeedbackBlocks } from "./build-review-feedback";
@@ -89,9 +90,6 @@ export function TaskReviewPanel({
   const [fileSearch, setFileSearch] = useState("");
   const [selectedFileIndex, setSelectedFileIndex] = useState<number | null>(null);
   const [scope, setScope] = useState<DiffScope>({ type: "all" });
-  const [viewedFiles, setViewedFiles] = useState<Set<string>>(() =>
-    reviewStore.getViewedFiles(task.id),
-  );
   const stackRef = useRef<DiffFileStackHandle>(null);
   const panel = useReviewPanelLayout();
 
@@ -188,7 +186,7 @@ export function TaskReviewPanel({
   const untrackedFiles = useMemo(() => diffQuery.data?.untracked_files ?? [], [diffQuery.data]);
   const scopeFileCount = diffFiles.length + untrackedFiles.length;
 
-  const { items, panelFiles, selectFile, selectedPath } = useReviewItems({
+  const { items, allItems, panelFiles, selectFile, selectedPath } = useReviewItems({
     diffFiles,
     untrackedFiles,
     search: fileSearch,
@@ -196,19 +194,14 @@ export function TaskReviewPanel({
     stackRef,
   });
 
-  // Viewed toggle — sync to store
-  const toggleViewed = useCallback(
-    (fileName: string) => {
-      setViewedFiles((prev) => {
-        const next = new Set(prev);
-        if (next.has(fileName)) next.delete(fileName);
-        else next.add(fileName);
-        reviewStore.setViewedFiles(task.id, next);
-        return next;
-      });
-    },
-    [task.id, reviewStore],
+  const { viewedFiles, toggleViewed } = useViewedFiles(allItems, () =>
+    reviewStore.getViewedFiles(task.id),
   );
+
+  // Sync viewed files to store
+  useEffect(() => {
+    reviewStore.setViewedFiles(task.id, viewedFiles);
+  }, [viewedFiles, task.id, reviewStore]);
 
   const handleRemoveComment = useCallback((commentId: string) => {
     setComments((prev) => prev.filter((c) => c.id !== commentId));
