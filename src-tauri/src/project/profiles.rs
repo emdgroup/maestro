@@ -75,6 +75,18 @@ impl AgentRole {
     }
 }
 
+/// Which pipeline role a session was started for, and the profile that role resolved to.
+///
+/// One type rather than two fields on the session because they are only meaningful together: a
+/// profile id says nothing without the role that picked it, and it is absent whenever the role
+/// ran on the project's default agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct SessionRole {
+    pub role: AgentRole,
+    pub profile_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct AgentProfile {
     pub id: String,

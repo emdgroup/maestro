@@ -115,6 +115,9 @@ pub struct ActiveSessionInfo {
     pub started_at: String,
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
+    /// Which pipeline role this session runs, for a session started from a task. `None` for an
+    /// ad-hoc session, and for every PTY shell.
+    pub task_role: Option<crate::project::profiles::SessionRole>,
     pub branch_name: Option<String>,
     pub acp_session_id: Option<String>,
     /// The directory the session runs in. Carried so a view can tell which worktree a session is

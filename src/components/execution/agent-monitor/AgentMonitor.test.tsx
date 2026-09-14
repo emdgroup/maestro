@@ -17,6 +17,7 @@ const baseSession = {
   session_key: 1,
   task_id: null,
   task_name: null,
+  task_role: null,
   session_name: "test-session",
   branch_name: "main",
   agent_id: null,
@@ -75,5 +76,34 @@ describe("AgentMonitor session-type icon (SPAWN-03)", () => {
       sessions: [{ ...baseSession, execution_mode: "pty", agent_id: null }],
     });
     expect(document.querySelector(".pr-avatar-icon svg")).toBeInTheDocument();
+  });
+});
+
+describe("AgentMonitor role chip", () => {
+  const taskSession = {
+    ...baseSession,
+    execution_mode: "acp" as const,
+    agent_id: "claude-acp",
+    task_id: 42,
+    task_name: "Fix login",
+    session_name: "amber-brook",
+  };
+
+  it("names the role the session was spawned for", () => {
+    const { getAllByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [{ ...taskSession, task_role: { role: "Planner" as const, profile_id: "strict" } }],
+    });
+    // Sidebar row and detail header both carry one.
+    expect(getAllByText("Planner").length).toBeGreaterThan(0);
+  });
+
+  it("shows nothing for a session no task started", () => {
+    const { queryByText } = renderMonitor({
+      ...defaultProps,
+      sessions: [{ ...taskSession, task_id: null, task_name: null, task_role: null }],
+    });
+    expect(queryByText("Planner")).toBeNull();
+    expect(queryByText("Coder")).toBeNull();
   });
 });

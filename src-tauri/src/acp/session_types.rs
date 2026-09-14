@@ -201,6 +201,8 @@ pub struct AcpProcess {
     pub started_at: String,
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
+    /// The role this session was spawned for. See `TaskMetadata::role`.
+    pub task_role: Option<crate::project::profiles::SessionRole>,
     pub branch_name: Option<String>,
     /// Git HEAD SHA captured at session spawn time. Used for session-scoped diffs.
     pub session_start_sha: Option<String>,
@@ -249,6 +251,12 @@ pub struct TaskMetadata {
     pub task_name: Option<String>,
     pub branch_name: Option<String>,
     pub session_start_sha: Option<String>,
+    /// Which pipeline stage started this session, recorded at spawn.
+    ///
+    /// Deriving it from the task's current `phase` instead would be wrong: nothing closes a
+    /// finished coder's session when the reviewer starts, so two sessions of one task coexist and
+    /// the phase describes only the later one.
+    pub role: Option<crate::project::profiles::SessionRole>,
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
@@ -369,6 +377,7 @@ impl AcpProcess {
             started_at: chrono::Utc::now().to_rfc3339(),
             task_id: params.task.task_id,
             task_name: params.task.task_name,
+            task_role: params.task.role,
             branch_name: params.task.branch_name,
             session_start_sha: params.task.session_start_sha,
             acp_session_id,

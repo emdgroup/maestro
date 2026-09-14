@@ -340,6 +340,7 @@ describe("useSessionShipState", () => {
       started_at: "",
       task_id: null,
       task_name: null,
+      task_role: null,
       branch_name: null,
       acp_session_id: null,
       cwd: "",

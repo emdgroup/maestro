@@ -1443,9 +1443,9 @@ async fetchProjectRemote(projectId: number, force: boolean) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
-async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null) : Promise<Result<SpawnSessionResult, string>> {
+async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, projectId: number, connection: ConnectionKey, worktreeBranch: string | null, taskId: number | null, taskName: string | null, role: SessionRole | null) : Promise<Result<SpawnSessionResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName }) };
+    return { status: "ok", data: await TAURI_INVOKE("spawn_acp_session", { agentId, cwd, sessionName, projectId, connection, worktreeBranch, taskId, taskName, role }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2548,7 +2548,12 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; branch_name: string | null; acp_session_id: string | null; 
+export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; 
+/**
+ * Which pipeline role this session runs, for a session started from a task. `None` for an
+ * ad-hoc session, and for every PTY shell.
+ */
+task_role: SessionRole | null; branch_name: string | null; acp_session_id: string | null; 
 /**
  * The directory the session runs in. Carried so a view can tell which worktree a session is
  * working in — `branch_name` cannot, since several worktrees may share a branch name's shape
@@ -3285,6 +3290,14 @@ folder: string | null }
  * Return type for `list_acp_sessions` — includes capability flags from the live agent connection.
  */
 export type SessionListResult = { sessions: SessionListEntryDto[]; supports_session_delete: boolean }
+/**
+ * Which pipeline role a session was started for, and the profile that role resolved to.
+ * 
+ * One type rather than two fields on the session because they are only meaningful together: a
+ * profile id says nothing without the role that picked it, and it is absent whenever the role
+ * ran on the project's default agent.
+ */
+export type SessionRole = { role: AgentRole; profile_id: string | null }
 export type SpawnSessionResult = { log_id: number }
 /**
  * SSH authentication method configuration

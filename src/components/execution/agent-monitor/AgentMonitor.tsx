@@ -18,6 +18,7 @@ import {
   useRenameAcpSessionMutation,
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
+import { useAgentProfilesQuery } from "@/services/project.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
@@ -111,6 +112,53 @@ function AgentIcon({
   return null;
 }
 
+/**
+ * Which pipeline role this session runs, for the sessions a task started.
+ *
+ * On the metadata line rather than beside the name, because the name is editable and a chip next
+ * to an input reads as part of it. Sessions are renamed freely, so this is the only thing on the
+ * row that still says where the session came from afterwards.
+ *
+ * The role is on the chip and the profile behind it is in the tooltip: the role is the same four
+ * words on every project and so reads at a glance, while the profile is named by whoever wrote it
+ * and is what answers "with which settings".
+ */
+function RoleChip({
+  session,
+  profileNames,
+  tooltip = true,
+}: {
+  session: ActiveSessionInfo;
+  profileNames: Record<string, string>;
+  /**
+   * Off inside the sidebar row, which is itself one big tooltip trigger for names too long to
+   * fit. A trigger nested in a trigger opens both on the same hover, and two tooltips over one
+   * chip read as a glitch.
+   */
+  tooltip?: boolean;
+}) {
+  if (!session.task_role) return null;
+  const { role, profile_id } = session.task_role;
+  const chip = (
+    <span className="shrink-0 rounded-full border border-border bg-muted/50 px-1.5 text-[11px] leading-[16px] text-muted-foreground">
+      {role}
+    </span>
+  );
+  if (!tooltip) return chip;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipContent>
+        {profile_id
+          ? // The id rather than nothing when the profile has since been renamed away or deleted:
+            // it is what the session actually ran with.
+            `Profile: ${profileNames[profile_id] ?? profile_id}`
+          : "No profile — the project's default agent"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 interface SessionRowProps {
   session: ActiveSessionInfo;
   isSelected: boolean;
@@ -118,6 +166,7 @@ interface SessionRowProps {
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
+  profileNames: Record<string, string>;
 }
 
 const SessionRow = memo(function SessionRow({
@@ -126,6 +175,7 @@ const SessionRow = memo(function SessionRow({
   onSelect,
   onClose,
   agentIcons,
+  profileNames,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_key);
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
@@ -187,8 +237,11 @@ const SessionRow = memo(function SessionRow({
               </div>
               {session.execution_mode === "acp" && (
                 <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 min-w-0">
-                  <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
-                    {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <RoleChip session={session} profileNames={profileNames} tooltip={false} />
+                    <span className={cn("truncate", getStatusLabelClass(activityInfo))}>
+                      {activityInfo ? getStatusLabel(activityInfo) : "Starting…"}
+                    </span>
                   </span>
                   {activityInfo && (
                     <span className="transition-opacity group-hover/menu-item:opacity-0">
@@ -268,6 +321,17 @@ export function AgentMonitor({
   const renameCanceledRef = useRef(false);
   const renameMutation = useRenameAcpSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
+  // A session stores the profile's id; the name lives in the project's profile document. Memoized
+  // into a map because `SessionRow` is memoized, and a lookup closure rebuilt each render would
+  // re-render every row on every poll.
+  const { data: profilesDocument } = useAgentProfilesQuery(projectId ?? null);
+  const profileNames = useMemo(
+    () =>
+      Object.fromEntries(
+        (profilesDocument?.profiles ?? []).map((profile) => [profile.id, profile.name]),
+      ),
+    [profilesDocument],
+  );
 
   const commitRename = useCallback(
     (session: ActiveSessionInfo) => {
@@ -383,6 +447,7 @@ export function AgentMonitor({
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
+            <RoleChip session={session} profileNames={profileNames} />
             {selectedActivityInfo?.status === "stale" ? (
               <>
                 <span className="text-xs text-destructive truncate">
@@ -472,6 +537,7 @@ export function AgentMonitor({
                 onClose={onClose}
                 agentIcons={agentIcons}
                 agentNames={agentNames}
+                profileNames={profileNames}
               />
             ))}
           </SidebarMenu>

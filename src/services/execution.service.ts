@@ -6,7 +6,7 @@ import { Channel as TAURI_CHANNEL } from "@tauri-apps/api/core";
 import { taskQueryKeys } from "@/services/task.service";
 import { findEffortOption } from "@/lib/effort-option";
 import type { ConfigOption } from "@/components/execution/activity/types";
-import type { ConnectionKey } from "@/types/bindings";
+import type { ConnectionKey, SessionRole } from "@/types/bindings";
 import { commands } from "@/types/bindings";
 
 export const executionQueryKeys = {
@@ -91,6 +91,7 @@ async function probeAgentConfig(
     null,
     projectId,
     connection,
+    null,
     null,
     null,
     null,
@@ -489,6 +490,7 @@ export function useSpawnAcpSessionMutation() {
       worktreeBranch,
       taskId,
       taskName,
+      role,
     }: {
       agentId: string;
       cwd: string;
@@ -498,6 +500,7 @@ export function useSpawnAcpSessionMutation() {
       worktreeBranch?: string | null;
       taskId?: number | null;
       taskName?: string | null;
+      role?: SessionRole | null;
     }) => {
       return await api.spawnAcpSession(
         agentId,
@@ -508,6 +511,7 @@ export function useSpawnAcpSessionMutation() {
         worktreeBranch ?? null,
         taskId ?? null,
         taskName ?? null,
+        role ?? null,
       );
     },
     onSuccess: (_data, { projectId }) => {
