@@ -1,5 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { basename, getFolderName, isAbsolutePath, toPosixPath } from "./path-utils";
+import { basename, fileUriToPath, getFolderName, isAbsolutePath, toPosixPath } from "./path-utils";
+
+describe("fileUriToPath", () => {
+  it("drops the empty-authority slash only in front of a drive letter", () => {
+    expect(fileUriToPath("file:///C:/Users/me/shots/details.png")).toBe(
+      "C:/Users/me/shots/details.png",
+    );
+    expect(fileUriToPath("file:///home/me/shots/details.png")).toBe("/home/me/shots/details.png");
+  });
+
+  it("keeps the two-slash form ComposeBar emits working", () => {
+    expect(fileUriToPath("file://C:/Users/me/notes.md")).toBe("C:/Users/me/notes.md");
+    expect(fileUriToPath("file://C:\\Users\\me\\notes.md")).toBe("C:/Users/me/notes.md");
+    expect(fileUriToPath("file://\\\\wsl$\\Ubuntu\\home\\me\\notes.md")).toBe(
+      "//wsl$/Ubuntu/home/me/notes.md",
+    );
+  });
+
+  it("handles every session platform's absolute root", () => {
+    // The session's OS decides the shape, not the host's: SSH/WSL/Docker are posix
+    // even when Maestro itself runs on Windows.
+    expect(fileUriToPath("file:///Users/me/repo/a.png")).toBe("/Users/me/repo/a.png"); // macOS
+    expect(fileUriToPath("file:///home/me/repo/a.png")).toBe("/home/me/repo/a.png"); // Linux/SSH/WSL
+    expect(fileUriToPath("file:///c:/users/me/repo/a.png")).toBe("c:/users/me/repo/a.png"); // lowercase drive
+    expect(fileUriToPath("file:///D:/work/a.png")).toBe("D:/work/a.png"); // non-C drive
+  });
+
+  it("decodes percent-escaped segments", () => {
+    expect(fileUriToPath("file:///C:/Program%20Files/app/log.txt")).toBe(
+      "C:/Program Files/app/log.txt",
+    );
+  });
+
+  it("leaves a malformed escape alone rather than throwing", () => {
+    expect(fileUriToPath("file:///C:/Users/me/100%/report.md")).toBe("C:/Users/me/100%/report.md");
+  });
+
+  it("passes a plain path through normalised", () => {
+    expect(fileUriToPath("src\\components\\App.tsx")).toBe("src/components/App.tsx");
+  });
+});
 
 describe("toPosixPath", () => {
   it("rewrites the separators a Windows tool call reports", () => {
