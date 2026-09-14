@@ -273,7 +273,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
         // Fixed rather than sized to content: with the body in tabs, `w-fit`/`max-h` resized and
         // re-centred the whole dialog on every tab click, because the two panels do not measure
         // the same. The description is `flex-1`, so the fixed height is spent on it.
-        className="sm:w-160 sm:max-w-[90vw] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden"
+        className="sm:w-320 sm:max-w-[90vw] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
         {task === null ? (
           <div className="flex flex-col items-center justify-center gap-4 py-16">
