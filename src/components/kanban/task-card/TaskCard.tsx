@@ -277,6 +277,15 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const activeSession = useTaskSession(task.id);
   const activityInfo = useSessionActivity(activeSession?.session_key);
 
+  // Fired from the footer and from the abandon confirmation, which offers it as the other way out
+  // of a stuck run. Null means the backend found no changes and declined to move it. Confirm rather
+  // than force silently: an empty review is the state the pipeline exists to avoid.
+  const handleSendToReview = () =>
+    sendToReview.mutate(
+      { taskId: task.id },
+      { onSuccess: (moved) => moved === null && setDialog("emptyReview") },
+    );
+
   useEffect(() => {
     if (pendingAuthRetry !== task.id) return;
     clearPendingAuthRetry();
@@ -443,13 +452,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
               task.completion === "LocalOnly" ? setDialog("archive") : archiveTask.mutate(task.id),
             onLogin: () => setDialog("auth"),
             onRecover: () => recoverSession.mutate({ taskId: task.id, projectId }),
-            onSendToReview: () =>
-              sendToReview.mutate(
-                { taskId: task.id },
-                // Null means the backend found no changes and declined to move it. Confirm rather
-                // than force silently: an empty review is the state the pipeline exists to avoid.
-                { onSuccess: (moved) => moved === null && setDialog("emptyReview") },
-              ),
+            onSendToReview: handleSendToReview,
           }}
         />
       </div>
@@ -494,6 +497,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
               { onSuccess: () => archiveTask.mutate(task.id) },
             ),
           onForceReview: () => sendToReview.mutate({ taskId: task.id, force: true }),
+          onSendToReview: handleSendToReview,
           onAuthSuccess: () => {
             // Clearing the store unmounts the modal on its own, but the card's own dialog value
             // has to be reset too — left at "auth", the next time this task needed credentials

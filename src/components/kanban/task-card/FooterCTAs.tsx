@@ -39,6 +39,19 @@ export interface FooterActions {
   onSendToReview: () => void;
 }
 
+/**
+ * The pipeline has stopped for a reason the user can act on — which is the only time there is
+ * anything to send on. While it is genuinely working there is no finished work to move. Shared
+ * with the abandon confirmation, which offers the same escape hatch under the same condition.
+ */
+export function isTaskStuck(task: Task) {
+  return (
+    task.phase_status === "Waiting" ||
+    task.phase_status === "Blocked" ||
+    task.phase_status === "Failed"
+  );
+}
+
 interface FooterCTAsProps {
   task: Task;
   /** Only ever read for its truthiness — the footer offers Join, it does not address the session. */
@@ -83,14 +96,7 @@ export function FooterCTAs({
    * a reading of the task, and the card had nothing to add to it.
    */
   const isAwaiting = task.phase_status === "Blocked";
-  /**
-   * The pipeline has stopped for a reason the user can act on — which is the only time there is
-   * anything to send on. While it is genuinely working there is no finished work to move.
-   */
-  const isStuck =
-    task.phase_status === "Waiting" ||
-    task.phase_status === "Blocked" ||
-    task.phase_status === "Failed";
+  const isStuck = isTaskStuck(task);
 
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
@@ -157,6 +163,17 @@ export function FooterCTAs({
 
     return (
       <div className="flex gap-1 mt-1.5">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onStop();
+          }}
+          variant="ghost"
+          className={cn(base, "h-auto")}
+        >
+          <Square className="w-2.5 h-2.5 fill-current" />
+          Stop
+        </Button>
         {hasActiveSession && (
           <Button
             onClick={(e) => {
@@ -170,17 +187,6 @@ export function FooterCTAs({
             {isAwaiting ? "Respond" : "Join"}
           </Button>
         )}
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onStop();
-          }}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-        >
-          <Square className="w-2.5 h-2.5 fill-current" />
-          Stop
-        </Button>
       </div>
     );
   }
@@ -193,6 +199,24 @@ export function FooterCTAs({
   if (task.status === "Planning") {
     return (
       <div className="flex gap-1 mt-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenProfiles();
+                }}
+                variant="ghost"
+                className={cn(base, "h-auto")}
+              />
+            }
+          >
+            <SlidersHorizontal className="w-2.5 h-2.5" />
+            Agents
+          </TooltipTrigger>
+          <TooltipContent>Choose which agent runs each stage of this task</TooltipContent>
+        </Tooltip>
         {/* Refinement needs an agent to run it, and nothing on this card can conjure one. Left
             enabled, the only thing pressing it produced was a toast about the default agent — an
             answer to a question the user had not asked, on a project whose real problem is that no
@@ -217,24 +241,6 @@ export function FooterCTAs({
               ? "Ask an agent to sharpen this task's description"
               : "No agent can refine this task. Add a Refinement profile in Settings."}
           </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenProfiles();
-                }}
-                variant="ghost"
-                className={cn(base, "h-auto")}
-              />
-            }
-          >
-            <SlidersHorizontal className="w-2.5 h-2.5" />
-            Agents
-          </TooltipTrigger>
-          <TooltipContent>Choose which agent runs each stage of this task</TooltipContent>
         </Tooltip>
       </div>
     );
@@ -392,6 +398,7 @@ export function FooterCTAs({
     if (isAwaiting) {
       return (
         <div className="flex gap-1 mt-1.5">
+          {sendToReview}
           <Button
             onClick={(e) => {
               e.stopPropagation();
@@ -403,10 +410,12 @@ export function FooterCTAs({
             <MessageSquare className="w-2.5 h-2.5 fill-current" />
             Respond
           </Button>
-          {sendToReview}
         </div>
       );
     }
+    // Two controls, never three. A stuck run with a live session has three plausible moves —
+    // abandon it, send the work on, talk to the agent — and the third one lives in the abandon
+    // confirmation instead, where "send it to review anyway" is the natural second thought.
     return (
       <div className="flex gap-1 mt-1.5">
         <Tooltip>
@@ -440,7 +449,6 @@ export function FooterCTAs({
             Join
           </Button>
         )}
-        {sendToReview}
       </div>
     );
   }
