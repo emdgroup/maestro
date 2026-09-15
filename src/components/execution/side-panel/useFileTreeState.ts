@@ -8,6 +8,7 @@ import {
   useDeletePath,
   useListDirContents,
 } from "@/services/connection.service";
+import { isAbsolutePath } from "@/lib/path-utils";
 import { folderLabel } from "./file-edit-utils";
 import type { FileTreeAction, FileTreeTarget } from "./LazyFileTree";
 import type { ConnectionKey } from "@/types/bindings";
@@ -15,6 +16,16 @@ import type { ConnectionKey } from "@/types/bindings";
 export type NameDialogState =
   | { kind: "new-file" | "new-folder"; parentAbsolutePath: string; siblings: string[] }
   | { kind: "rename"; target: FileTreeTarget };
+
+/**
+ * Absolute path of the folder holding `relativePath`, or `null` for the workspace root — which is
+ * also what a selection outside the workspace gets, since no row in the tree represents it.
+ */
+function folderOf(relativePath: string, workspacePath: string): string | null {
+  const slash = relativePath.lastIndexOf("/");
+  if (slash === -1 || isAbsolutePath(relativePath)) return null;
+  return `${workspacePath}/${relativePath.slice(0, slash)}`;
+}
 
 interface UseFileTreeStateOptions {
   connection: ConnectionKey;
@@ -42,14 +53,26 @@ export function useFileTreeState({
   initialPath,
 }: UseFileTreeStateOptions) {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<string | null>(initialPath ?? null);
+  const [selected, setSelectedPath] = useState<string | null>(initialPath ?? null);
   const [showHidden, setShowHidden] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileTreeTarget | null>(null);
   /** `null` is the workspace root. Drives the tree highlight and the header's create buttons. */
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(() =>
+    initialPath ? folderOf(initialPath, workspacePath) : null,
+  );
   const treeRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * A folder is highlighted either because the user picked it or because it holds the open file —
+   * never because it was picked before an unrelated sibling file was opened. So every selection
+   * moves the highlight with it; only clearing the selection leaves it where it was.
+   */
+  function setSelected(relativePath: string | null) {
+    setSelectedPath(relativePath);
+    if (relativePath != null) setSelectedFolder(folderOf(relativePath, workspacePath));
+  }
 
   const targetFolder = selectedFolder ?? workspacePath;
   const targetLabel = folderLabel(targetFolder, workspacePath);
