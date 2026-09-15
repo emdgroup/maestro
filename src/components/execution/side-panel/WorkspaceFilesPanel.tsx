@@ -52,6 +52,7 @@ import {
   canEditFile,
   filePollInterval,
   folderLabel,
+  previewKindFor,
   type MarkdownEditLayout,
 } from "./file-edit-utils";
 import { useFileDraft } from "./useFileDraft";
@@ -202,13 +203,13 @@ export function WorkspaceFilesPanel({
 
   const basename = selected ? (selected.split("/").pop() ?? selected) : null;
   const editable = canEditFile({ fileName: selected, binaryMime, error: contentError, content });
-  const isMarkdown = selected?.toLowerCase().endsWith(".md") ?? false;
+  const previewKind = previewKindFor(selected);
 
-  // Markdown, images, PDFs, load errors and the empty state keep their own renderers; plain text is
-  // the editor in both modes. Keeping the same element type across the mode toggle is what stops
-  // React remounting it — and with it the scroll position.
+  // Markdown, HTML, images, PDFs, load errors and the empty state keep their own renderers; plain
+  // text is the editor in both modes. Keeping the same element type across the mode toggle is what
+  // stops React remounting it — and with it the scroll position.
   const showsEditorSurface =
-    (mode === "edit" && fullPath != null) || (mode === "view" && editable && !isMarkdown);
+    (mode === "edit" && fullPath != null) || (mode === "view" && editable && previewKind === null);
 
   const {
     chooseLayout,
@@ -219,7 +220,7 @@ export function WorkspaceFilesPanel({
     editAreaRef,
     setEditorScroller,
     setPreviewScroller,
-  } = useMarkdownLayout({ isMarkdown, showsEditorSurface });
+  } = useMarkdownLayout({ hasPreview: previewKind !== null, showsEditorSurface });
 
   // Bridges the two hooks: which file is open is the tree's business, but whether leaving the
   // current one is allowed to happen without asking is the draft's.
@@ -365,8 +366,10 @@ export function WorkspaceFilesPanel({
 
   const inEdit = selected != null && mode === "edit";
   const saveDisabled = saving || !isDirty;
-  const showLayoutGroup = inEdit && isMarkdown;
-  const showSyncToggle = inEdit && effectiveLayout === "split";
+  const showLayoutGroup = inEdit && previewKind !== null;
+  // Markdown only: the HTML preview is a cross-origin iframe, whose scroll position the parent
+  // cannot read without `allow-same-origin` — which is the one thing the sandbox is there for.
+  const showSyncToggle = inEdit && effectiveLayout === "split" && previewKind === "markdown";
   const syncLabel = scrollSync ? "Turn off synced scrolling" : "Turn on synced scrolling";
   const hiddenLabel = showHidden ? "Hide hidden files" : "Show hidden files";
   // The stored preference survives an unavailable split; only this rendering of it is withheld, so

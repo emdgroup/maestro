@@ -672,6 +672,54 @@ describe("WorkspaceFilesPanel markdown preview", () => {
   });
 });
 
+describe("WorkspaceFilesPanel html preview", () => {
+  async function enterHtmlEdit() {
+    renderPanel({ initialPath: "index.html" });
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() => expect(screen.getByTestId("editor")).toBeInTheDocument());
+  }
+
+  /** The point of the feature: opening a page shows the page, not its source. */
+  it("shows the rendered page rather than the source when not editing", async () => {
+    renderPanel({ initialPath: "index.html" });
+
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("original"));
+    expect(screen.queryByTestId("editor")).toBeNull();
+  });
+
+  it("offers the same three layouts markdown gets", async () => {
+    await enterHtmlEdit();
+
+    expect(screen.getByRole("button", { name: "Source only" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Source and preview" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview only" })).toBeInTheDocument();
+  });
+
+  it("previews the draft beside the source in split", async () => {
+    await enterHtmlEdit();
+    await typeDraft("<p>mine</p>");
+
+    await userEvent.click(screen.getByRole("button", { name: "Source and preview" }));
+
+    await waitFor(() => expect(screen.getByTestId("read-view")).toHaveTextContent("mine"));
+    expect(screen.getByTestId("editor")).toBeInTheDocument();
+  });
+
+  /**
+   * The preview is a cross-origin iframe, so the parent cannot read its scroll position — reading
+   * it would need `allow-same-origin`, which is the one thing the sandbox is there for. A toggle
+   * that cannot do anything is worse than no toggle.
+   */
+  it("offers no sync toggle in split, unlike markdown", async () => {
+    getSettings.mockResolvedValue({ markdown_edit_layout: "split", updated_at: "now" });
+    await enterHtmlEdit();
+    await waitFor(() => expect(screen.getByTestId("read-view")).toBeInTheDocument());
+
+    expect(screen.queryByRole("button", { name: /synced scrolling/ })).toBeNull();
+  });
+});
+
 describe("WorkspaceFilesPanel conflict handling", () => {
   async function reachConflict() {
     renderPanel();

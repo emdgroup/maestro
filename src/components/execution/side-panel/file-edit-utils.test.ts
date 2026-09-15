@@ -5,6 +5,7 @@ import {
   filePollInterval,
   folderLabel,
   parseMarkdownEditLayout,
+  previewKindFor,
   proportionalScrollTop,
   resolveMarkdownLayout,
   validateEntryName,
@@ -26,18 +27,36 @@ describe("parseMarkdownEditLayout", () => {
   });
 });
 
+describe("previewKindFor", () => {
+  it.each(["README.md", "docs/Notes.MD"])("renders %s as markdown", (name) => {
+    expect(previewKindFor(name)).toBe("markdown");
+  });
+
+  it.each(["index.html", "site/page.htm", "index.HTML"])("renders %s as html", (name) => {
+    expect(previewKindFor(name)).toBe("html");
+  });
+
+  /** Anything else is source in both modes — an editor opened on it must not gain a preview pane. */
+  it.each(["src/main.ts", "Cargo.toml", "notes", "html", "a.md.bak", null])(
+    "has no rendered form for %p",
+    (name) => {
+      expect(previewKindFor(name)).toBeNull();
+    },
+  );
+});
+
 describe("resolveMarkdownLayout", () => {
   const wide = 1400;
 
   it("renders the chosen layout when there is room", () => {
-    expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: wide })).toBe(
+    expect(resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: wide })).toBe(
       "split",
     );
   });
 
   /** Two columns of ~300px are not a split view, they are two unreadable columns. */
   it("collapses split to source when the panel is too narrow", () => {
-    expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: 600 })).toBe(
+    expect(resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: 600 })).toBe(
       "source",
     );
   });
@@ -45,10 +64,10 @@ describe("resolveMarkdownLayout", () => {
   it("takes split at exactly two minimum panes and refuses one pixel under", () => {
     const exact = MIN_SPLIT_PANE_PX * 2;
     expect(
-      resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: exact }),
+      resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: exact }),
     ).toBe("split");
     expect(
-      resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: exact - 1 }),
+      resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: exact - 1 }),
     ).toBe("source");
   });
 
@@ -59,12 +78,12 @@ describe("resolveMarkdownLayout", () => {
   it("restores split once the panel is wide again", () => {
     const narrow = resolveMarkdownLayout({
       layout: "split",
-      isMarkdown: true,
+      hasPreview: true,
       availableWidth: 400,
     });
     const widened = resolveMarkdownLayout({
       layout: "split",
-      isMarkdown: true,
+      hasPreview: true,
       availableWidth: wide,
     });
     expect([narrow, widened]).toEqual(["source", "split"]);
@@ -72,19 +91,19 @@ describe("resolveMarkdownLayout", () => {
 
   it("leaves the single-pane layouts alone at any width", () => {
     expect(
-      resolveMarkdownLayout({ layout: "preview", isMarkdown: true, availableWidth: 200 }),
+      resolveMarkdownLayout({ layout: "preview", hasPreview: true, availableWidth: 200 }),
     ).toBe("preview");
-    expect(resolveMarkdownLayout({ layout: "source", isMarkdown: true, availableWidth: 200 })).toBe(
+    expect(resolveMarkdownLayout({ layout: "source", hasPreview: true, availableWidth: 200 })).toBe(
       "source",
     );
   });
 
-  it("forces source for anything that is not markdown", () => {
+  it("forces source for a file with nothing to preview", () => {
     expect(
-      resolveMarkdownLayout({ layout: "split", isMarkdown: false, availableWidth: wide }),
+      resolveMarkdownLayout({ layout: "split", hasPreview: false, availableWidth: wide }),
     ).toBe("source");
     expect(
-      resolveMarkdownLayout({ layout: "preview", isMarkdown: false, availableWidth: wide }),
+      resolveMarkdownLayout({ layout: "preview", hasPreview: false, availableWidth: wide }),
     ).toBe("source");
   });
 
@@ -93,7 +112,7 @@ describe("resolveMarkdownLayout", () => {
    * split sees a frame of source view on every open.
    */
   it("assumes split fits until the width has been measured", () => {
-    expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: null })).toBe(
+    expect(resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: null })).toBe(
       "split",
     );
   });
@@ -103,7 +122,7 @@ describe("resolveMarkdownLayout", () => {
    * wide. Reading that as "too narrow" collapsed the pane for the frame before the tab was shown.
    */
   it("treats a zero width as not-yet-laid-out rather than too narrow", () => {
-    expect(resolveMarkdownLayout({ layout: "split", isMarkdown: true, availableWidth: 0 })).toBe(
+    expect(resolveMarkdownLayout({ layout: "split", hasPreview: true, availableWidth: 0 })).toBe(
       "split",
     );
   });
