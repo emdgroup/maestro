@@ -117,10 +117,9 @@ pub async fn save_current_sessions_for_project(app_state: Arc<AppState>, project
         (snapshots, folders)
     };
 
-    if snapshots.is_empty() && folders.is_empty() {
-        return;
-    }
-
+    // No early return when both are empty. Closing the last session is exactly when `state.json`
+    // has to be rewritten — skipping it left the closed session listed as restorable, and the next
+    // `prime_project_server` brought it back.
     let mut project_state = read_project_state(&app_state, &project_path, connection_key).await;
     for folder in folders {
         match project_state.session_folders.iter_mut().find(|existing| {

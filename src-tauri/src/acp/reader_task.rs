@@ -181,7 +181,7 @@ pub(crate) fn spawn_reader_task(
             }
         }
 
-        app_state.acp.sessions.lock().await.remove(&log_id);
+        remove_session_and_persist(&app_state, log_id).await;
         fail_task_if_still_running(&app_state, task_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
@@ -215,6 +215,27 @@ fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
     if changed {
         app_state.app_handle.emit("tasks-changed", ()).ok();
     }
+}
+
+/// Drop a session the agent side ended, and rewrite `.maestro/state.json` so the next
+/// `prime_project_server` does not restore it.
+///
+/// Every removal here is an ending nothing else observes — no IPC command ran, so none of the
+/// `save_current_sessions_for_project` calls on the user-driven paths fire. Without this the
+/// snapshot keeps listing a session whose agent is gone, and opening the project brings back a
+/// ghost of it. Returns the removed entry, which is the last place its task id is available.
+async fn remove_session_and_persist(
+    app_state: &Arc<crate::core::AppState>,
+    log_id: i32,
+) -> Option<crate::acp::AcpProcess> {
+    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
+    if let Some(project_id) = removed.as_ref().and_then(|session| session.project_id) {
+        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
+            Arc::clone(app_state),
+            project_id,
+        ));
+    }
+    removed
 }
 
 /// A session's reader has ended. If the pipeline still believes an agent is working the task,
@@ -1515,7 +1536,7 @@ async fn handle_shared_server_message(
             if is_session_load_error {
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
-                app_state.acp.sessions.lock().await.remove(&log_id);
+                remove_session_and_persist(app_state, log_id).await;
                 fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
@@ -1722,7 +1743,7 @@ async fn handle_shared_server_message(
             for session_id_str in &lost.affected_session_ids {
                 if let Some(log_id) = log_id_from_session_id(session_id_str) {
                     // The removed entry is the only place the task id is still available.
-                    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
+                    let removed = remove_session_and_persist(app_state, log_id).await;
                     fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
                     if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ())
                     {
