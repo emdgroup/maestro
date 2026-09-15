@@ -409,9 +409,7 @@ describe("WorkspaceFilesPanel file list", () => {
    */
   it("mounts the create actions only while the list is open", async () => {
     renderPanel();
-    expect(
-      await screen.findByRole("button", { name: "New file in the workspace root" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^New file in/ })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Hide file list" }));
 
@@ -428,7 +426,12 @@ describe("WorkspaceFilesPanel create destination", () => {
   beforeEach(() => {
     listContents.mockImplementation((_conn: unknown, path: string) =>
       Promise.resolve(
-        path === WORKSPACE ? [{ name: "src", is_dir: true }] : [{ name: "main.ts", is_dir: false }],
+        path === WORKSPACE
+          ? [
+              { name: "src", is_dir: true },
+              { name: "root.md", is_dir: false },
+            ]
+          : [{ name: "main.ts", is_dir: false }],
       ),
     );
   });
@@ -454,6 +457,22 @@ describe("WorkspaceFilesPanel create destination", () => {
     await userEvent.click(await screen.findByRole("button", { name: "New file in src" }));
 
     expect(await screen.findByText(/Created in src/)).toBeInTheDocument();
+  });
+
+  /**
+   * A folder highlight left over from an earlier click read as if that folder were still selected
+   * while a file elsewhere was open. Opening a file moves the highlight to its own parent.
+   */
+  it("moves the highlight to the parent of the file that is opened", async () => {
+    renderPanel({ initialPath: undefined });
+    await userEvent.click(await screen.findByRole("button", { name: /src/ }));
+    expect(await screen.findByRole("button", { name: "New file in src" })).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole("button", { name: /root.md/ }));
+
+    expect(
+      await screen.findByRole("button", { name: "New file in the workspace root" }),
+    ).toBeInTheDocument();
   });
 
   it("creates in the highlighted folder, not the root", async () => {
