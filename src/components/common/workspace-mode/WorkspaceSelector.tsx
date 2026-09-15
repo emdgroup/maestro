@@ -1,11 +1,12 @@
-import { Folder } from "lucide-react";
+import { Folder, GitBranch } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { useNow } from "@/hooks/useNow";
+import { cn } from "@/lib/utils";
 import { MAESTRO_BRANCH_PREFIX } from "@/lib/generateSessionName";
 import type { BranchMode, WorkspaceMode, WorktreeWithStatus } from "@/types/bindings";
 import { WorkspaceCard } from "./WorkspaceCard";
 import { WorkspaceModeSelect } from "./WorkspaceModeSelect";
-import { NewWorktreeFields } from "./NewWorktreeFields";
+import { CHIP_LABEL, NewWorktreeFields } from "./NewWorktreeFields";
 
 interface WorkspaceSelectorProps {
   mode: WorkspaceMode;
@@ -80,25 +81,47 @@ export function WorkspaceSelector({
   const newBranchName = branchSuffix || generatedBranchSuffix;
 
   if (readOnly) {
-    const summary =
-      mode === "NewWorktree"
-        ? branchMode === "Checkout"
-          ? `A worktree on ${baseBranch || "the branch below"}`
-          : newBranchName
-            ? `A new branch ${MAESTRO_BRANCH_PREFIX}${newBranchName} from ${baseBranch || "the base branch"}`
-            : `A new branch from ${baseBranch || "the base branch"}`
-        : mode === "RepositoryDirectory"
-          ? "The repository directory"
-          : (selected?.branch_name ?? "A workspace that no longer exists");
+    // Same shape as the editable control: the `From`/`On` chip, then the branch it applies to.
+    // Only `NewWorktree` has two things to say — the other modes name one place and stop.
+    const branchName = newBranchName && `${MAESTRO_BRANCH_PREFIX}${newBranchName}`;
     return (
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
           WORKSPACE
         </span>
-        <span className="flex items-center gap-1.5 rounded-full border border-border px-2.5 h-7 text-xs text-muted-foreground font-mono cursor-default w-fit">
-          <Folder className="size-3 shrink-0" />
-          {summary}
-        </span>
+        {mode === "NewWorktree" ? (
+          <span className="flex items-stretch h-7 w-fit max-w-full rounded-md border border-border overflow-hidden text-xs cursor-default">
+            <span className="flex items-center gap-1.5 shrink-0 px-2.5 bg-muted/60 border-r border-border">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {CHIP_LABEL[branchMode]}
+              </span>
+              <span className="font-mono text-muted-foreground">
+                {baseBranch || "the base branch"}
+              </span>
+            </span>
+            {branchMode === "Create" && (
+              <span className="flex items-center gap-1.5 min-w-0 px-2.5">
+                <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+                {branchName ? (
+                  <span className="font-mono truncate" title={branchName}>
+                    {branchName}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Auto-generated name</span>
+                )}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 h-7 w-fit max-w-full rounded-md border border-border px-2.5 text-xs cursor-default">
+            <Folder className="size-3 shrink-0 text-muted-foreground" />
+            <span className={cn("truncate", selected?.branch_name && "font-mono")}>
+              {mode === "RepositoryDirectory"
+                ? "The repository directory"
+                : (selected?.branch_name ?? "A workspace that no longer exists")}
+            </span>
+          </span>
+        )}
       </div>
     );
   }

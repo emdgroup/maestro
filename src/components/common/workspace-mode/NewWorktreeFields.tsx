@@ -29,7 +29,7 @@ const MODES: { value: BranchMode; label: string; description: string }[] = [
 ];
 
 /** The word in front of the branch, which is also the control that changes it. */
-const CHIP_LABEL: Record<BranchMode, string> = { Create: "From", Checkout: "On" };
+export const CHIP_LABEL: Record<BranchMode, string> = { Create: "From", Checkout: "On" };
 
 /**
  * Stands in for the name when there is none to preview.
