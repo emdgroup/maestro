@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.1](https://github.com/emdgroup/maestro/compare/v0.27.0...v0.27.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **review:** stop the review tab crashing on open ([#384](https://github.com/emdgroup/maestro/issues/384)) ([bdac2de](https://github.com/emdgroup/maestro/commit/bdac2deb5b5ed40aad0b44459236bc11d9ad3bed))
+* **sessions:** stop a session from being restored twice on project open ([#385](https://github.com/emdgroup/maestro/issues/385)) ([0a70e16](https://github.com/emdgroup/maestro/commit/0a70e16eb4fe2eadf5a1a92ee5e97919d567db2b))
+
 ## [0.27.0](https://github.com/emdgroup/maestro/compare/v0.26.0...v0.27.0) (2026-09-15)
 
 
