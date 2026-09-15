@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import {
   LayoutDashboard,
   Bot,
@@ -58,6 +58,8 @@ interface SidePanelTabBarProps {
   onMaximizedChange?: (v: boolean) => void;
   maximized: boolean;
   addTabContent: (side: "bottom" | "left") => React.ReactNode;
+  /** Per-tab hover text, keyed by tab id — the open file of a Files tab, whose label is generic. */
+  tabTitles?: Readonly<Record<string, string>>;
 }
 
 export function SidePanelTabBar({
@@ -69,6 +71,7 @@ export function SidePanelTabBar({
   onMaximizedChange,
   maximized,
   addTabContent,
+  tabTitles,
 }: SidePanelTabBarProps) {
   const { ref: scrollRef, maskStyle } = useHorizontalScrollFade<HTMLDivElement>(tabs.length);
 
@@ -107,9 +110,9 @@ export function SidePanelTabBar({
           {tabs.map(({ id, kind, label, closeable }) => {
             const Icon = KIND_ICON[kind];
             const isActive = activeTabId === id;
-            return (
+            const title = tabTitles?.[id];
+            const tab = (
               <button
-                key={id}
                 type="button"
                 data-tab-id={id}
                 onClick={() => onTabChange(id)}
@@ -149,6 +152,15 @@ export function SidePanelTabBar({
                   </span>
                 )}
               </button>
+            );
+            // Only tabs whose label does not say what they hold — a Files tab with a file open.
+            return title ? (
+              <Tooltip key={id}>
+                <TooltipTrigger render={tab} />
+                <TooltipContent className="max-w-md break-all">{title}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Fragment key={id}>{tab}</Fragment>
             );
           })}
         </div>
