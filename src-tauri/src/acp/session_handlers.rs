@@ -494,6 +494,27 @@ pub async fn restore_acp_session(
     worktree_branch: Option<String>,
     task_id: Option<i32>,
 ) -> Result<i32, String> {
+    // A webview reload, and leaving a project for the picker, both leave the backend's session map
+    // untouched — while `.maestro/state.json` still lists those live sessions, so `prime_project_server`
+    // restores them a second time. The user then sees the same session twice: the original, whose
+    // transcript the reloaded UI never received, and a freshly loaded copy carrying the history.
+    // Hand back the live one rather than loading it again.
+    let live = app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .iter()
+        .find(|(_, proc)| {
+            proc.acp_session_id
+                .lock()
+                .is_ok_and(|id| id.as_deref() == Some(acp_session_id.as_str()))
+        })
+        .map(|(log_id, _)| *log_id);
+    if let Some(log_id) = live {
+        return Ok(log_id);
+    }
+
     let log_id = app_state
         .pty
         .session_counter

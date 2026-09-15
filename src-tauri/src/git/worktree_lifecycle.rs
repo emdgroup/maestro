@@ -547,8 +547,9 @@ pub async fn cleanup_worktree_if_clean(
 }
 
 /// Directories of sessions running now. Separate from [`live_session_cwds`] because the
-/// `.maestro/state.json` snapshots that one adds outlive the sessions they describe —
-/// `save_current_sessions_for_project` skips the write when the last session closes.
+/// `.maestro/state.json` snapshots that one adds describe the sessions of the *last* run until
+/// this one restores them — that is the point of the file, and it deliberately survives a quit
+/// (`save_current_sessions_for_project` short-circuits once `is_closing` is set).
 pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
     let mut cwds: Vec<String> = Vec::new();
     {
