@@ -790,6 +790,12 @@ describe("WorkspaceFilesPanel conflict handling", () => {
 });
 
 describe("WorkspaceFilesPanel unsaved-work guards", () => {
+  it("reports the open file so its tab can name it on hover", async () => {
+    const onSelectedChange = vi.fn();
+    renderPanel({ onSelectedChange });
+    await waitFor(() => expect(onSelectedChange).toHaveBeenLastCalledWith("src/main.ts"));
+  });
+
   it("reports its dirty state so the tab can refuse to close", async () => {
     const onDirtyChange = vi.fn();
     renderPanel({ onDirtyChange });

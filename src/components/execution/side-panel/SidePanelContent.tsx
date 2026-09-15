@@ -73,6 +73,8 @@ interface SidePanelContentProps {
   onSeedPrompt?: (text: string) => void;
   /** Reports a Files tab holding an unsaved draft, so closing it can be guarded. */
   onTabDirtyChange?: (tabId: string, dirty: boolean) => void;
+  /** Reports the file a Files tab has open, so the tab can name it on hover. */
+  onTabFileChange?: (tabId: string, path: string | null) => void;
 }
 
 export function SidePanelContent({
@@ -101,6 +103,7 @@ export function SidePanelContent({
   canSendImages,
   onSeedPrompt,
   onTabDirtyChange,
+  onTabFileChange,
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
@@ -471,6 +474,7 @@ export function SidePanelContent({
                 initialPath={initialPath}
                 isProcessing={isProcessing}
                 onDirtyChange={(dirty) => onTabDirtyChange?.(id, dirty)}
+                onSelectedChange={(path) => onTabFileChange?.(id, path)}
               />
             )}
             {kind === "terminal" && (

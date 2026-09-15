@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   PanelLeft,
   ExternalLink,
@@ -82,6 +82,8 @@ interface WorkspaceFilesPanelProps {
   isProcessing?: boolean;
   /** Lets the panel's own tab refuse to close while an unsaved draft is open. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Reports the open file, so the tab that holds this panel can name it on hover. */
+  onSelectedChange?: (path: string | null) => void;
 }
 
 /** The three markdown arrangements, rendered as a group in the header and as radio items in the
@@ -104,6 +106,7 @@ export function WorkspaceFilesPanel({
   initialPath,
   isProcessing = false,
   onDirtyChange,
+  onSelectedChange,
 }: WorkspaceFilesPanelProps) {
   const openTransfer = useFileTransfer();
   const downloadTransfer = useFileTransfer();
@@ -145,6 +148,16 @@ export function WorkspaceFilesPanel({
     handleNameConfirm,
     handleDeleteConfirm,
   } = tree;
+
+  // Through a ref for the same reason `useFileDraft` reports dirtiness that way: the parent binds
+  // an inline callback to this tab's id, so it is a new function on every render.
+  const onSelectedChangeRef = useRef(onSelectedChange);
+  useEffect(() => {
+    onSelectedChangeRef.current = onSelectedChange;
+  });
+  useEffect(() => {
+    onSelectedChangeRef.current?.(selected ?? null);
+  }, [selected]);
 
   // A file link in the stream can point outside the project — an agent reads
   // config from a home directory, a log from /tmp — and `handleOpenFile` hands

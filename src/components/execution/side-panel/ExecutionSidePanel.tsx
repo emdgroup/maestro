@@ -99,6 +99,19 @@ export function ExecutionSidePanel({
   // rather than a check inside `useSidePanelTabs`, which owns no content.
   const [dirtyTabIds, setDirtyTabIds] = useState<ReadonlySet<string>>(() => new Set());
   const [closePrompt, setClosePrompt] = useState<string | null>(null);
+  // Same reason: every Files tab keeps its own selection, and the tab bar that has to name it on
+  // hover is several components above the panel that knows.
+  const [tabFiles, setTabFiles] = useState<Readonly<Record<string, string>>>({});
+
+  const handleTabFileChange = useCallback((id: string, path: string | null) => {
+    setTabFiles((prev) => {
+      if ((prev[id] ?? null) === path) return prev;
+      const next = { ...prev };
+      if (path === null) delete next[id];
+      else next[id] = path;
+      return next;
+    });
+  }, []);
 
   const forgetTab = useCallback((id: string) => {
     setDirtyTabIds((prev) => {
@@ -184,6 +197,7 @@ export function ExecutionSidePanel({
             onMaximizedChange={onMaximizedChange}
             maximized={maximized}
             addTabContent={addTabPopoverContent}
+            tabTitles={tabFiles}
           />
           <div className="flex-1 min-h-0 flex flex-col pl-[10px]">
             <div className="flex-1 relative min-h-0 rounded-tl-xl border-t border-l border-border bg-background overflow-hidden">
@@ -213,6 +227,7 @@ export function ExecutionSidePanel({
                 canSendImages={canSendImages}
                 onSeedPrompt={onSeedPrompt}
                 onTabDirtyChange={handleTabDirtyChange}
+                onTabFileChange={handleTabFileChange}
               />
             </div>
           </div>
