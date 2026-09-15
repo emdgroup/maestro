@@ -17,10 +17,10 @@ import {
  * when another window changes it.
  */
 export function useMarkdownLayout({
-  isMarkdown,
+  hasPreview,
   showsEditorSurface,
 }: {
-  isMarkdown: boolean;
+  hasPreview: boolean;
   showsEditorSurface: boolean;
 }) {
   const { data: appSettings } = useSettings();
@@ -62,7 +62,7 @@ export function useMarkdownLayout({
 
   const effectiveLayout = resolveMarkdownLayout({
     layout,
-    isMarkdown,
+    hasPreview,
     availableWidth: editAreaWidth,
   });
   // Matches `resolveMarkdownLayout`: unmeasured and not-yet-laid-out both count as fitting, or the

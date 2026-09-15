@@ -80,8 +80,24 @@ export function canEditFile({
   return fileName != null && binaryMime == null && error == null && content != null;
 }
 
-/** How the Files tab arranges an open markdown file in edit mode. */
+/** How the Files tab arranges an open previewable file in edit mode. */
 export type MarkdownEditLayout = "source" | "split" | "preview";
+
+/** What the Files tab can render a file as instead of its source. */
+export type PreviewKind = "markdown" | "html";
+
+/**
+ * Which rendered form a file has, or `null` for one that is only ever source.
+ *
+ * Extension rather than content sniffing: this decides what the *view* mode shows, and it has to
+ * answer before the read comes back or the panel would flip renderer mid-load.
+ */
+export function previewKindFor(fileName: string | null): PreviewKind | null {
+  const lower = fileName?.toLowerCase() ?? "";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  return null;
+}
 
 const MARKDOWN_EDIT_LAYOUTS: readonly MarkdownEditLayout[] = ["source", "split", "preview"];
 
@@ -111,9 +127,9 @@ export const MIN_SPLIT_PANE_PX = 500;
 /**
  * The layout actually rendered, which is not always the one stored.
  *
- * Non-markdown has nothing to preview, and a pane too narrow to read is worse than one pane. The
- * stored preference is left untouched in both cases, so widening the panel restores split without
- * the user having to ask for it again.
+ * A file with no rendered form has nothing to preview, and a pane too narrow to read is worse than
+ * one pane. The stored preference is left untouched in both cases, so widening the panel restores
+ * split without the user having to ask for it again.
  *
  * `availableWidth` is `null` before the first measurement, and **zero means not laid out** — an
  * inactive side-panel tab is `hidden`, so it measures 0 while carrying a perfectly wide layout.
@@ -122,14 +138,14 @@ export const MIN_SPLIT_PANE_PX = 500;
  */
 export function resolveMarkdownLayout({
   layout,
-  isMarkdown,
+  hasPreview,
   availableWidth,
 }: {
   layout: MarkdownEditLayout;
-  isMarkdown: boolean;
+  hasPreview: boolean;
   availableWidth: number | null;
 }): MarkdownEditLayout {
-  if (!isMarkdown) return "source";
+  if (!hasPreview) return "source";
   if (layout !== "split") return layout;
   const measured = availableWidth !== null && availableWidth > 0;
   if (measured && availableWidth < MIN_SPLIT_PANE_PX * 2) return "source";
