@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.27.0](https://github.com/emdgroup/maestro/compare/v0.26.0...v0.27.0) (2026-09-15)
+
+
+### Features
+
+* **files:** render an HTML file as a page, not as source ([#379](https://github.com/emdgroup/maestro/issues/379)) ([ce28ae1](https://github.com/emdgroup/maestro/commit/ce28ae18b253ce6f3f54cc673a30ffdf1a4aa382))
+* **side-panel:** name the open file on a Files tab hover ([#382](https://github.com/emdgroup/maestro/issues/382)) ([80a9c3b](https://github.com/emdgroup/maestro/commit/80a9c3b6f10b17635b64a8a584e3aed076a0b7bb))
+
+
+### Bug Fixes
+
+* **files:** move the folder highlight to the open file's parent ([#381](https://github.com/emdgroup/maestro/issues/381)) ([cb8ae79](https://github.com/emdgroup/maestro/commit/cb8ae79e407c1b90ea54f7af9293cb0bf2ea5a58))
+* **tasks:** show a running task's workspace as a branch chip ([#383](https://github.com/emdgroup/maestro/issues/383)) ([8f5a8f3](https://github.com/emdgroup/maestro/commit/8f5a8f34629cc8fdd88fd727700ba76439832b41))
+
 ## [0.26.0](https://github.com/emdgroup/maestro/compare/v0.25.1...v0.26.0) (2026-09-14)
 
 
