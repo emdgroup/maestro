@@ -23,8 +23,13 @@ export const useReviewStore = create<ReviewState & ReviewActions>()(
     getViewedFiles: (taskId) => new Set(get().viewedFiles[taskId] ?? []),
     getComments: (taskId) => get().comments[taskId] ?? [],
 
+    // Idempotent on purpose. Both setters are driven by effects that watch the value they write,
+    // so a write that changes nothing must not produce a new state object: subscribers re-render,
+    // the effect re-runs, and the pair spins until React gives up (error #185).
     setViewedFiles: (taskId, files) =>
       set((state) => {
+        const current = state.viewedFiles[taskId];
+        if (current?.length === files.size && current.every((path) => files.has(path))) return;
         state.viewedFiles[taskId] = [...files];
       }),
 

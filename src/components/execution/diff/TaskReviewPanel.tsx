@@ -82,7 +82,11 @@ export function TaskReviewPanel({
   onClose,
 }: TaskReviewPanelProps) {
   const { projectId, projectPath, connection } = useKanban();
-  const reviewStore = useReviewStore();
+  // Captured once, never subscribed. `useReviewStore()` with no selector returns a new root object
+  // on every write, and the sync effects below list the store in their dependencies: a write
+  // re-rendered, the new identity re-ran the effect, which wrote again — React error #185,
+  // "maximum update depth exceeded". The actions themselves never change identity.
+  const [reviewStore] = useState(useReviewStore.getState);
   const startSha = task.execution_start_sha ?? null;
 
   // View state
