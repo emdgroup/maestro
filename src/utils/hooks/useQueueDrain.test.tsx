@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { Task } from "@/types/bindings";
 
-const execute = vi.hoisted(() => vi.fn<(task: Task) => Promise<void>>());
+const execute = vi.hoisted(() => vi.fn<(task: Task, opts: unknown) => Promise<void>>());
 const drainReadyQueue = vi.hoisted(() => vi.fn<() => Promise<number[]>>());
 /** Captures the listeners the hook registers so a test can fire the backend events itself. */
 const listeners = vi.hoisted(() => new Map<string, () => void>());
@@ -74,7 +74,24 @@ describe("useQueueDrain", () => {
     expect(drainReadyQueue).toHaveBeenCalled();
     // No capacity option: these ids were counted against the slots free when the drain ran, so
     // re-checking once the first has started would defer the rest of the scheduler's own batch.
-    expect(execute).toHaveBeenCalledWith(tasks[1]);
+    expect(execute).toHaveBeenCalledWith(tasks[1], { unattended: true });
+  });
+
+  /**
+   * This hook renders none of `useExecuteTask`'s dialogs, so a start that stopped to ask would
+   * await a promise nothing can resolve — and the drain is sequential behind `drainingRef`, so
+   * one hang takes auto-mode down for the session.
+   */
+  it("never starts a task that could stop to ask a question", async () => {
+    drainReadyQueue.mockResolvedValue([1, 2]);
+    render();
+
+    await settle();
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    for (const [, options] of execute.mock.calls) {
+      expect(options).toMatchObject({ unattended: true });
+    }
   });
 
   it("drains when a slot frees or a task arrives", async () => {
@@ -197,7 +214,7 @@ describe("useQueueDrain", () => {
     await settle();
 
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith(tasks[0]);
+    expect(execute).toHaveBeenCalledWith(tasks[0], { unattended: true });
   });
 
   it("does not drain without a project", async () => {

@@ -71,7 +71,12 @@ export function useQueueDrain(
           // Sequentially, because each start claims a slot and the ids were counted against the
           // slots free when the drain ran. Firing them at once would be correct only until a
           // claim failed, and then it would be over the limit.
-          await executeRef.current(task);
+          //
+          // Unattended for the same reason `useAgentPipeline` is: this hook takes `execute` and
+          // renders none of the dialogs beside it, so anything `execute` stops to ask would await
+          // a promise nothing can resolve. Worse here than there — the loop is sequential and
+          // holds `drainingRef`, so one hang stops auto-mode for the rest of the session.
+          await executeRef.current(task, { unattended: true });
         }
       } catch (err) {
         console.error("[auto-mode] queue drain failed:", err);
