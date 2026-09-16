@@ -9,6 +9,10 @@ import type { AgentRole } from "@/types/bindings";
  * because some harness uses it and no other — the list is expected to grow as harnesses are tried,
  * which is why the resolved mode is logged.
  *
+ * `READ_ONLY_MODES` plus `DEFAULT_MODE` is the set `READ_ONLY_SAFE_MODES` in
+ * `src-tauri/src/project/profiles.rs` calls read-only-safe. That check answers "can this role be
+ * held read-only" from what the agent offers, so a mode added to one list belongs in the other.
+ *
  * `acceptEdits` is deliberately absent. It silences prompts for edits but still asks before
  * running a command, and a task in this pipeline is meant to run without a person: stopping on
  * every test run is the failure mode, not a safeguard. `bypassPermissions` is last for the
