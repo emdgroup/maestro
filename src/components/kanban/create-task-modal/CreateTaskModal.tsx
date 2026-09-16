@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/ui/dialog";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 import { IssueTypeChip } from "@/components/kanban/shared/IssueTypeChip";
 import {
   useCreateTaskMutation,
@@ -16,10 +17,7 @@ import { useProjectIssueTrackingConfig } from "@/services/integration.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useIsGitRepo } from "@/store/projectStore";
 import { EditableField } from "@/components/kanban/task-detail-modal/EditableField";
-import {
-  useDraggableFileInput,
-  appendToAttachmentsSection,
-} from "@/components/kanban/shared/useFileInput";
+import { useDraggableFileInput } from "@/components/kanban/shared/useFileInput";
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
 import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
@@ -94,11 +92,16 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [description, setDescription] = useState("");
 
   const { pickFiles, isDragging } = useDraggableFileInput(isOpen, (filename, filePath) => {
-    setPendingFiles((prev) => [...prev, { filename, filePath }]);
+    // Read of this render's value, which is current: a picker or a drop never returns the same
+    // path twice, so a duplicate can only come from a later action, after a commit.
+    if (pendingFiles.some((f) => f.filePath === filePath)) {
+      toast.info(`${filename} is already attached`);
+      return;
+    }
     // Functional update, not a read of the latest value: `pickFiles` calls this once per
     // selected file in a synchronous loop, so every file but the last would be dropped by
     // a snapshot taken before the batch.
-    setDescription((prev) => appendToAttachmentsSection(prev, filename));
+    setPendingFiles((prev) => [...prev, { filename, filePath }]);
   });
 
   const { data: remoteIssues, isFetching: issuesFetching } = useListRemoteIssuesQuery(
@@ -333,6 +336,31 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
               onPickFiles={pickFiles}
               placeholder="Add description..."
             />
+
+            {/* Attachments, held until the task exists to hang them off */}
+            {pendingFiles.length > 0 && (
+              <ul className="shrink-0 space-y-1">
+                {pendingFiles.map((f) => (
+                  <li
+                    key={f.filePath}
+                    className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
+                  >
+                    <span className="flex-1 truncate text-foreground">{f.filename}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() =>
+                        setPendingFiles((prev) => prev.filter((p) => p.filePath !== f.filePath))
+                      }
+                    >
+                      <X className="size-3" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {/* Labels */}
             {labels.length > 0 && (

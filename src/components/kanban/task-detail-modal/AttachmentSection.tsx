@@ -1,15 +1,12 @@
-import { useState, useRef, useEffect } from "react";
 import { Paperclip, Upload, X } from "lucide-react";
 import type { TaskAttachment } from "@/types/bindings";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
   useTaskAttachmentsQuery,
-  useAddTaskAttachmentMutation,
   useDeleteTaskAttachmentMutation,
   useProxyImageQuery,
 } from "@/services/task.service";
-import { useFileInput } from "@/components/kanban/shared/useFileInput";
 import { isImageExtension } from "@/components/execution/activity/fileTypeUtils";
 
 function isImage(filename: string): boolean {
@@ -50,27 +47,27 @@ interface AttachmentSectionProps {
   taskId: number;
   projectId: number;
   isEditable: boolean;
+  onPickFiles: () => void;
+  /** Driven by the parent's file input: a webview drag never reaches HTML5 drag events. */
+  isDragging: boolean;
 }
 
-export function AttachmentSection({ taskId, projectId, isEditable }: AttachmentSectionProps) {
+/**
+ * The task's attachment list, straight from `list_task_attachments`.
+ *
+ * Presentational on the write side: the parent owns the one `useFileInput`, because each call
+ * registers its own paste and drop listeners and a second one would attach every pasted image
+ * twice, under two different temp paths that no dedupe can collapse.
+ */
+export function AttachmentSection({
+  taskId,
+  projectId,
+  isEditable,
+  onPickFiles,
+  isDragging,
+}: AttachmentSectionProps) {
   const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
-  const addAttachment = useAddTaskAttachmentMutation();
   const removeAttachment = useDeleteTaskAttachmentMutation();
-  // Mirrored from an effect rather than assigned during render — read only by the
-  // file-input callback below, which runs after commit.
-  const addAttachmentRef = useRef(addAttachment);
-  useEffect(() => {
-    addAttachmentRef.current = addAttachment;
-  });
-
-  const [isDragOver, setIsDragOver] = useState(false);
-  const resetDragOver = () => setIsDragOver(false);
-
-  const { pickFiles } = useFileInput(
-    isEditable,
-    (filename, filePath) => addAttachmentRef.current.mutate({ taskId, filename, filePath }),
-    { onDrop: resetDragOver, onLeave: resetDragOver },
-  );
 
   const imageAtts = attachments.filter((a: TaskAttachment) => isImage(a.filename));
   const fileAtts = attachments.filter((a: TaskAttachment) => !isImage(a.filename));
@@ -145,22 +142,17 @@ export function AttachmentSection({ taskId, projectId, isEditable }: AttachmentS
         <div
           className={cn(
             "border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground transition-colors",
-            isDragOver
+            isDragging
               ? "border-ring bg-muted/20"
               : "border-border hover:border-muted-foreground/50",
           )}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragOver(true);
-          }}
-          onDragLeave={() => setIsDragOver(false)}
         >
           <Upload className="mx-auto mb-2 size-5 text-muted-foreground/60" />
           <p>
             Drop files here or{" "}
             <button
               className="text-foreground underline underline-offset-2 hover:text-primary"
-              onClick={pickFiles}
+              onClick={onPickFiles}
             >
               browse
             </button>

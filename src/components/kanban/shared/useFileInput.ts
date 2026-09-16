@@ -13,15 +13,6 @@ interface UseFileInputOpts {
   onOver?: () => void;
 }
 
-export function appendToAttachmentsSection(description: string, filename: string): string {
-  const marker = "## Attachments";
-  if (description.includes(marker)) {
-    return `${description}\n- ${filename}`;
-  }
-  const base = description.trim();
-  return base ? `${base}\n\n${marker}\n- ${filename}` : `${marker}\n- ${filename}`;
-}
-
 export function useFileInput(
   isActive: boolean,
   onFile: (filename: string, filePath: string) => void,
