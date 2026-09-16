@@ -40,15 +40,24 @@ export interface FooterActions {
 }
 
 /**
- * The pipeline has stopped for a reason the user can act on — which is the only time there is
- * anything to send on. While it is genuinely working there is no finished work to move. Shared
- * with the abandon confirmation, which offers the same escape hatch under the same condition.
+ * Whether there is work to send on. Two conditions, and both matter:
+ *
+ * The pipeline has to have stopped for a reason the user can act on — waiting, blocked or failed.
+ * While it is genuinely working there is no finished work to move.
+ *
+ * And the phase it stopped in has to be one that writes code — `Implementing` or `Rework`. A
+ * stopped `Drafting` or `Refining` agent has produced prose, not a diff, so "send it to review"
+ * would open a review of nothing. A null phase is not one of those two, so it is out as well.
+ *
+ * Shared with the abandon confirmation, which offers the same escape hatch.
  */
-export function isTaskStuck(task: Task) {
+export function canSendToReview(task: Task) {
   return (
-    task.phase_status === "Waiting" ||
-    task.phase_status === "Blocked" ||
-    task.phase_status === "Failed"
+    task.status === "InProgress" &&
+    (task.phase === "Implementing" || task.phase === "Rework") &&
+    (task.phase_status === "Waiting" ||
+      task.phase_status === "Blocked" ||
+      task.phase_status === "Failed")
   );
 }
 
@@ -96,7 +105,6 @@ export function FooterCTAs({
    * a reading of the task, and the card had nothing to add to it.
    */
   const isAwaiting = task.phase_status === "Blocked";
-  const isStuck = isTaskStuck(task);
 
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
@@ -324,11 +332,10 @@ export function FooterCTAs({
   }
 
   if (task.status === "InProgress") {
-    // Only offered when the pipeline is stuck — the agent is waiting, blocked or has failed.
-    // While it is genuinely working there is nothing to send on yet. Declared before the early
-    // returns below because a dead session is exactly when this is needed: the work may well be
-    // finished and only the session gone.
-    const sendToReview = isStuck && (
+    // Only offered when a code-writing phase has stopped — see `canSendToReview`. Declared before
+    // the early returns below because a dead session is exactly when this is needed: the work may
+    // well be finished and only the session gone.
+    const sendToReview = canSendToReview(task) && (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -413,7 +420,7 @@ export function FooterCTAs({
         </div>
       );
     }
-    // Two controls, never three. A stuck run with a live session has three plausible moves —
+    // Two controls, never three. A stopped run with a live session has three plausible moves —
     // abandon it, send the work on, talk to the agent — and the third one lives in the abandon
     // confirmation instead, where "send it to review anyway" is the natural second thought.
     return (

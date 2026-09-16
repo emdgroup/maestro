@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskCard } from "./TaskCard";
 import type { Task, TaskPhase, PhaseStatus, TaskBall } from "@/types/bindings";
@@ -330,7 +330,7 @@ describe("TaskCard pipeline treatment", () => {
  * the agent is still working, or it invites sending half-finished work to review.
  */
 /**
- * A card footer carries at most two controls, and on a stuck run the agent's own controls fill
+ * A card footer carries at most two controls, and on a stopped run the agent's own controls fill
  * both — so the escape hatch moved into the abandon confirmation, where "keep the work" is the
  * alternative to destroying it. Blocked is the exception: there the footer offers it directly,
  * because Respond and Review are the only two things that state has to say.
@@ -364,11 +364,51 @@ describe("TaskCard send-to-review escape hatch", () => {
     expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
   });
 
+  /** Rework is the other phase that writes code, so the rule is not "Implementing only". */
+  it("is offered when a failed rework has work behind it", async () => {
+    activeSession.current = { session_key: 1 };
+    renderCard({ phase: "Rework", phase_status: "Failed", ball: "User" });
+    await openAbandonDialog();
+    expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
+  });
+
   /** The agent is waiting on an answer, so the footer's two slots are Review and Respond. */
   it("stays on the footer while the agent is blocked", () => {
     activeSession.current = { session_key: 1 };
     renderCard({ phase: "Implementing", phase_status: "Blocked", ball: "User" });
     expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
+  });
+
+  /**
+   * The reported case: a blocked *planner*. `Drafting` writes a plan, not code, so there is no
+   * diff to review — the button asked the backend to move the task on anyway.
+   */
+  it("is withheld while the planner is blocked", () => {
+    activeSession.current = { session_key: 1 };
+    renderCard({ phase: "Drafting", phase_status: "Blocked", ball: "User" });
+    expect(screen.getByRole("button", { name: /respond/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
+  });
+
+  it("is withheld in the abandon dialog of a failed planner", async () => {
+    activeSession.current = { session_key: 1 };
+    renderCard({ phase: "Drafting", phase_status: "Failed", ball: "User" });
+    await openAbandonDialog();
+    expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
+  });
+
+  /** A dead session is the one place the footer still offers it, and a planner does not qualify. */
+  it("is withheld on the session-lost row of a planner", () => {
+    vi.useFakeTimers();
+    try {
+      renderCard({ phase: "Drafting", phase_status: "Waiting", ball: "User" });
+      // The "session lost" flag is debounced by 2s, so the row is not up before then.
+      act(() => vi.advanceTimersByTime(2100));
+      expect(screen.getByRole("button", { name: /recover/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is hidden outside In Progress", async () => {
