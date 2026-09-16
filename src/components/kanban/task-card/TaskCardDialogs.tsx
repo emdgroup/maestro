@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { AgentAuthModal } from "@/components/common/AgentAuthModal";
-import { isTaskStuck } from "./FooterCTAs";
+import { canSendToReview } from "./FooterCTAs";
 import type { Task, WorktreeWithStatus } from "@/types/bindings";
 import type { AuthRequiredEntry } from "@/store/boardStore";
 
@@ -136,9 +136,10 @@ export function TaskCardDialogs({
           <AlertDialogFooter className="sm:flex-col-reverse">
             <AlertDialogCancel>Keep working</AlertDialogCancel>
             {/* The card's footer has two slots and the run's own controls fill them, so this is
-                where a stuck run offers the other way out: keep what it produced and move on.
-                Only from In Progress — a refinement being stopped has no work to send anywhere. */}
-            {task.status === "InProgress" && isTaskStuck(task) && (
+                where a stopped run offers the other way out: keep what it produced and move on.
+                Only from a code-writing phase in In Progress — a stopped refinement or plan has
+                no work to send anywhere. See `canSendToReview`. */}
+            {canSendToReview(task) && (
               <AlertDialogAction
                 variant="outline"
                 onClick={() => {
