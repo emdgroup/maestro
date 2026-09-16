@@ -47,6 +47,7 @@ export function useMessageSender({
   isCenteredCompose,
   onCenteredTransition,
   pendingSendRef,
+  autoResumeSpentRef,
   isTurnActiveRef,
 }: {
   sessionKey: number;
@@ -62,6 +63,8 @@ export function useMessageSender({
   isCenteredCompose: boolean;
   onCenteredTransition: () => void;
   pendingSendRef: MutableRefObject<boolean>;
+  /** Set by any cancel this hook sends, so `useAutoResume` does not read it as an abandoned turn. */
+  autoResumeSpentRef: MutableRefObject<boolean>;
   /** Mirrors `liveState.isTurnActive`, so a send can wait for a cancelled turn to finish. */
   isTurnActiveRef: React.RefObject<boolean>;
 }): {
@@ -81,15 +84,12 @@ export function useMessageSender({
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
       if (isProcessing) return;
-      // Revising a plan. The agent is blocked inside `session/request_permission`, which is inside
-      // its turn, so the prompt cannot simply go out: ACP only sanctions another `session/prompt`
-      // once a turn completes, and `maestro-server` does not serialise them — a second one would
-      // race the first (see command_loop.rs, SessionCommand::Prompt).
-      //
-      // The protocol's answer is `session/cancel`, which requires every pending permission request
-      // to be answered `cancelled`. Cancel first, so the agent is not unblocked into carrying on
-      // before the cancel lands, then wait for the turn to actually end.
+      // Revising a plan: the agent is blocked inside `session/request_permission`, mid-turn, and
+      // ACP only sanctions another `session/prompt` once a turn ends (command_loop.rs races two).
+      // So cancel first, answer the request `cancelled`, then wait for the turn to actually end.
+      // Mark auto-resume spent: that turn end marks the plan call `interrupted`.
       if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
+        autoResumeSpentRef.current = true;
         try {
           await api.interruptAcpTurn(sessionKey);
         } catch {
@@ -121,11 +121,15 @@ export function useMessageSender({
       pendingPermission,
       handlePermissionRespond,
       pendingSendRef,
+      autoResumeSpentRef,
       isTurnActiveRef,
     ],
   );
 
   const handleCancel = useCallback(async () => {
+    // Before anything that can await or dispatch: the turn end this cancel provokes marks every
+    // unfinished tool call `interrupted`, and auto-resume must not read that as an abandoned turn.
+    autoResumeSpentRef.current = true;
     try {
       await api.interruptAcpTurn(sessionKey);
       // A cancel is only answered if the agent honours it, or if maestro-server
@@ -142,7 +146,7 @@ export function useMessageSender({
       liveDispatch({ type: "turn_ended" });
       setActivity(sessionKey, "idle");
     }
-  }, [sessionKey, setActivity, liveDispatch]);
+  }, [sessionKey, setActivity, liveDispatch, autoResumeSpentRef]);
 
   const handleSendWithTransition = useCallback(
     (content: string, contentBlocks?: JsonValue) => {
