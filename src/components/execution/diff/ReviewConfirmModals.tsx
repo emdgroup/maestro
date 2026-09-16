@@ -293,7 +293,11 @@ export function ApproveModal({
 
   function getDescription(): string {
     if (hasWorktree && !hasUncommitted)
-      return "Changes are committed. This will merge the branch and delete the worktree.";
+      return showStrategy
+        ? // The select is on screen and may be set to push or open a pull request, so naming one
+          // outcome here would contradict the control directly below it.
+          "Changes in the worktree are committed."
+        : "Changes are committed. This will merge the branch and delete the worktree.";
     if (!hasWorktree && hasUncommitted)
       return "Uncommitted changes will be committed and the task marked as done.";
     if (!hasWorktree && !hasUncommitted)
