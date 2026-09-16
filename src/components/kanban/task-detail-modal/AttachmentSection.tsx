@@ -1,7 +1,10 @@
 import { Paperclip, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 import type { TaskAttachment } from "@/types/bindings";
+import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { ZoomableContent } from "@/ui/zoomable-content";
 import {
   useTaskAttachmentsQuery,
   useDeleteTaskAttachmentMutation,
@@ -35,12 +38,31 @@ function AttachmentThumbnail({
   }
 
   return (
-    <img
-      src={src}
-      alt={attachment.filename}
-      className="w-20 h-20 object-cover rounded-md border border-border"
-    />
+    <ZoomableContent
+      ariaLabel={attachment.filename}
+      lightboxContent={<img src={src} alt={attachment.filename} />}
+    >
+      <img
+        src={src}
+        alt={attachment.filename}
+        className="w-20 h-20 object-cover rounded-md border border-border"
+      />
+    </ZoomableContent>
   );
+}
+
+/**
+ * Attachments record where the user's file actually lives rather than copying it, so the path is
+ * a host path and opening it is `openPathNative` — not [openFileWithConnection], which would go
+ * looking for it on the remote of an SSH project. A file that has since moved surfaces as the
+ * rejection below.
+ */
+async function openAttachment(filePath: string) {
+  try {
+    await api.openPathNative(filePath);
+  } catch (e) {
+    toast.error(`Could not open ${filePath}`, { description: String(e) });
+  }
 }
 
 interface AttachmentSectionProps {
@@ -94,6 +116,7 @@ export function AttachmentSection({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Remove ${att.filename}`}
                       className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() =>
                         removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
@@ -114,7 +137,12 @@ export function AttachmentSection({
                   key={att.id}
                   className="h-9 flex items-center gap-2 rounded-md border border-border bg-card px-3 text-sm"
                 >
-                  <span className="flex-1 truncate text-foreground">{att.filename}</span>
+                  <button
+                    className="flex-1 min-w-0 truncate text-left text-foreground hover:underline underline-offset-2"
+                    onClick={() => void openAttachment(att.file_path)}
+                  >
+                    {att.filename}
+                  </button>
                   <span className="text-xs text-muted-foreground shrink-0">
                     {formatFileSize(att.file_size)}
                   </span>
@@ -122,6 +150,7 @@ export function AttachmentSection({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Remove ${att.filename}`}
                       className="h-6 w-6 shrink-0"
                       onClick={() =>
                         removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })

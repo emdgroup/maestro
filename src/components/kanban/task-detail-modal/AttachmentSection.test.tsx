@@ -7,6 +7,8 @@ import type { TaskAttachment } from "@/types/bindings";
 const listTaskAttachments = vi.fn();
 const addTaskAttachment = vi.fn();
 const deleteTaskAttachment = vi.fn();
+const openPathNative = vi.fn();
+const proxyImage = vi.fn();
 const toastInfo = vi.fn();
 
 vi.mock("@/lib/tauri-utils", () => ({
@@ -14,7 +16,12 @@ vi.mock("@/lib/tauri-utils", () => ({
     listTaskAttachments: (...a: unknown[]) => listTaskAttachments(...a),
     addTaskAttachment: (...a: unknown[]) => addTaskAttachment(...a),
     deleteTaskAttachment: (...a: unknown[]) => deleteTaskAttachment(...a),
+    openPathNative: (...a: unknown[]) => openPathNative(...a),
   },
+}));
+
+vi.mock("@/types/bindings", () => ({
+  commands: { proxyImage: (...a: unknown[]) => proxyImage(...a) },
 }));
 
 vi.mock("sonner", () => ({
@@ -30,6 +37,15 @@ const NOTES: TaskAttachment = {
   filename: "notes.txt",
   file_path: "/tmp/notes.txt",
   file_size: 1024,
+  created_at: "2026-01-01T00:00:00Z",
+};
+
+const SHOT: TaskAttachment = {
+  id: 8,
+  task_id: 1,
+  filename: "shot.png",
+  file_path: "/tmp/shot.png",
+  file_size: 2048,
   created_at: "2026-01-01T00:00:00Z",
 };
 
@@ -60,9 +76,57 @@ describe("AttachmentSection", () => {
 
     const row = (await screen.findByText("notes.txt")).closest("li");
     expect(row).toBeTruthy();
-    await userEvent.click(within(row!).getByRole("button"));
+    await userEvent.click(within(row!).getByRole("button", { name: "Remove notes.txt" }));
 
     await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(NOTES.id));
+  });
+
+  it("opens an image attachment in the lightbox, and deleting one does not", async () => {
+    listTaskAttachments.mockResolvedValue([SHOT]);
+    proxyImage.mockResolvedValue({ status: "ok", data: "data:image/png;base64,AAA" });
+    deleteTaskAttachment.mockResolvedValue(undefined);
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <AttachmentSection
+          taskId={1}
+          projectId={1}
+          isEditable
+          onPickFiles={() => {}}
+          isDragging={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    const trigger = await screen.findByRole("button", { name: "Open shot.png in lightbox" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Remove shot.png" }));
+    await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(SHOT.id));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("opens a non-image attachment with the OS", async () => {
+    listTaskAttachments.mockResolvedValue([NOTES]);
+    openPathNative.mockResolvedValue(undefined);
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <AttachmentSection
+          taskId={1}
+          projectId={1}
+          isEditable
+          onPickFiles={() => {}}
+          isDragging={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "notes.txt" }));
+
+    await waitFor(() => expect(openPathNative).toHaveBeenCalledWith(NOTES.file_path));
   });
 });
 
