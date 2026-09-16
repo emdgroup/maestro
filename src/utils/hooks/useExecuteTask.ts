@@ -27,16 +27,24 @@ import {
   useMarkTaskExecutionStartedMutation,
   useMarkTaskSessionReadyMutation,
   useReleaseTaskExecutionClaimMutation,
+  useDeleteTaskAttachmentMutation,
 } from "@/services/task.service";
 import { useProjectSettings } from "@/services/project.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
+import type { UnusableAttachment } from "@/components/execution/MissingAttachmentsDialog";
 
 interface DirtyState {
   modifiedCount: number;
   untrackedCount: number;
   resolve: (choice: DirtyChoice | "cancel") => void;
+}
+
+/** The attachments whose files cannot be sent, and the promise the user's answer settles. */
+interface MissingAttachmentsState {
+  files: UnusableAttachment[];
+  resolve: (choice: "continue" | "park") => void;
 }
 
 /** The task waiting on an agent to be chosen for it, and the promise that choice settles. */
@@ -129,12 +137,15 @@ export function useExecuteTask(
   const markExecutionStarted = useMarkTaskExecutionStartedMutation();
   const markSessionReady = useMarkTaskSessionReadyMutation();
   const releaseClaim = useReleaseTaskExecutionClaimMutation();
+  const deleteAttachment = useDeleteTaskAttachmentMutation();
   // Which task is mid-spawn, not merely that one is. The board shares a single instance of this
   // hook across every card, so a bare boolean would disable Execute on all of them while any one
   // task started.
   const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
+  const [missingState, setMissingState] = useState<MissingAttachmentsState | null>(null);
+  const missingResolveRef = useRef<((choice: "continue" | "park") => void) | null>(null);
   const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
   const agentPickerResolveRef = useRef<((agentId: string | null) => void) | null>(null);
   // Only to tell "nothing is installed" from "nothing resolved", which are different problems with
@@ -252,6 +263,81 @@ export function useExecuteTask(
         toast.warning(`Starting "${task.title}" with the host already full`, {
           description: decision.reason,
         });
+      }
+    }
+
+    // An attachment whose file has since been deleted used to abort the whole start: the batch
+    // read in `prepare_external_attachments` fails on the first missing path, and the rejection
+    // unwound into tearing the spawned session down and leaving the card red. Nothing prunes
+    // `task_attachments`, so every retry failed the same way with no way past it.
+    //
+    // Checked here rather than at the point of use: metadata for a handful of files is cheap, and
+    // asking before the claim means parking is a plain return — no session to cancel and no claim
+    // to hand back, the same shape as the pinned-workspace check above.
+    const attachments = await api.listTaskAttachments(task.id).catch((err) => {
+      console.warn("Failed to list attachments, starting without them:", err);
+      toast.warning(`Starting "${task.title}" without its attachments`, {
+        description: "The attachment list could not be read.",
+      });
+      return [];
+    });
+
+    const skipPaths = new Set<string>();
+    if (attachments.length > 0) {
+      // `rejection` covers an image that exists but is over the size limit, which fails the send
+      // the same way a missing file does. Both are "cannot be attached", so both are offered here
+      // — but only the missing ones are dead rows, so `missing` keeps them apart for the delete
+      // below. A file that is merely too big is still on disk and still the user's to keep.
+      const unusable = (
+        await Promise.all(
+          attachments.map(async (attachment) =>
+            api
+              .validateAttachment(attachment.file_path, false)
+              .then((validation) =>
+                validation.rejection
+                  ? { ...attachment, problem: validation.rejection, missing: false }
+                  : null,
+              )
+              .catch((err: unknown) => ({
+                ...attachment,
+                problem: err instanceof Error ? err.message : String(err),
+                missing: true,
+              })),
+          ),
+        )
+      ).filter((entry) => entry !== null);
+
+      if (unusable.length > 0) {
+        for (const attachment of unusable) skipPaths.add(attachment.file_path);
+
+        if (unattended) {
+          // Nobody is there to answer, and awaiting a dialog no caller renders is the deadlock
+          // the dirty-worktree note below records. The rows are left alone: skipping them for one
+          // run is not the same consent as deleting them.
+          toast.warning(
+            `Starting "${task.title}" without ${unusable.length} attachment${
+              unusable.length === 1 ? "" : "s"
+            }`,
+            { description: unusable.map((a) => a.filename).join(", ") },
+          );
+        } else {
+          const choice = await new Promise<"continue" | "park">((resolve) => {
+            missingResolveRef.current = resolve;
+            setMissingState({ files: unusable, resolve });
+          });
+          setMissingState(null);
+          missingResolveRef.current = null;
+          if (choice === "park") return;
+
+          // Only the rows whose file is gone: those point at nothing, so removing them is what
+          // stops the next run asking the same question again. An oversized image is still on
+          // disk and stays attached — dropping it would destroy a reference the user can still use.
+          for (const attachment of unusable.filter((entry) => entry.missing)) {
+            await deleteAttachment
+              .mutateAsync({ attachmentId: attachment.id, taskId: task.id })
+              .catch((err) => console.warn("Failed to remove a dead attachment row:", err));
+          }
+        }
       }
     }
 
@@ -563,7 +649,6 @@ export function useExecuteTask(
       }
 
       // Build initial prompt content blocks
-      const attachments = await api.listTaskAttachments(task.id);
       const contentBlocks: JsonValue[] = [];
 
       const promptText = task.description
@@ -651,8 +736,10 @@ export function useExecuteTask(
         }
       }
 
-      if (attachments.length > 0) {
-        const files = attachments.map((a) => ({ path: a.file_path, is_image: false }));
+      const files = attachments
+        .filter((a) => !skipPaths.has(a.file_path))
+        .map((a) => ({ path: a.file_path, is_image: false }));
+      if (files.length > 0) {
         const prepared = await api.prepareExternalAttachments(logId, files, true);
         for (const attachment of prepared) {
           contentBlocks.push(attachment.content_block as JsonValue);
@@ -760,6 +847,14 @@ export function useExecuteTask(
     dirtyResolveRef.current?.("cancel");
   }, []);
 
+  const onAttachmentsContinue = useCallback(() => {
+    missingResolveRef.current?.("continue");
+  }, []);
+
+  const onAttachmentsPark = useCallback(() => {
+    missingResolveRef.current?.("park");
+  }, []);
+
   const onAgentPicked = useCallback((agentId: string) => {
     agentPickerResolveRef.current?.(agentId);
   }, []);
@@ -779,6 +874,13 @@ export function useExecuteTask(
     dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
     onDirtyChoice,
     onDirtyCancel,
+    /**
+     * The attachments this task cannot send, or `null`. Never set on an `unattended` start, which
+     * skips them with a warning instead — nothing renders a dialog on that path.
+     */
+    missingAttachments: missingState?.files ?? null,
+    onAttachmentsContinue,
+    onAttachmentsPark,
     /**
      * Only ever set for a caller that passed `canPickAgent`; everyone else gets a toast instead
      * and never renders the modal.
