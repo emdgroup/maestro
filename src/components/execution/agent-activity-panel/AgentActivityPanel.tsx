@@ -43,6 +43,7 @@ import { useWorkingFileTracker } from "./useWorkingFileTracker";
 import { useAcpSessionMeta, useActiveSessionsQuery } from "@/services/execution.service";
 import { usePermissionHandlers } from "./usePermissionHandlers";
 import { useMessageSender } from "./useMessageSender";
+import { useAutoResume } from "./useAutoResume";
 import { AgentLoadingSkeleton } from "./AgentLoadingSkeleton";
 import { AgentStreamContent, getItemKey } from "./AgentStreamContent";
 import { AgentBottomBar } from "./AgentBottomBar";
@@ -183,6 +184,9 @@ export function AgentActivityPanel({
   const [, setScrollRestoreToken] = useState(0);
 
   const pendingSendRef = useRef(false);
+  // Panel-lived, so a stop suppresses auto-resume for the session. A remount (restart, reopen)
+  // resets it and resumes — deliberate: a remount looks exactly like the restore case.
+  const autoResumeSpentRef = useRef(false);
   useActivityStatusManager(
     sessionKey,
     liveState,
@@ -379,6 +383,7 @@ export function AgentActivityPanel({
     isCenteredCompose,
     onCenteredTransition: () => setHasSentFirstMessage(true),
     pendingSendRef,
+    autoResumeSpentRef,
     isTurnActiveRef,
   });
 
@@ -548,23 +553,14 @@ export function AgentActivityPanel({
     // when one takes the other's place.
   }, [showCompose, hasInlinePermission, hasPendingPlan, hasElicitation, liveState.isInitializing]);
 
-  const hasInterruptedCalls = useMemo(
-    () => [...liveState.toolCallMap.values()].some((tc) => tc.status === "interrupted"),
-    [liveState.toolCallMap],
-  );
-  const autoResumedRef = useRef(false);
-  useEffect(() => {
-    if (
-      !liveState.isInitializing &&
-      !isNewSession &&
-      hasInterruptedCalls &&
-      taskId != null &&
-      !autoResumedRef.current
-    ) {
-      autoResumedRef.current = true;
-      handleSend("resume");
-    }
-  }, [liveState.isInitializing, hasInterruptedCalls, isNewSession, taskId, handleSend]);
+  useAutoResume({
+    toolCallMap: liveState.toolCallMap,
+    isInitializing: liveState.isInitializing,
+    isNewSession,
+    taskId,
+    autoResumeSpentRef,
+    handleSend,
+  });
 
   // The plan tool call the open request names, so its row can be left out of the stream and shown
   // in the slot below instead.
