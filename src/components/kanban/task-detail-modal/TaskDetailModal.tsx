@@ -346,7 +346,6 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   onSave={(v) => markDirtySetDraft((d) => ({ ...d, description: v }))}
                   isEditable={isEditable ?? false}
                   isDragging={isDragging}
-                  onPickFiles={pickFiles}
                   placeholder="Add a description..."
                 />
 

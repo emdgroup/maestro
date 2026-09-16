@@ -1,4 +1,4 @@
-import { Paperclip, Upload, X } from "lucide-react";
+import { FileWarning, Paperclip, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import type { TaskAttachment } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
@@ -31,10 +31,27 @@ function AttachmentThumbnail({
   attachment: TaskAttachment;
   projectId: number;
 }) {
-  const { data: src } = useProxyImageQuery(projectId, attachment.file_path);
+  const { data: src, isPending } = useProxyImageQuery(projectId, attachment.file_path);
 
-  if (!src) {
+  if (isPending) {
     return <span className="w-20 h-20 bg-muted rounded-md animate-pulse" />;
+  }
+
+  // `proxy_image` answers with an error the query maps to null — a file that has moved or been
+  // deleted since it was attached, so say so rather than pulse forever. Still clickable: the
+  // native opener reports what actually went wrong.
+  if (!src) {
+    return (
+      <button
+        aria-label={`Open ${attachment.filename}`}
+        title={attachment.file_path}
+        className="w-20 h-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border px-1 text-[10px] text-muted-foreground"
+        onClick={() => void openAttachment(attachment.file_path)}
+      >
+        <FileWarning className="size-4" />
+        <span className="w-full truncate">{attachment.filename}</span>
+      </button>
+    );
   }
 
   return (

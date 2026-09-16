@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import type { TaskAttachment } from "@/types/bindings";
 
 const listTaskAttachments = vi.fn();
@@ -106,6 +108,67 @@ describe("AttachmentSection", () => {
 
     await userEvent.click(trigger);
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("closes only the lightbox on Escape, not the dialog it is nested in", async () => {
+    listTaskAttachments.mockResolvedValue([SHOT]);
+    proxyImage.mockResolvedValue({ status: "ok", data: "data:image/png;base64,AAA" });
+
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent>
+            <DialogTitle>Task detail</DialogTitle>
+            <AttachmentSection
+              taskId={1}
+              projectId={1}
+              isEditable
+              onPickFiles={() => {}}
+              isDragging={false}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open shot.png in lightbox" }));
+    expect(await screen.findByRole("dialog", { name: "shot.png" })).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "shot.png" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Task detail")).toBeInTheDocument();
+  });
+
+  it("offers the file itself when the image cannot be proxied", async () => {
+    listTaskAttachments.mockResolvedValue([SHOT]);
+    proxyImage.mockResolvedValue({ status: "error", error: "no such file" });
+    openPathNative.mockResolvedValue(undefined);
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <AttachmentSection
+          taskId={1}
+          projectId={1}
+          isEditable
+          onPickFiles={() => {}}
+          isDragging={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open shot.png" }));
+
+    await waitFor(() => expect(openPathNative).toHaveBeenCalledWith(SHOT.file_path));
   });
 
   it("opens a non-image attachment with the OS", async () => {
