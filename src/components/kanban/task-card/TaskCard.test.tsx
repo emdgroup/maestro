@@ -1090,8 +1090,19 @@ describe("TaskCard awaiting a pull request", () => {
   it("says what the forge thinks of the checks", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: "Passing" });
 
-    expect(screen.getByText(/ready to merge/i)).toBeInTheDocument();
+    expect(screen.getByText(/checks passed/i)).toBeInTheDocument();
     expect(screen.getByText(/PR #42/)).toBeInTheDocument();
+  });
+
+  /**
+   * Green checks are not a green merge: branch protection can hold a pull request every check has
+   * passed. The label stays a statement about the checks so the card never points at a button the
+   * forge will refuse.
+   */
+  it("does not promise a merge the forge may refuse", () => {
+    renderCard({ ...awaitingMerge, pull_request_ci: "Passing" });
+
+    expect(screen.queryByText(/ready to merge/i)).not.toBeInTheDocument();
   });
 
   it("says when a build is red", () => {
@@ -1108,7 +1119,7 @@ describe("TaskCard awaiting a pull request", () => {
 
   /**
    * Nothing reported used to render as no label at all, which read exactly like no sweep running.
-   * It now says so — and must not borrow either verdict: not "ready to merge", which would be a
+   * It now says so — and must not borrow either verdict: not "checks passed", which would be a
    * green light nobody earned while a build is still queueing, and not "waiting for CI", which
    * claims a run that may not exist.
    */
@@ -1117,7 +1128,7 @@ describe("TaskCard awaiting a pull request", () => {
 
     expect(screen.getByText(/PR #42/)).toBeInTheDocument();
     expect(screen.getByText(/no checks reported/i)).toBeInTheDocument();
-    expect(screen.queryByText(/ready to merge/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/checks passed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/waiting for CI/i)).not.toBeInTheDocument();
   });
 
@@ -1151,6 +1162,8 @@ describe("TaskCard awaiting a pull request", () => {
 
     expect(screen.queryByRole("button", { name: /pull request/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
+    // And no CI verdict either way: there are no checks on a pull request that was never written.
+    expect(screen.queryByText(/no checks reported/i)).not.toBeInTheDocument();
   });
 });
 

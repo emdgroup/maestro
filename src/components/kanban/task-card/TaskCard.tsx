@@ -121,11 +121,16 @@ function CompletionLine({ task }: { task: Task }) {
 function PullRequestLine({ task }: { task: Task }) {
   const conflicted = task.phase_status === "Waiting" && task.ball === "User";
   const ci = task.pull_request_ci;
+  // "Nothing reported" is a claim about a pull request, so it needs one to exist. A task that
+  // reached this phase without a number — the write failed — has no checks to have not reported,
+  // and the footer has already given up on the pull request by then.
   const detail = conflicted
     ? { label: "conflicts", tone: "text-warning" }
     : ci
       ? { label: CI_LABELS[ci], tone: CI_TONES[ci] }
-      : CI_UNREPORTED;
+      : task.pull_request_number != null
+        ? CI_UNREPORTED
+        : null;
 
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
@@ -137,8 +142,14 @@ function PullRequestLine({ task }: { task: Task }) {
       >
         {task.pull_request_number ? `PR #${task.pull_request_number}` : PHASE_LABELS.AwaitingMerge}
       </span>
-      <span className="text-muted-foreground/40 shrink-0">·</span>
-      <span className={cn("uppercase tracking-wide truncate", detail.tone)}>{detail.label}</span>
+      {detail && (
+        <>
+          <span className="text-muted-foreground/40 shrink-0">·</span>
+          <span className={cn("uppercase tracking-wide truncate", detail.tone)}>
+            {detail.label}
+          </span>
+        </>
+      )}
     </div>
   );
 }
