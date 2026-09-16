@@ -3,6 +3,8 @@
  * Frontend-only types for review workflow (no ts-rs export needed)
  */
 
+import type { Task } from "@/types/bindings";
+
 export type ReviewDecision = "Approve" | "RequestChanges";
 
 export type DiffHighlighterLang =
@@ -83,4 +85,22 @@ export type DisplayItem =
 /** The path a display item is keyed and labelled by. */
 export function displayItemPath(item: DisplayItem): string {
   return item.kind === "diff" ? item.file.fileName : item.path;
+}
+
+/**
+ * Whether the review panel may still offer Approve.
+ *
+ * A task at `AwaitingMerge` has been approved once and its pull request is open on the forge, so
+ * approving again re-runs the merge on work already pushed. On the conflicted path that is not
+ * merely redundant: `approve_task_and_merge` hits the conflict, `reject_merge_on_conflict` sends
+ * the task back to `InProgress`, and `reconcile_pull_requests` only ever selects tasks still at
+ * `AwaitingMerge` — so the pull request stays open with nothing on the board tracking it.
+ *
+ * Rework and Discard are why the diff stays reachable from a conflicted card; Approve is not.
+ *
+ * `Failed` is the exception. There the pull request was closed, so there is nothing left open to
+ * orphan and approving is how a new one gets opened.
+ */
+export function canApprove(task: Pick<Task, "phase" | "phase_status">): boolean {
+  return task.phase !== "AwaitingMerge" || task.phase_status === "Failed";
 }

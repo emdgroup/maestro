@@ -46,7 +46,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import { useReviewStore } from "@/store/reviewStore";
 import { api } from "@/lib/tauri-utils";
-import { displayItemPath } from "@/types/review";
+import { displayItemPath, canApprove } from "@/types/review";
 import type { DiffTarget, MergeResult, Task } from "@/types/bindings";
 
 /** The approve modal's radio values, mapped to what `approve_task_and_merge` expects. */
@@ -269,9 +269,12 @@ export function TaskReviewPanel({
     [items],
   );
 
-  // Multi-state button logic
+  // Multi-state button logic. Approve drops out entirely on a task whose pull request is already
+  // open — see `canApprove` for what a second approve does to a conflicted one — which leaves
+  // Rework as the default there whether or not any comments were written.
   const hasComments = comments.length > 0;
-  const defaultAction = hasComments ? "rework" : "approve";
+  const approveAllowed = canApprove(task);
+  const defaultAction = hasComments || !approveAllowed ? "rework" : "approve";
 
   const handleActionSelect = useCallback((value: string) => {
     switch (value) {
@@ -419,17 +422,17 @@ export function TaskReviewPanel({
           splitButtonNode={
             <ButtonGroup>
               <Button
-                variant={hasComments ? "outline" : "accent"}
+                variant={defaultAction === "approve" ? "accent" : "outline"}
                 size="sm"
                 onClick={() => handleActionSelect(defaultAction)}
               >
-                {hasComments ? "Rework" : "Approve"}
+                {defaultAction === "approve" ? "Approve" : "Rework"}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <Button
-                      variant={hasComments ? "outline" : "accent"}
+                      variant={defaultAction === "approve" ? "accent" : "outline"}
                       size="sm"
                       className="px-1.5!"
                     >
@@ -438,7 +441,7 @@ export function TaskReviewPanel({
                   }
                 />
                 <DropdownMenuContent align="end" className="w-40">
-                  {defaultAction !== "approve" && (
+                  {approveAllowed && defaultAction !== "approve" && (
                     <DropdownMenuItem onClick={() => handleActionSelect("approve")}>
                       Approve
                     </DropdownMenuItem>

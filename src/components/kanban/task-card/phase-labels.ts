@@ -53,10 +53,20 @@ export const COMPLETION_LABELS: Partial<Record<NonNullable<Task["completion"]>, 
   NoChanges: "no changes",
 };
 
+/**
+ * What each CI state means for the user, rather than what the forge called it. "CI failing" and
+ * "checks running" describe machinery; what the user needs from this line is whether anything is
+ * being asked of them.
+ *
+ * `Passing` stays a statement about the checks and not about the merge. Branch protection —
+ * required approvals, required linear history, a branch behind its base — blocks a merge with
+ * every check green, and a card reading "ready to merge" over a button the forge will refuse is
+ * worse than a dull label. Same reasoning as `CI_UNREPORTED` below.
+ */
 export const CI_LABELS: Record<NonNullable<Task["pull_request_ci"]>, string> = {
   Passing: "checks passed",
-  Failing: "CI failing",
-  Pending: "checks running",
+  Failing: "needs fixing",
+  Pending: "waiting for CI",
 };
 
 export const CI_TONES: Record<NonNullable<Task["pull_request_ci"]>, string> = {
@@ -64,3 +74,17 @@ export const CI_TONES: Record<NonNullable<Task["pull_request_ci"]>, string> = {
   Failing: "text-destructive",
   Pending: "text-muted-foreground",
 };
+
+/**
+ * `NULL` — nothing has been reported. Not a key above, because `pull_request_ci` cannot hold it.
+ *
+ * It used to render as no label at all, which read the same as no sweep running. It means three
+ * things at once — not swept yet, no CI in the repository, and a forge that cannot report CI at
+ * all — and none of them is on the bindings, so the label can only say that nothing is known.
+ *
+ * Deliberately not green: a queued build that has not registered yet is indistinguishable from a
+ * repository with no CI, and the burst in `usePullRequestPoll` only buys 30s of cover. A verdict
+ * here would be one nobody has run. Muted, like the Worktrees panel's `unknown`
+ * (`@/components/execution/worktree-card/pullRequestCi`).
+ */
+export const CI_UNREPORTED = { label: "no checks reported", tone: "text-muted-foreground" };
