@@ -50,7 +50,7 @@ machine-uid = "0.6"
 rand = { version = "0.8", features = ["getrandom"] }
 portable-pty = "0.9.0"
 russh = { version = "0.63.0", default-features = false, features = ["ring", "rsa", "flate2"] }
-russh-sftp = "2.1"
+russh-sftp = "3.0"
 keyring = { version = "3.6.3", features = [
   "windows-native",
   "apple-native",
