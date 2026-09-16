@@ -488,6 +488,10 @@ export function useTaskAttachmentsQuery(taskId: number | null) {
 
 /**
  * Mutation hook for adding an attachment record to a task
+ *
+ * Re-attaching a file the task already has is a no-op with a note, not a failure — the command
+ * returns the existing row either way, this only saves the round trip and gives the user a signal
+ * that something happened.
  */
 export function useAddTaskAttachmentMutation() {
   const queryClient = useQueryClient();
@@ -500,7 +504,16 @@ export function useAddTaskAttachmentMutation() {
       taskId: number;
       filename: string;
       filePath: string;
-    }) => api.addTaskAttachment(taskId, filename, filePath),
+    }) => {
+      const existing = queryClient
+        .getQueryData<TaskAttachment[]>(taskQueryKeys.attachments(taskId))
+        ?.find((a) => a.file_path === filePath);
+      if (existing) {
+        toast.info(`${filename} is already attached`);
+        return Promise.resolve(existing);
+      }
+      return api.addTaskAttachment(taskId, filename, filePath);
+    },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.attachments(variables.taskId),

@@ -40,11 +40,9 @@ import { useTaskHold } from "@/hooks/useTaskHold";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { ShortcutHint } from "@/components/common/shortcut-hint/ShortcutHint";
 import { EditableField } from "./EditableField";
-import {
-  useDraggableFileInput,
-  appendToAttachmentsSection,
-} from "@/components/kanban/shared/useFileInput";
+import { useDraggableFileInput } from "@/components/kanban/shared/useFileInput";
 import { DescriptionWithAttachments } from "@/components/kanban/shared/DescriptionWithAttachments";
+import { AttachmentSection } from "./AttachmentSection";
 import { WorkspaceSelector } from "@/components/common/workspace-mode/WorkspaceSelector";
 import { TaskMetadataPills } from "@/components/kanban/shared/TaskMetadataPills";
 import { useWorktreesQuery } from "@/services/worktree.service";
@@ -180,15 +178,12 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     setDraft(updater);
   }
 
+  // No description line any more: the attachment list below is the record, and a line the user
+  // could delete without detaching anything only made the description look like the registry.
   const { pickFiles, isDragging } = useDraggableFileInput(
     isEditable ?? false,
-    (filename, filePath) => {
-      addAttachmentRef.current.mutate({ taskId: task!.id, filename, filePath });
-      markDirtySetDraft((d) => ({
-        ...d,
-        description: appendToAttachmentsSection(d.description, filename),
-      }));
-    },
+    (filename, filePath) =>
+      addAttachmentRef.current.mutate({ taskId: task!.id, filename, filePath }),
   );
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -354,6 +349,19 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                   onPickFiles={pickFiles}
                   placeholder="Add a description..."
                 />
+
+                {/* Attachments */}
+                {projectId !== null && (
+                  <div className="shrink-0">
+                    <AttachmentSection
+                      taskId={task.id}
+                      projectId={projectId}
+                      isEditable={isEditable ?? false}
+                      onPickFiles={pickFiles}
+                      isDragging={isDragging}
+                    />
+                  </div>
+                )}
 
                 {/* Labels */}
                 {draft.labels.length > 0 && (
