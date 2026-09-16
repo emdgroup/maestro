@@ -106,6 +106,13 @@ export function FooterCTAs({
    */
   const isAwaiting = task.phase_status === "Blocked";
 
+  /**
+   * A claimed task keeps its column, so `Spawning` is the only thing distinguishing a task waiting
+   * to start from one already starting — in Queue and in In Progress alike, since a re-start
+   * (the plan gate's coder, the rework handoff) claims a task that is already `InProgress`.
+   */
+  const starting = task.phase === "Spawning" && task.phase_status !== "Failed";
+
   const base =
     "flex-1 flex items-center justify-center gap-1 text-[10px] font-bold py-2 rounded-full border border-border bg-primary-foreground text-primary hover:bg-muted disabled:opacity-50";
 
@@ -118,13 +125,22 @@ export function FooterCTAs({
   */
   const tooltipWrapper = "inline-flex flex-1";
 
-  // Debounced by 2s: `sessions-changed` and `tasks-changed` do not arrive together, so mid-spawn a
-  // task reads as InProgress with no session behind it and would flash "session lost".
-  const isSessionLost = task.status === "InProgress" && !hasActiveSession;
+  // A claimed task is InProgress with no session for the whole spawn — seconds, longer on a cold
+  // agent or a remote connection — so `starting` is part of the reading rather than a filter over
+  // it. And debounced by 2s on top, because `sessions-changed` and `tasks-changed` do not arrive
+  // together: on the way *out* of `Spawning` the row can read `Implementing` before the session
+  // lands, which the phase alone does not cover. Folding `starting` in rather than `&&`-ing it
+  // after the latch is what keeps that debounce running from the moment the phase changes.
+  const isSessionLost = task.status === "InProgress" && !hasActiveSession && !starting;
   const [sessionLostStable, setSessionLostStable] = useState(false);
-  // The debounce only ever raises the flag, so a session that is no longer lost cannot
-  // be stably lost — derived here rather than reset from the effect below.
+  // The raise is debounced below; the drop is taken here, during the render that reads it, so the
+  // latch is always `false` going into a raise and the grace period really does apply every time.
+  // Debouncing the drop too would put the old never-lowered bug back one step further out: a
+  // true→false→true inside 2s — the gate latching while the user reads the plan, then a warm spawn
+  // landing before the timer fires — would leave the latch `true` and show "Session lost" the
+  // instant the phase left `Spawning`.
   const showSessionLost = isSessionLost && sessionLostStable;
+  if (sessionLostStable && !isSessionLost) setSessionLostStable(false);
 
   useEffect(() => {
     if (!isSessionLost) return;
@@ -255,11 +271,9 @@ export function FooterCTAs({
   }
 
   if (task.status === "Queue") {
-    // A claimed task keeps its column, so `Spawning` is the only thing distinguishing a task
-    // waiting to start from one already starting. Offering Execute again would be a second click
-    // the backend refuses — visible to the user only as a button that does nothing.
-    const starting = task.phase === "Spawning" && task.phase_status !== "Failed";
-
+    // Offering Execute again while `starting` would be a second click the backend refuses —
+    // visible to the user only as a button that does nothing.
+    //
     // A failed spawn keeps the claim so the card can show it, and this is the retry. A
     // deferred task keeps the button too, so a user who has just freed a slot can take it
     // rather than waiting for the next drain.
@@ -398,6 +412,24 @@ export function FooterCTAs({
           >
             <LockKeyhole className="w-2.5 h-2.5" />
             Login
+          </Button>
+        </div>
+      );
+    }
+    // After the auth check, not before it: on the `auth_required` path the claim is released an
+    // IPC round-trip later, so for that moment the row is still `Spawning` and an earlier gate
+    // would hide the Login button behind a disabled one.
+    //
+    // The same control the Queue branch renders, because that is what this card showed a moment
+    // ago — the re-start is a continuation of it, not a new shape. Abandon deliberately stays off
+    // the row: it deletes the worktree and its branch, and half a session is not a state anyone
+    // has specified it against.
+    if (starting) {
+      return (
+        <div className="flex gap-1 mt-1.5">
+          <Button disabled variant="ghost" className={cn(base, "h-auto")}>
+            <Play className="w-2.5 h-2.5 fill-current" />
+            Starting…
           </Button>
         </div>
       );

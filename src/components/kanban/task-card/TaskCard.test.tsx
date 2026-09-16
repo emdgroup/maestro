@@ -612,6 +612,98 @@ describe("TaskCard spawning state", () => {
     expect(retry).toBeInTheDocument();
     expect(retry).not.toBeDisabled();
   });
+
+  /**
+   * The re-starts — the coder taken on at the plan gate, the rework handoff — claim a task that is
+   * already In Progress, so the row reads In Progress with no session for the whole spawn. That
+   * used to fall into the lost-session branch and tell the user their run had died.
+   */
+  it("says nothing about a lost session while a re-start is spawning", () => {
+    vi.useFakeTimers();
+    try {
+      renderCard({
+        status: "InProgress",
+        phase: "Spawning",
+        phase_status: "Running",
+        ball: "Agent",
+      });
+      // The whole point: the debounce elapsing changes nothing, however long the spawn takes.
+      act(() => vi.advanceTimersByTime(2100));
+
+      expect(screen.queryByText(/session lost/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /recover/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /starting/i })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A spawn that failed keeps its claim, and a silent "Starting…" would hide it forever. */
+  it("offers recovery on a failed re-start rather than a starting state", () => {
+    vi.useFakeTimers();
+    try {
+      renderCard({
+        status: "InProgress",
+        phase: "Spawning",
+        phase_status: "Failed",
+        ball: "User",
+      });
+      // Failed is not starting, so the card takes the ordinary lost-session route and its debounce.
+      act(() => vi.advanceTimersByTime(2100));
+
+      expect(screen.getByRole("button", { name: /recover/i })).toBeInTheDocument();
+      expect(screen.queryByText("Starting…")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * The card sits at the gate long enough to latch the lost-session state, and a warm local agent
+   * can leave `Spawning` before the 2s is up. Lowering the latch on the drop rather than debouncing
+   * it is what keeps that from firing with no grace period at all.
+   */
+  it("gives the grace period again after a spawn that outran it", () => {
+    vi.useFakeTimers();
+    try {
+      const at = (phase: TaskPhase, phase_status: PhaseStatus) =>
+        makeTask({ status: "InProgress", phase, phase_status, ball: "Agent" });
+
+      const { rerender } = render(<TaskCard task={at("Implementing", "Waiting")} index={0} />);
+      act(() => vi.advanceTimersByTime(2100));
+      expect(screen.getByRole("button", { name: /recover/i })).toBeInTheDocument();
+
+      // Approved: the claim lands, and the row leaves `Spawning` again before the debounce fires.
+      rerender(<TaskCard task={at("Spawning", "Running")} index={0} />);
+      act(() => vi.advanceTimersByTime(500));
+      rerender(<TaskCard task={at("Implementing", "Running")} index={0} />);
+      act(() => vi.advanceTimersByTime(500));
+
+      expect(screen.queryByText(/session lost/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /recover/i })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** And a session that really is gone still says so — the reason Recover exists. */
+  it("still reports a session lost outside a spawn", () => {
+    vi.useFakeTimers();
+    try {
+      renderCard({
+        status: "InProgress",
+        phase: "Implementing",
+        phase_status: "Waiting",
+        ball: "User",
+      });
+      act(() => vi.advanceTimersByTime(2100));
+
+      expect(screen.getByText(/session lost/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /recover/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 /**
