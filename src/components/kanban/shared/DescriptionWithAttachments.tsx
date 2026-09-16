@@ -8,7 +8,11 @@ interface DescriptionWithAttachmentsProps {
   onSave: (v: string) => void;
   isEditable: boolean;
   isDragging: boolean;
-  onPickFiles: () => void;
+  /**
+   * Omitted where the caller already renders a drop zone of its own — the detail modal's
+   * [AttachmentSection] does, and two browse affordances for one file input is one too many.
+   */
+  onPickFiles?: () => void;
   placeholder?: string;
 }
 
@@ -30,7 +34,7 @@ export function DescriptionWithAttachments({
           placeholder={placeholder}
         />
       </div>
-      {isEditable && (
+      {isEditable && onPickFiles && (
         <Button
           variant="ghost"
           onClick={onPickFiles}

@@ -343,6 +343,11 @@ async fn resolve_turn_end(
                 log::error!("Could not mark task {} as failed: {}", task_id, e);
             }
         }
+        // Both paths moved the task and neither reaches the emit below. A successful push cleared
+        // `pull_request_ci`, which the board only learns by refetching — and the point of clearing
+        // it is to get the pull request poll off its steady rate, which it cannot do from a stale
+        // cache. A failed push parked the task and is equally invisible without this.
+        app_state.app_handle.emit("tasks-changed", ()).ok();
         return;
     }
 

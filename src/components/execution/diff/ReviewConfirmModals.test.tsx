@@ -90,7 +90,7 @@ describe("ApproveModal", () => {
       pullRequestProvider: "github",
     });
 
-    expect(screen.getByText(/Connect github in Settings/)).toBeInTheDocument();
+    expect(screen.getByText(/Connect GitHub in Settings/)).toBeInTheDocument();
 
     await openStrategies();
     expectDisabled(/Open a pull request/);
@@ -108,13 +108,13 @@ describe("ApproveModal", () => {
       forgeSupportsPullRequests: false,
     });
 
-    expect(screen.queryByText(/Connect bitbucket in Settings/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Connect Bitbucket in Settings/)).not.toBeInTheDocument();
 
     await openStrategies();
     expectEnabled(/Push only/);
     expectDisabled(/Open a pull request/);
     expect(option(/Open a pull request/)).toHaveTextContent(
-      "cannot open pull requests on bitbucket",
+      "cannot open pull requests on Bitbucket",
     );
   });
 
@@ -128,7 +128,7 @@ describe("ApproveModal", () => {
       forgeSupportsPullRequests: false,
     });
 
-    expect(screen.queryByText(/Connect bitbucket in Settings/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Connect Bitbucket in Settings/)).not.toBeInTheDocument();
   });
 
   it("reports the pull request strategy back to the caller", async () => {

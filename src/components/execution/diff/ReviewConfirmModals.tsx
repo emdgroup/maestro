@@ -23,6 +23,7 @@ import { ButtonGroup } from "@/ui/button-group";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Checkbox } from "@/ui/checkbox";
 import type { LandingMode } from "@/types/bindings";
+import { PROVIDER_NAMES } from "@/services/integration.service";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -239,6 +240,11 @@ export function ApproveModal({
   // able to disagree: an unconnected forge gets the invitation below, never a selectable option.
   const canOpenPullRequest =
     canPush && !!pullRequestProvider && forgeSupportsPullRequests && !pullRequestNeedsConnecting;
+  // Settings names forges by their display name; the raw id is an implementation detail and had
+  // this dialog offering to connect "bitbucket".
+  const providerName = pullRequestProvider
+    ? (PROVIDER_NAMES[pullRequestProvider] ?? pullRequestProvider)
+    : null;
 
   // The project's preference, honoured only where the option is actually on offer. A project set
   // to `PullRequest` whose forge is unconnected must not open on an option it cannot select.
@@ -278,8 +284,7 @@ export function ApproveModal({
     if (value === "pull-request" && !canOpenPullRequest) {
       if (!canPush) return "This project has no remote to push to";
       if (!pullRequestProvider) return "Maestro does not recognise this host";
-      if (!forgeSupportsPullRequests)
-        return `Maestro cannot open pull requests on ${pullRequestProvider}`;
+      if (!forgeSupportsPullRequests) return `Maestro cannot open pull requests on ${providerName}`;
       // Terse on purpose: the invitation below the control says where to go and what it buys.
       return "Not connected";
     }
@@ -288,12 +293,18 @@ export function ApproveModal({
 
   function getDescription(): string {
     if (hasWorktree && !hasUncommitted)
-      return "Changes are committed. This will merge the branch and delete the worktree.";
+      return showStrategy
+        ? // The select is on screen and may be set to push or open a pull request, so naming one
+          // outcome here would contradict the control directly below it.
+          "Changes in the worktree are committed."
+        : "Changes are committed. This will merge the branch and delete the worktree.";
     if (!hasWorktree && hasUncommitted)
       return "Uncommitted changes will be committed and the task marked as done.";
     if (!hasWorktree && !hasUncommitted)
       return "All changes are committed. Task will be marked as done.";
-    return "Choose how to handle the worktree:";
+    // No "choose how to…" here: the strategy select below carries its own label, and the two read
+    // as two headings for the one control.
+    return "Uncommitted changes in the worktree will be committed first.";
   }
 
   function getActionLabel(): string {
@@ -365,7 +376,7 @@ export function ApproveModal({
                 it, and every other way of approving stays available. */}
             {showConnectInvitation && (
               <p className="text-xs text-muted-foreground">
-                Connect {pullRequestProvider} in Settings to open a pull request from here.
+                Connect {providerName} in Settings to open a pull request from here.
               </p>
             )}
           </div>

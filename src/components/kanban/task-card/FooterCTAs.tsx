@@ -133,17 +133,23 @@ export function FooterCTAs({
   // after the latch is what keeps that debounce running from the moment the phase changes.
   const isSessionLost = task.status === "InProgress" && !hasActiveSession && !starting;
   const [sessionLostStable, setSessionLostStable] = useState(false);
-  // The raise is debounced below; the drop is taken here, during the render that reads it, so the
-  // latch is always `false` going into a raise and the grace period really does apply every time.
-  // Debouncing the drop too would put the old never-lowered bug back one step further out: a
-  // true→false→true inside 2s — the gate latching while the user reads the plan, then a warm spawn
-  // landing before the timer fires — would leave the latch `true` and show "Session lost" the
-  // instant the phase left `Spawning`.
+  // Only the raise is delayed: the drop is immediate, so the latch is always `false` going into a
+  // raise and the grace period really does apply every time. That is what keeps a true→false→true
+  // inside 2s — the gate latching while the user reads the plan, then a warm spawn landing before
+  // the timer fires — from leaving the latch `true` and showing "Session lost" the instant the
+  // phase leaves `Spawning`. Resetting from the effect rather than during render costs nothing,
+  // because `showSessionLost` already reads `false` for that render through `isSessionLost`.
   const showSessionLost = isSessionLost && sessionLostStable;
-  if (sessionLostStable && !isSessionLost) setSessionLostStable(false);
 
   useEffect(() => {
-    if (!isSessionLost) return;
+    if (!isSessionLost) {
+      // The cascading render the rule warns about cannot happen here: this only does anything when
+      // the latch is `true` and `isSessionLost` has just gone `false`, and the extra render shows
+      // nothing new because `showSessionLost` already reads `false` through `isSessionLost`.
+      // oxlint-disable-next-line react/set-state-in-effect
+      setSessionLostStable(false);
+      return;
+    }
     const t = setTimeout(() => setSessionLostStable(true), 2000);
     return () => clearTimeout(t);
   }, [isSessionLost]);

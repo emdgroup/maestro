@@ -993,6 +993,14 @@ pub(crate) async fn push_ci_fix(app_state: &AppState, task_id: i32) -> Result<()
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
+    // The verdict that triggered the fix must not outlive the fix: the card would keep reading
+    // `Failing` for a build that is re-running, and the poll would see nothing unreported and stay
+    // at its steady rate instead of sweeping for the new run.
+    conn.execute(
+        "UPDATE tasks SET pull_request_ci = NULL WHERE id = ?",
+        [task_id],
+    )
+    .map_err(|e| format!("Failed to clear the CI verdict: {}", e))?;
     transition::apply(&conn, task_id, TaskTransition::CiFixPushed).map(|_| ())
 }
 
