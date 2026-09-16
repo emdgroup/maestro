@@ -19,6 +19,7 @@ import {
   COMPLETION_LABELS,
   CI_LABELS,
   CI_TONES,
+  CI_UNREPORTED,
 } from "./phase-labels";
 import {
   useInterruptTaskMutation,
@@ -124,7 +125,7 @@ function PullRequestLine({ task }: { task: Task }) {
     ? { label: "conflicts", tone: "text-warning" }
     : ci
       ? { label: CI_LABELS[ci], tone: CI_TONES[ci] }
-      : null;
+      : CI_UNREPORTED;
 
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
@@ -136,14 +137,8 @@ function PullRequestLine({ task }: { task: Task }) {
       >
         {task.pull_request_number ? `PR #${task.pull_request_number}` : PHASE_LABELS.AwaitingMerge}
       </span>
-      {detail && (
-        <>
-          <span className="text-muted-foreground/40 shrink-0">·</span>
-          <span className={cn("uppercase tracking-wide truncate", detail.tone)}>
-            {detail.label}
-          </span>
-        </>
-      )}
+      <span className="text-muted-foreground/40 shrink-0">·</span>
+      <span className={cn("uppercase tracking-wide truncate", detail.tone)}>{detail.label}</span>
     </div>
   );
 }

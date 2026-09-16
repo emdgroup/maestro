@@ -453,9 +453,16 @@ export function FooterCTAs({
     );
   }
 
-  // A task waiting on a pull request has nothing for the user to do here, so the card points at
-  // the one place where something can happen. Review stays available beside it — the diff is
-  // still worth reading while the PR is open.
+  // A task waiting on a pull request points at the one place where something can happen. Review
+  // used to sit beside it unconditionally, but the panel behind that button is the approval gate —
+  // Approve / Rework / Discard — so on a pull request that is simply open it means approving and
+  // pushing the same work twice. The remaining decision lives on the forge.
+  //
+  // It only comes back when the ball is with the user, which is every `AwaitingMerge` state where
+  // the forge has stopped: a closed pull request (`Failed`) and a conflicted one (`Waiting`). There
+  // the gate is the point — nothing else on the card can rework or discard the work — and the card
+  // says which of the two it is through its own wording. The agent-held CI-fix states keep the bare
+  // link: something is working, so there is nothing to decide yet.
   if (task.phase === "AwaitingMerge" && task.pull_request_url) {
     const pullRequestUrl = task.pull_request_url;
     return (
@@ -472,17 +479,19 @@ export function FooterCTAs({
           Pull request
           {task.pull_request_number ? ` #${task.pull_request_number}` : ""}
         </Button>
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReview();
-          }}
-          variant="ghost"
-          className={cn(base, "h-auto")}
-        >
-          <ScanEye className="w-2.5 h-2.5" />
-          Review
-        </Button>
+        {task.ball === "User" && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onReview();
+            }}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          >
+            <ScanEye className="w-2.5 h-2.5" />
+            Review
+          </Button>
+        )}
       </div>
     );
   }

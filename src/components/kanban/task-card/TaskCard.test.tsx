@@ -1071,31 +1071,15 @@ describe("TaskCard awaiting a pull request", () => {
     expect(openUrl).toHaveBeenCalledWith("https://github.com/acme/widgets/pull/42");
   });
 
-  // The diff is still worth reading while the PR is open, so this must not replace Review.
-  it("keeps Review reachable", () => {
-    renderCard(awaitingMerge);
-
-    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
-  });
-
   /**
-   * Review shipped with no icon, and the first fix gave it the pull-request one — which put two
-   * buttons carrying the same glyph side by side in the same row, one opening the forge and the
-   * other the diff. Asserting merely that an icon was present is what let that through, so this
-   * pins the distinction rather than the presence.
+   * Review used to sit beside the pull request link so the diff stayed readable, but the panel it
+   * opens is the approval gate — Approve / Rework / Discard — on work that has already been
+   * approved and pushed. Pressing it ran a second `save_task_review` + `approve_task_and_merge`.
    */
-  it("does not give Review the same icon as the pull request link", () => {
+  it("does not offer the approval gate on work already pushed", () => {
     renderCard(awaitingMerge);
 
-    const iconOf = (name: RegExp) =>
-      screen.getByRole("button", { name }).querySelector("svg")?.getAttribute("class");
-
-    const review = iconOf(/^review$/i);
-    const pullRequest = iconOf(/pull request/i);
-
-    expect(review).toBeTruthy();
-    expect(pullRequest).toBeTruthy();
-    expect(review).not.toEqual(pullRequest);
+    expect(screen.queryByRole("button", { name: /^review$/i })).not.toBeInTheDocument();
   });
 
   /**
@@ -1106,25 +1090,35 @@ describe("TaskCard awaiting a pull request", () => {
   it("says what the forge thinks of the checks", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: "Passing" });
 
-    expect(screen.getByText(/checks passed/i)).toBeInTheDocument();
+    expect(screen.getByText(/ready to merge/i)).toBeInTheDocument();
     expect(screen.getByText(/PR #42/)).toBeInTheDocument();
   });
 
   it("says when a build is red", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: "Failing" });
 
-    expect(screen.getByText(/CI failing/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs fixing/i)).toBeInTheDocument();
+  });
+
+  it("says when the checks have not finished", () => {
+    renderCard({ ...awaitingMerge, pull_request_ci: "Pending" });
+
+    expect(screen.getByText(/waiting for CI/i)).toBeInTheDocument();
   });
 
   /**
-   * A repository with no CI has nothing to report, and "no checks" on every card in a project
-   * that will never have any is noise. The absence is the answer.
+   * Nothing reported used to render as no label at all, which read exactly like no sweep running.
+   * It now says so — and must not borrow either verdict: not "ready to merge", which would be a
+   * green light nobody earned while a build is still queueing, and not "waiting for CI", which
+   * claims a run that may not exist.
    */
-  it("says nothing extra when the repository has no CI", () => {
+  it("says nothing is known when there is nothing to report", () => {
     renderCard({ ...awaitingMerge, pull_request_ci: null });
 
     expect(screen.getByText(/PR #42/)).toBeInTheDocument();
-    expect(screen.queryByText(/checks/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/no checks reported/i)).toBeInTheDocument();
+    expect(screen.queryByText(/ready to merge/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/waiting for CI/i)).not.toBeInTheDocument();
   });
 
   /**
@@ -1137,6 +1131,17 @@ describe("TaskCard awaiting a pull request", () => {
 
     expect(screen.getByText(/conflicts/i)).toBeInTheDocument();
     expect(screen.queryByText(/pull request closed/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * Suppressing the gate is only right while the forge is the one holding the ball. A conflicted
+   * pull request needs the user, and the gate is the only control that can rework or discard the
+   * work — without it the card offers nothing but a link to the conflict.
+   */
+  it("gives the gate back when a conflict puts the ball on the user", () => {
+    renderCard({ ...awaitingMerge, phase_status: "Waiting", ball: "User" });
+
+    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 
   // A task can reach AwaitingMerge without a URL only if the write failed, and a button that
@@ -1172,6 +1177,14 @@ describe("TaskCard after a pull request is closed", () => {
     renderCard(closed);
 
     expect(screen.getByRole("button", { name: /pull request #42/i })).toBeInTheDocument();
+  });
+
+  // The forge has stopped and the ball is with the user, so rework and discard have to stay
+  // reachable — the link alone leaves the card with no way to act on a closed pull request.
+  it("keeps the review panel reachable", () => {
+    renderCard(closed);
+
+    expect(screen.getByRole("button", { name: /^review$/i })).toBeInTheDocument();
   });
 });
 

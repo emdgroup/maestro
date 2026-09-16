@@ -46,7 +46,7 @@ export const KanbanView: React.FC = () => {
   // another tab — auto-mode has to keep filling slots when nobody is watching the board, which is
   // most of the time it matters.
   useQueueDrain(projectId, projectPath, taskList, connection);
-  usePullRequestPoll(projectId);
+  usePullRequestPoll(projectId, taskList);
   useAgentPipeline(projectId, projectPath, taskList, connection);
 
   const [query, setQuery] = useState("");
