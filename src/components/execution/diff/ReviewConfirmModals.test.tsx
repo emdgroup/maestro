@@ -23,67 +23,99 @@ function renderModal(props: Partial<Parameters<typeof ApproveModal>[0]> = {}) {
   );
 }
 
+/** The strategies only exist in the DOM while the select is open. */
+async function openStrategies() {
+  await userEvent.setup().click(screen.getByRole("combobox"));
+}
+
+function option(name: RegExp) {
+  return screen.getByRole("option", { name });
+}
+
+/** An unavailable strategy stays on screen and disabled, so its reason is readable. */
+function expectDisabled(name: RegExp) {
+  expect(option(name)).toHaveAttribute("aria-disabled", "true");
+}
+
+function expectEnabled(name: RegExp) {
+  expect(option(name)).not.toHaveAttribute("aria-disabled", "true");
+}
+
 describe("ApproveModal", () => {
   beforeEach(() => {
     onConfirm.mockClear();
   });
 
-  it("offers no push option when the project has no remote", () => {
+  it("cannot push when the project has no remote", async () => {
     renderModal({ pushRemote: null });
+    await openStrategies();
 
-    expect(screen.getByText(/Commit \+ Merge \+ Delete worktree/)).toBeInTheDocument();
-    expect(screen.queryByText(/Commit \+ Push/)).not.toBeInTheDocument();
+    expectEnabled(/Merge locally/);
+    expectDisabled(/Push only/);
+    expect(option(/Push only/)).toHaveTextContent("no remote to push to");
   });
 
-  it("names the remote it would push to", () => {
+  it("names the remote it would push to", async () => {
     renderModal({ pushRemote: "upstream" });
+    await openStrategies();
 
-    expect(screen.getByText(/Commit \+ Push to upstream/)).toBeInTheDocument();
+    expect(option(/Push only/)).toHaveTextContent("Push the branch to upstream");
   });
 
   // The push option used to be unreachable on a fully committed branch, because the strategy
-  // radio only appeared when there was something to commit. Pushing an already-committed
+  // control only appeared when there was something to commit. Pushing an already-committed
   // branch is the ordinary case, not an edge one.
-  it("still offers the choice when everything is already committed", () => {
+  it("still offers the choice when everything is already committed", async () => {
     renderModal({ hasUncommitted: false, pushRemote: "origin" });
+    await openStrategies();
 
-    expect(screen.getByText(/Commit \+ Push to origin/)).toBeInTheDocument();
+    expect(option(/Push only/)).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("offers no pull request until a forge answers for the remote", () => {
+  it("cannot open a pull request until a forge answers for the remote", async () => {
     renderModal({ pushRemote: "origin" });
+    await openStrategies();
 
-    expect(screen.getByText(/Commit \+ Push to origin/)).toBeInTheDocument();
-    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
+    expectEnabled(/Push only/);
+    expectDisabled(/Open a pull request/);
+    expect(option(/Open a pull request/)).toHaveTextContent("does not recognise this host");
   });
 
   // Rung 3: the forge is known but nothing has authenticated for it. An invitation, not an
   // error — every other way of approving has to stay available.
-  it("invites the user to connect rather than hiding the reason", () => {
+  it("invites the user to connect rather than hiding the reason", async () => {
     renderModal({
       pushRemote: "origin",
       pullRequestNeedsConnecting: true,
       pullRequestProvider: "github",
     });
 
-    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
     expect(screen.getByText(/Connect github in Settings/)).toBeInTheDocument();
-    expect(screen.getByText(/Commit \+ Merge \+ Delete worktree/)).toBeInTheDocument();
+
+    await openStrategies();
+    expectDisabled(/Open a pull request/);
+    expect(option(/Open a pull request/)).toHaveTextContent("Not connected");
+    expectEnabled(/Merge locally/);
   });
 
   // A connected forge is not necessarily one Maestro can post to. Bitbucket reaches rung Ready
   // as soon as a credential answers, and offering the option there ends in a pushed branch, no
   // pull request, and a task stuck in Review.
-  it("offers no pull request on a forge it cannot post to", () => {
+  it("cannot open a pull request on a forge it cannot post to", async () => {
     renderModal({
       pushRemote: "origin",
       pullRequestProvider: "bitbucket",
       forgeSupportsPullRequests: false,
     });
 
-    expect(screen.getByText(/Commit \+ Push to origin/)).toBeInTheDocument();
-    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Connect bitbucket in Settings/)).not.toBeInTheDocument();
+
+    await openStrategies();
+    expectEnabled(/Push only/);
+    expectDisabled(/Open a pull request/);
+    expect(option(/Open a pull request/)).toHaveTextContent(
+      "cannot open pull requests on bitbucket",
+    );
   });
 
   // Asking someone to go and authenticate a forge that still could not open a pull request sends
@@ -103,7 +135,8 @@ describe("ApproveModal", () => {
     const user = userEvent.setup();
     renderModal({ pushRemote: "origin", pullRequestProvider: "github" });
 
-    await user.click(screen.getByText(/Open a pull request/));
+    await user.click(screen.getByRole("combobox"));
+    await user.click(option(/Open a pull request/));
     await user.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(onConfirm).toHaveBeenCalledWith(
@@ -115,7 +148,8 @@ describe("ApproveModal", () => {
     const user = userEvent.setup();
     renderModal({ pushRemote: "origin" });
 
-    await user.click(screen.getByText(/Commit \+ Push to origin/));
+    await user.click(screen.getByRole("combobox"));
+    await user.click(option(/Push only/));
     await user.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(onConfirm).toHaveBeenCalledWith(
@@ -127,7 +161,7 @@ describe("ApproveModal", () => {
 /**
  * The project's landing mode decides which option the dialog opens on. It is a preference, so it
  * only ever picks between options that are already on offer, and a preference the project cannot
- * currently act on falls back to merging rather than to a radio that is not rendered.
+ * currently act on falls back to merging rather than to an option it could not select.
  */
 describe("ApproveModal and the project's landing mode", () => {
   beforeEach(() => {
@@ -167,7 +201,7 @@ describe("ApproveModal and the project's landing mode", () => {
 
   /**
    * The regression this fallback exists to prevent: a project configured for pull requests whose
-   * forge nobody has connected would otherwise open on an option the dialog does not render.
+   * forge nobody has connected would otherwise open on an option the dialog does not allow.
    */
   it("falls back to merging when the forge is not connected", async () => {
     renderModal({
@@ -177,8 +211,10 @@ describe("ApproveModal and the project's landing mode", () => {
       landingMode: "PullRequest",
     });
 
-    expect(screen.queryByText(/Open a pull request/)).not.toBeInTheDocument();
     expect(await confirmWithoutChoosing()).toBe("merge-delete");
+
+    await openStrategies();
+    expectDisabled(/Open a pull request/);
   });
 
   it("falls back to merging when there is no remote to push to", async () => {

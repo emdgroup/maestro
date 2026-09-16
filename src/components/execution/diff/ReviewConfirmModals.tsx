@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  GitMerge,
+  GitCommitHorizontal,
+  Upload,
+  GitPullRequest,
+} from "lucide-react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import {
   AlertDialog,
@@ -12,7 +20,7 @@ import {
 } from "@/ui/alert-dialog";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
-import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Checkbox } from "@/ui/checkbox";
 import type { LandingMode } from "@/types/bindings";
 import {
@@ -158,6 +166,48 @@ const STRATEGY_FOR_LANDING_MODE: Record<LandingMode, string> = {
   PushOnly: "commit-push",
 };
 
+/**
+ * What each strategy does, in the order of how much of it Maestro performs. The labels match the
+ * landing modes in Settings, which configures the default this dialog opens on — the same choice
+ * described twice in different words is how the two drifted apart in the first place.
+ *
+ * A function of the remote because the push option names the remote it would actually push to,
+ * which is not always `origin`.
+ */
+function strategiesFor(pushRemote?: string | null): {
+  value: string;
+  label: string;
+  description: string;
+  icon: typeof GitMerge;
+}[] {
+  return [
+    {
+      value: "merge-delete",
+      label: "Merge locally",
+      description: "Merge into the base branch, delete the worktree, move the task to Done",
+      icon: GitMerge,
+    },
+    {
+      value: "commit-only",
+      label: "Commit only",
+      description: "Leave the branch unmerged and the worktree on disk, move the task to Done",
+      icon: GitCommitHorizontal,
+    },
+    {
+      value: "commit-push",
+      label: "Push only",
+      description: `Push the branch to ${pushRemote ?? "the remote"}, keep the worktree, move the task to Done`,
+      icon: Upload,
+    },
+    {
+      value: "pull-request",
+      label: "Open a pull request",
+      description: "Push and open a pull request, keep the task in Review until it merges",
+      icon: GitPullRequest,
+    },
+  ];
+}
+
 export function ApproveModal({
   open,
   onOpenChange,
@@ -186,12 +236,12 @@ export function ApproveModal({
 
   const canPush = hasWorktree && !!pushRemote;
   // Knowing the forge is not the same as being able to post to it, and the two props must not be
-  // able to disagree: an unconnected forge gets the invitation below, never the option.
+  // able to disagree: an unconnected forge gets the invitation below, never a selectable option.
   const canOpenPullRequest =
     canPush && !!pullRequestProvider && forgeSupportsPullRequests && !pullRequestNeedsConnecting;
 
   // The project's preference, honoured only where the option is actually on offer. A project set
-  // to `PullRequest` whose forge is unconnected must not open on a radio that is not rendered.
+  // to `PullRequest` whose forge is unconnected must not open on an option it cannot select.
   const preferred = landingMode ? STRATEGY_FOR_LANDING_MODE[landingMode] : "merge-delete";
   const defaultStrategy =
     (preferred === "pull-request" && !canOpenPullRequest) ||
@@ -213,7 +263,28 @@ export function ApproveModal({
   const showConnectInvitation = pullRequestNeedsConnecting && forgeSupportsPullRequests;
   // Pushing is worth offering even when everything is already committed, which is why this
   // no longer keys off uncommitted changes alone.
-  const showRadio = hasWorktree && (hasUncommitted || canPush);
+  const showStrategy = hasWorktree && (hasUncommitted || canPush);
+
+  const strategies = strategiesFor(pushRemote);
+  const selected = strategies.find((s) => s.value === strategy) ?? strategies[0];
+  const SelectedIcon = selected.icon;
+
+  /**
+   * Why a strategy cannot happen here, or null when it can. An unavailable option stays on screen
+   * and disabled, so "why can't I open a pull request" has an answer where the question is asked.
+   */
+  function unavailableReason(value: string): string | null {
+    if (value === "commit-push" && !canPush) return "This project has no remote to push to";
+    if (value === "pull-request" && !canOpenPullRequest) {
+      if (!canPush) return "This project has no remote to push to";
+      if (!pullRequestProvider) return "Maestro does not recognise this host";
+      if (!forgeSupportsPullRequests)
+        return `Maestro cannot open pull requests on ${pullRequestProvider}`;
+      // Terse on purpose: the invitation below the control says where to go and what it buys.
+      return "Not connected";
+    }
+    return null;
+  }
 
   function getDescription(): string {
     if (hasWorktree && !hasUncommitted)
@@ -245,30 +316,51 @@ export function ApproveModal({
           <AlertDialogDescription>{getDescription()}</AlertDialogDescription>
         </AlertDialogHeader>
 
-        {showRadio && (
-          <>
-            <RadioGroup value={strategy} onValueChange={setStrategy} className="gap-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <RadioGroupItem value="merge-delete" />
-                Commit + Merge + Delete worktree
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <RadioGroupItem value="commit-only" />
-                Commit only (keep worktree)
-              </label>
-              {canPush && (
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <RadioGroupItem value="commit-push" />
-                  Commit + Push to {pushRemote}
-                </label>
-              )}
-              {canOpenPullRequest && (
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <RadioGroupItem value="pull-request" />
-                  Commit + Open a pull request
-                </label>
-              )}
-            </RadioGroup>
+        {showStrategy && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">When this task is approved</p>
+            <Select value={strategy} onValueChange={(next) => next && setStrategy(next)}>
+              {/* See `WorkspaceModeSelect` on why the height override has to carry the size
+                  variant. */}
+              <SelectTrigger
+                aria-label="When this task is approved"
+                className="w-full data-[size=default]:h-auto py-2 px-3 border-border bg-transparent shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted"
+              >
+                <span className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                  <SelectedIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm truncate">{selected.label}</span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      {selected.description}
+                    </span>
+                  </span>
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {strategies.map((option) => {
+                  const Icon = option.icon;
+                  const reason = unavailableReason(option.value);
+                  return (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      disabled={reason !== null}
+                      className="py-2"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="block text-sm">{option.label}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {reason ?? option.description}
+                          </span>
+                        </span>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
             {/* An invitation, not an error. The forge is known but nothing has authenticated for
                 it, and every other way of approving stays available. */}
             {showConnectInvitation && (
@@ -276,18 +368,7 @@ export function ApproveModal({
                 Connect {pullRequestProvider} in Settings to open a pull request from here.
               </p>
             )}
-            {/* Every strategy approves the task, so all of them move it to Done. Worth saying,
-                because keeping the worktree reads like the task is still in flight. */}
-            <p className="text-xs text-muted-foreground">
-              {strategy === "commit-only" &&
-                "The task moves to Done. The branch stays unmerged and the worktree stays on disk for you to merge or push yourself."}
-              {strategy === "commit-push" &&
-                `The branch is pushed to ${pushRemote} and the task moves to Done. It stays unmerged, and the worktree stays on disk.`}
-              {strategy === "pull-request" &&
-                "The branch is pushed and a pull request opened. The task stays in Review until the pull request merges, and the worktree stays on disk until then."}
-              {strategy === "merge-delete" && "The task moves to Done and the worktree is deleted."}
-            </p>
-          </>
+          </div>
         )}
 
         {untrackedCount > 0 && (
@@ -324,7 +405,7 @@ export function ApproveModal({
             onClick={() => onConfirm({ mergeStrategy: strategy, includeUntracked, commitMessage })}
             disabled={isPending || !commitMessage.trim()}
           >
-            {isPending ? "Approving..." : showRadio ? "Confirm" : getActionLabel()}
+            {isPending ? "Approving..." : showStrategy ? "Confirm" : getActionLabel()}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
