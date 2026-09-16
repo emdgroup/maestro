@@ -32,7 +32,9 @@ pub const PROFILES_FILE: &str = "profiles.json";
 /// than the agent's. Ordered from strongest to weakest, and deliberately not a preference list —
 /// which of the three a role should use depends on what it has to deliver, not on which is
 /// strictest. See `READ_ONLY_MODES` in `utils/helpers/permission-modes.ts` for the preference
-/// order a profile that names no mode is filled in from.
+/// order a profile that names no mode is filled in from — that is the same set of three, and the
+/// two lists have to stay in step: this one decides whether a role *can* be held read-only, and
+/// that one is what the spawn actually picks from when it is.
 const READ_ONLY_SAFE_MODES: [&str; 3] = ["readonly", "plan", "default"];
 
 /// What a profile does when the agent it names cannot honour part of it.
@@ -263,11 +265,21 @@ pub fn apply_capabilities(
     // becomes a permission prompt, and `try_auto_approve_permission` refuses to answer one in a
     // read-only phase, so it reaches the user. `acceptEdits` and `bypassPermissions` do not hold
     // anything, and a presence check called them read-only.
-    if profile.role.is_read_only()
-        && !permission_mode
-            .as_deref()
-            .is_some_and(|mode| READ_ONLY_SAFE_MODES.contains(&mode))
-    {
+    // Naming no mode means the spawn picks one, and it picks from this same set — so the question
+    // is what the agent offers, not whether the profile filled the field in. An empty `mode_ids` is
+    // an agent that did not advertise, which is unknown rather than none, as above.
+    let held_read_only = match permission_mode.as_deref() {
+        Some(mode) => READ_ONLY_SAFE_MODES.contains(&mode),
+        None => {
+            capabilities.mode_ids.is_empty()
+                || capabilities
+                    .mode_ids
+                    .iter()
+                    .any(|mode| READ_ONLY_SAFE_MODES.contains(&mode.as_str()))
+        }
+    };
+
+    if profile.role.is_read_only() && !held_read_only {
         warnings.push(format!(
             "'{}' could not be held read-only for the {:?} role",
             profile.agent_id, profile.role
@@ -576,6 +588,44 @@ mod tests {
         };
         let resolved = apply_capabilities(&p, &capabilities).unwrap();
         assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
+    }
+
+    /// A profile that names no mode is held by whatever the spawn will pick, so an agent offering
+    /// one of the safe modes is not a failure to hold the role. Settings leaves the field empty
+    /// whenever the agent probe does not settle, and claude-acp offers `plan`.
+    #[test]
+    fn an_unnamed_mode_is_held_by_whatever_the_agent_offers() {
+        let mut p = profile(AgentRole::Refiner);
+        p.permission_mode = None;
+
+        let capabilities = AgentCapabilities {
+            mode_ids: vec![
+                "default".to_string(),
+                "acceptEdits".to_string(),
+                "bypassPermissions".to_string(),
+                "plan".to_string(),
+            ],
+            ..Default::default()
+        };
+        let resolved = apply_capabilities(&p, &capabilities).unwrap();
+        assert!(resolved.warnings.is_empty(), "{:?}", resolved.warnings);
+    }
+
+    /// An agent that offers only writable modes cannot hold the role however the spawn picks.
+    #[test]
+    fn an_unnamed_mode_still_warns_when_nothing_safe_is_offered() {
+        let mut p = profile(AgentRole::Refiner);
+        p.permission_mode = None;
+
+        let capabilities = AgentCapabilities {
+            mode_ids: vec!["acceptEdits".to_string(), "bypassPermissions".to_string()],
+            ..Default::default()
+        };
+        let resolved = apply_capabilities(&p, &capabilities).unwrap();
+        assert_eq!(resolved.warnings.len(), 1, "{:?}", resolved.warnings);
+
+        p.fallback_behaviour = FallbackBehaviour::Fail;
+        assert!(apply_capabilities(&p, &capabilities).is_err());
     }
 
     /// The coder is the one role that may legitimately run with the agent's default mode.
