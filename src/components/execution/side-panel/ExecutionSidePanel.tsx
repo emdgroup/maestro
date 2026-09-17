@@ -43,7 +43,7 @@ interface ExecutionSidePanelProps {
   latestCanvasSurfaceId: string | null;
   /** Set while the agent is blocked in `canvas_await`, which is what makes the controls live. */
   pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string, event: unknown) => void;
+  onCanvasEvent: (requestId: string | null, event: unknown) => void;
   subagentItems: ToolCallItem[];
   toolCallMap: Map<string, ToolCallItem>;
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;

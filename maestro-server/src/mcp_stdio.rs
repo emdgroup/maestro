@@ -4,9 +4,9 @@
 //! `maestro-server` (see `mcp_gateway`), sends a `GatewayRequest` and waits for the answer, so a
 //! shim that the agent restarts mid-session costs nothing.
 //!
-//! Canvas arguments are validated here, against the same catalog the `canvas_update` description
-//! is built from, so a malformed surface comes back as a tool error the agent can fix rather than
-//! as a round trip that renders something broken.
+//! Canvas arguments are not inspected beyond their shape: a surface is an HTML document, and the
+//! frame reports what it could not load or run back to the host, so a validator here would only
+//! guess earlier and be wrong about strings inside JavaScript.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -19,10 +19,6 @@ use maestro_protocol::{
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
-
-pub(crate) const CATALOG_ID: &str = "maestro-canvas/v1";
-
-const CATALOG: &str = include_str!("assets/canvas-catalog.json");
 
 /// The agent-facing tool surface. Vendored like the catalog and the agent registry — never
 /// fetched, never generated — so what the agent is told is reviewable as a document.
@@ -196,12 +192,6 @@ async fn call_tool(shim: &Shim, params: Option<&Value>) -> Result<Value, (i64, S
         return Err((-32602, format!("unknown tool: {name}")));
     }
 
-    if is_canvas_tool(name) {
-        if let Err(errors) = validate_canvas_message(&canvas_payload(name, &arguments)) {
-            return Ok(tool_error(errors.join("\n")));
-        }
-    }
-
     let call = HostToolCall {
         session_id: shim.session_id.clone(),
         request_id: format!(
@@ -255,7 +245,7 @@ async fn send_to_gateway(shim: &Shim, call: HostToolCall) -> Result<HostToolResu
     }
 }
 
-// --- Canvas validation ---
+// --- Canvas payloads ---
 
 pub(crate) fn is_canvas_tool(name: &str) -> bool {
     matches!(name, "canvas_create" | "canvas_update" | "canvas_data")
@@ -263,96 +253,15 @@ pub(crate) fn is_canvas_tool(name: &str) -> bool {
 
 /// The session-update payload a canvas tool call stands for.
 ///
-/// The gateway emits exactly this, so what is validated here is what the renderer receives.
-/// `catalogId` only belongs on `canvas_create`; the other two schemas reject it.
+/// The gateway emits exactly this, so the renderer receives the agent's arguments verbatim.
 pub(crate) fn canvas_payload(name: &str, arguments: &Value) -> Value {
     let mut payload = json!({ "sessionUpdate": name });
-    if name == "canvas_create" {
-        payload["catalogId"] = Value::String(CATALOG_ID.to_string());
-    }
     if let Some(fields) = arguments.as_object() {
         for (key, value) in fields {
             payload[key] = value.clone();
         }
     }
     payload
-}
-
-fn catalog() -> &'static Value {
-    static CATALOG_VALUE: OnceLock<Value> = OnceLock::new();
-    CATALOG_VALUE.get_or_init(|| {
-        serde_json::from_str(CATALOG).expect("the bundled canvas catalog is valid JSON")
-    })
-}
-
-/// Validate a canvas session-update payload against the bundled catalog.
-pub(crate) fn validate_canvas_message(instance: &Value) -> Result<(), Vec<String>> {
-    let Some(session_update) = instance.get("sessionUpdate").and_then(Value::as_str) else {
-        return Err(vec![
-            "missing 'sessionUpdate' — must be canvas_create, canvas_update or canvas_data"
-                .to_string(),
-        ]);
-    };
-
-    let empty = Vec::new();
-    let messages = catalog()
-        .pointer("/protocol/messages")
-        .and_then(Value::as_array)
-        .unwrap_or(&empty);
-    let Some(message) = messages
-        .iter()
-        .find(|m| m.get("type").and_then(Value::as_str) == Some(session_update))
-    else {
-        let known: Vec<&str> = messages
-            .iter()
-            .filter_map(|m| m.get("type").and_then(Value::as_str))
-            .collect();
-        return Err(vec![format!(
-            "unknown canvas message '{session_update}' — must be one of: {}",
-            known.join(", ")
-        )]);
-    };
-    let Some(schema) = message.get("jsonSchema") else {
-        return Err(vec![format!(
-            "no jsonSchema for '{session_update}' in the canvas catalog"
-        )]);
-    };
-    let validator = jsonschema::validator_for(schema)
-        .map_err(|e| vec![format!("cannot compile the catalog schema: {e}")])?;
-
-    let mut errors: Vec<String> = validator
-        .iter_errors(instance)
-        .map(|error| error.to_string())
-        .collect();
-
-    // Not expressible in the schema: `srcdoc` is inlined into an iframe, and both characters
-    // routinely arrive escaped one level too few and break the document.
-    if session_update == "canvas_update" {
-        for component in instance
-            .get("components")
-            .and_then(Value::as_array)
-            .unwrap_or(&empty)
-        {
-            if component.get("component").and_then(Value::as_str) != Some("Html") {
-                continue;
-            }
-            let Some(srcdoc) = component.get("srcdoc").and_then(Value::as_str) else {
-                continue;
-            };
-            if srcdoc.contains('"') {
-                errors.push("Html srcdoc contains double-quote characters — use single quotes for all HTML attributes and JS strings".to_string());
-            }
-            if srcdoc.contains('\\') {
-                errors.push("Html srcdoc contains backslashes — avoid backslash escapes in JS; use DOM API or character alternatives".to_string());
-            }
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
 }
 
 // --- Tool definitions ---
@@ -362,37 +271,20 @@ fn tools() -> &'static Vec<Value> {
     TOOLS.get_or_init(build_tools)
 }
 
-/// Load the tool surface from its asset, substituting the catalog's component props.
+/// Load the tool surface from its asset.
 ///
 /// The descriptions are prose written for a model, and they are the only documentation it gets —
 /// so they live in a document (`assets/mcp-tools.json`) rather than in `json!` literals here, the
-/// same way the canvas catalog and the agent registry already do. Editing what the agent is told
-/// is then a change to an asset, reviewable as writing, instead of a change to Rust.
+/// same way the agent registry already does. Editing what the agent is told is then a change to
+/// an asset, reviewable as writing, instead of a change to Rust.
 fn build_tools() -> Vec<Value> {
-    let components = catalog()
-        .get("components")
-        .map(|value| serde_json::to_string_pretty(value).unwrap_or_default())
-        .unwrap_or_default();
-
     let manifest: Value =
         serde_json::from_str(TOOLS_MANIFEST).expect("the bundled MCP tool manifest is valid JSON");
-    let tools = manifest
+    manifest
         .get("tools")
         .and_then(Value::as_array)
-        .expect("the MCP tool manifest has a `tools` array");
-
-    tools
-        .iter()
-        .map(|tool| {
-            let mut tool = tool.clone();
-            // Only the description interpolates, and only `canvas_update` uses the placeholder.
-            if let Some(description) = tool.get("description").and_then(Value::as_str) {
-                tool["description"] =
-                    Value::String(description.replace("{components}", &components));
-            }
-            tool
-        })
-        .collect()
+        .expect("the MCP tool manifest has a `tools` array")
+        .clone()
 }
 
 #[cfg(test)]
@@ -492,8 +384,8 @@ mod tests {
             names,
             vec![
                 "canvas_create",
-                "canvas_data",
                 "canvas_update",
+                "canvas_data",
                 "canvas_await",
                 "create_task",
                 "list_tasks"
@@ -502,21 +394,6 @@ mod tests {
         for tool in tools {
             assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
             assert_eq!(tool["inputSchema"]["type"], "object");
-        }
-        // The catalog's component props reach the agent through this description, which is the
-        // only place they are documented now that the skill no longer ships the catalog.
-        let update = tools.iter().find(|t| t["name"] == "canvas_update").unwrap();
-        assert!(update["description"]
-            .as_str()
-            .unwrap()
-            .contains("DataTable"));
-        // A renamed placeholder would otherwise ship the literal `{components}` to the agent,
-        // which reads as an instruction it cannot follow rather than as a missing section.
-        for tool in tools {
-            assert!(!tool["description"]
-                .as_str()
-                .unwrap()
-                .contains("{components}"));
         }
     }
 
@@ -528,26 +405,6 @@ mod tests {
         )
         .await;
         assert_eq!(responses[0]["error"]["code"], -32601);
-    }
-
-    #[tokio::test]
-    async fn invalid_canvas_arguments_fail_without_reaching_the_gateway() {
-        // Port 1 has no listener: reaching it would surface as -32603 rather than a tool error.
-        let responses = exchange(
-            test_shim(1),
-            &[json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": { "name": "canvas_create", "arguments": { "surfaceId": "s1" } }
-            })],
-        )
-        .await;
-        assert_eq!(responses[0]["result"]["isError"], true);
-        assert!(responses[0]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("title"));
     }
 
     #[tokio::test]
@@ -581,29 +438,18 @@ mod tests {
     }
 
     #[test]
-    fn canvas_payload_only_adds_the_catalog_id_to_create() {
-        let created = canvas_payload("canvas_create", &json!({"surfaceId": "s", "title": "T"}));
-        assert_eq!(created["catalogId"], CATALOG_ID);
-        assert!(validate_canvas_message(&created).is_ok());
-
-        let data = canvas_payload(
-            "canvas_data",
-            &json!({"surfaceId": "s", "path": "/rows", "value": []}),
+    fn canvas_payload_names_the_session_update_and_carries_the_arguments() {
+        let created = canvas_payload(
+            "canvas_create",
+            &json!({"surfaceId": "s", "title": "T", "html": "<p id='x'>hi</p>"}),
         );
-        assert!(data.get("catalogId").is_none());
-        assert!(validate_canvas_message(&data).is_ok());
-    }
-
-    #[test]
-    fn html_srcdoc_quoting_is_rejected() {
-        let payload = canvas_payload(
+        assert_eq!(created["sessionUpdate"], "canvas_create");
+        assert_eq!(created["html"], "<p id='x'>hi</p>");
+        // The quoting rule the old fence encoding needed does not apply to MCP arguments.
+        let quoted = canvas_payload(
             "canvas_update",
-            &json!({
-                "surfaceId": "s",
-                "components": [{"id": "h", "component": "Html", "srcdoc": "<p class=\"x\"></p>"}]
-            }),
+            &json!({"surfaceId": "s", "html": "<p class=\"x\">\\o/</p>"}),
         );
-        let errors = validate_canvas_message(&payload).unwrap_err();
-        assert!(errors.iter().any(|e| e.contains("double-quote")));
+        assert_eq!(quoted["html"], "<p class=\"x\">\\o/</p>");
     }
 }

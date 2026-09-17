@@ -114,6 +114,10 @@ pub struct AcpState {
     /// takes the sender out.
     pub pending_host_tools:
         tokio::sync::Mutex<HashMap<(i32, String), tokio::sync::oneshot::Sender<serde_json::Value>>>,
+    /// What a canvas frame failed to load or run, keyed by `(log_id, surface_id)`. The agent never
+    /// sees its own surface, so a blocked asset or a thrown exception is invisible to it until the
+    /// next canvas tool call on that surface drains this and carries it back.
+    pub canvas_errors: tokio::sync::Mutex<HashMap<(i32, String), Vec<String>>>,
 }
 
 pub struct PtyState {
@@ -177,6 +181,7 @@ impl AppState {
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
                 pending_host_tools: tokio::sync::Mutex::new(HashMap::new()),
+                canvas_errors: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

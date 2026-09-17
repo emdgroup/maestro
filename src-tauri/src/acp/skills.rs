@@ -11,10 +11,6 @@ const BUNDLED: &[(&str, &str)] = &[
         include_str!("../../assets/skills/maestro-output/SKILL.md"),
     ),
     (
-        "maestro-output/references/canvas.md",
-        include_str!("../../assets/skills/maestro-output/references/canvas.md"),
-    ),
-    (
         "maestro-custom-agents/SKILL.md",
         include_str!("../../assets/skills/maestro-custom-agents/SKILL.md"),
     ),

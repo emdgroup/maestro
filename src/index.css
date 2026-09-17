@@ -78,11 +78,13 @@
   --border: oklch(86% 0.01 70);
   --input: oklch(99% 0.018 70);
   --ring: var(--accent);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Fallback until ThemeProvider paints these from the live accent hue — same construction,
+     around the default hue of 250, so a chart is never grey while settings load. */
+  --chart-1: oklch(50% 0.15 250);
+  --chart-2: oklch(56% 0.14 40);
+  --chart-3: oklch(45% 0.16 190);
+  --chart-4: oklch(60% 0.13 320);
+  --chart-5: oklch(40% 0.15 120);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -134,11 +136,12 @@
   --border: oklch(45% 0.01 250);
   --input: oklch(32% 0.01 250);
   --ring: var(--accent);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Dark fallback, same construction as the light one — see the note there. */
+  --chart-1: oklch(75% 0.15 250);
+  --chart-2: oklch(81% 0.14 40);
+  --chart-3: oklch(70% 0.16 190);
+  --chart-4: oklch(85% 0.13 320);
+  --chart-5: oklch(65% 0.15 120);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

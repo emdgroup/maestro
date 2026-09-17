@@ -3,11 +3,13 @@ import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
-import {
-  CanvasRenderer,
-  CanvasEventContext,
-} from "@/components/execution/activity/canvas/CanvasRenderer";
-import type { CanvasEventKind } from "@/components/execution/activity/canvas/CanvasRenderer";
+import { CanvasHtml } from "@/components/execution/activity/canvas/CanvasHtml";
+import type {
+  CanvasFrameHandle,
+  FrameNode,
+} from "@/components/execution/activity/canvas/CanvasHtml";
+import { CanvasEventContext } from "@/components/execution/activity/canvas/canvas-events";
+import type { CanvasEventKind } from "@/components/execution/activity/canvas/canvas-events";
 import {
   awaitForSurface,
   awaitToFollow,
@@ -63,7 +65,7 @@ interface SidePanelContentProps {
   latestCanvasSurfaceId: string | null;
   /** Open `canvas_await` calls — what makes a surface's controls answer rather than just record. */
   pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string, event: unknown) => void;
+  onCanvasEvent: (requestId: string | null, event: unknown) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   workspacePath: string;
@@ -202,6 +204,26 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
+  // The surface renders inside a sandboxed frame, so its geometry only exists where the frame
+  // reports it. Held here because the annotation layer reads it and the frame produces it.
+  const canvasFrameRef = useRef<CanvasFrameHandle | null>(null);
+  const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
+  // Paging the carousel invalidates the geometry: the nodes describe the surface that was on
+  // screen, and keeping them would resolve this one's notes against another one's rects. Latched
+  // during render so the overlay never paints a frame of the wrong outlines.
+  const activeSurfaceKey = activeSurface?.surfaceId ?? null;
+  const [measuredSurfaceKey, setMeasuredSurfaceKey] = useState(activeSurfaceKey);
+  if (measuredSurfaceKey !== activeSurfaceKey) {
+    setMeasuredSurfaceKey(activeSurfaceKey);
+    setFrameNodes([]);
+  }
+
+  // The agent never sees its rendered surface, so a blocked asset or a thrown exception is only
+  // visible here. Parked in the backend and carried back on its next canvas call.
+  const reportCanvasError = (surfaceId: string, error: { message: string; source: string }) => {
+    void commands.canvasReportError(sessionKey, surfaceId, `${error.source}: ${error.message}`);
+  };
+
   // What the user has entered, per surface. Per surface because they can page between canvases
   // freely: one shared bag would send an answer typed on one form as if it belonged to another,
   // and component ids repeat across surfaces precisely because they are the obvious names.
@@ -224,10 +246,11 @@ export function SidePanelContent({
       record: (componentId: string, value: unknown) => {
         values()[componentId] = value;
       },
-      // Present on every surface, firing only on one: a surface with no wait against it keeps
-      // its controls usable and its entries, and simply has nowhere to send them yet.
+      // Fires on every surface, whether or not a wait covers it. With a wait it answers that
+      // wait; without one — a restored session, where the agent is idle and cannot have called
+      // `canvas_await` — the panel turns it into a prompt instead, which is the only way a
+      // surface that outlived its turn can reach the agent again.
       emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => {
-        if (!activeRequestId) return;
         onCanvasEvent(activeRequestId, {
           surfaceId: activeSurfaceId,
           componentId,
@@ -383,6 +406,8 @@ export function SidePanelContent({
                 <CanvasAnnotationLayer
                   sessionKey={sessionKey}
                   surface={activeSurface}
+                  frameNodes={frameNodes}
+                  frame={canvasFrameRef}
                   onSend={onSendAnnotations}
                   sendDisabled={isProcessing}
                   canCapture={canSendImages}
@@ -404,6 +429,16 @@ export function SidePanelContent({
                               {canvasIdx + 1} / {canvasEntries.length}
                             </span>
                           )}
+                          {/* Every origin this surface may reach through `maestro.fetch`, named
+                              where the user can see it. No canvas talks to anything else. */}
+                          {activeSurface.sources.map((source) => (
+                            <span
+                              key={source}
+                              className="ml-1.5 rounded-sm bg-muted px-1 py-px text-[10px] font-mono"
+                            >
+                              {source.replace(/^https?:\/\//, "")}
+                            </span>
+                          ))}
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{activeSurface.title}</TooltipContent>
                       </Tooltip>
@@ -492,7 +527,7 @@ export function SidePanelContent({
                     ),
                   }}
                 >
-                  {activeSurface.components.length === 0 ? (
+                  {activeSurface.html.trim().length === 0 ? (
                     <div className="flex flex-col gap-3 p-1">
                       <Skeleton className="h-6 w-3/4" />
                       <Skeleton className="h-32 w-full" />
@@ -501,7 +536,12 @@ export function SidePanelContent({
                     </div>
                   ) : (
                     <CanvasEventContext.Provider value={canvasEventSink}>
-                      <CanvasRenderer surface={activeSurface} />
+                      <CanvasHtml
+                        surface={activeSurface}
+                        handleRef={canvasFrameRef}
+                        onNodes={setFrameNodes}
+                        onError={(error) => reportCanvasError(activeSurface.surfaceId, error)}
+                      />
                     </CanvasEventContext.Provider>
                   )}
                 </CanvasAnnotationLayer>

@@ -29,6 +29,9 @@ pub(crate) async fn handle(app_state: Arc<AppState>, log_id: i32, call: HostTool
         "create_task" => create_task(&app_state, log_id, &call.arguments).await,
         "list_tasks" => list_tasks(&app_state, log_id, &call.arguments).await,
         "canvas_await" => canvas_await(&app_state, log_id, &call).await,
+        "canvas_create" | "canvas_update" | "canvas_data" => {
+            canvas_ack(&app_state, log_id, &call.arguments).await
+        }
         other => Err(format!("unknown Maestro tool: {other}")),
     };
 
@@ -217,6 +220,32 @@ async fn list_tasks(
 /// a minute and tells the agent to call again. Controls answer nothing outside this window, so a
 /// click landing between two polls is impossible rather than silently dropped.
 ///
+/// Answer a canvas tool, carrying back whatever that surface's frame has failed at since the last
+/// one.
+///
+/// The surface itself was already drawn by the server, which owns the session-update channel; this
+/// arm exists so the agent hears about a blocked asset, an offline CDN or a thrown exception. They
+/// arrive on the *next* call by necessity — the frame has not rendered this one yet.
+async fn canvas_ack(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let Some(surface_id) = arguments.get("surfaceId").and_then(Value::as_str) else {
+        return Ok(json!({ "ok": true }));
+    };
+    let drained = app_state
+        .acp
+        .canvas_errors
+        .lock()
+        .await
+        .remove(&(log_id, surface_id.to_string()));
+    match drained {
+        Some(errors) if !errors.is_empty() => Ok(json!({ "ok": true, "errors": errors })),
+        _ => Ok(json!({ "ok": true })),
+    }
+}
+
 /// `surfaceId` is optional. Omitted, the wait takes whichever canvas the user acts on — they can
 /// page between all of them, so tying the wait to one is a guess about where they will look. The
 /// event names the surface either way.

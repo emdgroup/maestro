@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SquareDashedMousePointer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -7,18 +7,22 @@ import { PendingCommentBlock } from "@/components/execution/diff/PendingCommentB
 import { useAnnotationStore, useSessionAnnotations } from "@/store/annotationStore";
 import type { Annotation, CanvasAnnotation } from "@/store/annotationStore";
 import type { CanvasSurface } from "@/components/execution/activity/types";
+import type {
+  CanvasFrameHandle,
+  FrameNode,
+} from "@/components/execution/activity/canvas/CanvasHtml";
 import { AnnotationBar } from "./AnnotationBar";
 import { AnnotationComposer } from "./AnnotationComposer";
 import { CaptureChip } from "./CaptureChip";
-import { describeCanvasSubtree } from "./build-annotation-prompt";
+import { MAX_SUBTREE_CHARS } from "./build-annotation-prompt";
 import { captureRegion, type CanvasCapture } from "./canvas-capture";
 import {
   boundingRect,
   isStale,
   pickAt,
   pickInRect,
-  readNodes,
   resolveRects,
+  toCanvasNodes,
   uncapturableKinds,
   type CanvasNode,
 } from "./canvas-anchor";
@@ -36,6 +40,10 @@ interface CanvasAnnotationLayerProps {
   sessionKey: number;
   /** The surface on screen. Notes are keyed to it, and the bar can span several. */
   surface: CanvasSurface;
+  /** The frame's last report of its own elements. The only source of canvas geometry. */
+  frameNodes: FrameNode[];
+  /** Controls on the rendered frame: annotation mode, subtree reads, region captures. */
+  frame: React.RefObject<CanvasFrameHandle | null>;
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
   /** The agent takes image blocks. Without it a drag still selects, it just does not capture. */
@@ -71,6 +79,8 @@ type Pending = {
 export function CanvasAnnotationLayer({
   sessionKey,
   surface,
+  frameNodes,
+  frame,
   onSend,
   sendDisabled,
   canCapture,
@@ -88,9 +98,10 @@ export function CanvasAnnotationLayer({
   const [active, setActive] = useState(false);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   // Origin of the overlay frame in viewport coordinates. Captured in the same pass as
-  // `nodes` — both are viewport measurements and must come from one layout read, or a
-  // frame mid-scroll would offset fresh rects against a stale origin.
+  // the iframe's own origin — both are viewport measurements and must come from one layout
+  // read, or a frame mid-scroll would offset fresh rects against a stale origin.
   const [frameOrigin, setFrameOrigin] = useState({ left: 0, top: 0 });
+  const [contentOrigin, setContentOrigin] = useState({ left: 0, top: 0 });
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<DOMRect | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -104,16 +115,15 @@ export function CanvasAnnotationLayer({
 
   const mine = all.filter((a) => a.surfaceId === surface.surfaceId);
 
-  // Geometry is re-read rather than stored, for the reason `plan-anchor` rebuilds its Ranges: the
-  // agent rewrites the surface mid-session and anything measured before that is a lie.
+  // The frame's rects are relative to its own viewport, so where the iframe sits is the other half
+  // of every measurement. Re-read on scroll and resize for the reason `plan-anchor` rebuilds its
+  // Ranges: anything stored before the surface moved is a lie.
   const refresh = useCallback(() => {
-    if (contentRef.current) {
-      const measured = readNodes(contentRef.current);
-      // Only adopt a measurement that found something. A collapsed side panel lays its
-      // contents out at zero size, which `readNodes` skips entirely — adopting that empty
-      // result discarded the geometry every saved note is resolved against, so re-opening
-      // the panel left them all reading as stale.
-      if (measured.length > 0) setNodes(measured);
+    const origin = frame.current?.origin();
+    if (origin) {
+      setContentOrigin((prev) =>
+        prev.left === origin.left && prev.top === origin.top ? prev : origin,
+      );
     }
     const box = frameRef.current?.getBoundingClientRect();
     if (box) {
@@ -121,10 +131,9 @@ export function CanvasAnnotationLayer({
         prev.left === box.left && prev.top === box.top ? prev : { left: box.left, top: box.top },
       );
     }
-  }, []);
+  }, [frame]);
 
   useEffect(() => {
-    if (!active) return;
     refresh();
     const scroller = scrollRef.current;
     const observer = new ResizeObserver(refresh);
@@ -134,7 +143,23 @@ export function CanvasAnnotationLayer({
       observer.disconnect();
       scroller?.removeEventListener("scroll", refresh);
     };
-  }, [active, refresh, children, surface]);
+  }, [refresh, children, surface]);
+
+  // Only adopt a report that found something. A collapsed side panel lays its contents out at
+  // zero size and the frame reports nothing — adopting that discards the geometry every saved
+  // note is resolved against, and re-opening the panel would leave them all reading as stale.
+  const measured = useMemo(
+    () => toCanvasNodes(frameNodes, contentOrigin),
+    [frameNodes, contentOrigin],
+  );
+  if (measured.length > 0 && nodes !== measured) setNodes(measured);
+
+  // The reporter runs while the mode is on, and while this surface carries notes — those have to
+  // be resolvable from the bar without entering the mode first.
+  const reporting = active || mine.length > 0;
+  useEffect(() => {
+    frame.current?.setAnnotating(reporting);
+  }, [reporting, frame, surface]);
 
   // Leaving the mode drops everything transient with it — a highlight with no way to act on it is
   // just a decoration the user cannot dismiss. Adjusted during render rather than from an effect,
@@ -211,13 +236,16 @@ export function CanvasAnnotationLayer({
       if (!capture) return;
       // Taken now rather than at send: by then the agent may have redrawn the surface, and a
       // screenshot of something the user never saw is worse than none.
-      const content = contentRef.current;
-      if (!content) return;
-      void captureRegion(content, rect).then((shot) =>
+      void captureRegion(frame.current, {
+        left: rect.left - contentOrigin.left,
+        top: rect.top - contentOrigin.top,
+        width: rect.width,
+        height: rect.height,
+      }).then((shot) =>
         setPending((prev) => (prev ? { ...prev, shot, capture: shot ? "done" : "failed" } : prev)),
       );
     },
-    [place],
+    [place, frame, contentOrigin],
   );
 
   const openAnnotation = useCallback(
@@ -348,27 +376,33 @@ export function CanvasAnnotationLayer({
   }, [pressing, finishPress]);
 
   const submit = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!pending) return;
       const kinds = uncapturableKinds(nodes, pending.ids);
       const caveat =
         pending.shot && kinds.length > 0
           ? `\n\n(The screenshot cannot show the ${kinds.join(" and ")} in this region.)`
           : "";
+      // Read now rather than at send, for the reason the capture is: the agent rewrites the
+      // surface as it works, and a note has to keep describing what the user was looking at.
+      const subtree =
+        pending.ids.length > 0
+          ? await frame.current?.describe(pending.ids, MAX_SUBTREE_CHARS)
+          : undefined;
       addAnnotation(sessionKey, {
         id: crypto.randomUUID(),
         kind: "canvas",
         surfaceId: surface.surfaceId,
         surfaceTitle: surface.title,
         componentIds: pending.ids,
-        subtree: describeCanvasSubtree(surface, pending.ids),
+        subtree: subtree || undefined,
         shotPath: pending.shot?.path,
         shotDataUrl: pending.shot?.dataUrl,
         text: text + caveat,
       });
       setPending(null);
     },
-    [pending, nodes, addAnnotation, sessionKey, surface],
+    [pending, nodes, addAnnotation, sessionKey, surface, frame],
   );
 
   /** Reveal one note: page to its surface if needed, scroll to it, and open its bubble. */
@@ -384,24 +418,31 @@ export function CanvasAnnotationLayer({
         return;
       }
       const scroller = scrollRef.current;
-      const frame = frameRef.current;
-      if (!scroller || !frame) return;
-      // Measure here rather than trusting `nodes`: the observer that keeps it warm only
-      // runs in annotation mode, so revealing a note from the list with the mode off — or
-      // straight after re-opening the panel — would otherwise find nothing to scroll to.
-      const measured = nodes.length > 0 ? nodes : readNodes(contentRef.current ?? frame);
-      const bounds = boundingRect(resolveRects(measured, a.componentIds));
+      const frameEl = frameRef.current;
+      if (!scroller || !frameEl) return;
+      const bounds = boundingRect(resolveRects(nodes, a.componentIds));
       if (!bounds) return;
-      const top = bounds.top - frame.getBoundingClientRect().top;
+      const top = bounds.top - frameEl.getBoundingClientRect().top;
       scroller.scrollTo({ top: Math.max(0, top - SCROLL_MARGIN), behavior: "smooth" });
-      // Re-measure after the scroll so the bubble lands on the components, not where they were.
+      // Re-read the origin after the scroll so the bubble lands on the elements, not where they
+      // were. The frame's own rects do not change — it does not scroll — so only this moved.
       requestAnimationFrame(() => {
-        const settled = readNodes(contentRef.current ?? frame);
+        const origin = frame.current?.origin() ?? contentOrigin;
+        const settled = toCanvasNodes(frameNodes, origin);
         setNodes(settled);
         openAnnotation(a, resolveRects(settled, a.componentIds));
       });
     },
-    [all, surface.surfaceId, nodes, onRequestSurface, openAnnotation],
+    [
+      all,
+      surface.surfaceId,
+      nodes,
+      frameNodes,
+      frame,
+      contentOrigin,
+      onRequestSurface,
+      openAnnotation,
+    ],
   );
 
   // The surface asked for has arrived — finish the reveal that paging interrupted. Waits for the

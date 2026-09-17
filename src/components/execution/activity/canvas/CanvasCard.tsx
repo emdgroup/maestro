@@ -5,7 +5,7 @@ import { Button } from "@/ui/button";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { CanvasItem, CanvasSurface } from "../types";
-import { CanvasRenderer } from "./CanvasRenderer";
+import { CanvasHtml } from "./CanvasHtml";
 
 interface Props {
   item: CanvasItem;
@@ -14,11 +14,11 @@ interface Props {
 
 export function CanvasCard({ surface }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [showJson, setShowJson] = useState(false);
+  const [showHtml, setShowHtml] = useState(false);
 
   if (!surface) return null;
 
-  const isEmpty = surface.components.length === 0;
+  const isEmpty = surface.html.trim().length === 0;
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -34,11 +34,6 @@ export function CanvasCard({ surface }: Props) {
           <div className="flex-1 min-w-0">
             <span className="text-sm font-medium truncate block">{surface.title}</span>
             {isEmpty && <span className="text-xs text-muted-foreground">Loading…</span>}
-            {!isEmpty && (
-              <span className="text-xs text-muted-foreground">
-                {surface.components.length} component{surface.components.length !== 1 ? "s" : ""}
-              </span>
-            )}
           </div>
         </button>
         <div className="flex items-center gap-1 shrink-0">
@@ -50,13 +45,13 @@ export function CanvasCard({ surface }: Props) {
                     variant="ghost"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    onClick={() => setShowJson((v) => !v)}
+                    onClick={() => setShowHtml((v) => !v)}
                   />
                 }
               >
                 <Code className="w-3.5 h-3.5" />
               </TooltipTrigger>
-              <TooltipContent>{showJson ? "Show preview" : "Show JSON"}</TooltipContent>
+              <TooltipContent>{showHtml ? "Show preview" : "Show HTML"}</TooltipContent>
             </Tooltip>
           )}
           <button
@@ -81,16 +76,12 @@ export function CanvasCard({ surface }: Props) {
             <div className="border-t">
               <ScrollArea className="max-h-[600px]">
                 <div className="p-4">
-                  {showJson ? (
+                  {showHtml ? (
                     <pre className="text-xs font-mono bg-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all">
-                      {JSON.stringify(
-                        { components: surface.components, data: surface.data },
-                        null,
-                        2,
-                      )}
+                      {surface.html}
                     </pre>
                   ) : (
-                    <CanvasRenderer surface={surface} />
+                    <CanvasHtml surface={surface} />
                   )}
                 </div>
               </ScrollArea>

@@ -1729,9 +1729,15 @@ async renameAcpSession(projectId: number, agentId: string, acpSessionId: string,
     else return { status: "error", error: e  as any };
 }
 },
-async saveCanvasSurface(projectId: number, logId: number, surfaceId: string, surface: JsonValue) : Promise<Result<null, string>> {
+/**
+ * Write one surface as a self-contained `.html` file.
+ * 
+ * `html` is the agent's own document plus the `<title>` and `<meta>` tags the frontend folds in;
+ * Maestro's injected head is deliberately absent, so the file opens in any browser.
+ */
+async saveCanvasSurface(projectId: number, logId: number, surfaceId: string, html: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { projectId, logId, surfaceId, surface }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { projectId, logId, surfaceId, html }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1745,9 +1751,31 @@ async deleteCanvasSurface(projectId: number, logId: number, surfaceId: string) :
     else return { status: "error", error: e  as any };
 }
 },
-async loadSavedCanvases(projectId: number, logId: number) : Promise<Result<JsonValue[], string>> {
+async loadSavedCanvases(projectId: number, logId: number) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("load_saved_canvases", { projectId, logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Note something a canvas frame could not load or run, for the agent's next canvas tool call.
+ * 
+ * Capped per surface: a document whose script throws on every animation frame would otherwise
+ * grow this without bound, and the oldest few failures are the ones that explain the rest.
+ */
+async canvasReportError(logId: number, surfaceId: string, message: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("canvas_report_error", { logId, surfaceId, message }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async canvasFetch(url: string, method: string | null, headers: Partial<{ [key in string]: string }> | null, body: string | null) : Promise<Result<CanvasFetchResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("canvas_fetch", { url, method, headers, body }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2746,6 +2774,17 @@ checks: PullRequestCheckInfo[] }
  * every provider and giving it a `specta` derive would put forge internals in the bindings.
  */
 export type BranchPullRequestState = "Open" | "Merged" | "Closed"
+/**
+ * One request a canvas asked the host to make on its behalf.
+ * 
+ * The surface's frame has an opaque origin, so an endpoint without `Access-Control-Allow-Origin`
+ * cannot be read from inside it at all. This is the way round that, and it is deliberately narrow:
+ * the *host* machine performs the request, which for an SSH, WSL or container session is not the
+ * machine the agent is on. The declared `sources` allow-list is enforced by the caller, which is
+ * the only thing holding the surface it belongs to; what is enforced here is everything that does
+ * not depend on that list.
+ */
+export type CanvasFetchResponse = { status: number; headers: Partial<{ [key in string]: string }>; body: string }
 /**
  * How far up the capability ladder this project reaches.
  * 

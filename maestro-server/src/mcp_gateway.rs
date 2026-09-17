@@ -153,15 +153,6 @@ fn fail(call: &HostToolCall, message: &str) -> HostToolResult {
     }
 }
 
-fn ok(call: &HostToolCall, result: serde_json::Value) -> HostToolResult {
-    HostToolResult {
-        session_id: call.session_id.clone(),
-        request_id: call.request_id.clone(),
-        result,
-        error: None,
-    }
-}
-
 /// Answer a call from a shim, or park it until the host answers.
 pub(crate) async fn handle_host_tool_call(
     call: HostToolCall,
@@ -177,22 +168,23 @@ pub(crate) async fn handle_host_tool_call(
         return;
     }
 
+    // A canvas call is a session update — the server owns that channel, so the surface is drawn
+    // from here. It is *also* forwarded to the host below, whose answer carries back whatever the
+    // frame has failed at; the agent never sees its own surface and this is the only way it hears.
     if crate::mcp_stdio::is_canvas_tool(&call.name) {
         let payload = crate::mcp_stdio::canvas_payload(&call.name, &call.arguments);
-        let sent = send_response(
+        if let Err(e) = send_response(
             stdout,
             &MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
                 session_id: call.session_id.clone(),
                 payload,
             })),
         )
-        .await;
-        let result = match sent {
-            Ok(()) => ok(&call, serde_json::json!({ "ok": true })),
-            Err(e) => fail(&call, &format!("cannot reach Maestro: {e}")),
-        };
-        let _ = reply_tx.send(result);
-        return;
+        .await
+        {
+            let _ = reply_tx.send(fail(&call, &format!("cannot reach Maestro: {e}")));
+            return;
+        }
     }
 
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);

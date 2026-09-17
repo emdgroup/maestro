@@ -175,6 +175,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::save_canvas_surface,
         crate::ipc::delete_canvas_surface,
         crate::ipc::load_saved_canvases,
+        crate::ipc::canvas_report_error,
+        crate::ipc::canvas_fetch,
         crate::ipc::sftp_upload,
         crate::ipc::sftp_download,
         crate::ipc::list_wsl_distros,

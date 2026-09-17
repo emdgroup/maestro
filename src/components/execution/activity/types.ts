@@ -111,24 +111,24 @@ export type ConfigOptionUpdatePayload = {
   configOptions: ConfigOption[];
 };
 
-export type CanvasComponent = {
-  id: string;
-  component: string;
-  children?: string[];
-  [prop: string]: unknown;
-};
+export type CanvasTheme = "maestro" | "tailwind" | "none";
 
 export type CanvasCreatePayload = {
   sessionUpdate: "canvas_create";
   surfaceId: string;
-  catalogId: string;
   title: string;
+  html: string;
+  theme?: CanvasTheme;
+  /** Origins `maestro.fetch` may reach from this surface. */
+  sources?: string[];
 };
 
 export type CanvasUpdatePayload = {
   sessionUpdate: "canvas_update";
   surfaceId: string;
-  components: CanvasComponent[];
+  html: string;
+  /** Element id to replace in the live frame. Without it the whole document is replaced. */
+  target?: string;
 };
 
 export type CanvasDataPayload = {
@@ -207,10 +207,23 @@ export type ElicitationSummaryItem = {
 
 export type CanvasSurface = {
   surfaceId: string;
-  catalogId: string;
   title: string;
-  components: CanvasComponent[];
+  html: string;
+  theme: CanvasTheme;
+  sources: string[];
   data: Record<string, unknown>;
+  /**
+   * When `canvas_create` opened this surface, and the only thing that can put a restored session's
+   * canvases back in the order the agent drew them: they are reloaded from a directory listing,
+   * whose order is the filesystem's, not ours. Saved with the file and sorted on restore.
+   */
+  createdAt: number;
+  /**
+   * The last targeted `canvas_update`, pushed into the live frame and never merged into `html`.
+   * A reload — restoring a saved canvas, or a full replace — shows the authored document instead,
+   * the same trade the surface already makes with anything the user typed into it.
+   */
+  patch?: { seq: number; target: string; html: string };
 };
 
 export type CanvasItem = {

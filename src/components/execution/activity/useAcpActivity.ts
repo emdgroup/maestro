@@ -13,9 +13,25 @@ import type { ActivityAction } from "./activityReducer";
 export { activityReducer } from "./activityReducer";
 export type { ActivityAction } from "./activityReducer";
 
+/**
+ * Sessions already asked to listen to their canvases, so that a remount does not ask twice.
+ *
+ * Module-level rather than a ref, because a ref is exactly what a remount discards — and the
+ * panel remounts on every session switch, and on every hot reload during development. Cleared when
+ * a session ends, so reopening one legitimately asks again.
+ */
+const canvasTriggered = new Set<number>();
+
 export function useAcpActivity(
   logId: number | null,
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
+  /**
+   * Called with the ids of surfaces restored from disk. A restored canvas has live controls and
+   * nothing listening — the agent is idle and cannot open a `canvas_await` outside a turn — so the
+   * panel answers this by prompting it once. A ref for the same reason as `sessionUpdateRef`: the
+   * listener effect below must not re-subscribe because a callback identity changed.
+   */
+  canvasesRestoredRef?: React.RefObject<((surfaceIds: string[]) => void) | undefined>,
 ): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
   const selectedProject = useSelectedProject();
@@ -49,10 +65,14 @@ export function useAcpActivity(
     if (projectId == null || logId == null) return;
     loadSavedCanvases(projectId, logId)
       .then((surfaces) => {
-        if (surfaces.length > 0) dispatch({ type: "restore_canvases", surfaces });
+        if (surfaces.length === 0) return;
+        dispatch({ type: "restore_canvases", surfaces });
+        if (canvasTriggered.has(logId)) return;
+        canvasTriggered.add(logId);
+        canvasesRestoredRef?.current?.(surfaces.map((surface) => surface.surfaceId));
       })
       .catch(console.error);
-  }, [projectId, logId]);
+  }, [projectId, logId, canvasesRestoredRef]);
 
   useEffect(() => {
     if (logId == null) return;
@@ -64,6 +84,9 @@ export function useAcpActivity(
         enqueue({ type: "event", payload, raw }, raw);
       }),
       listen<null>(`acp://session-ended/${logId}`, () => {
+        // Reopening this session will restore its canvases into an agent that is listening to
+        // nothing again, so the ask is owed a second time.
+        canvasTriggered.delete(logId);
         enqueue({ type: "session_ended" });
       }),
       listen<string>(`acp://turn-ended/${logId}`, (e) => {

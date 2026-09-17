@@ -1,12 +1,10 @@
 import { api } from "@/lib/tauri-utils";
 import { commentAnchor } from "@/components/execution/diff/comment-anchor";
 import type { Annotation } from "@/store/annotationStore";
-import type { CanvasComponent, CanvasSurface } from "@/components/execution/activity/types";
 import type { JsonValue } from "@/types/bindings";
 
 /** Past this the subtree stops being context and starts being the whole prompt. */
-const MAX_SUBTREE_CHARS = 2000;
-const MAX_SUBTREE_COMPONENTS = 40;
+export const MAX_SUBTREE_CHARS = 2000;
 
 interface BuildOptions {
   /** Session the notes belong to, needed to turn a capture into an attachment. */
@@ -70,9 +68,9 @@ export async function buildAnnotationBlocks(
     let section = `## Canvas “${a.surfaceTitle}” (surface \`${a.surfaceId}\`)\n\n`;
     section +=
       a.componentIds.length > 0
-        ? `Components: ${a.componentIds.map((id) => `\`${id}\``).join(", ")}\n\n`
-        : "About the surface as a whole, not one component.\n\n";
-    if (a.subtree) section += `\`\`\`json\n${a.subtree}\n\`\`\`\n\n`;
+        ? `Elements: ${a.componentIds.map((id) => `\`${id}\``).join(", ")}\n\n`
+        : "About the surface as a whole, not one element.\n\n";
+    if (a.subtree) section += `\`\`\`html\n${a.subtree}\n\`\`\`\n\n`;
     section += `${a.text}\n`;
 
     const shot = await imageBlock(a.shotPath, options);
@@ -106,57 +104,4 @@ async function imageBlock(
   } catch {
     return null;
   }
-}
-
-/**
- * Snapshot the annotated components as JSON, to be stored on the note when it is written.
- *
- * Taken at creation for the same reason the capture is: the agent rewrites the surface as it
- * works, and a note has to keep describing what the user was looking at. Data bindings are left
- * as the `/pointer` strings the agent authored — those are more useful to it than the resolved
- * values, and they are what it will edit.
- */
-export function describeCanvasSubtree(surface: CanvasSurface, ids: string[]): string | undefined {
-  if (ids.length === 0) return undefined;
-
-  const byId = new Map(surface.components.map((c) => [c.id, c]));
-  const collected: CanvasComponent[] = [];
-  const seen = new Set<string>();
-  const queue = [...ids];
-
-  while (queue.length > 0 && collected.length < MAX_SUBTREE_COMPONENTS) {
-    const id = queue.shift();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const component = byId.get(id);
-    if (!component) continue;
-    collected.push(trimInlineData(component));
-    if (component.children) queue.push(...component.children);
-  }
-
-  if (collected.length === 0) return undefined;
-
-  const json = JSON.stringify(collected, null, 2);
-  return json.length > MAX_SUBTREE_CHARS
-    ? `${json.slice(0, MAX_SUBTREE_CHARS)}\n… truncated`
-    : json;
-}
-
-/**
- * Guard against a component that inlined its rows instead of pushing them through `canvas_data`.
- * One `DataTable` like that is larger than every other note in the prompt put together.
- */
-function trimInlineData(component: CanvasComponent): CanvasComponent {
-  const trimmed: CanvasComponent = { id: component.id, component: component.component };
-  for (const [key, value] of Object.entries(component)) {
-    if (key === "id" || key === "component") continue;
-    // `children` is structure, not data: a shortened list would read as the surface having fewer
-    // children than it does.
-    if (key !== "children" && Array.isArray(value) && value.length > 5) {
-      trimmed[key] = [...value.slice(0, 5), `… ${value.length - 5} more`];
-    } else {
-      trimmed[key] = value;
-    }
-  }
-  return trimmed;
 }
