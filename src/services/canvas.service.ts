@@ -3,13 +3,14 @@ import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
+import { surfaceFromHtml, surfaceToHtml } from "@/components/execution/activity/canvas/canvas-file";
 
 export async function saveCanvasSurface(
   projectId: number,
   logId: number,
   surface: CanvasSurface,
 ): Promise<void> {
-  await api.saveCanvasSurface(projectId, logId, surface.surfaceId, surface as never);
+  await api.saveCanvasSurface(projectId, logId, surface.surfaceId, surfaceToHtml(surface));
 }
 
 export function useSaveCanvasSurfaceMutation() {
@@ -48,5 +49,6 @@ export async function loadSavedCanvases(
   projectId: number,
   logId: number,
 ): Promise<CanvasSurface[]> {
-  return api.loadSavedCanvases(projectId, logId) as Promise<CanvasSurface[]>;
+  const files = await api.loadSavedCanvases(projectId, logId);
+  return files.map(surfaceFromHtml).filter((s): s is CanvasSurface => s !== null);
 }

@@ -95,7 +95,7 @@ The side panel is a tab strip. Some tabs open themselves when the agent produces
 
 <img src="docs/assets/side-panel-files.webp" alt="The Files tab of the side panel with store.ts open in the editor next to the agent stream" width="960" />
 
-The canvas is where an agent shows work instead of describing it. Maestro installs the `maestro-output` skill on every connection, and with it an agent renders tables, charts, dashboards and real UI controls in your theme. Click a component or drag a rectangle over it to attach a note, and the note goes back to the agent anchored to what you pointed at.
+The canvas is where an agent shows work instead of describing it. A surface is an HTML document the agent writes, rendered in a sandboxed frame with Maestro's own theme — tables, charts, dashboards and real UI controls, in your colours. Click an element or drag a rectangle over it to attach a note, and the note goes back to the agent anchored to what you pointed at. Saved canvases are plain `.html` files that open in any browser.
 
 <img src="docs/assets/side-panel-canvas.webp" alt="The Canvas tab showing stat cards, a bar chart and a table the agent rendered for the repository" width="960" />
 

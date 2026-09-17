@@ -505,9 +505,10 @@ function processEvent(
     case "canvas_create": {
       const surface: CanvasSurface = {
         surfaceId: payload.surfaceId,
-        catalogId: payload.catalogId,
         title: payload.title,
-        components: [],
+        html: payload.html,
+        theme: payload.theme ?? "maestro",
+        sources: payload.sources ?? [],
         data: {},
       };
       const newCanvasMap = new Map(newState.canvasMap);
@@ -524,14 +525,19 @@ function processEvent(
       const newCanvasMap = new Map(newState.canvasMap);
       const existing = newCanvasMap.get(payload.surfaceId);
       if (existing) {
-        const componentMap = new Map(existing.components.map((c) => [c.id, c]));
-        for (const c of payload.components) {
-          componentMap.set(c.id, c);
-        }
-        newCanvasMap.set(payload.surfaceId, {
-          ...existing,
-          components: [...componentMap.values()],
-        });
+        newCanvasMap.set(
+          payload.surfaceId,
+          payload.target
+            ? {
+                ...existing,
+                patch: {
+                  seq: (existing.patch?.seq ?? 0) + 1,
+                  target: payload.target,
+                  html: payload.html,
+                },
+              }
+            : { ...existing, html: payload.html, patch: undefined },
+        );
       }
       return { ...newState, canvasMap: newCanvasMap };
     }

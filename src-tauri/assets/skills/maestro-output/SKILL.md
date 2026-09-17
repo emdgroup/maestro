@@ -28,10 +28,10 @@ file it stays in context, so a later turn in the same session needs no second in
 
 | What the answer is                                                     | Reach for                        |
 | ---------------------------------------------------------------------- | -------------------------------- |
-| Rows the user will filter or page through, or read next to a chart     | canvas `DataTable`               |
-| Numbers that move — over time, across categories, as proportions       | canvas `Chart`                   |
-| A mix: totals, a table and a trend answering one question together     | canvas dashboard (`Card`, `Row`) |
-| A mock of UI — a control, dialog, form, a screen                       | canvas (real `Button`, `Modal`)  |
+| Rows the user will filter or page through, or read next to a chart     | canvas (an HTML table)           |
+| Numbers that move — over time, across categories, as proportions       | canvas (inline SVG, or a chart)  |
+| A mix: totals, a table and a trend answering one question together     | canvas dashboard                 |
+| A mock of UI — a control, dialog, form, a screen                       | canvas (real buttons and inputs) |
 | Static tabular content — a comparison, an inventory, an attribute grid | GFM table (sortable columns)     |
 | Control flow, architecture, state machines, sequences of calls         | ` ```mermaid `                   |
 | A formula, complexity bound, derivation                                | `$...$` / `$$...$$` (KaTeX)      |
@@ -40,14 +40,14 @@ file it stays in context, so a later turn in the same session needs no second in
 | A molecule                                                             | ` ```smiles `                    |
 | Code                                                                   | fenced block with a language tag |
 
-### `DataTable` or a GFM table?
+### A canvas table or a GFM table?
 
 This is the pair that gets confused, and row count is not what separates them — a 40-row GFM
-table is fine, and a 3-row `DataTable` can be right.
+table is fine, and a 3-row canvas table can be right.
 
-Reach for canvas `DataTable` when the table is **interactive or live**: the user will filter it,
-page through it, or read it alongside a `Chart` on the same surface that shares its data, or rows
-keep arriving while tool calls run. That interaction is the whole reason the component exists.
+Put the table on a canvas when it is **interactive or live**: the user will filter it, page
+through it, or read it alongside a chart on the same surface that shares its data, or rows keep
+arriving while tool calls run. That interaction is the whole reason to spend the tool calls.
 
 Otherwise use a GFM table. It already sorts on column click, it costs no tool calls, and it stays
 readable when the user copies the answer out of Maestro.
@@ -65,29 +65,31 @@ usually there; it can be missing if Maestro could not open its tool gateway. If 
 a GFM table, Mermaid or SVG instead of a canvas and carry on — every other format in this file
 still renders, because they are the markdown renderer rather than tool calls.
 
-Canvas surfaces are built by calling tools on the **`maestro` MCP server**: `canvas_create`, then
-`canvas_data`, then `canvas_update`, in that order. They are live — update components in place as
-more data arrives, so a dashboard fills in while other tool calls are still running.
+A canvas surface is **an HTML document you write** — HTML, CSS and JavaScript — rendered in a
+sandboxed frame beside the conversation. Call `canvas_create` with the document, then
+`canvas_update` to change it and `canvas_data` to push values into it. They are live: a dashboard
+fills in while other tool calls are still running.
 
-They are not only for data. The catalog has real controls — `Button`, `Modal`, `TextField`,
-`CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput` — rendered as Maestro's own components in
-the user's theme, so a mock of a dialog or a form is the working thing rather than a picture of
-it. Never draw UI as ASCII art or box-drawing characters.
+They are not only for data. Real `<button>`s and `<input>`s work, so a mock of a dialog or a form
+is the working thing rather than a picture of it. Never draw UI as ASCII art or box-drawing
+characters.
 
 To collect an actual answer from the user, render the form and then call **`canvas_await`**. That
-is what makes the controls clickable; it returns what the user did, with every field on the
-surface attached, so one form is one round trip.
+is what makes the controls answer; it returns what the user did, with every field on the surface
+attached, so one form is one round trip.
 
-Read `references/canvas.md` before your first surface in a session — the data pipeline, component
-selection, chart formats, and the failure patterns that leave a surface stuck on skeletons. Each
-tool's own description carries the component props it accepts.
+The tool descriptions carry the rest — themes, ids, assets, charts. Four things bite:
 
-Two things bite before you get there:
-
-- **Data before component.** A component pointing at a path with nothing behind it shows a
-  skeleton forever. `canvas_data` first, `canvas_update` second.
-- **Read the tool's error.** A malformed surface comes back as a tool error naming what is wrong;
-  fix it and call again. That is your only signal, because you never see the rendered result.
+- **Give every meaningful element an `id`.** Controls with an id answer `canvas_await`; elements
+  with an id are what the user can annotate and point you at.
+- **`theme: "maestro"`** (the default) gives you Tailwind with Maestro's own tokens, so
+  `bg-card`, `text-muted-foreground` and `rounded-lg` look like the rest of the app. Use
+  `theme: "none"` when mocking up someone else's product.
+- **Assets are `https:` URLs or `data:` URIs.** Relative paths do not resolve. Icons are inline
+  `<svg>`.
+- **Read the tool's result.** Anything the frame failed to load or run comes back on your next
+  canvas call for that surface. That is your only signal, because you never see the rendered
+  result.
 
 Keep all of that out of your reply: never narrate a canvas tool call, never announce that you are
 about to render or that it worked, never paste the arguments or a tool error. The user sees a

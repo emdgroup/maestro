@@ -3,6 +3,10 @@ import { render, screen, fireEvent, createEvent, waitFor } from "@testing-librar
 import { CanvasAnnotationLayer } from "./CanvasAnnotationLayer";
 import { useAnnotationStore, type CanvasAnnotation } from "@/store/annotationStore";
 import type { CanvasSurface } from "@/components/execution/activity/types";
+import type {
+  CanvasFrameHandle,
+  FrameNode,
+} from "@/components/execution/activity/canvas/CanvasHtml";
 
 const captureRegion = vi.fn();
 vi.mock("./canvas-capture", () => ({
@@ -13,43 +17,54 @@ const SESSION = 42;
 
 const surface: CanvasSurface = {
   surfaceId: "s-1",
-  catalogId: "maestro-canvas/v1",
   title: "Latency review",
-  components: [
-    { id: "card", component: "Card", children: ["value"] },
-    { id: "value", component: "Text", text: "42 ms" },
-    { id: "chart", component: "Chart", type: "bar" },
-  ],
+  html: "<div id='card'><span id='value'>42 ms</span></div><svg id='chart'></svg>",
+  theme: "maestro",
+  sources: [],
   data: {},
 };
 
 /**
- * happy-dom lays nothing out, so every rect is zero and the hit-testing rules would have nothing
- * to work with. The geometry each element should claim is declared on it instead, which is enough
- * for `readNodes` — the one function that reads layout — to produce a real node list.
+ * What the frame reports about itself. The layer never reads the surface's DOM — it cannot, the
+ * document is sandboxed — so this list is the whole of its geometry, and a test needs no layout.
  */
-const RECTS: Record<string, [number, number, number, number]> = {
-  card: [0, 0, 200, 100],
-  value: [10, 40, 100, 40],
-  chart: [0, 120, 200, 100],
-};
-
-function Canvas() {
-  return (
-    <div>
-      <span data-canvas-id="card" data-canvas-kind="Card" style={{ display: "contents" }}>
-        <div data-rect="card">
-          <span data-canvas-id="value" data-canvas-kind="Text" style={{ display: "contents" }}>
-            <div data-rect="value">42 ms</div>
-          </span>
-        </div>
-      </span>
-      <span data-canvas-id="chart" data-canvas-kind="Chart" style={{ display: "contents" }}>
-        <div data-rect="chart" />
-      </span>
-    </div>
-  );
+function node(
+  id: string,
+  tag: string,
+  parentId: string | null,
+  [left, top, width, height]: [number, number, number, number],
+  extra: Partial<FrameNode> = {},
+): FrameNode {
+  return {
+    id,
+    parentId,
+    tag,
+    className: "",
+    role: "",
+    ownText: true,
+    childCount: 0,
+    rect: { left, top, width, height },
+    ...extra,
+  };
 }
+
+const FRAME_NODES: FrameNode[] = [
+  node("card", "div", null, [0, 0, 200, 100], {
+    className: "card",
+    ownText: false,
+    childCount: 1,
+  }),
+  node("value", "span", "card", [10, 40, 100, 40]),
+  node("chart", "svg", null, [0, 120, 200, 100]),
+];
+
+const frameHandle: CanvasFrameHandle = {
+  setAnnotating: vi.fn(),
+  describe: vi.fn(async (ids: string[]) => ids.map((id) => `<div id="${id}"></div>`).join("\n")),
+  capture: vi.fn(async () => null),
+  loadScript: vi.fn(),
+  origin: () => ({ left: 0, top: 0 }),
+};
 
 let originalGetRect: typeof Element.prototype.getBoundingClientRect;
 
@@ -57,22 +72,18 @@ beforeEach(() => {
   captureRegion.mockReset();
   useAnnotationStore.getState().clearSession(SESSION);
   originalGetRect = Element.prototype.getBoundingClientRect;
+  // The layer's own chrome — the scroller, the frame, the overlay — stands in for the visible
+  // pane, which the marquee is clamped to, so zeroes would pin every drag to a point.
   Element.prototype.getBoundingClientRect = function () {
-    const key = (this as HTMLElement).dataset?.rect;
-    const spec = key ? RECTS[key] : undefined;
-    // Anything unmarked is the layer's own chrome — the scroller, the frame, the overlay. They
-    // stand in for the visible pane, which the marquee is clamped to, so zeroes would pin every
-    // drag to a point.
-    const [left, top, width, height] = spec ?? [0, 0, 1000, 1000];
     return {
-      left,
-      top,
-      width,
-      height,
-      right: left + width,
-      bottom: top + height,
-      x: left,
-      y: top,
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 1000,
+      right: 1000,
+      bottom: 1000,
+      x: 0,
+      y: 0,
       toJSON: () => ({}),
     } as DOMRect;
   };
@@ -87,12 +98,14 @@ function renderLayer(props: Partial<React.ComponentProps<typeof CanvasAnnotation
     <CanvasAnnotationLayer
       sessionKey={SESSION}
       surface={surface}
+      frameNodes={FRAME_NODES}
+      frame={{ current: frameHandle }}
       onSend={vi.fn()}
       onRequestSurface={vi.fn()}
       header={{ title: <span>Latency review</span>, actions: null }}
       {...props}
     >
-      <Canvas />
+      <div>the frame goes here</div>
     </CanvasAnnotationLayer>,
   );
 }
@@ -113,6 +126,14 @@ describe("CanvasAnnotationLayer", () => {
   it("does not intercept the canvas until the mode is entered", () => {
     const { container } = renderLayer();
     expect(container.querySelector(".cursor-crosshair")).toBeNull();
+  });
+
+  it("turns the frame's reporter on with the mode", async () => {
+    const setAnnotating = frameHandle.setAnnotating as ReturnType<typeof vi.fn>;
+    setAnnotating.mockClear();
+    const { container } = renderLayer();
+    enterMode(container);
+    await waitFor(() => expect(setAnnotating).toHaveBeenCalledWith(true));
   });
 
   it("anchors a click to the card rather than the text inside it", async () => {
@@ -163,7 +184,7 @@ describe("CanvasAnnotationLayer", () => {
     expect(captureRegion).not.toHaveBeenCalled();
   });
 
-  it("marquees every component the drag touches and captures the region", async () => {
+  it("marquees every element the drag touches and captures the region", async () => {
     captureRegion.mockResolvedValue({ path: "/tmp/shot.png", dataUrl: "data:image/png;base64,x" });
     const { container } = renderLayer({ canCapture: true });
     const overlay = enterMode(container);
@@ -253,6 +274,26 @@ describe("CanvasAnnotationLayer", () => {
     expect(annotations()[0].componentIds.length).toBeGreaterThan(0);
   });
 
+  it("keeps the note when the capture fails", async () => {
+    captureRegion.mockResolvedValue(null);
+    const { container } = renderLayer({ canCapture: true });
+    const overlay = enterMode(container);
+
+    fireEvent.mouseDown(overlay, { clientX: 5, clientY: 5, button: 0 });
+    fireEvent.mouseMove(overlay, { clientX: 150, clientY: 200 });
+    fireEvent.mouseUp(overlay, { clientX: 150, clientY: 200, button: 0 });
+
+    fireEvent.change(await screen.findByPlaceholderText(/leave a comment/i), {
+      target: { value: "still worth saying" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(annotations()).toHaveLength(1));
+    expect(annotations()[0].kind === "canvas" && annotations()[0].text).toContain(
+      "still worth saying",
+    );
+  });
+
   it("says so when the region could not be captured", async () => {
     captureRegion.mockResolvedValue(null);
     const { container } = renderLayer({ canCapture: true });
@@ -271,7 +312,7 @@ describe("CanvasAnnotationLayer", () => {
     const overlay = enterMode(container);
 
     fireEvent.mouseDown(overlay, { clientX: 5, clientY: 5, button: 0 });
-    // The pointer crosses the panel edge — the movement someone makes to reach a component sitting
+    // The pointer crosses the panel edge — the movement someone makes to reach an element sitting
     // against it — and the gesture is released out there, never over the overlay again.
     fireEvent.mouseLeave(overlay);
     fireEvent.mouseMove(window, { clientX: 150, clientY: 200 });
@@ -296,26 +337,6 @@ describe("CanvasAnnotationLayer", () => {
     expect(down.defaultPrevented).toBe(true);
   });
 
-  it("keeps the note when the capture fails", async () => {
-    captureRegion.mockResolvedValue(null);
-    const { container } = renderLayer({ canCapture: true });
-    const overlay = enterMode(container);
-
-    fireEvent.mouseDown(overlay, { clientX: 5, clientY: 5, button: 0 });
-    fireEvent.mouseMove(overlay, { clientX: 150, clientY: 200 });
-    fireEvent.mouseUp(overlay, { clientX: 150, clientY: 200, button: 0 });
-
-    fireEvent.change(await screen.findByPlaceholderText(/leave a comment/i), {
-      target: { value: "still worth saying" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
-    await waitFor(() => expect(annotations()).toHaveLength(1));
-    expect(annotations()[0].kind === "canvas" && annotations()[0].text).toContain(
-      "still worth saying",
-    );
-  });
-
   it("does not capture at all when the agent takes no images", async () => {
     const { container } = renderLayer({ canCapture: false });
     const overlay = enterMode(container);
@@ -328,7 +349,7 @@ describe("CanvasAnnotationLayer", () => {
     expect(captureRegion).not.toHaveBeenCalled();
   });
 
-  it("snapshots the annotated components as JSON", async () => {
+  it("stores the annotated elements' own HTML, read back from the frame", async () => {
     const { container } = renderLayer();
     const overlay = enterMode(container);
 
@@ -340,8 +361,9 @@ describe("CanvasAnnotationLayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => expect(annotations()).toHaveLength(1));
-    const [note] = annotations();
-    expect(note.kind === "canvas" && note.subtree).toContain('"id": "value"');
+    expect(annotations()[0].kind === "canvas" && annotations()[0].subtree).toContain(
+      '<div id="card">',
+    );
   });
 
   it("leaves the mode on Escape once nothing is open", async () => {

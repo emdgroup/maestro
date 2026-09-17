@@ -361,10 +361,9 @@ agent ──stdio (MCP JSON-RPC)──▶ maestro-server mcp   (the shim, one pe
 Three files:
 
 - `maestro-server/src/mcp_stdio.rs` — the shim (`maestro mcp`). Serves the tool surface from
-  `assets/mcp-tools.json`, validates canvas arguments against `assets/canvas-catalog.json` before
-  any round trip, and forwards everything else to the gateway.
-- `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Answers the
-  canvas tools itself by emitting a `SessionUpdate`, and parks everything else in
+  `assets/mcp-tools.json` and forwards every call to the gateway.
+- `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
+  surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
 - `src-tauri/src/acp/host_tools.rs` — the host end: `create_task`, `list_tasks`, `canvas_await`.
 
@@ -375,18 +374,23 @@ any local process can connect, so the token is what decides whether a call is an
 id collision follows. If the gateway fails to bind, nothing is injected and the session runs
 without canvas and task tools.
 
-| Tool                                              | Answered by                                  | Result                   |
-| ------------------------------------------------- | -------------------------------------------- | ------------------------ |
-| `canvas_create` / `canvas_data` / `canvas_update` | the gateway, as a session update             | `{ok}`                   |
-| `canvas_await`                                    | the host, after the user acts on the surface | `{event}` or `{timeout}` |
-| `create_task` / `list_tasks`                      | the host, against the database               | the task, or the list    |
+| Tool                                              | Answered by                                    | Result                        |
+| ------------------------------------------------- | ---------------------------------------------- | ----------------------------- |
+| `canvas_create` / `canvas_update` / `canvas_data` | drawn by the gateway, acknowledged by the host | `{ok}`, plus frame `{errors}` |
+| `canvas_await`                                    | the host, after the user acts on the surface   | `{event}` or `{timeout}`      |
+| `create_task` / `list_tasks`                      | the host, against the database                 | the task, or the list         |
+
+A canvas call goes both ways on purpose: the gateway emits the session update because it owns that
+channel, and the _same_ call is then forwarded to `host_tools::canvas_ack`, whose answer carries
+back whatever that surface's frame has failed to load or run since the last call. The agent never
+sees its own surface, so this is the only way a blocked asset or a thrown exception reaches it.
+They arrive on the **next** call by necessity — the frame has not rendered this one yet.
 
 **Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
 `host_tools::handle`. The entry's `description` is the _only_ documentation the agent gets — it
 carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
-rather than in Rust for the same reason `registry.json` and `canvas-catalog.json` do. A
-`{components}` placeholder in a description is replaced at load with the catalog's component
-props; `build_tools` does nothing else.
+rather than in Rust for the same reason `registry.json` does. `build_tools` loads it and does
+nothing else.
 
 A tool added to the manifest without a matching arm in `host_tools::handle` is worse than a
 missing tool: the agent is told it exists, calls it, and gets `unknown Maestro tool` after a full
@@ -395,6 +399,27 @@ round trip.
 `canvas_await` is a poll, not an open wait: MCP clients enforce tool timeouts, so it promises at
 most 60 seconds and the description tells the agent to call again. The canvas controls are live
 only while one is pending, which is why a click cannot be silently dropped between polls.
+
+### Canvas surfaces are HTML
+
+A surface is an HTML document the agent writes, rendered in
+`<iframe srcdoc sandbox="allow-scripts">` — opaque origin, no `allow-same-origin`, ever. That is
+the whole trust boundary: `withGlobalTauri` puts `invoke` on the app origin with no per-command
+permissions, so agent script on that origin could call all ~187 commands.
+
+`src/components/execution/activity/canvas/canvas-frame.ts` builds everything Maestro prepends —
+`<base href="about:blank">` (a srcdoc frame inherits the _parent's_ base URL, so without this
+`<img src="logo.png">` fetches from the app's own origin), a frame-level CSP naming schemes and
+never `'self'`, the theme tokens, the Tailwind browser build, and the bridge. None of it is saved
+to disk; `canvas-file.ts` writes the agent's document alone.
+
+**`script-src ... https:` in `tauri.conf.json` is load-bearing.** `about:srcdoc` inherits the app
+CSP, so that line is what lets a canvas load a chart library from a CDN. Tightening it turns off
+every canvas chart. The port-wildcarded localhost and `wss:` entries in `connect-src` are there so
+a surface can read a live local endpoint.
+
+Saved canvases are `.maestro/canvases/<acp_session_id>/<surfaceId>.html`, self-contained and
+openable in a browser. `.json` files from before this change are left alone, not migrated.
 
 ### Bundled ACP agent registry
 
