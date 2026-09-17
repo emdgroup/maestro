@@ -66,6 +66,22 @@ function applyUiScale(scale: string | null | undefined): void {
     .catch(() => {});
 }
 
+/**
+ * Categorical chart series, fanned out around the accent hue.
+ *
+ * The offsets are deliberately uneven and wide enough to stay apart once a colourblind viewer
+ * collapses part of the wheel; the lightness step gives a second channel, so two adjacent series
+ * differ in more than hue alone. Index 0 is the accent itself, so a single-series chart matches
+ * the rest of the UI.
+ */
+const CHART_SERIES: Array<{ hue: number; lightness: number; chroma: number }> = [
+  { hue: 0, lightness: 0, chroma: 0.15 },
+  { hue: 150, lightness: 0.06, chroma: 0.14 },
+  { hue: -60, lightness: -0.05, chroma: 0.16 },
+  { hue: 70, lightness: 0.1, chroma: 0.13 },
+  { hue: -130, lightness: -0.1, chroma: 0.15 },
+];
+
 function applyAccentHue(hue: number): void {
   const isDark = document.documentElement.classList.contains("dark");
   const lightness = isDark ? 0.75 : 0.5;
@@ -78,6 +94,19 @@ function applyAccentHue(hue: number): void {
     "--accent-foreground",
     isDark ? "oklch(25% 0.01 250)" : "oklch(100% 0 0)",
   );
+  // Published so anything deriving its own shades — a canvas surface, say — can reach the hue
+  // rather than re-deriving it from the resolved `--accent` colour.
+  document.documentElement.style.setProperty("--accent-hue", String(hue));
+
+  // Charts follow the accent. The static values in `index.css` are the pre-paint fallback and are
+  // built the same way around the default hue, so nothing is grey at any point.
+  CHART_SERIES.forEach((series, index) => {
+    const l = Math.min(0.92, Math.max(0.35, lightness + series.lightness));
+    document.documentElement.style.setProperty(
+      `--chart-${index + 1}`,
+      `oklch(${(l * 100).toFixed(1)}% ${series.chroma} ${(hue + series.hue + 360) % 360})`,
+    );
+  });
 }
 
 async function loadSystemAccentHue(): Promise<number> {

@@ -131,6 +131,7 @@ describe("saved canvas files", () => {
     theme: "tailwind" as const,
     sources: ["https://api.example.com"],
     data: { "/rows": [1, 2, 3] },
+    createdAt: 1758000000000,
   };
 
   it("round trips through a self-contained .html file", () => {

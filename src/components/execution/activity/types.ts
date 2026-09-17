@@ -213,6 +213,12 @@ export type CanvasSurface = {
   sources: string[];
   data: Record<string, unknown>;
   /**
+   * When `canvas_create` opened this surface, and the only thing that can put a restored session's
+   * canvases back in the order the agent drew them: they are reloaded from a directory listing,
+   * whose order is the filesystem's, not ours. Saved with the file and sorted on restore.
+   */
+  createdAt: number;
+  /**
    * The last targeted `canvas_update`, pushed into the live frame and never merged into `html`.
    * A reload — restoring a saved canvas, or a full replace — shows the authored document instead,
    * the same trade the surface already makes with anything the user typed into it.

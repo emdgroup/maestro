@@ -278,39 +278,73 @@ export const BRIDGE = `
     return html.length > limit ? html.slice(0, limit) + "\\n… truncated" : html;
   }
 
-  function loadScript(code) {
-    if (window.__mtShot) return;
-    var script = document.createElement("script");
-    script.textContent = code;
-    document.head.appendChild(script);
-    window.__mtShot = true;
+  var PIXEL_RATIO = 2;
+
+  /**
+   * Rasterise a region of this document to a PNG data URL.
+   *
+   * Hand-rolled rather than delegated to a screenshot library: every one of those resolves the
+   * document it is rasterising by walking up to the top window, and from an opaque origin that
+   * throws \`Blocked a frame with origin "null" from accessing a cross-origin frame\` before any
+   * pixels are drawn. The technique underneath is the same one they use — clone the node, inline
+   * its computed styles so the clone owes nothing to this document's stylesheets, wrap it in a
+   * \`foreignObject\` and let the SVG image decoder lay it out.
+   *
+   * Known limits, both inherited from that technique rather than from this implementation: a
+   * cross-origin \`https:\` image inside the region taints the canvas and \`toDataURL\` throws, and
+   * a web font that has not been inlined falls back to a system face in the picture.
+   */
+  function capture(id, rect) {
+    function fail() { post({ type: "canvas-capture-result", id: id, dataUrl: null }); }
+    if (rect.width < 1 || rect.height < 1) { fail(); return; }
+    try {
+      var source = document.body;
+      var clone = source.cloneNode(true);
+      inlineStyles(source, clone);
+
+      var box = source.getBoundingClientRect();
+      var w = Math.ceil(box.width), h = Math.ceil(box.height);
+      var serialised = new XMLSerializer().serializeToString(clone);
+      var svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+        '<foreignObject width="100%" height="100%">' +
+        '<div xmlns="http://www.w3.org/1999/xhtml">' + serialised + "</div>" +
+        "</foreignObject></svg>";
+
+      var image = new Image();
+      image.onload = function () {
+        try {
+          var out = document.createElement("canvas");
+          out.width = Math.round(rect.width * PIXEL_RATIO);
+          out.height = Math.round(rect.height * PIXEL_RATIO);
+          var ctx = out.getContext("2d");
+          if (!ctx) { fail(); return; }
+          ctx.drawImage(
+            image,
+            Math.round(rect.left - box.left), Math.round(rect.top - box.top),
+            Math.round(rect.width), Math.round(rect.height),
+            0, 0, out.width, out.height
+          );
+          post({ type: "canvas-capture-result", id: id, dataUrl: out.toDataURL("image/png") });
+        } catch (e) { fail(); }
+      };
+      image.onerror = fail;
+      image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    } catch (e) { fail(); }
   }
 
-  var PIXEL_RATIO = 2;
-  function capture(id, rect) {
-    var library = window.modernScreenshot;
-    function fail() { post({ type: "canvas-capture-result", id: id, dataUrl: null }); }
-    if (!library || rect.width < 1 || rect.height < 1) { fail(); return; }
-    library
-      .domToCanvas(document.body, { scale: PIXEL_RATIO, backgroundColor: null })
-      .then(function (full) {
-        var box = document.body.getBoundingClientRect();
-        var cropped = document.createElement("canvas");
-        cropped.width = Math.round(rect.width * PIXEL_RATIO);
-        cropped.height = Math.round(rect.height * PIXEL_RATIO);
-        var ctx = cropped.getContext("2d");
-        if (!ctx) { fail(); return; }
-        ctx.drawImage(
-          full,
-          Math.round((rect.left - box.left) * PIXEL_RATIO),
-          Math.round((rect.top - box.top) * PIXEL_RATIO),
-          cropped.width,
-          cropped.height,
-          0, 0, cropped.width, cropped.height
-        );
-        post({ type: "canvas-capture-result", id: id, dataUrl: cropped.toDataURL("image/png") });
-      })
-      .catch(fail);
+  /** Copy every computed property onto the clone, depth-first, so it stands alone in the SVG. */
+  function inlineStyles(source, clone) {
+    var computed = getComputedStyle(source);
+    var css = "";
+    for (var i = 0; i < computed.length; i++) {
+      var property = computed[i];
+      css += property + ":" + computed.getPropertyValue(property) + ";";
+    }
+    clone.setAttribute("style", css);
+    for (var k = 0; k < source.children.length; k++) {
+      if (clone.children[k]) inlineStyles(source.children[k], clone.children[k]);
+    }
   }
 
   // --- host messages ------------------------------------------------------------------------
@@ -349,9 +383,6 @@ export const BRIDGE = `
           id: message.id,
           html: describe(message.ids || [], message.limit || 2000),
         });
-        break;
-      case "canvas-load-script":
-        loadScript(message.code);
         break;
       case "canvas-capture":
         capture(message.id, message.rect);

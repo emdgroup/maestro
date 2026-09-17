@@ -26,6 +26,7 @@ export function surfaceToHtml(surface: CanvasSurface): string {
     `<meta name="maestro-surface" content="${escapeAttribute(surface.surfaceId)}">`,
     `<meta name="maestro-theme" content="${surface.theme}">`,
     `<meta name="maestro-sources" content="${escapeAttribute(surface.sources.join(" "))}">`,
+    `<meta name="maestro-created" content="${surface.createdAt}">`,
     // `</` inside the JSON would end the script element early.
     `<script type="application/json" id="maestro-data">${JSON.stringify(surface.data).replace(
       /<\//g,
@@ -62,5 +63,8 @@ export function surfaceFromHtml(file: string): CanvasSurface | null {
     theme: THEMES.includes(theme) ? theme : "maestro",
     sources: meta("maestro-sources").split(/\s+/).filter(Boolean),
     data,
+    // Absent in files written before surfaces recorded their order. Zero rather than `Date.now()`
+    // so those sort together at the front instead of jumping ahead of everything drawn since.
+    createdAt: Number(meta("maestro-created")) || 0,
   };
 }

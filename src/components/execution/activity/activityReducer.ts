@@ -104,7 +104,12 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     case "restore_canvases": {
       const newCanvasMap = new Map(state.canvasMap);
       const newItems = [...state.items];
-      for (const surface of action.surfaces) {
+      // They arrive in directory order, which is the filesystem's and not the order the agent
+      // drew them in. The carousel and the transcript both read insertion order, so sorting here
+      // is what puts a restored session back the way the user left it. Files written before
+      // `createdAt` existed sort to the front, together, in whatever order they arrived.
+      const ordered = [...action.surfaces].sort((a, b) => a.createdAt - b.createdAt);
+      for (const surface of ordered) {
         if (!newCanvasMap.has(surface.surfaceId)) {
           newCanvasMap.set(surface.surfaceId, surface);
           newItems.push({ type: "canvas", item: { surfaceId: surface.surfaceId } });
@@ -510,6 +515,7 @@ function processEvent(
         theme: payload.theme ?? "maestro",
         sources: payload.sources ?? [],
         data: {},
+        createdAt: Date.now(),
       };
       const newCanvasMap = new Map(newState.canvasMap);
       newCanvasMap.set(payload.surfaceId, surface);

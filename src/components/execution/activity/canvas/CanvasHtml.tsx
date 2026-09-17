@@ -41,8 +41,6 @@ export interface CanvasFrameHandle {
     width: number;
     height: number;
   }) => Promise<string | null>;
-  /** Inject a library into the frame, once. */
-  loadScript: (code: string) => void;
   /** Where the frame sits in the host viewport, for turning frame rects into host ones. */
   origin: () => { left: number; top: number };
 }
@@ -250,7 +248,6 @@ export function CanvasHtml({ surface, className, handleRef, onNodes, onError }: 
       describe: (ids: string[], limit: number) =>
         ask<string>({ type: "canvas-describe", ids, limit }).then((html) => html ?? ""),
       capture: (rect) => ask<string | null>({ type: "canvas-capture", rect }),
-      loadScript: (code: string) => post({ type: "canvas-load-script", code }),
       origin: () => {
         const box = iframeRef.current?.getBoundingClientRect();
         return { left: box?.left ?? 0, top: box?.top ?? 0 };
@@ -276,7 +273,10 @@ export function CanvasHtml({ surface, className, handleRef, onNodes, onError }: 
       <iframe
         ref={iframeRef}
         srcDoc={srcdoc}
-        sandbox="allow-scripts"
+        // `allow-forms` does not let a form reach the network: the frame CSP sets
+        // `form-action 'none'` and the bridge calls `preventDefault()`. Without it Chromium never
+        // fires the `submit` event at all, which silently killed the bridge's `form[id]` wiring.
+        sandbox="allow-scripts allow-forms"
         title={surface.title}
         onLoad={() => requestAnimationFrame(() => setLoaded(true))}
         className={cn(

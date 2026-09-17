@@ -22,6 +22,7 @@ const surface: CanvasSurface = {
   theme: "maestro",
   sources: [],
   data: {},
+  createdAt: 0,
 };
 
 const sink: CanvasEventSink = { record: vi.fn(), emit: vi.fn() };
@@ -49,7 +50,12 @@ function fromFrame(iframe: HTMLIFrameElement, data: Record<string, unknown>) {
 describe("CanvasHtml", () => {
   it("renders the agent's document in a frame that can never reach the app", () => {
     const { iframe } = renderCanvas();
-    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+    // `allow-same-origin` is the one that must never appear: with it the agent's script would run
+    // on the app's origin, where `withGlobalTauri` exposes every IPC command. `allow-forms` is
+    // required for the opposite reason — without it Chromium never fires `submit`, so the
+    // bridge's `form[id]` wiring silently does nothing.
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
+    expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
     expect(iframe.getAttribute("srcdoc")).toContain("<div id='root'>hi</div>");
     // Relative URLs must not resolve against the app's own origin.
     expect(iframe.getAttribute("srcdoc")).toContain('<base href="about:blank">');

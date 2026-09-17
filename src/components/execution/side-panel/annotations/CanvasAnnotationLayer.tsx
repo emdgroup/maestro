@@ -161,15 +161,6 @@ export function CanvasAnnotationLayer({
     frame.current?.setAnnotating(reporting);
   }, [reporting, frame, surface]);
 
-  // The rasteriser is only injected once someone actually annotates, so a surface that is never
-  // annotated never pays for it.
-  useEffect(() => {
-    if (!active) return;
-    void import("modern-screenshot/dist/index.js?raw").then((module) =>
-      frame.current?.loadScript(module.default),
-    );
-  }, [active, frame, surface]);
-
   // Leaving the mode drops everything transient with it — a highlight with no way to act on it is
   // just a decoration the user cannot dismiss. Adjusted during render rather than from an effect,
   // so the overlay never paints a frame of stale highlights after the mode is switched off.

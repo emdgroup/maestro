@@ -22,6 +22,7 @@ const surface: CanvasSurface = {
   theme: "maestro",
   sources: [],
   data: {},
+  createdAt: 0,
 };
 
 /**
@@ -62,7 +63,6 @@ const frameHandle: CanvasFrameHandle = {
   setAnnotating: vi.fn(),
   describe: vi.fn(async (ids: string[]) => ids.map((id) => `<div id="${id}"></div>`).join("\n")),
   capture: vi.fn(async () => null),
-  loadScript: vi.fn(),
   origin: () => ({ left: 0, top: 0 }),
 };
 

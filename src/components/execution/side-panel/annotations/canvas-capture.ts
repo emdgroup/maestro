@@ -7,8 +7,10 @@
  * and every failure path here degrades to those.
  *
  * The rasterising happens *inside* the frame, because the surface is a sandboxed document this
- * side cannot read. `modern-screenshot` is pure DOM-to-canvas, so it runs in there as well as out
- * here; the frame is handed its source only when annotation mode is entered.
+ * side cannot read — and it is the frame's own code that does it. A screenshot library cannot:
+ * they all resolve the document they are rasterising by walking up to the top window, which from
+ * an opaque origin throws `Blocked a frame with origin "null" from accessing a cross-origin
+ * frame` before anything is drawn. See `capture` in `canvas-frame.ts`.
  */
 
 import { api } from "@/lib/tauri-utils";

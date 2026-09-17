@@ -836,6 +836,7 @@ describe("activityReducer — canvases and terminals", () => {
       theme: "maestro" as const,
       sources: [],
       data: {},
+      createdAt: 0,
     };
     let state = activityReducer(makeState(), { type: "restore_canvases", surfaces: [surface] });
     state = activityReducer(state, { type: "restore_canvases", surfaces: [surface] });
