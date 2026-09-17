@@ -290,25 +290,29 @@ export const BRIDGE = `
    * its computed styles so the clone owes nothing to this document's stylesheets, wrap it in a
    * \`foreignObject\` and let the SVG image decoder lay it out.
    *
-   * Known limits, both inherited from that technique rather than from this implementation: a
-   * cross-origin \`https:\` image inside the region taints the canvas and \`toDataURL\` throws, and
-   * a web font that has not been inlined falls back to a system face in the picture.
+   * Known limits, inherited from that technique rather than from this implementation: a
+   * cross-origin \`https:\` image inside the region taints the canvas and \`toDataURL\` throws,
+   * \`::before\` / \`::after\` content is absent, and a scrolled container is drawn from its top.
    */
-  function capture(id, rect) {
+  async function capture(id, rect) {
     function fail() { post({ type: "canvas-capture-result", id: id, dataUrl: null }); }
     if (rect.width < 1 || rect.height < 1) { fail(); return; }
     try {
       var source = document.body;
-      var clone = source.cloneNode(true);
-      inlineStyles(source, clone);
-
       var box = source.getBoundingClientRect();
+      var clone = source.cloneNode(true);
+      inlineStyles(source, clone, box);
+      inlineCanvases(source, clone);
+      var faces = await webFontCss();
+
       var w = Math.ceil(box.width), h = Math.ceil(box.height);
       var serialised = new XMLSerializer().serializeToString(clone);
       var svg =
         '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
         '<foreignObject width="100%" height="100%">' +
-        '<div xmlns="http://www.w3.org/1999/xhtml">' + serialised + "</div>" +
+        '<div xmlns="http://www.w3.org/1999/xhtml">' +
+        (faces ? '<style xmlns="http://www.w3.org/1999/xhtml">' + faces + "</style>" : "") +
+        serialised + "</div>" +
         "</foreignObject></svg>";
 
       var image = new Image();
@@ -333,18 +337,90 @@ export const BRIDGE = `
     } catch (e) { fail(); }
   }
 
-  /** Copy every computed property onto the clone, depth-first, so it stands alone in the SVG. */
-  function inlineStyles(source, clone) {
+  /**
+   * Copy every computed property onto the clone, depth-first, so it stands alone in the SVG, and
+   * carry across the two things a clone does not bring with it: what the user typed, which lives
+   * in a property rather than an attribute, and where a fixed element actually sits — inside the
+   * picture its containing block is the SVG root, not the frame's viewport.
+   */
+  function inlineStyles(source, clone, box) {
     var computed = getComputedStyle(source);
     var css = "";
     for (var i = 0; i < computed.length; i++) {
       var property = computed[i];
       css += property + ":" + computed.getPropertyValue(property) + ";";
     }
-    clone.setAttribute("style", css);
-    for (var k = 0; k < source.children.length; k++) {
-      if (clone.children[k]) inlineStyles(source.children[k], clone.children[k]);
+    if (computed.position === "fixed") {
+      var at = source.getBoundingClientRect();
+      css += "position:absolute;right:auto;bottom:auto;" +
+        "left:" + (at.left - box.left) + "px;top:" + (at.top - box.top) + "px;";
     }
+    clone.setAttribute("style", css);
+
+    var tag = source.tagName;
+    if (tag === "INPUT") {
+      clone.setAttribute("value", source.value);
+      if (source.checked) clone.setAttribute("checked", "");
+    } else if (tag === "TEXTAREA") {
+      clone.textContent = source.value;
+    } else if (tag === "OPTION" && source.selected) {
+      clone.setAttribute("selected", "");
+    }
+
+    for (var k = 0; k < source.children.length; k++) {
+      if (clone.children[k]) inlineStyles(source.children[k], clone.children[k], box);
+    }
+  }
+
+  /** A cloned \`<canvas>\` is an empty one — its bitmap only travels as an image. */
+  function inlineCanvases(source, clone) {
+    var live = source.querySelectorAll("canvas");
+    var copies = clone.querySelectorAll("canvas");
+    for (var i = 0; i < live.length && i < copies.length; i++) {
+      var picture = document.createElement("img");
+      try { picture.setAttribute("src", live[i].toDataURL()); } catch (e) { continue; }
+      picture.setAttribute("style", copies[i].getAttribute("style") || "");
+      copies[i].replaceWith(picture);
+    }
+  }
+
+  var webFonts = null;
+
+  /**
+   * The document's web fonts as \`@font-face\` rules with the files inlined.
+   *
+   * An SVG loaded through \`<img>\` is an isolated document that fetches nothing, so a font behind
+   * a URL is simply absent and every label is drawn in a system face — narrower or wider than the
+   * one on screen, which is what makes text spill out of the box that fits it in the live frame.
+   * Only Google Fonts stylesheets are followed, which is where the theme's Inter comes from, and
+   * only their Latin subset: the full family is fourteen files for one alphabet's worth of use.
+   * Fetched once per frame; any failure leaves the picture as it was, with a fallback face.
+   */
+  async function webFontCss() {
+    if (webFonts !== null) return webFonts;
+    webFonts = "";
+    try {
+      var links = document.querySelectorAll('link[rel="stylesheet"]');
+      var out = [];
+      for (var i = 0; i < links.length; i++) {
+        if (links[i].href.indexOf("https://fonts.googleapis.com/") !== 0) continue;
+        var sheet = await (await fetch(links[i].href)).text();
+        var blocks = sheet.match(/@font-face\\s*\\{[^}]*\\}/g) || [];
+        for (var b = 0; b < blocks.length; b++) {
+          if (blocks[b].indexOf("U+0000-00FF") < 0) continue;
+          var url = blocks[b].match(/url\\((https:[^)]+\\.woff2)\\)/);
+          if (!url) continue;
+          var bytes = new Uint8Array(await (await fetch(url[1])).arrayBuffer());
+          var binary = "";
+          for (var n = 0; n < bytes.length; n++) binary += String.fromCharCode(bytes[n]);
+          out.push(blocks[b].replace(url[1], "data:font/woff2;base64," + btoa(binary)));
+        }
+      }
+      webFonts = out.join("");
+    } catch (e) {
+      webFonts = "";
+    }
+    return webFonts;
   }
 
   // --- host messages ------------------------------------------------------------------------

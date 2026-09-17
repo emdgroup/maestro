@@ -16,8 +16,35 @@ export interface CanvasEvent {
 export interface CanvasEventSink {
   /** Note a field's current value without answering the agent — see `CanvasEvent.values`. */
   record: (componentId: string, value: unknown) => void;
-  /** No-op unless a `canvas_await` covers this surface, so a mock's controls simply go nowhere. */
+  /** Answers a `canvas_await` if one covers this surface, and otherwise starts a turn. */
   emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => void;
+}
+
+/**
+ * The same event written as a prompt, for when no `canvas_await` is open to receive it.
+ *
+ * Says what the tool result would have said, plus the one thing the agent has to be told rather
+ * than infer: that it is now back in a turn and can call `canvas_await` to stay in the exchange
+ * instead of answering this one event and stopping.
+ */
+export function describeCanvasEvent(event: CanvasEvent): string {
+  const lines = [
+    `The user interacted with canvas surface \`${event.surfaceId}\`.`,
+    "",
+    `- element: \`${event.componentId}\``,
+    `- kind: ${event.kind}`,
+  ];
+  if (event.value !== undefined) lines.push(`- value: ${JSON.stringify(event.value)}`);
+  if (Object.keys(event.values).length > 0) {
+    lines.push(`- fields: ${JSON.stringify(event.values)}`);
+  }
+  lines.push(
+    "",
+    "Act on it as you would on a `canvas_await` result — update the surface with `canvas_update`" +
+      " or `canvas_data` — then call `canvas_await` on that surface to keep receiving events" +
+      " without the user having to start a turn each time.",
+  );
+  return lines.join("\n");
 }
 
 /**

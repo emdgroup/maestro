@@ -36,6 +36,8 @@ import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
 import { buildAnnotationBlocks } from "@/components/execution/side-panel/annotations/build-annotation-prompt";
+import { describeCanvasEvent } from "@/components/execution/activity/canvas/canvas-events";
+import type { CanvasEvent } from "@/components/execution/activity/canvas/canvas-events";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
 import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
@@ -451,14 +453,27 @@ export function AgentActivityPanel({
     setSidePanelCollapsed(false);
   }, [awaitedRequestId, openTabKind, setSidePanelCollapsed]);
 
+  // A surface outlives the turn that drew it: restoring a session brings its canvases back while
+  // the agent is idle, and an idle agent cannot have a `canvas_await` open because it cannot call
+  // a tool outside a turn. So a control with no wait behind it sends its event as a prompt, which
+  // starts one — after which the agent answers and re-arms, and everything that follows takes the
+  // direct path above. Without this a restored canvas is a picture of a UI rather than a UI.
   const handleCanvasEvent = useCallback(
-    (requestId: string, event: unknown) => {
-      void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
-        toast.error("Could not send your answer to the agent");
-      });
-      setActivity(sessionKey, "thinking");
+    (requestId: string | null, event: unknown) => {
+      if (requestId) {
+        void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
+          toast.error("Could not send your answer to the agent");
+        });
+        setActivity(sessionKey, "thinking");
+        return;
+      }
+      if (isProcessing) {
+        toast.info("The agent is busy — try that again once it finishes");
+        return;
+      }
+      void handleSend(describeCanvasEvent(event as CanvasEvent));
     },
-    [sessionKey, setActivity],
+    [sessionKey, setActivity, isProcessing, handleSend],
   );
 
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);

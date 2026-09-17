@@ -65,7 +65,7 @@ interface SidePanelContentProps {
   latestCanvasSurfaceId: string | null;
   /** Open `canvas_await` calls — what makes a surface's controls answer rather than just record. */
   pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string, event: unknown) => void;
+  onCanvasEvent: (requestId: string | null, event: unknown) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   workspacePath: string;
@@ -246,10 +246,11 @@ export function SidePanelContent({
       record: (componentId: string, value: unknown) => {
         values()[componentId] = value;
       },
-      // Present on every surface, firing only on one: a surface with no wait against it keeps
-      // its controls usable and its entries, and simply has nowhere to send them yet.
+      // Fires on every surface, whether or not a wait covers it. With a wait it answers that
+      // wait; without one — a restored session, where the agent is idle and cannot have called
+      // `canvas_await` — the panel turns it into a prompt instead, which is the only way a
+      // surface that outlived its turn can reach the agent again.
       emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => {
-        if (!activeRequestId) return;
         onCanvasEvent(activeRequestId, {
           surfaceId: activeSurfaceId,
           componentId,
