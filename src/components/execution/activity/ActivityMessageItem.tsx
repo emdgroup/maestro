@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useContext } from "react";
+import { ListPlus } from "lucide-react";
 import type { MessageItem } from "./types";
 import { MarkdownBlock, getCompleteBlocksText } from "./MarkdownBlock";
 import { MessageActionBar } from "./MessageActionBar";
 import { splitAtSectionStarts } from "./markdown-stream-utils";
+import { CreateTaskFromTextContext } from "./task-draft";
+import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 
 export { getCompleteBlocksText } from "./MarkdownBlock";
 
@@ -32,7 +36,24 @@ export function TypingDots({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The selected text, when the selection lies inside `element`. `null` otherwise, including for a
+ * caret with nothing selected — "create a task from this message" is the sensible fallback, and a
+ * stray click inside the message must not turn into an empty draft.
+ */
+function selectionWithin(element: HTMLElement | null): string | null {
+  if (!element) return null;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!element.contains(range.commonAncestorContainer)) return null;
+  const text = selection.toString().trim();
+  return text.length > 0 ? text : null;
+}
+
 export function ActivityMessageItem({ message, showActions }: ActivityMessageItemProps) {
+  const createTaskFromText = useContext(CreateTaskFromTextContext);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const [recentlyStreamed, setRecentlyStreamed] = useState(false);
   // The poll below only runs while streaming, so a message that has finished is never
@@ -70,7 +91,7 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
 
   return (
     <div className="min-w-0 pb-1 group/message-block">
-      <div className="text-sm leading-relaxed text-foreground">
+      <div ref={bodyRef} className="text-sm leading-relaxed text-foreground">
         {message.isStreaming && isActivelyStreaming ? (
           <>
             {sections.map((section, i) => (
@@ -83,7 +104,30 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
         )}
       </div>
       {showActions && (!message.isStreaming || !isActivelyStreaming) && (
-        <MessageActionBar copyText={message.text} sentAt={message.sentAt} />
+        <MessageActionBar copyText={message.text} sentAt={message.sentAt}>
+          {createTaskFromText && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Create task from message"
+                    // Read at click time, not from state: the selection is browser-owned and
+                    // changes with no event this component subscribes to.
+                    onClick={() =>
+                      createTaskFromText(selectionWithin(bodyRef.current) ?? message.text)
+                    }
+                    className="text-muted-foreground/60 hover:text-foreground"
+                  />
+                }
+              >
+                <ListPlus className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Create task from selection</TooltipContent>
+            </Tooltip>
+          )}
+        </MessageActionBar>
       )}
     </div>
   );

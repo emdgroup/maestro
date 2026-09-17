@@ -13,7 +13,14 @@ pub fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
+    list_tasks_impl(&conn, project_id)
+}
 
+/// Every task of a project, newest first. Shared with the agent-facing `list_tasks` MCP tool.
+pub(crate) fn list_tasks_impl(
+    conn: &rusqlite::Connection,
+    project_id: i32,
+) -> Result<Vec<Task>, String> {
     let query = format!(
         "{} WHERE project_id = ? ORDER BY created_at DESC",
         TASK_SELECT
@@ -31,7 +38,7 @@ pub fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec
 
 // Arguments map one-to-one onto the inserted task columns.
 #[allow(clippy::too_many_arguments)]
-fn create_task_impl(
+pub(crate) fn create_task_impl(
     conn: &rusqlite::Connection,
     project_id: i32,
     title: String,

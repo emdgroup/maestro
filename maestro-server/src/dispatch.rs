@@ -34,6 +34,9 @@ fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheck
 ///
 /// Returns `true`  → the main loop should continue.
 /// Returns `false` → stdout is broken; the main loop should break.
+// Each argument is a distinct piece of the main loop's mutable state, borrowed separately
+// because the loop's other arms hold some of them at the same time.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_message(
     msg: MaestroRpcMessage,
     sessions: &mut SessionMap,
@@ -42,6 +45,7 @@ pub(crate) async fn dispatch_message(
     stdout: &Arc<Mutex<tokio::io::Stdout>>,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &AuthTerminals,
+    pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
 ) -> bool {
     // If stdout is broken we return false so the main loop breaks.
     macro_rules! send_or_return {
@@ -213,7 +217,14 @@ pub(crate) async fn dispatch_message(
             }
         }
 
+        MaestroRpcMessage::Request(ServerRequest::HostToolResult(result)) => {
+            if let Some((_, tx)) = pending_host_tools.remove(&result.request_id) {
+                let _ = tx.send(result);
+            }
+        }
+
         MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
+            crate::mcp_gateway::cancel_session(pending_host_tools, &req.session_id);
             if let Some(session) = sessions.remove(&req.session_id) {
                 let session_agent_id = session.agent_id.clone();
                 if session

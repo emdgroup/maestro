@@ -1,3 +1,4 @@
+import { createContext } from "react";
 import type { CanvasSurface } from "../types";
 import { CanvasColumn } from "./components/CanvasColumn";
 import { CanvasRow } from "./components/CanvasRow";
@@ -21,6 +22,31 @@ import { CanvasMarkdown } from "./components/CanvasMarkdown";
 import { CanvasAudioPlayer } from "./components/CanvasAudioPlayer";
 import { CanvasModal } from "./components/CanvasModal";
 import { CanvasHtml } from "./components/CanvasHtml";
+
+export type CanvasEventKind = "click" | "change" | "submit";
+
+export interface CanvasEvent {
+  /** Which canvas the user acted on — they can page between all of them. */
+  surfaceId: string;
+  componentId: string;
+  kind: CanvasEventKind;
+  value?: unknown;
+  /** Every field on that surface, so a multi-field form is one round trip for the agent. */
+  values: Record<string, unknown>;
+}
+
+export interface CanvasEventSink {
+  /** Note a field's current value without answering the agent — see `CanvasEvent.values`. */
+  record: (componentId: string, value: unknown) => void;
+  /** No-op unless a `canvas_await` covers this surface, so a mock's controls simply go nowhere. */
+  emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => void;
+}
+
+/**
+ * Present wherever a surface is rendered with somewhere to send events. Absent in the transcript
+ * card, whose controls render exactly as they did before they could be wired up.
+ */
+export const CanvasEventContext = createContext<CanvasEventSink | null>(null);
 
 export function resolveDataBindings(
   props: Record<string, unknown>,
@@ -94,18 +120,20 @@ export function CanvasComponentNode({ surface, componentId, depth = 0 }: Rendere
         return <CanvasIcon {...props} />;
       case "Video":
         return <CanvasVideo {...props} />;
+      // The controls are the only components that need their own id: it is what a canvas event
+      // names, and the destructure above strips it from `props`.
       case "Button":
-        return <CanvasButton {...props} />;
+        return <CanvasButton {...props} componentId={id} />;
       case "TextField":
-        return <CanvasTextField {...props} />;
+        return <CanvasTextField {...props} componentId={id} />;
       case "CheckBox":
-        return <CanvasCheckBox {...props} />;
+        return <CanvasCheckBox {...props} componentId={id} />;
       case "ChoicePicker":
-        return <CanvasChoicePicker {...props} />;
+        return <CanvasChoicePicker {...props} componentId={id} />;
       case "Slider":
-        return <CanvasSlider {...props} />;
+        return <CanvasSlider {...props} componentId={id} />;
       case "DateTimeInput":
-        return <CanvasDateTimeInput {...props} />;
+        return <CanvasDateTimeInput {...props} componentId={id} />;
       case "DataTable":
         return <CanvasDataTable {...props} />;
       case "Chart":

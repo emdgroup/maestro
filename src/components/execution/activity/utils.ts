@@ -134,6 +134,31 @@ export function getOptionName(
   return options?.find((o) => o.optionId === optionId)?.name;
 }
 
+/**
+ * A title that is nothing but a reference to one of Maestro's tools: the server name, a
+ * separator an adapter chose, and the tool name. Anchored at both ends on purpose — a title that
+ * merely mentions a tool ("maestro: create_task failed") is a report about the call, and hiding
+ * that is how a failure disappears.
+ */
+const MAESTRO_TOOL_TITLE =
+  /^maestro[\s:._-]*\(?(canvas_create|canvas_data|canvas_update|canvas_await|create_task|list_tasks)\)?$/;
+
+/**
+ * Whether a tool call is one the agent made against Maestro's own MCP server.
+ *
+ * Those calls *are* the UI — a rendered surface, a task appearing on the board — so a row saying
+ * the agent called them is noise. Each adapter spells an MCP tool differently, so this reads the
+ * structured name first and falls back to the title; an unrecognised spelling degrades to a
+ * visible row rather than a swallowed one.
+ */
+export function isMaestroHostTool(
+  toolName: string | undefined,
+  title: string | undefined,
+): boolean {
+  if (toolName?.startsWith("mcp__maestro__")) return true;
+  return !!title && MAESTRO_TOOL_TITLE.test(title.trim());
+}
+
 export function isSubagentToolCall(tc: ToolCallItem): boolean {
   return typeof tc.rawInput?.prompt === "string";
 }

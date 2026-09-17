@@ -1484,6 +1484,20 @@ async respondAcpElicitation(logId: number, requestId: string, response: JsonValu
 }
 },
 /**
+ * Answer a `canvas_await` the agent is blocked on.
+ * 
+ * Silently does nothing when the request is no longer pending: the wait times out on its own
+ * schedule, and a click that lands as it expires is a race, not an error worth surfacing.
+ */
+async respondHostTool(logId: number, requestId: string, result: JsonValue) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_host_tool", { logId, requestId, result }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
  */
 async cancelAcpSession(logId: number) : Promise<Result<null, string>> {

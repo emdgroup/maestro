@@ -99,6 +99,16 @@ pub(crate) fn parse_mcp_servers(
 
     let mut out = LoadedMcpServers::default();
     for (name, entry) in parsed.mcp_servers {
+        // Maestro injects a server under this name on every session. Two entries with one name is
+        // not something ACP can express, and letting the file win would replace the canvas and
+        // task tools with whatever it points at — same rule as a `custom-agents.json` id that
+        // collides with a bundled agent.
+        if name == maestro_protocol::MCP_SERVER_NAME {
+            out.skipped.push(format!(
+                "{name}: reserved — Maestro provides its own server under this name"
+            ));
+            continue;
+        }
         match convert_entry(&name, entry, support, env) {
             Ok(server) => out.servers.push(server),
             Err(reason) => out.skipped.push(format!("{name}: {reason}")),
@@ -347,6 +357,21 @@ mod tests {
         assert!(loaded.servers.is_empty());
         assert!(
             loaded.skipped[0].contains("no ACP equivalent"),
+            "{:?}",
+            loaded.skipped
+        );
+    }
+
+    #[test]
+    fn an_entry_named_maestro_is_skipped_as_reserved() {
+        let loaded = parse_mcp_servers(
+            r#"{"mcpServers":{"maestro":{"command":"x"},"other":{"command":"y"}}}"#,
+            BOTH,
+            &env(&[]),
+        );
+        assert_eq!(loaded.servers.len(), 1);
+        assert!(
+            loaded.skipped[0].contains("reserved"),
             "{:?}",
             loaded.skipped
         );

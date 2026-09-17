@@ -19,6 +19,7 @@ tokio = { version = "1", features = [
   "rt",
   "io-util",
   "io-std",
+  "net",
   "sync",
   "macros",
   "process",
@@ -33,6 +34,7 @@ ignore = "0.4"
 jsonschema = { version = "0.55", default-features = false }
 which = "8.0.2"
 fs2 = "0.4"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"

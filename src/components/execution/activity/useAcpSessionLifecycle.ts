@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionActivityActions } from "@/store/sessionActivityStore";
 import type { AvailableCommand, UsageState, ConfigOption } from "./types";
+import type { PendingCanvasAwait } from "./canvas/await-matching";
 export type AcpPromptCapabilities = {
   embedded_context: boolean;
   image: boolean;
@@ -30,6 +31,11 @@ export type AcpSessionLifecycleResult = {
       payload: Record<string, unknown>;
     } | null>
   >;
+  /**
+   * Every `canvas_await` the agent is blocked on, oldest first. More than one can be open, and
+   * an entry with a `null` surfaceId is answerable from whichever canvas the user acts on.
+   */
+  pendingCanvasAwaits: PendingCanvasAwait[];
 };
 
 export function useAcpSessionLifecycle(
@@ -53,6 +59,7 @@ export function useAcpSessionLifecycle(
     message: string;
     payload: Record<string, unknown>;
   } | null>(null);
+  const [pendingCanvasAwaits, setPendingCanvasAwaits] = useState<PendingCanvasAwait[]>([]);
 
   useEffect(() => {
     const unlisten = Promise.all([
@@ -84,6 +91,23 @@ export function useAcpSessionLifecycle(
           payload: event.payload.payload,
         });
         setActivityStatus(sessionKey, "awaiting_input");
+      }),
+      listen<{ request_id: string; surface_id: string | null }>(
+        `acp://canvas-await/${sessionKey}`,
+        (event) => {
+          setPendingCanvasAwaits((prev) => [
+            ...prev.filter((entry) => entry.requestId !== event.payload.request_id),
+            { requestId: event.payload.request_id, surfaceId: event.payload.surface_id ?? null },
+          ]);
+        },
+      ),
+      // The wait can end without an answer — it times out on its own schedule — so the end is
+      // its own event rather than something the answer path clears. Removed by request id, not
+      // by surface: waits on other surfaces are still open and must survive this one ending.
+      listen<{ request_id: string }>(`acp://canvas-await-ended/${sessionKey}`, (event) => {
+        setPendingCanvasAwaits((prev) =>
+          prev.filter((entry) => entry.requestId !== event.payload.request_id),
+        );
       }),
       listen<AcpPromptCapabilities>(`acp://session-capabilities/${sessionKey}`, (event) => {
         setPromptCapabilities(event.payload);
@@ -234,5 +258,6 @@ export function useAcpSessionLifecycle(
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
+    pendingCanvasAwaits,
   };
 }

@@ -276,10 +276,22 @@ fn test_cancel_unknown_session_produces_no_output() {
         .expect("drain stdout");
     let _ = child.wait();
 
+    // Diagnostics, not raw bytes: `send_diag` writes through a channel, so anything the server
+    // reports about its own startup — the MCP gateway's port, for one — lands here on its own
+    // schedule. Asserting emptiness made this test a race that only lost on a slower machine.
+    let mut remaining = std::io::Cursor::new(&output);
+    let mut unexpected = Vec::new();
+    while (remaining.position() as usize) < output.len() {
+        match read_frame(&mut remaining) {
+            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
+            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            other => unexpected.push(other),
+        }
+    }
+
     assert!(
-        output.is_empty(),
-        "server must produce no output for Cancel of unknown session, got {} bytes",
-        output.len()
+        unexpected.is_empty(),
+        "server must answer nothing for Cancel of unknown session, got {unexpected:?}"
     );
 }
 

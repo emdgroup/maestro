@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupIntoAgentSections, groupToolCalls } from "./utils";
+import { groupIntoAgentSections, groupToolCalls, isMaestroHostTool } from "./utils";
 import type { ActivityItem } from "./types";
 
 function message(text: string): ActivityItem {
@@ -29,6 +29,32 @@ function toolCall(toolCallId: string): ActivityItem {
 }
 
 const sections = (items: ActivityItem[]) => groupIntoAgentSections(groupToolCalls(items));
+
+describe("isMaestroHostTool", () => {
+  it("recognises Claude Code's namespaced tool names", () => {
+    expect(isMaestroHostTool("mcp__maestro__canvas_update", "maestro - canvas_update")).toBe(true);
+    expect(isMaestroHostTool("mcp__maestro__create_task", undefined)).toBe(true);
+  });
+
+  it("falls back to the title when the adapter reports no tool name", () => {
+    expect(isMaestroHostTool(undefined, "maestro - canvas_await")).toBe(true);
+    expect(isMaestroHostTool(undefined, "maestro (list_tasks)")).toBe(true);
+  });
+
+  it("leaves everything else visible", () => {
+    expect(isMaestroHostTool("mcp__github__create_task", "github - create_task")).toBe(false);
+    expect(isMaestroHostTool("Bash", "maestro-server --version")).toBe(false);
+    expect(isMaestroHostTool(undefined, "Read")).toBe(false);
+    expect(isMaestroHostTool(undefined, undefined)).toBe(false);
+  });
+
+  it("keeps a title that says something about the call, rather than naming it", () => {
+    // Suppressing these is how a failure the user needs to see disappears from the transcript.
+    expect(isMaestroHostTool(undefined, "maestro: create_task failed")).toBe(false);
+    expect(isMaestroHostTool(undefined, "Retrying maestro canvas_update")).toBe(false);
+    expect(isMaestroHostTool(undefined, "maestro create_task (3 of 4)")).toBe(false);
+  });
+});
 
 describe("groupIntoAgentSections", () => {
   it("keeps one reply in a single section across a tool call", () => {

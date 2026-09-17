@@ -1,11 +1,8 @@
 //! ACP reader tasks: background loops that consume messages from a maestro-server process
 //! and dispatch them to per-session handlers or connection-level pending channels.
 
-use crate::acp::canvas::{
-    emit_or_buffer_payload, extract_canvas_fences_from_payload, push_config_init_to_buffer,
-    CanvasFenceExtractor,
-};
 use crate::acp::manager::log_server_diagnostic;
+use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
 use crate::acp::session_types::{
     PendingChannels, PendingReply, ReaderTaskContext, RestorableSession,
 };
@@ -54,7 +51,6 @@ pub(crate) fn spawn_reader_task(
         acp_session_id_cache,
         replay_buffer,
         initialized,
-        canvas_extractor,
         completion_filter,
         declared_complete,
         user_interrupted,
@@ -99,6 +95,15 @@ pub(crate) fn spawn_reader_task(
             }
 
             update_session_from_response(log_id, &msg, &app_state).await;
+
+            // Off the reader loop for the same reason `resolve_turn_end` is: a `canvas_await`
+            // blocks until the user acts, and nothing else on this session could arrive
+            // meanwhile — including the answer itself.
+            if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+                let state = Arc::clone(&app_state);
+                tokio::spawn(crate::acp::host_tools::handle(state, log_id, call));
+                continue;
+            }
 
             if let MaestroRpcMessage::Response(ServerResponse::PermissionRequest(ref perm_req)) =
                 msg
@@ -153,7 +158,6 @@ pub(crate) fn spawn_reader_task(
                 &acp_session_id_cache,
                 &replay_buffer,
                 &initialized,
-                &canvas_extractor,
                 &completion_filter,
                 &declared_complete,
                 &closing_message,
@@ -195,7 +199,7 @@ pub(crate) fn spawn_reader_task(
 /// `apply_if_changed` matters here rather than being a nicety: with auto-approve off a session
 /// raises permission requests constantly, and every write emits `tasks-changed`, which refetches
 /// the whole board.
-fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
+pub(crate) fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32) {
     let changed = {
         let Ok(conn) = app_state.db.lock() else {
             return;
@@ -976,7 +980,6 @@ fn handle_server_message(
     acp_session_id_cache: &Arc<std::sync::Mutex<Option<String>>>,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
-    canvas_extractor: &Arc<std::sync::Mutex<CanvasFenceExtractor>>,
     completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
     declared_complete: &Arc<std::sync::atomic::AtomicBool>,
     closing_message: &Arc<std::sync::Mutex<crate::acp::completion::ClosingMessage>>,
@@ -998,25 +1001,13 @@ fn handle_server_message(
                     }
                 }
             }
-            // Extract canvas fences from agent_message_chunk text. Each complete
-            // ```maestro-canvas ... ``` block is emitted as a synthetic canvas session
-            // update; the remaining text (fences stripped) is forwarded normally.
-            let (payload_opt, canvas_messages) =
-                extract_canvas_fences_from_payload(upd.payload, canvas_extractor);
-
-            for canvas_msg in canvas_messages {
-                emit_or_buffer_payload(canvas_msg, replay_buffer, app_handle, log_id);
-            }
-
-            // Strip the completion marker last, so it is removed from what the user sees
-            // while recording that the agent declared the task done.
-            let payload_opt = payload_opt.and_then(|payload| {
-                crate::acp::completion::strip_completion_marker_from_payload(
-                    payload,
-                    completion_filter,
-                    declared_complete,
-                )
-            });
+            // Strip the completion marker, so it is removed from what the user sees while
+            // recording that the agent declared the task done.
+            let payload_opt = crate::acp::completion::strip_completion_marker_from_payload(
+                upd.payload,
+                completion_filter,
+                declared_complete,
+            );
 
             if let Some(payload) = payload_opt {
                 // After stripping, so the marker never reaches the outcome thread either.
@@ -1331,6 +1322,9 @@ fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
         MaestroRpcMessage::Response(ServerResponse::TurnEnded(r)) => {
             log_id_from_session_id(&r.session_id)
         }
+        MaestroRpcMessage::Response(ServerResponse::HostToolCall(r)) => {
+            log_id_from_session_id(&r.session_id)
+        }
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(r)) => {
             log_id_from_session_id(&r.session_id)
         }
@@ -1367,6 +1361,18 @@ async fn handle_shared_server_message(
     if let Some(log_id) = extract_session_log_id(&msg) {
         update_session_from_response(log_id, &msg, app_state).await;
 
+        // Before the cache borrow below: this needs none of it, and the shared reader serves
+        // every session on the connection, so a `canvas_await` answered inline would block all
+        // of them for as long as the user takes.
+        if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+            tokio::spawn(crate::acp::host_tools::handle(
+                Arc::clone(app_state),
+                log_id,
+                call,
+            ));
+            return;
+        }
+
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
             sessions.get(&log_id).map(|s| {
@@ -1378,7 +1384,6 @@ async fn handle_shared_server_message(
                     Arc::clone(&s.acp_session_id),
                     Arc::clone(&s.replay_buffer),
                     Arc::clone(&s.initialized),
-                    Arc::clone(&s.canvas_extractor),
                     Arc::clone(&s.completion_filter),
                     Arc::clone(&s.declared_complete),
                     Arc::clone(&s.user_interrupted),
@@ -1398,7 +1403,6 @@ async fn handle_shared_server_message(
             acp_sid,
             replay,
             initialized,
-            canvas_extractor,
             completion_filter,
             declared_complete,
             user_interrupted,
@@ -1499,7 +1503,6 @@ async fn handle_shared_server_message(
                 &acp_sid,
                 &replay,
                 &initialized,
-                &canvas_extractor,
                 &completion_filter,
                 &declared_complete,
                 &closing_message,

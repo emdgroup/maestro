@@ -190,8 +190,7 @@ pub fn classify_turn(
 /// Strips [`COMPLETION_MARKER`] out of streamed agent text and reports whether it was seen.
 ///
 /// The marker can be split across stream chunks, so text that could still turn out to be the
-/// start of one is held back until the next chunk resolves it. Same problem and same shape as
-/// `CanvasFenceExtractor` in `canvas.rs`.
+/// start of one is held back until the next chunk resolves it.
 #[derive(Default)]
 pub struct CompletionMarkerFilter {
     /// Text received but not yet safe to forward, because it may be a partial marker.

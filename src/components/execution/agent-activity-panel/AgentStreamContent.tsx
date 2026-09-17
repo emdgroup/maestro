@@ -14,6 +14,7 @@ import {
   useMessageScroller,
 } from "@/ui/message-scroller";
 import { OpenFileContext, CommandsContext, ImageProxyContext } from "../activity/MarkdownBlock";
+import { CreateTaskFromTextContext } from "../activity/task-draft";
 
 /* Keys the scroller itself treats as scroll input. */
 const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
@@ -111,6 +112,8 @@ interface AgentStreamContentProps {
   projectId?: number;
   /** The session's own cwd — see the image-proxy contract below. */
   workspacePath?: string;
+  /** Drafts a task from a message or a selection inside one. Omitted: the action is hidden. */
+  onCreateTaskFromText?: (text: string) => void;
 }
 
 export function AgentStreamContent({
@@ -123,6 +126,7 @@ export function AgentStreamContent({
   commands,
   projectId,
   workspacePath,
+  onCreateTaskFromText,
 }: AgentStreamContentProps) {
   const { data: appSettings } = useSettings();
   const isCompact = appSettings?.agent_stream_width === "compact";
@@ -191,59 +195,61 @@ export function AgentStreamContent({
 
   return (
     <OpenFileContext.Provider value={onOpenFile}>
-      <ImageProxyContext.Provider value={imageProxy}>
-        <CommandsContext.Provider value={commands}>
-          <MessageScroller className="absolute inset-0">
-            {/*
+      <CreateTaskFromTextContext.Provider value={onCreateTaskFromText}>
+        <ImageProxyContext.Provider value={imageProxy}>
+          <CommandsContext.Provider value={commands}>
+            <MessageScroller className="absolute inset-0">
+              {/*
             Reserve the scrollbar's width whether or not it is showing — the content is
             centred, so a scrollbar appearing mid-stream would otherwise nudge every
             message sideways.
           */}
-            <MessageScrollerViewport
-              className="overflow-x-hidden [scrollbar-gutter:stable]"
-              onScroll={handleScroll}
-              onWheel={handleWheel}
-              onTouchMove={markGesture}
-              onKeyDown={handleKeyDown}
-            >
-              <MessageScrollerContent
-                className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
-                style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
+              <MessageScrollerViewport
+                className="overflow-x-hidden [scrollbar-gutter:stable]"
+                onScroll={handleScroll}
+                onWheel={handleWheel}
+                onTouchMove={markGesture}
+                onKeyDown={handleKeyDown}
               >
-                {agentSections.map((section) => {
-                  if (section.type === "standalone") {
-                    const gi = section.item;
-                    if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
-                    const msgId = gi.item.item.id;
+                <MessageScrollerContent
+                  className={cn("gap-3 pt-3", isCompact && "max-w-3xl mx-auto w-full")}
+                  style={bottomPadding ? { paddingBottom: bottomPadding } : undefined}
+                >
+                  {agentSections.map((section) => {
+                    if (section.type === "standalone") {
+                      const gi = section.item;
+                      if (gi.type !== "solo" || gi.item.type !== "userMessage") return null;
+                      const msgId = gi.item.item.id;
+                      return (
+                        <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
+                          <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
+                        </MessageScrollerItem>
+                      );
+                    }
+
+                    // Derived here rather than in the row because it is also the React key, which
+                    // has to be on the element this callback returns.
+                    const sectionKey = getItemKey(section.items[0]);
+
                     return (
-                      <MessageScrollerItem key={msgId} messageId={msgId} className="px-3">
-                        <ActivityUserMessage message={gi.item.item} onOpenFile={onOpenFile} />
-                      </MessageScrollerItem>
+                      <AgentSectionRow
+                        key={sectionKey}
+                        section={section}
+                        sectionKey={sectionKey}
+                        toolCallMap={toolCallMap}
+                        livePlanToolCallId={livePlanToolCallId}
+                        thinkingHidden={thinkingHidden}
+                        toolCallsHidden={toolCallsHidden}
+                        onAuthLogin={onAuthLogin}
+                      />
                     );
-                  }
-
-                  // Derived here rather than in the row because it is also the React key, which
-                  // has to be on the element this callback returns.
-                  const sectionKey = getItemKey(section.items[0]);
-
-                  return (
-                    <AgentSectionRow
-                      key={sectionKey}
-                      section={section}
-                      sectionKey={sectionKey}
-                      toolCallMap={toolCallMap}
-                      livePlanToolCallId={livePlanToolCallId}
-                      thinkingHidden={thinkingHidden}
-                      toolCallsHidden={toolCallsHidden}
-                      onAuthLogin={onAuthLogin}
-                    />
-                  );
-                })}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-          </MessageScroller>
-        </CommandsContext.Provider>
-      </ImageProxyContext.Provider>
+                  })}
+                </MessageScrollerContent>
+              </MessageScrollerViewport>
+            </MessageScroller>
+          </CommandsContext.Provider>
+        </ImageProxyContext.Provider>
+      </CreateTaskFromTextContext.Provider>
     </OpenFileContext.Provider>
   );
 }

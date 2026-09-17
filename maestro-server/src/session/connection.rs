@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use acp::schema::v1::{
     ClientCapabilities, CloseSessionRequest, CreateTerminalRequest, CreateTerminalResponse,
-    DeleteSessionRequest, Implementation, InitializeRequest, KillTerminalRequest,
-    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer, NewSessionRequest,
-    ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
+    DeleteSessionRequest, EnvVariable, Implementation, InitializeRequest, KillTerminalRequest,
+    KillTerminalResponse, ListSessionsRequest, LoadSessionRequest, McpServer, McpServerStdio,
+    NewSessionRequest, ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, TerminalExitStatus, TerminalOutputRequest,
     TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
 };
@@ -52,7 +52,11 @@ pub(crate) struct SpawnResult {
 ///
 /// Shared by `session/new` and `session/load` so a resumed session sees the same servers as a
 /// fresh one — an agent that reconnects its MCP servers on load would otherwise lose them.
-async fn mcp_servers_for(cwd: &str, support: McpTransportSupport) -> Vec<McpServer> {
+async fn mcp_servers_for(
+    cwd: &str,
+    support: McpTransportSupport,
+    maestro_session_id: &str,
+) -> Vec<McpServer> {
     let loaded = crate::mcp_config::load_mcp_servers(cwd, support).await;
     for reason in &loaded.skipped {
         crate::send_diag("warn", format!("[mcp] skipped {reason}"));
@@ -67,7 +71,55 @@ async fn mcp_servers_for(cwd: &str, support: McpTransportSupport) -> Vec<McpServ
             ),
         );
     }
-    loaded.servers
+    let mut servers = loaded.servers;
+    if let Some(server) = maestro_mcp_server(maestro_session_id) {
+        servers.push(server);
+    }
+    servers
+}
+
+/// Maestro's own MCP server, as a stdio entry pointing back at this binary.
+///
+/// Stdio rather than http: it is the ACP v1 baseline every agent must support, so this needs no
+/// capability gate and no listening HTTP server. Port, token and session travel as environment
+/// variables on the entry itself, so the shim guesses nothing and inherits nothing.
+///
+/// Absent when the gateway failed to bind — the session still works, without canvas and task
+/// tools, which beats refusing to start it.
+fn maestro_mcp_server(maestro_session_id: &str) -> Option<McpServer> {
+    let Some((port, token)) = crate::mcp_gateway::gateway_address() else {
+        crate::send_diag(
+            "warn",
+            "[mcp] no gateway, so this session gets no canvas or task tools",
+        );
+        return None;
+    };
+    let executable = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(e) => {
+            crate::send_diag("warn", format!("[mcp] cannot locate maestro-server: {e}"));
+            return None;
+        }
+    };
+    crate::send_diag(
+        "info",
+        format!(
+            "[mcp] forwarding {} (stdio)",
+            maestro_protocol::MCP_SERVER_NAME
+        ),
+    );
+    Some(McpServer::Stdio(
+        McpServerStdio::new(maestro_protocol::MCP_SERVER_NAME, executable)
+            .args(vec!["mcp".to_string()])
+            .env(vec![
+                EnvVariable::new(maestro_protocol::MCP_GATEWAY_PORT_ENV, port.to_string()),
+                EnvVariable::new(maestro_protocol::MCP_GATEWAY_TOKEN_ENV, token.clone()),
+                EnvVariable::new(
+                    maestro_protocol::MCP_GATEWAY_SESSION_ENV,
+                    maestro_session_id.to_string(),
+                ),
+            ]),
+    ))
 }
 
 /// Resolve the project's extra workspace roots and report what was dropped and why.
@@ -217,7 +269,8 @@ pub(crate) async fn create_session_on_connection(
         "info",
         format!("[session] session/new maestro_id={maestro_session_id}"),
     );
-    let mcp_servers = mcp_servers_for(cwd, conn.capabilities.mcp_transports).await;
+    let mcp_servers =
+        mcp_servers_for(cwd, conn.capabilities.mcp_transports, &maestro_session_id).await;
     let roots = additional_directories_for(
         additional_directories,
         conn.capabilities.supports_additional_directories,
@@ -384,7 +437,9 @@ pub(crate) async fn load_session_on_connection(
 
     let load_req =
         LoadSessionRequest::new(resume_session_id.clone(), std::path::PathBuf::from(cwd))
-            .mcp_servers(mcp_servers_for(cwd, conn.capabilities.mcp_transports).await)
+            .mcp_servers(
+                mcp_servers_for(cwd, conn.capabilities.mcp_transports, &maestro_session_id).await,
+            )
             .additional_directories(
                 additional_directories_for(
                     additional_directories,
