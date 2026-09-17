@@ -20,7 +20,8 @@ export type ActivityAction =
   | { type: "set_initialized" }
   | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
   | { type: "terminal_output"; terminalId: string; output: string }
-  | { type: "restore_canvases"; surfaces: CanvasSurface[] };
+  | { type: "restore_canvases"; surfaces: CanvasSurface[] }
+  | { type: "close_canvas"; surfaceId: string };
 
 /**
  * `terminalBuffers` is a catch-up buffer, not a scrollback. Its only consumer is
@@ -116,6 +117,18 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
         }
       }
       return { ...state, canvasMap: newCanvasMap, items: newItems };
+    }
+    case "close_canvas": {
+      if (!state.canvasMap.has(action.surfaceId)) return state;
+      const newCanvasMap = new Map(state.canvasMap);
+      newCanvasMap.delete(action.surfaceId);
+      return {
+        ...state,
+        canvasMap: newCanvasMap,
+        items: state.items.filter(
+          (entry) => entry.type !== "canvas" || entry.item.surfaceId !== action.surfaceId,
+        ),
+      };
     }
     default:
       return state;

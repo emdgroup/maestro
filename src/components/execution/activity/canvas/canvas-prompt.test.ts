@@ -7,13 +7,15 @@ import {
 
 describe("canvas prompts", () => {
   it("carries everything the tool result would have carried", () => {
-    const text = buildCanvasEventPrompt({
-      surfaceId: "match",
-      componentId: "chatForm",
-      kind: "submit",
-      value: "send",
-      values: { message: "hi", persona: "Rust" },
-    });
+    const text = buildCanvasEventPrompt([
+      {
+        surfaceId: "match",
+        componentId: "chatForm",
+        kind: "submit",
+        value: "send",
+        values: { message: "hi", persona: "Rust" },
+      },
+    ]);
 
     expect(text).toContain("`match`");
     expect(text).toContain("`chatForm`");
@@ -24,15 +26,24 @@ describe("canvas prompts", () => {
   });
 
   it("leaves out what the event did not carry", () => {
-    const text = buildCanvasEventPrompt({
-      surfaceId: "dash",
-      componentId: "refresh",
-      kind: "click",
-      values: {},
-    });
+    const text = buildCanvasEventPrompt([
+      { surfaceId: "dash", componentId: "refresh", kind: "click", values: {} },
+    ]);
 
     expect(text).not.toContain("- value:");
     expect(text).not.toContain("- fields:");
+  });
+
+  it("numbers a queue and keeps it in order", () => {
+    const text = buildCanvasEventPrompt([
+      { surfaceId: "ttt", componentId: "board", kind: "click", value: 2, values: {} },
+      { surfaceId: "ttt", componentId: "board", kind: "click", value: 8, values: {} },
+    ]);
+
+    expect(text).toContain("2 times while you were busy");
+    expect(text.indexOf("value: 2")).toBeLessThan(text.indexOf("value: 8"));
+    // In the wrapper, which is the part the stream reads.
+    expect(text).toContain('count="2"');
   });
 
   it("names every restored surface once", () => {
@@ -43,12 +54,9 @@ describe("canvas prompts", () => {
 
   it("round-trips through the wrapper the stream reads", () => {
     const event = parseCanvasPrompt(
-      buildCanvasEventPrompt({
-        surfaceId: "match",
-        componentId: "chatForm",
-        kind: "submit",
-        values: {},
-      }),
+      buildCanvasEventPrompt([
+        { surfaceId: "match", componentId: "chatForm", kind: "submit", values: {} },
+      ]),
     );
     expect(event).toEqual({
       kind: "event",

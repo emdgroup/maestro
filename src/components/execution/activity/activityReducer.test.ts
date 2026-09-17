@@ -844,6 +844,25 @@ describe("activityReducer — canvases and terminals", () => {
     expect(state.canvasMap.size).toBe(1);
     expect(state.items.filter((i) => i.type === "canvas")).toHaveLength(1);
   });
+
+  it("closes one surface and leaves the others", () => {
+    let state = makeState();
+    for (const surfaceId of ["s1", "s2"]) {
+      state = activityReducer(
+        state,
+        event({ sessionUpdate: "canvas_create", surfaceId, title: surfaceId, html: "<p>x</p>" }),
+      );
+    }
+    state = activityReducer(state, { type: "close_canvas", surfaceId: "s1" });
+
+    expect([...state.canvasMap.keys()]).toEqual(["s2"]);
+    expect(state.items.filter((i) => i.type === "canvas")).toHaveLength(1);
+  });
+
+  it("returns the same state when closing a surface that is not there", () => {
+    const state = makeState();
+    expect(activityReducer(state, { type: "close_canvas", surfaceId: "gone" })).toBe(state);
+  });
 });
 
 describe("activityReducer — invariants", () => {
