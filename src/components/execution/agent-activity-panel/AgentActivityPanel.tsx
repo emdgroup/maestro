@@ -41,6 +41,7 @@ import {
   buildCanvasRestoredPrompt,
 } from "@/components/execution/activity/canvas/canvas-prompt";
 import type { CanvasEvent } from "@/components/execution/activity/canvas/canvas-events";
+import { awaitForSurface } from "@/components/execution/activity/canvas/await-matching";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
 import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
@@ -474,6 +475,7 @@ export function AgentActivityPanel({
   // a tool outside a turn. So a control with no wait behind it sends its event as a prompt, which
   // starts one — after which the agent answers and re-arms, and everything that follows takes the
   // direct path above. Without this a restored canvas is a picture of a UI rather than a UI.
+  const [queuedCanvasEvents, setQueuedCanvasEvents] = useState<CanvasEvent[]>([]);
   const handleCanvasEvent = useCallback(
     (requestId: string | null, event: unknown) => {
       if (requestId) {
@@ -483,14 +485,46 @@ export function AgentActivityPanel({
         setActivity(sessionKey, "thinking");
         return;
       }
+      // Mid-turn there is nowhere to put it: ACP allows one `session/prompt` per turn, and the
+      // agent has not armed a wait. Queued rather than dropped — the gap between one
+      // `canvas_await` returning and the next one arming is on every turn, and a click lost there
+      // leaves the agent acting on a surface it can no longer see.
       if (isProcessing) {
-        toast.info("The agent is busy — try that again once it finishes");
+        setQueuedCanvasEvents((queued) => [...queued, event as CanvasEvent]);
         return;
       }
-      void handleSend(buildCanvasEventPrompt(event as CanvasEvent));
+      void handleSend(buildCanvasEventPrompt([event as CanvasEvent]));
     },
     [sessionKey, setActivity, isProcessing, handleSend],
   );
+
+  // Drains one event per pass: answering a wait consumes it, which brings the agent back here with
+  // a new one, and the effect runs again for the next event. Only when no wait can take them and
+  // the agent has gone idle do the rest travel together as a prompt.
+  useEffect(() => {
+    const [next, ...rest] = queuedCanvasEvents;
+    if (!next || liveState.sessionEnded) return;
+    const waiting = awaitForSurface(pendingCanvasAwaits, next.surfaceId);
+    if (waiting) {
+      setQueuedCanvasEvents(rest);
+      void api
+        .respondHostTool(sessionKey, waiting.requestId, next as unknown as JsonValue)
+        .catch(() => toast.error("Could not send your answer to the agent"));
+      setActivity(sessionKey, "thinking");
+      return;
+    }
+    if (isProcessing) return;
+    setQueuedCanvasEvents([]);
+    void handleSend(buildCanvasEventPrompt(queuedCanvasEvents));
+  }, [
+    queuedCanvasEvents,
+    pendingCanvasAwaits,
+    isProcessing,
+    liveState.sessionEnded,
+    sessionKey,
+    setActivity,
+    handleSend,
+  ]);
 
   // One prompt however many canvases came back, and only to ask the agent to arm `canvas_await` —
   // after which every click is answered directly and costs nothing. `useAcpActivity` owns the
@@ -685,7 +719,7 @@ export function AgentActivityPanel({
   const sharedComposeBarProps = {
     onSend: handleSendWithTransition as (content: string, contentBlocks?: JsonValue) => void,
     onCancel: handleCancel,
-    isProcessing,
+    isProcessing: isProcessing && pendingCanvasAwaits.length === 0,
     commands: availableCommands,
     embeddedContext: promptCapabilities?.embedded_context ?? false,
     logId: sessionKey,
@@ -879,6 +913,7 @@ export function AgentActivityPanel({
             latestCanvasSurfaceId={latestCanvasSurfaceId}
             pendingCanvasAwaits={pendingCanvasAwaits}
             onCanvasEvent={handleCanvasEvent}
+            onCloseCanvas={(surfaceId) => liveDispatch({ type: "close_canvas", surfaceId })}
             subagentItems={subagentItems}
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}

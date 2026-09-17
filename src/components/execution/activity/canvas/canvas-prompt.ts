@@ -8,8 +8,8 @@
  *
  * So Maestro prompts, but at most once: the prompt below goes out when saved canvases are
  * restored, and asks the agent to arm `canvas_await` and keep it armed. While a wait is open every
- * interaction is answered directly, and no further prompt is sent. A single event prompt exists as
- * the fallback for when the agent let its wait lapse.
+ * interaction is answered directly, and no further prompt is sent. The event prompt is the fallback
+ * for when the agent let its wait lapse, and carries however many interactions queued up meanwhile.
  *
  * Both are wrapped in a `<canvas-event>` element so the stream can render them as what they are —
  * a click, not a paragraph the user typed. The wrapper is also the first thing the agent reads,
@@ -52,26 +52,46 @@ export function buildCanvasRestoredPrompt(surfaceIds: readonly string[]): string
   );
 }
 
-/** The fallback: an interaction arrived with no wait open, so it has to travel as a prompt. */
-export function buildCanvasEventPrompt(event: CanvasEvent): string {
-  const body = [
-    `The user acted on canvas surface \`${event.surfaceId}\`.`,
-    "",
-    `- element: \`${event.componentId}\``,
-    `- kind: ${event.kind}`,
-  ];
-  if (event.value !== undefined) body.push(`- value: ${JSON.stringify(event.value)}`);
+function describe(event: CanvasEvent, prefix: string): string[] {
+  const lines = [`${prefix}element: \`${event.componentId}\``, `${prefix}kind: ${event.kind}`];
+  if (event.value !== undefined) lines.push(`${prefix}value: ${JSON.stringify(event.value)}`);
   if (Object.keys(event.values).length > 0) {
-    body.push(`- fields: ${JSON.stringify(event.values)}`);
+    lines.push(`${prefix}fields: ${JSON.stringify(event.values)}`);
   }
+  return lines;
+}
+
+/**
+ * The fallback: interactions arrived with no wait open, so they have to travel as a prompt.
+ *
+ * Takes a list because they queue. An event that lands while the agent is mid-turn cannot be sent
+ * — ACP allows one `session/prompt` per turn — so it waits, and by the time the turn ends there
+ * may be several. Sending them as one prompt keeps them in order and costs one turn rather than
+ * one each.
+ */
+export function buildCanvasEventPrompt(events: readonly CanvasEvent[]): string {
+  const [first] = events;
+  if (!first) return "";
+  const body =
+    events.length === 1
+      ? [`The user acted on canvas surface \`${first.surfaceId}\`.`, "", ...describe(first, "- ")]
+      : [
+          `The user acted on your canvas ${events.length} times while you were busy, oldest first.`,
+          "",
+          ...events.flatMap((event, i) => [
+            `${i + 1}. surface \`${event.surfaceId}\``,
+            ...describe(event, "   - "),
+          ]),
+        ];
   body.push(
     "",
     "Act on it with `canvas_update` or `canvas_data`, then call `canvas_await` on that surface" +
       " and keep re-arming it, so the next interaction reaches you without another prompt.",
   );
   return wrap(
-    `kind="${attribute(event.kind)}" surface="${attribute(event.surfaceId)}"` +
-      ` element="${attribute(event.componentId)}"`,
+    `kind="${attribute(first.kind)}" surface="${attribute(first.surfaceId)}"` +
+      ` element="${attribute(first.componentId)}"` +
+      (events.length > 1 ? ` count="${events.length}"` : ""),
     body.join("\n"),
   );
 }
