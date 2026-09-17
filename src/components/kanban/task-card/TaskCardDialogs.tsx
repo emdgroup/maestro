@@ -93,20 +93,19 @@ export function TaskCardDialogs({
               dialog keeps the stacked footer at every width. */}
           <AlertDialogFooter className="sm:flex-col-reverse">
             <AlertDialogCancel>Keep on the board</AlertDialogCancel>
-            {taskWorktree &&
-              projectId !== null && (
-                // Deletes the checkout, not the branch. The commits are the unmerged work this
-                // dialog exists to protect; the working copy of them is just disk.
-                <AlertDialogAction
-                  variant="outline"
-                  onClick={() => {
-                    onClose();
-                    actions.onArchiveAndRemoveWorktree(taskWorktree);
-                  }}
-                >
-                  Archive and remove the worktree
-                </AlertDialogAction>
-              )}
+            {taskWorktree && projectId !== null && (
+              // Deletes the checkout, not the branch. The commits are the unmerged work this
+              // dialog exists to protect; the working copy of them is just disk.
+              <AlertDialogAction
+                variant="outline"
+                onClick={() => {
+                  onClose();
+                  actions.onArchiveAndRemoveWorktree(taskWorktree);
+                }}
+              >
+                Archive and remove the worktree
+              </AlertDialogAction>
+            )}
             <AlertDialogAction
               onClick={() => {
                 onClose();

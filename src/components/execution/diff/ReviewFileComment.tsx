@@ -38,21 +38,20 @@ export function ReviewFileComment({
 
   return (
     <div className="shrink-0 border-b border-border">
-      {comment &&
-        !editing && (
-          // Tagged so comment navigation can find it: `buildExtendData` skips line 0, so unlike a
-          // line comment this one has no anchor inside the diff itself.
-          <div data-comment-id={comment.id}>
-            <PendingCommentBlock
-              text={comment.text}
-              onRemove={onRemove}
-              onEdit={onSubmit}
-              onSend={onSend}
-              sendDisabled={sendDisabled}
-              {...(nav ?? {})}
-            />
-          </div>
-        )}
+      {comment && !editing && (
+        // Tagged so comment navigation can find it: `buildExtendData` skips line 0, so unlike a
+        // line comment this one has no anchor inside the diff itself.
+        <div data-comment-id={comment.id}>
+          <PendingCommentBlock
+            text={comment.text}
+            onRemove={onRemove}
+            onEdit={onSubmit}
+            onSend={onSend}
+            sendDisabled={sendDisabled}
+            {...(nav ?? {})}
+          />
+        </div>
+      )}
       {editing && (
         <div className="p-2">
           <InlineCommentInput
