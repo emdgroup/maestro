@@ -1,87 +1,109 @@
 /**
- * Anchoring canvas annotations to components.
+ * Anchoring canvas annotations to elements.
  *
- * The sibling of `plan-anchor.ts`, and it exists for the same reason: a surface is re-rendered
+ * The sibling of `plan-anchor.ts`, and it exists for the same reason: a surface is replaced
  * whenever the agent pushes a `canvas_update`, so nothing may hold a DOM node or a rect. What is
- * stored is the component id — which the agent authored and addresses its own updates by — and the
- * geometry is re-read from the live DOM whenever it is needed.
+ * stored is the element's `id` — which the agent authored and addresses its own updates by — and
+ * the geometry is re-read whenever it is needed.
  *
- * Reading the DOM and deciding what a point or a rect selects are deliberately separate: only
- * `readNodes` touches layout, so every rule below is a pure function over a node list and can be
- * tested without one.
+ * The surface lives in a sandboxed frame, so nothing here can read its DOM. The frame reports its
+ * own elements (see `canvas-frame.ts`) and `toCanvasNodes` turns that report into the node list
+ * every rule below is a pure function over.
  */
 
-/** Components that are never a hit-test target — decorative, and too small to mean anything. */
-const SKIP = new Set(["Divider", "Icon"]);
+import type { FrameNode } from "@/components/execution/activity/canvas/CanvasHtml";
 
-/**
- * Pure layout wrappers. Never picked directly: they draw nothing of their own, so the only part of
- * one exposed to the pointer is the `gap` between its children, and picking there would flash an
- * outline around half the surface as the pointer crossed it. Reached by widening from a child.
- */
-const LAYOUT = new Set(["Column", "Row", "List"]);
+/** Never a hit-test target — decorative, or too small to mean anything. */
+const SKIP_TAGS = new Set(["hr", "br", "script", "style", "link", "meta"]);
+/** Smaller than this in either direction and an image is a spacer, not a picture. */
+const MIN_IMAGE_SIZE = 8;
 
 /**
- * Components that draw a frame of their own and hold children. Preferred over anything inside
- * them: hovering the value in a `Card > Text` stat tile means the tile, not the label.
+ * Elements that draw a frame of their own and hold children. Preferred over anything inside them:
+ * hovering the value in a stat tile means the tile, not the label.
  */
-const FRAME = new Set(["Card", "Modal", "Tabs"]);
+const FRAME_TAGS = new Set(["section", "article", "fieldset", "form", "table", "dialog"]);
 
 export interface CanvasNode {
   id: string;
+  /** The element's tag, shown on the hover chip beside the id. */
   kind: string;
   rect: DOMRect;
-  el: Element;
+  /** Nearest ancestor with an id, as the frame saw it. */
+  parentId: string | null;
+  frame: boolean;
+  layout: boolean;
+  skip: boolean;
 }
 
-/** Is `outer` an ancestor of `inner` in the render tree (not merely overlapping it)? */
-function contains(outer: CanvasNode, inner: CanvasNode): boolean {
-  return outer.el !== inner.el && outer.el.contains(inner.el);
+function isFrame(node: FrameNode): boolean {
+  return (
+    FRAME_TAGS.has(node.tag) ||
+    node.role === "region" ||
+    /(^|[\s-])card([\s-]|$)/.test(node.className)
+  );
 }
 
 /**
- * Union of an element's children's rects.
- *
- * The markers are `display: contents`, so they have no box of their own and
- * `getBoundingClientRect` on one is empty. Their children are the component's rendered roots,
- * which is what we actually want to measure. A component that rendered `null` has none, and
- * returning null here is what keeps it from being pickable.
+ * Pure layout wrappers: no text of their own and only element children. Never picked directly —
+ * they draw nothing, so the only part exposed to the pointer is the gap between their children,
+ * and picking there flashes an outline around half the surface as the pointer crosses it.
  */
-function unionOfChildren(el: Element): DOMRect | null {
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-
-  for (const child of el.children) {
-    const r = child.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
-    left = Math.min(left, r.left);
-    top = Math.min(top, r.top);
-    right = Math.max(right, r.right);
-    bottom = Math.max(bottom, r.bottom);
-  }
-
-  if (left === Infinity) return null;
-  return new DOMRect(left, top, right - left, bottom - top);
+function isLayout(node: FrameNode): boolean {
+  return !node.ownText && node.childCount > 0;
 }
 
-/** The only function here that reads layout. Everything else works off its result. */
-export function readNodes(container: HTMLElement): CanvasNode[] {
-  const nodes: CanvasNode[] = [];
-  for (const el of container.querySelectorAll("[data-canvas-id]")) {
-    const id = el.getAttribute("data-canvas-id");
-    const kind = el.getAttribute("data-canvas-kind");
-    if (!id || !kind) continue;
-    const rect = unionOfChildren(el);
-    if (!rect) continue;
-    nodes.push({ id, kind, rect, el });
-  }
-  return nodes;
+function isSkipped(node: FrameNode): boolean {
+  if (SKIP_TAGS.has(node.tag)) return true;
+  return (
+    node.tag === "img" && (node.rect.width < MIN_IMAGE_SIZE || node.rect.height < MIN_IMAGE_SIZE)
+  );
 }
 
+/**
+ * The frame's report, in host viewport coordinates.
+ *
+ * The frame does not scroll — its height tracks its content — so a rect inside it plus the
+ * iframe's own origin is a viewport rect.
+ */
+export function toCanvasNodes(
+  reported: FrameNode[],
+  origin: { left: number; top: number },
+): CanvasNode[] {
+  return reported
+    .filter((node) => node.rect.width > 0 || node.rect.height > 0)
+    .map((node) => ({
+      id: node.id,
+      kind: node.tag,
+      rect: new DOMRect(
+        node.rect.left + origin.left,
+        node.rect.top + origin.top,
+        node.rect.width,
+        node.rect.height,
+      ),
+      parentId: node.parentId,
+      frame: isFrame(node),
+      layout: isLayout(node),
+      skip: isSkipped(node),
+    }));
+}
+
+/** Is `outer` an ancestor of `inner` in the document (not merely overlapping it)? */
+function contains(nodes: CanvasNode[], outer: CanvasNode, inner: CanvasNode): boolean {
+  if (outer.id === inner.id) return false;
+  let parentId = inner.parentId;
+  const seen = new Set<string>();
+  while (parentId && !seen.has(parentId)) {
+    if (parentId === outer.id) return true;
+    seen.add(parentId);
+    parentId = nodes.find((n) => n.id === parentId)?.parentId ?? null;
+  }
+  return false;
+}
+
+/** A framed element is pickable even when it holds nothing but other elements — a card is a box. */
 function pickable(node: CanvasNode): boolean {
-  return !SKIP.has(node.kind) && !LAYOUT.has(node.kind);
+  return !node.skip && (node.frame || !node.layout);
 }
 
 function hit(rect: DOMRect, x: number, y: number): boolean {
@@ -93,11 +115,10 @@ function intersects(a: DOMRect, b: DOMRect): boolean {
 }
 
 /**
- * What a hover at this point selects: the outermost framed component containing it, or — where
- * there is no frame, which is every surface built straight out of a `Column` — the innermost
- * component of any other kind.
+ * What a hover at this point selects: the outermost framed element containing it, or — where there
+ * is no frame — the innermost element of any other kind.
  *
- * `drill` (the Alt key) forces the innermost result, which is the only way to reach a component
+ * `drill` (the Alt key) forces the innermost result, which is the only way to reach an element
  * inside a card.
  */
 export function pickAt(
@@ -109,23 +130,26 @@ export function pickAt(
   const under = nodes.filter((n) => pickable(n) && hit(n.rect, x, y));
   if (under.length === 0) return null;
 
-  const innermost = () => under.reduce((best, n) => (contains(best, n) ? n : best), under[0]).id;
+  const innermost = () =>
+    under.reduce((best, n) => (contains(nodes, best, n) ? n : best), under[0]).id;
 
   if (opts.drill) return innermost();
 
-  const frames = under.filter((n) => FRAME.has(n.kind));
+  const frames = under.filter((n) => n.frame);
   if (frames.length === 0) return innermost();
-  return frames.reduce((best, n) => (contains(n, best) ? n : best), frames[0]).id;
+  return frames.reduce((best, n) => (contains(nodes, n, best) ? n : best), frames[0]).id;
 }
 
 /**
  * What a marquee selects: everything it touches, reduced to the outermost. Intersection rather
- * than containment, so clipping a component's edge still selects it — requiring full coverage
- * makes anything near the panel edge unselectable.
+ * than containment, so clipping an element's edge still selects it — requiring full coverage makes
+ * anything near the panel edge unselectable.
  */
 export function pickInRect(nodes: CanvasNode[], rect: DOMRect): string[] {
   const touched = nodes.filter((n) => pickable(n) && intersects(n.rect, rect));
-  return touched.filter((n) => !touched.some((other) => contains(other, n))).map((n) => n.id);
+  return touched
+    .filter((n) => !touched.some((other) => contains(nodes, other, n)))
+    .map((n) => n.id);
 }
 
 export function resolveRects(nodes: CanvasNode[], ids: string[]): DOMRect[] {
@@ -133,15 +157,15 @@ export function resolveRects(nodes: CanvasNode[], ids: string[]): DOMRect[] {
 }
 
 /**
- * The annotated components are gone — the agent replaced them. The note is kept rather than
- * dropped: its text, and the capture taken when it was written, still say something.
+ * The annotated elements are gone — the agent replaced them. The note is kept rather than dropped:
+ * its text, and the capture taken when it was written, still say something.
  */
 export function isStale(nodes: CanvasNode[], ids: string[]): boolean {
   if (ids.length === 0) return false;
   return !ids.some((id) => nodes.some((n) => n.id === id));
 }
 
-/** Union of several rects, for placing one outline around a multi-component selection. */
+/** Union of several rects, for placing one outline around a multi-element selection. */
 export function boundingRect(rects: DOMRect[]): DOMRect | null {
   if (rects.length === 0) return null;
   const left = Math.min(...rects.map((r) => r.left));
@@ -156,9 +180,8 @@ export function uncapturableKinds(nodes: CanvasNode[], ids: string[]): string[] 
   const kinds = new Set<string>();
   for (const n of nodes) {
     if (!ids.includes(n.id)) continue;
-    // The `Html` iframe is sandboxed without `allow-same-origin`, so its document is unreachable
-    // from here by any means; `Video` paints outside the DOM. Both rasterise blank.
-    if (n.kind === "Html" || n.kind === "Video") kinds.add(n.kind);
+    // Both paint outside the DOM the rasteriser walks, so they come out blank.
+    if (n.kind === "video" || n.kind === "iframe") kinds.add(n.kind);
   }
   return [...kinds];
 }

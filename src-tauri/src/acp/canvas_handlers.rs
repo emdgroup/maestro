@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
@@ -38,6 +39,10 @@ fn canvas_dir(project_path: &str, acp_session_id: &str) -> PathBuf {
         .join(acp_session_id)
 }
 
+/// Write one surface as a self-contained `.html` file.
+///
+/// `html` is the agent's own document plus the `<title>` and `<meta>` tags the frontend folds in;
+/// Maestro's injected head is deliberately absent, so the file opens in any browser.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_canvas_surface(
@@ -45,7 +50,7 @@ pub async fn save_canvas_surface(
     project_id: i32,
     log_id: i32,
     surface_id: String,
-    surface: serde_json::Value,
+    html: String,
 ) -> Result<(), String> {
     let path = project_path(&app_state, project_id)?;
     let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
@@ -53,10 +58,8 @@ pub async fn save_canvas_surface(
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("Failed to create canvas directory: {}", e))?;
-    let file_path = dir.join(format!("{}.json", surface_id));
-    let contents = serde_json::to_vec_pretty(&surface)
-        .map_err(|e| format!("Failed to serialize canvas: {}", e))?;
-    tokio::fs::write(&file_path, contents)
+    let file_path = dir.join(format!("{}.html", surface_id));
+    tokio::fs::write(&file_path, html)
         .await
         .map_err(|e| format!("Failed to write canvas file: {}", e))?;
     Ok(())
@@ -72,7 +75,7 @@ pub async fn delete_canvas_surface(
 ) -> Result<(), String> {
     let path = project_path(&app_state, project_id)?;
     let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
-    let file_path = canvas_dir(&path, &acp_session_id).join(format!("{}.json", surface_id));
+    let file_path = canvas_dir(&path, &acp_session_id).join(format!("{}.html", surface_id));
     match tokio::fs::remove_file(&file_path).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -86,7 +89,7 @@ pub async fn load_saved_canvases(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     log_id: i32,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<String>, String> {
     let path = project_path(&app_state, project_id)?;
     let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
     let dir = canvas_dir(&path, &acp_session_id);
@@ -102,17 +105,126 @@ pub async fn load_saved_canvases(
         .map_err(|e| format!("Failed to read directory entry: {}", e))?
     {
         let entry_path = entry.path();
-        if entry_path.extension().and_then(|e| e.to_str()) != Some("json") {
+        // Canvases saved by an older build are `.json` in the same directory. They are left where
+        // they are rather than migrated: nothing here can turn a component tree into a document.
+        if entry_path.extension().and_then(|e| e.to_str()) != Some("html") {
             continue;
         }
-        let contents = match tokio::fs::read_to_string(&entry_path).await {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        match serde_json::from_str::<serde_json::Value>(&contents) {
-            Ok(value) => surfaces.push(value),
-            Err(_) => continue,
+        if let Ok(contents) = tokio::fs::read_to_string(&entry_path).await {
+            surfaces.push(contents);
         }
     }
     Ok(surfaces)
+}
+
+/// Note something a canvas frame could not load or run, for the agent's next canvas tool call.
+///
+/// Capped per surface: a document whose script throws on every animation frame would otherwise
+/// grow this without bound, and the oldest few failures are the ones that explain the rest.
+#[tauri::command]
+#[specta::specta]
+pub async fn canvas_report_error(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    surface_id: String,
+    message: String,
+) -> Result<(), String> {
+    const MAX_PER_SURFACE: usize = 10;
+    let mut errors = app_state.acp.canvas_errors.lock().await;
+    let entry = errors.entry((log_id, surface_id)).or_default();
+    if entry.len() < MAX_PER_SURFACE && !entry.contains(&message) {
+        entry.push(message);
+    }
+    Ok(())
+}
+
+/// One request a canvas asked the host to make on its behalf.
+///
+/// The surface's frame has an opaque origin, so an endpoint without `Access-Control-Allow-Origin`
+/// cannot be read from inside it at all. This is the way round that, and it is deliberately narrow:
+/// the *host* machine performs the request, which for an SSH, WSL or container session is not the
+/// machine the agent is on. The declared `sources` allow-list is enforced by the caller, which is
+/// the only thing holding the surface it belongs to; what is enforced here is everything that does
+/// not depend on that list.
+#[derive(serde::Serialize, specta::Type)]
+pub struct CanvasFetchResponse {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: String,
+}
+
+/// Enough for a JSON API answer; a canvas that needs more than this wants a file, not a fetch.
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[tauri::command]
+#[specta::specta]
+pub async fn canvas_fetch(
+    url: String,
+    method: Option<String>,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<CanvasFetchResponse, String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|e| format!("Not a URL: {}", e))?;
+    let host = parsed.host_str().unwrap_or_default();
+    let local = matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]");
+    match parsed.scheme() {
+        "https" => {}
+        "http" if local => {}
+        scheme => {
+            return Err(format!(
+                "{scheme}: is not allowed from a canvas — use https, or http on localhost"
+            ))
+        }
+    }
+
+    let method = method.unwrap_or_else(|| "GET".to_string());
+    let method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|_| format!("Not an HTTP method: {}", method))?;
+
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        // A redirect off the declared origin would reach somewhere the user was never shown.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Could not build the HTTP client: {}", e))?;
+
+    let mut request = client.request(method, parsed);
+    for (name, value) in headers.unwrap_or_default() {
+        request = request.header(name, value);
+    }
+    if let Some(body) = body {
+        request = request.body(body);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status().as_u16();
+    let response_headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.to_string(), value.to_string()))
+        })
+        .collect();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Could not read the response: {}", e))?;
+    if bytes.len() > MAX_BODY_BYTES {
+        return Err(format!(
+            "Response is {} bytes, over the {MAX_BODY_BYTES} byte limit for a canvas fetch",
+            bytes.len()
+        ));
+    }
+    Ok(CanvasFetchResponse {
+        status,
+        headers: response_headers,
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+    })
 }

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildAnnotationBlocks, describeCanvasSubtree } from "./build-annotation-prompt";
+import { buildAnnotationBlocks } from "./build-annotation-prompt";
 import type { Annotation } from "@/store/annotationStore";
-import type { CanvasSurface } from "@/components/execution/activity/types";
 
 const prepareExternalAttachments = vi.fn();
 
@@ -26,19 +25,6 @@ function canvas(over: Partial<Extract<Annotation, { kind: "canvas" }>> = {}): An
     ...over,
   };
 }
-
-const surface: CanvasSurface = {
-  surfaceId: "s-3",
-  catalogId: "maestro-canvas/v1",
-  title: "Latency review",
-  components: [
-    { id: "card", component: "Card", title: "Latency", children: ["lat-chart", "caption"] },
-    { id: "lat-chart", component: "Chart", type: "bar", data: "/rows" },
-    { id: "caption", component: "Text", text: "p99 by endpoint" },
-    { id: "elsewhere", component: "Text", text: "not selected" },
-  ],
-  data: { "/rows": [] },
-};
 
 beforeEach(() => {
   prepareExternalAttachments.mockReset();
@@ -83,12 +69,16 @@ describe("buildAnnotationBlocks", () => {
 
   it("names the surface and the component ids for a canvas annotation", async () => {
     const blocks = await buildAnnotationBlocks([
-      canvas({ componentIds: ["lat-chart", "caption"], subtree: '[{"id":"lat-chart"}]' }),
+      canvas({
+        componentIds: ["lat-chart", "caption"],
+        subtree: '<svg id="lat-chart"></svg>',
+      }),
     ]);
     const text = (blocks[1] as { text: string }).text;
     expect(text).toContain("## Canvas “Latency review” (surface `s-3`)");
     expect(text).toContain("`lat-chart`, `caption`");
-    expect(text).toContain('[{"id":"lat-chart"}]');
+    // The agent gets back the HTML it wrote, in an html fence.
+    expect(text).toContain('```html\n<svg id="lat-chart"></svg>');
     expect(text).toContain("the p99 axis is truncated");
   });
 
@@ -128,40 +118,5 @@ describe("buildAnnotationBlocks", () => {
     });
     expect(blocks).toHaveLength(2);
     expect((blocks[1] as { text: string }).text).toContain("the p99 axis is truncated");
-  });
-});
-
-describe("describeCanvasSubtree", () => {
-  it("includes the selected components and their descendants, and nothing else", () => {
-    const json = describeCanvasSubtree(surface, ["card"]);
-    expect(json).toContain('"id": "card"');
-    expect(json).toContain('"id": "lat-chart"');
-    expect(json).toContain('"id": "caption"');
-    expect(json).not.toContain("elsewhere");
-  });
-
-  it("keeps data bindings as the pointers the agent authored", () => {
-    expect(describeCanvasSubtree(surface, ["lat-chart"])).toContain('"data": "/rows"');
-  });
-
-  it("shortens inlined data but never the children list", () => {
-    const bloated: CanvasSurface = {
-      ...surface,
-      components: [
-        {
-          id: "t",
-          component: "DataTable",
-          rows: Array.from({ length: 30 }, (_, i) => [i]),
-          children: ["a", "b", "c", "d", "e", "f", "g"],
-        },
-      ],
-    };
-    const json = describeCanvasSubtree(bloated, ["t"]) ?? "";
-    expect(json).toContain("… 25 more");
-    expect(json).toContain('"g"');
-  });
-
-  it("has nothing to describe for a note taken on empty space", () => {
-    expect(describeCanvasSubtree(surface, [])).toBeUndefined();
   });
 });

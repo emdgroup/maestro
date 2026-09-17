@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 const interruptAcpTurn = vi.hoisted(() => vi.fn<(sessionKey: number) => Promise<void>>());
+const respondHostTool = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const sendAcpPrompt = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("@/lib/tauri-utils", () => ({
   api: {
     interruptAcpTurn: (sessionKey: number) => interruptAcpTurn(sessionKey),
-    sendAcpPrompt: vi.fn().mockResolvedValue(undefined),
+    sendAcpPrompt: (sessionKey: number, content: string) => sendAcpPrompt(sessionKey, content),
+    respondHostTool: (sessionKey: number, requestId: string, value: unknown) =>
+      respondHostTool(sessionKey, requestId, value),
     sendAcpPromptStructured: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -46,6 +50,7 @@ function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {})
       pendingSendRef: { current: false },
       autoResumeSpentRef,
       isTurnActiveRef: { current: false },
+      pendingCanvasAwaitsRef: { current: [] },
       ...overrides,
     }),
   );
@@ -54,6 +59,8 @@ function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {})
 
 beforeEach(() => {
   interruptAcpTurn.mockReset().mockResolvedValue(undefined);
+  respondHostTool.mockReset().mockResolvedValue(undefined);
+  sendAcpPrompt.mockReset().mockResolvedValue(undefined);
 });
 
 describe("handleCancel", () => {
@@ -100,5 +107,25 @@ describe("handleSend", () => {
     await result.current.handleSend("hello");
     expect(interruptAcpTurn).not.toHaveBeenCalled();
     expect(autoResumeSpentRef.current).toBe(false);
+  });
+
+  // An agent that keeps `canvas_await` armed is "busy" for as long as the user leaves the surface
+  // alone. Without this the compose bar would be dead for exactly as long.
+  it("ends an open canvas wait rather than refusing to send", async () => {
+    const { result } = render({
+      isProcessing: true,
+      pendingCanvasAwaitsRef: { current: [{ requestId: "w-1", surfaceId: "match" }] },
+    });
+    await result.current.handleSend("stop that and look at this");
+    expect(interruptAcpTurn).toHaveBeenCalledWith(7);
+    expect(respondHostTool).toHaveBeenCalledWith(7, "w-1", { timeout: true });
+    expect(sendAcpPrompt).toHaveBeenCalledWith(7, "stop that and look at this");
+  });
+
+  it("still refuses to send while the agent is genuinely working", async () => {
+    const { result } = render({ isProcessing: true });
+    await result.current.handleSend("hello");
+    expect(interruptAcpTurn).not.toHaveBeenCalled();
+    expect(sendAcpPrompt).not.toHaveBeenCalled();
   });
 });

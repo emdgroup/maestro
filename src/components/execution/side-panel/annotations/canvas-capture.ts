@@ -3,15 +3,18 @@
  *
  * The agent never sees its own surface rendered, so this is the only way to tell it that something
  * it authored correctly still came out wrong — a truncated axis, an overflowing column. It is
- * evidence rather than an anchor: the component ids in the annotation are what the agent acts on,
+ * evidence rather than an anchor: the element ids in the annotation are what the agent acts on,
  * and every failure path here degrades to those.
+ *
+ * The rasterising happens *inside* the frame, because the surface is a sandboxed document this
+ * side cannot read — and it is the frame's own code that does it. A screenshot library cannot:
+ * they all resolve the document they are rasterising by walking up to the top window, which from
+ * an opaque origin throws `Blocked a frame with origin "null" from accessing a cross-origin
+ * frame` before anything is drawn. See `capture` in `canvas-frame.ts`.
  */
 
-import { domToCanvas } from "modern-screenshot";
 import { api } from "@/lib/tauri-utils";
-
-/** Enough to read small type when the agent looks at it, without a megabyte of base64. */
-const PIXEL_RATIO = 2;
+import type { CanvasFrameHandle } from "@/components/execution/activity/canvas/CanvasHtml";
 
 export interface CanvasCapture {
   /** Temp PNG on disk, handed to `prepare_external_attachments` when the note is sent. */
@@ -21,44 +24,23 @@ export interface CanvasCapture {
 }
 
 /**
- * Rasterise `content` and cut `region` out of it, returning a path to a temp PNG.
+ * Rasterise `region` of the surface and write it to a temp PNG.
  *
- * `region` is in viewport coordinates, as the pointer reports it. `content` must be the element
- * holding the canvas *only* — the selection overlay has to live outside it, or the marquee and the
- * bubble end up in the picture.
+ * `region` is in the frame's own coordinates — the frame does not scroll, so subtracting the
+ * iframe's origin from a viewport rect is the whole conversion.
  *
- * Returns null rather than throwing: a capture that fails (a remote `CanvasImage` tainting the
+ * Returns null rather than throwing: a capture that fails (a cross-origin image tainting the
  * canvas is the likely cause) must not cost the user the note they were writing.
  */
 export async function captureRegion(
-  content: HTMLElement,
+  frame: CanvasFrameHandle | null,
   region: { left: number; top: number; width: number; height: number },
 ): Promise<CanvasCapture | null> {
-  if (region.width < 1 || region.height < 1) return null;
+  if (!frame || region.width < 1 || region.height < 1) return null;
 
   try {
-    const full = await domToCanvas(content, { scale: PIXEL_RATIO, backgroundColor: null });
-    const box = content.getBoundingClientRect();
-
-    const cropped = document.createElement("canvas");
-    cropped.width = Math.round(region.width * PIXEL_RATIO);
-    cropped.height = Math.round(region.height * PIXEL_RATIO);
-    const ctx = cropped.getContext("2d");
-    if (!ctx) return null;
-
-    ctx.drawImage(
-      full,
-      Math.round((region.left - box.left) * PIXEL_RATIO),
-      Math.round((region.top - box.top) * PIXEL_RATIO),
-      cropped.width,
-      cropped.height,
-      0,
-      0,
-      cropped.width,
-      cropped.height,
-    );
-
-    const dataUrl = cropped.toDataURL("image/png");
+    const dataUrl = await frame.capture(region);
+    if (!dataUrl) return null;
     const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
     if (!base64) return null;
 

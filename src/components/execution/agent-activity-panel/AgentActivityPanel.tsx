@@ -36,6 +36,12 @@ import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
 import { buildAnnotationBlocks } from "@/components/execution/side-panel/annotations/build-annotation-prompt";
+import {
+  buildCanvasEventPrompt,
+  buildCanvasRestoredPrompt,
+} from "@/components/execution/activity/canvas/canvas-prompt";
+import type { CanvasEvent } from "@/components/execution/activity/canvas/canvas-events";
+import { awaitForSurface } from "@/components/execution/activity/canvas/await-matching";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { Annotation } from "@/store/annotationStore";
 import { useSessionDiffStats } from "@/components/execution/side-panel/useSessionDiffStats";
@@ -171,8 +177,13 @@ export function AgentActivityPanel({
   const sessionUpdateRef = useRef<((payload: Record<string, unknown>) => void) | undefined>(
     undefined,
   );
+  const canvasesRestoredRef = useRef<((surfaceIds: string[]) => void) | undefined>(undefined);
 
-  const [liveState, liveDispatch] = useAcpActivity(sessionKey, sessionUpdateRef);
+  const [liveState, liveDispatch] = useAcpActivity(
+    sessionKey,
+    sessionUpdateRef,
+    canvasesRestoredRef,
+  );
   const {
     configOptions,
     configValues,
@@ -196,7 +207,7 @@ export function AgentActivityPanel({
     sessionKey,
     liveState,
     pendingSendRef,
-    !!pendingPermission || !!pendingElicitation || pendingCanvasAwaits.length > 0,
+    !!pendingPermission || !!pendingElicitation,
   );
   const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
 
@@ -338,6 +349,13 @@ export function AgentActivityPanel({
     isTurnActiveRef.current = liveState.isTurnActive;
   }, [liveState.isTurnActive]);
 
+  // Same again: `handleSend` reads this to decide whether a "busy" agent is busy working or just
+  // parked on a canvas, and it must see the list as it is when the user presses enter.
+  const pendingCanvasAwaitsRef = useRef(pendingCanvasAwaits);
+  useEffect(() => {
+    pendingCanvasAwaitsRef.current = pendingCanvasAwaits;
+  }, [pendingCanvasAwaits]);
+
   const displayItems = useMemo(
     () => mergeLiveItems(liveState.items, livePermissionResponses, liveElicitationSummaries),
     [liveState.items, livePermissionResponses, liveElicitationSummaries],
@@ -390,6 +408,7 @@ export function AgentActivityPanel({
     pendingSendRef,
     autoResumeSpentRef,
     isTurnActiveRef,
+    pendingCanvasAwaitsRef,
   });
 
   // The Overview's "asks the agent" actions write into the composer instead of prompting, so the
@@ -451,15 +470,70 @@ export function AgentActivityPanel({
     setSidePanelCollapsed(false);
   }, [awaitedRequestId, openTabKind, setSidePanelCollapsed]);
 
+  // A surface outlives the turn that drew it: restoring a session brings its canvases back while
+  // the agent is idle, and an idle agent cannot have a `canvas_await` open because it cannot call
+  // a tool outside a turn. So a control with no wait behind it sends its event as a prompt, which
+  // starts one — after which the agent answers and re-arms, and everything that follows takes the
+  // direct path above. Without this a restored canvas is a picture of a UI rather than a UI.
+  const [queuedCanvasEvents, setQueuedCanvasEvents] = useState<CanvasEvent[]>([]);
   const handleCanvasEvent = useCallback(
-    (requestId: string, event: unknown) => {
-      void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
-        toast.error("Could not send your answer to the agent");
-      });
-      setActivity(sessionKey, "thinking");
+    (requestId: string | null, event: unknown) => {
+      if (requestId) {
+        void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
+          toast.error("Could not send your answer to the agent");
+        });
+        setActivity(sessionKey, "thinking");
+        return;
+      }
+      // Mid-turn there is nowhere to put it: ACP allows one `session/prompt` per turn, and the
+      // agent has not armed a wait. Queued rather than dropped — the gap between one
+      // `canvas_await` returning and the next one arming is on every turn, and a click lost there
+      // leaves the agent acting on a surface it can no longer see.
+      if (isProcessing) {
+        setQueuedCanvasEvents((queued) => [...queued, event as CanvasEvent]);
+        return;
+      }
+      void handleSend(buildCanvasEventPrompt([event as CanvasEvent]));
     },
-    [sessionKey, setActivity],
+    [sessionKey, setActivity, isProcessing, handleSend],
   );
+
+  // Drains one event per pass: answering a wait consumes it, which brings the agent back here with
+  // a new one, and the effect runs again for the next event. Only when no wait can take them and
+  // the agent has gone idle do the rest travel together as a prompt.
+  useEffect(() => {
+    const [next, ...rest] = queuedCanvasEvents;
+    if (!next || liveState.sessionEnded) return;
+    const waiting = awaitForSurface(pendingCanvasAwaits, next.surfaceId);
+    if (waiting) {
+      setQueuedCanvasEvents(rest);
+      void api
+        .respondHostTool(sessionKey, waiting.requestId, next as unknown as JsonValue)
+        .catch(() => toast.error("Could not send your answer to the agent"));
+      setActivity(sessionKey, "thinking");
+      return;
+    }
+    if (isProcessing) return;
+    setQueuedCanvasEvents([]);
+    void handleSend(buildCanvasEventPrompt(queuedCanvasEvents));
+  }, [
+    queuedCanvasEvents,
+    pendingCanvasAwaits,
+    isProcessing,
+    liveState.sessionEnded,
+    sessionKey,
+    setActivity,
+    handleSend,
+  ]);
+
+  // One prompt however many canvases came back, and only to ask the agent to arm `canvas_await` —
+  // after which every click is answered directly and costs nothing. `useAcpActivity` owns the
+  // once-per-session part, which cannot live in this component: it remounts.
+  useEffect(() => {
+    canvasesRestoredRef.current = (surfaceIds: string[]) => {
+      if (surfaceIds.length > 0) void handleSend(buildCanvasRestoredPrompt(surfaceIds));
+    };
+  }, [handleSend]);
 
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const handleCreateTaskFromText = useCallback((text: string) => {
@@ -645,7 +719,7 @@ export function AgentActivityPanel({
   const sharedComposeBarProps = {
     onSend: handleSendWithTransition as (content: string, contentBlocks?: JsonValue) => void,
     onCancel: handleCancel,
-    isProcessing,
+    isProcessing: isProcessing && pendingCanvasAwaits.length === 0,
     commands: availableCommands,
     embeddedContext: promptCapabilities?.embedded_context ?? false,
     logId: sessionKey,
@@ -839,6 +913,7 @@ export function AgentActivityPanel({
             latestCanvasSurfaceId={latestCanvasSurfaceId}
             pendingCanvasAwaits={pendingCanvasAwaits}
             onCanvasEvent={handleCanvasEvent}
+            onCloseCanvas={(surfaceId) => liveDispatch({ type: "close_canvas", surfaceId })}
             subagentItems={subagentItems}
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}

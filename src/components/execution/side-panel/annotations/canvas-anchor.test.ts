@@ -1,53 +1,68 @@
 import { describe, it, expect } from "vitest";
-import { isStale, pickAt, pickInRect, uncapturableKinds, type CanvasNode } from "./canvas-anchor";
+import { isStale, pickAt, pickInRect, toCanvasNodes, uncapturableKinds } from "./canvas-anchor";
+import type { FrameNode } from "@/components/execution/activity/canvas/CanvasHtml";
 
 /**
- * The rules are pure functions over a node list, so the tree is built out of plain objects with
- * real elements for ancestry — happy-dom has no layout, but `Node.contains` works, and that is the
- * only DOM behaviour these rules depend on.
+ * The rules are pure functions over a node list, and the list is what the frame reports — so the
+ * fixtures are exactly the shape a real surface sends across, and nothing here needs layout.
  */
-function tree(
-  spec: Array<{
-    id: string;
-    kind: string;
-    parent?: string;
-    rect: [number, number, number, number];
-  }>,
-): CanvasNode[] {
-  const els = new Map<string, HTMLElement>();
-  for (const { id, parent } of spec) {
-    const el = document.createElement("div");
-    els.set(id, el);
-    if (parent) els.get(parent)?.appendChild(el);
-  }
-  return spec.map(({ id, kind, rect: [left, top, width, height] }) => ({
+function node(
+  id: string,
+  tag: string,
+  parentId: string | null,
+  [left, top, width, height]: [number, number, number, number],
+  extra: Partial<FrameNode> = {},
+): FrameNode {
+  return {
     id,
-    kind,
-    el: els.get(id)!,
-    rect: { left, top, right: left + width, bottom: top + height, width, height } as DOMRect,
-  }));
+    parentId,
+    tag,
+    className: "",
+    role: "",
+    ownText: true,
+    childCount: 0,
+    rect: { left, top, width, height },
+    ...extra,
+  };
 }
 
-/** A stat tile: a framed Card wrapping a label and a value. */
-const tile = tree([
-  { id: "col", kind: "Column", rect: [0, 0, 400, 300] },
-  { id: "card", kind: "Card", parent: "col", rect: [10, 10, 180, 80] },
-  { id: "label", kind: "Text", parent: "card", rect: [20, 20, 60, 20] },
-  { id: "value", kind: "Text", parent: "card", rect: [20, 50, 100, 30] },
-  { id: "chart", kind: "Chart", parent: "col", rect: [10, 110, 380, 150] },
-  { id: "rule", kind: "Divider", parent: "col", rect: [10, 100, 380, 4] },
-]);
+/** A stat tile: a framed card wrapping a label and a value, beside a chart. */
+const tile = toCanvasNodes(
+  [
+    node("col", "div", null, [0, 0, 400, 300], { ownText: false, childCount: 3 }),
+    node("card", "div", "col", [10, 10, 180, 80], {
+      className: "rounded-lg border card",
+      ownText: false,
+      childCount: 2,
+    }),
+    node("label", "span", "card", [20, 20, 60, 20]),
+    node("value", "span", "card", [20, 50, 100, 30]),
+    node("chart", "svg", "col", [10, 110, 380, 150]),
+    node("rule", "hr", "col", [10, 100, 380, 4]),
+  ],
+  { left: 0, top: 0 },
+);
+
+describe("toCanvasNodes", () => {
+  it("offsets the frame's rects by where the frame sits", () => {
+    const [only] = toCanvasNodes([node("a", "div", null, [10, 20, 30, 40])], {
+      left: 100,
+      top: 200,
+    });
+    expect([only.rect.left, only.rect.top]).toEqual([110, 220]);
+  });
+});
 
 describe("pickAt", () => {
   it("picks the card, not the text inside it", () => {
     expect(pickAt(tile, 60, 60)).toBe("card");
   });
 
-  it("drills to the innermost component when asked", () => {
+  it("drills to the innermost element when asked", () => {
     expect(pickAt(tile, 60, 60, { drill: true })).toBe("value");
   });
 
-  it("picks a bare component where no card encloses it", () => {
+  it("picks a bare element where no card encloses it", () => {
     expect(pickAt(tile, 200, 180)).toBe("chart");
   });
 
@@ -55,12 +70,12 @@ describe("pickAt", () => {
     expect(pickAt(tile, 300, 95)).toBeNull();
   });
 
-  it("looks straight through a divider", () => {
-    // The pointer is over the rule, which sits in the Column's gap and is skipped.
+  it("looks straight through a rule", () => {
+    // The pointer is over the `hr`, which sits in the column's gap and is skipped.
     expect(pickAt(tile, 100, 102)).toBeNull();
   });
 
-  it("returns null outside every component", () => {
+  it("returns null outside every element", () => {
     expect(pickAt(tile, 900, 900)).toBeNull();
   });
 });
@@ -69,7 +84,7 @@ describe("pickInRect", () => {
   const rect = (left: number, top: number, width: number, height: number) =>
     ({ left, top, right: left + width, bottom: top + height, width, height }) as DOMRect;
 
-  it("selects a component the marquee only clips", () => {
+  it("selects an element the marquee only clips", () => {
     expect(pickInRect(tile, rect(0, 100, 100, 100))).toContain("chart");
   });
 
@@ -87,7 +102,7 @@ describe("pickInRect", () => {
 });
 
 describe("isStale", () => {
-  it("is stale once every annotated component is gone", () => {
+  it("is stale once every annotated element is gone", () => {
     expect(isStale(tile, ["removed-a", "removed-b"])).toBe(true);
   });
 
@@ -101,17 +116,20 @@ describe("isStale", () => {
 });
 
 describe("uncapturableKinds", () => {
-  const withIframe = tree([
-    { id: "col", kind: "Column", rect: [0, 0, 400, 300] },
-    { id: "widget", kind: "Html", parent: "col", rect: [0, 0, 200, 100] },
-    { id: "chart", kind: "Chart", parent: "col", rect: [0, 120, 200, 100] },
-  ]);
+  const withVideo = toCanvasNodes(
+    [
+      node("col", "div", null, [0, 0, 400, 300], { ownText: false, childCount: 2 }),
+      node("clip", "video", "col", [0, 0, 200, 100]),
+      node("chart", "svg", "col", [0, 120, 200, 100]),
+    ],
+    { left: 0, top: 0 },
+  );
 
-  it("reports the components a screenshot cannot show", () => {
-    expect(uncapturableKinds(withIframe, ["widget", "chart"])).toEqual(["Html"]);
+  it("reports the elements a screenshot cannot show", () => {
+    expect(uncapturableKinds(withVideo, ["clip", "chart"])).toEqual(["video"]);
   });
 
   it("reports nothing for a region that rasterises fully", () => {
-    expect(uncapturableKinds(withIframe, ["chart"])).toEqual([]);
+    expect(uncapturableKinds(withVideo, ["chart"])).toEqual([]);
   });
 });

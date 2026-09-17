@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { ChevronLeft, ChevronRight, MoreHorizontal, Save, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
-import {
-  CanvasRenderer,
-  CanvasEventContext,
-} from "@/components/execution/activity/canvas/CanvasRenderer";
-import type { CanvasEventKind } from "@/components/execution/activity/canvas/CanvasRenderer";
+import { CanvasHtml } from "@/components/execution/activity/canvas/CanvasHtml";
+import type {
+  CanvasFrameHandle,
+  FrameNode,
+} from "@/components/execution/activity/canvas/CanvasHtml";
+import { CanvasEventContext } from "@/components/execution/activity/canvas/canvas-events";
+import type { CanvasEventKind } from "@/components/execution/activity/canvas/canvas-events";
 import {
   awaitForSurface,
   awaitToFollow,
@@ -34,20 +36,14 @@ import { useSessionDiffStats } from "./useSessionDiffStats";
 import { useSessionShipState } from "./useSessionShipState";
 import { useWslConnections } from "@/services/connection.service";
 import {
-  useSaveCanvasSurfaceMutation,
   useDeleteCanvasSurfaceMutation,
+  useExportCanvasSurfaceMutation,
 } from "@/services/canvas.service";
 import { commands } from "@/types/bindings";
 import { useSelectedProject } from "@/store/projectStore";
 import type { Annotation } from "@/store/annotationStore";
 import { PlanAnnotationLayer } from "./annotations/PlanAnnotationLayer";
 import { CanvasAnnotationLayer } from "./annotations/CanvasAnnotationLayer";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/ui/dropdown-menu";
 
 interface SidePanelContentProps {
   tabs: SidePanelTab[];
@@ -63,7 +59,9 @@ interface SidePanelContentProps {
   latestCanvasSurfaceId: string | null;
   /** Open `canvas_await` calls — what makes a surface's controls answer rather than just record. */
   pendingCanvasAwaits: PendingCanvasAwait[];
-  onCanvasEvent: (requestId: string, event: unknown) => void;
+  onCanvasEvent: (requestId: string | null, event: unknown) => void;
+  /** Drops the surface from this session's carousel. Its autosaved file is deleted alongside. */
+  onCloseCanvas: (surfaceId: string) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   workspacePath: string;
@@ -101,6 +99,7 @@ export function SidePanelContent({
   latestCanvasSurfaceId,
   pendingCanvasAwaits,
   onCanvasEvent,
+  onCloseCanvas,
   workingFiles,
   taskId,
   workspacePath,
@@ -121,7 +120,7 @@ export function SidePanelContent({
 }: SidePanelContentProps) {
   const [artifactsSelectedFile, setArtifactsSelectedFile] = useState<string | null>(null);
   const selectedProject = useSelectedProject();
-  const saveCanvasMutation = useSaveCanvasSurfaceMutation();
+  const exportCanvasMutation = useExportCanvasSurfaceMutation();
   const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
   // Polling is gated on the session being on screen rather than on the Review or Overview
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
@@ -173,6 +172,11 @@ export function SidePanelContent({
   // Canvas carousel
   const canvasEntries = useMemo(() => [...canvasMap.entries()], [canvasMap]);
   const [canvasIdx, setCanvasIdx] = useState(0);
+  // Closing the last surface in the carousel would otherwise leave the index past the end, which
+  // reads as "No canvas active" while surfaces are still there.
+  if (canvasIdx > 0 && canvasIdx >= canvasEntries.length) {
+    setCanvasIdx(canvasEntries.length - 1);
+  }
 
   // Page to a surface the agent just produced, but only when that target changes — the
   // user is free to page away afterwards, so the index cannot simply be derived from the
@@ -202,6 +206,26 @@ export function SidePanelContent({
 
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
 
+  // The surface renders inside a sandboxed frame, so its geometry only exists where the frame
+  // reports it. Held here because the annotation layer reads it and the frame produces it.
+  const canvasFrameRef = useRef<CanvasFrameHandle | null>(null);
+  const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
+  // Paging the carousel invalidates the geometry: the nodes describe the surface that was on
+  // screen, and keeping them would resolve this one's notes against another one's rects. Latched
+  // during render so the overlay never paints a frame of the wrong outlines.
+  const activeSurfaceKey = activeSurface?.surfaceId ?? null;
+  const [measuredSurfaceKey, setMeasuredSurfaceKey] = useState(activeSurfaceKey);
+  if (measuredSurfaceKey !== activeSurfaceKey) {
+    setMeasuredSurfaceKey(activeSurfaceKey);
+    setFrameNodes([]);
+  }
+
+  // The agent never sees its rendered surface, so a blocked asset or a thrown exception is only
+  // visible here. Parked in the backend and carried back on its next canvas call.
+  const reportCanvasError = (surfaceId: string, error: { message: string; source: string }) => {
+    void commands.canvasReportError(sessionKey, surfaceId, `${error.source}: ${error.message}`);
+  };
+
   // What the user has entered, per surface. Per surface because they can page between canvases
   // freely: one shared bag would send an answer typed on one form as if it belonged to another,
   // and component ids repeat across surfaces precisely because they are the obvious names.
@@ -224,10 +248,11 @@ export function SidePanelContent({
       record: (componentId: string, value: unknown) => {
         values()[componentId] = value;
       },
-      // Present on every surface, firing only on one: a surface with no wait against it keeps
-      // its controls usable and its entries, and simply has nowhere to send them yet.
+      // Fires on every surface, whether or not a wait covers it. With a wait it answers that
+      // wait; without one — a restored session, where the agent is idle and cannot have called
+      // `canvas_await` — the panel turns it into a prompt instead, which is the only way a
+      // surface that outlived its turn can reach the agent again.
       emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => {
-        if (!activeRequestId) return;
         onCanvasEvent(activeRequestId, {
           surfaceId: activeSurfaceId,
           componentId,
@@ -383,6 +408,8 @@ export function SidePanelContent({
                 <CanvasAnnotationLayer
                   sessionKey={sessionKey}
                   surface={activeSurface}
+                  frameNodes={frameNodes}
+                  frame={canvasFrameRef}
                   onSend={onSendAnnotations}
                   sendDisabled={isProcessing}
                   canCapture={canSendImages}
@@ -404,6 +431,16 @@ export function SidePanelContent({
                               {canvasIdx + 1} / {canvasEntries.length}
                             </span>
                           )}
+                          {/* Every origin this surface may reach through `maestro.fetch`, named
+                              where the user can see it. No canvas talks to anything else. */}
+                          {activeSurface.sources.map((source) => (
+                            <span
+                              key={source}
+                              className="ml-1.5 rounded-sm bg-muted px-1 py-px text-[10px] font-mono"
+                            >
+                              {source.replace(/^https?:\/\//, "")}
+                            </span>
+                          ))}
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{activeSurface.title}</TooltipContent>
                       </Tooltip>
@@ -432,67 +469,54 @@ export function SidePanelContent({
                             </button>
                           </>
                         )}
-                        {/* Save and delete gave up their places in the row to the mode toggle and
-                            the annotation bar: they are occasional, and the row is 400px wide. */}
-                        <DropdownMenu>
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <DropdownMenuTrigger
-                                  render={
-                                    <button
-                                      type="button"
-                                      aria-label="Canvas actions"
-                                      className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                                    />
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                aria-label="Export canvas as HTML"
+                                disabled={exportCanvasMutation.isPending}
+                                onClick={() => exportCanvasMutation.mutate(activeSurface)}
+                                className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+                              />
+                            }
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </TooltipTrigger>
+                          <TooltipContent>Export as HTML</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                aria-label="Close canvas"
+                                onClick={() => {
+                                  // The state drop and the file are both needed: leaving the file
+                                  // behind means `restore_canvases` brings the surface back on the
+                                  // next session load.
+                                  if (selectedProject != null) {
+                                    deleteCanvasMutation.mutate({
+                                      projectId: selectedProject.id,
+                                      logId: sessionKey,
+                                      surfaceId: activeSurface.surfaceId,
+                                    });
                                   }
-                                />
-                              }
-                            >
-                              <MoreHorizontal className="w-3.5 h-3.5" />
-                            </TooltipTrigger>
-                            <TooltipContent>Canvas actions</TooltipContent>
-                          </Tooltip>
-                          {/* `DropdownMenuContent` is `w-(--anchor-width)` by default, which here
-                              is the width of an icon button — every label would wrap to three
-                              lines. These items are labels, not a menu sized to a field. */}
-                          <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
-                            <DropdownMenuItem
-                              disabled={saveCanvasMutation.isPending || selectedProject == null}
-                              onClick={() => {
-                                if (selectedProject == null) return;
-                                saveCanvasMutation.mutate({
-                                  projectId: selectedProject.id,
-                                  logId: sessionKey,
-                                  surface: activeSurface,
-                                });
-                              }}
-                            >
-                              <Save className="w-3.5 h-3.5" />
-                              Save canvas to disk
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              disabled={deleteCanvasMutation.isPending || selectedProject == null}
-                              onClick={() => {
-                                if (selectedProject == null) return;
-                                deleteCanvasMutation.mutate({
-                                  projectId: selectedProject.id,
-                                  logId: sessionKey,
-                                  surfaceId: activeSurface.surfaceId,
-                                });
-                              }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Delete saved canvas
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                  onCloseCanvas(activeSurface.surfaceId);
+                                }}
+                                className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                              />
+                            }
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </TooltipTrigger>
+                          <TooltipContent>Close and discard this surface</TooltipContent>
+                        </Tooltip>
                       </>
                     ),
                   }}
                 >
-                  {activeSurface.components.length === 0 ? (
+                  {activeSurface.html.trim().length === 0 ? (
                     <div className="flex flex-col gap-3 p-1">
                       <Skeleton className="h-6 w-3/4" />
                       <Skeleton className="h-32 w-full" />
@@ -501,7 +525,12 @@ export function SidePanelContent({
                     </div>
                   ) : (
                     <CanvasEventContext.Provider value={canvasEventSink}>
-                      <CanvasRenderer surface={activeSurface} />
+                      <CanvasHtml
+                        surface={activeSurface}
+                        handleRef={canvasFrameRef}
+                        onNodes={setFrameNodes}
+                        onError={(error) => reportCanvasError(activeSurface.surfaceId, error)}
+                      />
                     </CanvasEventContext.Provider>
                   )}
                 </CanvasAnnotationLayer>

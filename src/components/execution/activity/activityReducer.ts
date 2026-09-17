@@ -20,7 +20,8 @@ export type ActivityAction =
   | { type: "set_initialized" }
   | { type: "append_error"; stopReason: "error" | "auth_required"; message: string }
   | { type: "terminal_output"; terminalId: string; output: string }
-  | { type: "restore_canvases"; surfaces: CanvasSurface[] };
+  | { type: "restore_canvases"; surfaces: CanvasSurface[] }
+  | { type: "close_canvas"; surfaceId: string };
 
 /**
  * `terminalBuffers` is a catch-up buffer, not a scrollback. Its only consumer is
@@ -104,13 +105,30 @@ export function activityReducer(state: ActivityState, action: ActivityAction): A
     case "restore_canvases": {
       const newCanvasMap = new Map(state.canvasMap);
       const newItems = [...state.items];
-      for (const surface of action.surfaces) {
+      // They arrive in directory order, which is the filesystem's and not the order the agent
+      // drew them in. The carousel and the transcript both read insertion order, so sorting here
+      // is what puts a restored session back the way the user left it. Files written before
+      // `createdAt` existed sort to the front, together, in whatever order they arrived.
+      const ordered = [...action.surfaces].sort((a, b) => a.createdAt - b.createdAt);
+      for (const surface of ordered) {
         if (!newCanvasMap.has(surface.surfaceId)) {
           newCanvasMap.set(surface.surfaceId, surface);
           newItems.push({ type: "canvas", item: { surfaceId: surface.surfaceId } });
         }
       }
       return { ...state, canvasMap: newCanvasMap, items: newItems };
+    }
+    case "close_canvas": {
+      if (!state.canvasMap.has(action.surfaceId)) return state;
+      const newCanvasMap = new Map(state.canvasMap);
+      newCanvasMap.delete(action.surfaceId);
+      return {
+        ...state,
+        canvasMap: newCanvasMap,
+        items: state.items.filter(
+          (entry) => entry.type !== "canvas" || entry.item.surfaceId !== action.surfaceId,
+        ),
+      };
     }
     default:
       return state;
@@ -505,10 +523,12 @@ function processEvent(
     case "canvas_create": {
       const surface: CanvasSurface = {
         surfaceId: payload.surfaceId,
-        catalogId: payload.catalogId,
         title: payload.title,
-        components: [],
+        html: payload.html,
+        theme: payload.theme ?? "maestro",
+        sources: payload.sources ?? [],
         data: {},
+        createdAt: Date.now(),
       };
       const newCanvasMap = new Map(newState.canvasMap);
       newCanvasMap.set(payload.surfaceId, surface);
@@ -524,14 +544,19 @@ function processEvent(
       const newCanvasMap = new Map(newState.canvasMap);
       const existing = newCanvasMap.get(payload.surfaceId);
       if (existing) {
-        const componentMap = new Map(existing.components.map((c) => [c.id, c]));
-        for (const c of payload.components) {
-          componentMap.set(c.id, c);
-        }
-        newCanvasMap.set(payload.surfaceId, {
-          ...existing,
-          components: [...componentMap.values()],
-        });
+        newCanvasMap.set(
+          payload.surfaceId,
+          payload.target
+            ? {
+                ...existing,
+                patch: {
+                  seq: (existing.patch?.seq ?? 0) + 1,
+                  target: payload.target,
+                  html: payload.html,
+                },
+              }
+            : { ...existing, html: payload.html, patch: undefined },
+        );
       }
       return { ...newState, canvasMap: newCanvasMap };
     }

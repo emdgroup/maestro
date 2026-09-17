@@ -6,6 +6,7 @@ import { isPlanPermission } from "../activity/PermissionPrompt";
 import type { ActivityAction } from "../activity/useAcpActivity";
 import type { JsonValue } from "@/types/bindings";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
+import type { PendingCanvasAwait } from "../activity/canvas/await-matching";
 
 type PendingPermission = { requestId: string; payload: Record<string, unknown> };
 type PendingElicitation = { requestId: string; message: string; payload: Record<string, unknown> };
@@ -49,6 +50,7 @@ export function useMessageSender({
   pendingSendRef,
   autoResumeSpentRef,
   isTurnActiveRef,
+  pendingCanvasAwaitsRef,
 }: {
   sessionKey: number;
   isProcessing: boolean;
@@ -67,6 +69,8 @@ export function useMessageSender({
   autoResumeSpentRef: MutableRefObject<boolean>;
   /** Mirrors `liveState.isTurnActive`, so a send can wait for a cancelled turn to finish. */
   isTurnActiveRef: React.RefObject<boolean>;
+  /** Open `canvas_await` calls, so a send can end them rather than be refused as "busy". */
+  pendingCanvasAwaitsRef: React.RefObject<PendingCanvasAwait[]>;
 }): {
   handleSend: (content: string, contentBlocks?: JsonValue) => Promise<void>;
   handleCancel: () => Promise<void>;
@@ -83,7 +87,24 @@ export function useMessageSender({
 
   const handleSend = useCallback(
     async (content: string, contentBlocks?: JsonValue) => {
-      if (isProcessing) return;
+      if (isProcessing) {
+        // An agent holding `canvas_await` open is "busy" for as long as the user leaves the
+        // surface alone, which without this would mean never being able to type again. Ending
+        // the wait is the price of speaking: the turn stops, and the surface goes quiet until
+        // the agent arms another one.
+        const waiting = pendingCanvasAwaitsRef.current;
+        if (waiting.length === 0) return;
+        autoResumeSpentRef.current = true;
+        try {
+          await api.interruptAcpTurn(sessionKey);
+        } catch {
+          // Best-effort: answering the waits below still unblocks the agent.
+        }
+        for (const { requestId } of waiting) {
+          await api.respondHostTool(sessionKey, requestId, { timeout: true }).catch(() => {});
+        }
+        await waitForTurnEnd(isTurnActiveRef);
+      }
       // Revising a plan: the agent is blocked inside `session/request_permission`, mid-turn, and
       // ACP only sanctions another `session/prompt` once a turn ends (command_loop.rs races two).
       // So cancel first, answer the request `cancelled`, then wait for the turn to actually end.
@@ -123,6 +144,7 @@ export function useMessageSender({
       pendingSendRef,
       autoResumeSpentRef,
       isTurnActiveRef,
+      pendingCanvasAwaitsRef,
     ],
   );
 

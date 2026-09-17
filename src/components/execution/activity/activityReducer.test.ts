@@ -802,31 +802,22 @@ describe("activityReducer — canvases and terminals", () => {
     expect(state.terminalBuffers.get("t1")).toContain("line 99\n");
   });
 
-  it("merges canvas components by id instead of appending duplicates", () => {
+  it("replaces the canvas document on an untargeted update", () => {
     let state = activityReducer(
       makeState(),
-      event({ sessionUpdate: "canvas_create", surfaceId: "s1", catalogId: "c1", title: "Chart" }),
-    );
-    state = activityReducer(
-      state,
       event({
-        sessionUpdate: "canvas_update",
+        sessionUpdate: "canvas_create",
         surfaceId: "s1",
-        components: [{ id: "a", component: "Text" }],
+        title: "Chart",
+        html: "<p id='a'>one</p>",
       }),
     );
     state = activityReducer(
       state,
-      event({
-        sessionUpdate: "canvas_update",
-        surfaceId: "s1",
-        components: [{ id: "a", component: "Heading" }],
-      }),
+      event({ sessionUpdate: "canvas_update", surfaceId: "s1", html: "<p id='a'>two</p>" }),
     );
 
-    const components = state.canvasMap.get("s1")!.components;
-    expect(components).toHaveLength(1);
-    expect(components[0].component).toBe("Heading");
+    expect(state.canvasMap.get("s1")!.html).toBe("<p id='a'>two</p>");
   });
 
   it("ignores canvas data addressed to a surface that does not exist", () => {
@@ -838,12 +829,39 @@ describe("activityReducer — canvases and terminals", () => {
   });
 
   it("restores canvases without duplicating ones already present", () => {
-    const surface = { surfaceId: "s1", catalogId: "c1", title: "Chart", components: [], data: {} };
+    const surface = {
+      surfaceId: "s1",
+      title: "Chart",
+      html: "<p id='a'>one</p>",
+      theme: "maestro" as const,
+      sources: [],
+      data: {},
+      createdAt: 0,
+    };
     let state = activityReducer(makeState(), { type: "restore_canvases", surfaces: [surface] });
     state = activityReducer(state, { type: "restore_canvases", surfaces: [surface] });
 
     expect(state.canvasMap.size).toBe(1);
     expect(state.items.filter((i) => i.type === "canvas")).toHaveLength(1);
+  });
+
+  it("closes one surface and leaves the others", () => {
+    let state = makeState();
+    for (const surfaceId of ["s1", "s2"]) {
+      state = activityReducer(
+        state,
+        event({ sessionUpdate: "canvas_create", surfaceId, title: surfaceId, html: "<p>x</p>" }),
+      );
+    }
+    state = activityReducer(state, { type: "close_canvas", surfaceId: "s1" });
+
+    expect([...state.canvasMap.keys()]).toEqual(["s2"]);
+    expect(state.items.filter((i) => i.type === "canvas")).toHaveLength(1);
+  });
+
+  it("returns the same state when closing a surface that is not there", () => {
+    const state = makeState();
+    expect(activityReducer(state, { type: "close_canvas", surfaceId: "gone" })).toBe(state);
   });
 });
 

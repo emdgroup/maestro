@@ -1,24 +1,58 @@
 {
-  "$comment": "Maestro's own MCP tool surface, served by `maestro-server mcp` (see mcp_stdio.rs). Descriptions are the ONLY documentation the agent receives — the skill no longer ships the canvas catalog — so prose here is behaviour, not commentary. `{components}` in a description is replaced at load with the pretty-printed `components` section of canvas-catalog.json. Adding a tool here also needs an arm in the host's `host_tools::handle`, or the gateway will forward calls nobody answers.",
+  "$comment": "Maestro's own MCP tool surface, served by `maestro-server mcp` (see mcp_stdio.rs). Descriptions are the ONLY documentation the agent receives, so prose here is behaviour, not commentary. Adding a tool here also needs an arm in the host's `host_tools::handle`, or the gateway will forward calls nobody answers.",
   "tools": [
     {
       "name": "canvas_create",
-      "description": "Open a canvas surface in Maestro's side panel. Always the first call for a new surfaceId, before canvas_data or canvas_update. Reuse one surfaceId for a whole answer — a new surface per tool call produces disconnected panels. Never narrate these calls to the user; they see the rendered surface, not the machinery.",
+      "description": "Open a canvas surface in Maestro's side panel. A surface is an HTML document you write — HTML, CSS and JavaScript — rendered in a sandboxed frame beside the conversation. Always the first call for a new surfaceId, before canvas_data or canvas_update. Reuse one surfaceId for a whole answer; a new surface per tool call produces disconnected panels. Never narrate these calls to the user — they see the rendered surface, not the machinery.\n\nWRITING THE DOCUMENT\n- Give every meaningful element an `id`. Controls with an id answer canvas_await, and elements with an id are the ones the user can annotate and point you at.\n- theme `maestro` (the default) gives you Tailwind compiled in the frame with Maestro's own tokens: `bg-card`, `text-muted-foreground`, `border-border`, `rounded-lg`, `bg-primary`, `text-destructive`, `bg-chart-1`. Writing shadcn-flavoured Tailwind produces a surface that looks like the rest of the app — `<div class='rounded-lg border bg-card p-4 shadow-sm'>` is a Maestro card.\n- theme `tailwind` is Tailwind with its own stock tokens, for mocking up a project that uses Tailwind. theme `none` injects nothing, for a mockup carrying the target project's own CSS.\n- Assets are `https:` URLs or `data:` URIs. Relative paths and `file://` do NOT resolve — the frame has no base URL and no access to the disk. Icons are inline `<svg>`, not image files.\n- Charts: inline `<svg>` for bars, lines and sparklines, which always works. For real axes, scales and tooltips add a CDN library — and guard it, because the user may be offline:\n  `<script src='https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js' onerror=\"document.getElementById('chart').textContent='Chart library unavailable offline'\"></script>`\n- `window.maestro` is available in the frame: `maestro.emit(id, kind, value)` answers a pending canvas_await from your own code, `maestro.record(id, value)` notes a value without answering, `maestro.onData(cb)` reads what canvas_data pushed, and `maestro.fetch(url, init)` performs a request from the host machine against the origins you declared in `sources`.\n- A control your own script handles should either call `preventDefault()` or carry `data-maestro-ignore`. Otherwise Maestro also reports the click, and a button that only redraws something in the frame consumes the canvas_await you were holding for a real answer.\n- Anything the frame fails to load or run — a blocked asset, an offline CDN, a thrown exception — comes back to you on the result of your next canvas call on this surface.",
       "inputSchema": {
         "type": "object",
-        "required": ["surfaceId", "title"],
+        "required": ["surfaceId", "title", "html"],
         "properties": {
           "surfaceId": {
             "type": "string",
             "description": "Your identifier for this surface; reuse it in every later call."
           },
-          "title": { "type": "string", "description": "Shown above the surface." }
+          "title": { "type": "string", "description": "Shown above the surface." },
+          "html": {
+            "type": "string",
+            "description": "The document. A full `<html>` page or a fragment — Maestro prepends its own head either way."
+          },
+          "theme": {
+            "type": "string",
+            "enum": ["maestro", "tailwind", "none"],
+            "default": "maestro",
+            "description": "`maestro` for anything that should look like the app. `none` for a mockup of someone else's product."
+          },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Origins `maestro.fetch` may reach, e.g. [\"https://api.example.com\"]. Anything else is refused. The user is shown this list. Secrets in request headers end up in the transcript and in the saved file."
+          }
+        }
+      }
+    },
+    {
+      "name": "canvas_update",
+      "description": "Change a surface. With `target`, the element with that id is replaced in the live frame: no reload, so scroll position, focus, canvas bitmaps and anything the user typed survive — prefer this for content. Without `target`, the whole document is replaced and the frame reloads, losing all of that and re-running your script from the top.\n\nThe replacement is assigned as `outerHTML`, so the element itself is a new node: listeners your script bound to it are gone, and a `<script>` inside the replacement never runs. A control your own JavaScript drives has to be rewired, which means a document-level listener that survives the swap — or a full replace. Static content, rows, values and labels are what `target` is for.\n\nElement ids are scoped to their surface, so two forms may both use `branch` without colliding. Neither `title` nor `sources` can be changed after canvas_create.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["surfaceId", "html"],
+        "properties": {
+          "surfaceId": { "type": "string" },
+          "html": {
+            "type": "string",
+            "description": "With `target`, the replacement for that element — include the element itself, with its id, or you lose the anchor. Without `target`, the whole document."
+          },
+          "target": {
+            "type": "string",
+            "description": "Id of the element to replace. Omit to replace the document."
+          }
         }
       }
     },
     {
       "name": "canvas_data",
-      "description": "Store data on a surface at a JSON Pointer path, for Chart and DataTable to bind to. Call this BEFORE the canvas_update that references the path — a component pointing at an empty path shows a skeleton forever. DataTable rows are positional arrays of cells indexed by column order, not objects keyed by column key.",
+      "description": "Store data on a surface at a JSON Pointer path. The document subscribes with `maestro.onData(function (data) { ... })`, reading `data['/rows']`. Use it for values that change while the surface stays the same — a table's rows, a chart's series — so a refresh is one small call instead of a document rewrite.\n\nSubscribe; do not read `maestro.data` while your script is initialising. It is empty then — the bag arrives just after the document loads, and `onData` fires at that moment with everything in it.\n\nThe bag outlives the document. A full canvas_update reloads the frame, and `onData` then delivers every value you have ever pushed as though it were new — so a handler that acts on what it receives (appending a row, playing a move) must be able to tell a replay from a change. Push a counter alongside the value and ignore anything not newer than what the document has already seen.",
       "inputSchema": {
         "type": "object",
         "required": ["surfaceId", "path", "value"],
@@ -30,31 +64,8 @@
       }
     },
     {
-      "name": "canvas_update",
-      "description": "Add or update components on a surface. Components are a flat adjacency list: each has an `id` and a `component` type, and nests by listing child ids in `children`. Re-sending a component with the same id updates it in place, so a dashboard can fill in while tool calls run.\n\nOrder is canvas_create, then canvas_data, then canvas_update.\n\nControls (Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput) report back only while a canvas_await is pending. Outside that window the user can still fill them in, and nothing is sent to you — which is the right shape for a UI mock. Component ids are scoped to their surface, so two forms may both use `branch` without colliding.\n\nComponent props:\n{components}",
-      "inputSchema": {
-        "type": "object",
-        "required": ["surfaceId", "components"],
-        "properties": {
-          "surfaceId": { "type": "string" },
-          "components": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["id", "component"],
-              "properties": {
-                "id": { "type": "string" },
-                "component": { "type": "string" },
-                "children": { "type": "array", "items": { "type": "string" } }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
       "name": "canvas_await",
-      "description": "Wait for the user to act on a surface's controls, and return what they did. This is what makes the controls answer — render the form with canvas_update first, then call this. Returns `{event:{surfaceId,componentId,kind,value,values}}`, where `values` holds every field on that surface, so one form is one round trip. Omit `surfaceId` to take whichever canvas the user acts on: they can page between every surface you have drawn, and the event names the one they used. Pass `surfaceId` only to insist on a particular canvas — one that does not match a canvas you created waits for nothing. Returns `{timeout:true}` if nothing happened in the window; call again to keep waiting.",
+      "description": "Wait for the user to act on a surface's controls, and return what they did. This is what makes the controls answer — render the form with canvas_create or canvas_update first, then call this. Returns `{event:{surfaceId,componentId,kind,value,values}}`, where `componentId` is the element's `id` and `values` holds every field on that surface, so one form is one round trip. A `button[id]` click, a `form[id]` submit, and any `maestro.emit` call all answer it; inputs with an `id` or `name` fill `values` without answering. Omit `surfaceId` to take whichever canvas the user acts on: they can page between every surface you have drawn, and the event names the one they used. Pass `surfaceId` only to insist on a particular canvas — one that does not match a canvas you created waits for nothing. Returns `{timeout:true}` if nothing happened in the window; call again to keep waiting. Keep an open wait for as long as the surface is worth interacting with, re-arming after every event and every timeout: while one is open the user's actions reach you directly, and while none is open each one costs a whole turn. Nothing is lost either way — an action with no wait open is held and delivered to the next wait you arm, or as a prompt once you go idle — but a held action is one the user is waiting on, so arm the next wait before doing anything else. A surface only the user's own script reacts to — a filter that redraws a chart in the frame — never answers a wait and does not need one. Stop re-arming when the exchange is finished; the user can always type, which ends the wait.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -83,6 +94,62 @@
             "enum": ["Urgent", "High", "Medium", "Low", "None"]
           },
           "labels": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    {
+      "name": "get_task",
+      "description": "Read a Maestro task: its description, status, labels, and the outcome thread of what previous sessions concluded about it. Omit `id` for the task this session was started for — the prompt you were given is a paraphrase of a card, and the card is where the user put the detail, the acceptance criteria and the history. Read it before assuming what the work is. The thread carries the last 20 entries, newest kept.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Omit for the task this session is working on."
+          }
+        }
+      }
+    },
+    {
+      "name": "update_task",
+      "description": "Change a Maestro task. Only the fields you pass are touched; omit `id` for the task this session is working on.\n\nMoving `status` is the same move as the user dragging the card, so make it when the work has actually reached that state — `Review` when you are finished and want it looked at, not when you expect to be finished. The user is watching the board, so a wrong move is visible and misleading rather than harmless.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Omit for the task this session is working on."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Planning", "Queue", "InProgress", "Review", "Done"]
+          },
+          "title": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "description": { "type": "string", "description": "Markdown. Replaces what is there." },
+          "priority": {
+            "type": "string",
+            "enum": ["Urgent", "High", "Medium", "Low", "None"]
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Replaces the whole list, so include the ones you are keeping."
+          }
+        }
+      }
+    },
+    {
+      "name": "comment_task",
+      "description": "Add a note to a task's outcome thread: what you concluded, what you tried that did not work, what the next session needs to know. This transcript is discarded when the session closes and the thread is not, so anything worth keeping belongs here rather than only in your reply. Omit `id` for the task this session is working on.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Omit for the task this session is working on."
+          },
+          "body": { "type": "string", "description": "Markdown." }
         }
       }
     },

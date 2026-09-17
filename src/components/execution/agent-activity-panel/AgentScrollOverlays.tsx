@@ -4,6 +4,17 @@ import { ChevronDown, ChevronUp, User } from "lucide-react";
 import { ComposeBar } from "../activity/compose-bar/ComposeBar";
 import type { ComposeBarHandle } from "../activity/compose-bar/ComposeBar";
 import { parseUserContent } from "../activity/ActivityUserMessage";
+import { parseCanvasPrompt } from "../activity/canvas/canvas-prompt";
+
+/** The pinned bar says what the message was, and a canvas prompt was a click, not its own text. */
+function summariseUserMessage(content: string): string {
+  const text = parseUserContent(content).text;
+  const canvas = parseCanvasPrompt(text);
+  if (!canvas) return text;
+  return canvas.kind === "restored"
+    ? `${canvas.surfaces.length} canvas surfaces restored`
+    : `${canvas.componentId || canvas.surfaceId} ${canvas.eventKind} on ${canvas.surfaceId}`;
+}
 import type {
   ConfigOption,
   UsageState,
@@ -88,7 +99,7 @@ function PinnedUserMessage({
             <User className="w-2.5 h-2.5 text-accent/70" />
           </div>
           <span className="text-xs text-foreground/80 truncate flex-1 min-w-0 text-left">
-            {parseUserContent(pinnedUserMessage.content).text}
+            {summariseUserMessage(pinnedUserMessage.content)}
           </span>
           <ChevronUp className="w-3 h-3 text-muted-foreground shrink-0 opacity-50" />
         </motion.button>
