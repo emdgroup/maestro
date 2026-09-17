@@ -2,16 +2,19 @@
 name: maestro-output
 description: MANDATORY output formatting for the Maestro desktop app. Invoke BEFORE writing any reply — every request, before you answer, report, summarize, compare or explain — not only when you already expect structure, since you cannot judge your answer's shape before reading this. Maestro is not a terminal; it renders canvas dashboards and real UI controls, Mermaid, LaTeX, SVG, SMILES and sortable tables inline, and flat prose throws all of that away. Assume shape until proven otherwise; "show me x", "list the y", "what's the status", "how does this work", "compare a and b" all land as a table, chart, diagram, dashboard or mock. Always invoke for a table, an inventory, items with attributes, more than three numbers, test/build/CI results, a status overview, UI, control flow, architecture, a formula, a layout, a molecule. Users never ask for a chart or a diagram, so invoke on the shape of the answer, not on their wording. Flattening shaped data into prose is the failure this skill exists to prevent.
 user-invocable: false
-allowed-tools: Bash(maestro-server validate-canvas*) Bash(echo *)
+allowed-tools: Bash(echo *) mcp__maestro__*
 ---
 
 # Rendering output in Maestro
 
 Session check — `MAESTRO_SESSION` is: !`echo "${MAESTRO_SESSION:-unset}"`
 
-`unset` means a plain terminal, not Maestro: none of this renders and `maestro-server` is absent.
-Answer in ordinary markdown and ignore the rest of this file. If the line is blank or still shows
-a raw `${...}`, the check did not run — run `echo $MAESTRO_SESSION` yourself before deciding.
+`unset` means a plain terminal, not Maestro: none of this renders. Answer in ordinary markdown and
+ignore the rest of this file. If the line is blank or still shows a raw `${...}`, the check did not
+run — run `echo $MAESTRO_SESSION` yourself before deciding.
+
+Everything below renders on that basis alone. The canvas section has one extra condition, stated
+there.
 
 ## Choosing a format
 
@@ -46,8 +49,8 @@ Reach for canvas `DataTable` when the table is **interactive or live**: the user
 page through it, or read it alongside a `Chart` on the same surface that shares its data, or rows
 keep arriving while tool calls run. That interaction is the whole reason the component exists.
 
-Otherwise use a GFM table. It already sorts on column click, it costs no validation round trip,
-and it stays readable when the user copies the answer out of Maestro.
+Otherwise use a GFM table. It already sorts on column click, it costs no tool calls, and it stays
+readable when the user copies the answer out of Maestro.
 
 ### When plain prose is the right answer
 
@@ -57,36 +60,43 @@ scan the answer or read it — scanning wants structure, reading wants sentences
 
 ## Canvas
 
-Canvas surfaces are live: create one, push data in, and update components in place as more data
-arrives, so a dashboard fills in while tool calls are still running. They are emitted as
-` ```maestro-canvas ` fences holding one JSON message, which Maestro strips from the text stream
-and renders.
+**This section, and only this section, needs the `maestro` MCP server in your tool list.** It is
+usually there; it can be missing if Maestro could not open its tool gateway. If it is missing, use
+a GFM table, Mermaid or SVG instead of a canvas and carry on — every other format in this file
+still renders, because they are the markdown renderer rather than tool calls.
+
+Canvas surfaces are built by calling tools on the **`maestro` MCP server**: `canvas_create`, then
+`canvas_data`, then `canvas_update`, in that order. They are live — update components in place as
+more data arrives, so a dashboard fills in while other tool calls are still running.
 
 They are not only for data. The catalog has real controls — `Button`, `Modal`, `TextField`,
 `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput` — rendered as Maestro's own components in
 the user's theme, so a mock of a dialog or a form is the working thing rather than a picture of
 it. Never draw UI as ASCII art or box-drawing characters.
 
-Read `references/canvas.md` before your first fence in a session — message protocol and its
-mandatory ordering, validation, component selection, and the failure patterns that leave a surface
-stuck on skeletons. Its component catalog is `references/canvas-catalog.json`.
+To collect an actual answer from the user, render the form and then call **`canvas_await`**. That
+is what makes the controls clickable; it returns what the user did, with every field on the
+surface attached, so one form is one round trip.
+
+Read `references/canvas.md` before your first surface in a session — the data pipeline, component
+selection, chart formats, and the failure patterns that leave a surface stuck on skeletons. Each
+tool's own description carries the component props it accepts.
 
 Two things bite before you get there:
 
 - **Data before component.** A component pointing at a path with nothing behind it shows a
-  skeleton forever.
-- **Validate every fence** with `maestro-server validate-canvas` before emitting it. You never see
-  the rendered result, so this is your only signal that what you emitted is a working surface
-  rather than a broken one the user is now staring at.
+  skeleton forever. `canvas_data` first, `canvas_update` second.
+- **Read the tool's error.** A malformed surface comes back as a tool error naming what is wrong;
+  fix it and call again. That is your only signal, because you never see the rendered result.
 
-Keep that validation loop out of your reply: never paste the fence JSON, the command, or its
-output; never announce that you are about to validate or that it passed; never narrate a retry.
-The user sees a rendered surface, not the machinery. If a fence cannot be made to validate, drop
-the canvas and answer in plain markdown rather than explaining the failure.
+Keep all of that out of your reply: never narrate a canvas tool call, never announce that you are
+about to render or that it worked, never paste the arguments or a tool error. The user sees a
+rendered surface, not the machinery. If a surface cannot be made to work, drop the canvas and
+answer in plain markdown rather than explaining the failure.
 
 ## The other formats
 
-These need no validation and no protocol — write the fence and Maestro renders it.
+These need no tool calls and no protocol — write the fence and Maestro renders it.
 
 - **Mermaid** — ` ```mermaid `, all the usual diagram types (flowchart, sequence, class, state, ER, gantt).
 - **LaTeX** — `$...$` inline and `$$...$$` block, KaTeX syntax. `mhchem` is loaded, so `\ce{H2O}`

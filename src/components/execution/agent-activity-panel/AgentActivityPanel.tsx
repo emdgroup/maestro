@@ -14,6 +14,10 @@ import {
   extractBodyTextFromToolCallItem,
 } from "../activity/permission-prompt-utils";
 import { ElicitationPrompt, parseElicitationFields } from "../activity/ElicitationPrompt";
+import { deriveTaskDraft } from "../activity/task-draft";
+import type { TaskDraft } from "../activity/task-draft";
+import { CreateTaskModal } from "@/components/kanban/create-task-modal/CreateTaskModal";
+import { useNavigationStore } from "@/store/navigationStore";
 import {
   groupToolCalls,
   groupIntoAgentSections,
@@ -141,7 +145,7 @@ export function AgentActivityPanel({
   headerSlot,
   onSpawnShell,
 }: AgentActivityPanelProps) {
-  const { markSeen } = useSessionActivityActions();
+  const { markSeen, setActivity } = useSessionActivityActions();
   const {
     setAuthRequired,
     clearAuthRequired,
@@ -179,6 +183,7 @@ export function AgentActivityPanel({
     setPendingPermission,
     pendingElicitation,
     setPendingElicitation,
+    pendingCanvasAwaits,
   } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef, sessionUpdateRef);
 
   const [, setScrollRestoreToken] = useState(0);
@@ -191,7 +196,7 @@ export function AgentActivityPanel({
     sessionKey,
     liveState,
     pendingSendRef,
-    !!pendingPermission || !!pendingElicitation,
+    !!pendingPermission || !!pendingElicitation || pendingCanvasAwaits.length > 0,
   );
   const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
 
@@ -436,6 +441,31 @@ export function AgentActivityPanel({
     openTabKind("plan");
   }, [handleOpenPlanOverlaySplit, openTabKind]);
 
+  // A canvas the agent is waiting on is a request, not a notification: put it on screen rather
+  // than raising an unseen dot on a collapsed panel. Keyed on the newest wait, so a second one
+  // arriving re-opens the panel the user closed on the first.
+  const awaitedRequestId = pendingCanvasAwaits[pendingCanvasAwaits.length - 1]?.requestId ?? null;
+  useEffect(() => {
+    if (!awaitedRequestId) return;
+    openTabKind("canvas");
+    setSidePanelCollapsed(false);
+  }, [awaitedRequestId, openTabKind, setSidePanelCollapsed]);
+
+  const handleCanvasEvent = useCallback(
+    (requestId: string, event: unknown) => {
+      void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
+        toast.error("Could not send your answer to the agent");
+      });
+      setActivity(sessionKey, "thinking");
+    },
+    [sessionKey, setActivity],
+  );
+
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+  const handleCreateTaskFromText = useCallback((text: string) => {
+    setTaskDraft(deriveTaskDraft(text));
+  }, []);
+
   const handleOpenFile = useCallback(
     (uri: string) => {
       // Tool calls report Windows paths with backslashes and an arbitrarily cased
@@ -674,6 +704,7 @@ export function AgentActivityPanel({
                 projectId={selectedProject?.id}
                 workspacePath={workspacePath}
                 onAuthLogin={hasAuthError || hasPreSpawnAuthError ? handleAuthLogin : undefined}
+                onCreateTaskFromText={selectedProject ? handleCreateTaskFromText : undefined}
               />
             )}
             <AgentBottomBar
@@ -702,6 +733,25 @@ export function AgentActivityPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {selectedProject && (
+        <CreateTaskModal
+          isOpen={!!taskDraft}
+          onClose={() => setTaskDraft(null)}
+          projectId={selectedProject.id}
+          initial={taskDraft ?? undefined}
+          onCreated={(task) => {
+            toast.success(`Task created: ${task.title}`, {
+              action: {
+                label: "Open",
+                onClick: () => {
+                  useNavigationStore.getState().setActiveTab("kanban");
+                  useNavigationStore.getState().setActiveTaskId(task.id);
+                },
+              },
+            });
+          }}
+        />
+      )}
       {agentId && (
         <AgentAuthModal
           agentId={agentId}
@@ -787,6 +837,8 @@ export function AgentActivityPanel({
             connection={connection}
             canvasMap={liveState.canvasMap}
             latestCanvasSurfaceId={latestCanvasSurfaceId}
+            pendingCanvasAwaits={pendingCanvasAwaits}
+            onCanvasEvent={handleCanvasEvent}
             subagentItems={subagentItems}
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}

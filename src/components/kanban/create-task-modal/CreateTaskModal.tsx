@@ -54,9 +54,19 @@ interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
+  /** Prefills title and description — used when a task is drafted from an agent's message. */
+  initial?: { title: string; description: string };
+  /** Called once the task exists, for callers that are not looking at the board. */
+  onCreated?: (task: Task) => void;
 }
 
-export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalProps) {
+export function CreateTaskModal({
+  isOpen,
+  onClose,
+  projectId,
+  initial,
+  onCreated,
+}: CreateTaskModalProps) {
   const isGitRepo = useIsGitRepo();
 
   const { data: issueConfig } = useProjectIssueTrackingConfig(projectId);
@@ -142,8 +152,8 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
   const [openState, setOpenState] = useState(isOpen);
   if (openState !== isOpen) {
     setOpenState(isOpen);
-    setTitle("");
-    setDescription("");
+    setTitle(isOpen ? (initial?.title ?? "") : "");
+    setDescription(isOpen ? (initial?.description ?? "") : "");
     if (!isOpen) {
       setError(null);
       setSelectedIssue(null);
@@ -249,6 +259,7 @@ export function CreateTaskModal({ isOpen, onClose, projectId }: CreateTaskModalP
             });
           }
           setPendingFiles([]);
+          onCreated?.(newTask);
           if (createAnother) {
             setTitle("");
             setDescription("");

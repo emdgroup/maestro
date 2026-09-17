@@ -10,6 +10,7 @@ import type {
   ErrorItem,
 } from "./types";
 import { extractAgentMeta, mergeAgentMeta } from "./agentMeta";
+import { isMaestroHostTool } from "./utils";
 
 export type ActivityAction =
   | { type: "event"; payload: SessionUpdatePayload; raw: Record<string, unknown> }
@@ -328,8 +329,10 @@ function processEvent(
       const newMap = new Map(newState.toolCallMap);
       newMap.set(payload.toolCallId, tc);
 
-      // AskUserQuestion is handled by the elicitation panel — suppress the generic tool card
-      if (meta.toolName === "AskUserQuestion") {
+      // AskUserQuestion is handled by the elicitation panel — suppress the generic tool card.
+      // Maestro's own MCP tools are suppressed for the same reason: the canvas surface and the
+      // created task are the visible result, and a row about the call adds nothing.
+      if (meta.toolName === "AskUserQuestion" || isMaestroHostTool(meta.toolName, payload.title)) {
         return { ...newState, items, toolCallMap: newMap };
       }
 

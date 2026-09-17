@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -85,11 +85,53 @@ pub enum ServerRequest {
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
     KillAuthTerminal(KillAuthTerminalRequest),
     AuthTerminalInput(AuthTerminalInputRequest),
+    /// Answer to a [`ServerResponse::HostToolCall`] the host resolved.
+    HostToolResult(HostToolResult),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
     },
 }
+
+/// A tool an agent invoked on Maestro's own MCP server, on its way to the host.
+///
+/// The same struct travels all three hops — MCP shim to the running server over the loopback
+/// gateway, server to Tauri over the framed stdio channel — so a tool that the server can answer
+/// itself and one only the host can answer differ by where they stop, not by their shape.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HostToolCall {
+    pub session_id: String,
+    pub request_id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HostToolResult {
+    pub session_id: String,
+    pub request_id: String,
+    pub result: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What the MCP shim writes to the gateway, framed with [`write_frame`]. The reply is a bare
+/// [`HostToolResult`].
+///
+/// The token is checked before anything else is read from the call: the listener is on loopback,
+/// which any local process can reach.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GatewayRequest {
+    pub token: String,
+    pub call: HostToolCall,
+}
+
+/// Environment variables the `McpServerStdio` entry carries to the shim.
+pub const MCP_GATEWAY_PORT_ENV: &str = "MAESTRO_MCP_PORT";
+pub const MCP_GATEWAY_TOKEN_ENV: &str = "MAESTRO_MCP_TOKEN";
+pub const MCP_GATEWAY_SESSION_ENV: &str = "MAESTRO_MCP_SESSION";
+/// Name of the MCP server Maestro injects. A `.mcp.json` entry using it is skipped.
+pub const MCP_SERVER_NAME: &str = "maestro";
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnRequest {
@@ -327,6 +369,9 @@ pub enum ServerResponse {
     InstallSkillsOk(InstallSkillsResponse),
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
+    /// An agent called a Maestro MCP tool the host has to answer. Tauri replies with
+    /// `ServerRequest::HostToolResult` carrying the same `request_id`.
+    HostToolCall(HostToolCall),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,
@@ -1292,6 +1337,60 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_host_tool_call() {
+        let msg = MaestroRpcMessage::Response(ServerResponse::HostToolCall(HostToolCall {
+            session_id: "session-7".to_string(),
+            request_id: "host-1".to_string(),
+            name: "create_task".to_string(),
+            arguments: serde_json::json!({"title": "Add retries to SFTP reads"}),
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn roundtrip_host_tool_result() {
+        let msg = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+            session_id: "session-7".to_string(),
+            request_id: "host-1".to_string(),
+            result: serde_json::json!({"id": 12, "status": "Planning"}),
+            error: None,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
+
+        let failed = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+            session_id: "session-7".to_string(),
+            request_id: "host-2".to_string(),
+            result: serde_json::Value::Null,
+            error: Some("unknown tool".to_string()),
+        }));
+        let json = serde_json::to_string(&failed).unwrap();
+        let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(failed, back);
+    }
+
+    #[tokio::test]
+    async fn framing_gateway_request_roundtrip() {
+        let req = GatewayRequest {
+            token: "1cb1f3c8-0000-4000-8000-000000000000".to_string(),
+            call: HostToolCall {
+                session_id: "session-3".to_string(),
+                request_id: "shim".to_string(),
+                name: "canvas_await".to_string(),
+                arguments: serde_json::json!({"surfaceId": "s1", "timeoutSeconds": 30}),
+            },
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        write_frame(&mut buf, &req).await.unwrap();
+        let mut cursor = std::io::Cursor::new(buf);
+        let back: GatewayRequest = read_frame(&mut cursor).await.unwrap();
+        assert_eq!(req, back);
     }
 
     #[test]

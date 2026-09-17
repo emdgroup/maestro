@@ -124,7 +124,7 @@ and logic, so a feature touches one directory rather than three.
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (file-based single-instance locking), `session_state.rs`, `prime.rs`
 - `task/` — task CRUD, handlers, models, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`
-- `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `canvas.rs`, and session/prompt/discovery/file/meta/auth handlers
+- `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
 - `execution/` — PTY/process spawning (local + remote), `queue.rs`, `streaming.rs`, handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
@@ -134,7 +134,8 @@ and logic, so a feature touches one directory rather than three.
 
 **maestro-server (`maestro-server/src/`):**
 
-Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry), `dispatch.rs` (message routing), `session/` (`handlers.rs` ACP session lifecycle, `connection.rs`, `command_loop.rs`), `sessions.rs` (session types), `agent/` (`spawn.rs` subprocess spawn, `detection.rs` agent discovery, `registry.rs` agent registry), `agent_restart.rs`, `terminal.rs` (terminal I/O), `file_ops.rs` (file operations), `validate_canvas.rs`, `tool_check.rs`.
+Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry), `dispatch.rs` (message routing), `session/` (`handlers.rs` ACP session lifecycle, `connection.rs`, `command_loop.rs`), `sessions.rs` (session types), `agent/` (`spawn.rs` subprocess spawn, `detection.rs` agent discovery, `registry.rs` agent registry), `agent_restart.rs`, `terminal.rs` (terminal I/O), `file_ops.rs` (file operations), `mcp_gateway.rs` + `mcp_stdio.rs` (Maestro's own MCP server, see
+below), `tool_check.rs`.
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
@@ -311,8 +312,9 @@ level above `trace`.
 `maestro-server` is a separate process, spawned with a null stderr on one transport path, so its
 `eprintln!` output goes nowhere. Report from there with `helpers::send_diag(level, message)`,
 which forwards over the protocol's `Diagnostic` message; the host re-logs it at a matching level.
-The `validate-canvas` subcommand and `--version` are genuine CLI output and correctly use
-`println!`/`eprintln!`.
+The `mcp` subcommand and `--version` are genuine CLI output and correctly use
+`println!`/`eprintln!` — the shim speaks JSON-RPC on stdout to the agent that spawned it, not to
+the host.
 
 ### End-to-end tests and the `wdio` feature
 
@@ -340,6 +342,59 @@ Note: `generate_typescript_bindings` also runs as part of `cargo test -p maestro
 test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under `ignorePatterns`, so
 the committed copy is the generator's own output and a test run leaves it alone unless the bindings
 genuinely changed — a diff there means a model changed and should be committed.
+
+### The Maestro MCP server
+
+Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**
+as an MCP server on every `session/new` and `session/load`, as a stdio entry whose command is its
+own binary and whose argument is `mcp`. Stdio is the ACP v1 baseline every agent must support
+(`mcp_config.rs`), so there is no capability gate and no HTTP server to run. Tool descriptions
+arrive in-band through `tools/list`, so nothing here depends on a skill being installed.
+
+```
+agent ──stdio (MCP JSON-RPC)──▶ maestro-server mcp   (the shim, one per session, spawned by the agent)
+                                     │ one TCP connection per tools/call, 127.0.0.1:PORT + token
+                                     ▼
+                              maestro-server (running)  ── existing framed stdio ──▶ Tauri ──▶ UI
+```
+
+Three files:
+
+- `maestro-server/src/mcp_stdio.rs` — the shim (`maestro mcp`). Serves the tool surface from
+  `assets/mcp-tools.json`, validates canvas arguments against `assets/canvas-catalog.json` before
+  any round trip, and forwards everything else to the gateway.
+- `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Answers the
+  canvas tools itself by emitting a `SessionUpdate`, and parks everything else in
+  `PendingHostTools` until Tauri answers.
+- `src-tauri/src/acp/host_tools.rs` — the host end: `create_task`, `list_tasks`, `canvas_await`.
+
+Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
+so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
+any local process can connect, so the token is what decides whether a call is answered. A user
+`.mcp.json` entry named `maestro` is skipped with a reason, the same rule a `custom-agents.json`
+id collision follows. If the gateway fails to bind, nothing is injected and the session runs
+without canvas and task tools.
+
+| Tool                                              | Answered by                                  | Result                   |
+| ------------------------------------------------- | -------------------------------------------- | ------------------------ |
+| `canvas_create` / `canvas_data` / `canvas_update` | the gateway, as a session update             | `{ok}`                   |
+| `canvas_await`                                    | the host, after the user acts on the surface | `{event}` or `{timeout}` |
+| `create_task` / `list_tasks`                      | the host, against the database               | the task, or the list    |
+
+**Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
+`host_tools::handle`. The entry's `description` is the _only_ documentation the agent gets — it
+carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
+rather than in Rust for the same reason `registry.json` and `canvas-catalog.json` do. A
+`{components}` placeholder in a description is replaced at load with the catalog's component
+props; `build_tools` does nothing else.
+
+A tool added to the manifest without a matching arm in `host_tools::handle` is worse than a
+missing tool: the agent is told it exists, calls it, and gets `unknown Maestro tool` after a full
+round trip.
+
+`canvas_await` is a poll, not an open wait: MCP clients enforce tool timeouts, so it promises at
+most 60 seconds and the description tells the agent to call again. The canvas controls are live
+only while one is pending, which is why a click cannot be silently dropped between polls.
 
 ### Bundled ACP agent registry
 
@@ -432,7 +487,9 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 28 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 3.
+  Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
+  compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI
 - Foreign keys ensure referential integrity (CASCADE on delete)
 - All IPC commands use `Arc<AppState>` for thread-safe DB access

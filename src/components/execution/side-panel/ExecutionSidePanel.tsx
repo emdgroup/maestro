@@ -20,6 +20,7 @@ import type { CanvasSurface, PlanEntry, ToolCallItem } from "@/components/execut
 import type { WorkingFileEntry } from "@/components/execution/agent-activity-panel/useWorkingFileTracker";
 import type { ConnectionKey } from "@/types/bindings";
 import type { Annotation } from "@/store/annotationStore";
+import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/await-matching";
 
 // Re-export so AgentActivityPanel can still import SidePanelTab from this file
 export type { SidePanelTab, TabKind } from "./useSidePanelTabs";
@@ -40,6 +41,9 @@ interface ExecutionSidePanelProps {
   connection: ConnectionKey;
   canvasMap: Map<string, CanvasSurface>;
   latestCanvasSurfaceId: string | null;
+  /** Set while the agent is blocked in `canvas_await`, which is what makes the controls live. */
+  pendingCanvasAwaits: PendingCanvasAwait[];
+  onCanvasEvent: (requestId: string, event: unknown) => void;
   subagentItems: ToolCallItem[];
   toolCallMap: Map<string, ToolCallItem>;
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
@@ -75,6 +79,8 @@ export function ExecutionSidePanel({
   connection,
   canvasMap,
   latestCanvasSurfaceId,
+  pendingCanvasAwaits,
+  onCanvasEvent,
   subagentItems,
   toolCallMap,
   sidePanelPlan,
@@ -211,6 +217,8 @@ export function ExecutionSidePanel({
                 sidePanelPlan={sidePanelPlan}
                 canvasMap={canvasMap}
                 latestCanvasSurfaceId={latestCanvasSurfaceId}
+                pendingCanvasAwaits={pendingCanvasAwaits}
+                onCanvasEvent={onCanvasEvent}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 workspacePath={workspacePath}

@@ -20,13 +20,14 @@ mod exec_channel;
 mod file_ops;
 mod helpers;
 mod mcp_config;
+mod mcp_gateway;
+mod mcp_stdio;
 mod session;
 mod sessions;
 mod skills;
 mod terminal;
 mod tool_check;
 mod tool_config;
-mod validate_canvas;
 mod workspace_roots;
 
 #[cfg(test)]
@@ -64,8 +65,10 @@ fn main() {
         );
         return;
     }
-    if std::env::args().nth(1).as_deref() == Some("validate-canvas") {
-        std::process::exit(validate_canvas::run());
+    if std::env::args().nth(1).as_deref() == Some("mcp") {
+        // Its own runtime: the shim is a separate process from the ACP server it talks to, and
+        // shares no state with it.
+        std::process::exit(mcp_stdio::run());
     }
     if std::env::args().nth(1).as_deref() == Some(maestro_protocol::exec::EXEC_CHANNEL_ARG) {
         // Its own runtime: this mode shares no state with the ACP server and never starts one.
@@ -185,6 +188,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // After the handshake so a client of the wrong protocol version never opens a listener, and
+    // before the first session so `mcp_servers_for` has an address to inject.
+    let mut gateway_rx = mcp_gateway::start().await;
+    let mut pending_host_tools = mcp_gateway::PendingHostTools::new();
+
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
         agent::discover_agents(&registry);
     let auth_terminals: Arc<
@@ -275,6 +283,26 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
+            call = async {
+                match gateway_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    // No gateway bound: this arm must never resolve, or the loop spins.
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some((call, reply_tx)) = call {
+                    mcp_gateway::handle_host_tool_call(
+                        call,
+                        reply_tx,
+                        &sessions,
+                        &mut pending_host_tools,
+                        &stdout,
+                    )
+                    .await;
+                }
+                continue;
+            }
+
             _ = liveness_interval.tick() => {
                 let agents_with_dead: Vec<String> = {
                     let connections = agent_connections.lock().await;
@@ -305,6 +333,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             &stdout,
             &spawn_result_tx,
             &auth_terminals,
+            &mut pending_host_tools,
         )
         .await
         {

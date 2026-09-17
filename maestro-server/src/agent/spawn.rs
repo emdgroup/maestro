@@ -35,13 +35,8 @@ pub async fn spawn_agent_subprocess(
         Path::new(command).to_path_buf()
     };
 
-    // Include the launcher directory for sibling runtimes and our directory for canvas validation.
+    // Include the launcher directory so sibling runtimes resolve.
     let mut path_entries = Vec::new();
-    if let Ok(server) = std::env::current_exe() {
-        if let Some(parent) = server.parent() {
-            path_entries.push(parent.to_path_buf());
-        }
-    }
     if let Some(parent) = executable.parent() {
         path_entries.push(parent.to_path_buf());
     }
@@ -80,8 +75,8 @@ pub async fn spawn_agent_subprocess(
     cmd.args(args).current_dir(cwd_path).envs(env);
     // Marks this agent as running inside Maestro. The `maestro-` skills are installed globally, so
     // they are also in context when the user runs the same agent from a plain terminal, where none
-    // of what they describe — canvas surfaces, Mermaid rendering, `validate-canvas` — exists. This
-    // is what those skills gate on. Set after `envs()` so a caller cannot clear it.
+    // of what they describe — canvas surfaces, Mermaid rendering, the `maestro` MCP server —
+    // exists. This is what those skills gate on. Set after `envs()` so a caller cannot clear it.
     cmd.env("MAESTRO_SESSION", "1");
     if let Some(path) = child_path {
         cmd.env("PATH", path);

@@ -145,6 +145,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::send_acp_prompt_structured,
         crate::ipc::respond_acp_permission,
         crate::ipc::respond_acp_elicitation,
+        crate::ipc::respond_host_tool,
         crate::ipc::cancel_acp_session,
         crate::ipc::interrupt_acp_turn,
         crate::ipc::preflight_connection,

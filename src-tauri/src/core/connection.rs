@@ -109,6 +109,11 @@ pub struct AcpState {
     pub restorable_sessions: tokio::sync::Mutex<HashMap<i32, Vec<RestorableSession>>>,
     /// Auth state per (connection, agent_id). Populated on PreInitializeOk.
     pub agent_auth_info: tokio::sync::Mutex<HashMap<(ConnectionKey, String), AgentAuthInfo>>,
+    /// `canvas_await` calls parked on the user, keyed by `(log_id, request_id)`. The frontend
+    /// resolves one through `respond_host_tool`; whichever of that and the timeout arrives first
+    /// takes the sender out.
+    pub pending_host_tools:
+        tokio::sync::Mutex<HashMap<(i32, String), tokio::sync::oneshot::Sender<serde_json::Value>>>,
 }
 
 pub struct PtyState {
@@ -171,6 +176,7 @@ impl AppState {
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
+                pending_host_tools: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

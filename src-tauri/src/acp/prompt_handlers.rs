@@ -102,7 +102,7 @@ pub async fn respond_acp_permission(
 /// Paired with `mark_task_blocked` in `reader_task`. Missing this leaves the card pulsing for an
 /// answer that has already been given — the cost of persisting the blocked state rather than
 /// deriving it from live session events, which used to self-heal on reload.
-fn clear_task_blocked(app_state: &Arc<AppState>, task_id: Option<i32>) {
+pub(crate) fn clear_task_blocked(app_state: &Arc<AppState>, task_id: Option<i32>) {
     let Some(task_id) = task_id else {
         return;
     };
@@ -144,6 +144,30 @@ pub async fn respond_acp_elicitation(
         response,
     }));
     crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+}
+
+/// Answer a `canvas_await` the agent is blocked on.
+///
+/// Silently does nothing when the request is no longer pending: the wait times out on its own
+/// schedule, and a click that lands as it expires is a race, not an error worth surfacing.
+#[tauri::command]
+#[specta::specta]
+pub async fn respond_host_tool(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    request_id: String,
+    result: serde_json::Value,
+) -> Result<(), String> {
+    let sender = app_state
+        .acp
+        .pending_host_tools
+        .lock()
+        .await
+        .remove(&(log_id, request_id));
+    if let Some(sender) = sender {
+        let _ = sender.send(result);
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -1,0 +1,352 @@
+//! Tools an agent calls on Maestro's own MCP server and only the host can answer.
+//!
+//! `maestro-server` answers the canvas rendering tools itself — they are session updates it
+//! already owns the channel for. What reaches here is the rest: creating and listing tasks, which
+//! need the database, and `canvas_await`, which needs a user.
+
+use std::sync::Arc;
+use tauri::Emitter;
+
+use crate::acp::transport::{HostToolCall, HostToolResult, MaestroRpcMessage, ServerRequest};
+use crate::core::AppState;
+use crate::models::{BranchMode, TaskStatus};
+use serde_json::{json, Value};
+
+/// Ceiling on one `canvas_await`, matching the tool's own schema. The shim's gateway connection
+/// and the MCP client's tool timeout both sit above this.
+const MAX_AWAIT_SECONDS: u64 = 60;
+const DEFAULT_AWAIT_SECONDS: u64 = 30;
+
+/// Mirrors the `priority` enum in the `create_task` tool schema and `TaskPriority`.
+const PRIORITIES: [&str; 5] = ["Urgent", "High", "Medium", "Low", "None"];
+
+/// Run one host tool and send its result back to `maestro-server`.
+///
+/// Spawned off the reader loop by its callers: `canvas_await` blocks for up to a minute, and
+/// `create_task` touches the database and, for a remote project, may run `git` over SSH.
+pub(crate) async fn handle(app_state: Arc<AppState>, log_id: i32, call: HostToolCall) {
+    let outcome = match call.name.as_str() {
+        "create_task" => create_task(&app_state, log_id, &call.arguments).await,
+        "list_tasks" => list_tasks(&app_state, log_id, &call.arguments).await,
+        "canvas_await" => canvas_await(&app_state, log_id, &call).await,
+        other => Err(format!("unknown Maestro tool: {other}")),
+    };
+
+    let (result, error) = match outcome {
+        Ok(result) => (result, None),
+        Err(message) => (Value::Null, Some(message)),
+    };
+    let reply = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+        session_id: call.session_id,
+        request_id: call.request_id,
+        result,
+        error,
+    }));
+    if let Err(e) = crate::acp::write_to_acp_session(&app_state, log_id, &reply).await {
+        log::warn!(
+            "[acp] could not answer {} for session-{log_id}: {e}",
+            call.name
+        );
+    }
+}
+
+async fn session_project_id(app_state: &Arc<AppState>, log_id: i32) -> Result<i32, String> {
+    app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .get(&log_id)
+        .and_then(|session| session.project_id)
+        .ok_or_else(|| "this session is not attached to a Maestro project".to_string())
+}
+
+/// The title of a task the agent is asking for, or why it cannot be used.
+///
+/// Trimmed and required to be non-empty: the tool schema says `minLength: 3`, but nothing
+/// enforces a schema for the host tools — the shim only validates canvas arguments — so a
+/// whitespace title would otherwise reach the board as a blank card.
+fn parse_title(arguments: &Value) -> Result<String, String> {
+    let title = arguments
+        .get("title")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "title is required".to_string())?
+        .trim();
+    if title.is_empty() {
+        return Err("title is required".to_string());
+    }
+    Ok(title.to_string())
+}
+
+/// The priority the agent asked for, if any.
+///
+/// Rejected rather than coerced: `TaskPriority::from_str` answers `Medium` for anything it does
+/// not recognise, and `create_task_impl` writes the raw string to SQLite regardless. Silently
+/// filing a task as Medium because the agent invented a priority is the kind of thing nobody
+/// notices. A non-string is the same mistake with a different spelling, so it fails too.
+fn parse_priority(arguments: &Value) -> Result<Option<String>, String> {
+    let value = match arguments.get("priority") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(value) => value,
+    };
+    let name = value
+        .as_str()
+        .ok_or_else(|| format!("priority must be a string, got {value}"))?;
+    if !PRIORITIES.contains(&name) {
+        return Err(format!(
+            "unknown priority {name:?} — use one of {}",
+            PRIORITIES.join(", ")
+        ));
+    }
+    Ok(Some(name.to_string()))
+}
+
+fn string_list(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn create_task(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let project_id = session_project_id(app_state, log_id).await?;
+    let title = parse_title(arguments)?;
+    let priority = parse_priority(arguments)?;
+
+    let config = crate::project::settings::load_project_config_for(app_state, project_id)
+        .await
+        .unwrap_or_default();
+    // The branch a task is cut from, in the same order the create dialog resolves it: the
+    // project's configured default, else whatever the repository is on.
+    let base_branch = match config.base_branch.clone() {
+        Some(branch) => branch,
+        None => match crate::core::get_project_with_git_conn(app_state, project_id).await {
+            Ok((_, conn)) => crate::git::ops::get_current_branch(&conn)
+                .await
+                .unwrap_or_else(|_| "main".to_string()),
+            Err(_) => "main".to_string(),
+        },
+    };
+
+    let task = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::crud::create_task_impl(
+            &conn,
+            project_id,
+            title,
+            arguments
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            Vec::new(),
+            string_list(arguments.get("labels")),
+            base_branch,
+            None,
+            priority,
+            false,
+            config.default_workspace_mode(),
+            None,
+            BranchMode::Create,
+            None,
+            None,
+        )?
+    };
+
+    app_state.app_handle.emit("tasks-changed", ()).ok();
+    Ok(json!({
+        "id": task.id,
+        "title": task.title,
+        "status": task.status,
+    }))
+}
+
+async fn list_tasks(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let project_id = session_project_id(app_state, log_id).await?;
+    let wanted: Option<TaskStatus> = match arguments.get("status") {
+        Some(value) if !value.is_null() => Some(
+            serde_json::from_value(value.clone())
+                .map_err(|_| format!("unknown status: {value}"))?,
+        ),
+        _ => None,
+    };
+
+    let tasks = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        crate::task::crud::list_tasks_impl(&conn, project_id)?
+    };
+
+    let rows: Vec<Value> = tasks
+        .into_iter()
+        .filter(|task| task.archived_at.is_none())
+        .filter(|task| wanted.is_none_or(|status| task.status == status))
+        .map(|task| {
+            json!({
+                "id": task.id,
+                "title": task.title,
+                "status": task.status,
+                "priority": task.priority,
+                "labels": task.labels,
+            })
+        })
+        .collect();
+    Ok(json!({ "tasks": rows }))
+}
+
+/// Make a surface's controls live, and return the first thing the user does with them.
+///
+/// A poll rather than an open wait: MCP clients time tool calls out, so the tool promises at most
+/// a minute and tells the agent to call again. Controls answer nothing outside this window, so a
+/// click landing between two polls is impossible rather than silently dropped.
+///
+/// `surfaceId` is optional. Omitted, the wait takes whichever canvas the user acts on — they can
+/// page between all of them, so tying the wait to one is a guess about where they will look. The
+/// event names the surface either way.
+async fn canvas_await(
+    app_state: &Arc<AppState>,
+    log_id: i32,
+    call: &HostToolCall,
+) -> Result<Value, String> {
+    let surface_id = match call.arguments.get("surfaceId") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or_else(|| format!("surfaceId must be a string, got {value}"))?
+                .to_string(),
+        ),
+    };
+    let seconds = call
+        .arguments
+        .get("timeoutSeconds")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_AWAIT_SECONDS)
+        .clamp(1, MAX_AWAIT_SECONDS);
+
+    let key = (log_id, call.request_id.clone());
+    let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+    app_state
+        .acp
+        .pending_host_tools
+        .lock()
+        .await
+        .insert(key.clone(), tx);
+
+    let task_id = {
+        let sessions = app_state.acp.sessions.lock().await;
+        sessions.get(&log_id).and_then(|session| session.task_id)
+    };
+    if let Some(task_id) = task_id {
+        crate::acp::reader_task::mark_task_blocked(app_state, task_id);
+    }
+
+    // `surface_id` is null for a wait that takes any surface; the panel reads it that way.
+    if let Err(e) = app_state.app_handle.emit(
+        &format!("acp://canvas-await/{}", log_id),
+        &json!({ "request_id": call.request_id, "surface_id": surface_id }),
+    ) {
+        log::warn!("[acp] emit canvas-await/{log_id} failed: {e}");
+    }
+
+    let outcome = match tokio::time::timeout(std::time::Duration::from_secs(seconds), rx).await {
+        Ok(Ok(event)) => json!({ "event": event }),
+        // Dropped sender: the entry was taken out by something other than an answer.
+        Ok(Err(_)) => json!({ "timeout": true }),
+        Err(_) => {
+            app_state.acp.pending_host_tools.lock().await.remove(&key);
+            json!({ "timeout": true })
+        }
+    };
+
+    if let Err(e) = app_state.app_handle.emit(
+        &format!("acp://canvas-await-ended/{}", log_id),
+        &json!({ "request_id": call.request_id }),
+    ) {
+        log::warn!("[acp] emit canvas-await-ended/{log_id} failed: {e}");
+    }
+    crate::acp::prompt_handlers::clear_task_blocked(app_state, task_id);
+
+    Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_priority_list_matches_the_enum() {
+        // The allow-list is what keeps a bad priority out of SQLite, and `TaskPriority::FromStr`
+        // cannot tell us it has drifted — it answers `Medium` for anything. Serde can.
+        use crate::models::TaskPriority::{High, Low, Medium, None, Urgent};
+        let names: Vec<String> = [Urgent, High, Medium, Low, None]
+            .iter()
+            .map(|priority| serde_json::to_value(priority).unwrap())
+            .map(|value| value.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(names, PRIORITIES);
+    }
+
+    #[test]
+    fn a_priority_is_accepted_only_by_its_exact_name() {
+        for name in PRIORITIES {
+            assert_eq!(
+                parse_priority(&json!({ "priority": name })).unwrap(),
+                Some(name.to_string())
+            );
+        }
+        assert!(parse_priority(&json!({ "priority": "urgent" })).is_err());
+        assert!(parse_priority(&json!({ "priority": "P0" })).is_err());
+        // A number is the same mistake: `as_str` would drop it and the task would be filed with
+        // whatever the default is.
+        assert!(parse_priority(&json!({ "priority": 1 })).is_err());
+    }
+
+    #[test]
+    fn an_absent_priority_is_not_an_error() {
+        assert_eq!(parse_priority(&json!({})).unwrap(), Option::None);
+        assert_eq!(
+            parse_priority(&json!({ "priority": null })).unwrap(),
+            Option::None
+        );
+    }
+
+    #[test]
+    fn a_title_must_hold_something() {
+        assert_eq!(
+            parse_title(&json!({ "title": "  Add retries " })).unwrap(),
+            "Add retries"
+        );
+        assert!(parse_title(&json!({})).is_err());
+        assert!(parse_title(&json!({ "title": "   " })).is_err());
+        assert!(parse_title(&json!({ "title": 7 })).is_err());
+    }
+
+    #[test]
+    fn labels_keep_only_strings() {
+        let arguments = json!({ "labels": ["bug", 3, null, "ssh"] });
+        assert_eq!(
+            string_list(arguments.get("labels")),
+            vec!["bug".to_string(), "ssh".to_string()]
+        );
+        assert!(string_list(Option::None).is_empty());
+        assert!(string_list(json!({ "labels": "bug" }).get("labels")).is_empty());
+    }
+}

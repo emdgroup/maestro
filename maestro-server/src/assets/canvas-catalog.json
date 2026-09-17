@@ -1,20 +1,12 @@
 {
-  "version": "6",
+  "version": "7",
   "catalogId": "maestro-canvas/v1",
-  "description": "Render interactive UI inline by writing canvas messages as ```maestro-canvas code fences in your response.",
+  "description": "Render interactive UI by calling the canvas_create, canvas_data and canvas_update tools on the maestro MCP server.",
   "protocol": {
-    "format": "Wrap each canvas message in a ```maestro-canvas code fence. One JSON object per fence. Maestro intercepts the fences and renders them; they are not shown as code blocks to the user.",
-    "fenceExample": "```maestro-canvas\n{\"sessionUpdate\":\"canvas_create\",\"surfaceId\":\"s1\",\"catalogId\":\"maestro-canvas/v1\",\"title\":\"My Dashboard\"}\n```",
     "messages": [
       {
         "type": "canvas_create",
-        "fields": {
-          "sessionUpdate": "canvas_create",
-          "surfaceId": "string",
-          "catalogId": "maestro-canvas/v1",
-          "title": "string"
-        },
-        "note": "Must be the first message for a new surfaceId.",
+        "note": "Must be called first for a new surfaceId.",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
@@ -30,11 +22,6 @@
       },
       {
         "type": "canvas_update",
-        "fields": {
-          "sessionUpdate": "canvas_update",
-          "surfaceId": "string",
-          "components": "array of component objects"
-        },
         "note": "Components are a flat adjacency list. Each has an 'id' and 'component' type. Children are referenced by ID in a 'children' array. Repeat to add or update components.",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -86,12 +73,6 @@
       },
       {
         "type": "canvas_data",
-        "fields": {
-          "sessionUpdate": "canvas_data",
-          "surfaceId": "string",
-          "path": "string (JSON Pointer e.g. /rows)",
-          "value": "any"
-        },
         "note": "Use to provide data separately from structure. Reference in component props as the path string (e.g. 'rows': '/rows').",
         "jsonSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
@@ -173,7 +154,7 @@
           "series": "[{ key: string, label: string, color?: string }] — each entry becomes one line/bar/area; pie uses series[0].key as the value field",
           "title": "string (optional label rendered above the chart)"
         },
-        "note": "Send data with canvas_data before canvas_update. Cartesian data format: [{ xKeyValue, seriesKey: number, ... }]. Pie format: [{ xKeyValue, valueKey: number }]."
+        "note": "Call canvas_data before canvas_update. Cartesian data format: [{ xKeyValue, seriesKey: number, ... }]. Pie format: [{ xKeyValue, valueKey: number }]."
       },
       "Html": {
         "props": {
@@ -181,7 +162,7 @@
           "height": "number (px, default 400)",
           "title": "string (accessibility label)"
         },
-        "note": "Rendered in a sandboxed iframe (allow-scripts only, no same-origin). Use for custom charts, animations, or layouts the catalog components cannot express."
+        "note": "Rendered in a sandboxed iframe (allow-scripts only, no same-origin). Use for custom charts, animations, or layouts the catalog components cannot express. No double-quote or backslash characters in srcdoc."
       }
     },
     "input": {
@@ -190,7 +171,8 @@
           "label": "string",
           "variant": "default|outline|ghost|destructive|secondary",
           "disabled": "boolean"
-        }
+        },
+        "emits": "click"
       },
       "TextField": {
         "props": {
@@ -198,9 +180,13 @@
           "placeholder": "string",
           "value": "string",
           "disabled": "boolean"
-        }
+        },
+        "emits": "submit on Enter; its text is always carried in `values`"
       },
-      "CheckBox": { "props": { "label": "string", "checked": "boolean", "disabled": "boolean" } },
+      "CheckBox": {
+        "props": { "label": "string", "checked": "boolean", "disabled": "boolean" },
+        "emits": "change"
+      },
       "ChoicePicker": {
         "props": {
           "label": "string",
@@ -208,7 +194,8 @@
           "value": "string",
           "placeholder": "string",
           "disabled": "boolean"
-        }
+        },
+        "emits": "change"
       },
       "Slider": {
         "props": {
@@ -218,7 +205,8 @@
           "step": "number",
           "value": "number",
           "disabled": "boolean"
-        }
+        },
+        "emits": "change"
       },
       "DateTimeInput": {
         "props": {
@@ -226,16 +214,9 @@
           "variant": "date|time|datetime-local",
           "value": "string",
           "disabled": "boolean"
-        }
+        },
+        "emits": "submit on Enter; its value is always carried in `values`"
       }
     }
-  },
-  "example": {
-    "description": "Stats dashboard with a table — write these fences in your response text",
-    "messages": [
-      "```maestro-canvas\n{\"sessionUpdate\":\"canvas_create\",\"surfaceId\":\"s1\",\"catalogId\":\"maestro-canvas/v1\",\"title\":\"Summary\"}\n```",
-      "```maestro-canvas\n{\"sessionUpdate\":\"canvas_update\",\"surfaceId\":\"s1\",\"components\":[\n  {\"id\":\"root\",\"component\":\"Column\",\"children\":[\"heading\",\"stats\",\"table\"]},\n  {\"id\":\"heading\",\"component\":\"Text\",\"text\":\"Results\",\"variant\":\"heading\"},\n  {\"id\":\"stats\",\"component\":\"Row\",\"children\":[\"s1\",\"s2\"]},\n  {\"id\":\"s1\",\"component\":\"Card\",\"title\":\"Total\",\"children\":[\"s1v\"]},\n  {\"id\":\"s1v\",\"component\":\"Text\",\"text\":\"42\",\"variant\":\"subheading\"},\n  {\"id\":\"s2\",\"component\":\"Card\",\"title\":\"Errors\",\"children\":[\"s2v\"]},\n  {\"id\":\"s2v\",\"component\":\"Text\",\"text\":\"3\",\"variant\":\"subheading\"},\n  {\"id\":\"table\",\"component\":\"DataTable\",\"columns\":[{\"key\":\"name\",\"label\":\"Name\"},{\"key\":\"status\",\"label\":\"Status\"}],\"rows\":\"/rows\"}\n]}\n```",
-      "```maestro-canvas\n{\"sessionUpdate\":\"canvas_data\",\"surfaceId\":\"s1\",\"path\":\"/rows\",\"value\":[[\"auth.rs\",\"Pass\"],[\"db.rs\",\"Fail\"]]}\n```"
-    ]
   }
 }

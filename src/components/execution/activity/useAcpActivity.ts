@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useReducer, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
-import { loadSavedCanvases } from "@/services/canvas.service";
+import { loadSavedCanvases, saveCanvasSurface } from "@/services/canvas.service";
 import { useSelectedProject } from "@/store/projectStore";
 import { INITIAL_ACTIVITY_STATE } from "./types";
-import type { SessionUpdatePayload, ActivityState } from "./types";
+import type { SessionUpdatePayload, ActivityState, CanvasSurface } from "./types";
 import { activityReducer } from "./activityReducer";
 import type { ActivityAction } from "./activityReducer";
 
@@ -128,6 +128,40 @@ export function useAcpActivity(
       pendingRef.current = [];
     };
   }, [logId, enqueue, tryRestoreCanvases]);
+
+  // Canvases are written to disk as they change, so a restarted app gets them back.
+  //
+  // Fences used to make this free: they were part of the transcript, so a replayed session
+  // rebuilt every surface from it. Tool calls are not — nothing replays them — so the surface
+  // only exists in this reducer until it is saved. Debounced because `canvas_update` merges in
+  // place and a dashboard filling in from tool calls revises the same surface many times.
+  //
+  // What has been written is tracked by object identity, which is only meaningful within one
+  // session — so the record is tied to the `logId` it was built for rather than to this hook
+  // instance. Today the panel remounts per session and the distinction never shows; if it ever
+  // stops doing that, the failure is silent, and a surface that was never written looks saved
+  // until a restart loses it.
+  const savedRef = useRef<{ logId: number | null; surfaces: Map<string, CanvasSurface> }>({
+    logId: null,
+    surfaces: new Map(),
+  });
+  useEffect(() => {
+    if (projectId == null || logId == null || state.canvasMap.size === 0) return;
+    const timer = setTimeout(() => {
+      if (savedRef.current.logId !== logId) {
+        savedRef.current = { logId, surfaces: new Map() };
+      }
+      const saved = savedRef.current.surfaces;
+      for (const [surfaceId, surface] of state.canvasMap) {
+        if (saved.get(surfaceId) === surface) continue;
+        saved.set(surfaceId, surface);
+        saveCanvasSurface(projectId, logId, surface).catch((e) => {
+          console.warn(`[canvas] could not save ${surfaceId}`, e);
+        });
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [state.canvasMap, projectId, logId]);
 
   return [state, dispatch];
 }

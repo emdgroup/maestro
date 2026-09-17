@@ -3,7 +3,16 @@ import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Save, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
-import { CanvasRenderer } from "@/components/execution/activity/canvas/CanvasRenderer";
+import {
+  CanvasRenderer,
+  CanvasEventContext,
+} from "@/components/execution/activity/canvas/CanvasRenderer";
+import type { CanvasEventKind } from "@/components/execution/activity/canvas/CanvasRenderer";
+import {
+  awaitForSurface,
+  awaitToFollow,
+} from "@/components/execution/activity/canvas/await-matching";
+import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/await-matching";
 import { extractBodyText } from "@/components/execution/activity/PermissionPrompt";
 import {
   extractPlanToolCallId,
@@ -52,6 +61,9 @@ interface SidePanelContentProps {
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
   canvasMap: Map<string, CanvasSurface>;
   latestCanvasSurfaceId: string | null;
+  /** Open `canvas_await` calls — what makes a surface's controls answer rather than just record. */
+  pendingCanvasAwaits: PendingCanvasAwait[];
+  onCanvasEvent: (requestId: string, event: unknown) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   workspacePath: string;
@@ -87,6 +99,8 @@ export function SidePanelContent({
   sidePanelPlan,
   canvasMap,
   latestCanvasSurfaceId,
+  pendingCanvasAwaits,
+  onCanvasEvent,
   workingFiles,
   taskId,
   workspacePath,
@@ -173,7 +187,57 @@ export function SidePanelContent({
     if (latestCanvasIdx >= 0) setCanvasIdx(latestCanvasIdx);
   }
 
+  // Page to the surface the agent is waiting on, the same latch the "latest surface" follow uses
+  // — the user can still page away, and is only pulled back when a *new* wait starts.
+  const followTarget = awaitToFollow(pendingCanvasAwaits);
+  const awaitedCanvasIdx = followTarget
+    ? canvasEntries.findIndex(([id]) => id === followTarget.surfaceId)
+    : -1;
+  const [followedAwaitKey, setFollowedAwaitKey] = useState<string | null>(null);
+  const awaitKey = followTarget && awaitedCanvasIdx >= 0 ? followTarget.requestId : null;
+  if (followedAwaitKey !== awaitKey) {
+    setFollowedAwaitKey(awaitKey);
+    if (awaitKey !== null) setCanvasIdx(awaitedCanvasIdx);
+  }
+
   const activeSurface = canvasEntries[canvasIdx]?.[1] ?? null;
+
+  // What the user has entered, per surface. Per surface because they can page between canvases
+  // freely: one shared bag would send an answer typed on one form as if it belonged to another,
+  // and component ids repeat across surfaces precisely because they are the obvious names.
+  const canvasValuesRef = useRef(new Map<string, Record<string, unknown>>());
+  const activeSurfaceId = activeSurface?.surfaceId ?? null;
+  const activeAwait = awaitForSurface(pendingCanvasAwaits, activeSurfaceId);
+  const activeRequestId = activeAwait?.requestId ?? null;
+  const canvasEventSink = useMemo(() => {
+    if (activeSurfaceId == null) return null;
+    // A ref, not state: recording a keystroke must not re-render the surface under the user.
+    const values = () => {
+      let bag = canvasValuesRef.current.get(activeSurfaceId);
+      if (!bag) {
+        bag = {};
+        canvasValuesRef.current.set(activeSurfaceId, bag);
+      }
+      return bag;
+    };
+    return {
+      record: (componentId: string, value: unknown) => {
+        values()[componentId] = value;
+      },
+      // Present on every surface, firing only on one: a surface with no wait against it keeps
+      // its controls usable and its entries, and simply has nowhere to send them yet.
+      emit: (componentId: string, kind: CanvasEventKind, value?: unknown) => {
+        if (!activeRequestId) return;
+        onCanvasEvent(activeRequestId, {
+          surfaceId: activeSurfaceId,
+          componentId,
+          kind,
+          value,
+          values: { ...values() },
+        });
+      },
+    };
+  }, [activeSurfaceId, activeRequestId, onCanvasEvent]);
 
   const { planContent, planReviewState, derivedPlanTitle } = useMemo(() => {
     let content: string | null = null;
@@ -436,7 +500,9 @@ export function SidePanelContent({
                       <Skeleton className="h-24 w-full" />
                     </div>
                   ) : (
-                    <CanvasRenderer surface={activeSurface} />
+                    <CanvasEventContext.Provider value={canvasEventSink}>
+                      <CanvasRenderer surface={activeSurface} />
+                    </CanvasEventContext.Provider>
                   )}
                 </CanvasAnnotationLayer>
               ) : (
