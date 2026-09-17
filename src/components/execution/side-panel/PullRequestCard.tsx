@@ -355,16 +355,15 @@ export function PullRequestCard({
         <div className="flex flex-col gap-1.5">
           <PullRequestFacts pullRequest={pullRequest} />
           {ci && <CheckRollup checks={pullRequest.checks} ci={ci} />}
-          {task &&
-            task.fix_rounds > 0 && (
-              // The cap lives in Rust as `FIX_ROUND_CAP` and is not in the bindings, so the count is
-              // shown without it rather than duplicating the number here where it could drift. That
-              // the pipeline has given up is read from the ball instead, which is what matters.
-              <span className="text-[10.5px] text-muted-foreground tabular-nums">
-                CI fix round {task.fix_rounds}
-                {task.ball === "User" && " — auto-fix stopped, over to you"}
-              </span>
-            )}
+          {task && task.fix_rounds > 0 && (
+            // The cap lives in Rust as `FIX_ROUND_CAP` and is not in the bindings, so the count is
+            // shown without it rather than duplicating the number here where it could drift. That
+            // the pipeline has given up is read from the ball instead, which is what matters.
+            <span className="text-[10.5px] text-muted-foreground tabular-nums">
+              CI fix round {task.fix_rounds}
+              {task.ball === "User" && " — auto-fix stopped, over to you"}
+            </span>
+          )}
           {ci === "Failing" && onSeedPrompt && (
             <div className="mt-1 pt-2 border-t border-border/50">
               <CardAction
