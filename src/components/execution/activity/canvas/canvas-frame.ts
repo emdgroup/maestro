@@ -191,26 +191,49 @@ export const BRIDGE = `
   document.addEventListener("input", function (e) { recordField(e.target); }, true);
   document.addEventListener("change", function (e) { recordField(e.target); }, true);
 
-  document.addEventListener("click", function (e) {
-    var el = e.target && e.target.closest ? e.target.closest("button[id]") : null;
-    if (!el) return;
-    // A submit button inside a form is answered by the submit handler below, not twice here.
-    if (el.form && el.type !== "button") return;
-    // Scoped to the button's own form where it has one, so two forms on a surface answer
-    // separately; a loose button takes the whole document, which is what a panel of controls
-    // with an Apply button reads as.
-    recordAll(el.form || document);
-    maestro.emit(el.id, "click", el.value || undefined);
-  });
+  /**
+   * Bound once the document has been parsed, rather than now.
+   *
+   * This script runs in the head, so binding here would put these listeners ahead of every
+   * listener the surface's own script registers — and a document-level listener fires in
+   * registration order. The surface would never get to decide anything first. Waiting means the
+   * document's handlers run before these, and \`defaultPrevented\` below is then a reliable "this
+   * control is mine": a range button that redraws a chart in the frame stops waking the agent for
+   * work it plays no part in, and a form the surface answers itself stops being answered twice.
+   *
+   * A surface with no JavaScript of its own prevents nothing, so it stays fully auto-wired.
+   */
+  function bindControls() {
+    document.addEventListener("click", function (e) {
+      if (e.defaultPrevented) return;
+      var el = e.target && e.target.closest ? e.target.closest("button[id]") : null;
+      if (!el || el.hasAttribute("data-maestro-ignore")) return;
+      // A submit button inside a form is answered by the submit handler below, not twice here.
+      if (el.form && el.type !== "button") return;
+      // Scoped to the button's own form where it has one, so two forms on a surface answer
+      // separately; a loose button takes the whole document, which is what a panel of controls
+      // with an Apply button reads as.
+      recordAll(el.form || document);
+      maestro.emit(el.id, "click", el.value || undefined);
+    });
 
-  document.addEventListener("submit", function (e) {
-    var form = e.target;
-    // Nothing can be posted anywhere from an opaque origin, so a real submit only blanks the page.
-    e.preventDefault();
-    if (!form.id) return;
-    recordAll(form);
-    maestro.emit(form.id, "submit");
-  });
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      // Nothing can be posted anywhere from an opaque origin, so a real submit only blanks the
+      // page. Prevented after the check below, which asks whether the *document* prevented it.
+      var mine = !e.defaultPrevented;
+      e.preventDefault();
+      if (!mine || !form.id || form.hasAttribute("data-maestro-ignore")) return;
+      recordAll(form);
+      maestro.emit(form.id, "submit");
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindControls);
+  } else {
+    bindControls();
+  }
 
   // --- annotation ---------------------------------------------------------------------------
   var annotationObserver = null;

@@ -1,5 +1,7 @@
-import { User } from "lucide-react";
+import { User, MousePointerClick } from "lucide-react";
 import type { UserMessageItem } from "./types";
+import { parseCanvasPrompt } from "./canvas/canvas-prompt";
+import type { CanvasPrompt } from "./canvas/canvas-prompt";
 import { MarkdownBlock } from "./MarkdownBlock";
 import { ZoomableContent } from "@/ui/zoomable-content";
 import { Message, MessageContent } from "@/ui/message";
@@ -163,8 +165,37 @@ export function parseUserContent(raw: string): ParsedUserContent {
   }
 }
 
+/**
+ * A canvas prompt is a click, not a sentence, so it is not drawn as one.
+ *
+ * It travels as a prompt because ACP offers nothing else that wakes an idle agent, but rendering
+ * it as the user's own message would put words in their mouth — a paragraph of instructions they
+ * never wrote. One line saying what was touched is the honest version, and it is also the only
+ * part of it they could act on.
+ */
+function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
+  return (
+    <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+      <MousePointerClick className="size-3 shrink-0" />
+      {prompt.kind === "restored" ? (
+        <span>
+          {prompt.surfaces.length} canvas {prompt.surfaces.length === 1 ? "surface" : "surfaces"}{" "}
+          restored — asked the agent to listen
+        </span>
+      ) : (
+        <span>
+          <span className="font-mono">{prompt.componentId || prompt.surfaceId}</span>{" "}
+          {prompt.eventKind} on <span className="font-mono">{prompt.surfaceId}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function ActivityUserMessage({ message, onOpenFile }: ActivityUserMessageProps) {
   const parsed = parseUserContent(message.content);
+  const canvasPrompt = parseCanvasPrompt(parsed.text);
+  if (canvasPrompt) return <CanvasPromptRow prompt={canvasPrompt} />;
   const hasAttachments = parsed.blocks.some((b) => b.type === "attachment");
   const imageBlocks = parsed.blocks.filter(
     (b): b is Extract<ParsedContentBlock, { type: "image" }> => b.type === "image",
