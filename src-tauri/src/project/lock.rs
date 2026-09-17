@@ -39,6 +39,11 @@ pub fn acquire_project_lock(app_data_dir: &Path, project_id: i32) -> Result<File
 
 /// Check if a project is currently locked by another process (non-blocking probe).
 /// Returns true if locked, false if available (including non-existent lock file).
+///
+/// Only contention counts as locked. A probe that fails for any other reason reports the project
+/// as available: `acquire_project_lock` is the real gate and would still refuse, whereas a false
+/// "locked" shuts the user out of a project nothing is holding. `flock` can also return `EINTR`
+/// even when told not to block, which is a retry rather than an answer.
 pub fn is_project_locked(app_data_dir: &Path, project_id: i32) -> bool {
     let lock_path = lock_file_path(app_data_dir, project_id);
 
@@ -51,14 +56,29 @@ pub fn is_project_locked(app_data_dir: &Path, project_id: i32) -> bool {
         Err(_) => return false,
     };
 
-    match file.try_lock_exclusive() {
-        Ok(()) => {
-            // Got the lock — no one else holds it; release immediately
-            let _ = file.unlock();
-            false
+    // Compared by raw code rather than `ErrorKind`: contention is `EWOULDBLOCK` on Unix and
+    // `ERROR_LOCK_VIOLATION` on Windows, and only the former maps to `ErrorKind::WouldBlock`.
+    let contended = fs2::lock_contended_error().raw_os_error();
+
+    for _ in 0..3 {
+        match file.try_lock_exclusive() {
+            Ok(()) => {
+                if let Err(e) = file.unlock() {
+                    log::warn!("Failed to release the lock probe on project {project_id}: {e}");
+                }
+                return false;
+            }
+            Err(e) if e.raw_os_error() == contended => return true,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => {
+                log::warn!("Could not probe the lock on project {project_id}: {e}");
+                return false;
+            }
         }
-        Err(_) => true,
     }
+
+    log::warn!("Lock probe on project {project_id} was interrupted repeatedly");
+    false
 }
 
 #[cfg(test)]
