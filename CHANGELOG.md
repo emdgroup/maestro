@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.2](https://github.com/emdgroup/maestro/compare/v0.27.1...v0.27.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **deps:** align react-dom with react 19.3.0 ([#405](https://github.com/emdgroup/maestro/issues/405)) ([b9ea6a0](https://github.com/emdgroup/maestro/commit/b9ea6a0bb4fa741f7bc0e582076ae50d57ce4ddd))
+
 ## [0.27.1](https://github.com/emdgroup/maestro/compare/v0.27.0...v0.27.1) (2026-09-15)
 
 
