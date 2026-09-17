@@ -97,7 +97,7 @@ const FONT_LINK =
  * Written plainly rather than minified: it is the contract between the frame and the host, and
  * the bytes it costs are irrelevant next to the Tailwind runtime beside it.
  */
-const BRIDGE = `
+export const BRIDGE = `
 (function () {
   var host = parent;
   function post(message) { host.postMessage(message, "*"); }
@@ -180,6 +180,14 @@ const BRIDGE = `
     if (key) maestro.record(key, fieldValue(el));
   }
 
+  // Every field in scope, whether or not the user touched it. A form whose defaults are already
+  // what the user wants fires no input events, so relying on those alone answers an untouched
+  // form with nothing — and the agent cannot tell "accepted the defaults" from "left it blank".
+  function recordAll(scope) {
+    var fields = scope.querySelectorAll("input, select, textarea");
+    for (var i = 0; i < fields.length; i++) recordField(fields[i]);
+  }
+
   document.addEventListener("input", function (e) { recordField(e.target); }, true);
   document.addEventListener("change", function (e) { recordField(e.target); }, true);
 
@@ -188,6 +196,10 @@ const BRIDGE = `
     if (!el) return;
     // A submit button inside a form is answered by the submit handler below, not twice here.
     if (el.form && el.type !== "button") return;
+    // Scoped to the button's own form where it has one, so two forms on a surface answer
+    // separately; a loose button takes the whole document, which is what a panel of controls
+    // with an Apply button reads as.
+    recordAll(el.form || document);
     maestro.emit(el.id, "click", el.value || undefined);
   });
 
@@ -196,8 +208,7 @@ const BRIDGE = `
     // Nothing can be posted anywhere from an opaque origin, so a real submit only blanks the page.
     e.preventDefault();
     if (!form.id) return;
-    var fields = form.querySelectorAll("input, select, textarea");
-    for (var i = 0; i < fields.length; i++) recordField(fields[i]);
+    recordAll(form);
     maestro.emit(form.id, "submit");
   });
 
