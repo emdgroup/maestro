@@ -278,6 +278,12 @@ export const BRIDGE = `
     return html.length > limit ? html.slice(0, limit) + "\\n… truncated" : html;
   }
 
+  /**
+   * How much finer than CSS pixels the picture is drawn. Two, so small type stays legible to the
+   * agent reading it — and applied to the SVG's own \`width\`/\`height\` against a CSS-sized
+   * \`viewBox\`, so the document is laid out at its real width and *painted* at twice the
+   * resolution. Scaling the drawn image instead only enlarges pixels that were never there.
+   */
   var PIXEL_RATIO = 2;
 
   /**
@@ -308,7 +314,8 @@ export const BRIDGE = `
       var w = Math.ceil(box.width), h = Math.ceil(box.height);
       var serialised = new XMLSerializer().serializeToString(clone);
       var svg =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + " " + h + '"' +
+        ' width="' + w * PIXEL_RATIO + '" height="' + h * PIXEL_RATIO + '">' +
         '<foreignObject width="100%" height="100%">' +
         '<div xmlns="http://www.w3.org/1999/xhtml">' +
         (faces ? '<style xmlns="http://www.w3.org/1999/xhtml">' + faces + "</style>" : "") +
@@ -323,10 +330,13 @@ export const BRIDGE = `
           out.height = Math.round(rect.height * PIXEL_RATIO);
           var ctx = out.getContext("2d");
           if (!ctx) { fail(); return; }
+          // Source coordinates are in the image's own pixels, which are \`PIXEL_RATIO\` to the CSS
+          // pixel the region was measured in.
           ctx.drawImage(
             image,
-            Math.round(rect.left - box.left), Math.round(rect.top - box.top),
-            Math.round(rect.width), Math.round(rect.height),
+            Math.round((rect.left - box.left) * PIXEL_RATIO),
+            Math.round((rect.top - box.top) * PIXEL_RATIO),
+            Math.round(rect.width * PIXEL_RATIO), Math.round(rect.height * PIXEL_RATIO),
             0, 0, out.width, out.height
           );
           post({ type: "canvas-capture-result", id: id, dataUrl: out.toDataURL("image/png") });
@@ -392,19 +402,37 @@ export const BRIDGE = `
    * An SVG loaded through \`<img>\` is an isolated document that fetches nothing, so a font behind
    * a URL is simply absent and every label is drawn in a system face — narrower or wider than the
    * one on screen, which is what makes text spill out of the box that fits it in the live frame.
-   * Only Google Fonts stylesheets are followed, which is where the theme's Inter comes from, and
-   * only their Latin subset: the full family is fourteen files for one alphabet's worth of use.
+   * Only Google Fonts stylesheets are followed, and only their Latin subset: a family is a dozen
+   * files for one alphabet's worth of use. Both ways of asking for one count — the \`<link>\` the
+   * Maestro theme injects, and the \`@import\` an agent writes in its own \`<style>\`, which is the
+   * form a surface styled as somebody else's product tends to use.
+   *
    * Fetched once per frame; any failure leaves the picture as it was, with a fallback face.
    */
   async function webFontCss() {
     if (webFonts !== null) return webFonts;
     webFonts = "";
     try {
+      var hrefs = [];
       var links = document.querySelectorAll('link[rel="stylesheet"]');
+      for (var l = 0; l < links.length; l++) hrefs.push(links[l].href);
+      // An imported sheet is cross-origin and its rules are unreadable, but the rule naming it
+      // belongs to this document, and its href is all that is needed.
+      for (var s = 0; s < document.styleSheets.length; s++) {
+        var rules;
+        try { rules = document.styleSheets[s].cssRules; } catch (e) { continue; }
+        for (var r = 0; r < rules.length; r++) {
+          if (rules[r].type === 3 && rules[r].href) hrefs.push(rules[r].href);
+        }
+      }
+
       var out = [];
-      for (var i = 0; i < links.length; i++) {
-        if (links[i].href.indexOf("https://fonts.googleapis.com/") !== 0) continue;
-        var sheet = await (await fetch(links[i].href)).text();
+      var seen = {};
+      for (var i = 0; i < hrefs.length; i++) {
+        if (hrefs[i].indexOf("https://fonts.googleapis.com/") !== 0) continue;
+        if (seen[hrefs[i]]) continue;
+        seen[hrefs[i]] = true;
+        var sheet = await (await fetch(hrefs[i])).text();
         var blocks = sheet.match(/@font-face\\s*\\{[^}]*\\}/g) || [];
         for (var b = 0; b < blocks.length; b++) {
           if (blocks[b].indexOf("U+0000-00FF") < 0) continue;
