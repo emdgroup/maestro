@@ -388,6 +388,9 @@ mod tests {
                 "canvas_data",
                 "canvas_await",
                 "create_task",
+                "get_task",
+                "update_task",
+                "comment_task",
                 "list_tasks"
             ]
         );

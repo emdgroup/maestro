@@ -365,7 +365,7 @@ Three files:
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
-- `src-tauri/src/acp/host_tools.rs` — the host end: `create_task`, `list_tasks`, `canvas_await`.
+- `src-tauri/src/acp/host_tools.rs` — the host end: the task tools and `canvas_await`.
 
 Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
 so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
@@ -379,6 +379,7 @@ without canvas and task tools.
 | `canvas_create` / `canvas_update` / `canvas_data` | drawn by the gateway, acknowledged by the host | `{ok}`, plus frame `{errors}` |
 | `canvas_await`                                    | the host, after the user acts on the surface   | `{event}` or `{timeout}`      |
 | `create_task` / `list_tasks`                      | the host, against the database                 | the task, or the list         |
+| `get_task` / `update_task` / `comment_task`       | the host, scoped to the session's project      | the task, or the new entry    |
 
 A canvas call goes both ways on purpose: the gateway emits the session update because it owns that
 channel, and the _same_ call is then forwarded to `host_tools::canvas_ack`, whose answer carries
