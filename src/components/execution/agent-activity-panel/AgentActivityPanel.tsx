@@ -206,7 +206,7 @@ export function AgentActivityPanel({
     sessionKey,
     liveState,
     pendingSendRef,
-    !!pendingPermission || !!pendingElicitation || pendingCanvasAwaits.length > 0,
+    !!pendingPermission || !!pendingElicitation,
   );
   const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
 
