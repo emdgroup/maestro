@@ -211,7 +211,7 @@ pub fn update_task(
     Ok(task)
 }
 
-fn update_task_impl(
+pub(crate) fn update_task_impl(
     conn: &mut rusqlite::Connection,
     task_id: i32,
     updates: UpdateTaskRequest,

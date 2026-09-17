@@ -170,6 +170,11 @@ pub fn list_task_comments(
         .db
         .lock()
         .map_err(|e| format!("Lock failed: {}", e))?;
+    list_for_task(&conn, task_id)
+}
+
+/// The same thread, for a caller that already holds the connection.
+pub(crate) fn list_for_task(conn: &Connection, task_id: i32) -> Result<Vec<TaskComment>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id, task_id, kind, author, body, external_ref, phase, created_at \
