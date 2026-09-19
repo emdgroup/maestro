@@ -35,6 +35,8 @@ import { commands } from "@/types/bindings";
 import type { JsonValue, ConnectionKey } from "@/types/bindings";
 import { ExecutionSidePanel } from "@/components/execution/side-panel/ExecutionSidePanel";
 import { useSidePanelTabs } from "@/components/execution/side-panel/useSidePanelTabs";
+import { useCanvasImport } from "@/components/execution/side-panel/useCanvasImport";
+import { CanvasImportDialog } from "@/components/execution/side-panel/CanvasImportDialog";
 import { buildAnnotationBlocks } from "@/components/execution/side-panel/annotations/build-annotation-prompt";
 import {
   buildCanvasEventPrompt,
@@ -526,6 +528,28 @@ export function AgentActivityPanel({
     handleSend,
   ]);
 
+  // An import happens whenever the user says so, which may be mid-turn — and ACP allows one
+  // `session/prompt` per turn. Held until the agent is idle, then drained one at a time: sending
+  // the first makes it busy again, so the next waits for that turn in its turn.
+  const [queuedCanvasPrompts, setQueuedCanvasPrompts] = useState<string[]>([]);
+  const queueCanvasPrompt = useCallback((text: string) => {
+    setQueuedCanvasPrompts((queued) => [...queued, text]);
+  }, []);
+  useEffect(() => {
+    const [next, ...rest] = queuedCanvasPrompts;
+    if (!next || isProcessing || liveState.sessionEnded) return;
+    setQueuedCanvasPrompts(rest);
+    void handleSend(next);
+  }, [queuedCanvasPrompts, isProcessing, liveState.sessionEnded, handleSend]);
+
+  const canvasImport = useCanvasImport({
+    logId: sessionKey,
+    canvasMap: liveState.canvasMap,
+    onSurface: (surface) => liveDispatch({ type: "restore_canvases", surfaces: [surface] }),
+    onCloseSurface: (surfaceId) => liveDispatch({ type: "close_canvas", surfaceId }),
+    onPrompt: queueCanvasPrompt,
+  });
+
   // One prompt however many canvases came back, and only to ask the agent to arm `canvas_await` —
   // after which every click is answered directly and costs nothing. `useAcpActivity` owns the
   // once-per-session part, which cannot live in this component: it remounts.
@@ -807,6 +831,7 @@ export function AgentActivityPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      <CanvasImportDialog request={canvasImport.request} onChoice={canvasImport.resolve} />
       {selectedProject && (
         <CreateTaskModal
           isOpen={!!taskDraft}
@@ -914,6 +939,7 @@ export function AgentActivityPanel({
             pendingCanvasAwaits={pendingCanvasAwaits}
             onCanvasEvent={handleCanvasEvent}
             onCloseCanvas={(surfaceId) => liveDispatch({ type: "close_canvas", surfaceId })}
+            onImportCanvas={canvasImport.importFile}
             subagentItems={subagentItems}
             toolCallMap={liveState.toolCallMap}
             sidePanelPlan={sidePanelPlan}

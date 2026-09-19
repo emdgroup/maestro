@@ -45,6 +45,8 @@ interface ExecutionSidePanelProps {
   pendingCanvasAwaits: PendingCanvasAwait[];
   onCanvasEvent: (requestId: string | null, event: unknown) => void;
   onCloseCanvas: (surfaceId: string) => void;
+  /** Takes a `.html` file on *this* machine and brings it in as a surface. */
+  onImportCanvas: (path: string) => void;
   subagentItems: ToolCallItem[];
   toolCallMap: Map<string, ToolCallItem>;
   sidePanelPlan: { requestId: string; payload: Record<string, unknown> } | null;
@@ -83,6 +85,7 @@ export function ExecutionSidePanel({
   pendingCanvasAwaits,
   onCanvasEvent,
   onCloseCanvas,
+  onImportCanvas,
   subagentItems,
   toolCallMap,
   sidePanelPlan,
@@ -222,6 +225,7 @@ export function ExecutionSidePanel({
                 pendingCanvasAwaits={pendingCanvasAwaits}
                 onCanvasEvent={onCanvasEvent}
                 onCloseCanvas={onCloseCanvas}
+                onImportCanvas={onImportCanvas}
                 workingFiles={workingFiles}
                 taskId={taskId}
                 workspacePath={workspacePath}
