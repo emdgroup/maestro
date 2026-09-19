@@ -524,6 +524,86 @@ async fn diff_args_for(
     })
 }
 
+/// How much surrounding context the scopes other than `Head` have always asked for.
+fn context_args(diff_target: &DiffTarget) -> &'static [&'static str] {
+    match diff_target {
+        DiffTarget::Head => &[],
+        _ => &["--unified=6"],
+    }
+}
+
+/// The full `git diff` argv for a target, optionally leaving some paths out of it.
+async fn full_diff_args(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+    remote: &str,
+    exclude: &[String],
+) -> Result<Vec<String>, String> {
+    let mut args = diff_args_for(git_conn, worktree_path, diff_target, remote).await?;
+    args.extend(context_args(diff_target).iter().map(|arg| arg.to_string()));
+    if !exclude.is_empty() {
+        args.push("--".into());
+        args.extend(exclude.iter().map(|path| format!(":(exclude){}", path)));
+    }
+    Ok(args)
+}
+
+/// The paths a target's diff reports as deleted.
+async fn deleted_paths(
+    git_conn: &crate::models::GitConnection,
+    worktree_path: &str,
+    diff_target: &DiffTarget,
+    remote: &str,
+) -> Vec<String> {
+    let Ok(mut args) = diff_args_for(git_conn, worktree_path, diff_target, remote).await else {
+        return Vec::new();
+    };
+    // `-z` so a path holding a quote or a non-ASCII byte arrives as itself rather than as git's
+    // C-style escaping of it.
+    args.extend([
+        "--name-only".to_string(),
+        "--diff-filter=D".to_string(),
+        "-z".to_string(),
+    ]);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::git::run_git_in_dir(git_conn, worktree_path, &arg_refs)
+        .await
+        .unwrap_or_default()
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Deleted paths matched to the untracked paths they were probably moved to.
+///
+/// ponytail: paired on file name, and only where that name is unique on both sides. Git pairs on
+/// content similarity but only among paths it tracks, which is the whole reason this exists; to
+/// catch a move that also renames, run the candidates through a throwaway index
+/// (`GIT_INDEX_FILE` + `git add -N`) and let git do the pairing.
+fn rename_pairs(deleted: &[String], untracked: &[String]) -> Vec<(String, String)> {
+    let unique_in = |paths: &[String], name: &str| {
+        paths.iter().filter(|path| basename(path) == name).count() == 1
+    };
+    deleted
+        .iter()
+        .filter(|old| unique_in(deleted, basename(old)))
+        .filter_map(|old| {
+            let name = basename(old);
+            if !unique_in(untracked, name) {
+                return None;
+            }
+            let new = untracked.iter().find(|path| basename(path) == name)?;
+            (new != old).then(|| (old.clone(), new.clone()))
+        })
+        .collect()
+}
+
 /// Whether a `DiffTarget` compares against the working tree, and so whether untracked files are
 /// part of what it shows.
 ///
@@ -572,28 +652,57 @@ pub async fn get_worktree_diff(
     let (_project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let diff_output = match &diff_target {
-        DiffTarget::Head => {
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "HEAD"]).await?
-        }
-        DiffTarget::Commit { sha } => {
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", sha])
-                .await?
-        }
-        DiffTarget::BranchAll { branch } => {
-            let remote = crate::git::remote::project_remote(&app_state, project_id).await;
-            let base = resolve_divergence_point(&git_conn, &worktree_path, branch, &remote).await?;
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &base])
-                .await?
-        }
-        DiffTarget::CommitRange { from, to } => {
-            let range = format!("{}..{}", from, to);
-            crate::git::run_git_in_dir(&git_conn, &worktree_path, &["diff", "--unified=6", &range])
-                .await?
-        }
-    };
+    let remote = crate::git::remote::project_remote(&app_state, project_id).await;
+    let args = full_diff_args(&git_conn, &worktree_path, &diff_target, &remote, &[]).await?;
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut diff_output = crate::git::run_git_in_dir(&git_conn, &worktree_path, &arg_refs).await?;
 
-    let all_untracked = untracked_files_for(&git_conn, &worktree_path, &diff_target).await;
+    let mut all_untracked = untracked_files_for(&git_conn, &worktree_path, &diff_target).await;
+
+    // Moves git cannot see. An agent that moves a file with plain filesystem calls leaves the old
+    // path deleted and the new one untracked, and git only pairs renames among paths it tracks —
+    // so the move arrives as a deletion plus a brand-new file. That is exactly the shape that
+    // hides what a reviewer needs, because a move usually carries edits with it.
+    if !all_untracked.is_empty() && diff_output.contains("deleted file mode") {
+        let deleted = deleted_paths(&git_conn, &worktree_path, &diff_target, &remote).await;
+        let pairs = rename_pairs(&deleted, &all_untracked);
+        if !pairs.is_empty() {
+            let base = base_rev_for(&git_conn, &worktree_path, &diff_target, &remote).await?;
+            let mut moved = String::new();
+            let mut paired: Vec<String> = Vec::new();
+            for (old, new) in &pairs {
+                // `<rev>:<path>` against a working-tree path is the one form of `git diff` that
+                // compares something git tracks with something it does not.
+                let spec = format!("{}:{}", base, old);
+                let mut argv = vec!["diff"];
+                argv.extend_from_slice(context_args(&diff_target));
+                argv.extend_from_slice(&[spec.as_str(), new.as_str()]);
+                match crate::git::run_git_in_dir(&git_conn, &worktree_path, &argv).await {
+                    // A move with no edits diffs to nothing, and a file with no section at all
+                    // would simply vanish from the review. Say what happened instead.
+                    Ok(text) if text.is_empty() => moved.push_str(&format!(
+                        "diff --git a/{old} b/{new}\nsimilarity index 100%\nrename from {old}\nrename to {new}\n"
+                    )),
+                    Ok(text) => moved.push_str(&text),
+                    Err(e) => {
+                        log::debug!("No move diff for {old} -> {new}: {e}");
+                        continue;
+                    }
+                }
+                paired.push(old.clone());
+                all_untracked.retain(|path| path != new);
+            }
+            if !paired.is_empty() {
+                let args =
+                    full_diff_args(&git_conn, &worktree_path, &diff_target, &remote, &paired)
+                        .await?;
+                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                diff_output =
+                    crate::git::run_git_in_dir(&git_conn, &worktree_path, &arg_refs).await?;
+                diff_output.push_str(&moved);
+            }
+        }
+    }
 
     let total_diff_bytes = diff_output.len();
     let diff_truncated = total_diff_bytes > MAX_DIFF_BYTES;
@@ -973,6 +1082,42 @@ pub async fn get_binary_file_info(
         new_size,
         preview,
     })
+}
+
+#[cfg(test)]
+mod rename_pair_tests {
+    use super::rename_pairs;
+
+    fn owned(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|path| path.to_string()).collect()
+    }
+
+    #[test]
+    fn pairs_a_deleted_file_with_the_untracked_one_of_the_same_name() {
+        assert_eq!(
+            rename_pairs(
+                &owned(&["src/a/f.rs"]),
+                &owned(&["src/b/f.rs", "src/new.rs"])
+            ),
+            vec![("src/a/f.rs".to_string(), "src/b/f.rs".to_string())]
+        );
+    }
+
+    #[test]
+    fn leaves_an_ambiguous_name_alone() {
+        // Two deletions and two arrivals all called `mod.rs` say nothing about which went where.
+        assert!(rename_pairs(
+            &owned(&["a/mod.rs", "b/mod.rs"]),
+            &owned(&["c/mod.rs", "d/mod.rs"])
+        )
+        .is_empty());
+        assert!(rename_pairs(&owned(&["a/mod.rs"]), &owned(&["c/mod.rs", "d/mod.rs"])).is_empty());
+    }
+
+    #[test]
+    fn a_deletion_with_no_arrival_is_still_a_deletion() {
+        assert!(rename_pairs(&owned(&["a/f.rs"]), &owned(&["a/g.rs"])).is_empty());
+    }
 }
 
 #[cfg(test)]
