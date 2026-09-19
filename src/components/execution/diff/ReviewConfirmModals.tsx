@@ -170,7 +170,9 @@ const STRATEGY_FOR_LANDING_MODE: Record<LandingMode, string> = {
 /**
  * What each strategy does, in the order of how much of it Maestro performs. The labels match the
  * landing modes in Settings, which configures the default this dialog opens on — the same choice
- * described twice in different words is how the two drifted apart in the first place.
+ * described twice in different words is how the two drifted apart in the first place. Keep the
+ * descriptions short: each is one line in a select trigger, and a longer one is truncated there
+ * and clipped in the open list.
  *
  * A function of the remote because the push option names the remote it would actually push to,
  * which is not always `origin`.
@@ -185,25 +187,25 @@ function strategiesFor(pushRemote?: string | null): {
     {
       value: "merge-delete",
       label: "Merge locally",
-      description: "Merge into the base branch, delete the worktree, move the task to Done",
+      description: "Merge into the base branch, delete the worktree",
       icon: GitMerge,
     },
     {
       value: "commit-only",
       label: "Commit only",
-      description: "Leave the branch unmerged and the worktree on disk, move the task to Done",
+      description: "Leave the branch unmerged, keep the worktree",
       icon: GitCommitHorizontal,
     },
     {
       value: "commit-push",
       label: "Push only",
-      description: `Push the branch to ${pushRemote ?? "the remote"}, keep the worktree, move the task to Done`,
+      description: `Push the branch to ${pushRemote ?? "the remote"}, keep the worktree`,
       icon: Upload,
     },
     {
       value: "pull-request",
       label: "Open a pull request",
-      description: "Push and open a pull request, keep the task in Review until it merges",
+      description: "Push and open a pull request, stay in Review",
       icon: GitPullRequest,
     },
   ];
