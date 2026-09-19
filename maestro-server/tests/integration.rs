@@ -242,10 +242,21 @@ fn test_permit_response_unknown_session_produces_no_output() {
         .expect("drain stdout");
     let _ = child.wait();
 
+    // Diagnostics, not raw bytes — same race as the Cancel twin below: `send_diag` writes through
+    // a channel, so the server's own startup reports land here on their own schedule.
+    let mut remaining = std::io::Cursor::new(&output);
+    let mut unexpected = Vec::new();
+    while (remaining.position() as usize) < output.len() {
+        match read_frame(&mut remaining) {
+            MaestroRpcMessage::Response(ServerResponse::Diagnostic(_)) => continue,
+            MaestroRpcMessage::Response(ServerResponse::Ping { .. }) => continue,
+            other => unexpected.push(other),
+        }
+    }
+
     assert!(
-        output.is_empty(),
-        "server must produce no output for PermitResponse to unknown session, got {} bytes",
-        output.len()
+        unexpected.is_empty(),
+        "server must answer nothing for PermitResponse to unknown session, got {unexpected:?}"
     );
 }
 

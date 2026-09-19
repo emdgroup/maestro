@@ -137,6 +137,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| "(disabled)".to_string())
     );
 
+    // No-op unless this is an AppImage: gives the running window an icon the desktop can find.
+    maestro_lib::core::desktop_entry::install_for_appimage();
+
     // A re-downloadable copy of files read over SFTP, keyed by a log_id that does not outlive the
     // run, so nothing in it is worth keeping. Cleared here rather than when a session ends because
     // SSH sessions — the only ones that populate it — run on a shared connection server and have no
