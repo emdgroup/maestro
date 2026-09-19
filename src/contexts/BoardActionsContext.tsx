@@ -7,7 +7,7 @@ import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.se
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
 import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
-import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import type { ActiveSessionInfo, Task, WorktreeWithStatus } from "@/types/bindings";
 
 interface BoardActionsValue {
   execute: ReturnType<typeof useExecuteTask>["execute"];
@@ -17,6 +17,13 @@ interface BoardActionsValue {
   canRefine: boolean;
   sessionByTaskId: Map<number, ActiveSessionInfo>;
   worktreeByTaskId: Map<number, WorktreeWithStatus>;
+  /**
+   * Keyed by the worktree's own id rather than by the task's, which is the only way to reach a
+   * `ReuseWorkspace` task's workspace: that worktree belongs to whichever task created it, so
+   * `worktreeByTaskId` finds it under a different task or, before the pinned workspace is claimed,
+   * not at all.
+   */
+  worktreeById: Map<number, WorktreeWithStatus>;
 }
 
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
@@ -80,9 +87,26 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
     return byTask;
   }, [worktrees]);
 
+  const worktreeById = useMemo(() => {
+    const byId = new Map<number, WorktreeWithStatus>();
+    // A worktree with no id has not been written to the database yet, so nothing can be pinned to
+    // it — same reason the map above skips a worktree with no task.
+    for (const worktree of worktrees ?? []) {
+      if (worktree.id != null) byId.set(worktree.id, worktree);
+    }
+    return byId;
+  }, [worktrees]);
+
   const value = useMemo(
-    () => ({ execute, executingTaskId, canRefine, sessionByTaskId, worktreeByTaskId }),
-    [execute, executingTaskId, canRefine, sessionByTaskId, worktreeByTaskId],
+    () => ({
+      execute,
+      executingTaskId,
+      canRefine,
+      sessionByTaskId,
+      worktreeByTaskId,
+      worktreeById,
+    }),
+    [execute, executingTaskId, canRefine, sessionByTaskId, worktreeByTaskId, worktreeById],
   );
 
   return (
@@ -129,4 +153,19 @@ export function useTaskSession(taskId: number): ActiveSessionInfo | null {
 /** The worktree a task left behind, read by the unmerged-archive confirmation. */
 export function useTaskWorktree(taskId: number): WorktreeWithStatus | null {
   return useBoardActionsContext().worktreeByTaskId.get(taskId) ?? null;
+}
+
+/**
+ * The worktree a task is working in, whether it made that worktree or was pinned to one.
+ *
+ * Deliberately wider than `useTaskWorktree`, which answers "what did this task leave behind" and
+ * is what the archive confirmation offers to delete. A `ReuseWorkspace` task only claims its
+ * pinned workspace when it runs, so until then the task-keyed lookup finds nothing and the card
+ * has no branch to show — even though the branch is already decided.
+ */
+export function useTaskWorkspace(task: Task): WorktreeWithStatus | null {
+  const { worktreeByTaskId, worktreeById } = useBoardActionsContext();
+  if (worktreeByTaskId.has(task.id)) return worktreeByTaskId.get(task.id)!;
+  if (task.workspace_worktree_id == null) return null;
+  return worktreeById.get(task.workspace_worktree_id) ?? null;
 }
