@@ -207,16 +207,16 @@ function ActivityLine({ activityInfo }: { activityInfo: SessionActivityInfo | un
   return (
     <div className="flex items-center gap-1 mb-1.5 min-w-0 text-[10px]">
       <span className={cn("size-1.5 rounded-full shrink-0", ACTIVITY_DOT[status])} />
-      <span className={cn("font-bold shrink-0", ACTIVITY_TEXT[status])}>
+      <span className={cn("font-bold shrink-0 min-w-16", ACTIVITY_TEXT[status])}>
         {status.toUpperCase()}
       </span>
+      <ElapsedTime status={status} stateChangedAt={stateChangedAt} />
       {label && (
         <>
           <span className="text-muted-foreground/40 shrink-0">·</span>
           <span className="text-muted-foreground truncate flex-1">{label}</span>
         </>
       )}
-      <ElapsedTime status={status} stateChangedAt={stateChangedAt} />
     </div>
   );
 }

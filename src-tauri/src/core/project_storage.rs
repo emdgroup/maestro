@@ -161,15 +161,79 @@ pub async fn ensure_project_storage(conn: &GitConnection) -> Result<(), String> 
     let dir = format!("{}/.maestro", conn.path());
     crate::connectivity::files::create_dir_all(conn, &dir).await?;
 
+    // Best effort: a project that is not a git repository has nothing to exclude from, and the
+    // folder is still perfectly usable without it.
+    if let Err(e) = exclude_maestro_from_git(conn).await {
+        log::warn!("[project] could not exclude .maestro/ from git: {e}");
+    }
+
     if crate::connectivity::files::exists(conn, &format!("{dir}/commit-template.txt")).await {
         return Ok(());
     }
     write_maestro_file(conn, "commit-template.txt", DEFAULT_COMMIT_TEMPLATE).await
 }
 
+/// Whether a path git printed is already absolute, on either kind of host.
+fn is_absolute_path(path: &str) -> bool {
+    path.starts_with('/') || path.as_bytes().get(1) == Some(&b':')
+}
+
+/// Keep `.maestro/` out of git, for the project and every worktree cut from it.
+///
+/// `info/exclude` rather than `.gitignore`: the canvases, imports and settings under `.maestro/`
+/// are this machine's, and committing an ignore rule for them would push a local arrangement into
+/// everyone else's repository. `info/` lives in the *common* git directory, so one write covers the
+/// main checkout and all of its worktrees at once.
+async fn exclude_maestro_from_git(conn: &GitConnection) -> Result<(), String> {
+    const RULE: &str = ".maestro/";
+
+    let common_dir =
+        crate::git::exec::run_git_in_dir(conn, conn.path(), &["rev-parse", "--git-common-dir"])
+            .await?;
+    let common_dir = common_dir.trim();
+    if common_dir.is_empty() {
+        return Err("git did not report a common directory".to_string());
+    }
+    // Relative (`.git`) when git is run from the main checkout, absolute from a worktree.
+    let common_dir = if is_absolute_path(common_dir) {
+        common_dir.to_string()
+    } else {
+        format!("{}/{common_dir}", conn.path())
+    };
+
+    let path = format!("{common_dir}/info/exclude");
+    let existing = if crate::connectivity::files::exists(conn, &path).await {
+        crate::connectivity::files::read_text(conn, &path).await?
+    } else {
+        crate::connectivity::files::create_dir_all(conn, &format!("{common_dir}/info")).await?;
+        String::new()
+    };
+    if existing.lines().any(|line| line.trim() == RULE) {
+        return Ok(());
+    }
+
+    let mut next = existing;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(RULE);
+    next.push('\n');
+    crate::connectivity::files::write_text(conn, &path, &next).await
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{atomic_write, atomic_write_script};
+    use super::{atomic_write, atomic_write_script, is_absolute_path};
+
+    /// `rev-parse --git-common-dir` answers `.git` from the main checkout and an absolute path
+    /// from a worktree. Treating the relative form as absolute writes the exclude file to `/info`.
+    #[test]
+    fn git_common_dir_forms_are_told_apart() {
+        assert!(!is_absolute_path(".git"));
+        assert!(!is_absolute_path("../.git"));
+        assert!(is_absolute_path("/home/u/proj/.git"));
+        assert!(is_absolute_path("C:/Users/u/proj/.git"));
+    }
 
     /// SSH runs this through the user's login shell, not `sh -c`, so the script has to stay
     /// within the subset every common login shell understands. An earlier version used

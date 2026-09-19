@@ -478,6 +478,9 @@ export function DiffFileStack({
               key={key}
               ref={(el) => registerSection(key, el)}
               path={key}
+              renamedFrom={
+                item.kind === "diff" && item.file.oldPath !== key ? item.file.oldPath : undefined
+              }
               hunks={hunks}
               stats={binary ? <BinaryDiffStats {...binaryProps} /> : undefined}
               viewed={viewedFiles.has(key)}

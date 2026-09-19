@@ -11,9 +11,16 @@ function summariseUserMessage(content: string): string {
   const text = parseUserContent(content).text;
   const canvas = parseCanvasPrompt(text);
   if (!canvas) return text;
-  return canvas.kind === "restored"
-    ? `${canvas.surfaces.length} canvas surfaces restored`
-    : `${canvas.componentId || canvas.surfaceId} ${canvas.eventKind} on ${canvas.surfaceId}`;
+  switch (canvas.kind) {
+    case "restored":
+      return `${canvas.surfaces.length} canvas surfaces restored`;
+    case "imported":
+      return `imported ${canvas.surfaces.join(", ")}`;
+    case "convert":
+      return `imported ${canvas.path.split(/[/\\]/).pop()}`;
+    default:
+      return `${canvas.componentId || canvas.surfaceId} ${canvas.eventKind} on ${canvas.surfaceId}`;
+  }
 }
 import type {
   ConfigOption,
