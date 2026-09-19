@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.0](https://github.com/emdgroup/maestro/compare/v0.27.2...v0.28.0) (2026-09-19)
+
+
+### Features
+
+* **canvas:** import a surface, and keep canvases with their session ([#416](https://github.com/emdgroup/maestro/issues/416)) ([e54419c](https://github.com/emdgroup/maestro/commit/e54419caa8a92f9814240c627068e7a0f5b866a4))
+
+
+### Bug Fixes
+
+* **canvas:** give a viewport-sized surface the panel's height ([#418](https://github.com/emdgroup/maestro/issues/418)) ([97a6673](https://github.com/emdgroup/maestro/commit/97a66736673276c7517843f4fd1b99101bd1cb66))
+* **diff:** pair a deleted file with the untracked one it moved to ([#413](https://github.com/emdgroup/maestro/issues/413)) ([c7edd1a](https://github.com/emdgroup/maestro/commit/c7edd1a573eb92370f4d618d8cf461830f0532f9))
+
 ## [0.27.2](https://github.com/emdgroup/maestro/compare/v0.27.1...v0.27.2) (2026-09-17)
 
 
