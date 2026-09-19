@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { BRIDGE } from "./canvas-frame";
+import { BRIDGE, wantsViewportHeight } from "./canvas-frame";
 
 /**
  * The bridge runs inside the canvas frame, so it is exercised here the way the frame runs it:
@@ -42,6 +42,21 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+});
+
+describe("wantsViewportHeight", () => {
+  it("catches the layouts that cannot be measured from their content", () => {
+    expect(wantsViewportHeight(".app { height: 100vh; overflow: hidden }")).toBe(true);
+    expect(wantsViewportHeight("<body><div class='h-screen flex'></div></body>")).toBe(true);
+    expect(wantsViewportHeight("<div class='min-h-screen'></div>")).toBe(true);
+    expect(wantsViewportHeight("height:100dvh")).toBe(true);
+  });
+
+  it("leaves a flow document to be auto-sized", () => {
+    expect(wantsViewportHeight("<div class='rounded-lg border p-4'>hi</div>")).toBe(false);
+    // A height that is not the whole viewport still grows with its content.
+    expect(wantsViewportHeight(".chart { height: 40vh }")).toBe(false);
+  });
 });
 
 describe("canvas bridge auto-wiring", () => {

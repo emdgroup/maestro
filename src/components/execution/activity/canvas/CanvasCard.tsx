@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { LayoutDashboard, ChevronDown, ChevronUp, Code } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { ScrollArea } from "@/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import type { CanvasItem, CanvasSurface } from "../types";
 import { CanvasHtml } from "./CanvasHtml";
+import { wantsViewportHeight } from "./canvas-frame";
 
 interface Props {
   item: CanvasItem;
@@ -81,7 +83,11 @@ export function CanvasCard({ surface }: Props) {
                       {surface.html}
                     </pre>
                   ) : (
-                    <CanvasHtml surface={surface} />
+                    // A viewport-sized document has no content height to grow to, so in the
+                    // stream it gets the scroller's own ceiling and scrolls inside it.
+                    <div className={cn(wantsViewportHeight(surface.html) && "h-[568px]")}>
+                      <CanvasHtml surface={surface} />
+                    </div>
                   )}
                 </div>
               </ScrollArea>
