@@ -52,6 +52,8 @@ function DiffStats({ hunks }: { hunks: string[] }) {
 interface ReviewFileCardProps {
   /** Repo-relative path — the card's identity, its label, and what Copy path yields. */
   path: string;
+  /** Where the file came from, when the change moved it. Omitted ⇒ the path is where it was. */
+  renamedFrom?: string;
   /** Raw hunks; the card derives +/- itself. Empty for an untracked file. */
   hunks: string[];
   /** Rendered in place of the derived +/- counts, for a change that cannot be counted in lines. */
@@ -89,6 +91,7 @@ interface ReviewFileCardProps {
  */
 export function ReviewFileCard({
   path,
+  renamedFrom,
   hunks,
   stats,
   viewed,
@@ -161,6 +164,17 @@ export function ReviewFileCard({
             </div>
           ) : (
             <span className="text-xs font-mono truncate text-foreground/80 flex-1">{path}</span>
+          )}
+          {renamedFrom && (
+            <Tooltip>
+              <TooltipTrigger
+                type="button"
+                className="text-xs font-mono truncate max-w-[40%] text-muted-foreground"
+              >
+                ← {renamedFrom}
+              </TooltipTrigger>
+              <TooltipContent>Moved from {renamedFrom}</TooltipContent>
+            </Tooltip>
           )}
           {stats ?? <DiffStats hunks={hunks} />}
           <CopyPathButton path={path} />
