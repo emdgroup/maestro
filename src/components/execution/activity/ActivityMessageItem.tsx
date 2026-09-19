@@ -56,6 +56,9 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastTextRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const [recentlyStreamed, setRecentlyStreamed] = useState(false);
+  // Read when the tooltip opens rather than tracked: the selection is browser-owned, and the
+  // label only has to be right at the moment it is shown.
+  const [hasSelection, setHasSelection] = useState(false);
   // The poll below only runs while streaming, so a message that has finished is never
   // actively streaming regardless of the last poll — derived here rather than reset from
   // the effect when streaming stops.
@@ -106,7 +109,11 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
       {showActions && (!message.isStreaming || !isActivelyStreaming) && (
         <MessageActionBar copyText={message.text} sentAt={message.sentAt}>
           {createTaskFromText && (
-            <Tooltip>
+            <Tooltip
+              onOpenChange={(open) => {
+                if (open) setHasSelection(selectionWithin(bodyRef.current) !== null);
+              }}
+            >
               <TooltipTrigger
                 render={
                   <Button
@@ -124,7 +131,9 @@ export function ActivityMessageItem({ message, showActions }: ActivityMessageIte
               >
                 <ListPlus className="size-3.5" />
               </TooltipTrigger>
-              <TooltipContent>Create task from selection</TooltipContent>
+              <TooltipContent>
+                {hasSelection ? "Create task from selection" : "Create task from response"}
+              </TooltipContent>
             </Tooltip>
           )}
         </MessageActionBar>
