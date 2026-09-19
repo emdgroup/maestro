@@ -6,12 +6,8 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
 import { surfaceFromHtml, surfaceToHtml } from "@/components/execution/activity/canvas/canvas-file";
 
-export async function saveCanvasSurface(
-  projectId: number,
-  logId: number,
-  surface: CanvasSurface,
-): Promise<void> {
-  await api.saveCanvasSurface(projectId, logId, surface.surfaceId, surfaceToHtml(surface));
+export async function saveCanvasSurface(logId: number, surface: CanvasSurface): Promise<void> {
+  await api.saveCanvasSurface(logId, surface.surfaceId, surfaceToHtml(surface));
 }
 
 /**
@@ -23,15 +19,8 @@ export async function saveCanvasSurface(
  */
 export function useDeleteCanvasSurfaceMutation() {
   return useMutation({
-    mutationFn: ({
-      projectId,
-      logId,
-      surfaceId,
-    }: {
-      projectId: number;
-      logId: number;
-      surfaceId: string;
-    }) => api.deleteCanvasSurface(projectId, logId, surfaceId),
+    mutationFn: ({ logId, surfaceId }: { logId: number; surfaceId: string }) =>
+      api.deleteCanvasSurface(logId, surfaceId),
     onError: createErrorToastHandler("Failed to delete the saved canvas file"),
   });
 }
@@ -64,10 +53,29 @@ export function useExportCanvasSurfaceMutation() {
   });
 }
 
-export async function loadSavedCanvases(
-  projectId: number,
-  logId: number,
-): Promise<CanvasSurface[]> {
-  const files = await api.loadSavedCanvases(projectId, logId);
+export async function loadSavedCanvases(logId: number): Promise<CanvasSurface[]> {
+  const files = await api.loadSavedCanvases(logId);
   return files.map(surfaceFromHtml).filter((s): s is CanvasSurface => s !== null);
+}
+
+/**
+ * Read a file the user picked on *this* machine — the picker is the host's, the same rule export
+ * follows — and hand it back for `surfaceFromHtml` to classify.
+ */
+export async function readImportedCanvasFile(path: string): Promise<string> {
+  return api.readFile({ type: "local" }, path);
+}
+
+/**
+ * Put an imported document into the session's own workspace, so the agent can read it.
+ *
+ * Returns the absolute path on the machine the agent runs on, which for a remote session is not
+ * the one the file was picked from.
+ */
+export async function saveCanvasImport(
+  logId: number,
+  fileName: string,
+  html: string,
+): Promise<string> {
+  return api.saveCanvasImport(logId, fileName, html);
 }

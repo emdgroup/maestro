@@ -1,42 +1,45 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::connectivity::files;
 use crate::core::AppState;
+use crate::models::GitConnection;
 
-fn project_path(state: &AppState, project_id: i32) -> Result<String, String> {
-    let conn = state
-        .db
-        .lock()
-        .map_err(|e| format!("DB lock failed: {}", e))?;
-    conn.query_row(
-        "SELECT path FROM projects WHERE id = ?",
-        [project_id],
-        |row| row.get::<_, String>(0),
-    )
-    .map_err(|_| format!("Project {} not found", project_id))
+/// Where a session keeps its canvases, and the connection to reach them over.
+///
+/// Both come from the session rather than from the project row: an SSH, WSL or container session's
+/// files live on *that* machine, and its working directory is the worktree the agent was started
+/// in — which is also the only place the agent can read a canvas back from.
+async fn canvas_target(
+    state: &AppState,
+    log_id: i32,
+) -> Result<(GitConnection, String, String), String> {
+    let (cwd, connection_key, acp_session_id) = {
+        let sessions = state.acp.sessions.lock().await;
+        let session = sessions
+            .get(&log_id)
+            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+        let acp_session_id = session
+            .acp_session_id
+            .lock()
+            .map_err(|_| "acp_session_id lock poisoned".to_string())?
+            .clone()
+            .ok_or_else(|| "Session not yet initialized (no acp_session_id)".to_string())?;
+        (session.cwd.clone(), session.connection_key, acp_session_id)
+    };
+    let conn = crate::core::git_connection_for(state, cwd.clone(), connection_key).await?;
+    let dir = format!("{cwd}/.maestro/canvases/{acp_session_id}");
+    Ok((conn, cwd, dir))
 }
 
-async fn get_acp_session_id(state: &AppState, log_id: i32) -> Result<String, String> {
-    let sessions = state.acp.sessions.lock().await;
-    let session = sessions
-        .get(&log_id)
-        .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
-    let id = session
-        .acp_session_id
-        .lock()
-        .map_err(|_| "acp_session_id lock poisoned".to_string())?
-        .clone()
-        .ok_or_else(|| "Session not yet initialized (no acp_session_id)".to_string());
-    id
-}
-
-fn canvas_dir(project_path: &str, acp_session_id: &str) -> PathBuf {
-    PathBuf::from(project_path)
-        .join(".maestro")
-        .join("canvases")
-        .join(acp_session_id)
+/// A surface id and an imported file name both reach here from outside, and both are pasted into a
+/// path. Anything that could climb out of the session's own directory is refused.
+fn plain_file_name(name: &str) -> Result<&str, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(format!("{name} is not a usable file name"));
+    }
+    Ok(name)
 }
 
 /// Write one surface as a self-contained `.html` file.
@@ -47,74 +50,76 @@ fn canvas_dir(project_path: &str, acp_session_id: &str) -> PathBuf {
 #[specta::specta]
 pub async fn save_canvas_surface(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
     log_id: i32,
     surface_id: String,
     html: String,
 ) -> Result<(), String> {
-    let path = project_path(&app_state, project_id)?;
-    let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
-    let dir = canvas_dir(&path, &acp_session_id);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| format!("Failed to create canvas directory: {}", e))?;
-    let file_path = dir.join(format!("{}.html", surface_id));
-    tokio::fs::write(&file_path, html)
-        .await
-        .map_err(|e| format!("Failed to write canvas file: {}", e))?;
-    Ok(())
+    let surface_id = plain_file_name(&surface_id)?;
+    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    files::create_dir_all(&conn, &dir).await?;
+    files::write_text(&conn, &format!("{dir}/{surface_id}.html"), &html).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_canvas_surface(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
     log_id: i32,
     surface_id: String,
 ) -> Result<(), String> {
-    let path = project_path(&app_state, project_id)?;
-    let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
-    let file_path = canvas_dir(&path, &acp_session_id).join(format!("{}.html", surface_id));
-    match tokio::fs::remove_file(&file_path).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("Failed to delete canvas file: {}", e)),
+    let surface_id = plain_file_name(&surface_id)?;
+    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    let file_path = format!("{dir}/{surface_id}.html");
+    if !files::exists(&conn, &file_path).await {
+        return Ok(());
     }
+    files::delete_path(&conn, &file_path, false).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn load_saved_canvases(
     app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
     log_id: i32,
 ) -> Result<Vec<String>, String> {
-    let path = project_path(&app_state, project_id)?;
-    let acp_session_id = get_acp_session_id(&app_state, log_id).await?;
-    let dir = canvas_dir(&path, &acp_session_id);
-    let mut read_dir = match tokio::fs::read_dir(&dir).await {
-        Ok(d) => d,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-        Err(e) => return Err(format!("Failed to read canvas directory: {}", e)),
-    };
+    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    if !files::exists(&conn, &dir).await {
+        return Ok(vec![]);
+    }
     let mut surfaces = Vec::new();
-    while let Some(entry) = read_dir
-        .next_entry()
-        .await
-        .map_err(|e| format!("Failed to read directory entry: {}", e))?
-    {
-        let entry_path = entry.path();
+    for entry in files::contents(&conn, &dir, false).await? {
         // Canvases saved by an older build are `.json` in the same directory. They are left where
         // they are rather than migrated: nothing here can turn a component tree into a document.
-        if entry_path.extension().and_then(|e| e.to_str()) != Some("html") {
+        if entry.is_dir || !entry.name.ends_with(".html") {
             continue;
         }
-        if let Ok(contents) = tokio::fs::read_to_string(&entry_path).await {
-            surfaces.push(contents);
+        match files::read_text(&conn, &format!("{dir}/{}", entry.name)).await {
+            Ok(contents) => surfaces.push(contents),
+            Err(e) => log::warn!("[canvas] could not read {}/{}: {e}", dir, entry.name),
         }
     }
     Ok(surfaces)
+}
+
+/// Put a document the user imported where the agent can read it, and say where that is.
+///
+/// The path is built here rather than in the frontend for the same reason the canvas directory is:
+/// for a remote session it names a directory on the agent's machine, not on this one.
+#[tauri::command]
+#[specta::specta]
+pub async fn save_canvas_import(
+    app_state: State<'_, Arc<AppState>>,
+    log_id: i32,
+    file_name: String,
+    html: String,
+) -> Result<String, String> {
+    let file_name = plain_file_name(&file_name)?;
+    let (conn, cwd, _dir) = canvas_target(&app_state, log_id).await?;
+    let dir = format!("{cwd}/.maestro/imports");
+    files::create_dir_all(&conn, &dir).await?;
+    let path = format!("{dir}/{file_name}");
+    files::write_text(&conn, &path, &html).await?;
+    Ok(path)
 }
 
 /// Note something a canvas frame could not load or run, for the agent's next canvas tool call.

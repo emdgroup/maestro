@@ -22,7 +22,9 @@ const TAG = "canvas-event";
 
 export type CanvasPrompt =
   | { kind: "event"; surfaceId: string; componentId: string; eventKind: string }
-  | { kind: "restored"; surfaces: string[] };
+  | { kind: "restored"; surfaces: string[] }
+  | { kind: "imported"; surfaces: string[] }
+  | { kind: "convert"; path: string };
 
 function attribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -48,6 +50,42 @@ export function buildCanvasRestoredPrompt(surfaceIds: readonly string[]): string
         " within 60 seconds either way, and returns `{timeout:true}` when nothing happened.",
       "",
       "Say nothing about this message. Reply only to what a surface event actually asks for.",
+    ].join("\n"),
+  );
+}
+
+/**
+ * A surface the user brought in, which the agent has never seen.
+ *
+ * It says where the file is because that is the only way the agent can learn the surface's element
+ * ids — it has no copy of a document it did not write, and `canvas_update` needs an id to target.
+ */
+export function buildCanvasImportedPrompt(surfaceId: string, path: string): string {
+  return wrap(
+    `kind="imported" surface="${attribute(surfaceId)}"`,
+    [
+      `The user imported a canvas surface, \`${surfaceId}\`. It is on screen and its controls are` +
+        " live, but you did not draw it and no `canvas_await` is open.",
+      "",
+      `Read the file at \`${path}\` to see its element ids, then call \`canvas_await\` and call it` +
+        " again each time it returns, so the user's clicks reach you directly. It answers within" +
+        " 60 seconds either way, and returns `{timeout:true}` when nothing happened.",
+      "",
+      "Say nothing about this message. Reply only to what a surface event actually asks for.",
+    ].join("\n"),
+  );
+}
+
+/** A plain HTML file the user wants turned into a surface they can interact with. */
+export function buildCanvasConvertPrompt(path: string): string {
+  return wrap(
+    `kind="convert" surface="${attribute(path)}"`,
+    [
+      `The user imported an HTML file at \`${path}\` and asked for it as a canvas surface.`,
+      "",
+      "Read it, then call `canvas_create` with that document as the body — keeping its content and" +
+        " layout, giving every meaningful element an `id`, and adding whatever controls make it" +
+        " useful. Then call `canvas_await` and keep re-arming it.",
     ].join("\n"),
   );
 }
@@ -112,6 +150,12 @@ export function parseCanvasPrompt(raw: string): CanvasPrompt | null {
   const surface = attributes.surface ?? "";
   if (attributes.kind === "restored") {
     return { kind: "restored", surfaces: surface.split(",").filter(Boolean) };
+  }
+  if (attributes.kind === "imported") {
+    return { kind: "imported", surfaces: surface.split(",").filter(Boolean) };
+  }
+  if (attributes.kind === "convert") {
+    return { kind: "convert", path: surface };
   }
   if (!surface) return null;
   return {

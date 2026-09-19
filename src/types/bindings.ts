@@ -1735,25 +1735,39 @@ async renameAcpSession(projectId: number, agentId: string, acpSessionId: string,
  * `html` is the agent's own document plus the `<title>` and `<meta>` tags the frontend folds in;
  * Maestro's injected head is deliberately absent, so the file opens in any browser.
  */
-async saveCanvasSurface(projectId: number, logId: number, surfaceId: string, html: string) : Promise<Result<null, string>> {
+async saveCanvasSurface(logId: number, surfaceId: string, html: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { projectId, logId, surfaceId, html }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { logId, surfaceId, html }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async deleteCanvasSurface(projectId: number, logId: number, surfaceId: string) : Promise<Result<null, string>> {
+async deleteCanvasSurface(logId: number, surfaceId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_canvas_surface", { projectId, logId, surfaceId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_canvas_surface", { logId, surfaceId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async loadSavedCanvases(projectId: number, logId: number) : Promise<Result<string[], string>> {
+async loadSavedCanvases(logId: number) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_saved_canvases", { projectId, logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_saved_canvases", { logId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Put a document the user imported where the agent can read it, and say where that is.
+ * 
+ * The path is built here rather than in the frontend for the same reason the canvas directory is:
+ * for a remote session it names a directory on the agent's machine, not on this one.
+ */
+async saveCanvasImport(logId: number, fileName: string, html: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_canvas_import", { logId, fileName, html }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

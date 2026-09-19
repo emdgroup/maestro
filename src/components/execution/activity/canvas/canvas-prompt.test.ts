@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildCanvasConvertPrompt,
   buildCanvasEventPrompt,
+  buildCanvasImportedPrompt,
   buildCanvasRestoredPrompt,
   parseCanvasPrompt,
 } from "./canvas-prompt";
@@ -68,6 +70,26 @@ describe("canvas prompts", () => {
     expect(parseCanvasPrompt(buildCanvasRestoredPrompt(["a", "b"]))).toEqual({
       kind: "restored",
       surfaces: ["a", "b"],
+    });
+  });
+
+  it("tells an imported surface apart from one the agent drew", () => {
+    const text = buildCanvasImportedPrompt("dash", "/srv/wt/.maestro/imports/dash.html");
+
+    // The path is the whole point: the agent has no copy of a document it did not write, so it
+    // cannot name a single element id without reading the file.
+    expect(text).toContain("/srv/wt/.maestro/imports/dash.html");
+    expect(text).toContain("canvas_await");
+    expect(parseCanvasPrompt(text)).toEqual({ kind: "imported", surfaces: ["dash"] });
+  });
+
+  it("asks for a conversion rather than announcing a surface", () => {
+    const text = buildCanvasConvertPrompt("/srv/wt/.maestro/imports/report.html");
+
+    expect(text).toContain("canvas_create");
+    expect(parseCanvasPrompt(text)).toEqual({
+      kind: "convert",
+      path: "/srv/wt/.maestro/imports/report.html",
     });
   });
 

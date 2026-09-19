@@ -182,6 +182,16 @@ function CanvasPromptRow({ prompt }: { prompt: CanvasPrompt }) {
           {prompt.surfaces.length} canvas {prompt.surfaces.length === 1 ? "surface" : "surfaces"}{" "}
           restored — asked the agent to listen
         </span>
+      ) : prompt.kind === "imported" ? (
+        <span>
+          imported <span className="font-mono">{prompt.surfaces.join(", ")}</span> — asked the agent
+          to listen
+        </span>
+      ) : prompt.kind === "convert" ? (
+        <span>
+          imported <span className="font-mono">{prompt.path.split(/[/\\]/).pop()}</span> — asked the
+          agent to make it a canvas
+        </span>
       ) : (
         <span>
           <span className="font-mono">{prompt.componentId || prompt.surfaceId}</span>{" "}

@@ -343,12 +343,18 @@ export function OverviewPanel({
 
         {/* Canvas */}
         <Card
-          available={canvasCount > 0}
+          // Always clickable, unlike the cards around it: the canvas tab is created on demand, so
+          // with no surface drawn yet this card is the only way to reach the import drop zone.
+          available
           onClick={() => onNavigate("canvas")}
           icon={<SquarePlay className="w-3.5 h-3.5 text-[--purple]" />}
           iconBg="bg-[--purple]/15"
           label="Canvas"
-          sub={canvasCount === 0 ? "None" : `${canvasCount} surface${canvasCount !== 1 ? "s" : ""}`}
+          sub={
+            canvasCount === 0
+              ? "Import a canvas"
+              : `${canvasCount} surface${canvasCount !== 1 ? "s" : ""}`
+          }
           badge={canvasCount > 0 ? String(canvasCount) : undefined}
           badgeClass="bg-[--purple]/15 text-[--purple]"
         />

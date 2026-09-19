@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
-import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDraggableFileInput } from "@/components/kanban/shared/useFileInput";
 import { ReviewChangesPanel } from "@/components/execution/activity/ReviewChangesPanel";
 import { CanvasHtml } from "@/components/execution/activity/canvas/CanvasHtml";
 import type {
@@ -62,6 +65,8 @@ interface SidePanelContentProps {
   onCanvasEvent: (requestId: string | null, event: unknown) => void;
   /** Drops the surface from this session's carousel. Its autosaved file is deleted alongside. */
   onCloseCanvas: (surfaceId: string) => void;
+  /** Takes a `.html` file on *this* machine and brings it in as a surface. */
+  onImportCanvas: (path: string) => void;
   workingFiles: WorkingFileEntry[];
   taskId: number | null;
   workspacePath: string;
@@ -100,6 +105,7 @@ export function SidePanelContent({
   pendingCanvasAwaits,
   onCanvasEvent,
   onCloseCanvas,
+  onImportCanvas,
   workingFiles,
   taskId,
   workspacePath,
@@ -122,6 +128,36 @@ export function SidePanelContent({
   const selectedProject = useSelectedProject();
   const exportCanvasMutation = useExportCanvasSurfaceMutation();
   const deleteCanvasMutation = useDeleteCanvasSurfaceMutation();
+
+  // Drag-drop is webview-global, so it is accepted only while this session is on screen and the
+  // user is looking at a tab an import belongs on. Dropping on Overview opens the canvas tab in
+  // the same gesture, since that is where the surface is about to appear.
+  const importCanvasFrom = useCallback(
+    (path: string) => {
+      if (!/\.html?$/i.test(path)) {
+        toast.error("Only an .html file can be imported as a canvas");
+        return;
+      }
+      onOpenTabKind("canvas");
+      onImportCanvas(path);
+    },
+    [onOpenTabKind, onImportCanvas],
+  );
+  const canImportCanvas =
+    isSessionActive && (activeTabId === "overview" || activeTabId === "canvas");
+  const { isDragging } = useDraggableFileInput(canImportCanvas, (_name, path) =>
+    importCanvasFrom(path),
+  );
+  // Not `pickFiles` from the hook above: that picker takes anything, and the one useful filter
+  // here is the file extension the drop path has to check for anyway.
+  const browseForCanvas = useCallback(() => {
+    void openFilePicker({
+      multiple: false,
+      filters: [{ name: "HTML", extensions: ["html", "htm"] }],
+    }).then((picked) => {
+      if (typeof picked === "string") importCanvasFrom(picked);
+    });
+  }, [importCanvasFrom]);
   // Polling is gated on the session being on screen rather than on the Review or Overview
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
   // the user is looking at another tab, or at a collapsed panel.
@@ -490,18 +526,30 @@ export function SidePanelContent({
                             render={
                               <button
                                 type="button"
+                                aria-label="Import a canvas"
+                                onClick={browseForCanvas}
+                                className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                              />
+                            }
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                          </TooltipTrigger>
+                          <TooltipContent>Import a canvas</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
                                 aria-label="Close canvas"
                                 onClick={() => {
                                   // The state drop and the file are both needed: leaving the file
                                   // behind means `restore_canvases` brings the surface back on the
                                   // next session load.
-                                  if (selectedProject != null) {
-                                    deleteCanvasMutation.mutate({
-                                      projectId: selectedProject.id,
-                                      logId: sessionKey,
-                                      surfaceId: activeSurface.surfaceId,
-                                    });
-                                  }
+                                  deleteCanvasMutation.mutate({
+                                    logId: sessionKey,
+                                    surfaceId: activeSurface.surfaceId,
+                                  });
                                   onCloseCanvas(activeSurface.surfaceId);
                                 }}
                                 className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
@@ -536,7 +584,24 @@ export function SidePanelContent({
                 </CanvasAnnotationLayer>
               ) : (
                 <div className="absolute inset-0 p-3">
-                  <p className="text-xs text-muted-foreground">No canvas active</p>
+                  {/* The empty state is the import affordance: with no surface drawn there is
+                      nothing else this tab could usefully say. */}
+                  <button
+                    type="button"
+                    onClick={browseForCanvas}
+                    className={cn(
+                      "flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs transition-colors",
+                      isDragging
+                        ? "border-accent bg-accent/5 text-foreground"
+                        : "border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                    )}
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Drop a canvas here, or browse</span>
+                    <span className="text-[10px] opacity-70">
+                      An exported canvas, or any HTML file
+                    </span>
+                  </button>
                 </div>
               ))}
             {kind === "review" && (

@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { drainAcpReplay } from "@/services/execution.service";
 import { loadSavedCanvases, saveCanvasSurface } from "@/services/canvas.service";
-import { useSelectedProject } from "@/store/projectStore";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import type { SessionUpdatePayload, ActivityState, CanvasSurface } from "./types";
 import { activityReducer } from "./activityReducer";
@@ -34,8 +33,6 @@ export function useAcpActivity(
   canvasesRestoredRef?: React.RefObject<((surfaceIds: string[]) => void) | undefined>,
 ): [ActivityState, React.Dispatch<ActivityAction>] {
   const [state, dispatch] = useReducer(activityReducer, INITIAL_ACTIVITY_STATE);
-  const selectedProject = useSelectedProject();
-  const projectId = selectedProject?.id ?? null;
 
   // Stream events can arrive at token rate; dispatching each one individually
   // forces a reducer + render pass per event and saturates the renderer thread
@@ -61,18 +58,42 @@ export function useAcpActivity(
     [sessionUpdateRef],
   );
 
+  // What has been written is tracked by object identity, which is only meaningful within one
+  // session — so the record is tied to the `logId` it was built for rather than to this hook
+  // instance. Today the panel remounts per session and the distinction never shows; if it ever
+  // stops doing that, the failure is silent, and a surface that was never written looks saved
+  // until a restart loses it.
+  const savedRef = useRef<{ logId: number | null; surfaces: Map<string, CanvasSurface> }>({
+    logId: null,
+    surfaces: new Map(),
+  });
+  const savedSurfaces = useCallback(
+    (forLogId: number) => {
+      if (savedRef.current.logId !== forLogId) {
+        savedRef.current = { logId: forLogId, surfaces: new Map() };
+      }
+      return savedRef.current.surfaces;
+    },
+    // Reads and writes a ref only; kept stable so the effects below do not re-run.
+    [],
+  );
+
   const tryRestoreCanvases = useCallback(() => {
-    if (projectId == null || logId == null) return;
-    loadSavedCanvases(projectId, logId)
+    if (logId == null) return;
+    loadSavedCanvases(logId)
       .then((surfaces) => {
         if (surfaces.length === 0) return;
+        // They came off disk, so they are already written. Without this the save below would copy
+        // every restored surface straight back, which on a remote session is a round trip each.
+        const saved = savedSurfaces(logId);
+        for (const surface of surfaces) saved.set(surface.surfaceId, surface);
         dispatch({ type: "restore_canvases", surfaces });
         if (canvasTriggered.has(logId)) return;
         canvasTriggered.add(logId);
         canvasesRestoredRef?.current?.(surfaces.map((surface) => surface.surfaceId));
       })
       .catch(console.error);
-  }, [projectId, logId, canvasesRestoredRef]);
+  }, [logId, canvasesRestoredRef, savedSurfaces]);
 
   useEffect(() => {
     if (logId == null) return;
@@ -152,39 +173,30 @@ export function useAcpActivity(
     };
   }, [logId, enqueue, tryRestoreCanvases]);
 
-  // Canvases are written to disk as they change, so a restarted app gets them back.
+  // Canvases are written to disk while the agent is idle, so a restarted app gets them back.
   //
   // Fences used to make this free: they were part of the transcript, so a replayed session
   // rebuilt every surface from it. Tool calls are not — nothing replays them — so the surface
-  // only exists in this reducer until it is saved. Debounced because `canvas_update` merges in
-  // place and a dashboard filling in from tool calls revises the same surface many times.
+  // only exists in this reducer until it is saved.
   //
-  // What has been written is tracked by object identity, which is only meaningful within one
-  // session — so the record is tied to the `logId` it was built for rather than to this hook
-  // instance. Today the panel remounts per session and the distinction never shows; if it ever
-  // stops doing that, the failure is silent, and a surface that was never written looks saved
-  // until a restart loses it.
-  const savedRef = useRef<{ logId: number | null; surfaces: Map<string, CanvasSurface> }>({
-    logId: null,
-    surfaces: new Map(),
-  });
+  // The trigger is the turn ending rather than the surface changing, because the write now goes
+  // over the session's connection: `canvas_update` merges in place, and a dashboard filling in
+  // from tool calls revises the same surface many times, which on an SSH session is a round trip
+  // each. A restored surface, an imported one and anything drawn after the turn are all covered
+  // too — each of those lands while this is already idle. The cost is that the app being killed
+  // mid-turn loses whatever that turn drew.
+  const isIdle = !state.isTurnActive || state.sessionEnded;
   useEffect(() => {
-    if (projectId == null || logId == null || state.canvasMap.size === 0) return;
-    const timer = setTimeout(() => {
-      if (savedRef.current.logId !== logId) {
-        savedRef.current = { logId, surfaces: new Map() };
-      }
-      const saved = savedRef.current.surfaces;
-      for (const [surfaceId, surface] of state.canvasMap) {
-        if (saved.get(surfaceId) === surface) continue;
-        saved.set(surfaceId, surface);
-        saveCanvasSurface(projectId, logId, surface).catch((e) => {
-          console.warn(`[canvas] could not save ${surfaceId}`, e);
-        });
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [state.canvasMap, projectId, logId]);
+    if (logId == null || !isIdle || state.canvasMap.size === 0) return;
+    const saved = savedSurfaces(logId);
+    for (const [surfaceId, surface] of state.canvasMap) {
+      if (saved.get(surfaceId) === surface) continue;
+      saved.set(surfaceId, surface);
+      saveCanvasSurface(logId, surface).catch((e) => {
+        console.warn(`[canvas] could not save ${surfaceId}`, e);
+      });
+    }
+  }, [state.canvasMap, isIdle, logId, savedSurfaces]);
 
   return [state, dispatch];
 }
