@@ -1,10 +1,11 @@
 import { memo, useRef, useEffect, useState } from "react";
-import { Task, TaskStatus, type JsonValue } from "@/types/bindings";
+import { Task, TaskStatus, type JsonValue, type WorktreeWithStatus } from "@/types/bindings";
 import { useKanban } from "@/contexts/KanbanContext";
 import {
   useBoardActionsContext,
   useTaskSession,
   useTaskWorktree,
+  useTaskWorkspace,
 } from "@/contexts/BoardActionsContext";
 import { useTaskHold } from "@/hooks/useTaskHold";
 import { ProposalGate } from "./ProposalGate";
@@ -49,6 +50,7 @@ import {
   ElapsedTime,
 } from "@/components/execution/shared/activityStatus";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { shortBranchName } from "@/lib/generateSessionName";
 
 interface TaskCardProps {
   task: Task;
@@ -253,6 +255,83 @@ function PriorityOpt({ priority }: { priority: string }) {
   return null;
 }
 
+/**
+ * Which branch this task is working on, in the slot that used to say "worktree".
+ *
+ * That label was the same on every card of a board whose tasks all use worktrees, which is a row
+ * of pixels spent saying nothing. The branch is what actually distinguishes one card from the
+ * next, and it is already in hand — no query of its own.
+ *
+ * Three states, in the order they occur: no branch decided yet (the mode is all there is to say),
+ * a branch chosen but not created (shown muted, because nothing is checked out there yet), and a
+ * live worktree (clickable, because there is now somewhere to go).
+ */
+function WorkspaceOpt({ task, worktree }: { task: Task; worktree: WorktreeWithStatus | null }) {
+  const navigate = useNavigate();
+  if (task.workspace_mode === "RepositoryDirectory") return null;
+
+  // The branch name is kept in the database for branch operations even while detached, so showing
+  // it would claim a checkout that is not there — the same call `WorktreeCard` makes.
+  const branch = worktree?.detached_at
+    ? `detached at ${worktree.detached_at}`
+    : (worktree?.branch_name ?? task.workspace_branch ?? null);
+  const label = branch
+    ? shortBranchName(branch)
+    : task.workspace_mode === "ReuseWorkspace"
+      ? "workspace"
+      : "worktree";
+
+  const content = (
+    <>
+      <GitBranch className="w-2.5 h-2.5 shrink-0" />
+      <span className="truncate">{label}</span>
+    </>
+  );
+  const className = cn(
+    "flex items-center gap-0.5 text-[9.5px] min-w-0 max-w-full",
+    // Pending rather than present: the name is decided, the checkout is not.
+    worktree ? "text-secondary" : "text-muted-foreground",
+  );
+
+  // Only a worktree the Worktrees view can find is worth a click — it deep-links by database id,
+  // which a worktree not yet written there does not have. The card itself opens the task
+  // underneath, so the click has to be stopped before it does.
+  const worktreeId = worktree?.id;
+  const trigger =
+    worktreeId != null ? (
+      <button
+        type="button"
+        aria-label={`Open the worktree on ${branch}`}
+        className={cn(className, "hover:text-foreground hover:underline")}
+        onClick={(e) => {
+          e.stopPropagation();
+          navigate({ worktreeId: String(worktreeId) });
+        }}
+      >
+        {content}
+      </button>
+    ) : (
+      <span className={className}>{content}</span>
+    );
+
+  // Nothing to add when the label is the mode name: the tooltip would repeat the badge.
+  if (!branch) return trigger;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={trigger} />
+      <TooltipContent>
+        <div className="font-mono">{branch}</div>
+        {worktree ? (
+          <div className="font-mono text-muted-foreground">{worktree.path}</div>
+        ) : (
+          <div className="text-muted-foreground">Not created yet</div>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const { projectId } = useKanban();
   const { setActiveTaskId } = useNavigationActions();
@@ -280,6 +359,9 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const deleteWorktree = useDeleteWorktreeMutation();
   // Only read for the unmerged-archive confirmation below.
   const taskWorktree = useTaskWorktree(task.id);
+  // Wider than the above: where the task works, including a workspace it was pinned to but has not
+  // claimed yet. Read by the branch badge, which is not offering to delete anything.
+  const taskWorkspace = useTaskWorkspace(task);
   const recoverSession = useRecoverTaskSessionMutation();
   const cancelSession = useCancelActiveSessionMutation();
   // Not gated on InProgress: a task keeps its session into Review, which is what the Join button
@@ -407,12 +489,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         {hasOptions && (
           <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-border/50 mb-1.5">
             <PriorityOpt priority={task.priority} />
-            {task.workspace_mode !== "RepositoryDirectory" && (
-              <span className="flex items-center gap-0.5 text-[9.5px] text-secondary">
-                <GitBranch className="w-2.5 h-2.5" />
-                {task.workspace_mode === "ReuseWorkspace" ? "workspace" : "worktree"}
-              </span>
-            )}
+            <WorkspaceOpt task={task} worktree={taskWorkspace} />
           </div>
         )}
 

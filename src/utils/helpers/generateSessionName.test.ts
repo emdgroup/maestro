@@ -3,8 +3,24 @@ import {
   slugifyName,
   taskBranchName,
   validateBranchSuffix,
+  shortBranchName,
   MAESTRO_BRANCH_PREFIX,
 } from "./generateSessionName";
+
+describe("shortBranchName", () => {
+  it("drops the namespace every Maestro branch shares", () => {
+    expect(shortBranchName("maestro/12-fix-windows-path")).toBe("12-fix-windows-path");
+  });
+
+  it("leaves a branch created outside the namespace whole", () => {
+    expect(shortBranchName("release/2.1")).toBe("release/2.1");
+    expect(shortBranchName("main")).toBe("main");
+  });
+
+  it("only strips the namespace from the front", () => {
+    expect(shortBranchName("fix/maestro/thing")).toBe("fix/maestro/thing");
+  });
+});
 
 describe("slugifyName", () => {
   it("lowercases and kebabs", () => {
