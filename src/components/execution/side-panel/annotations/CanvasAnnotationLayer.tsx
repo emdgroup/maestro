@@ -11,6 +11,7 @@ import type {
   CanvasFrameHandle,
   FrameNode,
 } from "@/components/execution/activity/canvas/CanvasHtml";
+import { wantsViewportHeight } from "@/components/execution/activity/canvas/canvas-frame";
 import { AnnotationBar } from "./AnnotationBar";
 import { AnnotationComposer } from "./AnnotationComposer";
 import { CaptureChip } from "./CaptureChip";
@@ -495,6 +496,7 @@ export function CanvasAnnotationLayer({
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [active, pending, viewingId]);
 
+  const fillHeight = wantsViewportHeight(surface.html);
   const viewing = mine.find((a) => a.id === viewingId) ?? null;
   const hovered = hoverId ? nodes.find((n) => n.id === hoverId) : null;
   const shellStops = {
@@ -554,10 +556,14 @@ export function CanvasAnnotationLayer({
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
-        <div ref={frameRef} className="relative">
+        {/* A viewport-sized document gets the pane's height rather than growing the scroller:
+            without a definite height to resolve against it collapses to its starting size. */}
+        <div ref={frameRef} className={cn("relative", fillHeight && "h-full")}>
           {/* The capture target. The overlay below is deliberately a sibling: anything inside this
               element — the marquee, the outlines, the bubble — would be rasterised into the shot. */}
-          <div ref={contentRef}>{children}</div>
+          <div ref={contentRef} className={cn(fillHeight && "h-full")}>
+            {children}
+          </div>
 
           {active && (
             <div

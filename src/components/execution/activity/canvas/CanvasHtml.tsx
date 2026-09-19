@@ -14,7 +14,7 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { Skeleton } from "@/ui/skeleton";
 import type { CanvasSurface } from "../types";
 import { CanvasEventContext, type CanvasEventKind } from "./canvas-events";
-import { buildSrcdoc, THEME_VARS } from "./canvas-frame";
+import { buildSrcdoc, THEME_VARS, wantsViewportHeight } from "./canvas-frame";
 
 /** One element with an `id`, as the frame reports it. Rects are in the frame's viewport. */
 export interface FrameNode {
@@ -265,10 +265,16 @@ export function CanvasHtml({ surface, className, handleRef, onNodes, onError }: 
     setLoaded(false);
   }
 
+  // A `100vh` document takes the height it is given; everything else is measured from its content.
+  const fill = wantsViewportHeight(surface.html);
+
   return (
-    <div className="relative w-full">
+    <div className={cn("relative w-full", fill && "h-full")}>
       {!loaded && (
-        <Skeleton className="absolute inset-0 w-full rounded" style={{ height: autoHeight }} />
+        <Skeleton
+          className="absolute inset-0 w-full rounded"
+          style={fill ? undefined : { height: autoHeight }}
+        />
       )}
       <iframe
         ref={iframeRef}
@@ -282,9 +288,10 @@ export function CanvasHtml({ surface, className, handleRef, onNodes, onError }: 
         className={cn(
           "w-full rounded bg-background transition-opacity duration-200",
           loaded ? "opacity-100" : "opacity-0",
+          fill && "h-full",
           className,
         )}
-        style={{ height: autoHeight }}
+        style={fill ? undefined : { height: autoHeight }}
       />
       {errors.length > 0 && (
         <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5">

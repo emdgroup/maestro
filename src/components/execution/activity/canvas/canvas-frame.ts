@@ -538,6 +538,18 @@ export const BRIDGE = `
 `;
 
 /**
+ * Whether the document sizes itself against the viewport rather than its content.
+ *
+ * Such a document cannot be auto-sized: the host measures `scrollHeight`, which for a `100vh`
+ * layout is whatever the frame already is, so the height is a fixpoint at its starting value and
+ * never grows. The caller gives these surfaces the panel's height instead and lets them scroll
+ * themselves — which is what an app-shell layout with its own scrollers expects anyway.
+ */
+export function wantsViewportHeight(html: string): boolean {
+  return /\b(?:100(?:d|s|l)?vh|h-screen|min-h-screen)\b/.test(html);
+}
+
+/**
  * Wrap the agent's document in Maestro's head.
  *
  * `themeCss` is the host's live token values; it lands in `#__mt__`, which the running frame
