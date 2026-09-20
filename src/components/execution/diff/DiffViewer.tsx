@@ -383,6 +383,11 @@ export function DiffViewer({
     <div className="min-h-0 flex flex-col h-full">
       <div
         ref={bindWrapper}
+        // Kept out of a panel drag except for the part on screen: the view wraps its lines and
+        // renders every one of them, so following a drag means relaying out the whole file per
+        // frame. `tr` is the unit that can be dropped — the table is `table-layout: fixed`, so
+        // hiding rows cannot change a column's width. See `freezeLayout` in `@/ui/resizable`.
+        data-freeze-layout="tr"
         className={cn(
           "flex-1 min-h-0",
           reviewMode && "review-mode-active",
