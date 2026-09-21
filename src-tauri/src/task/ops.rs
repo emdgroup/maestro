@@ -69,30 +69,30 @@ pub async fn interrupt_task(
     task_id: i32,
 ) -> Result<(), String> {
     // Search ACP sessions by task_id — release lock immediately in scoped block.
-    let acp_log_id: Option<i32> = {
+    let acp_session_id: Option<String> = {
         let sessions = app_state.acp.sessions.lock().await;
         sessions
             .iter()
             .find(|(_, proc)| proc.task_id == Some(task_id))
-            .map(|(log_id, _)| *log_id)
+            .map(|(session_id, _)| session_id.clone())
     };
 
     // Search PTY session metadata by task_id — release lock immediately in scoped block.
-    let pty_log_id: Option<i32> = {
+    let pty_session_key: Option<String> = {
         let session_meta = app_state.pty.session_meta.lock().await;
         session_meta
             .iter()
             .find(|(_, m)| m.task_id == Some(task_id))
-            .map(|(log_id, _)| *log_id)
+            .map(|(session_id, _)| session_id.clone())
     };
 
     // Shared with `end_acp_session` rather than copied: this is the copy its doc comment warns
     // about, and the divergence was real — the session id was built by hand and `state.json` was
     // never rewritten, leaving the interrupted session listed as live against a worktree that the
     // `discard_task_workspace` below had already deleted.
-    if let Some(log_id) = acp_log_id {
+    if let Some(session_id) = acp_session_id {
         let (project_id, _) =
-            crate::acp::session_handlers::tear_down_session(&app_state, log_id).await;
+            crate::acp::session_handlers::tear_down_session(&app_state, &session_id).await;
         // Before the fallible work below, not after: the entry is stale the moment the session is
         // torn down, so an early return must not be what decides whether it gets rewritten.
         if let Some(project_id) = project_id {
@@ -104,16 +104,16 @@ pub async fn interrupt_task(
     }
 
     // Tear down PTY session if found — replicates close_pty_session logic.
-    if let Some(session_key) = pty_log_id {
+    if let Some(session_id) = pty_session_key {
         {
             let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-            if let Some(flag) = cancel_map.remove(&session_key) {
+            if let Some(flag) = cancel_map.remove(&session_id) {
                 flag.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        app_state.pty.sessions.lock().await.remove(&session_key);
-        app_state.ssh.pty_sessions.lock().await.remove(&session_key);
-        app_state.pty.session_meta.lock().await.remove(&session_key);
+        app_state.pty.sessions.lock().await.remove(&session_id);
+        app_state.ssh.pty_sessions.lock().await.remove(&session_id);
+        app_state.pty.session_meta.lock().await.remove(&session_id);
     }
 
     // Session teardown is done — acquire sync DB mutex now to update task status.

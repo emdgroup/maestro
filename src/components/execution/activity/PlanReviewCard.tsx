@@ -64,7 +64,7 @@ export function PlanReviewCard({ item }: { item: ToolCallItem }) {
  */
 export function PendingPlanCard({
   title,
-  sessionKey,
+  sessionId,
   modelId,
   requestId,
   payload,
@@ -73,7 +73,7 @@ export function PendingPlanCard({
 }: {
   /** The plan's own heading, from the tool call the request names. */
   title: string | null;
-  sessionKey: number;
+  sessionId: string;
   /** The session's current model, which the remembered accept is keyed by. Null when unreported. */
   modelId: string | null;
   requestId: string;
@@ -81,7 +81,7 @@ export function PendingPlanCard({
   onRespond: (requestId: string, optionId: string | null) => void;
   onOpen: () => void;
 }) {
-  const noteCount = useSessionAnnotations(sessionKey, "plan").length;
+  const noteCount = useSessionAnnotations(sessionId, "plan").length;
   const { acceptOptions, rejectOption } = splitPermissionOptions(extractOptions(payload));
 
   // Read once per model rather than per render. The card is keyed by request id, so it remounts

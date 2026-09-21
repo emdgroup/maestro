@@ -13,6 +13,7 @@ import {
 } from "@/services/worktree.service";
 import { useConnectionHealth } from "@/hooks/useConnectionHealth";
 import { useServerEventSync } from "@/services/tauri-events";
+import { useAutomationTick } from "@/hooks/useAutomationTick";
 import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
   useActiveTab,
@@ -51,8 +52,11 @@ const AgentsView = lazy(() =>
 const WorktreesView = lazy(() =>
   import("@/views/worktrees/WorktreesView").then((m) => ({ default: m.WorktreesView })),
 );
-const SettingsView = lazy(() =>
-  import("@/views/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
+const LibraryView = lazy(() =>
+  import("@/views/library/LibraryView").then((m) => ({ default: m.LibraryView })),
+);
+const SettingsDialog = lazy(() =>
+  import("@/views/settings/SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
 );
 
 const NOOP = () => {};
@@ -82,13 +86,14 @@ function App() {
   // Page routing backed by navigationStore
   const activeTab = useActiveTab();
   const slideDirection = useSlideDirection();
-  const { setActiveTab } = useNavigationActions();
+  const { setActiveTab, openSettings } = useNavigationActions();
 
   useShortcuts("global", {
     "tab-board": () => setActiveTab("kanban"),
     "tab-agents": () => setActiveTab("agents"),
     "tab-worktrees": () => setActiveTab("worktrees"),
-    "tab-settings": () => setActiveTab("settings"),
+    "tab-library": () => setActiveTab("library"),
+    "open-settings": () => openSettings(),
     "prevent-reload": () => {},
     "prevent-reload-shift": () => {},
     "prevent-reload-f5": () => {},
@@ -97,7 +102,7 @@ function App() {
   const agentsControls = useAnimationControls();
   const kanbanControls = useAnimationControls();
   const worktreesControls = useAnimationControls();
-  const settingsControls = useAnimationControls();
+  const libraryControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
 
   const viewControls = useMemo(
@@ -106,9 +111,9 @@ function App() {
         kanban: kanbanControls,
         agents: agentsControls,
         worktrees: worktreesControls,
-        settings: settingsControls,
+        library: libraryControls,
       }) satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>,
-    [kanbanControls, agentsControls, worktreesControls, settingsControls],
+    [kanbanControls, agentsControls, worktreesControls, libraryControls],
   );
 
   // Zombie worktree cleanup on project open (REQ-36)
@@ -159,6 +164,10 @@ function App() {
   // The backend's change events, subscribed once here rather than inside each list hook — those
   // are called per card, so a listener in the hook was one native subscription per card.
   useServerEventSync(projectId);
+
+  // The automation clock. Here rather than in the Library view, so a schedule keeps its promise
+  // whichever tab is on screen.
+  useAutomationTick(projectId ?? null, currentProject?.path ?? null, connection);
 
   // Health of whichever connection this project lives on — every type, not just SSH.
   const {
@@ -266,6 +275,7 @@ function App() {
             onViewChange={setActiveTab}
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
+            onOpenSettings={openSettings}
             connectionQuiet={connectionHealth === "quiet"}
           />
           <main className="flex-1 overflow-hidden relative">
@@ -327,24 +337,30 @@ function App() {
               </Suspense>
             </motion.div>
 
-            {/* Settings View — always mounted, imperative animation */}
+            {/* Library View — always mounted, imperative animation */}
             <motion.div
-              initial={{ opacity: activeTab === "settings" ? 1 : 0 }}
-              animate={settingsControls}
+              initial={{ opacity: activeTab === "library" ? 1 : 0 }}
+              animate={libraryControls}
               className={cn(
                 "absolute inset-0 overflow-hidden",
-                activeTab !== "settings" && "pointer-events-none",
+                activeTab !== "library" && "pointer-events-none",
               )}
             >
-              {/* Not scrollable: the settings surface is two panes and scrolls its own
-                  content column, so an outer scroll would drag the sidebar off screen. */}
-              <div className="h-full overflow-hidden">
-                <Suspense fallback={fallback}>
-                  <SettingsView projectId={currentProject.id} connection={connection} />
-                </Suspense>
-              </div>
+              <Suspense fallback={fallback}>
+                <LibraryView
+                  projectId={currentProject.id}
+                  projectPath={currentProject.path}
+                  connection={connection}
+                />
+              </Suspense>
             </motion.div>
           </main>
+
+          {/* Settings, over whichever view is showing. Lazy like the views, so its chunk is only
+              fetched once somebody opens it. */}
+          <Suspense fallback={null}>
+            <SettingsDialog projectId={currentProject.id} connection={connection} />
+          </Suspense>
 
           {/* D-19 cascade check: block project access when issue tracking integration is missing */}
           <IntegrationMissingDialog

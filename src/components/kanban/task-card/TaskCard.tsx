@@ -260,7 +260,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   const { openReview, clearAuthRequired, setAuthTerminalIdle, clearPendingAuthRetry } =
     useBoardActions();
   const pendingAuthRetry = useBoardStore((s) => s.pendingAuthRetry);
-  const authRequired = useAuthRequiredTask(task.id);
+  const authRequired = useAuthRequiredTask(String(task.id));
   // One value rather than four booleans: only one confirmation can be up, and independent flags
   // could describe a state the card has no rendering for. `abandon` guards deleting the worktree
   // and its branch; `archive` guards putting unmerged work out of sight (D36).
@@ -286,7 +286,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   // there is for — while this was gated that button could never render. Everything below that
   // should stay InProgress-only carries its own check.
   const activeSession = useTaskSession(task.id);
-  const activityInfo = useSessionActivity(activeSession?.session_key);
+  const activityInfo = useSessionActivity(activeSession?.session_id);
 
   // Fired from the footer and from the abandon confirmation, which offers it as the other way out
   // of a stuck run. Null means the backend found no changes and declined to move it. Confirm rather
@@ -301,7 +301,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
     if (pendingAuthRetry !== task.id) return;
     clearPendingAuthRetry();
     if (activeSession) {
-      void api.discardFailedSpawn(activeSession.session_key);
+      void api.discardFailedSpawn(activeSession.session_id);
     }
     void handleExecute(task, { canPickAgent: true });
   }, [pendingAuthRetry, task.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -446,7 +446,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             onEndSelfReview: () => {
               if (activeSession) {
                 cancelSession.mutate({
-                  sessionKey: activeSession.session_key,
+                  sessionId: activeSession.session_id,
                   executionMode: activeSession.execution_mode,
                 });
               }
@@ -485,7 +485,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         dialog={dialog}
         onClose={closeDialog}
         authRequired={authRequired ?? null}
-        sessionKey={activeSession?.session_key ?? null}
+        sessionId={activeSession?.session_id ?? null}
         taskWorktree={taskWorktree}
         projectId={projectId}
         actions={{
@@ -509,12 +509,12 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             // has to be reset too — left at "auth", the next time this task needed credentials
             // the modal would already be open before anything asked for it.
             closeDialog();
-            clearAuthRequired(task.id);
+            clearAuthRequired(String(task.id));
             // The prompt the agent never got to answer, replayed on the session that is still
             // there. With no session there is nothing to replay it on, so the task starts again.
             if (authRequired?.lastPrompt && activeSession) {
               void api.sendAcpPromptStructured(
-                activeSession.session_key,
+                activeSession.session_id,
                 authRequired.lastPrompt as JsonValue,
               );
               navigate({ agentId: String(task.id) });
@@ -526,7 +526,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             if (authRequired?.terminalId) {
               void commands.acpAbortAuthTerminal(authRequired.connection);
             }
-            setAuthTerminalIdle(task.id);
+            setAuthTerminalIdle(String(task.id));
           },
         }}
       />

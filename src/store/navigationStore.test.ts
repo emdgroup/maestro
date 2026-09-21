@@ -8,9 +8,10 @@ function resetStore() {
     slideDirection: 1,
     activeTaskId: null,
     pendingAgentId: null,
-    pendingSessionKey: null,
+    pendingSessionId: null,
     pendingWorktreeId: null,
     pendingSettingsPage: null,
+    settingsOpen: false,
   });
 }
 
@@ -43,19 +44,19 @@ describe("navigationStore – navigate() with entity targets", () => {
    * hold several sessions, and a session need not belong to a task at all, so neither is reachable
    * through that route.
    */
-  it("navigate({ sessionKey }) sets activeTab=agents, pendingSessionKey", () => {
+  it("navigate({ sessionId }) sets activeTab=agents, pendingSessionId", () => {
     const { navigate } = useNavigationStore.getState();
-    navigate({ sessionKey: 12 });
+    navigate({ sessionId: "12" });
     const state = useNavigationStore.getState();
     expect(state.activeTab).toBe("agents");
-    expect(state.pendingSessionKey).toBe(12);
+    expect(state.pendingSessionId).toBe("12");
     expect(state.pendingAgentId).toBeNull();
   });
 
-  it("clearPendingSession sets pendingSessionKey to null", () => {
-    useNavigationStore.setState({ pendingSessionKey: 12 });
+  it("clearPendingSession sets pendingSessionId to null", () => {
+    useNavigationStore.setState({ pendingSessionId: "12" });
     useNavigationStore.getState().clearPendingSession();
-    expect(useNavigationStore.getState().pendingSessionKey).toBeNull();
+    expect(useNavigationStore.getState().pendingSessionId).toBeNull();
   });
 
   it("navigate({ worktreeId }) sets activeTab=worktrees, pendingWorktreeId", () => {
@@ -84,11 +85,30 @@ describe("navigationStore – navigate() with view targets", () => {
     expect(state.activeTab).toBe("worktrees");
   });
 
-  it("navigate({ view: 'settings' }) sets activeTab=settings", () => {
+  it("navigate({ view: 'library' }) sets activeTab=library", () => {
     const { navigate } = useNavigationStore.getState();
+    navigate({ view: "library" });
+    const state = useNavigationStore.getState();
+    expect(state.activeTab).toBe("library");
+  });
+
+  // Settings is a dialog, so navigating to it opens the dialog and leaves the tab alone — the
+  // whole reason it moved out of the tab row.
+  it("navigate({ view: 'settings' }) opens the dialog without changing the tab", () => {
+    const { setActiveTab, navigate } = useNavigationStore.getState();
+    setActiveTab("agents");
     navigate({ view: "settings" });
     const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("settings");
+    expect(state.settingsOpen).toBe(true);
+    expect(state.activeTab).toBe("agents");
+  });
+
+  it("openSettings(pageId) opens the dialog on that page", () => {
+    const { openSettings } = useNavigationStore.getState();
+    openSettings("agents");
+    const state = useNavigationStore.getState();
+    expect(state.settingsOpen).toBe(true);
+    expect(state.pendingSettingsPage).toBe("agents");
   });
 });
 
@@ -101,8 +121,8 @@ describe("navigationStore – slideDirection", () => {
     expect(useNavigationStore.getState().slideDirection).toBe(1);
   });
 
-  it("backward navigation (settings->kanban) sets slideDirection=-1", () => {
-    useNavigationStore.setState({ activeTab: "settings" });
+  it("backward navigation (library->kanban) sets slideDirection=-1", () => {
+    useNavigationStore.setState({ activeTab: "library" });
     const { setActiveTab } = useNavigationStore.getState();
     setActiveTab("kanban");
     expect(useNavigationStore.getState().slideDirection).toBe(-1);

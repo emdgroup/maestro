@@ -19,10 +19,10 @@ export type { ActivityAction } from "./activityReducer";
  * panel remounts on every session switch, and on every hot reload during development. Cleared when
  * a session ends, so reopening one legitimately asks again.
  */
-const canvasTriggered = new Set<number>();
+const canvasTriggered = new Set<string>();
 
 export function useAcpActivity(
-  logId: number | null,
+  sessionId: string | null,
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
   /**
    * Called with the ids of surfaces restored from disk. A restored canvas has live controls and
@@ -59,18 +59,18 @@ export function useAcpActivity(
   );
 
   // What has been written is tracked by object identity, which is only meaningful within one
-  // session — so the record is tied to the `logId` it was built for rather than to this hook
+  // session — so the record is tied to the `sessionId` it was built for rather than to this hook
   // instance. Today the panel remounts per session and the distinction never shows; if it ever
   // stops doing that, the failure is silent, and a surface that was never written looks saved
   // until a restart loses it.
-  const savedRef = useRef<{ logId: number | null; surfaces: Map<string, CanvasSurface> }>({
-    logId: null,
+  const savedRef = useRef<{ sessionId: string | null; surfaces: Map<string, CanvasSurface> }>({
+    sessionId: null,
     surfaces: new Map(),
   });
   const savedSurfaces = useCallback(
-    (forLogId: number) => {
-      if (savedRef.current.logId !== forLogId) {
-        savedRef.current = { logId: forLogId, surfaces: new Map() };
+    (forSessionId: string) => {
+      if (savedRef.current.sessionId !== forSessionId) {
+        savedRef.current = { sessionId: forSessionId, surfaces: new Map() };
       }
       return savedRef.current.surfaces;
     },
@@ -79,38 +79,38 @@ export function useAcpActivity(
   );
 
   const tryRestoreCanvases = useCallback(() => {
-    if (logId == null) return;
-    loadSavedCanvases(logId)
+    if (sessionId == null) return;
+    loadSavedCanvases(sessionId)
       .then((surfaces) => {
         if (surfaces.length === 0) return;
         // They came off disk, so they are already written. Without this the save below would copy
         // every restored surface straight back, which on a remote session is a round trip each.
-        const saved = savedSurfaces(logId);
+        const saved = savedSurfaces(sessionId);
         for (const surface of surfaces) saved.set(surface.surfaceId, surface);
         dispatch({ type: "restore_canvases", surfaces });
-        if (canvasTriggered.has(logId)) return;
-        canvasTriggered.add(logId);
+        if (canvasTriggered.has(sessionId)) return;
+        canvasTriggered.add(sessionId);
         canvasesRestoredRef?.current?.(surfaces.map((surface) => surface.surfaceId));
       })
       .catch(console.error);
-  }, [logId, canvasesRestoredRef, savedSurfaces]);
+  }, [sessionId, canvasesRestoredRef, savedSurfaces]);
 
   useEffect(() => {
-    if (logId == null) return;
+    if (sessionId == null) return;
 
     const unlisten = Promise.all([
-      listen<unknown>(`acp://session-update/${logId}`, (event) => {
+      listen<unknown>(`acp://session-update/${sessionId}`, (event) => {
         const raw = event.payload as Record<string, unknown>;
         const payload = raw as unknown as SessionUpdatePayload;
         enqueue({ type: "event", payload, raw }, raw);
       }),
-      listen<null>(`acp://session-ended/${logId}`, () => {
+      listen<null>(`acp://session-ended/${sessionId}`, () => {
         // Reopening this session will restore its canvases into an agent that is listening to
         // nothing again, so the ask is owed a second time.
-        canvasTriggered.delete(logId);
+        canvasTriggered.delete(sessionId);
         enqueue({ type: "session_ended" });
       }),
-      listen<string>(`acp://turn-ended/${logId}`, (e) => {
+      listen<string>(`acp://turn-ended/${sessionId}`, (e) => {
         const stopReason = e.payload;
         if (stopReason === "error" || stopReason === "auth_required") {
           enqueue({
@@ -124,17 +124,17 @@ export function useAcpActivity(
         }
         enqueue({ type: "turn_ended" });
       }),
-      listen<null>(`acp://replay-drained/${logId}`, () => {
+      listen<null>(`acp://replay-drained/${sessionId}`, () => {
         enqueue({ type: "turn_ended" });
         enqueue({ type: "set_initialized" });
         tryRestoreCanvases();
       }),
-      listen<null>(`acp://spawn-ok/${logId}`, () => {
+      listen<null>(`acp://spawn-ok/${sessionId}`, () => {
         enqueue({ type: "turn_ended" });
         enqueue({ type: "set_initialized" });
         tryRestoreCanvases();
       }),
-      listen<string>(`acp://session-error/${logId}`, (event) => {
+      listen<string>(`acp://session-error/${sessionId}`, (event) => {
         // A failed restore is not "the agent failed to start", and reopening a project whose
         // worktrees have been pruned produces one per stale session — which is why it gets no
         // toast. But it still ends the session, and that takes the compose bar with it, so
@@ -154,7 +154,7 @@ export function useAcpActivity(
       }),
     ])
       .then((listeners) => {
-        drainAcpReplay(logId).catch(console.error);
+        drainAcpReplay(sessionId).catch(console.error);
         return listeners;
       })
       .catch(console.error);
@@ -171,7 +171,7 @@ export function useAcpActivity(
       }
       pendingRef.current = [];
     };
-  }, [logId, enqueue, tryRestoreCanvases]);
+  }, [sessionId, enqueue, tryRestoreCanvases]);
 
   // Canvases are written to disk while the agent is idle, so a restarted app gets them back.
   //
@@ -187,16 +187,16 @@ export function useAcpActivity(
   // mid-turn loses whatever that turn drew.
   const isIdle = !state.isTurnActive || state.sessionEnded;
   useEffect(() => {
-    if (logId == null || !isIdle || state.canvasMap.size === 0) return;
-    const saved = savedSurfaces(logId);
+    if (sessionId == null || !isIdle || state.canvasMap.size === 0) return;
+    const saved = savedSurfaces(sessionId);
     for (const [surfaceId, surface] of state.canvasMap) {
       if (saved.get(surfaceId) === surface) continue;
       saved.set(surfaceId, surface);
-      saveCanvasSurface(logId, surface).catch((e) => {
+      saveCanvasSurface(sessionId, surface).catch((e) => {
         console.warn(`[canvas] could not save ${surfaceId}`, e);
       });
     }
-  }, [state.canvasMap, isIdle, logId, savedSurfaces]);
+  }, [state.canvasMap, isIdle, sessionId, savedSurfaces]);
 
   return [state, dispatch];
 }

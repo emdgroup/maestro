@@ -50,42 +50,42 @@ export type DiffAnnotation = Extract<Annotation, { kind: "diff" }>;
 export type CanvasAnnotation = Extract<Annotation, { kind: "canvas" }>;
 
 interface AnnotationState {
-  bySession: Record<number, Annotation[]>;
+  bySession: Record<string, Annotation[]>;
 }
 
 interface AnnotationActions {
-  getAnnotations: (sessionKey: number, kind?: Annotation["kind"]) => Annotation[];
-  addAnnotation: (sessionKey: number, annotation: Annotation) => void;
+  getAnnotations: (sessionId: string, kind?: Annotation["kind"]) => Annotation[];
+  addAnnotation: (sessionId: string, annotation: Annotation) => void;
   /**
    * `fromLineNumber` re-anchors a diff note whose range changed — commenting again on a range
    * ending at the same line replaces the note, and its label has to follow the new selection.
    */
-  updateAnnotation: (sessionKey: number, id: string, text: string, fromLineNumber?: number) => void;
+  updateAnnotation: (sessionId: string, id: string, text: string, fromLineNumber?: number) => void;
   /** Drop a canvas annotation's capture, keeping the note and its component anchor. */
-  clearAnnotationCapture: (sessionKey: number, id: string) => void;
-  removeAnnotations: (sessionKey: number, ids: string[]) => void;
-  clearSession: (sessionKey: number) => void;
+  clearAnnotationCapture: (sessionId: string, id: string) => void;
+  removeAnnotations: (sessionId: string, ids: string[]) => void;
+  clearSession: (sessionId: string) => void;
 }
 
 export const useAnnotationStore = create<AnnotationState & AnnotationActions>()(
   immer((set, get) => ({
     bySession: {},
 
-    getAnnotations: (sessionKey, kind) => {
-      const list = get().bySession[sessionKey] ?? [];
+    getAnnotations: (sessionId, kind) => {
+      const list = get().bySession[sessionId] ?? [];
       return kind ? list.filter((a) => a.kind === kind) : list;
     },
 
-    addAnnotation: (sessionKey, annotation) =>
+    addAnnotation: (sessionId, annotation) =>
       set((state) => {
-        const list = state.bySession[sessionKey] ?? [];
+        const list = state.bySession[sessionId] ?? [];
         list.push(annotation);
-        state.bySession[sessionKey] = list;
+        state.bySession[sessionId] = list;
       }),
 
-    updateAnnotation: (sessionKey, id, text, fromLineNumber) =>
+    updateAnnotation: (sessionId, id, text, fromLineNumber) =>
       set((state) => {
-        const target = state.bySession[sessionKey]?.find((a) => a.id === id);
+        const target = state.bySession[sessionId]?.find((a) => a.id === id);
         if (!target) return;
         target.text = text;
         if (fromLineNumber !== undefined && target.kind === "diff") {
@@ -93,24 +93,24 @@ export const useAnnotationStore = create<AnnotationState & AnnotationActions>()(
         }
       }),
 
-    clearAnnotationCapture: (sessionKey, id) =>
+    clearAnnotationCapture: (sessionId, id) =>
       set((state) => {
-        const target = state.bySession[sessionKey]?.find((a) => a.id === id);
+        const target = state.bySession[sessionId]?.find((a) => a.id === id);
         if (target?.kind !== "canvas") return;
         delete target.shotPath;
         delete target.shotDataUrl;
       }),
 
-    removeAnnotations: (sessionKey, ids) =>
+    removeAnnotations: (sessionId, ids) =>
       set((state) => {
-        const list = state.bySession[sessionKey];
+        const list = state.bySession[sessionId];
         if (!list) return;
-        state.bySession[sessionKey] = list.filter((a) => !ids.includes(a.id));
+        state.bySession[sessionId] = list.filter((a) => !ids.includes(a.id));
       }),
 
-    clearSession: (sessionKey) =>
+    clearSession: (sessionId) =>
       set((state) => {
-        delete state.bySession[sessionKey];
+        delete state.bySession[sessionId];
       }),
   })),
 );
@@ -119,8 +119,8 @@ export const useAnnotationStore = create<AnnotationState & AnnotationActions>()(
  * Subscribing selector — components re-render when this session's annotations change.
  * Memoized so the identity only changes with the data: the plan highlight effect keys off it.
  */
-export function useSessionAnnotations(sessionKey: number, kind?: Annotation["kind"]): Annotation[] {
-  const list = useAnnotationStore((s) => s.bySession[sessionKey]);
+export function useSessionAnnotations(sessionId: string, kind?: Annotation["kind"]): Annotation[] {
+  const list = useAnnotationStore((s) => s.bySession[sessionId]);
   return useMemo(() => {
     if (!list) return EMPTY;
     return kind ? list.filter((a) => a.kind === kind) : list;

@@ -282,7 +282,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
   function handlePullRequestAction(entry: PullRequestEntry) {
     switch (entry.action.kind) {
       case "open-session":
-        navigate({ sessionKey: entry.action.sessionKey });
+        navigate({ sessionId: entry.action.sessionId });
         return;
       case "reuse-worktree":
         setSpawnSeed({
@@ -538,9 +538,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
           connection={connection}
           worktrees={worktrees}
           seed={spawnSeed}
-          onSuccess={(sessionKey) => {
+          onSuccess={(sessionId) => {
             setSpawnSeed(null);
-            navigate({ sessionKey });
+            navigate({ sessionId });
           }}
         />
       )}

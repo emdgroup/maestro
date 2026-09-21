@@ -20,7 +20,7 @@ impl RemoteSshSession {
         &self,
         cols: u16,
         rows: u16,
-        log_id: i32,
+        session_id: &str,
     ) -> Result<SshPtyHandle, String> {
         if !self.is_connected().await {
             self.reconnect_if_needed()
@@ -160,7 +160,7 @@ impl RemoteSshSession {
         });
 
         Ok(SshPtyHandle {
-            log_id,
+            session_id: session_id.to_string(),
             write_tx,
             history,
             notify,

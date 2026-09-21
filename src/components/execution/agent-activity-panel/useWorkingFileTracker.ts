@@ -51,16 +51,16 @@ export function isWorkingFile(path: string): boolean {
 }
 
 export function useWorkingFileTracker(
-  sessionKey: number,
+  sessionId: string,
   items: ActivityItem[],
 ): { workingFiles: WorkingFileEntry[] } {
   const seenAt = useRef<Map<string, number>>(new Map());
-  const lastSessionKey = useRef<number | null>(null);
+  const lastSessionId = useRef<string | null>(null);
 
   return useMemo(() => {
-    if (lastSessionKey.current !== sessionKey) {
+    if (lastSessionId.current !== sessionId) {
       seenAt.current.clear();
-      lastSessionKey.current = sessionKey;
+      lastSessionId.current = sessionId;
     }
     const now = Date.now();
     const working = new Set<string>();
@@ -92,5 +92,5 @@ export function useWorkingFileTracker(
       })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, items]);
+  }, [sessionId, items]);
 }

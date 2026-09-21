@@ -4,7 +4,7 @@ import { motion, LayoutGroup } from "framer-motion";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bot, FolderGit2, Settings, FolderOpen } from "lucide-react";
+import { LayoutDashboard, Bot, FolderGit2, Library, Settings, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "@/components/common/theme-toggle/ThemeToggle";
 import { AccentColorPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { AccentBubbles } from "@/components/common/accent-bubbles/AccentBubbles";
@@ -27,6 +27,8 @@ interface AppHeaderProps {
   onViewChange: (view: ViewType) => void;
   onProjectChange?: (project: Project) => void;
   onBackToPicker?: () => void;
+  /** Settings is a dialog now, so it sits beside the theme controls rather than in the tab row. */
+  onOpenSettings: () => void;
   /**
    * The connection stopped answering but is still open — reported here rather than as a
    * blocking overlay, because nothing has necessarily failed.
@@ -44,7 +46,7 @@ const VIEWS: Array<{
   // The id stays `worktrees` — it is the persisted startup-tab value and the shortcut scope. Only
   // the label changes, because "worktree" is git vocabulary and this tab is for everyone.
   { id: "worktrees", label: "Workspaces", icon: FolderGit2 },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "library", label: "Library", icon: Library },
 ];
 
 export function AppHeader({
@@ -53,6 +55,7 @@ export function AppHeader({
   onViewChange,
   onProjectChange,
   onBackToPicker,
+  onOpenSettings,
   connectionQuiet = false,
 }: AppHeaderProps) {
   // Load recent projects on-demand (only when header is rendered)
@@ -176,7 +179,7 @@ export function AppHeader({
                       kanban: "tab-board",
                       agents: "tab-agents",
                       worktrees: "tab-worktrees",
-                      settings: "tab-settings",
+                      library: "tab-library",
                     }[view.id]
                   }
                   placement="below"
@@ -233,6 +236,20 @@ export function AppHeader({
 
         <AccentColorPicker />
         <ThemeToggle />
+        {/* Same trigger treatment as the picker screen's cog, so the icon row is one set of
+            controls rather than a button variant dropped next to two icon buttons. */}
+        <ShortcutHint shortcutId="open-settings" placement="below">
+          <button
+            type="button"
+            // Wrapped rather than passed straight through: the store's action takes an optional
+            // page id, which would otherwise be handed the click event.
+            onClick={() => onOpenSettings()}
+            className="flex items-center justify-center h-7 w-7 rounded-full hover:bg-muted/80 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:text-muted-foreground cursor-pointer"
+            aria-label="Settings"
+          >
+            <Settings />
+          </button>
+        </ShortcutHint>
         <WindowControls className="-mr-2 ml-1" />
       </div>
     </header>

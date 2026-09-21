@@ -390,8 +390,7 @@ export function useExecuteTask(
           action: {
             label: "Open agent settings",
             onClick: () => {
-              navigation.setActiveTab("settings");
-              navigation.setPendingSettingsPage("agents");
+              navigation.openSettings("agents");
             },
           },
         });
@@ -404,8 +403,7 @@ export function useExecuteTask(
           action: {
             label: "Open agent settings",
             onClick: () => {
-              navigation.setActiveTab("settings");
-              navigation.setPendingSettingsPage("agents");
+              navigation.openSettings("agents");
             },
           },
         });
@@ -426,7 +424,7 @@ export function useExecuteTask(
     }
 
     setExecutingTaskId(task.id);
-    let logId: number | null = null;
+    let sessionId: string | null = null;
     // Set once the task owns a live session; until then any exit has to hand the claim back.
     let claimHandedOver = false;
     let spawnFailed = false;
@@ -521,7 +519,7 @@ export function useExecuteTask(
         // capabilities below: they name the same profile, and this is the only one in hand yet.
         role: { role, profile_id: roleProfile?.profile_id ?? null },
       });
-      logId = spawnResult.log_id;
+      sessionId = spawnResult.session_id;
 
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -537,7 +535,7 @@ export function useExecuteTask(
         let unlistenSessionError: () => void = () => {};
 
         listen<{ current_mode_id: string; available_modes: { mode_id: string }[] }>(
-          `acp://session-modes/${logId}`,
+          `acp://session-modes/${sessionId}`,
           (e) => {
             capturedModeIds = e.payload.available_modes.map((m) => m.mode_id);
             unlistenModes();
@@ -548,14 +546,17 @@ export function useExecuteTask(
 
         // Effort has no event of its own — it is one entry in the generic config-option list the
         // reader emits from the same spawn response the modes come off.
-        listen<{ configOptions?: ConfigOption[] }>(`acp://config-state-updated/${logId}`, (e) => {
-          capturedEffortId = findEffortOption(e.payload.configOptions ?? [])?.id ?? "";
-          unlistenConfigOptions();
-        }).then((fn) => {
+        listen<{ configOptions?: ConfigOption[] }>(
+          `acp://config-state-updated/${sessionId}`,
+          (e) => {
+            capturedEffortId = findEffortOption(e.payload.configOptions ?? [])?.id ?? "";
+            unlistenConfigOptions();
+          },
+        ).then((fn) => {
           unlistenConfigOptions = fn;
         });
 
-        listen<null>(`acp://spawn-ok/${logId}`, () => {
+        listen<null>(`acp://spawn-ok/${sessionId}`, () => {
           clearTimeout(timer);
           unlistenSpawnOk();
           unlistenModes();
@@ -566,7 +567,7 @@ export function useExecuteTask(
           unlistenSpawnOk = fn;
         });
 
-        listen<string>(`acp://session-error/${logId}`, (e) => {
+        listen<string>(`acp://session-error/${sessionId}`, (e) => {
           clearTimeout(timer);
           unlistenSpawnOk();
           unlistenModes();
@@ -600,7 +601,7 @@ export function useExecuteTask(
       const model = (role === "Coder" ? task.model_override : null) ?? resolved?.model ?? null;
       if (model) {
         try {
-          await api.setAcpModel(logId, model);
+          await api.setAcpModel(sessionId, model);
         } catch (err) {
           console.warn("Failed to set model:", err);
         }
@@ -611,7 +612,7 @@ export function useExecuteTask(
       // override — effort is a property of how a role should work, which is what a profile is for.
       if (resolved?.effort && capturedEffortId) {
         try {
-          await api.setAcpConfigOption(logId, capturedEffortId, resolved.effort);
+          await api.setAcpConfigOption(sessionId, capturedEffortId, resolved.effort);
         } catch (err) {
           console.warn("Failed to set effort:", err);
         }
@@ -627,7 +628,7 @@ export function useExecuteTask(
         null;
       if (permissionMode) {
         try {
-          await api.setAcpMode(logId, permissionMode);
+          await api.setAcpMode(sessionId, permissionMode);
         } catch (err) {
           console.warn("Failed to set permission mode:", err);
         }
@@ -637,7 +638,7 @@ export function useExecuteTask(
           // promised is what runs here.
           const resolvedMode = resolveAutomaticMode(capturedModeIds, readOnly);
           if (resolvedMode) {
-            await api.setAcpMode(logId, resolvedMode);
+            await api.setAcpMode(sessionId, resolvedMode);
           } else if (readOnly) {
             toast.warning(
               `${agentId} offers no read-only mode, so it is asked not to write instead`,
@@ -740,7 +741,7 @@ export function useExecuteTask(
         .filter((a) => !skipPaths.has(a.file_path))
         .map((a) => ({ path: a.file_path, is_image: false }));
       if (files.length > 0) {
-        const prepared = await api.prepareExternalAttachments(logId, files, true);
+        const prepared = await api.prepareExternalAttachments(sessionId, files, true);
         for (const attachment of prepared) {
           contentBlocks.push(attachment.content_block as JsonValue);
         }
@@ -781,7 +782,7 @@ export function useExecuteTask(
         // Non-critical — proceed without review feedback
       }
 
-      await api.sendAcpPromptStructured(logId, contentBlocks);
+      await api.sendAcpPromptStructured(sessionId, contentBlocks);
 
       // Clear review from DB after successful injection to prevent re-injection on next cold start
       if (role === "Coder") api.clearTaskReview(task.id).catch(() => {});
@@ -791,7 +792,7 @@ export function useExecuteTask(
       // in flight. Their action wins, so the session we just built gets torn down instead.
       const started = await markSessionReady.mutateAsync({ taskId: task.id, role });
       if (!started) {
-        api.cancelAcpSession(logId).catch((err) => {
+        api.cancelAcpSession(sessionId).catch((err) => {
           console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
         });
         toast.info(`"${task.title}" was moved while starting`);
@@ -805,16 +806,16 @@ export function useExecuteTask(
 
       if (errorMsg === "auth_required") {
         // Remove zombie session but keep the connection server alive for authentication.
-        api.discardFailedSpawn(logId!).catch(() => {});
-        useBoardStore.getState().setAuthRequired(task.id, agentId!, connection, null);
+        api.discardFailedSpawn(sessionId!).catch(() => {});
+        useBoardStore.getState().setAuthRequired(String(task.id), agentId!, connection, null);
         return;
       }
 
       spawnFailed = true;
 
-      if (logId !== null) {
+      if (sessionId !== null) {
         try {
-          await api.cancelAcpSession(logId);
+          await api.cancelAcpSession(sessionId);
         } catch {
           // best-effort
         }

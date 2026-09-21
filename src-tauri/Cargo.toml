@@ -64,6 +64,7 @@ tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 urlencoding = "2.1"
 which = "8.0.2"
 maestro-protocol = { path = "../maestro-protocol" }
+uuid = { version = "1", features = ["v4"] }
 fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 tauri-plugin-log = "2.9.0"

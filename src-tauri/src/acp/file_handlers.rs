@@ -11,7 +11,7 @@ use crate::core::AppState;
 /// Send a request to a session and await a oneshot response with a 15-second timeout.
 async fn session_file_rpc<T>(
     app_state: &AppState,
-    log_id: i32,
+    session_id: &str,
     pending_field: impl Fn(
         &crate::acp::AcpProcess,
     ) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
@@ -20,8 +20,8 @@ async fn session_file_rpc<T>(
     let (cwd, pending) = {
         let sessions = app_state.acp.sessions.lock().await;
         let s = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {session_id}"))?;
         (s.cwd.clone(), Arc::clone(pending_field(s)))
     };
     let (tx, rx) = oneshot::channel();
@@ -30,7 +30,7 @@ async fn session_file_rpc<T>(
             .lock()
             .map_err(|_| "pending channel lock poisoned".to_string())? = Some(tx);
     }
-    crate::acp::write_to_acp_session(app_state, log_id, &build_request(&cwd)).await?;
+    crate::acp::write_to_acp_session(app_state, session_id, &build_request(&cwd)).await?;
     tokio::time::timeout(Duration::from_secs(15), rx)
         .await
         .map_err(|_| "File operation timed out".to_string())?
@@ -41,13 +41,13 @@ async fn session_file_rpc<T>(
 #[specta::specta]
 pub async fn search_session_files(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     query: String,
     limit: Option<u32>,
 ) -> Result<Vec<String>, String> {
     session_file_rpc(
         &app_state,
-        log_id,
+        session_id,
         |s| &s.pending_file_search,
         |cwd| {
             MaestroRpcMessage::Request(ServerRequest::FileSearch(FileSearchRequest {
@@ -64,12 +64,12 @@ pub async fn search_session_files(
 #[specta::specta]
 pub async fn read_session_file(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     relative_path: String,
 ) -> Result<String, String> {
     session_file_rpc(
         &app_state,
-        log_id,
+        session_id,
         |s| &s.pending_file_read,
         |cwd| {
             MaestroRpcMessage::Request(ServerRequest::FileRead(FileReadRequest {
@@ -85,7 +85,7 @@ pub async fn read_session_file(
 #[specta::specta]
 pub async fn read_session_file_binary(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     relative_path: String,
 ) -> Result<String, String> {
     if relative_path.starts_with('/') || relative_path.contains("..") {
@@ -95,8 +95,8 @@ pub async fn read_session_file_binary(
     let (cwd, connection_key) = {
         let sessions = app_state.acp.sessions.lock().await;
         let s = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {session_id}"))?;
         (s.cwd.clone(), s.connection_key)
     };
 
@@ -116,7 +116,7 @@ pub async fn read_session_file_binary(
             let cache_dir = app_state
                 .app_data_dir
                 .join("working_file_cache")
-                .join(log_id.to_string());
+                .join(session_id);
 
             let path_hash = {
                 use std::hash::{Hash, Hasher};
@@ -144,7 +144,7 @@ pub async fn read_session_file_binary(
                 tokio::fs::create_dir_all(&cache_dir)
                     .await
                     .map_err(|e| format!("Cannot create cache directory: {e}"))?;
-                let transfer_id = format!("working-file-{log_id}-{path_hash}");
+                let transfer_id = format!("working-file-{session_id}-{path_hash}");
                 crate::connectivity::ssh::sftp::download_file(
                     &session,
                     &remote_path,

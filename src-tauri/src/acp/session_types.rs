@@ -54,7 +54,7 @@ pub struct AgentAuthInfo {
 /// Metadata captured for sessions that were active when the connection server died.
 /// Used to reload them after SSH reconnects via the session/load mechanism.
 pub struct RestorableSession {
-    pub log_id: i32,
+    pub session_id: String,
     pub agent_id: String,
     /// None when the session hadn't received SpawnOk yet — cannot be restored.
     pub acp_session_id: Option<String>,
@@ -173,7 +173,7 @@ pub enum TransportTarget<'a> {
 
 /// A live ACP session — local subprocess or remote SSH exec channel.
 ///
-/// Stored in `AppState.acp_sessions` keyed by session key.
+/// Stored in `AppState.acp.sessions` keyed by session id.
 /// Dropping this struct cleanly shuts down the session:
 /// - Local: `child` drops with `kill_on_drop(true)`, killing maestro-server.
 /// - Remote: `writer` channel closes, writer task exits, SSH channel closes.
@@ -280,7 +280,7 @@ pub struct SessionRequest {
     pub connection_key: crate::acp::ConnectionKey,
     pub agent_id: String,
     pub cwd: String,
-    pub log_id: i32,
+    pub session_id: String,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
     pub task_id: Option<i32>,
@@ -288,7 +288,7 @@ pub struct SessionRequest {
 }
 
 pub struct ReaderTaskContext {
-    pub log_id: i32,
+    pub session_id: String,
     pub app_handle: tauri::AppHandle,
     pub app_state: Arc<crate::core::AppState>,
     pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
@@ -311,7 +311,7 @@ pub struct ReaderTaskContext {
 impl AcpProcess {
     pub fn create(
         params: AcpProcessParams,
-        log_id: i32,
+        session_id: String,
         app_handle: tauri::AppHandle,
         app_state: Arc<crate::core::AppState>,
     ) -> (Self, ReaderTaskContext) {
@@ -335,7 +335,7 @@ impl AcpProcess {
             super::completion::ClosingMessage::default(),
         ));
         let ctx = ReaderTaskContext {
-            log_id,
+            session_id,
             app_handle,
             app_state,
             current_model_id: Arc::clone(&current_model_id),

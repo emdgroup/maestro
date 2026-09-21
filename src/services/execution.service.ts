@@ -16,9 +16,9 @@ export const executionQueryKeys = {
   agentDiscovery: (connection: ConnectionKey) => ["agentDiscovery", connection] as const,
   projectAgents: (connection: ConnectionKey, cwd: string) =>
     ["projectAgents", connection, cwd] as const,
-  sessionMeta: (sessionKey: number | null) => ["acpSessionMeta", sessionKey] as const,
-  sessionFile: (sessionKey: number, relativePath: string, binary: boolean) =>
-    ["sessionFile", sessionKey, relativePath, binary] as const,
+  sessionMeta: (sessionId: string | null) => ["acpSessionMeta", sessionId] as const,
+  sessionFile: (sessionId: string, relativePath: string, binary: boolean) =>
+    ["sessionFile", sessionId, relativePath, binary] as const,
   // `modelId` is part of the key because the effort list is a property of the model, not the
   // agent: the same harness offers different reasoning budgets per model, so a probe answered
   // against the agent's default model is the wrong answer for a profile naming another one.
@@ -85,7 +85,7 @@ async function probeAgentConfig(
   connection: ConnectionKey,
   modelId: string | null,
 ): Promise<AgentConfig> {
-  const { log_id: logId } = await api.spawnAcpSession(
+  const { session_id: sessionId } = await api.spawnAcpSession(
     agentId,
     cwd,
     null,
@@ -130,7 +130,7 @@ async function probeAgentConfig(
       const timer = setTimeout(() => finish(() => resolve(config)), 30_000);
 
       void listen<{ available_models: AgentModel[]; current_model_id: string }>(
-        `acp://session-models/${logId}`,
+        `acp://session-models/${sessionId}`,
         (event) => {
           config.models = event.payload.available_models;
           currentModelId = event.payload.current_model_id;
@@ -139,7 +139,7 @@ async function probeAgentConfig(
         unlistenModels = fn;
       });
 
-      void listen<{ available_modes: AgentMode[] }>(`acp://session-modes/${logId}`, (event) => {
+      void listen<{ available_modes: AgentMode[] }>(`acp://session-modes/${sessionId}`, (event) => {
         config.modes = event.payload.available_modes;
       }).then((fn) => {
         unlistenModes = fn;
@@ -149,7 +149,7 @@ async function probeAgentConfig(
       // the reader emits from the same spawn response as the two above, and again with every
       // option refreshed when a config option is set.
       void listen<{ configOptions?: ConfigOption[] }>(
-        `acp://config-state-updated/${logId}`,
+        `acp://config-state-updated/${sessionId}`,
         (event) => {
           const option = findEffortOption(event.payload.configOptions ?? []);
           config.effort = option
@@ -169,7 +169,7 @@ async function probeAgentConfig(
       // Settled on spawn-ok, not on the two state events: the reader emits both from
       // `emit_session_init_events` and spawn-ok after, so by here anything the agent declares has
       // arrived. Waiting on either state event alone would hang for every agent that declares none.
-      void listen<null>(`acp://spawn-ok/${logId}`, () => {
+      void listen<null>(`acp://spawn-ok/${sessionId}`, () => {
         spawned = true;
         // A model id means nothing to a harness that did not issue it, and asking for one the
         // agent has not listed is answered with an error the user sees as "Agent failed to start".
@@ -186,21 +186,21 @@ async function probeAgentConfig(
         // The command only reports whether the request reached the agent; the agent's own refusal
         // comes back as a session-error, which is handled below. Either way the lists in hand are
         // still worth returning.
-        void api.setAcpConfigOption(logId, "model", modelId).catch(() => {
+        void api.setAcpConfigOption(sessionId, "model", modelId).catch(() => {
           finish(() => resolve(config));
         });
       }).then((fn) => {
         unlistenSpawnOk = fn;
       });
 
-      void listen<string>(`acp://session-error/${logId}`, (event) =>
+      void listen<string>(`acp://session-error/${sessionId}`, (event) =>
         finish(() => (spawned ? resolve(config) : reject(new Error(event.payload)))),
       ).then((fn) => {
         unlistenError = fn;
       });
     });
   } finally {
-    await api.cancelAcpSession(logId).catch((err: unknown) => {
+    await api.cancelAcpSession(sessionId).catch((err: unknown) => {
       console.warn("Failed to close config probe session:", err);
     });
   }
@@ -297,16 +297,16 @@ export function useDeleteAcpSessionMutation() {
   return useMutation({
     mutationFn: async ({
       agentId,
-      sessionId,
+      acpSessionId,
       cwd,
       connection,
     }: {
       agentId: string;
-      sessionId: string;
+      acpSessionId: string;
       cwd: string;
       connection: ConnectionKey;
     }) => {
-      return await api.deleteAcpSession(agentId, sessionId, cwd, connection);
+      return await api.deleteAcpSession(agentId, acpSessionId, cwd, connection);
     },
     onSuccess: (_data, { agentId, cwd, connection }) => {
       void queryClient.invalidateQueries({
@@ -325,7 +325,7 @@ export function useLoadAcpSessionMutation() {
   return useMutation({
     mutationFn: async ({
       agentId,
-      sessionId,
+      acpSessionId,
       cwd,
       connection,
       sessionName,
@@ -333,7 +333,7 @@ export function useLoadAcpSessionMutation() {
       worktreeBranch,
     }: {
       agentId: string;
-      sessionId: string;
+      acpSessionId: string;
       cwd: string;
       connection: ConnectionKey;
       sessionName?: string | null;
@@ -342,7 +342,7 @@ export function useLoadAcpSessionMutation() {
     }) => {
       return await api.loadAcpSession(
         agentId,
-        sessionId,
+        acpSessionId,
         cwd,
         connection,
         sessionName ?? null,
@@ -367,16 +367,16 @@ export function useCloseStoredAcpSessionMutation() {
   return useMutation({
     mutationFn: async ({
       agentId,
-      sessionId,
+      acpSessionId,
       cwd,
       connection,
     }: {
       agentId: string;
-      sessionId: string;
+      acpSessionId: string;
       cwd: string;
       connection: ConnectionKey;
     }) => {
-      return await api.closeAcpSession(agentId, sessionId, cwd, connection);
+      return await api.closeAcpSession(agentId, acpSessionId, cwd, connection);
     },
     onError: createErrorToastHandler("Failed to close session"),
   });
@@ -385,7 +385,7 @@ export function useCloseStoredAcpSessionMutation() {
 /**
  * Spawn a user-controlled interactive shell on a branch.
  * Managed AI-agent sessions use ACP instead of this PTY path.
- * Returns the session_key for attach_terminal.
+ * Returns the session_id for attach_terminal.
  */
 export function useSpawnInteractiveExecutionMutation() {
   const queryClient = useQueryClient();
@@ -566,13 +566,13 @@ export function useRenameAcpSessionMutation() {
  * globally, so without an interval this answer is the one fetched at mount, forever.
  */
 export function useAcpSessionMeta(
-  sessionKey: number | null,
+  sessionId: string | null,
   options?: { refetchInterval?: number | false },
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionMeta(sessionKey),
-    queryFn: () => api.getAcpSessionMeta(sessionKey!),
-    enabled: sessionKey != null,
+    queryKey: executionQueryKeys.sessionMeta(sessionId),
+    queryFn: () => api.getAcpSessionMeta(sessionId!),
+    enabled: sessionId != null,
     refetchInterval: options?.refetchInterval ?? false,
   });
 }
@@ -586,17 +586,17 @@ export function useAcpSessionMeta(
  * state around a bare `api` call.
  */
 export function useSessionFileQuery(
-  sessionKey: number,
+  sessionId: string,
   relativePath: string | null,
   binary: boolean,
   refetchIntervalMs?: number,
 ) {
   return useQuery({
-    queryKey: executionQueryKeys.sessionFile(sessionKey, relativePath ?? "", binary),
+    queryKey: executionQueryKeys.sessionFile(sessionId, relativePath ?? "", binary),
     queryFn: () =>
       binary
-        ? api.readSessionFileBinary(sessionKey, relativePath!)
-        : api.readSessionFile(sessionKey, relativePath!),
+        ? api.readSessionFileBinary(sessionId, relativePath!)
+        : api.readSessionFile(sessionId, relativePath!),
     enabled: relativePath != null,
     refetchInterval: refetchIntervalMs ?? false,
   });
@@ -606,8 +606,8 @@ export function useSessionFileQuery(
  * Flush buffered replay events for a loaded session.
  * Called after event listeners are registered to avoid the subscribe/emit race.
  */
-export async function drainAcpReplay(logId: number): Promise<void> {
-  await api.drainAcpReplay(logId);
+export async function drainAcpReplay(sessionId: string): Promise<void> {
+  await api.drainAcpReplay(sessionId);
 }
 
 /**
@@ -617,16 +617,16 @@ export function useCancelActiveSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      sessionKey,
+      sessionId,
       executionMode,
     }: {
-      sessionKey: number;
+      sessionId: string;
       executionMode: string;
     }) => {
       if (executionMode === "acp") {
-        return await api.cancelAcpSession(sessionKey);
+        return await api.cancelAcpSession(sessionId);
       } else {
-        return await api.closePtySession(sessionKey);
+        return await api.closePtySession(sessionId);
       }
     },
     onSuccess: () => {
@@ -640,13 +640,13 @@ export function useCancelActiveSessionMutation() {
 export function useAttachTerminalMutation() {
   return useMutation({
     mutationFn: async ({
-      taskId,
+      sessionId,
       outputChannel,
     }: {
-      taskId: number;
+      sessionId: string;
       outputChannel: TAURI_CHANNEL<string>;
     }) => {
-      return await api.attachTerminal(taskId, outputChannel, null);
+      return await api.attachTerminal(sessionId, outputChannel, null);
     },
     onError: createErrorToastHandler("Failed to attach terminal"),
   });
@@ -654,8 +654,8 @@ export function useAttachTerminalMutation() {
 
 export function useDetachTerminalMutation() {
   return useMutation({
-    mutationFn: async ({ taskId }: { taskId: number }) => {
-      return await api.detachTerminal(taskId);
+    mutationFn: async ({ sessionId }: { sessionId: string }) => {
+      return await api.detachTerminal(sessionId);
     },
     onError: createErrorToastHandler("Failed to detach terminal"),
   });
@@ -663,8 +663,8 @@ export function useDetachTerminalMutation() {
 
 export function useSendTerminalInputMutation() {
   return useMutation({
-    mutationFn: async ({ taskId, input }: { taskId: number; input: string }) => {
-      return await api.sendTerminalInput(taskId, input);
+    mutationFn: async ({ sessionId, input }: { sessionId: string; input: string }) => {
+      return await api.sendTerminalInput(sessionId, input);
     },
     onError: createErrorToastHandler("Failed to send terminal input"),
   });
@@ -672,8 +672,16 @@ export function useSendTerminalInputMutation() {
 
 export function useResizeTerminalMutation() {
   return useMutation({
-    mutationFn: async ({ taskId, cols, rows }: { taskId: number; cols: number; rows: number }) => {
-      return await api.resizeTerminal(taskId, cols, rows);
+    mutationFn: async ({
+      sessionId,
+      cols,
+      rows,
+    }: {
+      sessionId: string;
+      cols: number;
+      rows: number;
+    }) => {
+      return await api.resizeTerminal(sessionId, cols, rows);
     },
     onError: createErrorToastHandler("Failed to resize terminal"),
   });
@@ -687,7 +695,7 @@ export function useRecoverTaskSessionMutation() {
       if (result.status === "error") throw new Error(result.error);
       return result.data;
     },
-    onSuccess: (_logId, { projectId }) => {
+    onSuccess: (_sessionId, { projectId }) => {
       void queryClient.invalidateQueries({
         queryKey: executionQueryKeys.activeSessions(projectId),
       });

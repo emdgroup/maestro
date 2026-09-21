@@ -41,7 +41,7 @@ pub(crate) fn spawn_reader_task(
     ctx: ReaderTaskContext,
 ) {
     let ReaderTaskContext {
-        log_id,
+        session_id,
         app_handle,
         app_state,
         current_model_id,
@@ -78,15 +78,17 @@ pub(crate) fn spawn_reader_task(
                 | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
                 _ => {
                     if let Ok(json) = serde_json::to_string(&msg) {
-                        log::trace!("[acp] << log_id={log_id} {json}");
+                        log::trace!("[acp] << session_id={session_id} {json}");
                     }
                 }
             }
             if let MaestroRpcMessage::Response(ServerResponse::Ping { seq }) = &msg {
-                log::trace!("[acp] ping seq={seq} on direct session log_id={log_id}");
+                log::trace!("[acp] ping seq={seq} on direct session session_id={session_id}");
                 let pong = MaestroRpcMessage::Request(ServerRequest::Pong { seq: *seq });
-                if let Err(e) = crate::acp::write_to_acp_session(&app_state, log_id, &pong).await {
-                    log::warn!("[acp] pong failed on direct session log_id={log_id}: {e}");
+                if let Err(e) =
+                    crate::acp::write_to_acp_session(&app_state, &session_id, &pong).await
+                {
+                    log::warn!("[acp] pong failed on direct session session_id={session_id}: {e}");
                 }
                 if let Err(e) = app_state.app_handle.emit("acp://heartbeat", ()) {
                     log::warn!("[acp] emit heartbeat failed: {e}");
@@ -94,14 +96,17 @@ pub(crate) fn spawn_reader_task(
                 continue;
             }
 
-            update_session_from_response(log_id, &msg, &app_state).await;
+            update_session_from_response(&session_id, &msg, &app_state).await;
 
             // Off the reader loop for the same reason `resolve_turn_end` is: a `canvas_await`
             // blocks until the user acts, and nothing else on this session could arrive
             // meanwhile — including the answer itself.
             if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
                 let state = Arc::clone(&app_state);
-                tokio::spawn(crate::acp::host_tools::handle(state, log_id, call));
+                let owned_session_id = session_id.clone();
+                tokio::spawn(async move {
+                    crate::acp::host_tools::handle(state, &owned_session_id, call).await;
+                });
                 continue;
             }
 
@@ -109,7 +114,7 @@ pub(crate) fn spawn_reader_task(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if handle_permission_request(&app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(&app_state, tid, &session_id, perm_req).await {
                         continue;
                     }
                 }
@@ -149,7 +154,7 @@ pub(crate) fn spawn_reader_task(
 
             if let Some(native_id) = handle_server_message(
                 msg,
-                log_id,
+                &session_id,
                 &app_handle,
                 &current_model_id,
                 &current_mode_id,
@@ -185,11 +190,11 @@ pub(crate) fn spawn_reader_task(
             }
         }
 
-        remove_session_and_persist(&app_state, log_id).await;
+        remove_session_and_persist(&app_state, &session_id).await;
         fail_task_if_still_running(&app_state, task_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
-        if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
-            log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
+        if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
+            log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
         }
     });
 }
@@ -230,9 +235,9 @@ pub(crate) fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32)
 /// ghost of it. Returns the removed entry, which is the last place its task id is available.
 async fn remove_session_and_persist(
     app_state: &Arc<crate::core::AppState>,
-    log_id: i32,
+    session_id: &str,
 ) -> Option<crate::acp::AcpProcess> {
-    let removed = app_state.acp.sessions.lock().await.remove(&log_id);
+    let removed = app_state.acp.sessions.lock().await.remove(session_id);
     if let Some(project_id) = removed.as_ref().and_then(|session| session.project_id) {
         tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
             Arc::clone(app_state),
@@ -642,13 +647,13 @@ pub(crate) async fn is_task_project_git_repo(
 async fn handle_permission_request(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
-    log_id: i32,
+    session_id: &str,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
-    if try_auto_approve_permission(app_state, task_id, log_id, perm_req).await {
+    if try_auto_approve_permission(app_state, task_id, session_id, perm_req).await {
         return true;
     }
-    if try_conclude_plan_mode_phase(app_state, task_id, log_id, perm_req).await {
+    if try_conclude_plan_mode_phase(app_state, task_id, session_id, perm_req).await {
         return true;
     }
     // Nobody answered for it: the agent is stopped until the user does.
@@ -659,7 +664,7 @@ async fn handle_permission_request(
 async fn try_auto_approve_permission(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
-    log_id: i32,
+    session_id: &str,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
     let phase = app_state.db.lock().ok().and_then(|conn| {
@@ -749,15 +754,14 @@ async fn try_auto_approve_permission(
 
     let Some(oid) = option_id else { return false };
 
-    let session_id = format!("session-{}", log_id);
     let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
         crate::acp::transport::PermissionResponse {
-            session_id,
+            session_id: session_id.to_string(),
             request_id: perm_req.request_id.clone(),
             option_id: Some(oid),
         },
     ));
-    let _ = crate::acp::write_to_acp_session(app_state, log_id, &response).await;
+    let _ = crate::acp::write_to_acp_session(app_state, session_id, &response).await;
     true
 }
 
@@ -832,7 +836,7 @@ fn conclude_read_only_phase(
 async fn try_conclude_plan_mode_phase(
     app_state: &Arc<crate::core::AppState>,
     task_id: i32,
-    log_id: i32,
+    session_id: &str,
     perm_req: &crate::acp::transport::PermissionRequest,
 ) -> bool {
     let Some(plan) = perm_req
@@ -893,7 +897,6 @@ async fn try_conclude_plan_mode_phase(
         }
     }
 
-    let session_id = format!("session-{}", log_id);
     let refusal = perm_req
         .payload
         .get("options")
@@ -913,12 +916,12 @@ async fn try_conclude_plan_mode_phase(
     if let Some(option_id) = refusal {
         let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
             crate::acp::transport::PermissionResponse {
-                session_id,
+                session_id: session_id.to_string(),
                 request_id: perm_req.request_id.clone(),
                 option_id: Some(option_id),
             },
         ));
-        if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &response).await {
+        if let Err(e) = crate::acp::write_to_acp_session(app_state, session_id, &response).await {
             log::warn!("[acp] could not refuse the mode change for task {task_id}: {e}");
         }
     }
@@ -926,7 +929,7 @@ async fn try_conclude_plan_mode_phase(
     // After the transition, not before: ending a session runs `fail_if_agent_running`, which would
     // turn the card red if the task were still `Running`. It is a no-op against the `Waiting` the
     // gate above just wrote, which is the ordering this depends on.
-    crate::acp::session_handlers::end_acp_session(app_state, log_id).await;
+    crate::acp::session_handlers::end_acp_session(app_state, session_id).await;
     log::info!("[acp] took the plan for task {task_id} and closed its planning session");
 
     true
@@ -936,7 +939,7 @@ fn emit_session_init_events(
     models: Option<&SessionModelState>,
     modes: Option<&SessionModeState>,
     caps: Option<&PromptCapabilitiesInfo>,
-    log_id: i32,
+    session_id: &str,
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
     current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
@@ -945,21 +948,21 @@ fn emit_session_init_events(
         if let Ok(mut cache) = current_model_id.lock() {
             *cache = Some(m.current_model_id.clone());
         }
-        if let Err(e) = app_handle.emit(&format!("acp://session-models/{}", log_id), m) {
-            log::warn!("[acp] emit session-models/{log_id} failed: {e}");
+        if let Err(e) = app_handle.emit(&format!("acp://session-models/{}", session_id), m) {
+            log::warn!("[acp] emit session-models/{session_id} failed: {e}");
         }
     }
     if let Some(m) = modes {
         if let Ok(mut cache) = current_mode_id.lock() {
             *cache = Some(m.current_mode_id.clone());
         }
-        if let Err(e) = app_handle.emit(&format!("acp://session-modes/{}", log_id), m) {
-            log::warn!("[acp] emit session-modes/{log_id} failed: {e}");
+        if let Err(e) = app_handle.emit(&format!("acp://session-modes/{}", session_id), m) {
+            log::warn!("[acp] emit session-modes/{session_id} failed: {e}");
         }
     }
     if let Some(c) = caps {
-        if let Err(e) = app_handle.emit(&format!("acp://session-capabilities/{}", log_id), c) {
-            log::warn!("[acp] emit session-capabilities/{log_id} failed: {e}");
+        if let Err(e) = app_handle.emit(&format!("acp://session-capabilities/{}", session_id), c) {
+            log::warn!("[acp] emit session-capabilities/{session_id} failed: {e}");
         }
     }
 }
@@ -971,7 +974,7 @@ fn emit_session_init_events(
 #[allow(clippy::too_many_arguments)]
 fn handle_server_message(
     msg: MaestroRpcMessage,
-    log_id: i32,
+    session_id: &str,
     app_handle: &tauri::AppHandle,
     current_model_id: &Arc<std::sync::Mutex<Option<String>>>,
     current_mode_id: &Arc<std::sync::Mutex<Option<String>>>,
@@ -995,9 +998,9 @@ fn handle_server_message(
                         *m = Some(mode_id.to_string());
                     }
                     if let Err(e) =
-                        app_handle.emit(&format!("acp://mode-changed/{}", log_id), mode_id)
+                        app_handle.emit(&format!("acp://mode-changed/{}", session_id), mode_id)
                     {
-                        log::warn!("[acp] emit mode-changed/{log_id} failed: {e}");
+                        log::warn!("[acp] emit mode-changed/{session_id} failed: {e}");
                     }
                 }
             }
@@ -1019,7 +1022,7 @@ fn handle_server_message(
                         .and_then(|t| t.as_str()),
                     closing_message,
                 );
-                emit_or_buffer_payload(payload, replay_buffer, app_handle, log_id);
+                emit_or_buffer_payload(payload, replay_buffer, app_handle, session_id);
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(out)) => {
@@ -1032,25 +1035,29 @@ fn handle_server_message(
                 terminal_id: &out.terminal_id,
                 output: String::from_utf8_lossy(&out.bytes).into_owned(),
             };
-            if let Err(e) = app_handle.emit(&format!("acp://terminal-output/{}", log_id), &payload)
+            if let Err(e) =
+                app_handle.emit(&format!("acp://terminal-output/{}", session_id), &payload)
             {
-                log::warn!("[acp] emit terminal-output/{log_id} failed: {e}");
+                log::warn!("[acp] emit terminal-output/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::PermissionRequest(req)) => {
-            if let Err(e) = app_handle.emit(&format!("acp://permission-request/{}", log_id), &req) {
-                log::warn!("[acp] emit permission-request/{log_id} failed: {e}");
+            if let Err(e) =
+                app_handle.emit(&format!("acp://permission-request/{}", session_id), &req)
+            {
+                log::warn!("[acp] emit permission-request/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(req)) => {
-            if let Err(e) = app_handle.emit(&format!("acp://elicitation-request/{}", log_id), &req)
+            if let Err(e) =
+                app_handle.emit(&format!("acp://elicitation-request/{}", session_id), &req)
             {
-                log::warn!("[acp] emit elicitation-request/{log_id} failed: {e}");
+                log::warn!("[acp] emit elicitation-request/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(spawn_ok)) => {
             log::debug!(
-                "[acp] spawn-ok log_id={log_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={} session_delete={}",
+                "[acp] spawn-ok session_id={session_id} session={} acp_session={:?} model={:?} session_list={} session_load={} session_close={} session_delete={}",
                 spawn_ok.session_id,
                 spawn_ok.acp_session_id,
                 spawn_ok.models.as_ref().map(|m| &m.current_model_id),
@@ -1063,17 +1070,17 @@ fn handle_server_message(
                 spawn_ok.models.as_ref(),
                 spawn_ok.modes.as_ref(),
                 spawn_ok.prompt_capabilities.as_ref(),
-                log_id,
+                session_id,
                 app_handle,
                 current_model_id,
                 current_mode_id,
             );
             if let Some(ref config_options) = spawn_ok.config_options {
                 if let Err(e) = app_handle.emit(
-                    &format!("acp://config-state-updated/{}", log_id),
+                    &format!("acp://config-state-updated/{}", session_id),
                     &serde_json::json!({ "configOptions": config_options }),
                 ) {
-                    log::warn!("[acp] emit config-state-updated/{log_id} failed: {e}");
+                    log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
                 }
             }
             let new_native_id = if let Some(native_id) = spawn_ok.acp_session_id {
@@ -1090,31 +1097,31 @@ fn handle_server_message(
             if let Err(e) = app_handle.emit("sessions-changed", ()) {
                 log::warn!("[acp] emit sessions-changed failed: {e}");
             }
-            if let Err(e) = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ()) {
-                log::warn!("[acp] emit spawn-ok/{log_id} failed: {e}");
+            if let Err(e) = app_handle.emit(&format!("acp://spawn-ok/{}", session_id), ()) {
+                log::warn!("[acp] emit spawn-ok/{session_id} failed: {e}");
             }
             return new_native_id;
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(load_ok)) => {
             log::debug!(
-                "[acp] session-load-ok log_id={log_id} session={}",
+                "[acp] session-load-ok session_id={session_id} session={}",
                 load_ok.session_id
             );
             emit_session_init_events(
                 load_ok.models.as_ref(),
                 load_ok.modes.as_ref(),
                 load_ok.prompt_capabilities.as_ref(),
-                log_id,
+                session_id,
                 app_handle,
                 current_model_id,
                 current_mode_id,
             );
             if let Some(ref config_options) = load_ok.config_options {
                 if let Err(e) = app_handle.emit(
-                    &format!("acp://config-state-updated/{}", log_id),
+                    &format!("acp://config-state-updated/{}", session_id),
                     &serde_json::json!({ "configOptions": config_options }),
                 ) {
-                    log::warn!("[acp] emit config-state-updated/{log_id} failed: {e}");
+                    log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
                 }
             }
             push_config_init_to_buffer(
@@ -1125,47 +1132,54 @@ fn handle_server_message(
             if let Ok(mut init) = initialized.lock() {
                 *init = true;
             }
-            if let Err(e) = app_handle.emit(&format!("acp://spawn-ok/{}", log_id), ()) {
-                log::warn!("[acp] emit spawn-ok/{log_id} failed: {e}");
+            if let Err(e) = app_handle.emit(&format!("acp://spawn-ok/{}", session_id), ()) {
+                log::warn!("[acp] emit spawn-ok/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetModelOk(ok)) => {
-            log::debug!("[acp] set-model-ok log_id={log_id} model={}", ok.model_id);
+            log::debug!(
+                "[acp] set-model-ok session_id={session_id} model={}",
+                ok.model_id
+            );
             if let Ok(mut m) = current_model_id.lock() {
                 *m = Some(ok.model_id.clone());
             }
             if let Err(e) =
-                app_handle.emit(&format!("acp://model-changed/{}", log_id), &ok.model_id)
+                app_handle.emit(&format!("acp://model-changed/{}", session_id), &ok.model_id)
             {
-                log::warn!("[acp] emit model-changed/{log_id} failed: {e}");
+                log::warn!("[acp] emit model-changed/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetModeOk(ok)) => {
-            log::debug!("[acp] set-mode-ok log_id={log_id} mode={}", ok.mode_id);
+            log::debug!(
+                "[acp] set-mode-ok session_id={session_id} mode={}",
+                ok.mode_id
+            );
             if let Ok(mut m) = current_mode_id.lock() {
                 *m = Some(ok.mode_id.clone());
             }
-            if let Err(e) = app_handle.emit(&format!("acp://mode-changed/{}", log_id), &ok.mode_id)
+            if let Err(e) =
+                app_handle.emit(&format!("acp://mode-changed/{}", session_id), &ok.mode_id)
             {
-                log::warn!("[acp] emit mode-changed/{log_id} failed: {e}");
+                log::warn!("[acp] emit mode-changed/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(ok)) => {
             log::debug!(
-                "[acp] set-config-ok log_id={log_id} config={} value={}",
+                "[acp] set-config-ok session_id={session_id} config={} value={}",
                 ok.config_id,
                 ok.value
             );
             if let Err(e) = app_handle.emit(
-                &format!("acp://config-changed/{}", log_id),
+                &format!("acp://config-changed/{}", session_id),
                 &serde_json::json!({ "config_id": ok.config_id, "value": ok.value }),
             ) {
-                log::warn!("[acp] emit config-changed/{log_id} failed: {e}");
+                log::warn!("[acp] emit config-changed/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(ok)) => {
             log::debug!(
-                "[acp] config-updated log_id={log_id} config={} value={}",
+                "[acp] config-updated session_id={session_id} config={} value={}",
                 ok.config_id,
                 ok.value
             );
@@ -1179,14 +1193,14 @@ fn handle_server_message(
                 }
             }
             if let Err(e) = app_handle.emit(
-                &format!("acp://config-state-updated/{}", log_id),
+                &format!("acp://config-state-updated/{}", session_id),
                 &serde_json::json!({
                     "config_id": ok.config_id,
                     "value": ok.value,
                     "configOptions": ok.config_options,
                 }),
             ) {
-                log::warn!("[acp] emit config-state-updated/{log_id} failed: {e}");
+                log::warn!("[acp] emit config-state-updated/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
@@ -1204,7 +1218,10 @@ fn handle_server_message(
             }
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
-            log::error!("[acp] session-error log_id={log_id}: {}", err.message);
+            log::error!(
+                "[acp] session-error session_id={session_id}: {}",
+                err.message
+            );
             // Resolve any pending file op with the error before emitting the session-error event.
             if let Ok(mut guard) = pending_file_search.lock() {
                 if let Some(tx) = guard.take() {
@@ -1217,27 +1234,27 @@ fn handle_server_message(
                 }
             }
             if let Err(e) =
-                app_handle.emit(&format!("acp://session-error/{}", log_id), &err.message)
+                app_handle.emit(&format!("acp://session-error/{}", session_id), &err.message)
             {
-                log::error!("[acp] emit session-error/{log_id} failed: {e}");
+                log::error!("[acp] emit session-error/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::TurnEnded(turn_ended)) => {
             log::debug!(
-                "[acp] turn-ended log_id={log_id} stop={}",
+                "[acp] turn-ended session_id={session_id} stop={}",
                 turn_ended.stop_reason
             );
             if let Err(e) = app_handle.emit(
-                &format!("acp://turn-ended/{}", log_id),
+                &format!("acp://turn-ended/{}", session_id),
                 &turn_ended.stop_reason,
             ) {
-                log::warn!("[acp] emit turn-ended/{log_id} failed: {e}");
+                log::warn!("[acp] emit turn-ended/{session_id} failed: {e}");
             }
         }
         MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
             log_server_diagnostic(&diag.level, &diag.message);
-            if let Err(e) = app_handle.emit(&format!("acp://diagnostic/{}", log_id), &diag) {
-                log::warn!("[acp] emit diagnostic/{log_id} failed: {e}");
+            if let Err(e) = app_handle.emit(&format!("acp://diagnostic/{}", session_id), &diag) {
+                log::warn!("[acp] emit diagnostic/{session_id} failed: {e}");
             }
         }
         _ => {
@@ -1248,14 +1265,14 @@ fn handle_server_message(
 }
 
 pub(crate) async fn update_session_from_response(
-    log_id: i32,
+    session_id: &str,
     msg: &MaestroRpcMessage,
     app_state: &Arc<crate::core::AppState>,
 ) {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
             let mut sessions = app_state.acp.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&log_id) {
+            if let Some(session) = sessions.get_mut(session_id) {
                 session.session_capabilities = crate::acp::session_types::SessionCapabilitiesInfo {
                     supports_session_list: r.supports_session_list,
                     supports_session_load: r.supports_session_load,
@@ -1268,14 +1285,14 @@ pub(crate) async fn update_session_from_response(
         }
         MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
             let mut sessions = app_state.acp.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&log_id) {
+            if let Some(session) = sessions.get_mut(session_id) {
                 session.config_options = r.config_options.clone().unwrap_or_default();
                 session.prompt_capabilities = r.prompt_capabilities.clone();
             }
         }
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
             let mut sessions = app_state.acp.sessions.lock().await;
-            if let Some(session) = sessions.get_mut(&log_id) {
+            if let Some(session) = sessions.get_mut(session_id) {
                 session.config_options = r.config_options.clone();
             }
         }
@@ -1288,7 +1305,7 @@ pub(crate) async fn update_session_from_response(
                     serde_json::from_value::<Vec<serde_json::Value>>(options_val.clone())
                 {
                     let mut sessions = app_state.acp.sessions.lock().await;
-                    if let Some(session) = sessions.get_mut(&log_id) {
+                    if let Some(session) = sessions.get_mut(session_id) {
                         session.config_options = options;
                     }
                 }
@@ -1298,50 +1315,32 @@ pub(crate) async fn update_session_from_response(
     }
 }
 
-fn log_id_from_session_id(session_id: &str) -> Option<i32> {
-    session_id.strip_prefix("session-")?.parse().ok()
-}
-
-fn extract_session_log_id(msg: &MaestroRpcMessage) -> Option<i32> {
+fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
+        MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => Some(r.session_id.clone()),
+        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(r)) => Some(r.session_id.clone()),
         MaestroRpcMessage::Response(ServerResponse::PermissionRequest(r)) => {
-            log_id_from_session_id(&r.session_id)
+            Some(r.session_id.clone())
         }
         MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(r)) => {
-            log_id_from_session_id(&r.session_id)
+            Some(r.session_id.clone())
         }
         MaestroRpcMessage::Response(ServerResponse::TerminalOutput(r)) => {
-            log_id_from_session_id(&r.session_id)
+            Some(r.session_id.clone())
         }
-        MaestroRpcMessage::Response(ServerResponse::TurnEnded(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
-        MaestroRpcMessage::Response(ServerResponse::HostToolCall(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetModelOk(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetModeOk(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
+        MaestroRpcMessage::Response(ServerResponse::TurnEnded(r)) => Some(r.session_id.clone()),
+        MaestroRpcMessage::Response(ServerResponse::HostToolCall(r)) => Some(r.session_id.clone()),
+        MaestroRpcMessage::Response(ServerResponse::SetModelOk(r)) => Some(r.session_id.clone()),
+        MaestroRpcMessage::Response(ServerResponse::SetModeOk(r)) => Some(r.session_id.clone()),
         MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(r)) => {
-            log_id_from_session_id(&r.session_id)
+            Some(r.session_id.clone())
         }
         MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
-            log_id_from_session_id(&r.session_id)
+            Some(r.session_id.clone())
         }
-        MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => {
-            log_id_from_session_id(&r.session_id)
-        }
+        MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => Some(r.session_id.clone()),
         MaestroRpcMessage::Response(ServerResponse::Error(err)) if err.session_id.is_some() => {
-            err.session_id.as_deref().and_then(log_id_from_session_id)
+            err.session_id.clone()
         }
         _ => None,
     }
@@ -1356,26 +1355,25 @@ async fn handle_shared_server_message(
     app_state: &Arc<crate::core::AppState>,
     pending: &PendingChannels,
 ) {
-    // Session-bearing messages: extract log_id, borrow caches from AcpProcess,
+    // Session-bearing messages: extract session_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
-    if let Some(log_id) = extract_session_log_id(&msg) {
-        update_session_from_response(log_id, &msg, app_state).await;
+    if let Some(session_id) = extract_session_id(&msg) {
+        update_session_from_response(&session_id, &msg, app_state).await;
 
         // Before the cache borrow below: this needs none of it, and the shared reader serves
         // every session on the connection, so a `canvas_await` answered inline would block all
         // of them for as long as the user takes.
         if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
-            tokio::spawn(crate::acp::host_tools::handle(
-                Arc::clone(app_state),
-                log_id,
-                call,
-            ));
+            let state = Arc::clone(app_state);
+            tokio::spawn(async move {
+                crate::acp::host_tools::handle(state, &session_id, call).await;
+            });
             return;
         }
 
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
-            sessions.get(&log_id).map(|s| {
+            sessions.get(&session_id).map(|s| {
                 (
                     Arc::clone(&s.current_model_id),
                     Arc::clone(&s.current_mode_id),
@@ -1417,7 +1415,7 @@ async fn handle_shared_server_message(
                 msg
             {
                 if let Some(tid) = task_id {
-                    if handle_permission_request(app_state, tid, log_id, perm_req).await {
+                    if handle_permission_request(app_state, tid, &session_id, perm_req).await {
                         return;
                     }
                 }
@@ -1494,7 +1492,7 @@ async fn handle_shared_server_message(
             let is_session_load_error = is_fatal_session_error(&msg);
             let native_id = handle_server_message(
                 msg,
-                log_id,
+                &session_id,
                 app_handle,
                 &current_model_id,
                 &current_mode_id,
@@ -1509,7 +1507,7 @@ async fn handle_shared_server_message(
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
-                if let Some(session) = sessions.get(&log_id) {
+                if let Some(session) = sessions.get(&session_id) {
                     session
                         .has_pending_permission
                         .store(true, Ordering::Release);
@@ -1544,7 +1542,7 @@ async fn handle_shared_server_message(
             if is_session_load_error {
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
-                remove_session_and_persist(app_state, log_id).await;
+                remove_session_and_persist(app_state, &session_id).await;
                 fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
@@ -1555,13 +1553,15 @@ async fn handle_shared_server_message(
             // reply — cleanup, a failed write rollback, a concurrent close. Everything
             // above needs the caches, but turn-ended does not: dropping it here is what
             // strands the UI in "thinking", so emit it anyway.
-            log::warn!("[acp] no session entry for log_id={log_id} while handling agent reply");
+            log::warn!(
+                "[acp] no session entry for session_id={session_id} while handling agent reply"
+            );
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
                 if let Err(e) = app_handle.emit(
-                    &format!("acp://turn-ended/{}", log_id),
+                    &format!("acp://turn-ended/{}", session_id),
                     &turn_ended.stop_reason,
                 ) {
-                    log::warn!("[acp] emit turn-ended/{log_id} failed: {e}");
+                    log::warn!("[acp] emit turn-ended/{session_id} failed: {e}");
                 }
             }
         }
@@ -1749,13 +1749,15 @@ async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::AgentConnectionLost(lost)) => {
             for session_id_str in &lost.affected_session_ids {
-                if let Some(log_id) = log_id_from_session_id(session_id_str) {
+                {
+                    let session_id = session_id_str.clone();
                     // The removed entry is the only place the task id is still available.
-                    let removed = remove_session_and_persist(app_state, log_id).await;
+                    let removed = remove_session_and_persist(app_state, &session_id).await;
                     fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
-                    if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ())
+                    if let Err(e) =
+                        app_handle.emit(&format!("acp://session-ended/{}", session_id), ())
                     {
-                        log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
+                        log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
                     }
                 }
             }
@@ -1803,15 +1805,15 @@ async fn handle_shared_server_message(
         MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
             log_server_diagnostic(&diag.level, &diag.message);
             // Best-effort: emit to any session on this connection for frontend visibility.
-            let log_ids: Vec<i32> = {
+            let session_ids: Vec<String> = {
                 let sessions = app_state.acp.sessions.lock().await;
                 sessions
                     .iter()
                     .filter(|(_, s)| s.connection_key == connection_key)
-                    .map(|(id, _)| *id)
+                    .map(|(id, _)| id.clone())
                     .collect()
             };
-            for lid in log_ids {
+            for lid in session_ids {
                 crate::core::emit_or_log(app_handle, &format!("acp://diagnostic/{}", lid), &diag);
             }
             // Connection-scoped event so the auth modal can receive output even when the
@@ -1974,19 +1976,19 @@ async fn handle_shared_server_message(
                     let _ = tx.send(Err(err.message));
                 } else {
                     // Emit as session-error for all connection sessions.
-                    let log_ids: Vec<i32> = {
+                    let session_ids: Vec<String> = {
                         let sessions = app_state.acp.sessions.lock().await;
                         sessions
                             .iter()
                             .filter(|(_, s)| s.connection_key == connection_key)
-                            .map(|(id, _)| *id)
+                            .map(|(id, _)| id.clone())
                             .collect()
                     };
-                    for log_id in log_ids {
+                    for session_id in session_ids {
                         if let Err(e) = app_handle
-                            .emit(&format!("acp://session-error/{}", log_id), &err.message)
+                            .emit(&format!("acp://session-error/{}", session_id), &err.message)
                         {
-                            log::error!("[acp] emit session-error/{log_id} failed: {e}");
+                            log::error!("[acp] emit session-error/{session_id} failed: {e}");
                         }
                     }
                 }
@@ -2128,19 +2130,19 @@ pub(crate) fn spawn_shared_reader_task(
         // Snapshot restorable metadata before removing sessions from the map.
         // Sessions without an acp_session_id haven't received SpawnOk yet and cannot
         // be restored — emit session-ended for those immediately.
-        let (to_restore, to_end_now): (Vec<RestorableSession>, Vec<i32>) = {
+        let (to_restore, to_end_now): (Vec<RestorableSession>, Vec<String>) = {
             let sessions = app_state.acp.sessions.lock().await;
             let mut restorable: Vec<RestorableSession> = Vec::new();
-            let mut unrestorable: Vec<i32> = Vec::new();
+            let mut unrestorable: Vec<String> = Vec::new();
             let is_ssh = matches!(connection_key, crate::acp::ConnectionKey::Ssh { .. });
-            for (log_id, s) in sessions
+            for (session_id, s) in sessions
                 .iter()
                 .filter(|(_, s)| s.connection_key == connection_key)
             {
                 let acp_session_id = s.acp_session_id.lock().ok().and_then(|g| g.clone());
                 if acp_session_id.is_some() && is_ssh {
                     restorable.push(RestorableSession {
-                        log_id: *log_id,
+                        session_id: session_id.clone(),
                         agent_id: s.agent_id_meta.clone(),
                         acp_session_id,
                         cwd: s.cwd.clone(),
@@ -2149,7 +2151,7 @@ pub(crate) fn spawn_shared_reader_task(
                         task_id: s.task_id,
                     });
                 } else {
-                    unrestorable.push(*log_id);
+                    unrestorable.push(session_id.clone());
                 }
             }
             (restorable, unrestorable)
@@ -2159,17 +2161,17 @@ pub(crate) fn spawn_shared_reader_task(
         {
             let mut sessions = app_state.acp.sessions.lock().await;
             for s in &to_restore {
-                sessions.remove(&s.log_id);
+                sessions.remove(&s.session_id);
             }
-            for log_id in &to_end_now {
-                sessions.remove(log_id);
+            for session_id in &to_end_now {
+                sessions.remove(session_id);
             }
         }
 
         // Immediately end unrestorable sessions (no acp_session_id yet, or non-SSH).
-        for log_id in &to_end_now {
-            if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", log_id), ()) {
-                log::warn!("[acp] emit session-ended/{log_id} failed: {e}");
+        for session_id in &to_end_now {
+            if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
+                log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
             }
         }
 
@@ -2187,9 +2189,9 @@ pub(crate) fn spawn_shared_reader_task(
             _ => {
                 for s in &to_restore {
                     if let Err(e) =
-                        app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ())
+                        app_handle.emit(&format!("acp://session-ended/{}", s.session_id), ())
                     {
-                        log::warn!("[acp] emit session-ended/{} failed: {e}", s.log_id);
+                        log::warn!("[acp] emit session-ended/{} failed: {e}", s.session_id);
                     }
                 }
             }

@@ -88,7 +88,7 @@ pub async fn try_spawn_via_connection_server(
             initial_acp_session_id: None,
             enable_replay_buffer: true,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -97,11 +97,16 @@ pub async fn try_spawn_via_connection_server(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
 
     // Register before sending so a fast SpawnOk can always be routed to this session.
     if writer_tx.send(bytes).await.is_err() {
-        req.app_state.acp.sessions.lock().await.remove(&req.log_id);
+        req.app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .remove(&req.session_id);
         return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
@@ -185,7 +190,7 @@ async fn launch_cold_session(
             initial_acp_session_id,
             enable_replay_buffer,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -195,7 +200,7 @@ async fn launch_cold_session(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
     spawn_reader_task(source, cancel_rx, ctx);
 
     Ok(())
@@ -227,7 +232,7 @@ pub async fn load_acp_session_cold(
 ) -> Result<(), String> {
     let initial_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
-        session_id: format!("session-{}", req.log_id),
+        session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
@@ -244,14 +249,14 @@ pub async fn load_acp_session_cold(
     .await
 }
 
-/// Write a message to an active ACP session's transport by log_id.
+/// Write a message to an active ACP session's transport by session_id.
 ///
 /// Acquires the sessions lock only long enough to extract the writer handle, then
 /// releases the lock before performing any async I/O, preventing sessions-lock
 /// contention while the write is in progress.
 pub async fn write_to_acp_session(
     app_state: &crate::core::AppState,
-    log_id: i32,
+    session_id: &str,
     msg: &MaestroRpcMessage,
 ) -> Result<(), String> {
     enum WriterHandle {
@@ -262,8 +267,8 @@ pub async fn write_to_acp_session(
     let writer_handle = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {}", session_id))?;
         match &session.writer {
             AcpTransportWriter::Local(writer) => WriterHandle::Local(Arc::clone(writer)),
             AcpTransportWriter::RemoteSsh(tx) | AcpTransportWriter::SharedServer(tx) => {
@@ -281,8 +286,8 @@ pub async fn write_to_acp_session(
             let bytes = serialize_message(msg)?;
             tx.send(bytes).await.map_err(|_| {
                 format!(
-                    "ACP session write failed: channel closed for log_id {}",
-                    log_id
+                    "ACP session write failed: channel closed for session_id {}",
+                    session_id
                 )
             })
         }
@@ -329,7 +334,7 @@ pub async fn try_session_load_via_connection_server(
     };
     let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
-        session_id: format!("session-{}", req.log_id),
+        session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
@@ -355,7 +360,7 @@ pub async fn try_session_load_via_connection_server(
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -364,10 +369,15 @@ pub async fn try_session_load_via_connection_server(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
 
     if writer_tx.send(bytes).await.is_err() {
-        req.app_state.acp.sessions.lock().await.remove(&req.log_id);
+        req.app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .remove(&req.session_id);
         return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
@@ -375,7 +385,7 @@ pub async fn try_session_load_via_connection_server(
 
 /// Re-spawn the shared maestro-server for a connection and reload sessions that were
 /// active when it died. Called after SSH successfully reconnects.
-/// Emits `acp://session-ended/{log_id}` for any session that cannot be restored.
+/// Emits `acp://session-ended/{session_id}` for any session that cannot be restored.
 pub async fn restore_acp_sessions(
     connection_id: i32,
     app_state: &Arc<crate::core::AppState>,
@@ -404,20 +414,17 @@ pub async fn restore_acp_sessions(
         let Some(acp_session_id) = &s.acp_session_id else {
             let _ = app_state
                 .app_handle
-                .emit(&format!("acp://session-ended/{}", s.log_id), ());
+                .emit(&format!("acp://session-ended/{}", s.session_id), ());
             continue;
         };
 
-        let new_log_id = app_state
-            .pty
-            .session_counter
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let reloaded_session_id = crate::core::new_session_id();
 
         let req = SessionRequest {
             connection_key: crate::acp::ConnectionKey::Ssh { id: connection_id },
             agent_id: s.agent_id.clone(),
             cwd: s.cwd.clone(),
-            log_id: new_log_id,
+            session_id: reloaded_session_id,
             session_name: s.session_name.clone(),
             project_id: s.project_id,
             task_id: s.task_id,
@@ -428,7 +435,7 @@ pub async fn restore_acp_sessions(
             _ => {
                 let _ = app_state
                     .app_handle
-                    .emit(&format!("acp://session-ended/{}", s.log_id), ());
+                    .emit(&format!("acp://session-ended/{}", s.session_id), ());
             }
         }
     }

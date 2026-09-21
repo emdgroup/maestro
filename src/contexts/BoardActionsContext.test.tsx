@@ -60,8 +60,8 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   <BoardActionsProvider>{children}</BoardActionsProvider>
 );
 
-function session(taskId: number | null, key: number): ActiveSessionInfo {
-  return { session_key: key, task_id: taskId } as ActiveSessionInfo;
+function session(taskId: number | null, key: string): ActiveSessionInfo {
+  return { session_id: key, task_id: taskId } as ActiveSessionInfo;
 }
 
 function worktree(taskId: number | null, id: number): WorktreeWithStatus {
@@ -121,15 +121,15 @@ describe("canRefine", () => {
 
 describe("useTaskSession", () => {
   it("finds the session belonging to a task", () => {
-    sessions.current = [session(4, 100), session(7, 101)];
+    sessions.current = [session(4, "100"), session(7, "101")];
 
     const { result } = renderHook(() => useTaskSession(7), { wrapper });
 
-    expect(result.current?.session_key).toBe(101);
+    expect(result.current?.session_id).toBe("101");
   });
 
   it("gives null for a task with no live session", () => {
-    sessions.current = [session(4, 100)];
+    sessions.current = [session(4, "100")];
 
     const { result } = renderHook(() => useTaskSession(7), { wrapper });
 
@@ -141,7 +141,7 @@ describe("useTaskSession", () => {
    * indexed under a task id at all, or it would surface on whichever card shares its key.
    */
   it("ignores sessions that belong to no task", () => {
-    sessions.current = [session(null, 100)];
+    sessions.current = [session(null, "100")];
 
     const { result } = renderHook(() => useBoardActionsContext(), { wrapper });
 

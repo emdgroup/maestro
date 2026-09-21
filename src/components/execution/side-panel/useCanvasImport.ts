@@ -54,13 +54,13 @@ function uniqueSurfaceId(base: string, taken: Map<string, CanvasSurface>): strin
 }
 
 export function useCanvasImport({
-  logId,
+  sessionId,
   canvasMap,
   onSurface,
   onCloseSurface,
   onPrompt,
 }: {
-  logId: number;
+  sessionId: string;
   canvasMap: Map<string, CanvasSurface>;
   /** Puts the surface in the carousel. */
   onSurface: (surface: CanvasSurface) => void;
@@ -94,11 +94,11 @@ export function useCanvasImport({
   const accept = useCallback(
     (surface: CanvasSurface, fileName: string) => {
       onSurface(surface);
-      void saveCanvasImport(logId, fileName, surfaceToHtml(surface))
+      void saveCanvasImport(sessionId, fileName, surfaceToHtml(surface))
         .then((path) => onPrompt(buildCanvasImportedPrompt(surface.surfaceId, path)))
         .catch(() => toast.error("Imported, but the agent was not given a copy it can read"));
     },
-    [logId, onSurface, onPrompt],
+    [sessionId, onSurface, onPrompt],
   );
 
   const resolve = useCallback(
@@ -122,7 +122,7 @@ export function useCanvasImport({
       } else if (staged.kind === "convert" && choice === "convert") {
         // No placeholder surface meanwhile: the agent's own `canvas_create` is what creates it,
         // and a placeholder would leave two.
-        void saveCanvasImport(logId, staged.fileName, staged.html)
+        void saveCanvasImport(sessionId, staged.fileName, staged.html)
           .then((path) => onPrompt(buildCanvasConvertPrompt(path)))
           .catch(() => toast.error("Could not put the file where the agent can read it"));
       } else if (staged.kind === "convert" && choice === "viewOnly") {
@@ -144,7 +144,7 @@ export function useCanvasImport({
       }
       setStaged(null);
     },
-    [staged, canvasMap, accept, onSurface, onCloseSurface, onPrompt, logId],
+    [staged, canvasMap, accept, onSurface, onCloseSurface, onPrompt, sessionId],
   );
 
   const request: CanvasImportRequest | null =

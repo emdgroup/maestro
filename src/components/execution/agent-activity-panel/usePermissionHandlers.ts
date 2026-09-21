@@ -22,7 +22,7 @@ export type PermissionHandlers = {
 };
 
 export function usePermissionHandlers(
-  sessionKey: number,
+  sessionId: string,
   agentItemsCountRef: React.RefObject<number>,
   pendingPermission: PendingPermission | null,
   setPendingPermission: React.Dispatch<React.SetStateAction<PendingPermission | null>>,
@@ -41,7 +41,7 @@ export function usePermissionHandlers(
   const handlePermissionRespond = useCallback(
     async (requestId: string, optionId: string | null) => {
       try {
-        await api.respondAcpPermission(sessionKey, requestId, optionId);
+        await api.respondAcpPermission(sessionId, requestId, optionId);
       } catch {
         // best-effort
       }
@@ -63,9 +63,9 @@ export function usePermissionHandlers(
         }
       }
       setPendingPermission(null);
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
     },
-    [sessionKey, pendingPermission, setPendingPermission, setActivity, agentItemsCountRef],
+    [sessionId, pendingPermission, setPendingPermission, setActivity, agentItemsCountRef],
   );
 
   // Auto-respond plan permissions that have no body text to display
@@ -84,7 +84,7 @@ export function usePermissionHandlers(
   const handleElicitationSubmit = useCallback(
     async (requestId: string, values: Record<string, unknown>) => {
       try {
-        await api.respondAcpElicitation(sessionKey, requestId, {
+        await api.respondAcpElicitation(sessionId, requestId, {
           action: "accept",
           content: values,
         } as never);
@@ -114,15 +114,15 @@ export function usePermissionHandlers(
         ]);
       }
       setPendingElicitation(null);
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
     },
-    [sessionKey, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
+    [sessionId, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
   );
 
   const handleElicitationDecline = useCallback(
     async (requestId: string) => {
       try {
-        await api.respondAcpElicitation(sessionKey, requestId, { action: "decline" });
+        await api.respondAcpElicitation(sessionId, requestId, { action: "decline" });
       } catch {
         /* best-effort */
       }
@@ -142,9 +142,9 @@ export function usePermissionHandlers(
         ]);
       }
       setPendingElicitation(null);
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
     },
-    [sessionKey, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
+    [sessionId, pendingElicitation, setPendingElicitation, setActivity, agentItemsCountRef],
   );
 
   return {

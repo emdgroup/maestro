@@ -13,7 +13,7 @@ import {
 export type Preset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
 
 export interface PendingRestore {
-  sessionId: string;
+  acpSessionId: string;
   title: string | null;
 }
 
@@ -51,7 +51,7 @@ interface Props {
   projectId: number;
   worktrees: WorktreeWithStatus[];
   onClose: () => void;
-  onSessionLoaded: (sessionKey: number) => void;
+  onSessionLoaded: (sessionId: string) => void;
 }
 
 export function useSessionHistory({
@@ -163,11 +163,11 @@ export function useSessionHistory({
     return `${count} sessions`;
   }, [filtered.length, preset, customRange]);
 
-  function toggleTick(sessionId: string) {
+  function toggleTick(acpSessionId: string) {
     setTicked((prev) => {
       const next = new Set(prev);
-      if (next.has(sessionId)) next.delete(sessionId);
-      else next.add(sessionId);
+      if (next.has(acpSessionId)) next.delete(acpSessionId);
+      else next.add(acpSessionId);
       return next;
     });
   }
@@ -186,16 +186,16 @@ export function useSessionHistory({
   function deleteTicked() {
     if (!agentId) return;
     const ids = [...ticked];
-    for (const sessionId of ids) {
-      deleteMutation.mutate({ agentId, sessionId, cwd: repoPath, connection });
+    for (const acpSessionId of ids) {
+      deleteMutation.mutate({ agentId, acpSessionId, cwd: repoPath, connection });
     }
     setTicked(new Set());
   }
 
   const recordedTarget = useCallback(
-    (sessionId: string) =>
+    (acpSessionId: string) =>
       resolveRecordedWorktree(
-        sessions.find((s) => s.session_id === sessionId)?.folder,
+        sessions.find((s) => s.session_id === acpSessionId)?.folder,
         repoPath,
         worktrees,
       ),
@@ -203,14 +203,14 @@ export function useSessionHistory({
   );
 
   const openSession = useCallback(
-    (sessionId: string, title: string | null) => {
+    (acpSessionId: string, title: string | null) => {
       if (!agentId) return;
-      const recorded = recordedTarget(sessionId);
+      const recorded = recordedTarget(acpSessionId);
       if (recorded || worktrees.length <= 1) {
         loadMutation.mutate(
           {
             agentId,
-            sessionId,
+            acpSessionId,
             cwd: recorded?.cwd ?? repoPath,
             connection,
             sessionName: title,
@@ -227,7 +227,7 @@ export function useSessionHistory({
       } else {
         setSelectedWorktreePath(repoPath);
         setWorktreeFilter("");
-        setPendingRestore({ sessionId, title });
+        setPendingRestore({ acpSessionId, title });
       }
     },
     [
@@ -243,26 +243,26 @@ export function useSessionHistory({
     ],
   );
 
-  function handleRowClick(sessionId: string, title: string | null) {
+  function handleRowClick(acpSessionId: string, title: string | null) {
     if (ticked.size > 0) {
-      toggleTick(sessionId);
+      toggleTick(acpSessionId);
       return;
     }
-    openSession(sessionId, title);
+    openSession(acpSessionId, title);
   }
 
   function openTicked() {
     if (!agentId) return;
     const ids = [...ticked];
     let completed = 0;
-    let lastKey: number | null = null;
-    for (const sessionId of ids) {
-      const entry = sessions.find((s) => s.session_id === sessionId);
-      const recorded = recordedTarget(sessionId);
+    let lastSessionId: string | null = null;
+    for (const acpSessionId of ids) {
+      const entry = sessions.find((s) => s.session_id === acpSessionId);
+      const recorded = recordedTarget(acpSessionId);
       loadMutation.mutate(
         {
           agentId,
-          sessionId,
+          acpSessionId,
           cwd: recorded?.cwd ?? repoPath,
           connection,
           sessionName: entry?.title ?? null,
@@ -271,10 +271,10 @@ export function useSessionHistory({
         },
         {
           onSuccess: (key) => {
-            lastKey = key;
+            lastSessionId = key;
             completed++;
             if (completed === ids.length) {
-              onSessionLoaded(lastKey!);
+              onSessionLoaded(lastSessionId!);
               onClose();
             }
           },
@@ -289,7 +289,7 @@ export function useSessionHistory({
     loadMutation.mutate(
       {
         agentId,
-        sessionId: pendingRestore.sessionId,
+        acpSessionId: pendingRestore.acpSessionId,
         cwd: selectedWorktreePath,
         connection,
         sessionName: pendingRestore.title,
@@ -317,9 +317,9 @@ export function useSessionHistory({
   ]);
 
   const startRename = useCallback(
-    (sessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
+    (acpSessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
       e.stopPropagation();
-      setRenamingId(sessionId);
+      setRenamingId(acpSessionId);
       setRenameValue(currentTitle ?? "");
       setTimeout(() => renameInputRef.current?.select(), 0);
     },
@@ -327,13 +327,13 @@ export function useSessionHistory({
   );
 
   const commitRename = useCallback(
-    (sessionId: string) => {
+    (acpSessionId: string) => {
       const trimmed = renameValue.trim();
       if (trimmed && agentId) {
         renameMutation.mutate({
           projectId,
           agentId,
-          acpSessionId: sessionId,
+          acpSessionId: acpSessionId,
           displayName: trimmed,
         });
       }

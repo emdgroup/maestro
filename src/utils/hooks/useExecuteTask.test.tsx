@@ -129,7 +129,7 @@ beforeEach(() => {
   mutations.markSessionReady.mockResolvedValue(true);
   mutations.releaseClaim.mockResolvedValue(undefined);
   mutations.deleteAttachment.mockResolvedValue(undefined);
-  mutations.spawnAcpSession.mockResolvedValue({ log_id: 42 });
+  mutations.spawnAcpSession.mockResolvedValue({ session_id: "42" });
 });
 
 describe("useExecuteTask with an attachment whose file is gone", () => {
@@ -177,7 +177,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      42,
+      "42",
       [{ path: PRESENT.file_path, is_image: false }],
       true,
     );
@@ -203,7 +203,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
 
     expect(result.current.missingAttachments).toBeNull();
     expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      42,
+      "42",
       [{ path: PRESENT.file_path, is_image: false }],
       true,
     );
@@ -238,7 +238,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      42,
+      "42",
       [{ path: PRESENT.file_path, is_image: false }],
       true,
     );
@@ -255,7 +255,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
 
     expect(result.current.missingAttachments).toBeNull();
     expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      42,
+      "42",
       [
         { path: GONE.file_path, is_image: false },
         { path: PRESENT.file_path, is_image: false },

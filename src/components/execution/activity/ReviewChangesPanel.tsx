@@ -8,7 +8,7 @@ import { displayItemPath } from "@/types/review";
 import type { Annotation } from "@/store/annotationStore";
 
 interface ReviewChangesPanelProps {
-  sessionKey: number;
+  sessionId: string;
   onClose: () => void;
   initialFile?: string;
   compact?: boolean;
@@ -21,7 +21,7 @@ interface ReviewChangesPanelProps {
 }
 
 export function ReviewChangesPanel({
-  sessionKey,
+  sessionId,
   initialFile,
   compact = false,
   isActive = true,
@@ -43,7 +43,7 @@ export function ReviewChangesPanel({
     diffError,
     truncationInfo,
     scope,
-  } = useReviewChangesData({ sessionKey, isActive, onDiffStats });
+  } = useReviewChangesData({ sessionId, isActive, onDiffStats });
 
   const { viewedFiles, toggleViewed } = useViewedFiles(allDisplayItems);
 
@@ -73,7 +73,7 @@ export function ReviewChangesPanel({
   if (compact) {
     return (
       <ReviewChangesPanelCompact
-        sessionKey={sessionKey}
+        sessionId={sessionId}
         onSendAnnotations={onSendAnnotations}
         annotationSendDisabled={annotationSendDisabled}
         allDisplayItems={allDisplayItems}

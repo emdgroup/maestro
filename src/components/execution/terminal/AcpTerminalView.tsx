@@ -15,7 +15,7 @@ import {
 import "@xterm/xterm/css/xterm.css";
 
 interface AcpTerminalViewProps {
-  logId: number;
+  sessionId: string;
   terminalId: string;
   initialOutput: string;
   onInput?: (data: string) => void;
@@ -26,7 +26,7 @@ function toTerminalOutput(s: string): string {
 }
 
 export function AcpTerminalView({
-  logId,
+  sessionId,
   terminalId,
   initialOutput,
   onInput,
@@ -94,7 +94,7 @@ export function AcpTerminalView({
     }
 
     const unlisten = listen<{ terminal_id: string; output: string }>(
-      `acp://terminal-output/${logId}`,
+      `acp://terminal-output/${sessionId}`,
       (event) => {
         if (event.payload.terminal_id !== terminalId) return;
         terminal.write(toTerminalOutput(event.payload.output));
@@ -110,7 +110,7 @@ export function AcpTerminalView({
       terminal.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logId, terminalId]);
+  }, [sessionId, terminalId]);
 
   useEffect(() => {
     const terminal = xtermRef.current;

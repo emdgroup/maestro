@@ -37,7 +37,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
 
 function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
   return {
-    session_key: 1,
+    session_id: "1",
     session_name: null,
     agent_id: "claude",
     execution_mode: "acp",
@@ -94,19 +94,19 @@ describe("sessionsByWorktree", () => {
   it("credits a session to the innermost worktree containing it, not to every ancestor", () => {
     const byPath = sessionsByWorktree(
       [root, child],
-      [session({ session_key: 1, cwd: "/repo/.maestro/worktrees/session-3/src" })],
+      [session({ session_id: "1", cwd: "/repo/.maestro/worktrees/session-3/src" })],
     );
 
-    expect(byPath.get("/repo/.maestro/worktrees/session-3")?.map((s) => s.session_key)).toEqual([
-      1,
+    expect(byPath.get("/repo/.maestro/worktrees/session-3")?.map((s) => s.session_id)).toEqual([
+      "1",
     ]);
     expect(byPath.get("/repo")).toEqual([]);
   });
 
   it("still credits a session running in the repository directory itself", () => {
-    const byPath = sessionsByWorktree([root, child], [session({ session_key: 7, cwd: "/repo" })]);
+    const byPath = sessionsByWorktree([root, child], [session({ session_id: "7", cwd: "/repo" })]);
 
-    expect(byPath.get("/repo")?.map((s) => s.session_key)).toEqual([7]);
+    expect(byPath.get("/repo")?.map((s) => s.session_id)).toEqual(["7"]);
     expect(byPath.get("/repo/.maestro/worktrees/session-3")).toEqual([]);
   });
 
@@ -177,13 +177,13 @@ describe("groupWorktrees", () => {
 describe("worktreeUsage", () => {
   it("splits the sessions in this worktree into linkable agents and a shell count", () => {
     const usage = worktreeUsage(worktree({ task_id: 4, task_name: "Do the thing" }), [
-      session({ session_key: 1 }),
-      session({ session_key: 2 }),
-      session({ session_key: 3, execution_mode: "pty" }),
+      session({ session_id: "1" }),
+      session({ session_id: "2" }),
+      session({ session_id: "3", execution_mode: "pty" }),
     ]);
 
     expect(usage.task).toEqual({ id: 4, name: "Do the thing" });
-    expect(usage.agents.map((a) => a.session_key)).toEqual([1, 2]);
+    expect(usage.agents.map((a) => a.session_id)).toEqual(["1", "2"]);
     expect(usage.shellCount).toBe(1);
   });
 

@@ -49,7 +49,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
 
 function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
   return {
-    session_key: 58,
+    session_id: "58",
     session_name: "reviewer",
     agent_id: null,
     execution_mode: "acp",
@@ -84,7 +84,7 @@ describe("pullRequestEntries", () => {
     expect(entry.worktree).toBe(wt);
     expect(entry.action).toEqual({
       kind: "open-session",
-      sessionKey: 58,
+      sessionId: "58",
       sessionLabel: "reviewer",
     });
   });
@@ -205,7 +205,7 @@ describe("pullRequestEntries", () => {
 
     const sessions = new Map([[wt.path, [session()]]]);
     const [running] = pullRequestEntries([fork], [wt], sessions, "origin", true);
-    expect(running.action).toMatchObject({ kind: "open-session", sessionKey: 58 });
+    expect(running.action).toMatchObject({ kind: "open-session", sessionId: "58" });
   });
 
   /**

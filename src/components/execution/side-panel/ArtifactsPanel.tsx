@@ -13,7 +13,7 @@ import { transferTooltip, useFileTransfer } from "./useFileTransfer";
 
 interface ArtifactsPanelProps {
   files: string[];
-  sessionKey: number;
+  sessionId: string;
   connection: ConnectionKey;
   wslDistroName?: string;
   isActive?: boolean;
@@ -22,7 +22,7 @@ interface ArtifactsPanelProps {
 
 export function ArtifactsPanel({
   files,
-  sessionKey,
+  sessionId,
   connection,
   wslDistroName,
   isActive = true,
@@ -34,7 +34,7 @@ export function ArtifactsPanel({
   const [zoom, setZoom] = useState(100);
   const openTransfer = useFileTransfer();
   const downloadTransfer = useFileTransfer();
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey ?? null);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId ?? null);
   const cwd = sessionMeta ? sessionMeta.cwd.replace(/\/+$/, "") : null;
 
   const relativeFiles = useMemo(
@@ -208,7 +208,7 @@ export function ArtifactsPanel({
 
       {/* Content */}
       <WorkingFileContentView
-        sessionKey={sessionKey}
+        sessionId={sessionId}
         connection={connection}
         filePath={selected}
         isActive={isActive}

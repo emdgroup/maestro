@@ -38,16 +38,16 @@ const MAX_THREAD_ENTRIES: usize = 20;
 ///
 /// Spawned off the reader loop by its callers: `canvas_await` blocks for up to a minute, and
 /// `create_task` touches the database and, for a remote project, may run `git` over SSH.
-pub(crate) async fn handle(app_state: Arc<AppState>, log_id: i32, call: HostToolCall) {
+pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: HostToolCall) {
     let outcome = match call.name.as_str() {
-        "create_task" => create_task(&app_state, log_id, &call.arguments).await,
-        "list_tasks" => list_tasks(&app_state, log_id, &call.arguments).await,
-        "get_task" => get_task(&app_state, log_id, &call.arguments).await,
-        "update_task" => update_task(&app_state, log_id, &call.arguments).await,
-        "comment_task" => comment_task(&app_state, log_id, &call.arguments).await,
-        "canvas_await" => canvas_await(&app_state, log_id, &call).await,
+        "create_task" => create_task(&app_state, session_id, &call.arguments).await,
+        "list_tasks" => list_tasks(&app_state, session_id, &call.arguments).await,
+        "get_task" => get_task(&app_state, session_id, &call.arguments).await,
+        "update_task" => update_task(&app_state, session_id, &call.arguments).await,
+        "comment_task" => comment_task(&app_state, session_id, &call.arguments).await,
+        "canvas_await" => canvas_await(&app_state, session_id, &call).await,
         "canvas_create" | "canvas_update" | "canvas_data" => {
-            canvas_ack(&app_state, log_id, &call.arguments).await
+            canvas_ack(&app_state, session_id, &call.arguments).await
         }
         other => Err(format!("unknown Maestro tool: {other}")),
     };
@@ -62,21 +62,21 @@ pub(crate) async fn handle(app_state: Arc<AppState>, log_id: i32, call: HostTool
         result,
         error,
     }));
-    if let Err(e) = crate::acp::write_to_acp_session(&app_state, log_id, &reply).await {
+    if let Err(e) = crate::acp::write_to_acp_session(&app_state, session_id, &reply).await {
         log::warn!(
-            "[acp] could not answer {} for session-{log_id}: {e}",
+            "[acp] could not answer {} for session-{session_id}: {e}",
             call.name
         );
     }
 }
 
-async fn session_project_id(app_state: &Arc<AppState>, log_id: i32) -> Result<i32, String> {
+async fn session_project_id(app_state: &Arc<AppState>, session_id: &str) -> Result<i32, String> {
     app_state
         .acp
         .sessions
         .lock()
         .await
-        .get(&log_id)
+        .get(session_id)
         .and_then(|session| session.project_id)
         .ok_or_else(|| "this session is not attached to a Maestro project".to_string())
 }
@@ -139,10 +139,10 @@ fn string_list(value: Option<&Value>) -> Vec<String> {
 
 async fn create_task(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let project_id = session_project_id(app_state, log_id).await?;
+    let project_id = session_project_id(app_state, session_id).await?;
     let title = parse_title(arguments)?;
     let priority = parse_priority(arguments)?;
 
@@ -198,10 +198,10 @@ async fn create_task(
 
 async fn list_tasks(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let project_id = session_project_id(app_state, log_id).await?;
+    let project_id = session_project_id(app_state, session_id).await?;
     let wanted: Option<TaskStatus> = match arguments.get("status") {
         Some(value) if !value.is_null() => Some(
             serde_json::from_value(value.clone())
@@ -241,14 +241,14 @@ async fn list_tasks(
 /// always wants and cannot otherwise name — it is told what to do, not which card that came from.
 async fn parse_task_id(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<i32, String> {
     match arguments.get("id") {
         None | Some(Value::Null) => {
             let sessions = app_state.acp.sessions.lock().await;
             sessions
-                .get(&log_id)
+                .get(session_id)
                 .and_then(|session| session.task_id)
                 .ok_or_else(|| "this session is not attached to a task — pass an id".to_string())
         }
@@ -286,11 +286,11 @@ fn task_summary(task: &crate::models::Task) -> Value {
 
 async fn get_task(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let project_id = session_project_id(app_state, log_id).await?;
-    let task_id = parse_task_id(app_state, log_id, arguments).await?;
+    let project_id = session_project_id(app_state, session_id).await?;
+    let task_id = parse_task_id(app_state, session_id, arguments).await?;
 
     let (task, thread) = {
         let conn = app_state
@@ -332,11 +332,11 @@ async fn get_task(
 
 async fn update_task(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let project_id = session_project_id(app_state, log_id).await?;
-    let task_id = parse_task_id(app_state, log_id, arguments).await?;
+    let project_id = session_project_id(app_state, session_id).await?;
+    let task_id = parse_task_id(app_state, session_id, arguments).await?;
     let status = parse_enum(arguments, "status", &STATUSES)?;
     let priority = parse_enum(arguments, "priority", &PRIORITIES)?;
 
@@ -397,11 +397,11 @@ async fn update_task(
 /// something a tool call can forge afterwards.
 async fn comment_task(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
-    let project_id = session_project_id(app_state, log_id).await?;
-    let task_id = parse_task_id(app_state, log_id, arguments).await?;
+    let project_id = session_project_id(app_state, session_id).await?;
+    let task_id = parse_task_id(app_state, session_id, arguments).await?;
     let body = arguments
         .get("body")
         .and_then(Value::as_str)
@@ -439,7 +439,7 @@ async fn comment_task(
 /// arrive on the *next* call by necessity — the frame has not rendered this one yet.
 async fn canvas_ack(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     arguments: &Value,
 ) -> Result<Value, String> {
     let Some(surface_id) = arguments.get("surfaceId").and_then(Value::as_str) else {
@@ -450,7 +450,7 @@ async fn canvas_ack(
         .canvas_errors
         .lock()
         .await
-        .remove(&(log_id, surface_id.to_string()));
+        .remove(&(session_id.to_string(), surface_id.to_string()));
     match drained {
         Some(errors) if !errors.is_empty() => Ok(json!({ "ok": true, "errors": errors })),
         _ => Ok(json!({ "ok": true })),
@@ -462,7 +462,7 @@ async fn canvas_ack(
 /// event names the surface either way.
 async fn canvas_await(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
     call: &HostToolCall,
 ) -> Result<Value, String> {
     let surface_id = match call.arguments.get("surfaceId") {
@@ -481,7 +481,7 @@ async fn canvas_await(
         .unwrap_or(DEFAULT_AWAIT_SECONDS)
         .clamp(1, MAX_AWAIT_SECONDS);
 
-    let key = (log_id, call.request_id.clone());
+    let key = (session_id.to_string(), call.request_id.clone());
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     app_state
         .acp
@@ -492,7 +492,7 @@ async fn canvas_await(
 
     let task_id = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).and_then(|session| session.task_id)
+        sessions.get(session_id).and_then(|session| session.task_id)
     };
     if let Some(task_id) = task_id {
         crate::acp::reader_task::mark_task_blocked(app_state, task_id);
@@ -500,10 +500,10 @@ async fn canvas_await(
 
     // `surface_id` is null for a wait that takes any surface; the panel reads it that way.
     if let Err(e) = app_state.app_handle.emit(
-        &format!("acp://canvas-await/{}", log_id),
+        &format!("acp://canvas-await/{}", session_id),
         &json!({ "request_id": call.request_id, "surface_id": surface_id }),
     ) {
-        log::warn!("[acp] emit canvas-await/{log_id} failed: {e}");
+        log::warn!("[acp] emit canvas-await/{session_id} failed: {e}");
     }
 
     let outcome = match tokio::time::timeout(std::time::Duration::from_secs(seconds), rx).await {
@@ -517,10 +517,10 @@ async fn canvas_await(
     };
 
     if let Err(e) = app_state.app_handle.emit(
-        &format!("acp://canvas-await-ended/{}", log_id),
+        &format!("acp://canvas-await-ended/{}", session_id),
         &json!({ "request_id": call.request_id }),
     ) {
-        log::warn!("[acp] emit canvas-await-ended/{log_id} failed: {e}");
+        log::warn!("[acp] emit canvas-await-ended/{session_id} failed: {e}");
     }
     crate::acp::prompt_handlers::clear_task_blocked(app_state, task_id);
 

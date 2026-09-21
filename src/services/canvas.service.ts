@@ -6,8 +6,8 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import type { CanvasSurface } from "@/components/execution/activity/types";
 import { surfaceFromHtml, surfaceToHtml } from "@/components/execution/activity/canvas/canvas-file";
 
-export async function saveCanvasSurface(logId: number, surface: CanvasSurface): Promise<void> {
-  await api.saveCanvasSurface(logId, surface.surfaceId, surfaceToHtml(surface));
+export async function saveCanvasSurface(sessionId: string, surface: CanvasSurface): Promise<void> {
+  await api.saveCanvasSurface(sessionId, surface.surfaceId, surfaceToHtml(surface));
 }
 
 /**
@@ -19,8 +19,8 @@ export async function saveCanvasSurface(logId: number, surface: CanvasSurface): 
  */
 export function useDeleteCanvasSurfaceMutation() {
   return useMutation({
-    mutationFn: ({ logId, surfaceId }: { logId: number; surfaceId: string }) =>
-      api.deleteCanvasSurface(logId, surfaceId),
+    mutationFn: ({ sessionId, surfaceId }: { sessionId: string; surfaceId: string }) =>
+      api.deleteCanvasSurface(sessionId, surfaceId),
     onError: createErrorToastHandler("Failed to delete the saved canvas file"),
   });
 }
@@ -53,8 +53,8 @@ export function useExportCanvasSurfaceMutation() {
   });
 }
 
-export async function loadSavedCanvases(logId: number): Promise<CanvasSurface[]> {
-  const files = await api.loadSavedCanvases(logId);
+export async function loadSavedCanvases(sessionId: string): Promise<CanvasSurface[]> {
+  const files = await api.loadSavedCanvases(sessionId);
   return files.map(surfaceFromHtml).filter((s): s is CanvasSurface => s !== null);
 }
 
@@ -73,9 +73,9 @@ export async function readImportedCanvasFile(path: string): Promise<string> {
  * the one the file was picked from.
  */
 export async function saveCanvasImport(
-  logId: number,
+  sessionId: string,
   fileName: string,
   html: string,
 ): Promise<string> {
-  return api.saveCanvasImport(logId, fileName, html);
+  return api.saveCanvasImport(sessionId, fileName, html);
 }

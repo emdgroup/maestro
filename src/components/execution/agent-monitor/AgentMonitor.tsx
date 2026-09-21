@@ -162,7 +162,7 @@ function RoleChip({
 interface SessionRowProps {
   session: ActiveSessionInfo;
   isSelected: boolean;
-  onSelect: (sessionKey: number) => void;
+  onSelect: (sessionId: string) => void;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
@@ -177,7 +177,7 @@ const SessionRow = memo(function SessionRow({
   agentIcons,
   profileNames,
 }: SessionRowProps) {
-  const activityInfo = useSessionActivity(session.session_key);
+  const activityInfo = useSessionActivity(session.session_id);
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
   const name =
     session.session_name ?? session.task_name ?? session.branch_name ?? "Interactive session";
@@ -199,7 +199,7 @@ const SessionRow = memo(function SessionRow({
       <Tooltip>
         <TooltipTrigger render={<span className="block" />}>
           <div
-            onClick={() => onSelect(session.session_key)}
+            onClick={() => onSelect(session.session_id)}
             className={cn(
               "pr-row relative flex items-stretch cursor-pointer transition-colors",
               isSelected && "selected-session-item selected",
@@ -232,7 +232,7 @@ const SessionRow = memo(function SessionRow({
                   {name}
                 </span>
                 <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
-                  #{session.session_key}
+                  #{session.session_id}
                 </span>
               </div>
               {session.execution_mode === "acp" && (
@@ -285,39 +285,39 @@ const SessionRow = memo(function SessionRow({
 
 interface AgentMonitorProps {
   sessions: ActiveSessionInfo[];
-  selectedSessionKey: number | null;
-  onSelect: (sessionKey: number) => void;
+  selectedSessionId: string | null;
+  onSelect: (sessionId: string) => void;
   search: string;
   onClose?: (session: ActiveSessionInfo) => void;
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   projectId?: number;
-  newSessionKey?: number | null;
+  newSessionId?: string | null;
   onSpawnShell?: (
     branchName: string | null,
     taskId: number | null,
     embedded?: boolean,
-  ) => Promise<number | null>;
+  ) => Promise<string | null>;
   connection: ConnectionKey;
 }
 
 export function AgentMonitor({
   sessions,
-  selectedSessionKey,
+  selectedSessionId,
   onSelect,
   search,
   onClose,
   agentIcons,
   agentNames,
   projectId,
-  newSessionKey,
+  newSessionId,
   onSpawnShell,
   connection,
 }: AgentMonitorProps) {
   const { state } = useSidebar();
   const [railExpanded, setRailExpanded] = useState(false);
-  const selectedActivityInfo = useSessionActivity(selectedSessionKey ?? undefined);
-  const [renamingKey, setRenamingKey] = useState<number | null>(null);
+  const selectedActivityInfo = useSessionActivity(selectedSessionId ?? undefined);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCanceledRef = useRef(false);
@@ -339,7 +339,7 @@ export function AgentMonitor({
     (session: ActiveSessionInfo) => {
       if (renameCanceledRef.current) {
         renameCanceledRef.current = false;
-        setRenamingKey(null);
+        setRenamingSessionId(null);
         return;
       }
       const trimmed = renameValue.trim();
@@ -358,7 +358,7 @@ export function AgentMonitor({
           displayName: trimmed,
         });
       }
-      setRenamingKey(null);
+      setRenamingSessionId(null);
     },
     [renameValue, projectId, renameMutation],
   );
@@ -373,7 +373,7 @@ export function AgentMonitor({
     );
   }, [sessions, search]);
 
-  const selectedSession = sessions.find((s) => s.session_key === selectedSessionKey);
+  const selectedSession = sessions.find((s) => s.session_id === selectedSessionId);
 
   const renderSessionHeader = (session: ActiveSessionInfo) => (
     <div className="px-4 py-3 border-b border-border bg-background shrink-0">
@@ -404,14 +404,14 @@ export function AgentMonitor({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             {session.execution_mode === "acp" && session.acp_session_id ? (
-              <Tooltip disabled={renamingKey === session.session_key} trackCursorAxis="x">
+              <Tooltip disabled={renamingSessionId === session.session_id} trackCursorAxis="x">
                 <TooltipTrigger
                   render={
                     <input
                       ref={renameInputRef}
                       className="text-sm font-semibold bg-transparent border border-transparent rounded px-1 -mx-1 outline-none hover:border-border/50 focus:border-border/70 focus:bg-muted/20 transition-colors cursor-default focus:cursor-text min-w-0 flex-1 overflow-hidden whitespace-nowrap mask-[linear-gradient(to_right,black_calc(100%-3rem),transparent)]"
                       value={
-                        renamingKey === session.session_key
+                        renamingSessionId === session.session_id
                           ? renameValue
                           : (session.session_name ??
                             session.task_name ??
@@ -419,7 +419,7 @@ export function AgentMonitor({
                             "Interactive session")
                       }
                       onFocus={() => {
-                        setRenamingKey(session.session_key);
+                        setRenamingSessionId(session.session_id);
                         setRenameValue(
                           session.session_name ?? session.task_name ?? session.branch_name ?? "",
                         );
@@ -458,7 +458,7 @@ export function AgentMonitor({
                 <button
                   onClick={() =>
                     cancelSession.mutate({
-                      sessionKey: session.session_key,
+                      sessionId: session.session_id,
                       executionMode: session.execution_mode,
                     })
                   }
@@ -536,9 +536,9 @@ export function AgentMonitor({
           <SidebarMenu className="gap-0">
             {filteredSessions.map((session) => (
               <SessionRow
-                key={session.session_key}
+                key={session.session_id}
                 session={session}
-                isSelected={session.session_key === selectedSessionKey}
+                isSelected={session.session_id === selectedSessionId}
                 onSelect={onSelect}
                 onClose={state === "collapsed" && !railExpanded ? undefined : onClose}
                 agentIcons={agentIcons}
@@ -557,19 +557,19 @@ export function AgentMonitor({
           .filter((s) => s.execution_mode === "acp")
           .map((s) => (
             <div
-              key={s.session_key}
+              key={s.session_id}
               className={cn(
                 "flex-1 flex flex-col min-h-0",
-                s.session_key !== selectedSessionKey && "hidden",
+                s.session_id !== selectedSessionId && "hidden",
               )}
             >
               <AgentActivityPanel
-                sessionKey={s.session_key}
+                sessionId={s.session_id}
                 agentId={s.agent_id ?? null}
                 connection={connection}
-                isSelected={s.session_key === selectedSessionKey}
-                isNewSession={s.session_key === newSessionKey}
-                headerSlot={s.session_key === selectedSessionKey ? renderSessionHeader(s) : null}
+                isSelected={s.session_id === selectedSessionId}
+                isNewSession={s.session_id === newSessionId}
+                headerSlot={s.session_id === selectedSessionId ? renderSessionHeader(s) : null}
                 onSpawnShell={
                   onSpawnShell
                     ? () => onSpawnShell(s.branch_name ?? null, s.task_id ?? null, true)
@@ -585,8 +585,8 @@ export function AgentMonitor({
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 {renderSessionHeader(selectedSession)}
                 <TerminalComponent
-                  key={selectedSession.session_key}
-                  taskId={selectedSession.session_key}
+                  key={selectedSession.session_id}
+                  sessionId={selectedSession.session_id}
                 />
               </div>
             </div>

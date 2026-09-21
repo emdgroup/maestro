@@ -15,7 +15,7 @@ function toolKindCategory(kind: string): string {
 }
 
 export function useActivityStatusManager(
-  sessionKey: number,
+  sessionId: string,
   liveState: Pick<ActivityState, "items" | "isInitializing" | "isTurnActive" | "sessionEnded">,
   pendingSendRef: MutableRefObject<boolean>,
   awaitingUserInput = false,
@@ -23,16 +23,16 @@ export function useActivityStatusManager(
   const { setActivity, removeActivity, resetIfStale } = useSessionActivityActions();
 
   useEffect(() => {
-    setActivity(sessionKey, "spawning");
+    setActivity(sessionId, "spawning");
     return () => {
-      removeActivity(sessionKey);
+      removeActivity(sessionId);
     };
-  }, [sessionKey, setActivity, removeActivity]);
+  }, [sessionId, setActivity, removeActivity]);
 
   useEffect(() => {
     if (liveState.isInitializing) return;
     if (liveState.sessionEnded) {
-      removeActivity(sessionKey);
+      removeActivity(sessionId);
       return;
     }
     // A pending permission or elicitation outranks anything the item tail says. The
@@ -40,7 +40,7 @@ export function useActivityStatusManager(
     // late tool_call (AskUserQuestion's is suppressed from `items` but still rebuilds
     // the array) would otherwise overwrite awaiting_input with thinking.
     if (awaitingUserInput) {
-      setActivity(sessionKey, "awaiting_input");
+      setActivity(sessionId, "awaiting_input");
       return;
     }
 
@@ -50,7 +50,7 @@ export function useActivityStatusManager(
 
     if (!lastItem || !liveState.isTurnActive) {
       if (!pendingSendRef.current) {
-        setActivity(sessionKey, "idle");
+        setActivity(sessionId, "idle");
       }
       return;
     }
@@ -61,20 +61,20 @@ export function useActivityStatusManager(
       (lastItem.type === "thinking" || lastItem.type === "message") &&
       lastItem.item.isStreaming
     ) {
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
     } else if (lastItem.type === "toolCall") {
       const tc = lastItem.item;
       if (tc.status === "pending" || tc.status === "in_progress") {
         if (/think/.test(tc.kind)) {
-          setActivity(sessionKey, "thinking");
+          setActivity(sessionId, "thinking");
         } else if (/switch_mode/.test(tc.kind)) {
-          setActivity(sessionKey, "awaiting_input");
+          setActivity(sessionId, "awaiting_input");
         } else {
-          setActivity(sessionKey, "acting", toolKindCategory(tc.kind));
+          setActivity(sessionId, "acting", toolKindCategory(tc.kind));
         }
       } else {
         // Tool completed — agent is processing the result before the next step.
-        setActivity(sessionKey, "thinking");
+        setActivity(sessionId, "thinking");
       }
     } else {
       // Turn is active but the tail carries no progress signal — a user message the
@@ -84,7 +84,7 @@ export function useActivityStatusManager(
       // (recent models omit thinking text) leave that window open for their whole
       // reasoning phase. Replay cannot reach this branch: replay-drained and spawn-ok
       // both dispatch `turn_ended`, which clears isTurnActive.
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
     }
   }, [
     liveState.items,
@@ -92,7 +92,7 @@ export function useActivityStatusManager(
     liveState.isTurnActive,
     liveState.sessionEnded,
     awaitingUserInput,
-    sessionKey,
+    sessionId,
     setActivity,
     removeActivity,
     pendingSendRef,
@@ -103,12 +103,12 @@ export function useActivityStatusManager(
   useEffect(() => {
     if (!liveState.isInitializing) return;
     if (liveState.sessionEnded) {
-      removeActivity(sessionKey);
+      removeActivity(sessionId);
       return;
     }
-    const id = setTimeout(() => setActivity(sessionKey, "stale"), 15_000);
+    const id = setTimeout(() => setActivity(sessionId, "stale"), 15_000);
     return () => clearTimeout(id);
-  }, [liveState.isInitializing, liveState.sessionEnded, sessionKey, setActivity, removeActivity]);
+  }, [liveState.isInitializing, liveState.sessionEnded, sessionId, setActivity, removeActivity]);
 
   // Stale connection detector: if a turn is active but no new events arrive for 45s,
   // mark the session stale so the UI can show a warning and offer a force-end action.
@@ -121,18 +121,18 @@ export function useActivityStatusManager(
     let unlisten: (() => void) | undefined;
     listen("acp://heartbeat", () => {
       setHeartbeatCount((n) => n + 1);
-      resetIfStale(sessionKey);
+      resetIfStale(sessionId);
     }).then((fn) => {
       unlisten = fn;
     });
     return () => unlisten?.();
-  }, [sessionKey, resetIfStale]);
+  }, [sessionId, resetIfStale]);
 
   useEffect(() => {
     if (!liveState.isTurnActive || liveState.sessionEnded || liveState.isInitializing) return;
     // Waiting on the user is not a stalled connection — the agent is blocked on us.
     if (awaitingUserInput) return;
-    const id = setTimeout(() => setActivity(sessionKey, "stale"), 45_000);
+    const id = setTimeout(() => setActivity(sessionId, "stale"), 45_000);
     return () => clearTimeout(id);
   }, [
     liveState.isTurnActive,
@@ -141,7 +141,7 @@ export function useActivityStatusManager(
     awaitingUserInput,
     itemsLength,
     heartbeatCount,
-    sessionKey,
+    sessionId,
     setActivity,
   ]);
 }

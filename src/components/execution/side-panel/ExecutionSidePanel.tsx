@@ -26,7 +26,7 @@ import type { PendingCanvasAwait } from "@/components/execution/activity/canvas/
 export type { SidePanelTab, TabKind } from "./useSidePanelTabs";
 
 interface ExecutionSidePanelProps {
-  sessionKey: number;
+  sessionId: string;
   tabs: SidePanelTab[];
   activeTabId: string;
   onTabChange: (id: string) => void;
@@ -59,7 +59,7 @@ interface ExecutionSidePanelProps {
   onMaximizedChange?: (v: boolean) => void;
   fill?: boolean;
   isSessionActive?: boolean;
-  onSpawnShell?: () => Promise<number | null>;
+  onSpawnShell?: () => Promise<string | null>;
   terminalBuffers?: Map<string, string>;
   onSendAnnotations: (annotations: Annotation[]) => void;
   isProcessing?: boolean;
@@ -68,7 +68,7 @@ interface ExecutionSidePanelProps {
 }
 
 export function ExecutionSidePanel({
-  sessionKey,
+  sessionId,
   tabs,
   activeTabId,
   onTabChange,
@@ -216,7 +216,7 @@ export function ExecutionSidePanel({
                 tabs={tabs}
                 activeTabId={activeTabId}
                 isSessionActive={isSessionActive}
-                sessionKey={sessionKey}
+                sessionId={sessionId}
                 subagentItems={subagentItems}
                 toolCallMap={toolCallMap}
                 sidePanelPlan={sidePanelPlan}

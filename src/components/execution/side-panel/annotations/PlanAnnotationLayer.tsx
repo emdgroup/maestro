@@ -20,7 +20,7 @@ const COMPOSER_HEIGHT = 172;
 const COMMENT_HEIGHT = 116;
 
 interface PlanAnnotationLayerProps {
-  sessionKey: number;
+  sessionId: string;
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
   /** Overrides the send button's wording — see `AnnotationBar`. */
@@ -39,7 +39,7 @@ interface PlanAnnotationLayerProps {
  * live ranges and the scroller, and the bar is where the send button and that navigation live.
  */
 export function PlanAnnotationLayer({
-  sessionKey,
+  sessionId,
   onSend,
   sendDisabled,
   sendLabel,
@@ -49,7 +49,7 @@ export function PlanAnnotationLayer({
 }: PlanAnnotationLayerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const annotations = useSessionAnnotations(sessionKey, "plan");
+  const annotations = useSessionAnnotations(sessionId, "plan");
   const { addAnnotation, updateAnnotation, removeAnnotations } = useAnnotationStore();
   const instanceId = useId();
 
@@ -281,7 +281,7 @@ export function PlanAnnotationLayer({
           </span>
         ) : (
           <AnnotationBar
-            sessionKey={sessionKey}
+            sessionId={sessionId}
             kind="plan"
             onSend={onSend}
             sendDisabled={sendDisabled}
@@ -312,7 +312,7 @@ export function PlanAnnotationLayer({
               {pending.composing ? (
                 <AnnotationComposer
                   onSubmit={(text) => {
-                    addAnnotation(sessionKey, {
+                    addAnnotation(sessionId, {
                       id: crypto.randomUUID(),
                       kind: "plan",
                       quote: pending.quote,
@@ -351,9 +351,9 @@ export function PlanAnnotationLayer({
                 <PendingCommentBlock
                   bare
                   text={viewing.text}
-                  onEdit={(text) => updateAnnotation(sessionKey, viewing.id, text)}
+                  onEdit={(text) => updateAnnotation(sessionId, viewing.id, text)}
                   onRemove={() => {
-                    removeAnnotations(sessionKey, [viewing.id]);
+                    removeAnnotations(sessionId, [viewing.id]);
                     setViewingId(null);
                   }}
                   onSend={() => {

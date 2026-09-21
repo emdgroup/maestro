@@ -7,6 +7,7 @@ pub use crate::connectivity::ssh_handlers::*;
 pub use crate::connectivity::wsl_handlers::*;
 pub use crate::git::review_handlers::*;
 pub use crate::git::worktree_handlers::*;
+pub use crate::project::automations::*;
 pub use crate::project::handlers::*;
 pub use crate::project::profiles::*;
 pub use crate::task::handlers::*;

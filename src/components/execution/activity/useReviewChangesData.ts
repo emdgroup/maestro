@@ -5,15 +5,15 @@ import { useAcpSessionMeta } from "@/services/execution.service";
 import { buildDisplayItems } from "@/components/execution/diff/useReviewItems";
 
 export function useReviewChangesData({
-  sessionKey,
+  sessionId,
   isActive,
   onDiffStats,
 }: {
-  sessionKey: number;
+  sessionId: string;
   isActive: boolean;
   onDiffStats?: (stats: { insertions: number; deletions: number } | null) => void;
 }) {
-  const { data: sessionMeta, isError: metaError } = useAcpSessionMeta(sessionKey ?? null);
+  const { data: sessionMeta, isError: metaError } = useAcpSessionMeta(sessionId ?? null);
   const projectId = sessionMeta?.project_id ?? null;
   const cwd = sessionMeta?.cwd ?? null;
   const startSha = sessionMeta?.session_start_sha ?? null;

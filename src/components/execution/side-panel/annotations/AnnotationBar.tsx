@@ -25,7 +25,7 @@ export function annotationLabel(a: Annotation): string {
 }
 
 interface AnnotationBarProps {
-  sessionKey: number;
+  sessionId: string;
   kind: Annotation["kind"];
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
@@ -51,7 +51,7 @@ interface AnnotationBarProps {
 }
 
 export function AnnotationBar({
-  sessionKey,
+  sessionId,
   kind,
   onSend,
   sendDisabled,
@@ -60,7 +60,7 @@ export function AnnotationBar({
   activeId,
   isStale,
 }: AnnotationBarProps) {
-  const annotations = useSessionAnnotations(sessionKey, kind);
+  const annotations = useSessionAnnotations(sessionId, kind);
   const [open, setOpen] = useState(false);
 
   if (annotations.length === 0) return null;
@@ -91,7 +91,7 @@ export function AnnotationBar({
             {annotations.length}
           </PopoverTrigger>
           <AnnotationListPanel
-            sessionKey={sessionKey}
+            sessionId={sessionId}
             annotations={annotations}
             onSend={onSend}
             sendDisabled={sendDisabled}
@@ -106,7 +106,7 @@ export function AnnotationBar({
 }
 
 function AnnotationListPanel({
-  sessionKey,
+  sessionId,
   annotations,
   onSend,
   sendDisabled,
@@ -114,7 +114,7 @@ function AnnotationListPanel({
   activeId,
   isStale,
 }: {
-  sessionKey: number;
+  sessionId: string;
   annotations: Annotation[];
   onSend: (annotations: Annotation[]) => void;
   sendDisabled?: boolean;
@@ -238,7 +238,7 @@ function AnnotationListPanel({
                     onKeyDown={(e) => {
                       if (e.key === "Escape") setEditingId(null);
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        if (draft.trim()) updateAnnotation(sessionKey, a.id, draft.trim());
+                        if (draft.trim()) updateAnnotation(sessionId, a.id, draft.trim());
                         setEditingId(null);
                       }
                     }}
@@ -270,7 +270,7 @@ function AnnotationListPanel({
                             disabled={!draft.trim()}
                             aria-label="Save"
                             onClick={() => {
-                              updateAnnotation(sessionKey, a.id, draft.trim());
+                              updateAnnotation(sessionId, a.id, draft.trim());
                               setEditingId(null);
                             }}
                           />
@@ -334,7 +334,7 @@ function AnnotationListPanel({
                         size="icon-xs"
                         aria-label="Delete"
                         className="text-muted-foreground hover:text-destructive"
-                        onClick={() => removeAnnotations(sessionKey, [a.id])}
+                        onClick={() => removeAnnotations(sessionId, [a.id])}
                       />
                     }
                   >
@@ -366,7 +366,7 @@ function AnnotationListPanel({
             variant="ghost"
             className="h-6 text-xs text-muted-foreground hover:text-destructive"
             onClick={() => {
-              removeAnnotations(sessionKey, [...selected]);
+              removeAnnotations(sessionId, [...selected]);
               setSelected(new Set());
             }}
           >

@@ -503,7 +503,7 @@ pub struct SessionListRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SessionLoadRequest {
     pub agent_id: String,
-    /// Maestro routing key for this session (e.g. "session-{log_id}"). Used by
+    /// Maestro routing key for this session: the id the host minted for it. Used by
     /// maestro-server to key the session in its internal map so all subsequent
     /// Prompt/Permission/etc. requests (which use the same routing key) find it.
     pub session_id: String,

@@ -140,7 +140,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // No-op unless this is an AppImage: gives the running window an icon the desktop can find.
     maestro_lib::core::desktop_entry::install_for_appimage();
 
-    // A re-downloadable copy of files read over SFTP, keyed by a log_id that does not outlive the
+    // A re-downloadable copy of files read over SFTP, keyed by a session id that does not outlive the
     // run, so nothing in it is worth keeping. Cleared here rather than when a session ends because
     // SSH sessions — the only ones that populate it — run on a shared connection server and have no
     // per-session reader loop to hang the delete off, and no teardown path runs after a crash.
@@ -202,16 +202,19 @@ fn main() {
                         .is_closing
                         .store(true, std::sync::atomic::Ordering::Relaxed);
 
-                    let session_keys: Vec<i32> =
-                        state.acp.sessions.lock().await.keys().copied().collect();
-                    for log_id in session_keys {
-                        let session_id = format!("session-{}", log_id);
+                    let session_ids: Vec<String> =
+                        state.acp.sessions.lock().await.keys().cloned().collect();
+                    for session_id in session_ids {
                         let cancel_msg =
                             MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
-                                session_id,
+                                session_id: session_id.clone(),
                             }));
-                        let _ = maestro_lib::acp::write_to_acp_session(&state, log_id, &cancel_msg)
-                            .await;
+                        let _ = maestro_lib::acp::write_to_acp_session(
+                            &state,
+                            &session_id,
+                            &cancel_msg,
+                        )
+                        .await;
                     }
                     // Give maestro-server time to forward CloseSessionRequest to agents.
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;

@@ -114,7 +114,7 @@ type ShipArgs = { taskId?: number | null; isProcessing?: boolean; visible?: bool
 function ship(args?: ShipArgs) {
   return renderHook(() =>
     useSessionShipState(
-      58,
+      "58",
       args?.taskId ?? null,
       args?.isProcessing ?? false,
       "C:/repo",
@@ -333,7 +333,7 @@ describe("useSessionShipState", () => {
    */
   it("counts only the sessions sharing this workspace", () => {
     const base: ActiveSessionInfo = {
-      session_key: 0,
+      session_id: "0",
       session_name: null,
       agent_id: null,
       execution_mode: "acp",
@@ -351,16 +351,16 @@ describe("useSessionShipState", () => {
       project_id: 1,
     };
     sessions.current = [
-      { ...base, session_key: 58, cwd: "C:/repo/.maestro/worktrees/session-58" },
+      { ...base, session_id: "58", cwd: "C:/repo/.maestro/worktrees/session-58" },
       {
         ...base,
-        session_key: 59,
+        session_id: "59",
         session_name: "reviewer",
         cwd: "C:\\repo\\.maestro\\worktrees\\session-58",
       },
       {
         ...base,
-        session_key: 60,
+        session_id: "60",
         session_name: "elsewhere",
         cwd: "C:/repo/.maestro/worktrees/session-12",
       },

@@ -94,6 +94,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::reject_review,
         crate::ipc::list_agent_profiles,
         crate::ipc::save_agent_profiles,
+        crate::ipc::list_automations,
+        crate::ipc::save_automations,
         crate::ipc::resolve_agent_profile,
         crate::ipc::get_project_settings,
         crate::ipc::update_project_settings,

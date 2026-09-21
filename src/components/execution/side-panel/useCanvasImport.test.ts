@@ -6,12 +6,13 @@ import { surfaceToHtml } from "@/components/execution/activity/canvas/canvas-fil
 import type { CanvasSurface } from "@/components/execution/activity/types";
 
 const readImportedCanvasFile = vi.fn<(path: string) => Promise<string>>();
-const saveCanvasImport = vi.fn<(logId: number, name: string, html: string) => Promise<string>>();
+const saveCanvasImport =
+  vi.fn<(sessionId: string, name: string, html: string) => Promise<string>>();
 
 vi.mock("@/services/canvas.service", () => ({
   readImportedCanvasFile: (path: string) => readImportedCanvasFile(path),
-  saveCanvasImport: (logId: number, name: string, html: string) =>
-    saveCanvasImport(logId, name, html),
+  saveCanvasImport: (sessionId: string, name: string, html: string) =>
+    saveCanvasImport(sessionId, name, html),
 }));
 
 const SURFACE: CanvasSurface = {
@@ -29,7 +30,7 @@ function setup(canvasMap = new Map<string, CanvasSurface>()) {
   const onCloseSurface = vi.fn();
   const onPrompt = vi.fn();
   const view = renderHook(() =>
-    useCanvasImport({ logId: 7, canvasMap, onSurface, onCloseSurface, onPrompt }),
+    useCanvasImport({ sessionId: "7", canvasMap, onSurface, onCloseSurface, onPrompt }),
   );
   return { view, onSurface, onCloseSurface, onPrompt };
 }

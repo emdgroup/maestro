@@ -3,10 +3,10 @@ import { api } from "@/lib/tauri-utils";
 import type { MentionEntry } from "./mentionEntry";
 
 interface Params {
-  logId: number | null | undefined;
+  sessionId: string | null | undefined;
 }
 
-export function useMentionAutocomplete({ logId }: Params) {
+export function useMentionAutocomplete({ sessionId }: Params) {
   const [mentions, setMentions] = useState<MentionEntry[]>([]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState<string[]>([]);
@@ -17,11 +17,11 @@ export function useMentionAutocomplete({ logId }: Params) {
   const mentionButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
   useEffect(() => {
-    if (!showMentions || !logId) return;
+    if (!showMentions || !sessionId) return;
     if (mentionSearchRef.current) clearTimeout(mentionSearchRef.current);
     mentionSearchRef.current = setTimeout(async () => {
       try {
-        const results = await api.searchSessionFiles(logId, mentionQuery, 20);
+        const results = await api.searchSessionFiles(sessionId, mentionQuery, 20);
         setMentionSuggestions(results);
         setMentionHighlight(0);
       } catch {
@@ -31,7 +31,7 @@ export function useMentionAutocomplete({ logId }: Params) {
     return () => {
       if (mentionSearchRef.current) clearTimeout(mentionSearchRef.current);
     };
-  }, [showMentions, mentionQuery, logId]);
+  }, [showMentions, mentionQuery, sessionId]);
 
   useEffect(() => {
     const button = mentionButtonRefs.current.get(mentionHighlight);
@@ -57,7 +57,7 @@ export function useMentionAutocomplete({ logId }: Params) {
     (value: string, cursor: number) => {
       const textToCursor = value.slice(0, cursor);
       const atMatch = textToCursor.match(/(?:^|[\s\n])(@)([^\s]*)$/);
-      if (atMatch && logId) {
+      if (atMatch && sessionId) {
         const triggerPos = textToCursor.lastIndexOf("@");
         const query = atMatch[2];
         setMentionTriggerOffset(triggerPos);
@@ -67,7 +67,7 @@ export function useMentionAutocomplete({ logId }: Params) {
         closeMentions();
       }
     },
-    [logId, closeMentions],
+    [sessionId, closeMentions],
   );
 
   // Returns true if the event was consumed

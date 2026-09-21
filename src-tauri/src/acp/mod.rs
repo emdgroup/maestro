@@ -33,10 +33,6 @@ pub(crate) const HOST_TRIPLE: &str = "aarch64-apple-darwin";
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub(crate) const HOST_TRIPLE: &str = "x86_64-pc-windows-msvc";
 
-pub(crate) fn session_id_for(log_id: i32) -> String {
-    format!("session-{}", log_id)
-}
-
 /// Identifies which connection server (or local instance) owns a session or cache entry.
 #[derive(
     Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, specta::Type,

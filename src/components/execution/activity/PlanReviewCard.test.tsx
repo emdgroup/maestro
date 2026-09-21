@@ -4,7 +4,7 @@ import { PlanReviewCard, PendingPlanCard } from "./PlanReviewCard";
 import { useAnnotationStore } from "@/store/annotationStore";
 import type { ToolCallItem } from "./types";
 
-const SESSION = 3;
+const SESSION = "3";
 const TITLE = "Move plan approval back into the stream";
 
 function planCall(status: ToolCallItem["status"]): ToolCallItem {
@@ -32,7 +32,7 @@ function setup(options: unknown[] | null = CLAUDE_OPTIONS, modelId: string | nul
   render(
     <PendingPlanCard
       title={TITLE}
-      sessionKey={SESSION}
+      sessionId={SESSION}
       modelId={modelId}
       requestId="perm-1"
       payload={

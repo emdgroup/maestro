@@ -100,13 +100,13 @@ export interface SessionShipState {
  * at it.
  */
 export function useSessionShipState(
-  sessionKey: number,
+  sessionId: string,
   taskId: number | null,
   isProcessing: boolean,
   projectPath: string | null,
   visible: boolean,
 ): SessionShipState {
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const projectId = sessionMeta?.project_id ?? null;
 
   const { data: worktrees } = useWorktreesQuery(projectId ?? undefined, projectPath ?? undefined, {
@@ -185,14 +185,12 @@ export function useSessionShipState(
     () =>
       (activeSessions ?? [])
         .filter(
-          (session) =>
-            session.session_key !== sessionKey && samePath(session.cwd, sessionMeta?.cwd),
+          (session) => session.session_id !== sessionId && samePath(session.cwd, sessionMeta?.cwd),
         )
         .map(
-          (session) =>
-            session.session_name ?? session.task_name ?? `Session ${session.session_key}`,
+          (session) => session.session_name ?? session.task_name ?? `Session ${session.session_id}`,
         ),
-    [activeSessions, sessionKey, sessionMeta?.cwd],
+    [activeSessions, sessionId, sessionMeta?.cwd],
   );
 
   // A merged pull request sitting on this exact commit means the work is done, and both offers

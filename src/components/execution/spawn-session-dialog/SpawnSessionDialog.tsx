@@ -43,7 +43,7 @@ interface SpawnSessionDialogProps {
   repoPath: string;
   connection: ConnectionKey;
   worktrees: WorktreeWithStatus[];
-  onSuccess: (sessionKey: number, createdWorktree: CreatedWorktree | null) => void;
+  onSuccess: (sessionId: string, createdWorktree: CreatedWorktree | null) => void;
   /**
    * Where the dialog should start when it is opened for something specific, rather than from the
    * "New Session" button that means "anywhere".
@@ -224,9 +224,9 @@ export function SpawnSessionDialog({
           worktreeId: worktree.id,
         },
         {
-          onSuccess: (sessionKey) => {
+          onSuccess: (sessionId) => {
             onOpenChange(false);
-            onSuccess(sessionKey, created);
+            onSuccess(sessionId, created);
           },
           onError: (error) => setSpawnError(String(error)),
         },
@@ -244,7 +244,7 @@ export function SpawnSessionDialog({
         {
           onSuccess: (result) => {
             onOpenChange(false);
-            onSuccess(result.log_id, created);
+            onSuccess(result.session_id, created);
           },
           onError: (error) => setSpawnError(String(error)),
         },

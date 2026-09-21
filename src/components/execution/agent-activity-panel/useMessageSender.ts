@@ -35,7 +35,7 @@ function waitForTurnEnd(isTurnActiveRef: React.RefObject<boolean>): Promise<void
 }
 
 export function useMessageSender({
-  sessionKey,
+  sessionId,
   isProcessing,
   pendingPermission,
   pendingElicitation,
@@ -52,7 +52,7 @@ export function useMessageSender({
   isTurnActiveRef,
   pendingCanvasAwaitsRef,
 }: {
-  sessionKey: number;
+  sessionId: string;
   isProcessing: boolean;
   pendingPermission: PendingPermission | null;
   pendingElicitation: PendingElicitation | null;
@@ -96,12 +96,12 @@ export function useMessageSender({
         if (waiting.length === 0) return;
         autoResumeSpentRef.current = true;
         try {
-          await api.interruptAcpTurn(sessionKey);
+          await api.interruptAcpTurn(sessionId);
         } catch {
           // Best-effort: answering the waits below still unblocks the agent.
         }
         for (const { requestId } of waiting) {
-          await api.respondHostTool(sessionKey, requestId, { timeout: true }).catch(() => {});
+          await api.respondHostTool(sessionId, requestId, { timeout: true }).catch(() => {});
         }
         await waitForTurnEnd(isTurnActiveRef);
       }
@@ -112,7 +112,7 @@ export function useMessageSender({
       if (pendingPermission && isPlanPermission(pendingPermission.payload)) {
         autoResumeSpentRef.current = true;
         try {
-          await api.interruptAcpTurn(sessionKey);
+          await api.interruptAcpTurn(sessionId);
         } catch {
           // Best-effort: answering the request below still unblocks the agent.
         }
@@ -122,21 +122,21 @@ export function useMessageSender({
       }
       liveDispatch({ type: "finalize_streaming" });
       pendingSendRef.current = true;
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
       try {
         if (contentBlocks) {
-          await api.sendAcpPromptStructured(sessionKey, contentBlocks);
+          await api.sendAcpPromptStructured(sessionId, contentBlocks);
         } else {
-          await api.sendAcpPrompt(sessionKey, content);
+          await api.sendAcpPrompt(sessionId, content);
         }
       } catch {
         pendingSendRef.current = false;
-        setActivity(sessionKey, "idle");
+        setActivity(sessionId, "idle");
       }
     },
     [
       isProcessing,
-      sessionKey,
+      sessionId,
       liveDispatch,
       setActivity,
       pendingPermission,
@@ -153,7 +153,7 @@ export function useMessageSender({
     // unfinished tool call `interrupted`, and auto-resume must not read that as an abandoned turn.
     autoResumeSpentRef.current = true;
     try {
-      await api.interruptAcpTurn(sessionKey);
+      await api.interruptAcpTurn(sessionId);
       // A cancel is only answered if the agent honours it, or if maestro-server
       // is new enough to synthesize a TurnEnded when no turn is in flight. The
       // deployed server binary is per project and can lag the app, and a wedged
@@ -166,9 +166,9 @@ export function useMessageSender({
       }, 3000);
     } catch {
       liveDispatch({ type: "turn_ended" });
-      setActivity(sessionKey, "idle");
+      setActivity(sessionId, "idle");
     }
-  }, [sessionKey, setActivity, liveDispatch, autoResumeSpentRef]);
+  }, [sessionId, setActivity, liveDispatch, autoResumeSpentRef]);
 
   const handleSendWithTransition = useCallback(
     (content: string, contentBlocks?: JsonValue) => {

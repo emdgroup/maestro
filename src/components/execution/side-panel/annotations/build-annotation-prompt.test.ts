@@ -93,7 +93,7 @@ describe("buildAnnotationBlocks", () => {
     ]);
     const blocks = await buildAnnotationBlocks(
       [canvas({ id: "a", shotPath: "/tmp/a.png" }), canvas({ id: "b", text: "second" })],
-      { logId: 7, canSendImages: true },
+      { sessionId: "7", canSendImages: true },
     );
     // header, note a, image a, note b — the image must not drift to the end.
     expect(blocks).toHaveLength(4);
@@ -103,7 +103,7 @@ describe("buildAnnotationBlocks", () => {
 
   it("leaves the capture out when the agent takes no images", async () => {
     const blocks = await buildAnnotationBlocks([canvas({ shotPath: "/tmp/a.png" })], {
-      logId: 7,
+      sessionId: "7",
       canSendImages: false,
     });
     expect(blocks).toHaveLength(2);
@@ -113,7 +113,7 @@ describe("buildAnnotationBlocks", () => {
   it("keeps the note when the capture cannot be attached", async () => {
     prepareExternalAttachments.mockRejectedValue(new Error("gone"));
     const blocks = await buildAnnotationBlocks([canvas({ shotPath: "/tmp/a.png" })], {
-      logId: 7,
+      sessionId: "7",
       canSendImages: true,
     });
     expect(blocks).toHaveLength(2);

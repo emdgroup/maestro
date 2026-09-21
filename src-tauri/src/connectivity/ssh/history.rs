@@ -18,7 +18,7 @@ use std::sync::Arc;
 /// sent to the frontend as literal printable characters.
 #[derive(Clone)]
 pub struct SshPtyHandle {
-    pub log_id: i32,
+    pub session_id: String,
     pub write_tx: tokio::sync::mpsc::Sender<SshWriteOp>,
     pub history: Arc<tokio::sync::Mutex<String>>,
     pub notify: Arc<tokio::sync::Notify>,

@@ -52,7 +52,7 @@ interface SidePanelContentProps {
   tabs: SidePanelTab[];
   activeTabId: string;
   isSessionActive: boolean;
-  sessionKey: number;
+  sessionId: string;
   subagentItems: ToolCallItem[];
   toolCallMap: Map<string, ToolCallItem>;
   /** Set while a plan is awaiting an answer — the tab reads and annotates it, the stream card
@@ -77,7 +77,7 @@ interface SidePanelContentProps {
   onOpenTabKind: (kind: TabKind) => void;
   /** Opens a path (absolute, or project-relative) in a Files tab. */
   onOpenFile: (path: string) => void;
-  onSpawnShell?: () => Promise<number | null>;
+  onSpawnShell?: () => Promise<string | null>;
   terminalBuffers?: Map<string, string>;
   onSendAnnotations: (annotations: Annotation[]) => void;
   /** The agent is mid-turn, so a prompt would be dropped — see useMessageSender.handleSend. */
@@ -96,7 +96,7 @@ export function SidePanelContent({
   tabs,
   activeTabId,
   isSessionActive,
-  sessionKey,
+  sessionId,
   subagentItems,
   toolCallMap,
   sidePanelPlan,
@@ -162,13 +162,13 @@ export function SidePanelContent({
   // tab being the active one: the Review tab has to be able to raise its unseen dot while
   // the user is looking at another tab, or at a collapsed panel.
   const { diffStats, changedFilesCount, uncommittedFilesCount, scope, isError } =
-    useSessionDiffStats(sessionKey, isSessionActive);
+    useSessionDiffStats(sessionId, isSessionActive);
   // The pull request state is gated harder than the diff stats above, because it is the one thing
   // here that leaves the machine. Its only consumer is a card on the Overview tab and there is no
   // unseen dot for it to raise, so nothing is lost by asking the forge only while that tab is the
   // one on screen.
   const ship = useSessionShipState(
-    sessionKey,
+    sessionId,
     taskId,
     isProcessing ?? false,
     selectedProject?.path ?? null,
@@ -182,7 +182,7 @@ export function SidePanelContent({
       : undefined;
 
   // PTY state per terminal tab
-  const [ptyState, setPtyState] = useState<Map<string, { key: number | null; failed: boolean }>>(
+  const [ptyState, setPtyState] = useState<Map<string, { key: string | null; failed: boolean }>>(
     new Map(),
   );
   const spawningRef = useRef<Set<string>>(new Set());
@@ -259,7 +259,7 @@ export function SidePanelContent({
   // The agent never sees its rendered surface, so a blocked asset or a thrown exception is only
   // visible here. Parked in the backend and carried back on its next canvas call.
   const reportCanvasError = (surfaceId: string, error: { message: string; source: string }) => {
-    void commands.canvasReportError(sessionKey, surfaceId, `${error.source}: ${error.message}`);
+    void commands.canvasReportError(sessionId, surfaceId, `${error.source}: ${error.message}`);
   };
 
   // What the user has entered, per surface. Per surface because they can page between canvases
@@ -371,7 +371,7 @@ export function SidePanelContent({
                 {planBody ? (
                   <PlanAnnotationLayer
                     className="flex-1"
-                    sessionKey={sessionKey}
+                    sessionId={sessionId}
                     onSend={onSendAnnotations}
                     sendDisabled={isProcessing}
                     sendLabel={sidePanelPlan ? "Revise plan" : undefined}
@@ -442,7 +442,7 @@ export function SidePanelContent({
             {kind === "canvas" &&
               (activeSurface ? (
                 <CanvasAnnotationLayer
-                  sessionKey={sessionKey}
+                  sessionId={sessionId}
                   surface={activeSurface}
                   frameNodes={frameNodes}
                   frame={canvasFrameRef}
@@ -547,7 +547,7 @@ export function SidePanelContent({
                                   // behind means `restore_canvases` brings the surface back on the
                                   // next session load.
                                   deleteCanvasMutation.mutate({
-                                    logId: sessionKey,
+                                    sessionId: sessionId,
                                     surfaceId: activeSurface.surfaceId,
                                   });
                                   onCloseCanvas(activeSurface.surfaceId);
@@ -606,7 +606,7 @@ export function SidePanelContent({
               ))}
             {kind === "review" && (
               <ReviewChangesPanel
-                sessionKey={sessionKey}
+                sessionId={sessionId}
                 onClose={() => onCollapsedChange(true)}
                 compact
                 isActive={isActive}
@@ -618,7 +618,7 @@ export function SidePanelContent({
             {kind === "artifacts" && (
               <ArtifactsPanel
                 files={workingFiles.map((f) => f.path)}
-                sessionKey={sessionKey}
+                sessionId={sessionId}
                 isActive={isActive}
                 connection={connection}
                 wslDistroName={wslDistroName}
@@ -641,7 +641,7 @@ export function SidePanelContent({
               <div className="absolute inset-0">
                 {acpTerminalId ? (
                   <AcpTerminalView
-                    logId={sessionKey}
+                    sessionId={sessionId}
                     terminalId={acpTerminalId}
                     initialOutput={terminalBuffers?.get(acpTerminalId) ?? ""}
                     onInput={
@@ -656,7 +656,7 @@ export function SidePanelContent({
                     }
                   />
                 ) : ptyEntry?.key != null ? (
-                  <TerminalComponent taskId={ptyEntry.key} />
+                  <TerminalComponent sessionId={ptyEntry.key} />
                 ) : ptyEntry?.failed ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     Failed to start terminal

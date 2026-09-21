@@ -78,7 +78,7 @@ interface ComposeBarProps {
   isProcessing: boolean;
   commands: AvailableCommand[];
   embeddedContext?: boolean;
-  logId?: number | null;
+  sessionId?: string | null;
   projectPath?: string | null;
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
@@ -96,7 +96,7 @@ export function ComposeBar({
   isProcessing,
   commands,
   embeddedContext = false,
-  logId,
+  sessionId,
   projectPath,
   configOptions,
   configValues,
@@ -139,11 +139,11 @@ export function ComposeBar({
   // spawned into a worktree is not the project root. Joining them onto the project path
   // produced a URI for a file that is not there — the agent could not read it, and clicking
   // the card in the sent message failed with "cannot find the file specified".
-  const { data: sessionMeta } = useAcpSessionMeta(logId ?? null);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId ?? null);
 
-  const mentionAC = useMentionAutocomplete({ logId });
+  const mentionAC = useMentionAutocomplete({ sessionId });
   const commandAC = useCommandAutocomplete({ commands });
-  const attach = useAttachments({ promptCapabilities, logId });
+  const attach = useAttachments({ promptCapabilities, sessionId });
   const panelPos = usePanelPositioner(
     mentionAC.showMentions || commandAC.showCommands,
     containerRef,
@@ -241,7 +241,7 @@ export function ComposeBar({
       return;
     }
 
-    if (!logId) {
+    if (!sessionId) {
       onSend(trimmed);
       resetForm();
       return;
@@ -253,7 +253,7 @@ export function ComposeBar({
       const attachmentBlocks: JsonValue[] = [];
       if (attachments.length > 0) {
         const prepared = await api.prepareExternalAttachments(
-          logId,
+          sessionId,
           attachments.map((a) => ({ path: a.localAbsPath, is_image: a.isImage })),
           embeddedContext,
         );
@@ -266,7 +266,7 @@ export function ComposeBar({
       if (mentions.length > 0 && embeddedContext) {
         const results = await Promise.allSettled(
           mentions.map(async (m) => {
-            const text = await api.readSessionFile(logId, m.filePath);
+            const text = await api.readSessionFile(sessionId, m.filePath);
             return { path: m.filePath, text, mime: mimeForExtension(m.filePath) };
           }),
         );
@@ -325,7 +325,7 @@ export function ComposeBar({
     isSending,
     mentionAC,
     attach,
-    logId,
+    sessionId,
     projectPath,
     sessionMeta,
     embeddedContext,
@@ -436,7 +436,7 @@ export function ComposeBar({
             }}
           />
           <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1">
-            {logId && (
+            {sessionId && (
               <Tooltip>
                 <TooltipTrigger
                   render={<button type="button" disabled={isProcessing || isSending} />}
@@ -457,7 +457,7 @@ export function ComposeBar({
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               placeholder={
-                logId ? "Ask anything, use @ for context, / for commands" : "Send a message…"
+                sessionId ? "Ask anything, use @ for context, / for commands" : "Send a message…"
               }
               rows={1}
               className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-5.5 leading-relaxed"

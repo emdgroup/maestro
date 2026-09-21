@@ -7,10 +7,10 @@ import type { ExternalAttachment } from "./externalAttachment";
 
 interface Params {
   promptCapabilities: AcpPromptCapabilities | null | undefined;
-  logId: number | null | undefined;
+  sessionId: string | null | undefined;
 }
 
-export function useAttachments({ promptCapabilities, logId }: Params) {
+export function useAttachments({ promptCapabilities, sessionId }: Params) {
   const [attachments, setAttachments] = useState<ExternalAttachment[]>([]);
   // Mirrored from an effect rather than assigned during render — read only by the
   // paste handler, which runs after commit.
@@ -45,7 +45,7 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
 
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (!promptCapabilities?.image || !logId) return;
+      if (!promptCapabilities?.image || !sessionId) return;
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -96,7 +96,7 @@ export function useAttachments({ promptCapabilities, logId }: Params) {
         ]);
       }
     },
-    [promptCapabilities, logId],
+    [promptCapabilities, sessionId],
   );
 
   const reset = useCallback(() => {

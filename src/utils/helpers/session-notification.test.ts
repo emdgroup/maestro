@@ -9,7 +9,7 @@ import {
 
 function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
   return {
-    session_key: 42,
+    session_id: "42",
     session_name: null,
     agent_id: "claude-code",
     execution_mode: "acp",
