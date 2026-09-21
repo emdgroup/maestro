@@ -167,12 +167,15 @@ pub(crate) async fn run_command_loop(
     so: crate::ClientOut,
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
-) {
     // Whether a `session/prompt` is genuinely outstanding. Without this the
     // cancel handler cannot tell "agent is working" from "the host's view is
     // stale", and answers neither — leaving the UI stuck in "thinking".
-    let turn_active = Arc::new(AtomicBool::new(false));
-
+    //
+    // Owned by the caller rather than created here because `ActiveSession` holds the other end:
+    // a client that has just attached asks which sessions are mid-turn before deciding what it
+    // can safely do to them.
+    turn_active: Arc<AtomicBool>,
+) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             SessionCommand::CloseSession => {

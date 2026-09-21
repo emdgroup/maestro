@@ -1012,6 +1012,25 @@ async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Ask every server this app is connected to to wind down, and forget them.
+ * 
+ * Exists for the updater. A resident server holds its own binary open, and Windows will not let
+ * the image of a running process be overwritten, so an install that does not do this fails — the
+ * same reason the old child-process servers were killed on quit.
+ * 
+ * Every running agent session ends with them, which is why nothing calls this without telling the
+ * user first. Fire and forget: there is no acknowledgement, and a server that does not hear it
+ * leaves the install to fail as it would have anyway.
+ */
+async stopResidentServers() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_resident_servers") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Update task-level configuration overrides
  */
 async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {

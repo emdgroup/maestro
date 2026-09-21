@@ -384,6 +384,20 @@ project being opened. It runs in `prime_project_server` _before_ the snapshot re
 `restore_acp_session`'s existing "already live" guard returns the adopted session rather than
 loading a second copy of the same conversation.
 
+**A session between turns is closed and reloaded instead**, which is the only way to recover the
+transcript it produced while nobody was attached: the agent keeps its own history, and
+`session/load` is what replays it. `ListLiveSession.turn_active` is what decides — closing a
+session mid-turn throws the turn away, so those are adopted as they are and their transcript
+begins at the reconnect. Do **not** issue `session/load` against a live session without closing it
+first: `maestro-server` would replace its own map entry while the displaced command loop kept
+running, leaving an agent nothing routes to and nothing stops.
+
+**The updater stops the servers before installing** (`stop_resident_servers`, called from
+`useUpdater` after the download and before `install()`). A resident server holds its own binary
+open and Windows will not overwrite the image of a running process — the same reason the old
+child-process servers were killed on quit. Every running session ends with them, which is what the
+Install button's tooltip says.
+
 ### The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**

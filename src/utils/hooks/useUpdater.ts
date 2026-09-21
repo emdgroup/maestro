@@ -3,6 +3,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { commands } from "@/types/bindings";
 
 type InstallType = "appimage" | "package" | "native";
 
@@ -64,8 +65,25 @@ async function doFullInstall(): Promise<void> {
       store.setStatus({ phase: "downloading", progress: pct, version });
     }
   });
+  // After the download, before the install: maestro-server is resident and holds its own binary
+  // open, and Windows will not overwrite the image of a running process. Downloading first keeps
+  // the servers up for as long as possible, so a failed download costs nobody their session.
+  await stopResidentServers();
+
   await pendingUpdate?.install();
   await relaunch();
+}
+
+/// Wind down the resident servers, ending every running agent session with them.
+///
+/// Reported rather than thrown: the install is worth attempting even if a server did not hear us,
+/// because it only fails on the platform where the file is locked, and the error it raises then
+/// says so more precisely than anything guessed here.
+async function stopResidentServers(): Promise<void> {
+  const result = await commands.stopResidentServers();
+  if (result.status === "error") {
+    console.error("Could not stop the background servers before updating:", result.error);
+  }
 }
 
 export function useUpdater() {

@@ -15,6 +15,7 @@ pub use crate::task::handlers::*;
 // resolves through this module, and a named re-export leaves them behind.
 pub use crate::acp::auth_handlers::*;
 pub use crate::acp::canvas_handlers::*;
+pub use crate::acp::connection_server::*;
 pub use crate::acp::discovery_handlers::*;
 pub use crate::acp::file_handlers::*;
 pub use crate::acp::meta_handlers::*;

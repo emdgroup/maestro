@@ -66,6 +66,12 @@ pub enum ServerRequest {
     ListAgents(ListAgentsRequest),
     /// What is this server running right now. Asked by a client that has just attached.
     ListLiveSessions(ListLiveSessionsRequest),
+    /// Wind down: end every session and exit.
+    ///
+    /// Asked for before an update installs, because a resident server holds its own binary open
+    /// and Windows will not overwrite the image of a running process. There is no acknowledgement
+    /// to wait for: the connection closing is the answer.
+    Shutdown,
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
     SetConfigOption(SetConfigOptionRequest),
@@ -212,6 +218,13 @@ pub struct ListLiveSession {
     /// The agent's own session id, when the session has one. Needed to replay history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acp_session_id: Option<String>,
+    /// Whether the agent is mid-turn on this session right now.
+    ///
+    /// Decides what a client that has just attached may do to it: a session between turns can be
+    /// closed and reloaded to recover its transcript, one mid-turn cannot without discarding the
+    /// turn in progress.
+    #[serde(default)]
+    pub turn_active: bool,
     /// Whatever the host attached at spawn, returned verbatim.
     ///
     /// The server never reads it. It exists because the host knows things about a session the

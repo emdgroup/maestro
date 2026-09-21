@@ -137,6 +137,66 @@ pub async fn try_spawn_via_connection_server(
     Ok(true)
 }
 
+/// Close an idle live session on the agent and load it back, so its transcript comes with it.
+///
+/// The close is what makes the load safe. Without it the agent would hold the same conversation
+/// open twice, and the server would replace its own entry for the first while its command loop
+/// kept running — an agent nothing routes to, still consuming tokens. `SessionClose` also drops
+/// the server's live entry, so what follows genuinely is a fresh load.
+///
+/// Returns whether the session ended up loaded. `false` means the caller should adopt it plainly,
+/// which is always still possible: a failed close leaves the session exactly as it was.
+async fn reload_for_history(
+    session: &maestro_protocol::ListLiveSession,
+    acp_session_id: &str,
+    meta: &SessionHostMeta,
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> bool {
+    let close = crate::acp::connection_server::query_session_close_via_server(
+        connection_key,
+        crate::acp::transport::SessionCloseRequest {
+            agent_id: session.agent_id.clone(),
+            session_id: acp_session_id.to_string(),
+            cwd: session.cwd.clone(),
+        },
+        app_state,
+    )
+    .await;
+    if let Err(e) = close {
+        log::warn!(
+            "could not close session {} to recover its history, adopting it as-is: {e}",
+            session.session_id
+        );
+        return false;
+    }
+
+    // A new routing key: the server forgot the old one when it closed the session, and reusing it
+    // would name a session that no longer exists on either side.
+    let req = SessionRequest {
+        connection_key,
+        agent_id: session.agent_id.clone(),
+        cwd: session.cwd.clone(),
+        session_id: crate::core::new_session_id(),
+        session_name: meta.session_name.clone(),
+        project_id: meta.project_id,
+        task_id: meta.task.task_id,
+        app_state: Arc::clone(app_state),
+    };
+    match try_session_load_via_connection_server(acp_session_id, &req).await {
+        Ok(true) => true,
+        // The session is gone from the server either way now, so there is nothing left to adopt
+        // and the user has to reopen it from the session history.
+        Ok(false) | Err(_) => {
+            log::warn!(
+                "closed session {} but could not load it back",
+                session.session_id
+            );
+            true
+        }
+    }
+}
+
 /// Take ownership of sessions the connection's server is already running.
 ///
 /// The server outlives the app now, so a freshly started app finds sessions it has no record of:
@@ -147,12 +207,17 @@ pub async fn try_spawn_via_connection_server(
 /// Scoped to one project because the app is: a machine's server holds sessions for every project
 /// opened against it, and the ones belonging to other projects are adopted when those are opened.
 ///
-/// Best effort throughout — a server too old to answer, or a session whose metadata cannot be
-/// read, must not stop a project from opening. The cost of skipping one is that the snapshot
-/// restore below may load a second copy of it, which is the behaviour that existed before any of
-/// this.
+/// A session that is **not** mid-turn is closed on the agent and loaded straight back instead,
+/// which is the only way to recover the transcript it produced while nobody was attached: the
+/// agent persists its own history and `session/load` is what replays it. That cannot be done to a
+/// session mid-turn — closing discards the turn in progress — so those are adopted as they are and
+/// their transcript begins where the app reconnected.
 ///
-/// Returns how many were adopted.
+/// Best effort throughout — a server too old to answer, a session whose metadata cannot be read,
+/// an agent that refuses the reload — must not stop a project from opening. Each failure degrades
+/// to plain adoption rather than to a lost session.
+///
+/// Returns how many were taken over, reloaded or not.
 pub async fn adopt_live_sessions(
     connection_key: crate::acp::ConnectionKey,
     project_id: i32,
@@ -204,6 +269,16 @@ pub async fn adopt_live_sessions(
             .contains_key(&session.session_id)
         {
             continue;
+        }
+
+        if let Some(acp_session_id) = session.acp_session_id.as_deref() {
+            if !session.turn_active
+                && reload_for_history(&session, acp_session_id, &meta, connection_key, app_state)
+                    .await
+            {
+                adopted += 1;
+                continue;
+            }
         }
 
         let (acp_process, _ctx) = AcpProcess::create(

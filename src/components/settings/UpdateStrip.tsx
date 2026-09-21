@@ -83,17 +83,32 @@ export function UpdateStrip({ padEnd = false }: { padEnd?: boolean }) {
 
       <div className="ml-auto flex items-center gap-2">
         {status.phase === "available" ? (
-          <Button
-            size="sm"
-            onClick={
-              isPackageInstall ? () => void downloadPackage(status.version) : () => void install()
-            }
-            variant="accent"
-            className="h-7 gap-1.5 text-xs"
-          >
-            <ArrowDownToLine className="size-3" />
-            {isPackageInstall ? "Download" : "Install"}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="sm"
+                  onClick={
+                    isPackageInstall
+                      ? () => void downloadPackage(status.version)
+                      : () => void install()
+                  }
+                  variant="accent"
+                  className="h-7 gap-1.5 text-xs"
+                />
+              }
+            >
+              <ArrowDownToLine className="size-3" />
+              {isPackageInstall ? "Download" : "Install"}
+            </TooltipTrigger>
+            <TooltipContent>
+              {isPackageInstall
+                ? "Download the package for your distribution"
+                : // The background server holds its own binary open, so it has to stop before the
+                  // new one can replace it, and every agent it is running stops with it.
+                  "Installing stops any running agent sessions"}
+            </TooltipContent>
+          </Tooltip>
         ) : status.phase === "downloading" ? (
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-muted-foreground">

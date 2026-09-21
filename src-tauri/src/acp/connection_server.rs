@@ -104,6 +104,38 @@ pub async fn query_list_agents_via_connection_server(
     .await
 }
 
+/// Ask every server this app is connected to to wind down, and forget them.
+///
+/// Exists for the updater. A resident server holds its own binary open, and Windows will not let
+/// the image of a running process be overwritten, so an install that does not do this fails — the
+/// same reason the old child-process servers were killed on quit.
+///
+/// Every running agent session ends with them, which is why nothing calls this without telling the
+/// user first. Fire and forget: there is no acknowledgement, and a server that does not hear it
+/// leaves the install to fail as it would have anyway.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_resident_servers(
+    app_state: tauri::State<'_, Arc<crate::core::AppState>>,
+) -> Result<u32, String> {
+    let servers: Vec<_> = {
+        let mut servers = app_state.acp.connection_servers.lock().await;
+        servers.drain().collect()
+    };
+    let request = serialize_message(&MaestroRpcMessage::Request(ServerRequest::Shutdown))?;
+
+    let mut stopped = 0;
+    for (connection_key, server) in servers {
+        match server.writer_tx.send(request.clone()).await {
+            Ok(()) => stopped += 1,
+            Err(_) => log::warn!("could not reach the server on {connection_key:?} to stop it"),
+        }
+    }
+    app_state.acp.sessions.lock().await.clear();
+    log::info!("asked {stopped} resident server(s) to stop");
+    Ok(stopped)
+}
+
 /// Ask the connection's server which sessions it is running right now.
 ///
 /// Not `SessionList`, which asks an *agent* what conversations it has stored on disk. This asks

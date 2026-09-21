@@ -86,6 +86,9 @@ pub(crate) async fn dispatch_message(
                     agent_id: session.agent_id.clone(),
                     cwd: session.cwd.clone(),
                     acp_session_id: session.cleanup.as_ref().map(|c| c.acp_session_id.clone()),
+                    turn_active: session
+                        .turn_active
+                        .load(std::sync::atomic::Ordering::SeqCst),
                     host_meta: session.host_meta.clone(),
                 })
                 .collect();
@@ -98,6 +101,11 @@ pub(crate) async fn dispatch_message(
                 )
                 .await
             );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
+            send_diag("info", "[server] shutdown requested by the host");
+            return false;
         }
 
         MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
@@ -417,6 +425,7 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Close,
                 req.agent_id,
                 req.session_id,
+                sessions,
                 agent_connections,
                 stdout,
             )
@@ -428,6 +437,7 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Delete,
                 req.agent_id,
                 req.session_id,
+                sessions,
                 agent_connections,
                 stdout,
             )
