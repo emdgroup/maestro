@@ -1592,6 +1592,13 @@ async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(resp)) => {
+            if let Ok(mut guard) = pending.live_sessions.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
             if let Ok(mut guard) = pending.session_list.lock() {
                 if let Some(tx) = guard.take() {

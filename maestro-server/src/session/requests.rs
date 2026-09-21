@@ -9,7 +9,6 @@ use std::sync::Arc;
 use maestro_protocol::{
     MaestroRpcMessage, ServerResponse, SessionListOkResponse, SessionLoadOkResponse,
 };
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::helpers::{
@@ -22,7 +21,7 @@ use crate::session::{
 };
 use crate::sessions::{ActiveSession, AgentConnectionHandle, SharedAgentConnections};
 
-type Stdout = Arc<Mutex<tokio::io::Stdout>>;
+use crate::ClientOut as Stdout;
 
 /// List the sessions an agent has on disk for a working directory.
 ///
@@ -146,6 +145,7 @@ pub(crate) async fn load(
                 session.agent_id = req.agent_id;
                 session.cwd = req.cwd;
                 session.additional_directories = req.additional_directories;
+                session.host_meta = req.host_meta;
                 let session_id = req.session_id.clone();
                 // Handed to the dispatch loop only once the host has been told the session
                 // exists, so a registered session is always one the host knows about.

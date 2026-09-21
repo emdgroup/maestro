@@ -14,7 +14,6 @@ use std::sync::Arc;
 use maestro_protocol::{
     AuthTerminalExitResponse, ErrorResponse, MaestroRpcMessage, ServerResponse,
 };
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::command_ext::NoConsoleWindow;
@@ -33,7 +32,7 @@ pub(crate) struct AuthTerminalState {
 pub(crate) type AuthTerminals =
     Arc<tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>>;
 
-type Stdout = Arc<Mutex<tokio::io::Stdout>>;
+use crate::ClientOut as Stdout;
 
 fn error_response(message: String) -> MaestroRpcMessage {
     MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {

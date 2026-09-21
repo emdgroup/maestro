@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use maestro_protocol::{MaestroRpcMessage, ServerResponse, SessionLoadOkResponse, TurnEnded};
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::helpers::{resolve_agent_spawn_params, send_diag, send_response};
@@ -13,7 +12,7 @@ pub(crate) async fn handle_agent_restart(
     agent_connections: &SharedAgentConnections,
     sessions: &mut SessionMap,
     agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) {
     send_diag("warn", format!("[agent] {dead_agent_id:?} connection dead"));
 

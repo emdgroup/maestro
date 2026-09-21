@@ -262,7 +262,7 @@ pub(crate) async fn create_session_on_connection(
     maestro_session_id: String,
     cwd: &str,
     additional_directories: &[String],
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
     crate::send_diag(
@@ -377,6 +377,7 @@ pub(crate) async fn create_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
+            host_meta: None,
         },
         models,
         modes,
@@ -402,7 +403,7 @@ pub(crate) async fn load_session_on_connection(
     resume_session_id: String,
     cwd: &str,
     additional_directories: &[String],
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Result<
     Option<(
         ActiveSession,
@@ -530,6 +531,7 @@ pub(crate) async fn load_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
+            host_meta: None,
         },
         models,
         modes,
@@ -546,7 +548,7 @@ pub(crate) async fn pre_initialize_agent(
     spawn_args: &[String],
     spawn_env: &HashMap<String, String>,
     cwd: &str,
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Option<AgentConnection> {
     let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await
     {

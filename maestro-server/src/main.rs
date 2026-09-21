@@ -14,7 +14,9 @@
 mod agent;
 mod agent_restart;
 mod auth;
+mod client_sink;
 mod command_ext;
+mod daemon;
 mod dispatch;
 mod exec_channel;
 mod file_ops;
@@ -40,7 +42,6 @@ use maestro_protocol::{
     AcpRegistry, DiagnosticPayload, ErrorResponse, HandshakeResponse, MaestroRpcMessage,
     ServerRequest, ServerResponse, PROTOCOL_VERSION,
 };
-use tokio::sync::Mutex;
 
 use agent_restart::handle_agent_restart;
 use auth::AuthTerminalState;
@@ -50,6 +51,7 @@ use sessions::{ActiveSession, AgentConnectionMap, SessionMap, SharedAgentConnect
 // Re-export so that `crate::send_response` and `crate::send_diag` still resolve
 // for the submodules that import them via `use crate::send_response` /
 // `crate::send_diag(...)`.
+pub(crate) use client_sink::ClientOut;
 pub(crate) use helpers::{send_diag, send_response, DIAG_TX};
 
 fn main() {
@@ -69,6 +71,23 @@ fn main() {
         // Its own runtime: the shim is a separate process from the ACP server it talks to, and
         // shares no state with it.
         std::process::exit(mcp_stdio::run());
+    }
+    // Resident mode and the relay that reaches it. Both need a runtime; `daemon` then never
+    // returns until it is asked to stop, and `attach` returns when the app's stdin closes.
+    if let Some(mode @ ("daemon" | "attach")) = std::env::args().nth(1).as_deref() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build tokio runtime");
+        let result = match mode {
+            "daemon" => runtime.block_on(daemon::run_daemon()),
+            _ => runtime.block_on(daemon::run_attach()),
+        };
+        if let Err(e) = result {
+            eprintln!("maestro-server {mode}: {e}");
+            std::process::exit(1);
+        }
+        return;
     }
     if std::env::args().nth(1).as_deref() == Some(maestro_protocol::exec::EXEC_CHANNEL_ARG) {
         // Its own runtime: this mode shares no state with the ACP server and never starts one.
@@ -91,18 +110,12 @@ fn main() {
         .expect("maestro-server fatal error");
 }
 
-async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
-    let stdout: Arc<Mutex<tokio::io::Stdout>> = Arc::new(Mutex::new(tokio::io::stdout()));
-    let mut sessions: SessionMap = HashMap::new();
-    let agent_connections: SharedAgentConnections =
-        Arc::new(tokio::sync::Mutex::new(AgentConnectionMap::new()));
-    // Completed Spawn and SessionLoad tasks send their results here so the main loop
-    // can insert sessions without holding any lock across the async ACP operations.
-    let (spawn_result_tx, mut spawn_result_rx) =
-        tokio::sync::mpsc::channel::<(String, ActiveSession)>(8);
+/// Channel the server loop receives client requests on, whatever carried them.
+type MsgRx = tokio::sync::mpsc::Receiver<Result<MaestroRpcMessage, String>>;
 
-    let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
-    let _ = DIAG_TX.set(diag_tx);
+/// Stdio mode: one client, this process's parent, for the life of the process.
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+    let stdout = client_sink::ClientSink::stdio();
 
     // On Windows, anonymous pipes don't support overlapped I/O (IOCP), so
     // tokio::io::stdin() falls back to spawn_blocking for each read. When a
@@ -140,13 +153,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
-        .await
-        .unwrap_or_else(|_| agent::load_registry());
-
     // Validate the protocol version handshake before entering the main dispatch loop.
-    // Agent discovery (which::which PATH scanning) runs AFTER handshake so the client
-    // does not time out waiting on slow PATH scans on Windows.
     let first_msg = match stdin_msg_rx.recv().await {
         Some(Ok(msg)) => msg,
         _ => return Ok(()),
@@ -187,6 +194,66 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     }
+
+    run_server(stdin_msg_rx, stdout).await
+}
+
+/// Daemon mode: no client at first, then whichever one is attached, then none again.
+///
+/// The server loop below never learns which it is running under. It ends when its message channel
+/// closes, and in daemon mode that channel is owned by the accept loop rather than by any one
+/// client, so a client disconnecting leaves every running session exactly where it was.
+pub(crate) async fn run_resident(
+    listener: tokio::net::TcpListener,
+    token: String,
+) -> Result<(), String> {
+    let sink = client_sink::ClientSink::detached();
+    let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<Result<MaestroRpcMessage, String>>(4);
+
+    tokio::spawn({
+        let sink = Arc::clone(&sink);
+        async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    continue;
+                };
+                // One client at a time: the app is the only one there is, and serving a second
+                // concurrently would interleave two streams onto one sink.
+                let shutdown = daemon::serve_client(stream, &token, &sink, &msg_tx).await;
+                sink.lock().await.detach();
+                send_diag("info", "[daemon] client detached");
+                if shutdown {
+                    break;
+                }
+            }
+            // Dropping the last sender ends the server loop, which tears down every session.
+        }
+    });
+
+    run_server(msg_rx, sink).await.map_err(|e| e.to_string())
+}
+
+/// The server proper: dispatch requests until the client channel closes.
+async fn run_server(
+    mut stdin_msg_rx: MsgRx,
+    stdout: crate::ClientOut,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut sessions: SessionMap = HashMap::new();
+    let agent_connections: SharedAgentConnections =
+        Arc::new(tokio::sync::Mutex::new(AgentConnectionMap::new()));
+    // Completed Spawn and SessionLoad tasks send their results here so the main loop
+    // can insert sessions without holding any lock across the async ACP operations.
+    let (spawn_result_tx, mut spawn_result_rx) =
+        tokio::sync::mpsc::channel::<(String, ActiveSession)>(8);
+
+    let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
+    let _ = DIAG_TX.set(diag_tx);
+
+    // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
+    // time out waiting on slow PATH scans on Windows.
+    let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
+        .await
+        .unwrap_or_else(|_| agent::load_registry());
 
     // After the handshake so a client of the wrong protocol version never opens a listener, and
     // before the first session so `mcp_servers_for` has an address to inject.

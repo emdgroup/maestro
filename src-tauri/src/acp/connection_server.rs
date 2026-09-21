@@ -104,6 +104,30 @@ pub async fn query_list_agents_via_connection_server(
     .await
 }
 
+/// Ask the connection's server which sessions it is running right now.
+///
+/// Not `SessionList`, which asks an *agent* what conversations it has stored on disk. This asks
+/// the server what is alive in its own process, which is what a freshly started app needs to know
+/// about a server that outlived the previous run.
+pub async fn query_live_sessions_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListLiveSessionsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.live_sessions.clone(),
+        "ListLiveSessions already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(
+            maestro_protocol::ListLiveSessionsRequest {},
+        )),
+        15,
+        "ListLiveSessions via connection server timed out after 15s",
+    )
+    .await
+}
+
 /// Send `SessionList` through the running connection server and return the result.
 pub async fn query_session_list_via_server(
     connection_key: crate::acp::ConnectionKey,

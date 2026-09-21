@@ -3,8 +3,8 @@
 use crate::acp::connection_server::spawn_connection_server;
 use crate::acp::reader_task::spawn_reader_task;
 use crate::acp::session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionRequest,
-    TaskMetadata, TransportTarget,
+    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionHostMeta,
+    SessionRequest, TaskMetadata, TransportTarget,
 };
 use crate::acp::transport::{MaestroRpcMessage, ServerRequest, SessionLoadRequest, SpawnRequest};
 #[cfg(windows)]
@@ -51,6 +51,30 @@ async fn additional_directories_for(req: &SessionRequest) -> Vec<String> {
     }
 }
 
+/// The blob `maestro-server` stores against a session and hands back when a later app run
+/// re-adopts it. See [`SessionHostMeta`].
+///
+/// Serialization cannot fail for this shape, so a failure is reported and the session still
+/// starts: losing the ability to re-adopt it later is not a reason to refuse to run it now.
+fn host_meta_for(req: &SessionRequest, task: &TaskMetadata) -> Option<serde_json::Value> {
+    let meta = SessionHostMeta {
+        project_id: req.project_id,
+        session_name: req.session_name.clone(),
+        connection_key: req.connection_key,
+        task: task.clone(),
+    };
+    match serde_json::to_value(&meta) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            log::warn!(
+                "could not record session metadata for {}: {e}",
+                req.session_id
+            );
+            None
+        }
+    }
+}
+
 /// Fast path: route a new session through a running `ConnectionServer`.
 ///
 /// Returns `true` if the session was registered via the shared server,
@@ -72,6 +96,7 @@ pub async fn try_spawn_via_connection_server(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(req, &task),
     }));
     let bytes = serialize_message(&spawn_req)?;
     let (acp_process, _ctx) = AcpProcess::create(
@@ -110,6 +135,113 @@ pub async fn try_spawn_via_connection_server(
         return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
+}
+
+/// Take ownership of sessions the connection's server is already running.
+///
+/// The server outlives the app now, so a freshly started app finds sessions it has no record of:
+/// its own map is empty while the server's is not. This rebuilds a host-side entry for each of
+/// them, keyed by the same id the server files it under, so every later prompt, cancel and event
+/// routes exactly as it did in the run that started the session.
+///
+/// Scoped to one project because the app is: a machine's server holds sessions for every project
+/// opened against it, and the ones belonging to other projects are adopted when those are opened.
+///
+/// Best effort throughout — a server too old to answer, or a session whose metadata cannot be
+/// read, must not stop a project from opening. The cost of skipping one is that the snapshot
+/// restore below may load a second copy of it, which is the behaviour that existed before any of
+/// this.
+///
+/// Returns how many were adopted.
+pub async fn adopt_live_sessions(
+    connection_key: crate::acp::ConnectionKey,
+    project_id: i32,
+    app_state: &Arc<crate::core::AppState>,
+) -> usize {
+    let live = match crate::acp::connection_server::query_live_sessions_via_server(
+        connection_key,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => response.sessions,
+        Err(e) => {
+            log::warn!("could not list live sessions on {connection_key:?}: {e}");
+            return 0;
+        }
+    };
+
+    let writer_tx = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        match servers.get(&connection_key) {
+            Some(server) => server.writer_tx.clone(),
+            None => return 0,
+        }
+    };
+
+    let mut adopted = 0;
+    for session in live {
+        let Some(meta) = session.host_meta.as_ref().and_then(|value| {
+            serde_json::from_value::<SessionHostMeta>(value.clone())
+                .map_err(|e| {
+                    log::warn!(
+                        "session {} has unreadable metadata: {e}",
+                        session.session_id
+                    )
+                })
+                .ok()
+        }) else {
+            continue;
+        };
+        if meta.project_id != Some(project_id) {
+            continue;
+        }
+        if app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .contains_key(&session.session_id)
+        {
+            continue;
+        }
+
+        let (acp_process, _ctx) = AcpProcess::create(
+            AcpProcessParams {
+                writer: AcpTransportWriter::SharedServer(writer_tx.clone()),
+                child: None,
+                cancel_tx: None,
+                cwd: session.cwd.clone(),
+                session_name: meta.session_name.clone(),
+                agent_id: session.agent_id.clone(),
+                project_id: meta.project_id,
+                connection_key,
+                task: meta.task.clone(),
+                initial_acp_session_id: session.acp_session_id.clone(),
+                // Nothing has subscribed to this session yet, so its updates have to be held
+                // until the frontend opens it, exactly as for a session being loaded.
+                enable_replay_buffer: true,
+            },
+            session.session_id.clone(),
+            app_state.app_handle.clone(),
+            Arc::clone(app_state),
+        );
+        app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .insert(session.session_id.clone(), acp_process);
+        adopted += 1;
+    }
+
+    if adopted > 0 {
+        log::info!("adopted {adopted} running session(s) on {connection_key:?}");
+        if let Err(e) = app_state.app_handle.emit("sessions-changed", ()) {
+            log::warn!("could not announce adopted sessions: {e}");
+        }
+    }
+    adopted
 }
 
 /// Open a transport channel, write the initial message, register the ACP process, and
@@ -219,6 +351,7 @@ pub async fn spawn_acp_session_cold(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(req, &task),
     }));
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
@@ -236,6 +369,13 @@ pub async fn load_acp_session_cold(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(
+            req,
+            &TaskMetadata {
+                task_id: req.task_id,
+                ..TaskMetadata::default()
+            },
+        ),
     }));
     launch_cold_session(
         target,
@@ -338,6 +478,13 @@ pub async fn try_session_load_via_connection_server(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(
+            req,
+            &TaskMetadata {
+                task_id: req.task_id,
+                ..TaskMetadata::default()
+            },
+        ),
     }));
     let bytes = serialize_message(&load_msg)?;
 

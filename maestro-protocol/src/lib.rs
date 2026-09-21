@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -64,6 +64,8 @@ pub enum ServerRequest {
     PermitResponse(PermissionResponse),
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
+    /// What is this server running right now. Asked by a client that has just attached.
+    ListLiveSessions(ListLiveSessionsRequest),
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
     SetConfigOption(SetConfigOptionRequest),
@@ -133,6 +135,38 @@ pub const MCP_GATEWAY_SESSION_ENV: &str = "MAESTRO_MCP_SESSION";
 /// Name of the MCP server Maestro injects. A `.mcp.json` entry using it is skipped.
 pub const MCP_SERVER_NAME: &str = "maestro";
 
+/// Directory holding the resident server's lock and runtime files.
+///
+/// Set by the host for a local connection, so a development build pointed at its own
+/// `MAESTRO_DATA_DIR` gets its own daemon rather than contending with the installed app. Unset on
+/// a remote machine, where there is no such directory and the daemon falls back to
+/// `~/.maestro/daemon`.
+pub const DAEMON_DIR_ENV: &str = "MAESTRO_DAEMON_DIR";
+/// Fallback daemon directory, relative to the home directory of the user the server runs as.
+pub const DAEMON_DIR_DEFAULT: &str = ".maestro/daemon";
+/// Held open by the running daemon for as long as it lives.
+///
+/// The lock, not the runtime file, is what answers "is a daemon alive here": a killed process
+/// leaves its runtime file behind pointing at a dead port, but the OS releases its lock.
+pub const DAEMON_LOCK_FILE: &str = "lock";
+/// Where a running daemon publishes how to reach it. See [`DaemonRuntime`].
+pub const DAEMON_RUNTIME_FILE: &str = "runtime.json";
+
+/// What a running daemon publishes about itself, written once at startup.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DaemonRuntime {
+    /// Loopback port the daemon accepts client connections on.
+    pub port: u16,
+    /// Secret a client must present as its first line. Any local process can reach the port, so
+    /// this is the only thing deciding whether a connection is answered.
+    pub token: String,
+    /// `CARGO_PKG_VERSION` of the daemon binary.
+    pub version: String,
+    /// Protocol the daemon speaks. A client of a different one kills it and starts its own.
+    pub protocol_version: u32,
+    pub pid: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnRequest {
     pub agent_id: String,
@@ -147,10 +181,46 @@ pub struct SpawnRequest {
     /// deployed binary is per project and can lag the app.
     #[serde(default)]
     pub additional_directories: Vec<String>,
+    /// See [`host_meta`](ListLiveSession::host_meta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListAgentsRequest {}
+
+/// Ask the server which sessions it is currently running.
+///
+/// Distinct from [`SessionListRequest`], which asks an *agent* what conversations it has stored on
+/// disk. This asks the *server* what is alive in its own process right now, which is the question
+/// a client that has just attached needs answered.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSessionsRequest {}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSessionsResponse {
+    pub sessions: Vec<ListLiveSession>,
+}
+
+/// One session the server is running, as seen by a client re-adopting it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSession {
+    /// The routing key the host minted, under which every later request finds this session.
+    pub session_id: String,
+    pub agent_id: String,
+    pub cwd: String,
+    /// The agent's own session id, when the session has one. Needed to replay history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    /// Whatever the host attached at spawn, returned verbatim.
+    ///
+    /// The server never reads it. It exists because the host knows things about a session the
+    /// server has no business knowing — which project and task it belongs to, what the user named
+    /// it — and needs them back when re-adopting a session it did not start in this run. Keeping
+    /// it opaque means adding a field to it never touches the protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DiscoveredAgent {
@@ -347,6 +417,7 @@ pub enum ServerResponse {
     ElicitationRequest(ElicitationRequest),
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
+    ListLiveSessionsOk(ListLiveSessionsResponse),
     SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
     SetConfigOptionOk(SetConfigOptionOkResponse),
@@ -513,6 +584,9 @@ pub struct SessionLoadRequest {
     /// See [`SpawnRequest::additional_directories`].
     #[serde(default)]
     pub additional_directories: Vec<String>,
+    /// See [`host_meta`](ListLiveSession::host_meta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -847,6 +921,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -1028,6 +1103,7 @@ mod tests {
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -1199,6 +1275,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

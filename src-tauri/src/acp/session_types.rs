@@ -82,6 +82,7 @@ pub enum AcpTransportWriter {
 pub struct PendingChannels {
     pub pre_init: PendingReplyMap<PreInitializeResponse>,
     pub list_agents: PendingReply<Vec<crate::acp::registry::DiscoveredAgent>>,
+    pub live_sessions: PendingReply<maestro_protocol::ListLiveSessionsResponse>,
     pub session_list: PendingReply<SessionListOkResponse>,
     pub session_close: PendingReply<()>,
     pub session_delete: PendingReply<()>,
@@ -106,6 +107,7 @@ impl PendingChannels {
         Self {
             pre_init: Arc::new(std::sync::Mutex::new(HashMap::new())),
             list_agents: Arc::new(std::sync::Mutex::new(None)),
+            live_sessions: Arc::new(std::sync::Mutex::new(None)),
             session_list: Arc::new(std::sync::Mutex::new(None)),
             session_close: Arc::new(std::sync::Mutex::new(None)),
             session_delete: Arc::new(std::sync::Mutex::new(None)),
@@ -241,7 +243,7 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -253,6 +255,25 @@ pub struct TaskMetadata {
     /// finished coder's session when the reviewer starts, so two sessions of one task coexist and
     /// the phase describes only the later one.
     pub role: Option<crate::project::profiles::SessionRole>,
+}
+
+/// What the host knows about a session that `maestro-server` does not.
+///
+/// Handed over at spawn as an opaque blob the server stores and never reads, and handed back by
+/// `ListLiveSessions`. It exists because a session now outlives the app run that started it: on
+/// re-adopting one, the host has only what the server can tell it — an id, an agent, a working
+/// directory — and none of what makes that session belong to a project, a task or a name in the
+/// sidebar.
+///
+/// Deliberately not a protocol type. Adding a field here is a change to two functions in this
+/// crate rather than a `PROTOCOL_VERSION` bump and a redeploy on every connection.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionHostMeta {
+    pub project_id: Option<i32>,
+    pub session_name: Option<String>,
+    pub connection_key: crate::acp::ConnectionKey,
+    #[serde(default)]
+    pub task: TaskMetadata,
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields

@@ -25,7 +25,7 @@ pub(crate) struct ConnectionHandlers {
     pub router: Arc<SessionRouter>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalHandle>>>,
     pub terminal_counter: Arc<AtomicU64>,
-    pub stdout: Arc<Mutex<tokio::io::Stdout>>,
+    pub stdout: crate::ClientOut,
     pub elicit_counter: Arc<AtomicU64>,
     pub permission_counter: Arc<AtomicU64>,
 }
@@ -209,7 +209,7 @@ macro_rules! configure_acp_builder {
 pub(crate) use configure_acp_builder;
 
 impl ConnectionHandlers {
-    pub fn new(stdout: Arc<Mutex<tokio::io::Stdout>>) -> (Self, Arc<SessionRouter>) {
+    pub fn new(stdout: crate::ClientOut) -> (Self, Arc<SessionRouter>) {
         let router = Arc::new(SessionRouter::default());
         let handlers = Self {
             router: Arc::clone(&router),

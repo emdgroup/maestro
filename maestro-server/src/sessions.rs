@@ -172,6 +172,9 @@ pub struct ActiveSession {
     pub cwd: String,
     /// Extra workspace roots this session was started with, replayed when the agent restarts.
     pub additional_directories: Vec<String>,
+    /// Opaque blob the host attached at spawn, handed back by `ListLiveSessions`.
+    /// Never read here. See `maestro_protocol::ListLiveSession::host_meta`.
+    pub host_meta: Option<serde_json::Value>,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

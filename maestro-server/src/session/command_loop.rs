@@ -13,7 +13,7 @@ use maestro_protocol::{
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
     SetModeOkResponse, TurnEnded,
 };
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::send_response;
 use crate::sessions::SessionCommand;
@@ -21,7 +21,7 @@ use crate::sessions::SessionCommand;
 pub(crate) async fn handle_prompt_result(
     result: Result<PromptResponse, acp::Error>,
     session_id: String,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) {
     let stop_reason = match result {
         Ok(resp) => match resp.stop_reason {
@@ -164,7 +164,7 @@ pub(crate) async fn run_command_loop(
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     cx: acp::ConnectionTo<acp::Agent>,
     session_id: acp::schema::v1::SessionId,
-    so: Arc<Mutex<tokio::io::Stdout>>,
+    so: crate::ClientOut,
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
 ) {

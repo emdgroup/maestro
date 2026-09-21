@@ -343,6 +343,47 @@ test run rewrites `src/types/bindings.ts`. `.oxfmtrc.json` lists the file under 
 the committed copy is the generator's own output and a test run leaves it alone unless the bindings
 genuinely changed — a diff there means a model changed and should be committed.
 
+### The resident maestro-server
+
+`maestro-server` is a daemon, one per machine, distro or container, and the app never spawns it
+directly. Every transport spawns `maestro-server attach` instead, a byte relay from its own stdin
+and stdout to the daemon's loopback socket:
+
+```
+app ──spawns child──▶ maestro-server attach ──TCP loopback + token──▶ maestro-server daemon
+                      (dies with the app)                             (resident)
+```
+
+This is why agent sessions survive the window closing, and why the four transport functions in
+`transport_setup.rs` did not change shape to get it: the relay speaks the same framed stdio the
+server always did. `attach` starts the daemon when none is running, so no caller has to know
+whether one is.
+
+**The lock, not the runtime file, says whether a daemon is alive.** `<dir>/lock` is held open for
+the daemon's whole life, so the OS releases it on death; `<dir>/runtime.json` carries
+`{port, token, version, protocol_version, pid}` and is left behind by a crash, pointing at a dead
+port. The directory is `<MAESTRO_DATA_DIR>/daemon/` locally — so a dev build gets its own daemon
+rather than contending with the installed app — and `~/.maestro/daemon/` on a remote machine,
+passed through `MAESTRO_DAEMON_DIR`.
+
+A daemon whose `version` or `protocol_version` differs from the connecting client is asked to stop
+over a plain-text `SHUTDOWN` line, which is read before any framing so it works across protocol
+versions. **Its running sessions die with it**, and remote daemons are not version-namespaced, so
+pointing a dev build and a released app at the same SSH host makes them retire each other's.
+
+`ClientSink` (`maestro-server/src/client_sink.rs`) is what made this possible without touching a
+dozen signatures: every response leaves through `helpers::send_response`, so swapping the
+destination is one indirection. A write with no client attached succeeds and drops the bytes —
+nobody watching is the normal state of a daemon between app runs, not an error.
+
+**Sessions are re-adopted, not reloaded.** `SpawnRequest` and `SessionLoadRequest` carry
+`host_meta`, an opaque blob the server stores and never reads, holding what the host knows and the
+server does not (project, task, session name, connection). `ListLiveSessions` hands it back, and
+`session_ops::adopt_live_sessions` rebuilds a host-side entry for each session belonging to the
+project being opened. It runs in `prime_project_server` _before_ the snapshot restore, so
+`restore_acp_session`'s existing "already live" guard returns the adopted session rather than
+loading a second copy of the same conversation.
+
 ### The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**
@@ -513,7 +554,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 28 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 3.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 4.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

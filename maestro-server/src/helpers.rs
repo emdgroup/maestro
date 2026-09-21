@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use maestro_protocol::{DiagnosticPayload, ErrorResponse, MaestroRpcMessage, ServerResponse};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
 
 use crate::session::pre_initialize_agent;
 use crate::sessions::{AgentConnectionHandle, SessionCommand, SessionMap, SharedAgentConnections};
@@ -55,7 +53,7 @@ pub(crate) async fn evict_if_same_connection(
 pub(crate) async fn resolve_agent_spawn_params(
     agent_id: &str,
     agents: &[crate::agent::registry::DiscoveredAgentWithSpawn],
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) -> Option<(String, Vec<String>, HashMap<String, String>)> {
     match agents.iter().find(|a| a.id == agent_id) {
         Some(a) => {
@@ -95,7 +93,7 @@ pub(crate) async fn ensure_and_get_connection(
     args: &[String],
     env: &HashMap<String, String>,
     cwd: &str,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) -> Option<AgentConnectionHandle> {
     if let Some(conn) = agent_connections.lock().await.get(agent_id) {
         return Some(AgentConnectionHandle::from(conn));
@@ -111,16 +109,14 @@ pub(crate) async fn ensure_and_get_connection(
     Some(handle)
 }
 
-/// Send a MaestroRpcMessage to stdout, flushing after every write.
+/// Send a MaestroRpcMessage to the client, flushing after every write.
 pub(crate) async fn send_response(
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
     msg: &MaestroRpcMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut buf: Vec<u8> = Vec::new();
     maestro_protocol::write_message(&mut buf, msg).await?;
-    let mut out = stdout.lock().await;
-    out.write_all(&buf).await?;
-    out.flush().await?;
+    stdout.lock().await.write(&buf).await?;
     Ok(())
 }
 
@@ -130,7 +126,7 @@ pub(crate) async fn forward_to_session(
     sessions: &SessionMap,
     session_id: &str,
     cmd: SessionCommand,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(session) = sessions.get(session_id) {
         if session.cmd_tx.send(cmd).await.is_err() {

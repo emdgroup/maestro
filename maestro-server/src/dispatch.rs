@@ -5,7 +5,6 @@ use maestro_protocol::{
     InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
     ServerRequest, ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::auth::{self, AuthTerminals};
@@ -42,7 +41,7 @@ pub(crate) async fn dispatch_message(
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
     agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &AuthTerminals,
     pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
@@ -73,6 +72,28 @@ pub(crate) async fn dispatch_message(
                     stdout,
                     &MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(
                         ListAgentsResponse { agents },
+                    )),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(_req)) => {
+            let live = sessions
+                .iter()
+                .map(|(session_id, session)| maestro_protocol::ListLiveSession {
+                    session_id: session_id.clone(),
+                    agent_id: session.agent_id.clone(),
+                    cwd: session.cwd.clone(),
+                    acp_session_id: session.cleanup.as_ref().map(|c| c.acp_session_id.clone()),
+                    host_meta: session.host_meta.clone(),
+                })
+                .collect();
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(
+                        maestro_protocol::ListLiveSessionsResponse { sessions: live },
                     )),
                 )
                 .await
@@ -153,6 +174,7 @@ pub(crate) async fn dispatch_message(
                 result.session.agent_id = req.agent_id;
                 result.session.cwd = req.cwd;
                 result.session.additional_directories = req.additional_directories;
+                result.session.host_meta = req.host_meta;
                 if send_response(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
