@@ -42,6 +42,12 @@ impl ClientSink {
         self.writer = None;
     }
 
+    /// Whether anybody is listening. False is the normal state of a daemon between app runs, and
+    /// what tells the reaper a session's output is going nowhere.
+    pub fn is_attached(&self) -> bool {
+        self.writer.is_some()
+    }
+
     /// Write already-framed bytes and flush.
     ///
     /// Flushing every message is deliberate: the client blocks on a response it cannot see

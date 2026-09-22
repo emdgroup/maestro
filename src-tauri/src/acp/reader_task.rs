@@ -1348,7 +1348,7 @@ fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
 
 /// Route a shared-reader message to the correct per-session handler or to
 /// connection-level pending channels (PreInitialize, SessionList, SessionClose, etc.).
-async fn handle_shared_server_message(
+pub(crate) async fn handle_shared_server_message(
     msg: MaestroRpcMessage,
     connection_key: crate::acp::ConnectionKey,
     app_handle: &tauri::AppHandle,

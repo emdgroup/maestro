@@ -233,6 +233,22 @@ pub struct ListLiveSession {
     /// it opaque means adding a field to it never touches the protocol.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_meta: Option<serde_json::Value>,
+    /// Requests this session is still waiting on an answer to.
+    ///
+    /// A permission or elicitation prompt outlives the client that was shown it: the agent is
+    /// blocked on it, so the session is mid-turn and is adopted as it stands rather than reloaded.
+    /// Replaying these to whoever adopts the session is the only way the prompt becomes answerable
+    /// again, because the message that carried it went to a client that is gone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_requests: Vec<PendingSessionRequest>,
+}
+
+/// A request the server sent a client and is still waiting on, replayed to the next client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PendingSessionRequest {
+    Permission(PermissionRequest),
+    Elicitation(ElicitationRequest),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -725,7 +741,7 @@ pub struct SessionUpdate {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PermissionRequest {
     pub session_id: String,
     pub request_id: String,
@@ -739,7 +755,7 @@ pub struct PermissionResponse {
     pub option_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElicitationRequest {
     pub session_id: String,
     pub request_id: String,

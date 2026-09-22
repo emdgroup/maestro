@@ -34,7 +34,7 @@ becomes one of its clients.
 | ----- | ------------------------------------------- | ----------------------------- |
 | 0     | Session identity: one opaque id everywhere  | Done, `4f08e9aa`              |
 | 1     | Resident mode: daemon, `attach`, re-adopt   | Done, `0fc3a63c` + `93d2b9b7` |
-| 2     | Session ownership and lifetime              | Next                          |
+| 2     | Session ownership and lifetime              | Done                          |
 | 3     | `automations.db`                            | Planned                       |
 | 4     | Worktree provisioning moves into the daemon | Planned                       |
 | 5     | The clock                                   | Planned                       |
@@ -141,26 +141,44 @@ The manual Windows pass: `bun run tauri:dev`, run an agent, close the window, re
 session back with its transcript when it was idle, `.maestro/dev-data/daemon/{lock,runtime.json}`
 on disk, and `maestro-server.exe` still running after the app exits.
 
-## Phase 2: session ownership and lifetime
+## Phase 2: session ownership and lifetime (done)
 
 Phase 1 made sessions immortal. This phase decides when they end.
 
-Scope:
+The pre-phase interview cut the scope roughly in half. Three of the four things originally listed
+here turned out to be premature: automation runs do not exist yet, and caps on concurrency and
+duration only bite when something can spawn without a human in the loop.
 
-- An **interactive** session ends roughly 60 seconds after the client that started it disconnects.
-- An **automation** run ends on the agent's final response.
-- A session **awaiting permission** times out after around 30 minutes.
-- Caps on concurrent agents and on run duration.
+| Topic                | Decision                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Scope                | Only what exists now. Automation-run lifetime moves to phase 5, beside the runner         |
+| Session kinds        | None. Every session is interactive; phase 5's in-daemon runner can mark its own           |
+| Idle session         | Closed 60 seconds after the last client detaches, freeing the agent process               |
+| Idle                 | `turn_active == false`. A turn in flight runs to completion, then starts its own 60s      |
+| Where the timer runs | The daemon, on the existing 10 second liveness tick. The host is not alive to be asked    |
+| How it closes        | `SessionCommand::CloseSession` through the command loop, never a task abort               |
+| No `session/load`    | Reaped uniformly. Those sessions lose their transcript, accepted over unbounded processes |
+| Permission timeout   | None. A blocked session is mid-turn, so the reaper never takes it                         |
+| Unanswered prompts   | Kept with their sender, returned by `ListLiveSessions`, replayed to whoever adopts        |
+| Replay routing       | After the host-side insert, through `handle_shared_server_message`                        |
+| Concurrency cap      | None in phase 2. A human clicking spawn is already rate limited by being a human          |
+| Duration cap         | None. The user will get a stop control instead, deferred                                  |
+| Cap configuration    | Hardcoded constants, made configurable in phase 3 when `automations.db` exists            |
+| Protocol             | No `PROTOCOL_VERSION` bump: `pending_requests` is additive with a serde default           |
 
-Already decided: **only the client that started a session sees its output.** There is no fan-out to
-other clients in this design.
+Rejected along the way, with the reason:
 
-Worth revisiting here, having been declined for phase 1: a rolling window per session would let a
-second client catch up mid-session. Only worth its memory if a second client actually exists.
+- **A blind re-send of outstanding prompts the moment a client attaches.** It arrives before the
+  host has adopted anything, so every message names a session this side does not hold yet and is
+  dropped. It would also push prompts belonging to projects this window never opened.
+- **A 30 minute permission timeout.** The reaper already exempts a blocked session, and a person
+  who walks away from a prompt they meant to answer is not a condition to recover from.
+- **`session_kind` on `SpawnRequest`.** A protocol bump and a redeploy on every connection, to
+  carry a distinction nothing makes until phase 5.
 
-Open questions for the pre-phase interview: where the timers live (daemon or host), what the caps
-are and whether they are configurable, what the user sees when a cap is hit, and whether a timed-out
-permission request cancels the turn or just stops waiting.
+Still open, deliberately: **only the client that started a session sees its output.** There is no
+fan-out, and a rolling per-session window that would let a second client catch up mid-session is
+only worth its memory once a second client exists.
 
 ## Phase 3: `automations.db`
 

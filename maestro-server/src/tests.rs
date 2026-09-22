@@ -180,3 +180,74 @@ async fn test_permission_pause_creates_pending_entry() {
     let back = read_message(&mut cursor).await.unwrap();
     assert_eq!(perm_req_msg, back);
 }
+
+/// A session that is idle with nobody attached is closed, and one that is neither is left alone.
+#[tokio::test]
+async fn test_reap_closes_only_idle_unwatched_sessions() {
+    use crate::sessions::{ActiveSession, SessionMap};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    fn session(
+        turn_active: bool,
+    ) -> (
+        ActiveSession,
+        tokio::sync::mpsc::Receiver<crate::SessionCommand>,
+    ) {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(4);
+        let session = ActiveSession {
+            cmd_tx,
+            pending_permissions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            pending_elicitations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            task: tokio::spawn(async {}),
+            cleanup: None,
+            agent_id: "agent".to_string(),
+            cwd: "/tmp".to_string(),
+            additional_directories: Vec::new(),
+            host_meta: None,
+            turn_active: Arc::new(AtomicBool::new(turn_active)),
+            idle_since: None,
+        };
+        (session, cmd_rx)
+    }
+
+    let mut sessions: SessionMap = HashMap::new();
+    let (idle, mut idle_rx) = session(false);
+    let (busy, _busy_rx) = session(true);
+    sessions.insert("idle".to_string(), idle);
+    sessions.insert("busy".to_string(), busy);
+
+    // Somebody is watching: nothing is idle, whatever the turn state.
+    let attached = crate::client_sink::ClientSink::stdio();
+    crate::reap_idle_sessions(&mut sessions, &attached).await;
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions["idle"].idle_since.is_none());
+
+    // Nobody watching: the idle one starts its grace period, the mid-turn one does not.
+    let detached = crate::client_sink::ClientSink::detached();
+    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    assert_eq!(sessions.len(), 2, "the grace period has not run out yet");
+    assert!(sessions["idle"].idle_since.is_some());
+    assert!(sessions["busy"].idle_since.is_none());
+
+    // Age it past the grace period.
+    sessions.get_mut("idle").unwrap().idle_since =
+        Instant::now().checked_sub(crate::IDLE_GRACE + Duration::from_secs(1));
+    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    assert_eq!(sessions.len(), 1, "the idle session is gone");
+    assert!(sessions.contains_key("busy"));
+    assert!(
+        matches!(
+            idle_rx.recv().await,
+            Some(crate::SessionCommand::CloseSession)
+        ),
+        "the agent is asked to close the session, not left holding it"
+    );
+
+    // A turn that ends while nobody is attached starts its own grace period, not the old one.
+    sessions["busy"].turn_active.store(false, Ordering::SeqCst);
+    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions["busy"].idle_since.is_some());
+}

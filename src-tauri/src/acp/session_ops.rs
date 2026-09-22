@@ -236,10 +236,10 @@ pub async fn adopt_live_sessions(
         }
     };
 
-    let writer_tx = {
+    let (writer_tx, pending) = {
         let servers = app_state.acp.connection_servers.lock().await;
         match servers.get(&connection_key) {
-            Some(server) => server.writer_tx.clone(),
+            Some(server) => (server.writer_tx.clone(), server.pending.clone()),
             None => return 0,
         }
     };
@@ -307,6 +307,34 @@ pub async fn adopt_live_sessions(
             .lock()
             .await
             .insert(session.session_id.clone(), acp_process);
+
+        // After the insert, never before: these go through the same routing every live message
+        // takes, and that routing drops anything addressed to a session this side does not hold
+        // yet. Replaying them is what makes a prompt the previous client was shown answerable
+        // again — the agent is still blocked on it, and the message that asked went to a client
+        // that is gone.
+        for request in session.pending_requests {
+            let msg = match request {
+                maestro_protocol::PendingSessionRequest::Permission(request) => {
+                    MaestroRpcMessage::Response(
+                        crate::acp::transport::ServerResponse::PermissionRequest(request),
+                    )
+                }
+                maestro_protocol::PendingSessionRequest::Elicitation(request) => {
+                    MaestroRpcMessage::Response(
+                        crate::acp::transport::ServerResponse::ElicitationRequest(request),
+                    )
+                }
+            };
+            crate::acp::reader_task::handle_shared_server_message(
+                msg,
+                connection_key,
+                &app_state.app_handle,
+                app_state,
+                &pending,
+            )
+            .await;
+        }
         adopted += 1;
     }
 

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 
 use agent_client_protocol as acp;
-use maestro_protocol::{AuthMethodInfo, PromptCapabilitiesInfo};
+use maestro_protocol::{
+    AuthMethodInfo, ElicitationRequest, PermissionRequest, PromptCapabilitiesInfo,
+};
 
 pub enum SessionCommand {
     Prompt(String),
@@ -29,10 +31,20 @@ pub struct TerminalExitInfo {
     pub signal: Option<String>,
 }
 
+/// Requests sent to a client and not yet answered, each kept with the message that carried it.
+///
+/// The message is kept because the client it went to may be gone: the agent stays blocked on the
+/// answer, so whoever attaches next has to be shown the prompt again, and re-sending what was sent
+/// is the only way to do that without inventing a second way of describing the same request.
+pub type PendingPermissions =
+    Arc<Mutex<HashMap<String, (PermissionRequest, oneshot::Sender<Option<String>>)>>>;
+pub type PendingElicitations =
+    Arc<Mutex<HashMap<String, (ElicitationRequest, oneshot::Sender<serde_json::Value>)>>>;
+
 /// Per-session state accessed from shared connection handlers via the router.
 pub struct SharedSessionState {
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
-    pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
+    pub pending_permissions: PendingPermissions,
+    pub pending_elicitations: PendingElicitations,
 }
 
 /// Routes ACP session IDs → maestro session IDs → per-session state.
@@ -160,8 +172,8 @@ pub struct SessionCleanup {
 
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
-    pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
+    pub pending_permissions: PendingPermissions,
+    pub pending_elicitations: PendingElicitations,
     pub task: tokio::task::JoinHandle<()>,
     /// Populated for fast-path sessions (shared connection server).
     /// `None` for cold-path sessions (process killed by kill_on_drop on cancel).
@@ -181,6 +193,9 @@ pub struct ActiveSession {
     /// session between turns can be closed and reloaded to recover its transcript, one mid-turn
     /// cannot without throwing the turn away.
     pub turn_active: Arc<AtomicBool>,
+    /// When this session was first seen idle with no client attached, or `None` while either is
+    /// untrue. The reaper closes it once this is old enough. See `main::reap_idle_sessions`.
+    pub idle_since: Option<std::time::Instant>,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

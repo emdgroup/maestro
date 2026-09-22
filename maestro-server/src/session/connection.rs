@@ -322,9 +322,9 @@ pub(crate) async fn create_session_on_connection(
     let acp_session_id_str = session_id.to_string();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+    let pending_permissions: crate::sessions::PendingPermissions =
         Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+    let pending_elicitations: crate::sessions::PendingElicitations =
         Arc::new(Mutex::new(HashMap::new()));
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
@@ -382,6 +382,7 @@ pub(crate) async fn create_session_on_connection(
             additional_directories: Vec::new(),
             host_meta: None,
             turn_active,
+            idle_since: None,
         },
         models,
         modes,
@@ -421,9 +422,9 @@ pub(crate) async fn load_session_on_connection(
     let cx = conn.connection.clone();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+    let pending_permissions: crate::sessions::PendingPermissions =
         Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+    let pending_elicitations: crate::sessions::PendingElicitations =
         Arc::new(Mutex::new(HashMap::new()));
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
@@ -539,6 +540,7 @@ pub(crate) async fn load_session_on_connection(
             additional_directories: Vec::new(),
             host_meta: None,
             turn_active,
+            idle_since: None,
         },
         models,
         modes,

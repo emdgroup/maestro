@@ -79,9 +79,23 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(_req)) => {
-            let live = sessions
-                .iter()
-                .map(|(session_id, session)| maestro_protocol::ListLiveSession {
+            let mut live = Vec::with_capacity(sessions.len());
+            for (session_id, session) in sessions.iter() {
+                let mut pending_requests: Vec<maestro_protocol::PendingSessionRequest> = session
+                    .pending_permissions
+                    .lock()
+                    .await
+                    .values()
+                    .map(|(request, _tx)| {
+                        maestro_protocol::PendingSessionRequest::Permission(request.clone())
+                    })
+                    .collect();
+                pending_requests.extend(session.pending_elicitations.lock().await.values().map(
+                    |(request, _tx)| {
+                        maestro_protocol::PendingSessionRequest::Elicitation(request.clone())
+                    },
+                ));
+                live.push(maestro_protocol::ListLiveSession {
                     session_id: session_id.clone(),
                     agent_id: session.agent_id.clone(),
                     cwd: session.cwd.clone(),
@@ -90,8 +104,9 @@ pub(crate) async fn dispatch_message(
                         .turn_active
                         .load(std::sync::atomic::Ordering::SeqCst),
                     host_meta: session.host_meta.clone(),
-                })
-                .collect();
+                    pending_requests,
+                });
+            }
             send_or_return!(
                 send_response(
                     stdout,
@@ -308,7 +323,7 @@ pub(crate) async fn dispatch_message(
 
         MaestroRpcMessage::Request(ServerRequest::PermitResponse(perm_resp)) => {
             if let Some(session) = sessions.get(&perm_resp.session_id) {
-                if let Some(tx) = session
+                if let Some((_request, tx)) = session
                     .pending_permissions
                     .lock()
                     .await
@@ -321,7 +336,7 @@ pub(crate) async fn dispatch_message(
 
         MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(elicit_resp)) => {
             if let Some(session) = sessions.get(&elicit_resp.session_id) {
-                if let Some(tx) = session
+                if let Some((_request, tx)) = session
                     .pending_elicitations
                     .lock()
                     .await
