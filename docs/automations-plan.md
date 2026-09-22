@@ -273,8 +273,16 @@ review, one workspace reused across runs, or a workspace removed when the run ch
 `POST /hooks/<automation_id>` on the daemon, with a per-automation secret and HMAC verification,
 request dedupe, a body size cap and a rate limit.
 
+**The editor gains a second trigger section**, beside the schedule one phase 3.5 built. A webhook
+is a trigger like a cron expression is, so it belongs in the same modal and under the same rule:
+one switch saying whether it is on, and what it takes to use it underneath. That is the URL, the
+secret, a way to copy both and a way to roll the secret, plus whatever the last delivery was, since
+a webhook that is not firing is the thing a user comes to that dialog to diagnose. The run row
+already records `scheduled`; a third origin makes that a value rather than a flag.
+
 Open: whether the endpoint is on the same loopback listener as `attach` or a separate bound port,
-and how a remote webhook reaches a daemon that only binds loopback.
+and how a remote webhook reaches a daemon that only binds loopback. The second question decides
+what the editor can even show as a URL, so it is settled before the section is designed.
 
 ## Phase 7: autostart and consent
 

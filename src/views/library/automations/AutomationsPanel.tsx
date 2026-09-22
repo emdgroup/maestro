@@ -282,7 +282,15 @@ export function AutomationsPanel({
 
   return (
     <div className="flex h-full min-w-0 flex-1">
-      <div className="flex h-full min-w-0 flex-1 flex-col gap-3 p-4">
+      {/* Its own top edge, rounding away from the column on its right, and the left corner rounding
+          away from the sidebar. The right border is dropped when there is no column to round away
+          from, because a curve at the window edge is just a gap. */}
+      <div
+        className={cn(
+          "flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background p-4",
+          panelOpen && "rounded-tr-xl border-r",
+        )}
+      >
         {(automations ?? []).length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
             <Bot className="size-8 text-muted-foreground/40" />
@@ -353,7 +361,7 @@ export function AutomationsPanel({
           onClose={() => setPanelOpen(false)}
         />
       ) : (
-        <div className="shrink-0 border-l border-border p-2">
+        <div className="shrink-0 bg-card p-2">
           <Tooltip>
             <TooltipTrigger
               render={

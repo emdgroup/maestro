@@ -62,7 +62,9 @@ export function LibraryView({
           </div>
         </nav>
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background">
+        {/* The inset surface is the panel's own, not this one's: it rounds away from the runs
+            column when that is open, which this cannot know. Same shape as Worktrees. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
           <AutomationsPanel
             projectId={projectId}
             projectPath={projectPath}
