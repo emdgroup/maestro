@@ -67,8 +67,8 @@ describe("describeExpression", () => {
     expect(say("0 * * * *")).toBe("Every hour, on the hour");
     expect(say("15 * * * *")).toBe("Every hour, at 15 minutes past");
     expect(say("0 */2 * * *")).toBe("Every 2 hours, on the hour");
-    expect(say("0 9 * * *")).toBe("At 09:00");
-    expect(say("30 9,17 * * *")).toBe("At 09:30 and 17:30");
+    expect(say("0 9 * * *")).toBe("Every day at 09:00");
+    expect(say("30 9,17 * * *")).toBe("Every day at 09:30 and 17:30");
     expect(say("*/30 9-17 * * *")).toBe("Every 30 minutes, between 09:00 and 17:59");
     expect(say("* * * * *")).toBe("Every minute");
   });
@@ -101,8 +101,19 @@ describe("describeExpression", () => {
   });
 
   it("describes every template, so the menu can never show one it cannot read", () => {
-    for (const template of SCHEDULE_TEMPLATES) {
-      expect(describeExpression(template.cron)).toHaveProperty("text");
-    }
+    // The menu labels are these same readings, which is the point: a hand-written label that
+    // disagreed with the sentence would promise one schedule and describe another.
+    expect(SCHEDULE_TEMPLATES.map(say)).toEqual([
+      "Every 15 minutes",
+      "Every 2 hours, on the hour",
+      "Every day at 09:00",
+      "Every day at 09:00 and 17:00",
+      "At 09:00, on Monday through Friday",
+      "At 08:00, on Mondays",
+      "At 10:00, on Saturdays and Sundays",
+      "Every 30 minutes, between 09:00 and 17:59, on Monday through Friday",
+      "At 07:00, on the 1st of the month",
+      "At 07:00, on the 1st of the month, every 3rd month",
+    ]);
   });
 });

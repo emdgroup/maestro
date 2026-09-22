@@ -165,7 +165,15 @@ export function describeExpression(cron: string): { text: string } | { error: st
   const days = [dayOfMonthClause(dayOfMonth), dayOfWeekClause(dayOfWeek)].filter(
     (clause) => clause !== null,
   );
-  const clauses = [timeClause(minute, hour), days.join(" or "), monthClause(month)].filter(
+  const month_ = monthClause(month);
+  let time = timeClause(minute, hour);
+  // "At 09:00" on its own does not say how often. Nothing restricts the day, so it is every one,
+  // and saying that is the difference between a time and a schedule. Only for the clauses that
+  // name a clock time: "Every day every 30 minutes" says it twice.
+  if (days.length === 0 && month_ === null && time.startsWith("At ")) {
+    time = `Every day ${time.replace("At ", "at ")}`;
+  }
+  const clauses = [time, days.join(" or "), month_].filter(
     (clause) => clause !== null && clause.length > 0,
   );
 

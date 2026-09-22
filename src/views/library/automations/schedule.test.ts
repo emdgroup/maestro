@@ -4,7 +4,7 @@ import { describeNextRun, describeSchedule } from "./schedule";
 describe("describeSchedule", () => {
   it("says what the row's schedule means, in the editor's words", () => {
     expect(describeSchedule(null)).toBe("Manual only");
-    expect(describeSchedule("0 9 * * *")).toBe("At 09:00");
+    expect(describeSchedule("0 9 * * *")).toBe("Every day at 09:00");
     expect(describeSchedule("*/30 * * * *")).toBe("Every 30 minutes");
     expect(describeSchedule("0 9 * * 1-5")).toBe("At 09:00, on Monday through Friday");
   });

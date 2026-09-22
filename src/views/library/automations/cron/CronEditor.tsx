@@ -46,6 +46,13 @@ export function CronEditor({
   // Asked only for an expression that parses here first, so a half-typed field is not a round trip.
   const { data: next } = usePreviewScheduleQuery(projectId, broken ? null : cron, timezone);
 
+  const focusedField = (() => {
+    if (focused === null) return null;
+    const spec = FIELDS[focused];
+    const result = parseField(tokens[focused], spec);
+    return { doc: FIELD_DOCS[spec.kind], error: isError(result) ? result.error : null };
+  })();
+
   function write(index: number, token: string) {
     const written = [...tokens];
     written[index] = token;
@@ -83,29 +90,34 @@ export function CronEditor({
           <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
             Start from
           </p>
-          {SCHEDULE_TEMPLATES.map((template) => (
-            <button
-              key={template.cron}
-              type="button"
-              onClick={() => onChange(template.cron)}
-              className={cn(
-                "rounded px-2 py-1.5 text-left text-xs hover:bg-muted",
-                template.cron === cron.trim() && "bg-muted",
-              )}
-            >
-              {template.label}
-            </button>
-          ))}
+          {SCHEDULE_TEMPLATES.map((template) => {
+            const reading = describeExpression(template);
+            return (
+              <button
+                key={template}
+                type="button"
+                onClick={() => onChange(template)}
+                className={cn(
+                  "rounded px-2 py-1.5 text-left text-xs hover:bg-muted",
+                  template === cron.trim() && "bg-muted",
+                )}
+              >
+                {"error" in reading ? template : reading.text}
+              </button>
+            );
+          })}
         </PopoverContent>
       </Popover>
 
-      <div className="flex items-start gap-1.5">
+      {/* `relative` on the row rather than on a slot: the popover is as wide as the whole control
+          and in the same place whichever field has focus, so reading one field after another does
+          not move the panel under the cursor. */}
+      <div className="relative flex items-start gap-1.5">
         {FIELDS.map((spec, index) => {
           const result = parseField(tokens[index], spec);
           const wrong = isError(result);
-          const doc = FIELD_DOCS[spec.kind];
           return (
-            <div key={spec.kind} className="relative flex-1 space-y-1">
+            <div key={spec.kind} className="flex-1 space-y-1">
               <input
                 value={tokens[index]}
                 onChange={(event) => write(index, event.target.value)}
@@ -135,36 +147,43 @@ export function CronEditor({
               >
                 {spec.label}
               </div>
-
-              {/* Hand-placed rather than a popover component: it follows focus rather than a
-                  click, and must not take focus away from the field it is describing. */}
-              {focused === index && (
-                <div className="absolute left-1/2 top-12 z-20 w-72 -translate-x-1/2 space-y-1.5 rounded-md border border-border bg-popover p-2.5 shadow-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-medium">{doc.title}</span>
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                      {doc.range}
-                    </span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {doc.examples.map((example) => (
-                      <div key={example.token} className="text-[10.5px] text-muted-foreground">
-                        <span className="font-mono text-foreground">{example.token}</span>{" "}
-                        {example.meaning}
-                      </div>
-                    ))}
-                  </div>
-                  {doc.caution && (
-                    <p className="border-t border-border pt-1.5 text-[10.5px] text-muted-foreground">
-                      {doc.caution}
-                    </p>
-                  )}
-                  {wrong && <p className="text-[10.5px] text-destructive">{result.error}</p>}
-                </div>
-              )}
             </div>
           );
         })}
+
+        {/* Hand-placed rather than a popover component: it follows focus rather than a click, and
+            must not take focus away from the field it is describing. */}
+        {focusedField && (
+          <div className="absolute inset-x-0 top-14 z-20 space-y-2 rounded-md border border-border bg-popover p-3 shadow-lg">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium">{focusedField.doc.title}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                {focusedField.doc.range}
+              </span>
+            </div>
+            {/* Two columns of token-and-meaning pairs, each pair a grid of its own so every
+                meaning starts at the same x whatever the token beside it is. */}
+            <div className="grid grid-cols-2 gap-x-5 gap-y-1">
+              {focusedField.doc.examples.map((example) => (
+                <div
+                  key={example.token}
+                  className="grid grid-cols-[4.5rem_1fr] items-baseline gap-x-2 text-[10.5px]"
+                >
+                  <span className="truncate font-mono text-foreground">{example.token}</span>
+                  <span className="text-muted-foreground">{example.meaning}</span>
+                </div>
+              ))}
+            </div>
+            {focusedField.doc.caution && (
+              <p className="border-t border-border pt-2 text-[10.5px] text-muted-foreground">
+                {focusedField.doc.caution}
+              </p>
+            )}
+            {focusedField.error && (
+              <p className="text-[10.5px] text-destructive">{focusedField.error}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Left empty rather than stale while a field is wrong: there is no answer to give. */}
