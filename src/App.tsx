@@ -7,6 +7,8 @@ import { useSelectedProject, useSelectedProjectActions } from "@/store/projectSt
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
+import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useSessionNotifications } from "@/hooks/useSessionNotifications";
 import {
   useCleanupZombieWorktreesMutation,
   usePrefetchWorktrees,
@@ -81,6 +83,12 @@ function App() {
     // Run once on mount after settings resolve
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoading]);
+
+  // Raised here rather than inside AgentsView, which is lazy: an automation that fires while the
+  // user is on another tab asks its question to a view that may never have been mounted, and the
+  // whole point of a scheduled run is that nobody is watching it.
+  const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
+  useSessionNotifications(sessions, appSettings);
 
   // Page routing backed by navigationStore
   const activeTab = useActiveTab();

@@ -43,16 +43,25 @@ CREATE TABLE IF NOT EXISTS automations (
 );
 
 CREATE TABLE IF NOT EXISTS runs (
-    id              TEXT PRIMARY KEY,
-    automation_id   TEXT NOT NULL,
-    project_path    TEXT NOT NULL,
-    automation_name TEXT NOT NULL,
-    status          TEXT NOT NULL,
-    scheduled       INTEGER NOT NULL,
-    started_at      TEXT NOT NULL,
-    finished_at     TEXT,
-    session_id      TEXT,
-    error           TEXT
+    id                TEXT PRIMARY KEY,
+    automation_id     TEXT NOT NULL,
+    project_path      TEXT NOT NULL,
+    automation_name   TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    scheduled         INTEGER NOT NULL,
+    started_at        TEXT NOT NULL,
+    finished_at       TEXT,
+    session_id        TEXT,
+    error             TEXT,
+    -- What it takes to open this run again once its session has been closed. The session id above
+    -- names a live session and stops meaning anything when the sweep takes it; these three are
+    -- what `session/load` needs, and the run row is the only place they survive.
+    agent_session_id  TEXT,
+    agent_id          TEXT,
+    cwd               TEXT,
+    -- Whether that agent answers session/load. Known when the session was made and not after it
+    -- is gone, which is exactly when a run needs to say whether it can be opened again.
+    can_reload        INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_project ON runs(project_path, started_at DESC);
@@ -74,7 +83,28 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("cannot enable foreign keys on {path:?}: {e}"))?;
     conn.execute_batch(SCHEMA)
         .map_err(|e| format!("cannot create the automation schema: {e}"))?;
+    // Added after the table existed on machines that had already run a daemon. Each is nullable,
+    // so a run recorded before them simply cannot be reopened, which is what it was anyway.
+    for column in ["agent_session_id", "agent_id", "cwd", "can_reload"] {
+        add_column_if_missing(&conn, "runs", column)?;
+    }
     Ok(conn)
+}
+
+fn add_column_if_missing(conn: &Connection, table: &str, column: &str) -> Result<(), String> {
+    let present: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
+            params![table, column],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("cannot read the shape of {table}: {e}"))?;
+    if present {
+        return Ok(());
+    }
+    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} TEXT"), [])
+        .map(|_| ())
+        .map_err(|e| format!("cannot add {table}.{column}: {e}"))
 }
 
 /// The name a project is filed under, resolved on the machine the path exists on.
@@ -183,14 +213,28 @@ pub fn validate(automation: &Automation) -> Result<(), String> {
         ));
     }
     if let Some(expression) = &automation.cron {
-        let parsed = to_crate_expression(expression)
-            .and_then(|expression| cron::Schedule::from_str(&expression).ok());
-        if parsed.is_none() {
-            return Err(format!(
-                "Automation '{}' has a schedule that cannot be read: '{expression}'",
+        validate_schedule(expression, &automation.timezone).map_err(|e| {
+            format!(
+                "Automation '{}' has a schedule that cannot be read: {e}",
                 automation.name
-            ));
-        }
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// An expression and the zone it is read in, on their own.
+///
+/// Used by the editor's preview, where there is no automation yet and nothing to name in the
+/// error, and by `validate` above, which wraps it in one.
+pub fn validate_schedule(expression: &str, timezone: &str) -> Result<(), String> {
+    if timezone.parse::<chrono_tz::Tz>().is_err() {
+        return Err(format!("'{timezone}' is not a timezone"));
+    }
+    let parsed = to_crate_expression(expression)
+        .and_then(|expression| cron::Schedule::from_str(&expression).ok());
+    if parsed.is_none() {
+        return Err(format!("'{expression}' is not a schedule"));
     }
     Ok(())
 }
@@ -369,6 +413,12 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
         finished_at: row.get("finished_at")?,
         session_id: row.get("session_id")?,
         error: row.get("error")?,
+        agent_session_id: row.get("agent_session_id")?,
+        agent_id: row.get("agent_id")?,
+        cwd: row.get("cwd")?,
+        can_reload: row
+            .get::<_, Option<i64>>("can_reload")?
+            .map(|flag| flag != 0),
     })
 }
 
@@ -400,6 +450,12 @@ pub fn start_run(
         finished_at: None,
         session_id: None,
         error: None,
+        // Filled in by `attach_session` once there is a session. A run that never gets one failed
+        // before it started, and there is nothing to reopen.
+        agent_session_id: None,
+        agent_id: None,
+        cwd: None,
+        can_reload: None,
     };
     conn.execute(
         "INSERT INTO runs (
@@ -419,10 +475,31 @@ pub fn start_run(
     Ok(run)
 }
 
-pub fn attach_session(conn: &Connection, run_id: &str, session_id: &str) -> Result<(), String> {
+/// Record the session a run is happening in, and what it takes to reopen it later.
+///
+/// `session_id` names a live session and stops resolving once the sweep closes it. The other
+/// three are what `session/load` needs, and this row is where they survive that.
+pub fn attach_session(
+    conn: &Connection,
+    run_id: &str,
+    session_id: &str,
+    agent_session_id: &str,
+    agent_id: &str,
+    cwd: &str,
+    can_reload: bool,
+) -> Result<(), String> {
     conn.execute(
-        "UPDATE runs SET session_id = ? WHERE id = ?",
-        params![session_id, run_id],
+        "UPDATE runs
+            SET session_id = ?, agent_session_id = ?, agent_id = ?, cwd = ?, can_reload = ?
+          WHERE id = ?",
+        params![
+            session_id,
+            agent_session_id,
+            agent_id,
+            cwd,
+            can_reload as i64,
+            run_id
+        ],
     )
     .map(|_| ())
     .map_err(|e| format!("cannot record the run's session: {e}"))
@@ -557,6 +634,19 @@ mod tests {
     }
 
     #[test]
+    fn a_step_expression_fires_within_the_hour() {
+        // What the editor writes for anything below a day. The seconds field this prepends must
+        // not shift the step onto the wrong column.
+        let after = DateTime::parse_from_rfc3339("2026-01-01T09:07:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let minutes = next_due("*/30 * * * *", "UTC", after).expect("a next occurrence");
+        assert_eq!(minutes.to_rfc3339(), "2026-01-01T09:30:00+00:00");
+        let hours = next_due("0 */6 * * *", "UTC", after).expect("a next occurrence");
+        assert_eq!(hours.to_rfc3339(), "2026-01-01T12:00:00+00:00");
+    }
+
+    #[test]
     fn a_schedule_is_read_in_its_own_timezone() {
         let after = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
             .unwrap()
@@ -599,13 +689,27 @@ mod tests {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
         let run = start_run(&conn, &saved, true).expect("start");
-        attach_session(&conn, &run.id, "session-1").expect("attach");
+        attach_session(
+            &conn,
+            &run.id,
+            "session-1",
+            "agent-session-1",
+            "claude-acp",
+            "/p",
+            true,
+        )
+        .expect("attach");
         delete(&conn, "a").expect("delete");
 
         let runs = list_runs(&conn, "/p", None).expect("runs");
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].automation_name, "Automation a");
         assert_eq!(runs[0].session_id.as_deref(), Some("session-1"));
+        // The three below are what a closed session is reopened from, so a run keeps them even
+        // after the automation that produced it is gone.
+        assert_eq!(runs[0].agent_session_id.as_deref(), Some("agent-session-1"));
+        assert_eq!(runs[0].agent_id.as_deref(), Some("claude-acp"));
+        assert_eq!(runs[0].can_reload, Some(true));
     }
 
     #[test]
@@ -613,7 +717,16 @@ mod tests {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
         let run = start_run(&conn, &saved, false).expect("start");
-        attach_session(&conn, &run.id, "session-1").expect("attach");
+        attach_session(
+            &conn,
+            &run.id,
+            "session-1",
+            "agent-session-1",
+            "claude-acp",
+            "/p",
+            true,
+        )
+        .expect("attach");
         assert!(run_for_session(&conn, "session-1").is_some());
 
         assert_eq!(fail_interrupted_runs(&conn).expect("sweep"), 1);

@@ -253,6 +253,31 @@ pub async fn query_run_automation_via_server(
         .map_err(|_| "Connection server writer channel closed".to_string())
 }
 
+/// When an expression the user is still typing would next come round.
+///
+/// Short timeout on purpose: this fires while somebody edits a field, and a preview nobody is
+/// waiting for any more is worth less than the editor staying responsive.
+pub async fn query_preview_schedule_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    cron: String,
+    timezone: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::PreviewScheduleResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.preview_schedule.clone(),
+        "PreviewSchedule already in progress",
+        MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(
+            maestro_protocol::PreviewScheduleRequest { cron, timezone },
+        )),
+        5,
+        "PreviewSchedule via connection server timed out after 5s",
+    )
+    .await
+}
+
 pub async fn query_automation_runs_via_server(
     connection_key: crate::acp::ConnectionKey,
     project_path: String,

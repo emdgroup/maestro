@@ -1627,6 +1627,13 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(resp)) => {
+            if let Ok(mut guard) = pending.preview_schedule.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
         // Unsolicited: the clock started this, not the window. Named by project rather than sent
         // to a particular view, because the run belongs to a project whether or not it is open.
         MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {

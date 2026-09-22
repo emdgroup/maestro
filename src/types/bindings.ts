@@ -971,6 +971,21 @@ async listAutomationRuns(projectId: number, limit: number | null) : Promise<Resu
 }
 },
 /**
+ * When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
+ * 
+ * Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
+ * daemon is what decides when a run happens, and a second implementation in the editor would be
+ * a second answer to that question.
+ */
+async previewSchedule(projectId: number, cron: string, timezone: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_schedule", { projectId, cron, timezone }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Resolve the profile for a role and reduce it to what the agent can honour.
  * 
  * Takes the agent's advertised capabilities as arguments rather than looking them up, because
@@ -2859,7 +2874,17 @@ scheduled: boolean; started_at: string; finished_at?: string | null;
 /**
  * The session the run is happening in. This is how the app finds a session it did not start.
  */
-session_id?: string | null; error?: string | null }
+session_id?: string | null; error?: string | null; 
+/**
+ * What it takes to open this run again once the idle sweep has closed its session: the
+ * agent's own id for the conversation, which agent it was, and where it ran.
+ */
+agent_session_id?: string | null; agent_id?: string | null; cwd?: string | null; 
+/**
+ * Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
+ * in, rather than with one that fails.
+ */
+can_reload?: boolean | null }
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * Where an automation's agent runs.

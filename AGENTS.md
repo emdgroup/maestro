@@ -436,10 +436,10 @@ project the database that would hold it is not even on the machine the agent run
 
 - **A project is its canonicalized path**, resolved by the daemon, because it is the process on the
   machine that path exists on. The app sends the path it knows and stores whatever comes back.
-- **Schedules are five-field cron plus an IANA timezone.** The editor still offers three presets
-  and compiles them (`src/views/library/automations/schedule.ts`); anything hand-written is shown
-  as it is rather than flattened. `to_crate_expression` fixes up the two places the `cron` crate
-  disagrees with a crontab: it wants a seconds field, and it counts Sunday as 1 rather than 0.
+- **Schedules are five-field cron plus an IANA timezone, and the editor is the expression.** There
+  is no preset layer above it, so nothing snaps and nothing is ever read only.
+  `to_crate_expression` fixes up the two places the `cron` crate disagrees with a crontab: it wants
+  a seconds field, and it counts Sunday as 1 rather than 0.
 - **The zone is a choice between two machines, never a list.** `ListAutomations` returns
   `server_timezone` beside the rows, and the editor offers that or this computer's — and shows no
   control at all when they match, which is every local project. A stored zone that is neither is
@@ -456,6 +456,34 @@ project the database that would hold it is not even on the machine the agent run
   idle for the sweep above.
 - **`NewWorktree` is refused**, and the editor disables it with a reason. Creating one goes through
   the app's `worktrees` table; see phase 4 in `docs/automations-plan.md`.
+
+### Reading a cron expression, and reopening a run
+
+`src/views/library/automations/cron/` parses each field and decides nothing. `fields.ts` turns one
+token into a value, and that one function is used three times: to colour a slot, to write that
+field's clause in the sentence `describe.ts` builds, and to refuse `25` in an hour field before it
+is saved. **When a schedule fires is never answered here.** `preview_schedule` asks the daemon,
+which is the same `next_due` a stored automation's `next_due_at` comes from, so the editor and the
+clock cannot disagree.
+
+Two cron facts the UI has to carry, since nothing hides them any more. Sunday is 0 in a crontab and
+1 in the crate the daemon schedules with, so the docs popover says so and the sentence uses day
+names. And a restricted day of month **or**ed with a restricted day of week is what cron does:
+`0 9 1 * 1` fires on the 1st and on every Monday, so `describe.ts` writes "or" and the test in
+`cron.test.ts` pins it.
+
+**A `runs` row carries what it takes to reopen a run**: `agent_session_id`, `agent_id`, `cwd` and
+`can_reload`. `session_id` names a live session and stops resolving the moment the idle sweep
+closes it, which is a minute or two after the run ends, so the run row is the only place those
+survive. `can_reload` is recorded rather than asked because whether an agent answers `session/load`
+cannot be discovered once its session is gone, and `DiscoveredAgent` does not carry it. A run
+without it draws no button rather than one that fails.
+
+**Needs input is a join, not a column.** A run is Running, Succeeded or Failed to the database;
+whether it is blocked on a permission or an elicitation is live session state, and the panel
+crosses the run's session id with `sessionActivityStore`. That also means the count is only as
+fresh as the attachment: adoption replays pending requests, so it is right a second after the
+window opens and not before.
 
 ### The Maestro MCP server
 

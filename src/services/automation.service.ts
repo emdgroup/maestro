@@ -30,6 +30,28 @@ export function useAutomationsQuery(projectId: number | null) {
   });
 }
 
+/**
+ * When a schedule being written would next fire.
+ *
+ * Asked of the server while the user edits, because the daemon is the only thing that parses cron
+ * and it is also the thing that decides when a run happens. Held for the session: an expression
+ * and a zone give the same answer every time within a minute of each other, and the editor asks
+ * again for every keystroke that changes either.
+ */
+export function usePreviewScheduleQuery(
+  projectId: number | null,
+  cron: string | null,
+  timezone: string,
+) {
+  return useQuery({
+    queryKey: [...automationQueryKeys.base, "preview", projectId, cron, timezone] as const,
+    queryFn: () => api.previewSchedule(projectId!, cron!, timezone),
+    enabled: projectId != null && cron != null && cron.trim().length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
 /** What this project's automations have done, newest first. */
 export function useAutomationRunsQuery(projectId: number | null) {
   return useQuery({

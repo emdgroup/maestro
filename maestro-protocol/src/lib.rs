@@ -81,6 +81,8 @@ pub enum ServerRequest {
     RunAutomation(RunAutomationRequest),
     /// What this project's automations have done, newest first.
     ListAutomationRuns(ListAutomationRunsRequest),
+    /// When an expression would next come round. For a schedule being written, not a stored one.
+    PreviewSchedule(PreviewScheduleRequest),
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
     SetConfigOption(SetConfigOptionRequest),
@@ -530,6 +532,20 @@ pub struct AutomationRun {
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The agent's own id for this conversation, which is what `session/load` resumes from.
+    ///
+    /// `session_id` above names a live session and stops resolving the moment the idle sweep
+    /// closes it. These three are what it takes to open the run again afterwards, and this row is
+    /// the only place they outlive the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Whether that agent answers `session/load`. `None` for a run recorded before this was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_reload: Option<bool>,
 }
 
 /// Every request below names a project by the path the client knows it by. The daemon
@@ -584,6 +600,22 @@ pub struct ListAutomationRunsResponse {
     pub runs: Vec<AutomationRun>,
 }
 
+/// A schedule the editor is in the middle of writing. Nothing is stored, and no project is named:
+/// the answer depends only on the expression and the zone it is read in.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreviewScheduleRequest {
+    pub cron: String,
+    pub timezone: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreviewScheduleResponse {
+    /// RFC 3339, or `None` for an expression with no next occurrence at all. A cron naming
+    /// February 30th is valid syntax and never happens.
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -602,6 +634,7 @@ pub enum ServerResponse {
     SaveAutomationOk(Automation),
     DeleteAutomationOk,
     ListAutomationRunsOk(ListAutomationRunsResponse),
+    PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.
     AutomationRunChanged(AutomationRun),

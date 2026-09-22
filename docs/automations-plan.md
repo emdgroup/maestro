@@ -36,6 +36,7 @@ becomes one of its clients.
 | 1     | Resident mode: daemon, `attach`, re-adopt     | Done, `0fc3a63c` + `93d2b9b7` |
 | 2     | Session ownership and lifetime                | Done                          |
 | 3     | `automations.db`, and the clock that reads it | Done                          |
+| 3.5   | The schedule editor, and run history          | In progress                   |
 | 4     | Worktree provisioning moves into the daemon   | Planned                       |
 | 5     | The clock                                     | Folded into phase 3           |
 | 6     | Webhooks                                      | Planned                       |
@@ -210,6 +211,53 @@ stays.
 Deferred out of this phase by the interview: **what a `NewWorktree` run leaves behind** is an
 automation setting, not a global rule, and is decided in phase 4 along with the provisioning.
 
+## Phase 3.5: the schedule editor, and run history
+
+Phase 3 shipped a store and a clock behind an editor that offered four presets, and a list that
+never showed what a run had done. Both were provisional and both are replaced here. Designed
+against mockups rather than in prose, which is why the decisions below are narrow.
+
+### The schedule editor is the cron expression
+
+| Topic           | Decision                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| Model           | The five-field expression, edited directly. No preset layer above it and nothing to map onto  |
+| Sentence        | A read-only line above the fields saying what the expression means, built from the fields     |
+| Templates       | The sentence is a button opening a menu of ten, one per cron mechanism, never one per number  |
+| Fields          | Five slots side by side, labelled, styled like an OTP entry. Free text, validated per field   |
+| Paste           | Pasting a whole expression into any slot fills all five, the way an OTP field takes a code    |
+| Docs            | A popover over the focused slot: range, the six forms, and what this slot currently says      |
+| Invalid         | Red slot, the error replaces the sentence, Next empties, Save refused                         |
+| Next            | One occurrence, from the daemon. Nothing here parses cron to decide when anything runs        |
+| Toggle          | One boolean. `Schedule` writes `enabled`; the expression stays, so pausing remembers it       |
+| Day-of-week     | Day names in the UI and in the sentence. The 0-or-1 Sunday question never reaches a user      |
+| DOM against DOW | Cron ORs them when both are set, so the sentence says "or". There is no run list to expose it |
+
+**The parser is per field and decides nothing.** One function turns `9-17` into a value, and it is
+used three times: to colour the slot, to write that field's clause in the sentence, and to refuse
+25 before it is saved. It never answers "when does this run", which stays with the daemon, so this
+is not a second cron implementation.
+
+`ScheduleKind`, `toCron` and `fromCron` are deleted: they exist only to move between four named
+presets and an expression, and with the expression edited directly there is nothing to move
+between. `describeSchedule` is replaced by the sentence builder, which the automation row uses too,
+so a row and the editor describe a schedule the same way instead of the row falling back to raw
+cron for anything the presets could not name.
+
+### Run history
+
+| Topic        | Decision                                                                                       |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| Shapes       | Both: the automation row expands to its own runs, a panel beside the list aggregates every one |
+| Data         | One `list_automation_runs` query feeds both, so the two can never disagree                     |
+| Panel        | Right of the list, collapsible, grouped by day, one card per run                               |
+| Filter       | All, Needs input, Failed                                                                       |
+| Needs input  | Not a run field. A Running row whose session is awaiting, joined against live session state    |
+| Open a run   | Opens the session normally. `session/load` when the sweep has closed it. No read-only mode     |
+| No reload    | An agent without `session/load` gets no button on that row rather than one that fails          |
+| Notification | A scheduled run that asks a question, through the path sessions already use                    |
+| Unanswered   | Waits. The user closes it by hand, and the reaper leaves it alone because it is mid turn       |
+
 ## Phase 4: worktree provisioning in the daemon
 
 Moves worktree creation out of the app so a scheduled or webhook-triggered run can provision one
@@ -237,6 +285,5 @@ have none.
 ## Deferred, not scheduled
 
 - The trigger unit list from the earlier design sketch.
-- A templates library for automations.
-- Run history in the UI, plus a needs-input badge.
+- A templates library for automations. The cron templates in phase 3.5 are schedules, not prompts.
 - An MCP `create_automation` tool, so an agent can write an automation.

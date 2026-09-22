@@ -193,7 +193,15 @@ pub async fn start(
 
         {
             let conn = store.lock().await;
-            if let Err(e) = automations::attach_session(&conn, &opened.id, &session_id) {
+            if let Err(e) = automations::attach_session(
+                &conn,
+                &opened.id,
+                &session_id,
+                &result.acp_session_id,
+                &automation.agent_id,
+                &cwd,
+                result.supports_session_load,
+            ) {
                 send_diag("warn", format!("[automation] {e}"));
             }
         }

@@ -18,8 +18,8 @@ use tauri::State;
 
 use crate::acp::connection_server::{
     query_automation_runs_via_server, query_delete_automation_via_server,
-    query_list_automations_via_server, query_run_automation_via_server,
-    query_save_automation_via_server,
+    query_list_automations_via_server, query_preview_schedule_via_server,
+    query_run_automation_via_server, query_save_automation_via_server,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
@@ -101,6 +101,18 @@ pub struct AutomationRun {
     pub session_id: Option<String>,
     #[specta(optional)]
     pub error: Option<String>,
+    /// What it takes to open this run again once the idle sweep has closed its session: the
+    /// agent's own id for the conversation, which agent it was, and where it ran.
+    #[specta(optional)]
+    pub agent_session_id: Option<String>,
+    #[specta(optional)]
+    pub agent_id: Option<String>,
+    #[specta(optional)]
+    pub cwd: Option<String>,
+    /// Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
+    /// in, rather than with one that fails.
+    #[specta(optional)]
+    pub can_reload: Option<bool>,
 }
 
 impl From<maestro_protocol::AutomationWorkspace> for AutomationWorkspace {
@@ -183,6 +195,10 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
             finished_at: run.finished_at,
             session_id: run.session_id,
             error: run.error,
+            agent_session_id: run.agent_session_id,
+            agent_id: run.agent_id,
+            cwd: run.cwd,
+            can_reload: run.can_reload,
         }
     }
 }
@@ -275,6 +291,25 @@ pub async fn run_automation(
 ) -> Result<(), String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
     query_run_automation_via_server(connection_key, automation_id, &app_state).await
+}
+
+/// When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
+///
+/// Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
+/// daemon is what decides when a run happens, and a second implementation in the editor would be
+/// a second answer to that question.
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_schedule(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    cron: String,
+    timezone: String,
+) -> Result<Option<String>, String> {
+    let (connection_key, _) = target(&app_state, project_id).await?;
+    let response =
+        query_preview_schedule_via_server(connection_key, cron, timezone, &app_state).await?;
+    Ok(response.next)
 }
 
 #[tauri::command]

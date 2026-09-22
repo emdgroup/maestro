@@ -261,6 +261,29 @@ pub(crate) async fn dispatch_message(
             }
         }
 
+        // No store and no project: an expression being typed belongs to nothing yet. This is here
+        // rather than in the editor because the daemon is the only thing that parses cron, and it
+        // must stay that way while it is also the thing that decides when a run happens.
+        MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(req)) => {
+            match crate::automations::validate_schedule(&req.cron, &req.timezone) {
+                Ok(()) => {
+                    let next =
+                        crate::automations::next_due(&req.cron, &req.timezone, chrono::Utc::now())
+                            .map(|due| due.to_rfc3339());
+                    send_or_return!(
+                        send_response(
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(
+                                maestro_protocol::PreviewScheduleResponse { next },
+                            )),
+                        )
+                        .await
+                    );
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
         MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
             send_diag(
                 "info",

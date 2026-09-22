@@ -1,0 +1,114 @@
+import { CornerDownRight, MessageCircleQuestion } from "lucide-react";
+import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { runDuration, type RunEntry, type RunState } from "./runs";
+
+const DOT: Record<RunState, string> = {
+  running: "bg-emerald-500 animate-pulse",
+  awaiting: "bg-amber-500 animate-pulse",
+  succeeded: "bg-emerald-500",
+  failed: "bg-destructive",
+};
+
+function startedAt(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * One firing of an automation.
+ *
+ * Running and awaiting are the same row to the database, so the colour and the word are the only
+ * thing that separates a run getting on with it from one that has been waiting on an answer since
+ * three in the morning. The button says `Answer` for the second, because that is what it leads to.
+ *
+ * Nothing happens on clicking the card itself: the action is a button, and a card that also acted
+ * would make the button decorative and every stray click consequential.
+ */
+export function RunCard({
+  entry,
+  /** Shown in the panel, where the row alone does not say which automation this was. */
+  withName,
+  now,
+  onOpen,
+  pending,
+}: {
+  entry: RunEntry;
+  withName: boolean;
+  now: number;
+  onOpen: () => void;
+  /** True while a closed session is being loaded again. */
+  pending: boolean;
+}) {
+  const { run, state, action } = entry;
+  const awaiting = state === "awaiting";
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border px-2 py-1.5",
+        awaiting ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-background",
+        state === "failed" && "border-destructive/30 bg-destructive/5",
+      )}
+    >
+      <div className="flex items-center gap-1.5 text-[11px]">
+        <span className={cn("size-1.5 shrink-0 rounded-full", DOT[state])} />
+        {withName && <span className="truncate font-medium">{run.automation_name}</span>}
+        <span className={cn("text-muted-foreground", !withName && "font-medium text-foreground")}>
+          {startedAt(run.started_at)}
+        </span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          {run.scheduled ? "scheduled" : "run now"}
+        </span>
+      </div>
+
+      <div className="mt-1 flex items-center gap-1.5 text-[10px]">
+        {awaiting ? (
+          <span className="flex items-center gap-1 text-amber-600">
+            <MessageCircleQuestion className="size-3" />
+            waiting on you for {runDuration(run, now)}
+          </span>
+        ) : state === "failed" && run.error ? (
+          <span className="truncate text-destructive">{run.error}</span>
+        ) : (
+          <span className="text-muted-foreground">
+            {state === "running" ? `running for ${runDuration(run, now)}` : runDuration(run, now)}
+          </span>
+        )}
+
+        {action !== "none" && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  disabled={pending}
+                  onClick={onOpen}
+                  className={cn(
+                    "ml-auto h-5 shrink-0 gap-1 border px-1.5 text-[10px]",
+                    awaiting
+                      ? "border-amber-500 text-amber-600 hover:bg-amber-500/10 hover:text-amber-600"
+                      : "border-accent text-accent hover:bg-accent/10 hover:text-accent",
+                  )}
+                />
+              }
+            >
+              <CornerDownRight className="size-2.5" />
+              {pending ? "Opening" : awaiting ? "Answer" : "Go to session"}
+            </TooltipTrigger>
+            <TooltipContent>
+              {action === "open"
+                ? "Open the session this run is in"
+                : "Load this run's transcript back into a session"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </div>
+  );
+}

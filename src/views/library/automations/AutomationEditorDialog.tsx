@@ -19,7 +19,11 @@ import { WorkspaceModeSelect } from "@/components/common/workspace-mode/Workspac
 import { useProjectSettings } from "@/services/project.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
-import { fromCron, localTimezone, MANUAL, toCron, type SchedulePreset } from "./schedule";
+import { Switch } from "@/ui/switch";
+import { CronEditor } from "./cron/CronEditor";
+import { describeExpression } from "./cron/describe";
+import { DEFAULT_CRON } from "./cron/templates";
+import { localTimezone } from "./schedule";
 import type {
   Automation,
   ConnectionKey,
@@ -67,8 +71,6 @@ function blank(workspaceMode: WorkspaceMode, baseBranch: string, agentId: string
     workspace: workspaceFor(workspaceMode, baseBranch),
   };
 }
-
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /**
  * Which clock the schedule is read against.
@@ -119,96 +121,66 @@ function TimezoneField({
   );
 }
 
-/** Presets plus "Manual only", which is the absence of a schedule rather than a kind of one. */
-function ScheduleFields({
-  preset,
-  timezone,
+/**
+ * The trigger section: one switch, and the schedule it turns on.
+ *
+ * "Runs on its own" is one fact, so it is one boolean. The switch writes `enabled`, which is what
+ * the row's own switch pauses, and the expression stays underneath it: turning the schedule off
+ * and on again finds the same schedule rather than an empty editor.
+ */
+function ScheduleSection({
+  projectId,
+  automation,
   serverTimezone,
   onChange,
-  onTimezoneChange,
 }: {
-  preset: SchedulePreset;
-  timezone: string;
+  projectId: number;
+  automation: Automation;
   serverTimezone: string;
-  onChange: (preset: SchedulePreset) => void;
-  onTimezoneChange: (timezone: string) => void;
+  onChange: (fields: Partial<Automation>) => void;
 }) {
-  const kind = preset.kind;
-  const schedule = kind === "Manual" ? null : preset;
+  const scheduled = automation.enabled && automation.cron != null;
 
   return (
     <div className="space-y-2">
-      <span className="text-[11px] text-muted-foreground">Trigger</span>
-      <div className="flex gap-2">
-        <Select
-          value={kind}
-          onValueChange={(value) => onChange({ ...preset, kind: value as SchedulePreset["kind"] })}
-        >
-          <SelectTrigger size="sm" className="flex-1 text-xs" aria-label="Trigger">
-            <span className="flex-1 truncate text-left">
-              {kind === "Manual"
-                ? "Manual only"
-                : kind === "Daily"
-                  ? "Every day"
-                  : kind === "Weekdays"
-                    ? "Every weekday"
-                    : "Every week"}
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Manual" className="text-xs">
-              Manual only
-            </SelectItem>
-            <SelectItem value="Daily" className="text-xs">
-              Every day
-            </SelectItem>
-            <SelectItem value="Weekdays" className="text-xs">
-              Every weekday
-            </SelectItem>
-            <SelectItem value="Weekly" className="text-xs">
-              Every week
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        {schedule?.kind === "Weekly" && (
-          <Select
-            value={String(schedule.weekday)}
-            onValueChange={(value) => onChange({ ...schedule, weekday: Number(value) })}
-          >
-            <SelectTrigger size="sm" className="w-32 text-xs" aria-label="Day">
-              <span className="flex-1 truncate text-left">{WEEKDAYS[schedule.weekday]}</span>
-            </SelectTrigger>
-            <SelectContent>
-              {WEEKDAYS.map((day, index) => (
-                <SelectItem key={day} value={String(index)} className="text-xs">
-                  {day}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {schedule && (
-          <Input
-            type="time"
-            value={schedule.time}
-            onChange={(e) => onChange({ ...schedule, time: e.target.value })}
-            aria-label="Time"
-            className="h-8 w-28 text-xs"
-          />
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={scheduled}
+          // Turning it on with nothing stored starts somewhere valid rather than on five stars,
+          // which is a schedule that fires every minute.
+          onCheckedChange={(on) =>
+            onChange({
+              enabled: on,
+              cron: on ? (automation.cron ?? DEFAULT_CRON) : automation.cron,
+            })
+          }
+          aria-label="Schedule"
+          className="data-unchecked:border-border/50 data-unchecked:bg-muted"
+        />
+        <span className="text-xs font-medium">Schedule</span>
+        {!scheduled && (
+          <span className="text-[11px] text-muted-foreground">
+            Runs only when you press Run now
+          </span>
         )}
       </div>
-      {schedule && (
+
+      {scheduled && (
         <>
+          <CronEditor
+            projectId={projectId}
+            cron={automation.cron ?? DEFAULT_CRON}
+            timezone={automation.timezone}
+            onChange={(cron) => onChange({ cron })}
+          />
           <TimezoneField
-            value={timezone}
+            value={automation.timezone}
             serverTimezone={serverTimezone}
-            onChange={onTimezoneChange}
+            onChange={(timezone) => onChange({ timezone })}
           />
           <p className="text-[11px] text-muted-foreground/70">
-            {timezone} time. It runs in the background whether or not Maestro is open, but a time
-            that passes while that machine is off is skipped rather than caught up.
+            It runs in the background whether or not Maestro is open, but a time that passes while
+            that machine is off is skipped rather than caught up.
           </p>
         </>
       )}
@@ -291,8 +263,6 @@ export function AutomationEditorDialog({
 
   const mode = modeOf(draft.workspace);
   const pinnedPath = draft.workspace.mode === "path" ? draft.workspace.path : "";
-  // Null for an expression no preset can express, which is a cron somebody wrote by hand.
-  const preset = fromCron(draft.cron);
 
   // What the disclosure hides, said on its own row: collapsed is only safe while the user can see
   // what they are collapsing over.
@@ -311,7 +281,12 @@ export function AutomationEditorDialog({
   const promptMissing = draft.prompt.trim().length === 0;
   const agentMissing = draft.agent_id.trim().length === 0;
   const workspaceMissing = mode === "ReuseWorkspace" && pinnedPath.length === 0;
-  const canSave = !nameMissing && !promptMissing && !agentMissing && !workspaceMissing;
+  // A schedule that cannot be read would be refused by the server anyway, and storing it would
+  // leave an automation that looks scheduled and never fires.
+  const scheduleBroken =
+    draft.enabled && draft.cron != null && "error" in describeExpression(draft.cron);
+  const canSave =
+    !nameMissing && !promptMissing && !agentMissing && !workspaceMissing && !scheduleBroken;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -345,33 +320,12 @@ export function AutomationEditorDialog({
             />
           </label>
 
-          {preset ? (
-            <ScheduleFields
-              preset={preset}
-              timezone={draft.timezone}
-              serverTimezone={serverTimezone}
-              onChange={(next) => patch({ cron: toCron(next) })}
-              onTimezoneChange={(timezone) => patch({ timezone })}
-            />
-          ) : (
-            // Written by hand, or by an agent. Shown rather than flattened into the nearest
-            // preset, which would change when it runs without saying so.
-            <div className="space-y-1">
-              <span className="text-[11px] text-muted-foreground">Trigger</span>
-              <Input value={draft.cron ?? ""} readOnly className="h-8 font-mono text-xs" />
-              <p className="text-[11px] text-muted-foreground/70">
-                A schedule this editor cannot show. Clear it to pick one of the presets instead.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => patch({ cron: toCron(MANUAL) })}
-              >
-                Clear schedule
-              </Button>
-            </div>
-          )}
+          <ScheduleSection
+            projectId={projectId}
+            automation={draft}
+            serverTimezone={serverTimezone}
+            onChange={patch}
+          />
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">
