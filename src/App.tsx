@@ -13,7 +13,6 @@ import {
 } from "@/services/worktree.service";
 import { useConnectionHealth } from "@/hooks/useConnectionHealth";
 import { useServerEventSync } from "@/services/tauri-events";
-import { useAutomationTick } from "@/hooks/useAutomationTick";
 import { DisconnectBackdrop } from "@/components/common/disconnect-backdrop/DisconnectBackdrop";
 import {
   useActiveTab,
@@ -164,10 +163,6 @@ function App() {
   // The backend's change events, subscribed once here rather than inside each list hook — those
   // are called per card, so a listener in the hook was one native subscription per card.
   useServerEventSync(projectId);
-
-  // The automation clock. Here rather than in the Library view, so a schedule keeps its promise
-  // whichever tab is on screen.
-  useAutomationTick(projectId ?? null, currentProject?.path ?? null, connection);
 
   // Health of whichever connection this project lives on — every type, not just SSH.
   const {

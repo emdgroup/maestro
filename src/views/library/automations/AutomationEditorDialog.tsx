@@ -16,41 +16,55 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collap
 import { cn } from "@/lib/utils";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
-import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { useProjectSettings } from "@/services/project.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
+import { fromCron, localTimezone, MANUAL, toCron, type SchedulePreset } from "./schedule";
 import type {
   Automation,
-  AutomationSchedule,
   ConnectionKey,
-  ScheduleKind,
+  WorkspaceMode,
   WorktreeWithStatus,
 } from "@/types/bindings";
+
+/** Creating a worktree is the app's job, and the background server cannot do it yet. */
+const NO_WORKTREE_YET = "Not available for automations yet";
 
 /** An id the user never sees or types, stable across renames. */
 function newAutomationId(): string {
   return `automation-${Date.now().toString(36)}`;
 }
 
-function blank(
-  workspaceMode: Automation["workspace_mode"],
-  baseBranch: string,
-  agentId: string,
-): Automation {
+/** The three-way choice the picker shows, read off the workspace an automation actually stores. */
+function modeOf(workspace: Automation["workspace"]): WorkspaceMode {
+  if (workspace.mode === "new_worktree") return "NewWorktree";
+  if (workspace.mode === "path") return "ReuseWorkspace";
+  return "RepositoryDirectory";
+}
+
+function workspaceFor(mode: WorkspaceMode, baseBranch: string): Automation["workspace"] {
+  if (mode === "NewWorktree") return { mode: "new_worktree", base_branch: baseBranch };
+  // Nothing is pinned yet, and an empty path is what the Save button refuses to write.
+  if (mode === "ReuseWorkspace") return { mode: "path", path: "" };
+  return { mode: "repository" };
+}
+
+function blank(workspaceMode: WorkspaceMode, baseBranch: string, agentId: string): Automation {
   return {
     id: newAutomationId(),
+    // Both filled in by the server, which is the only side that can resolve a path or a schedule.
+    project_path: "",
+    next_due_at: null,
     name: "",
     prompt: "",
     agent_id: agentId,
     model: null,
     permission_mode: null,
     effort: null,
-    schedule: null,
+    cron: null,
+    timezone: localTimezone(),
     enabled: true,
-    workspace_mode: workspaceMode,
-    workspace_worktree_id: null,
-    base_branch: baseBranch || null,
+    workspace: workspaceFor(workspaceMode, baseBranch),
   };
 }
 
@@ -58,13 +72,14 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 /** Presets plus "Manual only", which is the absence of a schedule rather than a kind of one. */
 function ScheduleFields({
-  schedule,
+  preset,
   onChange,
 }: {
-  schedule: AutomationSchedule | null;
-  onChange: (schedule: AutomationSchedule | null) => void;
+  preset: SchedulePreset;
+  onChange: (preset: SchedulePreset) => void;
 }) {
-  const kind = schedule?.kind ?? "Manual";
+  const kind = preset.kind;
+  const schedule = kind === "Manual" ? null : preset;
 
   return (
     <div className="space-y-2">
@@ -72,17 +87,7 @@ function ScheduleFields({
       <div className="flex gap-2">
         <Select
           value={kind}
-          onValueChange={(value) =>
-            onChange(
-              value === "Manual"
-                ? null
-                : {
-                    kind: value as ScheduleKind,
-                    time: schedule?.time ?? "09:00",
-                    weekday: value === "Weekly" ? (schedule?.weekday ?? 1) : null,
-                  },
-            )
-          }
+          onValueChange={(value) => onChange({ ...preset, kind: value as SchedulePreset["kind"] })}
         >
           <SelectTrigger size="sm" className="flex-1 text-xs" aria-label="Trigger">
             <span className="flex-1 truncate text-left">
@@ -113,11 +118,11 @@ function ScheduleFields({
 
         {schedule?.kind === "Weekly" && (
           <Select
-            value={String(schedule.weekday ?? 1)}
+            value={String(schedule.weekday)}
             onValueChange={(value) => onChange({ ...schedule, weekday: Number(value) })}
           >
             <SelectTrigger size="sm" className="w-32 text-xs" aria-label="Day">
-              <span className="flex-1 truncate text-left">{WEEKDAYS[schedule.weekday ?? 1]}</span>
+              <span className="flex-1 truncate text-left">{WEEKDAYS[schedule.weekday]}</span>
             </SelectTrigger>
             <SelectContent>
               {WEEKDAYS.map((day, index) => (
@@ -141,8 +146,8 @@ function ScheduleFields({
       </div>
       {schedule && (
         <p className="text-[11px] text-muted-foreground/70">
-          Local time, and only while Maestro is open on this project. A time that passes while it is
-          closed is skipped, not caught up.
+          {localTimezone()} time. It runs in the background whether or not Maestro is open, but a
+          time that passes while this machine is off is skipped rather than caught up.
         </p>
       )}
     </div>
@@ -185,10 +190,11 @@ export function AutomationEditorDialog({
   const isGitRepo = useIsGitRepo();
   const { data: projectSettings } = useProjectSettings(projectId);
   const defaultBaseBranch = useDefaultBaseBranch(open ? projectId : null);
-  // A non-git project has no worktree to offer and no branch to base one on.
-  const defaultMode = isGitRepo
-    ? (projectSettings?.default_workspace_mode ?? "NewWorktree")
-    : "RepositoryDirectory";
+  // A non-git project has no worktree to offer and no branch to base one on. Neither does an
+  // automation yet, whatever the project default says, so it never starts on a mode it cannot run.
+  const projectDefault = projectSettings?.default_workspace_mode ?? "NewWorktree";
+  const defaultMode: WorkspaceMode =
+    isGitRepo && projectDefault !== "NewWorktree" ? projectDefault : "RepositoryDirectory";
   const defaultAgent = projectSettings?.default_agent ?? "";
 
   const [draft, setDraft] = useState<Automation>(() => editing ?? blank(defaultMode, "", ""));
@@ -208,21 +214,20 @@ export function AutomationEditorDialog({
     }
   }
 
-  // The branch query may not have answered when the dialog opened, which would otherwise leave a
-  // new automation with no base branch at all. Only fills a field nobody has touched.
-  if (open && !editing && !draft.base_branch && defaultBaseBranch) {
-    setDraft((prev) => ({ ...prev, base_branch: defaultBaseBranch }));
-  }
-
-  // Same for the agent, whose query may also land after the dialog opened. Filling it late means
-  // the disclosure opened for a missing agent that now has one, so it folds away again.
+  // The agent query may land after the dialog opened. Filling it late means the disclosure opened
+  // for a missing agent that now has one, so it folds away again.
   if (open && !editing && !draft.agent_id && defaultAgent) {
     setDraft((prev) => ({ ...prev, agent_id: defaultAgent }));
     setAdvancedOpen(false);
   }
 
-  const reusable = worktrees.filter((w) => w.path !== projectPath && w.id != null);
+  const reusable = worktrees.filter((w) => w.path !== projectPath);
   const patch = (fields: Partial<Automation>) => setDraft((prev) => ({ ...prev, ...fields }));
+
+  const mode = modeOf(draft.workspace);
+  const pinnedPath = draft.workspace.mode === "path" ? draft.workspace.path : "";
+  // Null for an expression no preset can express, which is a cron somebody wrote by hand.
+  const preset = fromCron(draft.cron);
 
   // What the disclosure hides, said on its own row: collapsed is only safe while the user can see
   // what they are collapsing over.
@@ -230,12 +235,9 @@ export function AutomationEditorDialog({
     agents.find((a) => a.id === draft.agent_id)?.name || draft.agent_id || "no agent",
     draft.model,
     draft.permission_mode,
-    isGitRepo && draft.workspace_mode === "NewWorktree"
-      ? `new worktree from ${draft.base_branch || "the default branch"}`
-      : isGitRepo && draft.workspace_mode === "ReuseWorkspace"
-        ? (reusable.find((w) => w.id === draft.workspace_worktree_id)?.branch_name ??
-          "no workspace")
-        : "repository directory",
+    isGitRepo && mode === "ReuseWorkspace"
+      ? (reusable.find((w) => w.path === pinnedPath)?.branch_name ?? "no workspace")
+      : "repository directory",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -243,8 +245,7 @@ export function AutomationEditorDialog({
   const nameMissing = draft.name.trim().length === 0;
   const promptMissing = draft.prompt.trim().length === 0;
   const agentMissing = draft.agent_id.trim().length === 0;
-  const workspaceMissing =
-    draft.workspace_mode === "ReuseWorkspace" && draft.workspace_worktree_id == null;
+  const workspaceMissing = mode === "ReuseWorkspace" && pinnedPath.length === 0;
   const canSave = !nameMissing && !promptMissing && !agentMissing && !workspaceMissing;
 
   return (
@@ -279,10 +280,27 @@ export function AutomationEditorDialog({
             />
           </label>
 
-          <ScheduleFields
-            schedule={draft.schedule ?? null}
-            onChange={(schedule) => patch({ schedule })}
-          />
+          {preset ? (
+            <ScheduleFields preset={preset} onChange={(next) => patch({ cron: toCron(next) })} />
+          ) : (
+            // Written by hand, or by an agent. Shown rather than flattened into the nearest
+            // preset, which would change when it runs without saying so.
+            <div className="space-y-1">
+              <span className="text-[11px] text-muted-foreground">Trigger</span>
+              <Input value={draft.cron ?? ""} readOnly className="h-8 font-mono text-xs" />
+              <p className="text-[11px] text-muted-foreground/70">
+                A schedule this editor cannot show. Clear it to pick one of the presets instead.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => patch({ cron: toCron(MANUAL) })}
+              >
+                Clear schedule
+              </Button>
+            </div>
+          )}
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">
@@ -318,41 +336,35 @@ export function AutomationEditorDialog({
                 <div className="space-y-2">
                   <span className="text-[11px] text-muted-foreground">Workspace</span>
                   <WorkspaceModeSelect
-                    value={draft.workspace_mode}
-                    onChange={(mode) =>
-                      // Writing the mode clears the pin, so switching away cannot leave a worktree
-                      // id behind that nothing will look at again.
-                      patch({ workspace_mode: mode, workspace_worktree_id: null })
-                    }
+                    value={mode}
+                    // Writing the mode rebuilds the workspace, so switching away cannot leave a
+                    // path behind that nothing will look at again.
+                    onChange={(next) => patch({ workspace: workspaceFor(next, "") })}
+                    // The background server is what runs an automation, and it cannot create a
+                    // worktree: that is bound to this app's own bookkeeping.
+                    allowNewWorktree={false}
+                    unavailableReason={{ NewWorktree: NO_WORKTREE_YET }}
                     hasReusableWorkspace={reusable.length > 0}
                   />
 
-                  {draft.workspace_mode === "NewWorktree" && (
-                    <BranchPicker
-                      value={draft.base_branch ?? ""}
-                      onChange={(branch) => patch({ base_branch: branch })}
-                      prefix="From"
-                    />
-                  )}
-
-                  {draft.workspace_mode === "ReuseWorkspace" && (
+                  {mode === "ReuseWorkspace" && (
                     <Select
-                      value={draft.workspace_worktree_id?.toString() ?? ""}
-                      onValueChange={(v) => patch({ workspace_worktree_id: v ? Number(v) : null })}
+                      value={pinnedPath}
+                      // The path, not the row id: the server acts on this and cannot read a row of
+                      // ours to resolve one.
+                      onValueChange={(path) =>
+                        patch({ workspace: { mode: "path", path: path ?? "" } })
+                      }
                     >
                       <SelectTrigger size="sm" className="w-full text-xs" aria-label="Workspace">
                         <span className="truncate flex-1 text-left">
-                          {reusable.find((w) => w.id === draft.workspace_worktree_id)
-                            ?.branch_name ?? "Select a workspace"}
+                          {reusable.find((w) => w.path === pinnedPath)?.branch_name ??
+                            "Select a workspace"}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
                         {reusable.map((worktree) => (
-                          <SelectItem
-                            key={worktree.id}
-                            value={worktree.id!.toString()}
-                            className="text-xs"
-                          >
+                          <SelectItem key={worktree.path} value={worktree.path} className="text-xs">
                             {worktree.branch_name}
                           </SelectItem>
                         ))}
@@ -377,9 +389,9 @@ export function AutomationEditorDialog({
                 ...draft,
                 name: draft.name.trim(),
                 prompt: draft.prompt.trim(),
-                // Only the mode that creates a worktree branches from anything.
-                base_branch:
-                  draft.workspace_mode === "NewWorktree" ? (draft.base_branch ?? null) : null,
+                // Whatever the machine is set to now, so a schedule keeps meaning what it looked
+                // like when it was written rather than following the laptop across a border.
+                timezone: draft.timezone || localTimezone(),
               });
               onOpenChange(false);
             }}

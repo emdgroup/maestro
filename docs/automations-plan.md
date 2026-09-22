@@ -30,16 +30,16 @@ becomes one of its clients.
 
 ## Phase status
 
-| Phase | What                                        | State                         |
-| ----- | ------------------------------------------- | ----------------------------- |
-| 0     | Session identity: one opaque id everywhere  | Done, `4f08e9aa`              |
-| 1     | Resident mode: daemon, `attach`, re-adopt   | Done, `0fc3a63c` + `93d2b9b7` |
-| 2     | Session ownership and lifetime              | Done                          |
-| 3     | `automations.db`, and the clock that reads it | In progress                 |
-| 4     | Worktree provisioning moves into the daemon | Planned                       |
-| 5     | The clock                                   | Folded into phase 3           |
-| 6     | Webhooks                                    | Planned                       |
-| 7     | Autostart and consent                       | Planned, last before release  |
+| Phase | What                                          | State                         |
+| ----- | --------------------------------------------- | ----------------------------- |
+| 0     | Session identity: one opaque id everywhere    | Done, `4f08e9aa`              |
+| 1     | Resident mode: daemon, `attach`, re-adopt     | Done, `0fc3a63c` + `93d2b9b7` |
+| 2     | Session ownership and lifetime                | Done                          |
+| 3     | `automations.db`, and the clock that reads it | Done                          |
+| 4     | Worktree provisioning moves into the daemon   | Planned                       |
+| 5     | The clock                                     | Folded into phase 3           |
+| 6     | Webhooks                                      | Planned                       |
+| 7     | Autostart and consent                         | Planned, last before release  |
 
 ## Decisions that span every phase
 

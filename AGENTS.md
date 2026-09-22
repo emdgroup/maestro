@@ -422,6 +422,37 @@ open and Windows will not overwrite the image of a running process — the same 
 child-process servers were killed on quit. Every running session ends with them, which is what the
 Install button's tooltip says.
 
+### Automations live in the daemon
+
+An automation is a prompt, an agent and a workspace, run on a schedule or on demand. **None of it
+is stored or driven app-side.** `maestro-server/src/automations.rs` owns `automations.db` next to
+the daemon's lock, holding every project on that machine; `automation_runner.rs` is the clock. The
+app is a client: `project/automations.rs` is five commands that are each one round trip, and
+`.maestro/automations.json` is gone.
+
+That split is forced by the premise. A schedule has to fire for a project no window has open, so
+the store cannot be something an open project brings with it, and for an SSH, WSL or container
+project the database that would hold it is not even on the machine the agent runs on.
+
+- **A project is its canonicalized path**, resolved by the daemon, because it is the process on the
+  machine that path exists on. The app sends the path it knows and stores whatever comes back.
+- **Schedules are five-field cron plus an IANA timezone.** The editor still offers three presets
+  and compiles them (`src/views/library/automations/schedule.ts`); anything hand-written is shown
+  as it is rather than flattened. `to_crate_expression` fixes up the two places the `cron` crate
+  disagrees with a crontab: it wants a seconds field, and it counts Sunday as 1 rather than 0.
+- **`next_due_at` is computed on read and never stored.** Nothing outside the daemon parses cron.
+- **A missed occurrence is dropped.** The floor for the first firing is when the server started, so
+  a machine asleep for a day does not wake up and work through twenty-four hourly runs.
+- **A `runs` row opens before anything is spawned**, so a run that fails to start is still a run
+  that happened, and it carries the session id. That row is the only link between an automation and
+  its session: the daemon writes no `host_meta`, having nothing of the host's to write, so
+  `adopt_live_sessions` asks for the project's running runs and adopts the sessions they name.
+- **The run ends on `TurnEnded`**, routed through `helpers::TURN_TX` because turns end deep inside
+  a session's command loop, which holds none of the state that reacts. The session is then left
+  idle for the sweep above.
+- **`NewWorktree` is refused**, and the editor disables it with a reason. Creating one goes through
+  the app's `worktrees` table; see phase 4 in `docs/automations-plan.md`.
+
 ### The Maestro MCP server
 
 Agents get a channel back into Maestro that returns a value: `maestro-server` registers **itself**
@@ -592,7 +623,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 28 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 4.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 5.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

@@ -160,6 +160,123 @@ pub async fn query_live_sessions_via_server(
     .await
 }
 
+/// Wherever the server keeps this project's automations, ask it for them.
+///
+/// The path goes as the client knows it and comes back canonicalized: the server is the process on
+/// the machine that path exists on, so it is the only one that can resolve it.
+pub async fn query_list_automations_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListAutomationsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.automations.clone(),
+        "ListAutomations already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListAutomations(
+            maestro_protocol::ListAutomationsRequest { project_path },
+        )),
+        15,
+        "ListAutomations via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_save_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    automation: maestro_protocol::Automation,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::Automation, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.save_automation.clone(),
+        "SaveAutomation already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SaveAutomation(
+            maestro_protocol::SaveAutomationRequest {
+                project_path,
+                automation,
+            },
+        )),
+        15,
+        "SaveAutomation via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_delete_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.delete_automation.clone(),
+        "DeleteAutomation already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(
+            maestro_protocol::DeleteAutomationRequest { automation_id },
+        )),
+        15,
+        "DeleteAutomation via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Ask the server to start an automation now.
+///
+/// There is no reply to wait for beyond the request being accepted: the run announces itself on
+/// `AutomationRunChanged`, exactly as a scheduled one does.
+pub async fn query_run_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    let writer_tx = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        servers
+            .get(&connection_key)
+            .map(|server| server.writer_tx.clone())
+            .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?
+    };
+    let bytes = serialize_message(&MaestroRpcMessage::Request(ServerRequest::RunAutomation(
+        maestro_protocol::RunAutomationRequest { automation_id },
+    )))?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())
+}
+
+pub async fn query_automation_runs_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    limit: Option<u32>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListAutomationRunsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.automation_runs.clone(),
+        "ListAutomationRuns already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(
+            maestro_protocol::ListAutomationRunsRequest {
+                project_path,
+                limit,
+            },
+        )),
+        15,
+        "ListAutomationRuns via connection server timed out after 15s",
+    )
+    .await
+}
+
 /// Send `SessionList` through the running connection server and return the result.
 pub async fn query_session_list_via_server(
     connection_key: crate::acp::ConnectionKey,

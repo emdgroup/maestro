@@ -917,7 +917,7 @@ async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async listAutomations(projectId: number) : Promise<Result<AutomationsDocument, string>> {
+async listAutomations(projectId: number) : Promise<Result<Automation[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };
 } catch (e) {
@@ -926,14 +926,45 @@ async listAutomations(projectId: number) : Promise<Result<AutomationsDocument, s
 }
 },
 /**
- * Replace the whole document.
+ * Create or replace one automation.
  * 
- * Whole-document because the file is hand-editable and the UI already holds the full list: a
- * partial write would have to merge with whatever the user last typed into it, for no gain.
+ * One at a time rather than a whole document, because the store is a set of rows now: a
+ * whole-document write would have two windows overwriting each other with whatever each last read.
  */
-async saveAutomations(projectId: number, document: AutomationsDocument) : Promise<Result<null, string>> {
+async saveAutomation(projectId: number, automation: Automation) : Promise<Result<Automation, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_automations", { projectId, document }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_automation", { projectId, automation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAutomation(projectId: number, automationId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_automation", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fire one now, whatever its schedule says.
+ * 
+ * Returns as soon as the server has opened a run for it. What happens next arrives as
+ * `automation-run-changed`, the same way a scheduled run does — there is deliberately no second
+ * path for a run somebody asked for by hand.
+ */
+async runAutomation(projectId: number, automationId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_automation", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAutomationRuns(projectId: number, limit: number | null) : Promise<Result<AutomationRun[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_automation_runs", { projectId, limit }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2768,59 +2799,78 @@ rejection: string | null }
  */
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
- * One automation, whole.
- * 
- * The agent settings are the automation's own rather than a reference to an agent profile.
- * Profiles exist to say what a *pipeline role* means on this project, and an automation has no
- * role: picking one would have meant showing the user a list of Refiners and Reviewers to choose
- * between for work that is neither.
+ * TS-exportable version of `maestro_protocol::Automation` — the protocol crate derives no `Type`,
+ * and giving it one would compile specta into the binary deployed to every remote host.
  */
-export type Automation = { id: string; name: string; 
+export type Automation = { id: string; 
+/**
+ * Canonicalized by the server, so this is the server's answer rather than anything sent to it.
+ */
+project_path: string; name: string; 
 /**
  * What the agent is asked to do. The whole contract of the run.
  */
 prompt: string; agent_id: string; 
 /**
- * When it fires by itself. `None` means it only runs when the user presses Run now.
+ * Five-field cron. `None` for an automation that only runs when the user asks.
  */
-schedule?: AutomationSchedule | null; 
+cron?: string | null; 
+/**
+ * IANA name the cron is read in, so a laptop that crosses a timezone keeps its schedule.
+ */
+timezone: string; 
 /**
  * Whether the schedule is live. Disabling stops the clock; Run now still works, which is what
  * makes this a pause rather than a second kind of delete.
  */
-enabled?: boolean; model?: string | null; 
+enabled: boolean; model?: string | null; 
 /**
  * The ACP session mode id. `None` leaves it to the agent, which for an unattended run means
  * whatever that agent's default asks before doing.
  */
-permission_mode?: string | null; effort?: string | null; workspace_mode: WorkspaceMode; 
+permission_mode?: string | null; effort?: string | null; workspace: AutomationWorkspace; 
 /**
- * The worktree to run in, for `ReuseWorkspace`.
+ * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
  */
-workspace_worktree_id?: number | null; 
+next_due_at?: string | null }
 /**
- * What a `NewWorktree` run branches from. The branch itself is named per run rather than
- * stored: a fixed name would collide with the worktree the previous run left behind.
+ * What happened to one firing of an automation.
  */
-base_branch?: string | null }
+export type AutomationRun = { id: string; automation_id: string; project_path: string; 
 /**
- * When an automation fires on its own.
+ * Copied by the server rather than joined, so a run still says what it was after the
+ * automation that produced it is renamed or deleted.
+ */
+automation_name: string; status: AutomationRunStatus; 
+/**
+ * Whether the clock started this or somebody pressed the button.
+ */
+scheduled: boolean; started_at: string; finished_at?: string | null; 
+/**
+ * The session the run is happening in. This is how the app finds a session it did not start.
+ */
+session_id?: string | null; error?: string | null }
+export type AutomationRunStatus = "running" | "succeeded" | "failed"
+/**
+ * Where an automation's agent runs.
  * 
- * Presets rather than a cron expression: the app has to *show* a schedule as much as run it, and
- * "every second Tuesday at 03:17" is a sentence nobody wanted to write here. A cron field can be
- * added later as another kind without moving what exists.
+ * A path rather than a worktree row id: the server acts on this, and it has no access to this
+ * app's database — for an SSH, WSL or container project, not even to the machine it is on.
  */
-export type AutomationSchedule = { kind: ScheduleKind; 
+export type AutomationWorkspace = 
 /**
- * `HH:MM`, in the machine's own local time. There is no timezone field because there is
- * nowhere else for it to run: an automation only fires while Maestro is open on this machine.
+ * The project directory itself.
  */
-time: string; 
+{ mode: "repository" } | 
 /**
- * 0 is Sunday through 6 is Saturday. Only read for `Weekly`.
+ * A directory that already exists, named outright.
  */
-weekday?: number | null }
-export type AutomationsDocument = { automations?: Automation[] }
+{ mode: "path"; path: string } | 
+/**
+ * A fresh worktree per run, branched from `base_branch`. Not available yet: creating one is
+ * bound to this app's `worktrees` table, which the server cannot reach.
+ */
+{ mode: "new_worktree"; base_branch: string }
 /**
  * An Azure DevOps project option for combobox display.
  */
@@ -3439,18 +3489,6 @@ export type ReviewCommentEntry = { file_path: string; comment: string }
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
-/**
- * How often a schedule comes round.
- */
-export type ScheduleKind = "Daily" | 
-/**
- * Monday to Friday.
- */
-"Weekdays" | 
-/**
- * One day a week, named by `weekday`.
- */
-"Weekly"
 /**
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */

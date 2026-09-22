@@ -1,82 +1,68 @@
 import { describe, expect, it } from "vitest";
-import { describeNextRun, describeSchedule, isDue, nextRun } from "./schedule";
-import type { Automation, AutomationSchedule } from "@/types/bindings";
+import { describeNextRun, describeSchedule, fromCron, MANUAL, toCron } from "./schedule";
 
-const daily: AutomationSchedule = { kind: "Daily", time: "09:00", weekday: null };
-
-// 2026-09-16 is a Wednesday, so a weekday walk and a weekend walk are both reachable from it.
-const wednesdayMorning = new Date(2026, 8, 16, 8, 0);
-
-describe("nextRun", () => {
-  it("takes today's occurrence when it is still ahead", () => {
-    expect(nextRun(daily, wednesdayMorning)).toEqual(new Date(2026, 8, 16, 9, 0));
+describe("toCron", () => {
+  it("writes the three presets as standard five-field cron", () => {
+    expect(toCron({ kind: "Daily", time: "09:00", weekday: 1 })).toBe("0 9 * * *");
+    expect(toCron({ kind: "Weekdays", time: "18:30", weekday: 1 })).toBe("30 18 * * 1-5");
+    expect(toCron({ kind: "Weekly", time: "07:05", weekday: 0 })).toBe("5 7 * * 0");
   });
 
-  it("rolls to tomorrow once today's has passed", () => {
-    expect(nextRun(daily, new Date(2026, 8, 16, 9, 30))).toEqual(new Date(2026, 8, 17, 9, 0));
+  it("gives a manual automation no schedule at all", () => {
+    expect(toCron(MANUAL)).toBeNull();
   });
 
-  it("does not fire the same occurrence twice on an exact hit", () => {
-    // A tick landing on the minute is the common case, and `>=` here would re-fire it forever.
-    expect(nextRun(daily, new Date(2026, 8, 16, 9, 0))).toEqual(new Date(2026, 8, 17, 9, 0));
-  });
-
-  it("skips the weekend for Weekdays", () => {
-    const friday = new Date(2026, 8, 18, 10, 0);
-    const schedule: AutomationSchedule = { kind: "Weekdays", time: "09:00", weekday: null };
-    expect(nextRun(schedule, friday)).toEqual(new Date(2026, 8, 21, 9, 0));
-  });
-
-  it("walks to the named weekday for Weekly", () => {
-    const schedule: AutomationSchedule = { kind: "Weekly", time: "09:00", weekday: 1 };
-    expect(nextRun(schedule, wednesdayMorning)).toEqual(new Date(2026, 8, 21, 9, 0));
+  it("refuses a time that is not one", () => {
+    expect(toCron({ kind: "Daily", time: "", weekday: 1 })).toBeNull();
+    expect(toCron({ kind: "Daily", time: "nine", weekday: 1 })).toBeNull();
   });
 });
 
-describe("isDue", () => {
-  const automation = {
-    enabled: true,
-    schedule: daily,
-  } as Automation;
-
-  const nineOClock = new Date(2026, 8, 16, 9, 0).getTime();
-
-  it("fires once the time has come round", () => {
-    expect(isDue(automation, wednesdayMorning.getTime(), nineOClock)).toBe(true);
+describe("fromCron", () => {
+  it("round-trips every preset the editor can produce", () => {
+    for (const preset of [
+      { kind: "Daily", time: "09:00", weekday: 1 },
+      { kind: "Weekdays", time: "18:30", weekday: 1 },
+      { kind: "Weekly", time: "07:05", weekday: 6 },
+    ] as const) {
+      const cron = toCron(preset);
+      expect(fromCron(cron)).toEqual(preset);
+    }
   });
 
-  it("does not fire again on the next tick", () => {
-    // What the tick does after firing: the floor becomes the fire's own time.
-    expect(isDue(automation, nineOClock, nineOClock + 60_000)).toBe(false);
+  it("reads no schedule as manual", () => {
+    expect(fromCron(null)).toEqual(MANUAL);
+    expect(fromCron("")).toEqual(MANUAL);
   });
 
-  it("ignores a disabled automation and one with no schedule", () => {
-    expect(isDue({ ...automation, enabled: false }, wednesdayMorning.getTime(), nineOClock)).toBe(
-      false,
-    );
-    expect(isDue({ ...automation, schedule: null }, wednesdayMorning.getTime(), nineOClock)).toBe(
-      false,
-    );
+  it("returns null for an expression no preset can express", () => {
+    // Hand-written schedules are kept and shown as they are, rather than flattened into the
+    // nearest preset, which would change when the automation runs.
+    expect(fromCron("*/15 * * * *")).toBeNull();
+    expect(fromCron("0 9 1 * *")).toBeNull();
+    expect(fromCron("0 9 * * 1,3")).toBeNull();
+    expect(fromCron("0 9 * *")).toBeNull();
   });
 });
 
 describe("describeSchedule", () => {
-  it("names each kind", () => {
+  it("says what a preset means", () => {
     expect(describeSchedule(null)).toBe("Manual only");
-    expect(describeSchedule(daily)).toBe("Daily at 09:00");
-    expect(describeSchedule({ kind: "Weekdays", time: "07:30", weekday: null })).toBe(
-      "Weekdays at 07:30",
-    );
-    expect(describeSchedule({ kind: "Weekly", time: "18:00", weekday: 5 })).toBe(
-      "Fridays at 18:00",
-    );
+    expect(describeSchedule("0 9 * * *")).toBe("Daily at 09:00");
+    expect(describeSchedule("30 18 * * 1-5")).toBe("Weekdays at 18:30");
+    expect(describeSchedule("0 7 * * 2")).toBe("Tuesdays at 07:00");
+  });
+
+  it("shows an expression it cannot name verbatim", () => {
+    expect(describeSchedule("*/15 * * * *")).toBe("*/15 * * * *");
   });
 });
 
 describe("describeNextRun", () => {
-  it("says today, tomorrow, or the weekday", () => {
-    expect(describeNextRun(new Date(2026, 8, 16, 21, 0), wednesdayMorning)).toContain("today");
-    expect(describeNextRun(new Date(2026, 8, 17, 9, 0), wednesdayMorning)).toContain("tomorrow");
-    expect(describeNextRun(new Date(2026, 8, 21, 9, 0), wednesdayMorning)).toContain("Monday");
+  it("names the day relative to now", () => {
+    const now = new Date(2026, 0, 1, 12, 0);
+    expect(describeNextRun(new Date(2026, 0, 1, 15, 0), now)).toMatch(/^today at /);
+    expect(describeNextRun(new Date(2026, 0, 2, 9, 0), now)).toMatch(/^tomorrow at /);
+    expect(describeNextRun(new Date(2026, 0, 5, 9, 0), now)).toMatch(/^Monday at /);
   });
 });

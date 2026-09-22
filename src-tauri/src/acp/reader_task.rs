@@ -1599,6 +1599,39 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(resp)) => {
+            if let Ok(mut guard) = pending.automations.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(resp)) => {
+            if let Ok(mut guard) = pending.save_automation.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk) => {
+            if let Ok(mut guard) = pending.delete_automation.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(resp)) => {
+            if let Ok(mut guard) = pending.automation_runs.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        // Unsolicited: the clock started this, not the window. Named by project rather than sent
+        // to a particular view, because the run belongs to a project whether or not it is open.
+        MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
+            crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
+        }
         MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
             if let Ok(mut guard) = pending.session_list.lock() {
                 if let Some(tx) = guard.take() {

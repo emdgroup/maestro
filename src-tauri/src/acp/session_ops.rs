@@ -197,6 +197,51 @@ async fn reload_for_history(
     }
 }
 
+/// Sessions this project's automation runs are happening in, as the server's own records name them.
+///
+/// Best effort: a server too old to know about automations, or one whose store would not open,
+/// leaves this empty and costs nothing but an unadopted automation session.
+async fn automation_session_ids(
+    project_id: i32,
+    app_state: &Arc<crate::core::AppState>,
+) -> std::collections::HashSet<String> {
+    let (connection_key, project_path) =
+        match crate::core::get_project_with_git_conn(app_state, project_id).await {
+            Ok((project, _)) => (
+                crate::acp::ConnectionKey::from_all_ids(
+                    project.connection_id,
+                    project.wsl_connection_id,
+                    project.docker_connection_id,
+                ),
+                project.path,
+            ),
+            Err(e) => {
+                log::warn!("cannot read project {project_id} to find its automation runs: {e}");
+                return std::collections::HashSet::new();
+            }
+        };
+
+    match crate::acp::connection_server::query_automation_runs_via_server(
+        connection_key,
+        project_path,
+        None,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => response
+            .runs
+            .into_iter()
+            .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
+            .filter_map(|run| run.session_id)
+            .collect(),
+        Err(e) => {
+            log::warn!("cannot list automation runs on {connection_key:?}: {e}");
+            std::collections::HashSet::new()
+        }
+    }
+}
+
 /// Take ownership of sessions the connection's server is already running.
 ///
 /// The server outlives the app now, so a freshly started app finds sessions it has no record of:
@@ -244,20 +289,38 @@ pub async fn adopt_live_sessions(
         }
     };
 
+    // Sessions an automation started carry nothing of ours: the server spawned them with no
+    // `host_meta` because it had none to attach. The run rows pointing at them are what says they
+    // belong to this project, so they are adopted on that evidence instead.
+    let automation_sessions = automation_session_ids(project_id, app_state).await;
+
     let mut adopted = 0;
     for session in live {
-        let Some(meta) = session.host_meta.as_ref().and_then(|value| {
-            serde_json::from_value::<SessionHostMeta>(value.clone())
-                .map_err(|e| {
-                    log::warn!(
-                        "session {} has unreadable metadata: {e}",
-                        session.session_id
-                    )
+        let from_automation = automation_sessions.contains(&session.session_id);
+        let meta = session
+            .host_meta
+            .as_ref()
+            .and_then(|value| {
+                serde_json::from_value::<SessionHostMeta>(value.clone())
+                    .map_err(|e| {
+                        log::warn!(
+                            "session {} has unreadable metadata: {e}",
+                            session.session_id
+                        )
+                    })
+                    .ok()
+            })
+            // An automation's session has none, so one is made up from what is known: the project
+            // it belongs to, and the connection it is already running on.
+            .or_else(|| {
+                from_automation.then(|| SessionHostMeta {
+                    project_id: Some(project_id),
+                    session_name: None,
+                    connection_key,
+                    task: TaskMetadata::default(),
                 })
-                .ok()
-        }) else {
-            continue;
-        };
+            });
+        let Some(meta) = meta else { continue };
         if meta.project_id != Some(project_id) {
             continue;
         }
