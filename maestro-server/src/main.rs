@@ -14,6 +14,8 @@
 mod agent;
 mod agent_restart;
 mod auth;
+mod automation_runner;
+mod automations;
 mod client_sink;
 mod command_ext;
 mod daemon;
@@ -245,6 +247,12 @@ pub(crate) async fn run_resident(
 /// agent's own history.
 const IDLE_SWEEP: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How often the clock looks for an automation that has come round.
+///
+/// A minute, because that is the finest a cron expression can name. Anything shorter would ask the
+/// same question of the same rows for no answer that could differ.
+const AUTOMATION_TICK: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Mark sessions that are idle with no client attached, and close the ones already marked.
 ///
 /// Two passes rather than one so that resuming counts for something: any activity in between
@@ -316,6 +324,27 @@ async fn run_server(
     let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
 
+    let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+    let _ = helpers::TURN_TX.set(turn_tx);
+
+    // `None` when the store cannot be opened. Sessions are the server's real job and go on without
+    // it; automations answer with the reason instead, which is better than refusing to start.
+    let automation_store: Option<automation_runner::Store> = daemon::dir()
+        .and_then(|dir| automations::open(&dir))
+        .map(|conn| {
+            match automations::fail_interrupted_runs(&conn) {
+                Ok(0) => {}
+                Ok(closed) => send_diag(
+                    "info",
+                    format!("[automation] closed out {closed} run(s) left by an earlier server"),
+                ),
+                Err(e) => send_diag("warn", format!("[automation] {e}")),
+            }
+            Arc::new(tokio::sync::Mutex::new(conn))
+        })
+        .map_err(|e| send_diag("warn", format!("[automation] store unavailable: {e}")))
+        .ok();
+
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
     // time out waiting on slow PATH scans on Windows.
     let registry: AcpRegistry = tokio::task::spawn_blocking(agent::load_registry)
@@ -378,6 +407,12 @@ async fn run_server(
 
     let mut reap_interval = tokio::time::interval(IDLE_SWEEP);
     reap_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    // Everything before this instant belongs to whatever ran last. An occurrence missed while this
+    // machine was off is dropped rather than run late.
+    let automations_floor = chrono::Utc::now();
+    let mut automations_interval = tokio::time::interval(AUTOMATION_TICK);
+    automations_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         let msg = tokio::select! {
@@ -465,6 +500,38 @@ async fn run_server(
                 reap_idle_sessions(&mut sessions, &stdout).await;
                 continue;
             }
+
+            _ = automations_interval.tick() => {
+                if let Some(store) = automation_store.as_ref() {
+                    automation_runner::tick(
+                        store,
+                        automations_floor,
+                        automation_runner::Spawner {
+                            agents_with_spawn: &mut agents_with_spawn,
+                            agent_connections: &agent_connections,
+                            stdout: &stdout,
+                            spawn_result_tx: &spawn_result_tx,
+                        },
+                    )
+                    .await;
+                }
+                continue;
+            }
+
+            ended = turn_rx.recv() => {
+                if let (Some((session_id, stop_reason)), Some(store)) =
+                    (ended, automation_store.as_ref())
+                {
+                    automation_runner::finish_for_session(
+                        store,
+                        &stdout,
+                        &session_id,
+                        &stop_reason,
+                    )
+                    .await;
+                }
+                continue;
+            }
         };
 
         if !dispatch_message(
@@ -476,6 +543,7 @@ async fn run_server(
             &spawn_result_tx,
             &auth_terminals,
             &mut pending_host_tools,
+            automation_store.as_ref(),
         )
         .await
         {

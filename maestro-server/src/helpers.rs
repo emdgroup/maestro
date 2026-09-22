@@ -20,6 +20,24 @@ pub(crate) fn send_diag(level: &str, msg: impl Into<String>) {
     }
 }
 
+pub(crate) type TurnSender = tokio::sync::mpsc::UnboundedSender<(String, String)>;
+
+/// Where a finished turn is announced inside this process, as `(session_id, stop_reason)`.
+///
+/// A channel rather than a call, for the same reason `DIAG_TX` is one: turns end deep inside a
+/// session's own command loop, which holds none of the state that has to react. The main loop owns
+/// the automation store and picks these up there.
+pub(crate) static TURN_TX: std::sync::OnceLock<TurnSender> = std::sync::OnceLock::new();
+
+/// Note that a turn has ended. No-op until the main loop is running.
+pub(crate) fn note_turn_ended(session_id: &str, stop_reason: &str) {
+    if let Some(tx) = TURN_TX.get() {
+        if let Err(e) = tx.send((session_id.to_string(), stop_reason.to_string())) {
+            send_diag("warn", format!("[prompt] turn end went unheard: {e}"));
+        }
+    }
+}
+
 /// An error to send back to the host, with no session to attribute it to.
 pub(crate) fn error_response(message: String) -> MaestroRpcMessage {
     MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {

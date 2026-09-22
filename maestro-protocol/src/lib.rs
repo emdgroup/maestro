@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -72,6 +72,15 @@ pub enum ServerRequest {
     /// and Windows will not overwrite the image of a running process. There is no acknowledgement
     /// to wait for: the connection closing is the answer.
     Shutdown,
+    /// Every automation stored for one project, with the next time each comes round.
+    ListAutomations(ListAutomationsRequest),
+    /// Create or replace one automation, by id.
+    SaveAutomation(SaveAutomationRequest),
+    DeleteAutomation(DeleteAutomationRequest),
+    /// Fire one now, whatever its schedule says.
+    RunAutomation(RunAutomationRequest),
+    /// What this project's automations have done, newest first.
+    ListAutomationRuns(ListAutomationRunsRequest),
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
     SetConfigOption(SetConfigOptionRequest),
@@ -433,6 +442,137 @@ pub struct LogoutRequest {
     pub agent_id: String,
 }
 
+// --- Automations ---
+
+/// Where an automation's agent runs.
+///
+/// A path rather than the app's worktree row id: the daemon has to act on this with no access to
+/// the app's database, and on a remote project not even to the machine that database is on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum AutomationWorkspace {
+    /// The project directory itself.
+    Repository,
+    /// A directory that already exists, named outright.
+    Path { path: String },
+    /// A fresh worktree per run, branched from `base_branch`.
+    ///
+    /// Not implemented yet: creating one is bound to the app's `worktrees` table. An automation
+    /// configured this way records a failed run saying so. See phase 4 of `docs/automations-plan.md`.
+    NewWorktree { base_branch: String },
+}
+
+/// One automation, whole.
+///
+/// The agent settings are the automation's own rather than a reference to an agent profile.
+/// Profiles say what a *pipeline role* means on a project, and an automation has no role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Automation {
+    pub id: String,
+    /// Canonicalized path of the project this belongs to, as the daemon resolved it.
+    pub project_path: String,
+    pub name: String,
+    /// What the agent is asked to do. The whole contract of the run.
+    pub prompt: String,
+    pub agent_id: String,
+    /// Five-field cron, or `None` for an automation that only runs when asked.
+    ///
+    /// Cron rather than the editor's presets because the daemon is what evaluates it, and a preset
+    /// is a shape the UI can compile to this rather than a second thing to store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    /// IANA name the cron is read in, so a laptop that crosses a timezone keeps its schedule.
+    pub timezone: String,
+    /// Whether the schedule is live. Disabling stops the clock; running it by hand still works,
+    /// which is what makes this a pause rather than a second kind of delete.
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The ACP session mode id. `None` leaves it to the agent, which for an unattended run means
+    /// whatever that agent's default asks before doing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    pub workspace: AutomationWorkspace,
+    /// When this next comes round, RFC 3339. Computed on read and never stored — a stored one
+    /// would be wrong the moment the clock or the timezone database moved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_due_at: Option<String>,
+}
+
+/// What happened to one firing of an automation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationRun {
+    pub id: String,
+    pub automation_id: String,
+    pub project_path: String,
+    /// Copied rather than joined, so a run still says what it was even after the automation that
+    /// produced it is renamed or deleted.
+    pub automation_name: String,
+    pub status: AutomationRunStatus,
+    /// Whether the clock started this or somebody pressed the button.
+    pub scheduled: bool,
+    pub started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+    /// The session the run is happening in, absent when the spawn itself failed. This is how a
+    /// client finds a session the daemon started, since nothing the host wrote is attached to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Every request below names a project by the path the client knows it by. The daemon
+/// canonicalizes it, because it is the process on the machine that path exists on.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationsRequest {
+    pub project_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationsResponse {
+    pub automations: Vec<Automation>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveAutomationRequest {
+    pub project_path: String,
+    pub automation: Automation,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteAutomationRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RunAutomationRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationRunsRequest {
+    pub project_path: String,
+    /// Newest first, capped by the server whatever this says.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationRunsResponse {
+    pub runs: Vec<AutomationRun>,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -447,6 +587,13 @@ pub enum ServerResponse {
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
     ListLiveSessionsOk(ListLiveSessionsResponse),
+    ListAutomationsOk(ListAutomationsResponse),
+    SaveAutomationOk(Automation),
+    DeleteAutomationOk,
+    ListAutomationRunsOk(ListAutomationRunsResponse),
+    /// A run started or finished. Pushed unasked to whoever is attached, because the client that
+    /// cares did not ask for it: the clock did.
+    AutomationRunChanged(AutomationRun),
     SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
     SetConfigOptionOk(SetConfigOptionOkResponse),

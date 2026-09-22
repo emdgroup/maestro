@@ -10,12 +10,17 @@ use crate::agent;
 use crate::auth::{self, AuthTerminals};
 use crate::file_ops::{handle_file_read, handle_file_search};
 use crate::helpers::{
-    ensure_and_get_connection, evict_if_same_connection, forward_to_session,
+    ensure_and_get_connection, error_response, evict_if_same_connection, forward_to_session,
     resolve_agent_spawn_params, send_diag, send_response,
 };
 use crate::session::{self, create_session_on_connection, pre_initialize_agent};
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 use crate::tool_check::check_tools;
+
+/// What every automation request answers with when the store could not be opened. Said plainly
+/// rather than as an empty list, which would look like a project with no automations.
+const NO_AUTOMATION_STORE: &str =
+    "The automation store could not be opened, so automations are unavailable on this machine";
 
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
     maestro_protocol::ToolCheckResult {
@@ -45,6 +50,7 @@ pub(crate) async fn dispatch_message(
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &AuthTerminals,
     pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
+    automation_store: Option<&crate::automation_runner::Store>,
 ) -> bool {
     // If stdout is broken we return false so the main loop breaks.
     macro_rules! send_or_return {
@@ -121,6 +127,135 @@ pub(crate) async fn dispatch_message(
         MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
             send_diag("info", "[server] shutdown requested by the host");
             return false;
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListAutomations(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let listed = {
+                let conn = store.lock().await;
+                crate::automations::list(&conn, &project_path)
+            };
+            match listed {
+                Ok(automations) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(
+                            maestro_protocol::ListAutomationsResponse { automations },
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SaveAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            // Canonicalized here rather than trusted from the client: this is the process on the
+            // machine the path exists on, and every later lookup has to agree with this one.
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let mut automation = req.automation;
+            automation.project_path = project_path.clone();
+            let saved = {
+                let conn = store.lock().await;
+                crate::automations::save(&conn, &project_path, &automation)
+            };
+            match saved {
+                Ok(saved) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(saved)),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let deleted = {
+                let conn = store.lock().await;
+                crate::automations::delete(&conn, &req.automation_id)
+            };
+            match deleted {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::RunAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            // The run is announced by the runner, whether it starts or fails, so there is nothing
+            // to answer with here beyond an error the request itself could not get past.
+            if let Err(e) = crate::automation_runner::start(
+                store,
+                &req.automation_id,
+                false,
+                crate::automation_runner::Spawner {
+                    agents_with_spawn,
+                    agent_connections,
+                    stdout,
+                    spawn_result_tx,
+                },
+            )
+            .await
+            {
+                send_or_return!(send_response(stdout, &error_response(e)).await);
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let listed = {
+                let conn = store.lock().await;
+                crate::automations::list_runs(&conn, &project_path, req.limit)
+            };
+            match listed {
+                Ok(runs) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(
+                            maestro_protocol::ListAutomationRunsResponse { runs },
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
         }
 
         MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {

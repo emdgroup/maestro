@@ -35,9 +35,9 @@ becomes one of its clients.
 | 0     | Session identity: one opaque id everywhere  | Done, `4f08e9aa`              |
 | 1     | Resident mode: daemon, `attach`, re-adopt   | Done, `0fc3a63c` + `93d2b9b7` |
 | 2     | Session ownership and lifetime              | Done                          |
-| 3     | `automations.db`                            | Planned                       |
+| 3     | `automations.db`, and the clock that reads it | In progress                 |
 | 4     | Worktree provisioning moves into the daemon | Planned                       |
-| 5     | The clock                                   | Planned                       |
+| 5     | The clock                                   | Folded into phase 3           |
 | 6     | Webhooks                                    | Planned                       |
 | 7     | Autostart and consent                       | Planned, last before release  |
 
@@ -181,29 +181,43 @@ Still open, deliberately: **only the client that started a session sees its outp
 fan-out, and a rolling per-session window that would let a second client catch up mid-session is
 only worth its memory once a second client exists.
 
-## Phase 3: `automations.db`
+## Phase 3: `automations.db`, and the clock that reads it
 
-Replaces `.maestro/automations.json`, with a one-shot import so nothing already written is lost.
+Phase 5 was folded in here during the interview. Storing automations in the daemon and leaving the
+clock in the window would have meant a cron evaluator in TypeScript, written to be deleted two
+phases later; moving the firing at the same time as the store writes that logic once, where it
+stays.
 
-Tables: `projects`, `automations`, `runs`. Keyed by canonicalized project path, per the cross-phase
-decision above.
+| Topic            | Decision                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| Owner            | The daemon, on whichever machine the project lives on. The app does CRUD over the protocol   |
+| Location         | `<daemon dir>/automations.db`, beside the lock, so a dev build gets its own                  |
+| Tables           | `projects`, `automations`, `runs`, all three now                                             |
+| Project key      | Canonicalized path, canonicalized by the daemon, which is the machine the path exists on     |
+| Schedule         | A cron expression and an IANA timezone. The editor keeps its presets and compiles to cron    |
+| Next occurrence  | Computed by the daemon and returned with each automation, so no client parses cron           |
+| Import           | None. `.maestro/automations.json` never shipped, so there is nothing to migrate              |
+| Workspace        | Stored as a path, not the app's worktree row id, which means nothing on the daemon's side    |
+| `NewWorktree`    | Refused this phase. Worktree creation is bound to the app's `worktrees` table — see phase 4  |
+| Who fires        | The daemon, on a 60 second tick, for every project in its database, app open or not          |
+| Run records      | A `runs` row per firing, holding the session id it spawned                                   |
+| Session metadata | The daemon does not write `host_meta`. The app adopts the sessions its own `runs` rows name  |
+| Run events       | Pushed to whoever is attached, plus a run list on attach for what was missed                 |
+| After a run      | The session is left idle. Phase 2's sweep closes it, or leaves it alone if the user is there |
+| Protocol         | `PROTOCOL_VERSION` 4 to 5. CRUD, run list and run events are all new messages                |
 
-Open: whether this is a second database file or new tables in `maestro.db`. It is the daemon's state,
-not the app's, which argues for its own file next to the daemon's lock.
+Deferred out of this phase by the interview: **what a `NewWorktree` run leaves behind** is an
+automation setting, not a global rule, and is decided in phase 4 along with the provisioning.
 
 ## Phase 4: worktree provisioning in the daemon
 
 Moves worktree creation out of the app so a scheduled or webhook-triggered run can provision one
-with no window open. The git operations already live in `src-tauri/src/git/`, so the question is what
-moves and what is called over the protocol.
+with no window open. `git/worktree_lifecycle.rs` reserves a row id in the app's `worktrees` table
+and names the directory from it, so the question is not only what moves but who owns that table
+afterwards.
 
-## Phase 5: the clock
-
-Cron expressions with a timezone, evaluated on a 60 second tick. Each firing writes a `runs` row.
-A missed occurrence is recorded as `skipped` rather than run late, per the cross-phase decision.
-
-The app already has schedule presets and a 60 second clock from the pre-phase-0 work. This phase
-moves that authority into the daemon.
+Also decides what a run leaves behind, as a per-automation setting: a branch per run kept for
+review, one workspace reused across runs, or a workspace removed when the run changed nothing.
 
 ## Phase 6: webhooks
 

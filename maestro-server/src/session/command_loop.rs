@@ -46,6 +46,7 @@ pub(crate) async fn handle_prompt_result(
             .to_string()
         }
     };
+    crate::helpers::note_turn_ended(&session_id, &stop_reason);
     let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
         session_id,
         stop_reason,
