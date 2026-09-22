@@ -99,6 +99,32 @@ pub fn canonical_project_path(path: &str) -> String {
     }
 }
 
+/// The IANA zone this machine is set to, or `UTC` when it will not say.
+///
+/// `UTC` rather than an error: a machine with no readable zone still has to be able to run an
+/// automation, and a schedule an hour out is better than a project whose automations will not load.
+pub fn server_timezone() -> String {
+    match iana_time_zone::get_timezone() {
+        Ok(zone) if zone.parse::<chrono_tz::Tz>().is_ok() => zone,
+        Ok(zone) => {
+            crate::send_diag(
+                "warn",
+                format!(
+                    "[automation] this machine reports an unknown timezone '{zone}', using UTC"
+                ),
+            );
+            "UTC".to_string()
+        }
+        Err(e) => {
+            crate::send_diag(
+                "warn",
+                format!("[automation] cannot read this machine's timezone, using UTC: {e}"),
+            );
+            "UTC".to_string()
+        }
+    }
+}
+
 /// Rewrite a standard five-field cron into what the `cron` crate parses.
 ///
 /// Two differences, both silent if ignored: the crate wants a seconds field in front, and it counts

@@ -146,7 +146,10 @@ pub(crate) async fn dispatch_message(
                     send_response(
                         stdout,
                         &MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(
-                            maestro_protocol::ListAutomationsResponse { automations },
+                            maestro_protocol::ListAutomationsResponse {
+                                automations,
+                                server_timezone: crate::automations::server_timezone(),
+                            },
                         )),
                     )
                     .await

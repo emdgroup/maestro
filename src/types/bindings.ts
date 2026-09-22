@@ -917,7 +917,7 @@ async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-async listAutomations(projectId: number) : Promise<Result<Automation[], string>> {
+async listAutomations(projectId: number) : Promise<Result<AutomationList, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };
 } catch (e) {
@@ -2833,6 +2833,16 @@ permission_mode?: string | null; effort?: string | null; workspace: AutomationWo
  * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
  */
 next_due_at?: string | null }
+/**
+ * A project's automations, and the one thing about the machine running them the editor has to
+ * know: what "09:00" means there.
+ */
+export type AutomationList = { automations: Automation[]; 
+/**
+ * The IANA zone the background server's machine is set to. The same as this machine's for a
+ * local project, and the only reason the editor offers a choice when it is not.
+ */
+server_timezone: string }
 /**
  * What happened to one firing of an automation.
  */

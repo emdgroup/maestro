@@ -203,16 +203,29 @@ async fn target(
     ))
 }
 
+/// A project's automations, and the one thing about the machine running them the editor has to
+/// know: what "09:00" means there.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AutomationList {
+    pub automations: Vec<Automation>,
+    /// The IANA zone the background server's machine is set to. The same as this machine's for a
+    /// local project, and the only reason the editor offers a choice when it is not.
+    pub server_timezone: String,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn list_automations(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-) -> Result<Vec<Automation>, String> {
+) -> Result<AutomationList, String> {
     let (connection_key, project_path) = target(&app_state, project_id).await?;
-    let response = query_list_automations_via_server(connection_key, project_path, &app_state)
-        .await?;
-    Ok(response.automations.into_iter().map(Into::into).collect())
+    let response =
+        query_list_automations_via_server(connection_key, project_path, &app_state).await?;
+    Ok(AutomationList {
+        automations: response.automations.into_iter().map(Into::into).collect(),
+        server_timezone: response.server_timezone,
+    })
 }
 
 /// Create or replace one automation.

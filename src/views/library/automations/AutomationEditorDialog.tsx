@@ -70,13 +70,68 @@ function blank(workspaceMode: WorkspaceMode, baseBranch: string, agentId: string
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/**
+ * Which clock the schedule is read against.
+ *
+ * Two places can disagree about what "09:00" is, and only two: this machine, and the one the agent
+ * runs on. A local project has one machine, so there is nothing to ask and no control to show.
+ *
+ * A stored zone that is neither is kept and offered as it is — an automation written on another
+ * machine, or by hand — rather than silently rescheduled onto whichever of the two is closest.
+ */
+function TimezoneField({
+  value,
+  serverTimezone,
+  onChange,
+}: {
+  value: string;
+  serverTimezone: string;
+  onChange: (timezone: string) => void;
+}) {
+  const local = localTimezone();
+  const choices = [
+    { value: local, label: `This computer (${local})` },
+    { value: serverTimezone, label: `Where it runs (${serverTimezone})` },
+  ].filter((choice, index, all) => all.findIndex((c) => c.value === choice.value) === index);
+  if (!choices.some((choice) => choice.value === value)) {
+    choices.push({ value, label: `${value} (as saved)` });
+  }
+  if (choices.length < 2) return null;
+
+  return (
+    <label className="block space-y-1">
+      <span className="text-[11px] text-muted-foreground">Read the time in</span>
+      <Select value={value} onValueChange={(next) => next && onChange(next)}>
+        <SelectTrigger size="sm" className="w-full text-xs" aria-label="Timezone">
+          <span className="flex-1 truncate text-left">
+            {choices.find((choice) => choice.value === value)?.label ?? value}
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          {choices.map((choice) => (
+            <SelectItem key={choice.value} value={choice.value} className="text-xs">
+              {choice.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
 /** Presets plus "Manual only", which is the absence of a schedule rather than a kind of one. */
 function ScheduleFields({
   preset,
+  timezone,
+  serverTimezone,
   onChange,
+  onTimezoneChange,
 }: {
   preset: SchedulePreset;
+  timezone: string;
+  serverTimezone: string;
   onChange: (preset: SchedulePreset) => void;
+  onTimezoneChange: (timezone: string) => void;
 }) {
   const kind = preset.kind;
   const schedule = kind === "Manual" ? null : preset;
@@ -145,10 +200,17 @@ function ScheduleFields({
         )}
       </div>
       {schedule && (
-        <p className="text-[11px] text-muted-foreground/70">
-          {localTimezone()} time. It runs in the background whether or not Maestro is open, but a
-          time that passes while this machine is off is skipped rather than caught up.
-        </p>
+        <>
+          <TimezoneField
+            value={timezone}
+            serverTimezone={serverTimezone}
+            onChange={onTimezoneChange}
+          />
+          <p className="text-[11px] text-muted-foreground/70">
+            {timezone} time. It runs in the background whether or not Maestro is open, but a time
+            that passes while that machine is off is skipped rather than caught up.
+          </p>
+        </>
       )}
     </div>
   );
@@ -173,6 +235,7 @@ export function AutomationEditorDialog({
   connection,
   agents,
   worktrees,
+  serverTimezone,
   editing,
   onSave,
 }: {
@@ -183,6 +246,8 @@ export function AutomationEditorDialog({
   connection: ConnectionKey;
   agents: Array<{ id: string; name: string }>;
   worktrees: WorktreeWithStatus[];
+  /** The zone the machine that runs these is set to. Equal to this one for a local project. */
+  serverTimezone: string;
   /** The automation being edited, or null to create one. */
   editing: Automation | null;
   onSave: (automation: Automation) => void;
@@ -281,7 +346,13 @@ export function AutomationEditorDialog({
           </label>
 
           {preset ? (
-            <ScheduleFields preset={preset} onChange={(next) => patch({ cron: toCron(next) })} />
+            <ScheduleFields
+              preset={preset}
+              timezone={draft.timezone}
+              serverTimezone={serverTimezone}
+              onChange={(next) => patch({ cron: toCron(next) })}
+              onTimezoneChange={(timezone) => patch({ timezone })}
+            />
           ) : (
             // Written by hand, or by an agent. Shown rather than flattened into the nearest
             // preset, which would change when it runs without saying so.

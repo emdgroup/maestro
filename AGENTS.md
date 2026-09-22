@@ -440,6 +440,10 @@ project the database that would hold it is not even on the machine the agent run
   and compiles them (`src/views/library/automations/schedule.ts`); anything hand-written is shown
   as it is rather than flattened. `to_crate_expression` fixes up the two places the `cron` crate
   disagrees with a crontab: it wants a seconds field, and it counts Sunday as 1 rather than 0.
+- **The zone is a choice between two machines, never a list.** `ListAutomations` returns
+  `server_timezone` beside the rows, and the editor offers that or this computer's — and shows no
+  control at all when they match, which is every local project. A stored zone that is neither is
+  kept and offered as a third option rather than silently rescheduled onto the nearest.
 - **`next_due_at` is computed on read and never stored.** Nothing outside the daemon parses cron.
 - **A missed occurrence is dropped.** The floor for the first firing is when the server started, so
   a machine asleep for a day does not wake up and work through twenty-four hourly runs.

@@ -542,6 +542,17 @@ pub struct ListAutomationsRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListAutomationsResponse {
     pub automations: Vec<Automation>,
+    /// The IANA zone this server's own machine is set to.
+    ///
+    /// Sent with the list because it is what the editor has to offer: an automation on a remote
+    /// project runs on that machine, so "09:00" means one thing there and another where the window
+    /// is. Falls back to `UTC` when the machine cannot say.
+    #[serde(default = "utc")]
+    pub server_timezone: String,
+}
+
+fn utc() -> String {
+    "UTC".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

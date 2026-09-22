@@ -195,6 +195,7 @@ stays.
 | Tables           | `projects`, `automations`, `runs`, all three now                                             |
 | Project key      | Canonicalized path, canonicalized by the daemon, which is the machine the path exists on     |
 | Schedule         | A cron expression and an IANA timezone. The editor keeps its presets and compiles to cron    |
+| Timezone choice  | Two machines, never a zone list: this computer or the one it runs on. No control when equal  |
 | Next occurrence  | Computed by the daemon and returned with each automation, so no client parses cron           |
 | Import           | None. `.maestro/automations.json` never shipped, so there is nothing to migrate              |
 | Workspace        | Stored as a path, not the app's worktree row id, which means nothing on the daemon's side    |

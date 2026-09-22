@@ -17,7 +17,7 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
-import { describeNextRun, describeSchedule } from "./schedule";
+import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
 
 function describeWorkspace(workspace: Automation["workspace"]): string {
@@ -193,7 +193,7 @@ export function AutomationsPanel({
   editing: Automation | null;
   onEdit: (automation: Automation) => void;
 }) {
-  const { data: automations } = useAutomationsQuery(projectId);
+  const { data: list } = useAutomationsQuery(projectId);
   const { data: runs } = useAutomationRunsQuery(projectId);
   useAutomationRunEvents(projectId);
   const save = useSaveAutomationMutation();
@@ -202,6 +202,7 @@ export function AutomationsPanel({
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const { data: worktrees } = useWorktreesQuery(projectId, projectPath);
 
+  const automations = list?.automations;
   const agents = discovery?.agents ?? [];
   const running = new Map(
     (runs ?? []).filter((r) => r.status === "running").map((r) => [r.automation_id, r]),
@@ -252,6 +253,9 @@ export function AutomationsPanel({
         connection={connection}
         agents={agents}
         worktrees={worktrees ?? []}
+        // Until the list answers, the only honest answer is this machine's own, which is right for
+        // every local project and is replaced the moment the server says otherwise.
+        serverTimezone={list?.server_timezone ?? localTimezone()}
         editing={editing}
         onSave={(automation) => save.mutate({ projectId, automation })}
       />
