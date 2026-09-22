@@ -51,6 +51,54 @@ function contiguous(value: FieldValue): { from: number; to: number } | null {
 }
 
 /**
+ * Above this many values, a field is described by its shape rather than by its members.
+ *
+ * `8-14` is seven days, and reading them out is both longer than the expression and harder to
+ * check than "the 8th through the 14th". Three or fewer is where a list still reads as a list:
+ * `1-5/2` is Mondays, Wednesdays and Fridays, which says more than "every 2nd day from Monday".
+ */
+const ENUMERATE_UP_TO = 3;
+
+/** How one field says its values: a single one, a run of them, and a run taken in steps. */
+interface PartWords {
+  one: (value: number) => string;
+  range: (from: number, to: number) => string;
+  everyStep: (step: number) => string;
+  rangeStep: (from: number, to: number, step: number) => string;
+}
+
+/**
+ * One field, described by what was written rather than by what it expands to.
+ *
+ * The comma-separated parts the user typed are already the right granularity: each is one idea,
+ * and there are as many of them as they chose to write. Expanding them and listing the result is
+ * what turns `8-14` into seven ordinals and `*\/2` into sixteen.
+ *
+ * A part small enough to read as a list still becomes one, because "Monday, Wednesday and Friday"
+ * beats "every 2nd day from Monday through Friday" at three values.
+ */
+function describeParts(value: FieldValue, words: PartWords): string {
+  const phrases = value.parts.map((part) => {
+    const values: number[] = [];
+    for (let at = part.from; at <= part.to; at += part.step) values.push(at);
+
+    if (values.length <= ENUMERATE_UP_TO) return list(values.map(words.one));
+    if (part.wildcard) return words.everyStep(part.step);
+    if (part.step === 1) return words.range(part.from, part.to);
+    return words.rangeStep(part.from, part.to, part.step);
+  });
+  return list(phrases);
+}
+
+const HOUR_WORDS: PartWords = {
+  one: (hour) => `${pad(hour)}:00`,
+  range: (from, to) => `${pad(from)}:00 through ${pad(to)}:00`,
+  everyStep: (step) => `every ${ordinal(step)} hour`,
+  rangeStep: (from, to, step) =>
+    `every ${ordinal(step)} hour from ${pad(from)}:00 through ${pad(to)}:00`,
+};
+
+/**
  * When in the day, from the minute and hour fields together.
  *
  * The two are one clause because neither means anything alone: a minute of 30 is "half past" only
@@ -73,7 +121,7 @@ function timeClause(minute: FieldValue, hour: FieldValue): string {
     if (hour.unrestricted) return every;
     if (hourRange) return `${every}, between ${pad(hourRange.from)}:00 and ${pad(hourRange.to)}:59`;
     if (oneHour !== null) return `${every}, during the ${pad(oneHour)}:00 hour`;
-    return `${every}, during ${list(expand(hour).map((at) => `${pad(at)}:00`))}`;
+    return `${every}, during ${describeParts(hour, HOUR_WORDS)}`;
   }
 
   if (hourStep !== null && oneMinute !== null) {
@@ -90,42 +138,62 @@ function timeClause(minute: FieldValue, hour: FieldValue): string {
       : `Every hour, at ${past} minutes past`;
   }
 
-  const times = expand(hour).flatMap((at) => minutes.map((minute) => `${pad(at)}:${pad(minute)}`));
   if (hourRange && minutes.length === 1) {
     return `Every hour from ${pad(hourRange.from)}:${pad(minutes[0])} to ${pad(hourRange.to)}:${pad(minutes[0])}`;
   }
-  return `At ${list(times)}`;
+
+  const times = expand(hour).flatMap((at) => minutes.map((minute) => `${pad(at)}:${pad(minute)}`));
+  if (times.length <= ENUMERATE_UP_TO + 1) return `At ${list(times)}`;
+
+  // Too many clock times to read out, which is what an hour list crossed with a minute list does:
+  // four hours and three minutes is twelve. Said once each instead.
+  const past =
+    minutes.length === 1 && minutes[0] === 0
+      ? "on the hour"
+      : `at ${list(minutes.map(String))} minutes past`;
+  return `During ${describeParts(hour, HOUR_WORDS)}, ${past}`;
 }
 
 function dayOfMonthClause(value: FieldValue): string | null {
   if (value.unrestricted) return null;
-  const step = wholeRangeStep(value);
-  if (step !== null) return `every ${ordinal(step)} day of the month`;
-  const days = expand(value).map((day) => `the ${ordinal(day)}`);
-  return `on ${list(days)} of the month`;
+  const phrase = describeParts(value, {
+    one: (day) => `the ${ordinal(day)}`,
+    range: (from, to) => `the ${ordinal(from)} through the ${ordinal(to)}`,
+    everyStep: (step) => `every ${ordinal(step)} day`,
+    rangeStep: (from, to, step) =>
+      `every ${ordinal(step)} day from the ${ordinal(from)} through the ${ordinal(to)}`,
+  });
+  return `on ${phrase} of the month`;
+}
+
+/** 7 is Sunday in a crontab just as 0 is, so both land on the same name. */
+function dayName(day: number): string {
+  return DAY_NAMES[day % 7];
 }
 
 function dayOfWeekClause(value: FieldValue): string | null {
   if (value.unrestricted) return null;
-  // 7 is Sunday in a crontab just as 0 is, so both land on the same name. Listed from Monday
-  // rather than in the numeric order cron writes them, so a weekend reads "Saturdays and Sundays".
-  const names = expand(value)
-    .map((day) => day % 7)
-    .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-    .map((day) => DAY_NAMES[day]);
-  const unique = [...new Set(names)];
-  const range = contiguous(value);
-  if (range && range.to - range.from >= 2) {
-    return `on ${DAY_NAMES[range.from % 7]} through ${DAY_NAMES[range.to % 7]}`;
-  }
-  return `on ${list(unique.map((name) => `${name}s`))}`;
+  const phrase = describeParts(value, {
+    one: (day) => `${dayName(day)}s`,
+    range: (from, to) => `${dayName(from)} through ${dayName(to)}`,
+    everyStep: (step) => `every ${ordinal(step)} day of the week`,
+    rangeStep: (from, to, step) =>
+      `every ${ordinal(step)} day from ${dayName(from)} through ${dayName(to)}`,
+  });
+  return `on ${phrase}`;
 }
 
 function monthClause(value: FieldValue): string | null {
   if (value.unrestricted) return null;
-  const step = wholeRangeStep(value);
-  if (step !== null) return `every ${ordinal(step)} month`;
-  return `in ${list(expand(value).map((month) => MONTH_NAMES[month - 1]))}`;
+  const phrase = describeParts(value, {
+    one: (month) => MONTH_NAMES[month - 1],
+    range: (from, to) => `${MONTH_NAMES[from - 1]} through ${MONTH_NAMES[to - 1]}`,
+    everyStep: (step) => `every ${ordinal(step)} month`,
+    rangeStep: (from, to, step) =>
+      `every ${ordinal(step)} month from ${MONTH_NAMES[from - 1]} through ${MONTH_NAMES[to - 1]}`,
+  });
+  // A step over the whole year is a cadence rather than a set of months, so it reads on its own.
+  return value.parts.every((part) => part.wildcard) ? phrase : `in ${phrase}`;
 }
 
 function ordinal(value: number): string {
@@ -170,7 +238,8 @@ export function describeExpression(cron: string): { text: string } | { error: st
   // "At 09:00" on its own does not say how often. Nothing restricts the day, so it is every one,
   // and saying that is the difference between a time and a schedule. Only for the clauses that
   // name a clock time: "Every day every 30 minutes" says it twice.
-  if (days.length === 0 && month_ === null && time.startsWith("At ")) {
+  // Only the day fields decide this. A schedule restricted to June still runs every day of it.
+  if (days.length === 0 && time.startsWith("At ")) {
     time = `Every day ${time.replace("At ", "at ")}`;
   }
   const clauses = [time, days.join(" or "), month_].filter(

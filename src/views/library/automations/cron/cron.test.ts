@@ -82,6 +82,27 @@ describe("describeExpression", () => {
     expect(say("0 7 1 */3 *")).toBe("At 07:00, on the 1st of the month, every 3rd month");
   });
 
+  it("describes a wide field by its shape rather than by its members", () => {
+    // The rule that matters for scale: a part is read out only while it is short enough to read.
+    expect(say("0 4 8-14 * *")).toBe("At 04:00, on the 8th through the 14th of the month");
+    expect(say("0 4 */2 * *")).toBe("At 04:00, on every 2nd day of the month");
+    expect(say("0 4 1-28/7 * *")).toBe(
+      "At 04:00, on every 7th day from the 1st through the 28th of the month",
+    );
+    expect(say("0 9 * 6-8 *")).toBe("Every day at 09:00, in June, July and August");
+    expect(say("0 9 * * 1-5/2")).toBe("At 09:00, on Mondays, Wednesdays and Fridays");
+  });
+
+  it("says a long list of clock times once rather than crossing it out", () => {
+    // Four hours crossed with three minutes is twelve times, which is longer than the expression.
+    expect(say("0,20,40 9-12 * * *")).toBe(
+      "During 09:00 through 12:00, at 0, 20 and 40 minutes past",
+    );
+    expect(say("0 9-12,15-18 * * *")).toBe(
+      "During 09:00 through 12:00 and 15:00 through 18:00, on the hour",
+    );
+  });
+
   it("says or, because that is what cron does with both day fields", () => {
     // The trap: this fires on the 1st and on every Monday, not on Mondays that fall on the 1st.
     expect(say("0 9 1 * 1")).toBe("At 09:00, on the 1st of the month or on Mondays");
