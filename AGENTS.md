@@ -16,6 +16,10 @@ This file provides guidance to harness such as Claude Code (claude.ai/code) when
 
 See `.planning/PROJECT.md` for project goals, milestone progress, requirements.
 
+`docs/automations-plan.md` is the working plan for the Automations feature and the resident
+`maestro-server` it runs on. It is phased, and each phase records the decisions already locked, so
+read it before touching the daemon, session lifetime, or automation storage.
+
 ## Development Commands
 
 ### Frontend Development
