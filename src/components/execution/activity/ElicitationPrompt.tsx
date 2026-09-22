@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   MessageCircleQuestionMark,
   ChevronLeft,
@@ -34,27 +34,115 @@ function isMultiSelect(field: ElicitationField): boolean {
   return field.type === "array";
 }
 
-function OtherInput({
-  field,
+const optionShell = (selected: boolean) =>
+  cn(
+    "flex gap-2 rounded-md border cursor-pointer transition-all text-sm",
+    selected
+      ? "border-accent bg-accent/10 text-foreground"
+      : "border-border text-muted-foreground hover:border-accent/50",
+  );
+
+function OptionGlyph({ type, selected }: { type: "radio" | "checkbox"; selected: boolean }) {
+  return (
+    <div
+      className={cn(
+        "w-4 h-4 border-2 flex items-center justify-center shrink-0 transition-all",
+        type === "radio" ? "rounded-full" : "rounded",
+        selected ? "border-accent bg-accent" : "border-muted-foreground/40",
+      )}
+    >
+      {selected &&
+        (type === "radio" ? (
+          <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
+        ) : (
+          <Check className="w-2.5 h-2.5 text-primary-foreground" />
+        ))}
+    </div>
+  );
+}
+
+// One option row. Radio and checkbox differ only in the control glyph, so "Other" can be the
+// same row as every other choice — which is the point: it has to look like it belongs to the
+// group, or the user cannot tell whether picking it replaces or adds to their selection.
+function OptionRow({
+  type,
+  name,
+  selected,
+  onSelect,
+  children,
+}: {
+  type: "radio" | "checkbox";
+  name?: string;
+  selected: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className={cn(optionShell(selected), "items-center px-2.5 py-1.5")}>
+      <input type={type} name={name} className="sr-only" checked={selected} onChange={onSelect} />
+      <OptionGlyph type={type} selected={selected} />
+      {children}
+    </label>
+  );
+}
+
+// "Other" is one option whose body happens to be a text box: same shell, same glyph, and the box
+// inside it rather than under it, so putting the caret in it is picking the option. No divider
+// above it — it is a member of the list, not an aside — and the box stays mounted whether or not
+// it is picked, since revealing it on demand would move every control below it.
+function OtherOption({
+  label,
+  description,
+  type,
+  name,
+  checked,
+  setChecked,
   value,
   onChange,
 }: {
-  field: { key: string; title?: string; description?: string };
+  label: string;
+  description?: string;
+  type: "radio" | "checkbox";
+  name?: string;
+  checked: boolean;
+  setChecked: (checked: boolean) => void;
   value: string;
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="space-y-1.5 mt-2 pt-2 border-t border-border">
-      {field.title && <div className="text-xs font-medium text-foreground">{field.title}</div>}
-      {field.description && (
-        <div className="text-xs text-muted-foreground">{field.description}</div>
-      )}
-      <Textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="min-h-15 bg-muted/40 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
-        placeholder="Type here…"
+    <div
+      className={cn(optionShell(checked), "items-start px-2.5 py-2")}
+      // Toggles from anywhere but the box — inside it, focus does the picking, so a click there
+      // must not immediately undo it.
+      onClick={(e) => {
+        if ((e.target as HTMLElement).tagName !== "TEXTAREA") setChecked(!checked);
+      }}
+    >
+      <input
+        type={type}
+        name={name}
+        className="sr-only"
+        checked={checked}
+        onChange={() => setChecked(!checked)}
       />
+      <div className="mt-0.5">
+        <OptionGlyph type={type} selected={checked} />
+      </div>
+      <div className="flex-1 min-w-0 space-y-1.5">
+        <div>{label}</div>
+        <Textarea
+          value={value}
+          onFocus={() => setChecked(true)}
+          onChange={(e) => {
+            onChange(e.target.value);
+            if (!checked) setChecked(true);
+          }}
+          className="min-h-15 bg-background/60 border-border focus-visible:border-accent/50 focus-visible:ring-0 text-sm"
+          // The description is the prompt for what to type, so it is the placeholder rather than
+          // a line of its own — one less row in a card that already scrolls.
+          placeholder={description ?? "Type here…"}
+        />
+      </div>
     </div>
   );
 }
@@ -70,6 +158,9 @@ export function ElicitationPrompt({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [otherValues, setOtherValues] = useState<Record<string, string>>({});
+  // Whether "Other" is the picked option for this field, tracked separately from its text: a
+  // checked-but-empty Other is a deliberate state the user can see, not an unanswered field.
+  const [otherChecked, setOtherChecked] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [direction, setDirection] = useState(1);
   // Open on arrival — the agent is blocked on this. Collapsing is the user's own move, to give the
@@ -82,7 +173,11 @@ export function ElicitationPrompt({
   const set = (key: string, value: unknown) => setValues((prev) => ({ ...prev, [key]: value }));
 
   const isAnswered = (field: ElicitationField): boolean => {
-    if (otherValues[field.key]) return true;
+    if (otherChecked[field.key]) {
+      if (otherValues[field.key]?.trim()) return true;
+      // Other is the only answer a single-select can hold, so an empty box leaves it unanswered.
+      if (isSingleSelect(field)) return false;
+    }
     const val = values[field.key];
     if (field.type === "boolean") return val !== undefined;
     if (val === undefined || val === null || val === "") return false;
@@ -95,7 +190,8 @@ export function ElicitationPrompt({
   const resolvedValues = (): Record<string, unknown> => {
     const result = { ...values };
     for (const field of fields) {
-      const ov = otherValues[field.key];
+      if (!otherChecked[field.key]) continue;
+      const ov = otherValues[field.key]?.trim();
       if (!ov) continue;
       if (isSingleSelect(field)) {
         result[field.key] = ov;
@@ -148,6 +244,10 @@ export function ElicitationPrompt({
     : [];
 
   const showOtherInput = otherField !== null;
+  // The parser falls back to the request's own message when a field carries no description, so
+  // drop it here rather than printing the card's title a second time under "Other".
+  const otherDescription =
+    otherField?.description === message ? undefined : otherField?.description;
 
   return (
     // The sheet around this comes from the slot it renders in — see `AgentBottomBar`.
@@ -222,47 +322,40 @@ export function ElicitationPrompt({
                     {/* Single-select (radio) */}
                     {isSingleSelect(currentField) && (
                       <div className="space-y-1">
-                        {singleSelectOptions.map((opt) => {
-                          const selected = values[currentField.key] === opt.const;
-                          return (
-                            <label
-                              key={opt.const}
-                              className={cn(
-                                "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                                selected
-                                  ? "border-accent bg-accent/10 text-foreground"
-                                  : "border-border text-muted-foreground hover:border-accent/50",
-                              )}
-                            >
-                              <input
-                                type="radio"
-                                name={currentField.key}
-                                className="sr-only"
-                                checked={selected}
-                                onChange={() => {
-                                  set(currentField.key, opt.const);
-                                  advanceAfterPick();
-                                }}
-                              />
-                              <div
-                                className={cn(
-                                  "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                  selected
-                                    ? "border-accent bg-accent"
-                                    : "border-muted-foreground/40",
-                                )}
-                              >
-                                {selected && (
-                                  <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
-                                )}
-                              </div>
-                              {opt.title}
-                            </label>
-                          );
-                        })}
+                        {singleSelectOptions.map((opt) => (
+                          <OptionRow
+                            key={opt.const}
+                            type="radio"
+                            name={currentField.key}
+                            selected={
+                              !otherChecked[currentField.key] &&
+                              values[currentField.key] === opt.const
+                            }
+                            onSelect={() => {
+                              // Picking a listed option clears Other, and vice versa — one radio
+                              // group, so exactly one of them is the answer.
+                              setOtherChecked((prev) => ({ ...prev, [currentField.key]: false }));
+                              set(currentField.key, opt.const);
+                              advanceAfterPick();
+                            }}
+                          >
+                            {opt.title}
+                          </OptionRow>
+                        ))}
                         {showOtherInput && (
-                          <OtherInput
-                            field={otherField!}
+                          <OtherOption
+                            label={otherField!.title ?? "Other"}
+                            description={otherDescription}
+                            type="radio"
+                            name={currentField.key}
+                            checked={!!otherChecked[currentField.key]}
+                            setChecked={(checked) => {
+                              setOtherChecked((prev) => ({
+                                ...prev,
+                                [currentField.key]: checked,
+                              }));
+                              if (checked) set(currentField.key, undefined);
+                            }}
                             value={otherValues[currentField.key] ?? ""}
                             onChange={(v) =>
                               setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
@@ -280,48 +373,34 @@ export function ElicitationPrompt({
                             opt.const,
                           );
                           return (
-                            <label
+                            <OptionRow
                               key={opt.const}
-                              className={cn(
-                                "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                                selected
-                                  ? "border-accent bg-accent/10 text-foreground"
-                                  : "border-border text-muted-foreground hover:border-accent/50",
-                              )}
-                            >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={selected}
-                                onChange={() => {
-                                  const cur = (values[currentField.key] as string[]) ?? [];
-                                  set(
-                                    currentField.key,
-                                    selected
-                                      ? cur.filter((x) => x !== opt.const)
-                                      : [...cur, opt.const],
-                                  );
-                                }}
-                              />
-                              <div
-                                className={cn(
-                                  "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
+                              type="checkbox"
+                              selected={selected}
+                              onSelect={() => {
+                                const cur = (values[currentField.key] as string[]) ?? [];
+                                set(
+                                  currentField.key,
                                   selected
-                                    ? "border-accent bg-accent"
-                                    : "border-muted-foreground/40",
-                                )}
-                              >
-                                {selected && (
-                                  <Check className="w-2.5 h-2.5 text-primary-foreground" />
-                                )}
-                              </div>
+                                    ? cur.filter((x) => x !== opt.const)
+                                    : [...cur, opt.const],
+                                );
+                              }}
+                            >
                               {opt.title}
-                            </label>
+                            </OptionRow>
                           );
                         })}
                         {showOtherInput && (
-                          <OtherInput
-                            field={otherField!}
+                          <OtherOption
+                            label={otherField!.title ?? "Other"}
+                            description={otherDescription}
+                            type="checkbox"
+                            checked={!!otherChecked[currentField.key]}
+                            // Adds to the boxes already ticked rather than replacing them.
+                            setChecked={(checked) =>
+                              setOtherChecked((prev) => ({ ...prev, [currentField.key]: checked }))
+                            }
                             value={otherValues[currentField.key] ?? ""}
                             onChange={(v) =>
                               setOtherValues((prev) => ({ ...prev, [currentField.key]: v }))
@@ -333,34 +412,13 @@ export function ElicitationPrompt({
 
                     {/* Boolean */}
                     {currentField.type === "boolean" && (
-                      <label
-                        className={cn(
-                          "flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all text-sm",
-                          values[currentField.key]
-                            ? "border-accent bg-accent/10 text-foreground"
-                            : "border-border text-muted-foreground hover:border-accent/50",
-                        )}
+                      <OptionRow
+                        type="checkbox"
+                        selected={Boolean(values[currentField.key])}
+                        onSelect={() => set(currentField.key, !values[currentField.key])}
                       >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={Boolean(values[currentField.key])}
-                          onChange={(e) => set(currentField.key, e.target.checked)}
-                        />
-                        <div
-                          className={cn(
-                            "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all",
-                            values[currentField.key]
-                              ? "border-accent bg-accent"
-                              : "border-muted-foreground/40",
-                          )}
-                        >
-                          {Boolean(values[currentField.key]) && (
-                            <Check className="w-2.5 h-2.5 text-primary-foreground" />
-                          )}
-                        </div>
                         {currentField.title ?? currentField.key}
-                      </label>
+                      </OptionRow>
                     )}
 
                     {/* Free text */}
