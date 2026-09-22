@@ -396,15 +396,17 @@ begins at the reconnect. Do **not** issue `session/load` against a live session 
 first: `maestro-server` would replace its own map entry while the displaced command loop kept
 running, leaving an agent nothing routes to and nothing stops.
 
-**A session nobody is watching does not live forever.** `main::reap_idle_sessions` runs on the
-existing 10 second liveness tick and closes a session that has been idle for `IDLE_GRACE` (60
-seconds) with no client attached. Idle means `turn_active` is false, so a session working through
-a prompt finishes it whether or not anyone is there, and only then starts its grace period. The
-close goes through the session's own command loop rather than aborting its task, because
-`session/close` is what leaves the agent holding a transcript `session/load` can replay — an agent
-without `session/load` loses that transcript, which is the accepted price of not keeping an
-unbounded number of agent processes alive. A reopen inside the grace period re-adopts the session
-as it stands; a later one pays a `session/load`.
+**A session nobody is watching does not live forever.** `main::reap_idle_sessions` sweeps every
+`IDLE_SWEEP` (60 seconds) on its own interval, and it is mark-and-close rather than a deadline: a
+session found idle with no client attached is marked, and closed by the next sweep if it is still
+both. Any activity in between clears the mark and the session starts over, so a session survives
+between one and two minutes after the last client leaves. Idle means `turn_active` is false, so a
+session working through a prompt finishes it whether or not anyone is there, and is only marked
+once it is done. The close goes through the session's own command loop rather than aborting its
+task, because `session/close` is what leaves the agent holding a transcript `session/load` can
+replay — an agent without `session/load` loses that transcript, which is the accepted price of not
+keeping an unbounded number of agent processes alive. A reopen before the second sweep re-adopts
+the session as it stands; a later one pays a `session/load`.
 
 **An unanswered prompt survives the client it was shown to.** A session blocked on a permission or
 elicitation request is mid-turn by definition, so the reaper never takes it. The request itself is

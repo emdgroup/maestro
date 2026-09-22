@@ -235,20 +235,24 @@ pub(crate) async fn run_resident(
     run_server(msg_rx, sink).await.map_err(|e| e.to_string())
 }
 
-/// How long a session may sit idle with nobody watching before the server closes it.
+/// How often the sweep below runs, and so the unit its grace period is counted in.
 ///
 /// Residency made sessions immortal, and an immortal session is an agent child process this
-/// machine keeps forever. The grace period is what separates "the app is closing and will be back"
-/// from "nobody is coming": a reopen inside it re-adopts the session as it stands, and a later one
-/// pays a `session/load` to get the same transcript back from the agent's own history.
-const IDLE_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+/// machine keeps forever. The sweep is what separates "the app is closing and will be back" from
+/// "nobody is coming": a session has to be found idle twice running to be closed, so it survives
+/// for between one and two minutes after the last client leaves. A reopen inside that re-adopts it
+/// as it stands, and a later one pays a `session/load` to get the same transcript back from the
+/// agent's own history.
+const IDLE_SWEEP: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Close sessions that have been idle this long with no client attached.
+/// Mark sessions that are idle with no client attached, and close the ones already marked.
 ///
-/// Idle means no turn in flight, so a session working through a prompt runs to completion whether
-/// or not anyone is watching, and only starts its grace period once it is done. A session blocked
-/// on a permission prompt counts as mid-turn, which is what keeps the question answerable after a
-/// reopen instead of being reaped out from under the user.
+/// Two passes rather than one so that resuming counts for something: any activity in between
+/// clears the mark, and the session starts over. Idle means no turn in flight, so a session
+/// working through a prompt runs to completion whether or not anyone is watching, and is only
+/// marked once it is done. A session blocked on a permission prompt counts as mid-turn, which is
+/// what keeps the question answerable after a reopen instead of being reaped out from under the
+/// user.
 ///
 /// The close goes through the session's own command loop rather than aborting its task, because
 /// `session/close` is what leaves the agent holding a transcript that `session/load` can replay.
@@ -256,7 +260,6 @@ const IDLE_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
 /// the accepted cost of not keeping an unbounded number of agent processes alive.
 async fn reap_idle_sessions(sessions: &mut SessionMap, stdout: &crate::ClientOut) {
     let attached = stdout.lock().await.is_attached();
-    let now = std::time::Instant::now();
     let mut reap: Vec<String> = Vec::new();
 
     for (session_id, session) in sessions.iter_mut() {
@@ -265,13 +268,11 @@ async fn reap_idle_sessions(sessions: &mut SessionMap, stdout: &crate::ClientOut
                 .turn_active
                 .load(std::sync::atomic::Ordering::SeqCst);
         if busy {
-            session.idle_since = None;
-            continue;
-        }
-        match session.idle_since {
-            None => session.idle_since = Some(now),
-            Some(since) if now.duration_since(since) >= IDLE_GRACE => reap.push(session_id.clone()),
-            Some(_) => {}
+            session.idle_marked = false;
+        } else if session.idle_marked {
+            reap.push(session_id.clone());
+        } else {
+            session.idle_marked = true;
         }
     }
 
@@ -375,6 +376,9 @@ async fn run_server(
     let mut liveness_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
     liveness_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let mut reap_interval = tokio::time::interval(IDLE_SWEEP);
+    reap_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
         let msg = tokio::select! {
             biased;
@@ -454,6 +458,10 @@ async fn run_server(
                     )
                     .await;
                 }
+                continue;
+            }
+
+            _ = reap_interval.tick() => {
                 reap_idle_sessions(&mut sessions, &stdout).await;
                 continue;
             }

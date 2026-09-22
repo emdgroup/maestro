@@ -193,9 +193,10 @@ pub struct ActiveSession {
     /// session between turns can be closed and reloaded to recover its transcript, one mid-turn
     /// cannot without throwing the turn away.
     pub turn_active: Arc<AtomicBool>,
-    /// When this session was first seen idle with no client attached, or `None` while either is
-    /// untrue. The reaper closes it once this is old enough. See `main::reap_idle_sessions`.
-    pub idle_since: Option<std::time::Instant>,
+    /// Whether the last sweep found this session idle with no client attached. Set by the sweep
+    /// and cleared by any activity, so only a session idle across two of them is closed. See
+    /// `main::reap_idle_sessions`.
+    pub idle_marked: bool,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

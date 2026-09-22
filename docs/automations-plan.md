@@ -153,9 +153,10 @@ duration only bite when something can spawn without a human in the loop.
 | -------------------- | ----------------------------------------------------------------------------------------- |
 | Scope                | Only what exists now. Automation-run lifetime moves to phase 5, beside the runner         |
 | Session kinds        | None. Every session is interactive; phase 5's in-daemon runner can mark its own           |
-| Idle session         | Closed 60 seconds after the last client detaches, freeing the agent process               |
-| Idle                 | `turn_active == false`. A turn in flight runs to completion, then starts its own 60s      |
-| Where the timer runs | The daemon, on the existing 10 second liveness tick. The host is not alive to be asked    |
+| Idle session         | Marked by one sweep, closed by the next if still idle. One to two minutes in practice     |
+| Idle                 | `turn_active == false`. A turn in flight runs to completion, then gets marked             |
+| Resuming             | Clears the mark. A session that comes back to life starts the whole grace period over     |
+| Where the timer runs | The daemon, on its own 60 second sweep. The host is not alive to be asked                 |
 | How it closes        | `SessionCommand::CloseSession` through the command loop, never a task abort               |
 | No `session/load`    | Reaped uniformly. Those sessions lose their transcript, accepted over unbounded processes |
 | Permission timeout   | None. A blocked session is mid-turn, so the reaper never takes it                         |
