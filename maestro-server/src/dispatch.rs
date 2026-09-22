@@ -13,7 +13,7 @@ use crate::helpers::{
     ensure_and_get_connection, error_response, evict_if_same_connection, forward_to_session,
     resolve_agent_spawn_params, send_diag, send_response,
 };
-use crate::session::{self, create_session_on_connection, pre_initialize_agent};
+use crate::session::{self, create_session_on_connection};
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 use crate::tool_check::check_tools;
 
@@ -616,27 +616,32 @@ pub(crate) async fn dispatch_message(
             else {
                 return true;
             };
-            match pre_initialize_agent(
+            // Reuse whatever is already connected for this agent rather than spawning a second
+            // process and inserting it: the entry holds the shutdown sender, so replacing it killed
+            // the agent the live sessions were talking to. A client attaching to a daemon probes
+            // capabilities, which is exactly when there are sessions to lose.
+            match ensure_and_get_connection(
+                &req.agent_id,
+                agent_connections,
                 &spawn_cmd,
                 &spawn_args_owned,
                 &spawn_env,
                 &req.cwd,
-                Arc::clone(stdout),
+                stdout,
             )
             .await
             {
-                Some(conn) => {
+                Some(handle) => {
                     let response = PreInitializeResponse {
                         agent_id: req.agent_id.clone(),
-                        prompt_capabilities: conn.capabilities.prompt_capabilities.clone(),
-                        supports_session_list: conn.capabilities.supports_session_list,
-                        supports_session_load: conn.capabilities.supports_session_load,
-                        supports_session_close: conn.capabilities.supports_session_close,
-                        supports_session_delete: conn.capabilities.supports_session_delete,
-                        auth_methods: conn.capabilities.auth_methods.clone(),
-                        supports_auth_logout: conn.capabilities.supports_auth_logout,
+                        prompt_capabilities: handle.capabilities.prompt_capabilities.clone(),
+                        supports_session_list: handle.capabilities.supports_session_list,
+                        supports_session_load: handle.capabilities.supports_session_load,
+                        supports_session_close: handle.capabilities.supports_session_close,
+                        supports_session_delete: handle.capabilities.supports_session_delete,
+                        auth_methods: handle.capabilities.auth_methods.clone(),
+                        supports_auth_logout: handle.capabilities.supports_auth_logout,
                     };
-                    agent_connections.lock().await.insert(req.agent_id, conn);
                     send_or_return!(
                         send_response(
                             stdout,
