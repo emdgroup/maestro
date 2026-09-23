@@ -8,7 +8,7 @@ export const MAX_SUBTREE_CHARS = 2000;
 
 interface BuildOptions {
   /** Session the notes belong to, needed to turn a capture into an attachment. */
-  logId: number | null;
+  sessionId: string | null;
   /** The agent accepts image content blocks. When it does not, captures are left out entirely. */
   canSendImages?: boolean;
 }
@@ -24,7 +24,7 @@ interface BuildOptions {
  */
 export async function buildAnnotationBlocks(
   annotations: Annotation[],
-  options: BuildOptions = { logId: null },
+  options: BuildOptions = { sessionId: null },
 ): Promise<JsonValue[]> {
   if (annotations.length === 0) return [];
 
@@ -91,12 +91,12 @@ export async function buildAnnotationBlocks(
  */
 async function imageBlock(
   shotPath: string | undefined,
-  { logId, canSendImages }: BuildOptions,
+  { sessionId, canSendImages }: BuildOptions,
 ): Promise<JsonValue | null> {
-  if (!shotPath || !canSendImages || logId == null) return null;
+  if (!shotPath || !canSendImages || sessionId == null) return null;
   try {
     const prepared = await api.prepareExternalAttachments(
-      logId,
+      sessionId,
       [{ path: shotPath, is_image: true }],
       false,
     );

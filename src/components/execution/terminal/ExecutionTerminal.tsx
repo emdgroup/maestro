@@ -46,7 +46,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
 
   const detachTerminal = useCallback(async () => {
     try {
-      await api.detachTerminal(taskId);
+      await api.detachTerminal(String(taskId));
     } catch (err) {
       console.error("Detach terminal error:", err);
     }
@@ -72,7 +72,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
         };
 
         // Call executionService to attach terminal with the channel
-        await api.attachTerminal(taskId, channel, null);
+        await api.attachTerminal(String(taskId), channel, null);
 
         setLoading(false);
       } catch (err) {
@@ -107,7 +107,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
       setTerminalOutput((prev) => appendToTerminalOutput(prev, inputValue + "\n"));
 
       // Send input to PTY using execution service
-      await api.sendTerminalInput(taskId, inputValue + "\n");
+      await api.sendTerminalInput(String(taskId), inputValue + "\n");
 
       setInputValue("");
       setError(null);
@@ -124,7 +124,7 @@ export function ExecutionTerminal({ taskId, taskName, onClose, isActive }: Execu
     try {
       setSending(true);
       setTerminalOutput((prev) => appendToTerminalOutput(prev, "^C\n"));
-      await api.sendTerminalInput(taskId, "\x03"); // Ctrl+C
+      await api.sendTerminalInput(String(taskId), "\x03"); // Ctrl+C
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

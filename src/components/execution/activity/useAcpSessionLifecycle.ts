@@ -39,7 +39,7 @@ export type AcpSessionLifecycleResult = {
 };
 
 export function useAcpSessionLifecycle(
-  sessionKey: number,
+  sessionId: string,
   onUsageChangeRef: React.RefObject<((usage: UsageState | null) => void) | undefined>,
   sessionUpdateRef?: React.RefObject<((payload: Record<string, unknown>) => void) | undefined>,
 ): AcpSessionLifecycleResult {
@@ -63,37 +63,37 @@ export function useAcpSessionLifecycle(
 
   useEffect(() => {
     const unlisten = Promise.all([
-      listen<string>(`acp://turn-ended/${sessionKey}`, () => {
-        setActivityStatus(sessionKey, "idle", null);
+      listen<string>(`acp://turn-ended/${sessionId}`, () => {
+        setActivityStatus(sessionId, "idle", null);
       }),
-      listen<null>(`acp://replay-drained/${sessionKey}`, () => {
-        setActivityStatus(sessionKey, "idle", null);
+      listen<null>(`acp://replay-drained/${sessionId}`, () => {
+        setActivityStatus(sessionId, "idle", null);
       }),
       listen<{ request_id: string; payload: Record<string, unknown> }>(
-        `acp://permission-request/${sessionKey}`,
+        `acp://permission-request/${sessionId}`,
         (event) => {
           const permPayload = event.payload.payload;
           setPendingPermission({
             requestId: event.payload.request_id,
             payload: permPayload,
           });
-          setActivityStatus(sessionKey, "awaiting_input");
+          setActivityStatus(sessionId, "awaiting_input");
         },
       ),
       listen<{
         request_id: string;
         message: string;
         payload: Record<string, unknown>;
-      }>(`acp://elicitation-request/${sessionKey}`, (event) => {
+      }>(`acp://elicitation-request/${sessionId}`, (event) => {
         setPendingElicitation({
           requestId: event.payload.request_id,
           message: event.payload.message,
           payload: event.payload.payload,
         });
-        setActivityStatus(sessionKey, "awaiting_input");
+        setActivityStatus(sessionId, "awaiting_input");
       }),
       listen<{ request_id: string; surface_id: string | null }>(
-        `acp://canvas-await/${sessionKey}`,
+        `acp://canvas-await/${sessionId}`,
         (event) => {
           setPendingCanvasAwaits((prev) => [
             ...prev.filter((entry) => entry.requestId !== event.payload.request_id),
@@ -104,18 +104,18 @@ export function useAcpSessionLifecycle(
       // The wait can end without an answer — it times out on its own schedule — so the end is
       // its own event rather than something the answer path clears. Removed by request id, not
       // by surface: waits on other surfaces are still open and must survive this one ending.
-      listen<{ request_id: string }>(`acp://canvas-await-ended/${sessionKey}`, (event) => {
+      listen<{ request_id: string }>(`acp://canvas-await-ended/${sessionId}`, (event) => {
         setPendingCanvasAwaits((prev) =>
           prev.filter((entry) => entry.requestId !== event.payload.request_id),
         );
       }),
-      listen<AcpPromptCapabilities>(`acp://session-capabilities/${sessionKey}`, (event) => {
+      listen<AcpPromptCapabilities>(`acp://session-capabilities/${sessionId}`, (event) => {
         setPromptCapabilities(event.payload);
       }),
       listen<{
         current_model_id: string;
         available_models: Array<{ model_id: string; name: string }>;
-      }>(`acp://session-models/${sessionKey}`, (event) => {
+      }>(`acp://session-models/${sessionId}`, (event) => {
         const { current_model_id, available_models } = event.payload;
         setConfigOptions((prev) => {
           if (prev.some((o) => o.id === "model")) return prev;
@@ -135,7 +135,7 @@ export function useAcpSessionLifecycle(
       listen<{
         current_mode_id: string;
         available_modes: Array<{ mode_id: string; name: string }>;
-      }>(`acp://session-modes/${sessionKey}`, (event) => {
+      }>(`acp://session-modes/${sessionId}`, (event) => {
         const { current_mode_id, available_modes } = event.payload;
         setConfigOptions((prev) => {
           if (prev.some((o) => o.id === "mode")) return prev;
@@ -152,17 +152,17 @@ export function useAcpSessionLifecycle(
         });
         setConfigValues((prev) => ({ ...prev, mode: current_mode_id }));
       }),
-      listen<string>(`acp://model-changed/${sessionKey}`, (event) => {
+      listen<string>(`acp://model-changed/${sessionId}`, (event) => {
         setConfigValues((prev) => ({ ...prev, model: event.payload }));
       }),
-      listen<string>(`acp://mode-changed/${sessionKey}`, (event) => {
+      listen<string>(`acp://mode-changed/${sessionId}`, (event) => {
         setConfigValues((prev) => ({ ...prev, mode: event.payload }));
       }),
       listen<{
         config_id: string;
         value: string;
         configOptions: ConfigOption[];
-      }>(`acp://config-state-updated/${sessionKey}`, (event) => {
+      }>(`acp://config-state-updated/${sessionId}`, (event) => {
         const { configOptions: options, config_id, value } = event.payload;
         if (Array.isArray(options) && options.length > 0) {
           setConfigOptions(options);
@@ -184,7 +184,7 @@ export function useAcpSessionLifecycle(
         if (fns) for (const fn of fns) fn();
       });
     };
-  }, [sessionKey, setActivityStatus]);
+  }, [sessionId, setActivityStatus]);
 
   // Write session-update handler to the shared ref so useAcpActivity (which registers
   // its listener before drain) can forward events here without a race condition.

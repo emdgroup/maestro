@@ -54,7 +54,7 @@ pub struct AgentAuthInfo {
 /// Metadata captured for sessions that were active when the connection server died.
 /// Used to reload them after SSH reconnects via the session/load mechanism.
 pub struct RestorableSession {
-    pub log_id: i32,
+    pub session_id: String,
     pub agent_id: String,
     /// None when the session hadn't received SpawnOk yet — cannot be restored.
     pub acp_session_id: Option<String>,
@@ -82,6 +82,18 @@ pub enum AcpTransportWriter {
 pub struct PendingChannels {
     pub pre_init: PendingReplyMap<PreInitializeResponse>,
     pub list_agents: PendingReply<Vec<crate::acp::registry::DiscoveredAgent>>,
+    pub live_sessions: PendingReply<maestro_protocol::ListLiveSessionsResponse>,
+    pub automations: PendingReply<maestro_protocol::ListAutomationsResponse>,
+    pub save_automation: PendingReply<maestro_protocol::Automation>,
+    pub delete_automation: PendingReply<()>,
+    pub automation_runs: PendingReply<maestro_protocol::ListAutomationRunsResponse>,
+    pub delete_automation_run: PendingReply<()>,
+    pub set_run_retention: PendingReply<()>,
+    pub webhook_settings: PendingReply<maestro_protocol::WebhookStatus>,
+    pub server_status: PendingReply<maestro_protocol::ServerStatus>,
+    pub roll_webhook_secret: PendingReply<maestro_protocol::Automation>,
+    pub webhook_deliveries: PendingReply<maestro_protocol::ListWebhookDeliveriesResponse>,
+    pub preview_schedule: PendingReply<maestro_protocol::PreviewScheduleResponse>,
     pub session_list: PendingReply<SessionListOkResponse>,
     pub session_close: PendingReply<()>,
     pub session_delete: PendingReply<()>,
@@ -106,6 +118,18 @@ impl PendingChannels {
         Self {
             pre_init: Arc::new(std::sync::Mutex::new(HashMap::new())),
             list_agents: Arc::new(std::sync::Mutex::new(None)),
+            live_sessions: Arc::new(std::sync::Mutex::new(None)),
+            automations: Arc::new(std::sync::Mutex::new(None)),
+            save_automation: Arc::new(std::sync::Mutex::new(None)),
+            delete_automation: Arc::new(std::sync::Mutex::new(None)),
+            automation_runs: Arc::new(std::sync::Mutex::new(None)),
+            delete_automation_run: Arc::new(std::sync::Mutex::new(None)),
+            set_run_retention: Arc::new(std::sync::Mutex::new(None)),
+            webhook_settings: Arc::new(std::sync::Mutex::new(None)),
+            server_status: Arc::new(std::sync::Mutex::new(None)),
+            roll_webhook_secret: Arc::new(std::sync::Mutex::new(None)),
+            webhook_deliveries: Arc::new(std::sync::Mutex::new(None)),
+            preview_schedule: Arc::new(std::sync::Mutex::new(None)),
             session_list: Arc::new(std::sync::Mutex::new(None)),
             session_close: Arc::new(std::sync::Mutex::new(None)),
             session_delete: Arc::new(std::sync::Mutex::new(None)),
@@ -137,6 +161,8 @@ pub struct ConnectionServer {
     /// Unix timestamp (seconds) of the last `Ping` received from maestro-server.
     /// Zero until the first ping arrives. Checked by the heartbeat watchdog.
     pub last_ping_at: Arc<std::sync::atomic::AtomicU64>,
+    /// Signalled once by the reader when the pipe closes. What a deliberate stop waits on.
+    pub ended: Arc<tokio::sync::Notify>,
 }
 
 /// Session capability flags reported by the agent on SpawnOk.
@@ -173,7 +199,7 @@ pub enum TransportTarget<'a> {
 
 /// A live ACP session — local subprocess or remote SSH exec channel.
 ///
-/// Stored in `AppState.acp_sessions` keyed by session key.
+/// Stored in `AppState.acp.sessions` keyed by session id.
 /// Dropping this struct cleanly shuts down the session:
 /// - Local: `child` drops with `kill_on_drop(true)`, killing maestro-server.
 /// - Remote: `writer` channel closes, writer task exits, SSH channel closes.
@@ -241,7 +267,7 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -253,6 +279,25 @@ pub struct TaskMetadata {
     /// finished coder's session when the reviewer starts, so two sessions of one task coexist and
     /// the phase describes only the later one.
     pub role: Option<crate::project::profiles::SessionRole>,
+}
+
+/// What the host knows about a session that `maestro-server` does not.
+///
+/// Handed over at spawn as an opaque blob the server stores and never reads, and handed back by
+/// `ListLiveSessions`. It exists because a session now outlives the app run that started it: on
+/// re-adopting one, the host has only what the server can tell it — an id, an agent, a working
+/// directory — and none of what makes that session belong to a project, a task or a name in the
+/// sidebar.
+///
+/// Deliberately not a protocol type. Adding a field here is a change to two functions in this
+/// crate rather than a `PROTOCOL_VERSION` bump and a redeploy on every connection.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionHostMeta {
+    pub project_id: Option<i32>,
+    pub session_name: Option<String>,
+    pub connection_key: crate::acp::ConnectionKey,
+    #[serde(default)]
+    pub task: TaskMetadata,
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
@@ -280,7 +325,7 @@ pub struct SessionRequest {
     pub connection_key: crate::acp::ConnectionKey,
     pub agent_id: String,
     pub cwd: String,
-    pub log_id: i32,
+    pub session_id: String,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
     pub task_id: Option<i32>,
@@ -288,7 +333,7 @@ pub struct SessionRequest {
 }
 
 pub struct ReaderTaskContext {
-    pub log_id: i32,
+    pub session_id: String,
     pub app_handle: tauri::AppHandle,
     pub app_state: Arc<crate::core::AppState>,
     pub current_model_id: Arc<std::sync::Mutex<Option<String>>>,
@@ -311,7 +356,7 @@ pub struct ReaderTaskContext {
 impl AcpProcess {
     pub fn create(
         params: AcpProcessParams,
-        log_id: i32,
+        session_id: String,
         app_handle: tauri::AppHandle,
         app_state: Arc<crate::core::AppState>,
     ) -> (Self, ReaderTaskContext) {
@@ -335,7 +380,7 @@ impl AcpProcess {
             super::completion::ClosingMessage::default(),
         ));
         let ctx = ReaderTaskContext {
-            log_id,
+            session_id,
             app_handle,
             app_state,
             current_model_id: Arc::clone(&current_model_id),

@@ -17,7 +17,7 @@ use crate::core::AppState;
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with PTY sessions
-/// * `task_id` - Task ID of the PTY session
+/// * `session_id` - Session key of the PTY session
 /// * `input` - Data to send to the PTY (can be control sequences or regular text)
 ///
 /// # Returns
@@ -31,13 +31,13 @@ use crate::core::AppState;
 #[specta::specta]
 pub async fn send_terminal_input(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
+    session_id: String,
     input: String,
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
         let sessions = app_state.ssh.pty_sessions.lock().await;
-        sessions.get(&task_id).cloned()
+        sessions.get(&session_id).cloned()
     };
 
     if let Some(handle) = ssh_handle {
@@ -51,8 +51,8 @@ pub async fn send_terminal_input(
 
     let sessions = app_state.pty.sessions.lock().await;
     let session = sessions
-        .get(&task_id)
-        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
+        .get(&session_id)
+        .ok_or_else(|| format!("No PTY session {}", session_id))?
         .clone();
     drop(sessions);
 
@@ -68,7 +68,7 @@ pub async fn send_terminal_input(
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with PTY sessions
-/// * `task_id` - Task ID of the PTY session
+/// * `session_id` - Session key of the PTY session
 /// * `cols` - New column width
 /// * `rows` - New row height
 ///
@@ -78,14 +78,14 @@ pub async fn send_terminal_input(
 #[specta::specta]
 pub async fn resize_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
+    session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
         let sessions = app_state.ssh.pty_sessions.lock().await;
-        sessions.get(&task_id).cloned()
+        sessions.get(&session_id).cloned()
     };
 
     if let Some(handle) = ssh_handle {
@@ -98,8 +98,8 @@ pub async fn resize_terminal(
 
     let sessions = app_state.pty.sessions.lock().await;
     let session = sessions
-        .get(&task_id)
-        .ok_or_else(|| format!("No PTY session for task {}", task_id))?
+        .get(&session_id)
+        .ok_or_else(|| format!("No PTY session {}", session_id))?
         .clone();
     drop(sessions);
 
@@ -109,17 +109,17 @@ pub async fn resize_terminal(
 
 /// Detach from a PTY session
 ///
-/// Cancels the active local PTY reader task for the given task_id by setting its
+/// Cancels the active local PTY reader task for the given session_id by setting its
 /// AtomicBool cancel flag. This stops the spawn_blocking reader on the next iteration,
 /// preventing a stale reader from racing with a new attach_terminal call.
 #[tauri::command]
 #[specta::specta]
 pub async fn detach_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
+    session_id: String,
 ) -> Result<(), String> {
     let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-    if let Some(flag) = cancel_map.remove(&task_id) {
+    if let Some(flag) = cancel_map.remove(&session_id) {
         flag.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     Ok(())
@@ -134,24 +134,24 @@ pub async fn detach_terminal(
 #[specta::specta]
 pub async fn close_pty_session(
     app_state: State<'_, Arc<AppState>>,
-    session_key: i32,
+    session_id: String,
 ) -> Result<(), String> {
     // Cancel any active attach reader
     {
         let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-        if let Some(flag) = cancel_map.remove(&session_key) {
+        if let Some(flag) = cancel_map.remove(&session_id) {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     // Remove local PTY session (dropping PtySession kills the child process)
-    app_state.pty.sessions.lock().await.remove(&session_key);
+    app_state.pty.sessions.lock().await.remove(&session_id);
 
     // Remove remote SSH PTY session (dropping SshPtyHandle closes the write channel)
-    app_state.ssh.pty_sessions.lock().await.remove(&session_key);
+    app_state.ssh.pty_sessions.lock().await.remove(&session_id);
 
     // Remove session metadata so get_active_sessions no longer lists it
-    app_state.pty.session_meta.lock().await.remove(&session_key);
+    app_state.pty.session_meta.lock().await.remove(&session_id);
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())

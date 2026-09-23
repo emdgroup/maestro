@@ -154,11 +154,11 @@ pub struct PreparedAttachment {
 
 /// Where an attachment lands on the far side. Shared by every connection type so an agent finds
 /// attachments in one place however the project is reached.
-fn attachments_dir(cwd: &str, log_id: i32) -> String {
+fn attachments_dir(cwd: &str, session_id: &str) -> String {
     format!(
         "{}/.maestro/attachments/{}",
         cwd.trim_end_matches('/'),
-        log_id
+        session_id
     )
 }
 
@@ -178,15 +178,15 @@ fn copy_script(dir: &str, source: &str, dest: &str) -> String {
 #[specta::specta]
 pub async fn prepare_external_attachments(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     files: Vec<ExternalFileRequest>,
     embedded_context: bool,
 ) -> Result<Vec<PreparedAttachment>, String> {
     let (cwd, connection_key) = {
         let sessions = app_state.acp.sessions.lock().await;
         let s = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {log_id}"))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {session_id}"))?;
         (s.cwd.clone(), s.connection_key)
     };
 
@@ -228,14 +228,14 @@ pub async fn prepare_external_attachments(
                             format!("No active SSH session for connection {conn_id}")
                         })?;
 
-                    let attachments_dir = attachments_dir(&cwd, log_id);
+                    let attachments_dir = attachments_dir(&cwd, session_id);
                     session
                         .execute_command(&format!("mkdir -p '{attachments_dir}'"))
                         .await
                         .map_err(|e| format!("Failed to create attachments dir: {e}"))?;
 
                     let remote_path = format!("{attachments_dir}/{display_name}");
-                    let transfer_id = format!("attach-{log_id}-{display_name}");
+                    let transfer_id = format!("attach-{session_id}-{display_name}");
                     crate::connectivity::ssh::sftp::upload_file(
                         &session,
                         local_path,
@@ -268,7 +268,7 @@ pub async fn prepare_external_attachments(
                     // The host's drives are already mounted inside the distro, so this copies
                     // without the bytes ever leaving the machine.
                     let source = crate::connectivity::wsl::to_wsl_path(&distro, &file.path).await?;
-                    let attachments_dir = attachments_dir(&cwd, log_id);
+                    let attachments_dir = attachments_dir(&cwd, session_id);
                     let dest = format!("{attachments_dir}/{display_name}");
                     let conn = crate::models::GitConnection::Wsl {
                         distro: distro.clone(),
@@ -305,7 +305,7 @@ pub async fn prepare_external_attachments(
                     };
                     let cli = crate::connectivity::docker::ContainerCli::detect()?;
 
-                    let attachments_dir = attachments_dir(&cwd, log_id);
+                    let attachments_dir = attachments_dir(&cwd, session_id);
                     let mkdir = crate::connectivity::docker::run(
                         &cli,
                         &container_name,

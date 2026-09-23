@@ -19,26 +19,26 @@ export interface BoardState {
   activeTerminalTaskId: number | null;
   isTerminalOpen: boolean;
   reviewPanelTaskId: number | null;
-  authRequiredTasks: Record<number, AuthRequiredEntry>;
+  authRequiredTasks: Record<string, AuthRequiredEntry>;
   pendingAuthRetry: number | null;
-  pendingSessionRetry: { sessionKey: number; lastPrompt: unknown } | null;
+  pendingSessionRetry: { sessionId: string; lastPrompt: unknown } | null;
   openTerminal: (taskId: number) => void;
   closeTerminal: () => Promise<void>;
   openReview: (taskId: number) => void;
   closeReview: () => void;
   setAuthRequired: (
-    taskId: number,
+    authKey: string,
     agentId: string,
     connection: ConnectionKey,
     lastPrompt: unknown,
   ) => void;
-  clearAuthRequired: (taskId: number) => void;
-  setAuthTerminalRunning: (taskId: number, terminalId: string) => void;
-  setAuthTerminalInterrupted: (taskId: number) => void;
-  setAuthTerminalIdle: (taskId: number) => void;
+  clearAuthRequired: (authKey: string) => void;
+  setAuthTerminalRunning: (authKey: string, terminalId: string) => void;
+  setAuthTerminalInterrupted: (authKey: string) => void;
+  setAuthTerminalIdle: (authKey: string) => void;
   setPendingAuthRetry: (taskId: number) => void;
   clearPendingAuthRetry: () => void;
-  setPendingSessionRetry: (payload: { sessionKey: number; lastPrompt: unknown }) => void;
+  setPendingSessionRetry: (payload: { sessionId: string; lastPrompt: unknown }) => void;
   clearPendingSessionRetry: () => void;
 }
 
@@ -47,7 +47,7 @@ export const useBoardStore = create<BoardState>()(
     activeTerminalTaskId: null,
     isTerminalOpen: false,
     reviewPanelTaskId: null,
-    authRequiredTasks: {} as Record<number, AuthRequiredEntry>,
+    authRequiredTasks: {} as Record<string, AuthRequiredEntry>,
     pendingAuthRetry: null,
     pendingSessionRetry: null,
 
@@ -62,7 +62,7 @@ export const useBoardStore = create<BoardState>()(
       const state = get();
       if (state.activeTerminalTaskId !== null) {
         try {
-          await api.detachTerminal(state.activeTerminalTaskId);
+          await api.detachTerminal(String(state.activeTerminalTaskId));
         } catch (err) {
           console.error("Error detaching terminal:", err);
         }
@@ -83,9 +83,9 @@ export const useBoardStore = create<BoardState>()(
         state.reviewPanelTaskId = null;
       }),
 
-    setAuthRequired: (taskId, agentId, connection, lastPrompt) =>
+    setAuthRequired: (authKey, agentId, connection, lastPrompt) =>
       set((state) => {
-        state.authRequiredTasks[taskId] = {
+        state.authRequiredTasks[authKey] = {
           agentId,
           connection,
           lastPrompt,
@@ -94,31 +94,31 @@ export const useBoardStore = create<BoardState>()(
         };
       }),
 
-    clearAuthRequired: (taskId) =>
+    clearAuthRequired: (authKey) =>
       set((state) => {
-        delete state.authRequiredTasks[taskId];
+        delete state.authRequiredTasks[authKey];
       }),
 
-    setAuthTerminalRunning: (taskId, terminalId) =>
+    setAuthTerminalRunning: (authKey, terminalId) =>
       set((state) => {
-        const entry = state.authRequiredTasks[taskId];
+        const entry = state.authRequiredTasks[authKey];
         if (entry) {
           entry.terminalState = "running";
           entry.terminalId = terminalId;
         }
       }),
 
-    setAuthTerminalInterrupted: (taskId) =>
+    setAuthTerminalInterrupted: (authKey) =>
       set((state) => {
-        const entry = state.authRequiredTasks[taskId];
+        const entry = state.authRequiredTasks[authKey];
         if (entry) {
           entry.terminalState = "interrupted";
         }
       }),
 
-    setAuthTerminalIdle: (taskId) =>
+    setAuthTerminalIdle: (authKey) =>
       set((state) => {
-        const entry = state.authRequiredTasks[taskId];
+        const entry = state.authRequiredTasks[authKey];
         if (entry) {
           entry.terminalState = "idle";
           entry.terminalId = null;
@@ -150,8 +150,8 @@ export const useBoardStore = create<BoardState>()(
 export const useActiveTerminalTaskId = () => useBoardStore((s) => s.activeTerminalTaskId);
 export const useIsTerminalOpen = () => useBoardStore((s) => s.isTerminalOpen);
 export const useReviewPanelTaskId = () => useBoardStore((s) => s.reviewPanelTaskId);
-export const useAuthRequiredTask = (taskId: number) =>
-  useBoardStore((s) => s.authRequiredTasks[taskId]);
+export const useAuthRequiredTask = (authKey: string) =>
+  useBoardStore((s) => s.authRequiredTasks[authKey]);
 
 export const useBoardActions = () =>
   useBoardStore(

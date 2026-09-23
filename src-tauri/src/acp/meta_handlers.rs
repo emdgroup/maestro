@@ -26,13 +26,13 @@ pub struct AcpSessionMeta {
 #[specta::specta]
 pub async fn get_acp_session_meta(
     app_state: State<'_, Arc<AppState>>,
-    session_key: i32,
+    session_id: String,
 ) -> Result<AcpSessionMeta, String> {
     let (cwd, project_id, start_sha) = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions
-            .get(&session_key)
-            .ok_or_else(|| format!("No ACP session for key {}", session_key))?;
+            .get(&session_id)
+            .ok_or_else(|| format!("No ACP session for key {}", session_id))?;
         (
             session.cwd.clone(),
             session.project_id,
@@ -53,7 +53,7 @@ pub async fn get_acp_session_meta(
                 Err(e) => {
                     log::warn!(
                         "Session {} start commit {} unreachable in {}: {}",
-                        session_key,
+                        session_id,
                         sha,
                         cwd,
                         e
@@ -89,15 +89,16 @@ pub async fn get_active_sessions(
     project_id: i32,
 ) -> Result<Vec<ActiveSessionInfo>, String> {
     let mut sessions = Vec::new();
-    let mut session_cwds: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
+    let mut session_cwds: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     {
         let acp = app_state.acp.sessions.lock().await;
         for (key, proc) in acp.iter().filter(|(_, p)| p.project_id == Some(project_id)) {
             let native_id = proc.acp_session_id.lock().ok().and_then(|g| g.clone());
-            session_cwds.insert(*key, proc.cwd.clone());
+            session_cwds.insert(key.clone(), proc.cwd.clone());
             sessions.push(ActiveSessionInfo {
-                session_key: *key,
+                session_id: key.clone(),
                 session_name: proc.session_name.clone(),
                 agent_id: Some(proc.agent_id_meta.clone()),
                 execution_mode: ExecutionMode::Acp,
@@ -124,9 +125,9 @@ pub async fn get_active_sessions(
             if meta.project_id != Some(project_id) {
                 continue;
             }
-            session_cwds.insert(*key, meta.cwd.clone());
+            session_cwds.insert(key.clone(), meta.cwd.clone());
             sessions.push(ActiveSessionInfo {
-                session_key: *key,
+                session_id: key.clone(),
                 session_name: meta.session_name.clone(),
                 agent_id: None,
                 execution_mode: ExecutionMode::Pty,
@@ -163,7 +164,7 @@ pub async fn get_active_sessions(
             match crate::git::list_worktrees(&git_conn).await {
                 Ok(worktrees) => {
                     for session in &mut sessions {
-                        let Some(cwd) = session_cwds.get(&session.session_key) else {
+                        let Some(cwd) = session_cwds.get(&session.session_id) else {
                             continue;
                         };
                         if let Some(branch) = branch_for_cwd(&worktrees, cwd) {
@@ -373,10 +374,10 @@ pub async fn rename_acp_session(
 }
 
 /// Re-emit model/mode state from session fields during replay drain.
-async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
+async fn emit_init_events_from_session(session_id: &str, app_state: &Arc<AppState>) {
     let (model_id, mode_id, config_options, prompt_capabilities) = {
         let sessions = app_state.acp.sessions.lock().await;
-        let Some(session) = sessions.get(&log_id) else {
+        let Some(session) = sessions.get(session_id) else {
             return;
         };
         (
@@ -416,7 +417,7 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
         });
         let _ = app_state
             .app_handle
-            .emit(&format!("acp://session-models/{}", log_id), &payload);
+            .emit(&format!("acp://session-models/{}", session_id), &payload);
     }
     if let Some(mode_opt) = find_opt("mode") {
         let options = mode_opt
@@ -441,12 +442,12 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
         });
         let _ = app_state
             .app_handle
-            .emit(&format!("acp://session-modes/{}", log_id), &payload);
+            .emit(&format!("acp://session-modes/{}", session_id), &payload);
     }
     if let Some(capabilities) = prompt_capabilities {
         crate::core::emit_or_log(
             &app_state.app_handle,
-            &format!("acp://session-capabilities/{}", log_id),
+            &format!("acp://session-capabilities/{}", session_id),
             &capabilities,
         );
     }
@@ -456,11 +457,13 @@ async fn emit_init_events_from_session(log_id: i32, app_state: &Arc<AppState>) {
 #[specta::specta]
 pub async fn drain_acp_replay(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<(), String> {
     let replay_arc = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(&log_id).map(|s| Arc::clone(&s.replay_buffer))
+        sessions
+            .get(session_id)
+            .map(|s| Arc::clone(&s.replay_buffer))
     };
     let Some(replay_arc) = replay_arc else {
         return Ok(());
@@ -474,7 +477,7 @@ pub async fn drain_acp_replay(
     let is_initialized = {
         let sessions = app_state.acp.sessions.lock().await;
         sessions
-            .get(&log_id)
+            .get(session_id)
             .and_then(|s| s.initialized.lock().ok().map(|g| *g))
             .unwrap_or(false)
     };
@@ -482,22 +485,22 @@ pub async fn drain_acp_replay(
         for payload in events {
             let _ = app_state
                 .app_handle
-                .emit(&format!("acp://session-update/{}", log_id), &payload);
+                .emit(&format!("acp://session-update/{}", session_id), &payload);
         }
         if is_initialized {
-            emit_init_events_from_session(log_id, &app_state).await;
+            emit_init_events_from_session(session_id, &app_state).await;
             let _ = app_state
                 .app_handle
-                .emit(&format!("acp://replay-drained/{}", log_id), ());
+                .emit(&format!("acp://replay-drained/{}", session_id), ());
         }
     } else if is_initialized {
         // Buffer already consumed (no replay buffer for new sessions, or drained before
         // panel mounted). Emit replay-drained so late-mounting panels complete
         // initialization instead of waiting for the 15 s stale timeout.
-        emit_init_events_from_session(log_id, &app_state).await;
+        emit_init_events_from_session(session_id, &app_state).await;
         let _ = app_state
             .app_handle
-            .emit(&format!("acp://replay-drained/{}", log_id), ());
+            .emit(&format!("acp://replay-drained/{}", session_id), ());
     }
     Ok(())
 }

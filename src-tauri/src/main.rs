@@ -5,7 +5,6 @@
 )]
 
 use maestro_lib::core::{init_db, load_settings, logging, AppState};
-use maestro_protocol::{CancelRequest, MaestroRpcMessage, ServerRequest};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -83,19 +82,17 @@ fn resolve_data_dir(app: &tauri::App) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))
 }
 
-/// Stop the maestro-server processes this instance started, before the app exits.
+/// Drop this instance's relays to the resident servers, before the app exits.
 ///
-/// Without this they are orphaned. `kill_on_drop(true)` only fires when the `Child` is dropped
-/// inside the runtime, and `handle.exit(0)` drops neither map, so the children outlive us — and a
-/// stray server holds the cached `maestro-server.exe` open, which is what makes the next update
-/// fail: Windows will not let the image of a running process be overwritten. Clearing the maps is
-/// exactly what `release_active_project_lock` does when the user leaves a project; quitting simply
-/// never did it, despite that function's own comment claiming both paths.
+/// What is being dropped is `maestro-server attach`, one process per connection, whose only job is
+/// to carry bytes between this app and the daemon. Without this they are orphaned:
+/// `kill_on_drop(true)` only fires when the `Child` is dropped inside the runtime, and
+/// `handle.exit(0)` drops neither map. Clearing them is exactly what `release_active_project_lock`
+/// does when the user leaves a project.
 ///
-/// This kills rather than asking the servers to wind down, because a graceful exit is not
-/// reachable from here: a server only exits on stdin EOF, the pipe only closes when the last
-/// `writer_tx` clone drops, and the shared reader task holds one until *it* sees EOF. Leaving
-/// projects has always ended connection servers this way.
+/// The sessions those relays carried keep running, in a daemon this app never owned. Clearing
+/// `acp.sessions` discards the host's bookkeeping for them and nothing else; the next run adopts
+/// them back through `adopt_live_sessions`.
 async fn stop_connection_servers(state: &Arc<AppState>) {
     state.acp.sessions.lock().await.clear();
     state.acp.connection_servers.lock().await.clear();
@@ -140,7 +137,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // No-op unless this is an AppImage: gives the running window an icon the desktop can find.
     maestro_lib::core::desktop_entry::install_for_appimage();
 
-    // A re-downloadable copy of files read over SFTP, keyed by a log_id that does not outlive the
+    // A re-downloadable copy of files read over SFTP, keyed by a session id that does not outlive the
     // run, so nothing in it is worth keeping. Cleared here rather than when a session ends because
     // SSH sessions — the only ones that populate it — run on a shared connection server and have no
     // per-session reader loop to hang the delete off, and no teardown path runs after a crash.
@@ -165,6 +162,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     fix_path_env::fix().expect("failed to fix PATH");
 
+    // The login entry "Start automatically" writes. After the PATH fix, which the server and the
+    // agents it spawns inherit, and before anything that would open a window.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if args
+        .get(1)
+        .is_some_and(|arg| arg == maestro_lib::acp::server_control::START_SERVER_FLAG)
+    {
+        std::process::exit(maestro_lib::acp::server_control::start_server_at_login(
+            args.get(2..).unwrap_or_default(),
+        ));
+    }
+
     // Generate TypeScript bindings in debug builds
     let builder = maestro_lib::create_builder();
 
@@ -188,33 +197,20 @@ fn main() {
         .invoke_handler(builder.invoke_handler())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Prevent immediate close so we can cancel active ACP sessions first.
-                // This gives maestro-server a chance to send CloseSessionRequest to agents,
-                // freeing their in-memory session state rather than orphaning it.
+                // Prevent immediate close so the relays to the resident servers are dropped
+                // cleanly rather than orphaned. Sessions are deliberately *not* cancelled here:
+                // they run in a server that outlives this window, and the next run adopts them.
                 api.prevent_close();
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let state = handle.state::<Arc<AppState>>();
 
-                    // Block saves triggered by session cancel events during shutdown — state.json
-                    // was already written on the last spawn/cancel before close was requested.
+                    // Block saves triggered by session events during shutdown — state.json was
+                    // already written on the last spawn before close was requested.
                     state
                         .is_closing
                         .store(true, std::sync::atomic::Ordering::Relaxed);
 
-                    let session_keys: Vec<i32> =
-                        state.acp.sessions.lock().await.keys().copied().collect();
-                    for log_id in session_keys {
-                        let session_id = format!("session-{}", log_id);
-                        let cancel_msg =
-                            MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
-                                session_id,
-                            }));
-                        let _ = maestro_lib::acp::write_to_acp_session(&state, log_id, &cancel_msg)
-                            .await;
-                    }
-                    // Give maestro-server time to forward CloseSessionRequest to agents.
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     stop_connection_servers(&state).await;
                     handle.exit(0);
                 });

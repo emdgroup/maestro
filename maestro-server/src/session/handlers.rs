@@ -25,7 +25,7 @@ pub(crate) struct ConnectionHandlers {
     pub router: Arc<SessionRouter>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalHandle>>>,
     pub terminal_counter: Arc<AtomicU64>,
-    pub stdout: Arc<Mutex<tokio::io::Stdout>>,
+    pub stdout: crate::ClientOut,
     pub elicit_counter: Arc<AtomicU64>,
     pub permission_counter: Arc<AtomicU64>,
 }
@@ -209,7 +209,7 @@ macro_rules! configure_acp_builder {
 pub(crate) use configure_acp_builder;
 
 impl ConnectionHandlers {
-    pub fn new(stdout: Arc<Mutex<tokio::io::Stdout>>) -> (Self, Arc<SessionRouter>) {
+    pub fn new(stdout: crate::ClientOut) -> (Self, Arc<SessionRouter>) {
         let router = Arc::new(SessionRouter::default());
         let handlers = Self {
             router: Arc::clone(&router),
@@ -246,13 +246,15 @@ impl ConnectionHandlers {
 
         let payload =
             serde_json::to_value(&request).map_err(|e| acp::Error::new(-32603, e.to_string()))?;
-        let msg = MaestroRpcMessage::Response(ServerResponse::PermissionRequest(
-            MaestroPermissionRequest {
-                session_id: maestro_sid,
-                request_id: request_id.clone(),
-                payload,
-            },
-        ));
+        // Kept as well as sent: the client shown this may be gone before it answers, and the
+        // request is what the next one has to be shown to be able to.
+        let request_out = MaestroPermissionRequest {
+            session_id: maestro_sid,
+            request_id: request_id.clone(),
+            payload,
+        };
+        let msg =
+            MaestroRpcMessage::Response(ServerResponse::PermissionRequest(request_out.clone()));
         // Insert tx after send_response: single-threaded runtime guarantees no PermitResponse
         // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)
@@ -262,7 +264,7 @@ impl ConnectionHandlers {
             .pending_permissions
             .lock()
             .await
-            .insert(request_id, tx);
+            .insert(request_id, (request_out, tx));
 
         cx.spawn(async move {
             let outcome = match rx.await {
@@ -287,6 +289,7 @@ impl ConnectionHandlers {
 
         let payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+        crate::helpers::note_session_update(&maestro_sid, &payload);
         let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
             session_id: maestro_sid,
             payload,
@@ -360,14 +363,14 @@ impl ConnectionHandlers {
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
 
         let payload = request.params().clone();
-        let msg = MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(
-            MaestroElicitationRequest {
-                session_id: maestro_sid,
-                request_id: request_id.clone(),
-                message: elicitation.message,
-                payload,
-            },
-        ));
+        let request_out = MaestroElicitationRequest {
+            session_id: maestro_sid,
+            request_id: request_id.clone(),
+            message: elicitation.message,
+            payload,
+        };
+        let msg =
+            MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(request_out.clone()));
         // Insert tx after send_response: single-threaded runtime guarantees no ElicitationResponse
         // can arrive between these two awaits, so there is no race.
         send_response(&self.stdout, &msg)
@@ -377,7 +380,7 @@ impl ConnectionHandlers {
             .pending_elicitations
             .lock()
             .await
-            .insert(request_id, tx);
+            .insert(request_id, (request_out, tx));
 
         cx.spawn(async move {
             let response = match rx.await {

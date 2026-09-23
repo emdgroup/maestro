@@ -503,7 +503,7 @@ async pruneBranches(projectId: number, branches: string[], force: boolean) : Pro
  * Spawn a user-controlled interactive shell on a specific branch.
  * 
  * This creates an execution log with NULL task_id, resolves an existing worktree for the
- * given branch, and spawns an interactive PTY session keyed by log_id. It does not start
+ * given branch, and spawns an interactive PTY session keyed by session_id. It does not start
  * or manage an AI agent; managed agents use ACP.
  * 
  * # Arguments
@@ -517,9 +517,9 @@ async pruneBranches(projectId: number, branches: string[], force: boolean) : Pro
  * * `task_description` - Optional task description to inject into the PTY 2s after spawn
  * 
  * # Returns
- * Execution log ID (used as PTY session key for attach_terminal)
+ * The new session's id, which `attach_terminal` takes.
  */
-async spawnInteractiveExecution(projectId: number, branchName: string | null, repoPath: string, sessionName: string | null, worktreeId: number | null, taskId: number | null, taskDescription: string | null) : Promise<Result<number, string>> {
+async spawnInteractiveExecution(projectId: number, branchName: string | null, repoPath: string, sessionName: string | null, worktreeId: number | null, taskId: number | null, taskDescription: string | null) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("spawn_interactive_execution", { projectId, branchName, repoPath, sessionName, worktreeId, taskId, taskDescription }) };
 } catch (e) {
@@ -577,7 +577,7 @@ async requestTaskExecution(projectId: number, taskId: number) : Promise<Result<E
  * 
  * # Arguments
  * * `app_state` - Tauri app state with PTY sessions
- * * `task_id` - Task ID to attach to
+ * * `session_id` - Session key to attach to
  * * `output_channel` - Tauri IPC channel for streaming output
  * * `include_history` - If true, prepend terminal_output from execution log to stream
  * 
@@ -591,9 +591,9 @@ async requestTaskExecution(projectId: number, taskId: number) : Promise<Result<E
  * 3. Then continues streaming live PTY output as normal
  * This ensures the frontend sees the full terminal context when attaching.
  */
-async attachTerminal(taskId: number, outputChannel: TAURI_CHANNEL<string>, includeHistory: boolean | null) : Promise<Result<null, string>> {
+async attachTerminal(sessionId: string, outputChannel: TAURI_CHANNEL<string>, includeHistory: boolean | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("attach_terminal", { taskId, outputChannel, includeHistory }) };
+    return { status: "ok", data: await TAURI_INVOKE("attach_terminal", { sessionId, outputChannel, includeHistory }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -613,7 +613,7 @@ async attachTerminal(taskId: number, outputChannel: TAURI_CHANNEL<string>, inclu
  * 
  * # Arguments
  * * `app_state` - Tauri app state with PTY sessions
- * * `task_id` - Task ID of the PTY session
+ * * `session_id` - Session key of the PTY session
  * * `input` - Data to send to the PTY (can be control sequences or regular text)
  * 
  * # Returns
@@ -624,9 +624,9 @@ async attachTerminal(taskId: number, outputChannel: TAURI_CHANNEL<string>, inclu
  * - Ctrl+C: "\x03" → converted to SIGINT by PTY layer
  * - Ctrl+Z: "\x1a" → converted to SIGTSTP by PTY layer
  */
-async sendTerminalInput(taskId: number, input: string) : Promise<Result<null, string>> {
+async sendTerminalInput(sessionId: string, input: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_terminal_input", { taskId, input }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_terminal_input", { sessionId, input }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -640,16 +640,16 @@ async sendTerminalInput(taskId: number, input: string) : Promise<Result<null, st
  * 
  * # Arguments
  * * `app_state` - Tauri app state with PTY sessions
- * * `task_id` - Task ID of the PTY session
+ * * `session_id` - Session key of the PTY session
  * * `cols` - New column width
  * * `rows` - New row height
  * 
  * # Returns
  * `Result<(), String>` - Ok if resized, Err if session not found or resize failed
  */
-async resizeTerminal(taskId: number, cols: number, rows: number) : Promise<Result<null, string>> {
+async resizeTerminal(sessionId: string, cols: number, rows: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resize_terminal", { taskId, cols, rows }) };
+    return { status: "ok", data: await TAURI_INVOKE("resize_terminal", { sessionId, cols, rows }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -658,13 +658,13 @@ async resizeTerminal(taskId: number, cols: number, rows: number) : Promise<Resul
 /**
  * Detach from a PTY session
  * 
- * Cancels the active local PTY reader task for the given task_id by setting its
+ * Cancels the active local PTY reader task for the given session_id by setting its
  * AtomicBool cancel flag. This stops the spawn_blocking reader on the next iteration,
  * preventing a stale reader from racing with a new attach_terminal call.
  */
-async detachTerminal(taskId: number) : Promise<Result<null, string>> {
+async detachTerminal(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("detach_terminal", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("detach_terminal", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -677,9 +677,9 @@ async detachTerminal(taskId: number) : Promise<Result<null, string>> {
  * (remote SSH), removes all session state, and emits `sessions-changed` so the frontend
  * removes it from the list.
  */
-async closePtySession(sessionKey: number) : Promise<Result<null, string>> {
+async closePtySession(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("close_pty_session", { sessionKey }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_pty_session", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -917,6 +917,217 @@ async saveAgentProfiles(projectId: number, document: ProfilesDocument) : Promise
     else return { status: "error", error: e  as any };
 }
 },
+async listAutomations(projectId: number) : Promise<Result<AutomationList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_automations", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create or replace one automation.
+ * 
+ * One at a time rather than a whole document, because the store is a set of rows now: a
+ * whole-document write would have two windows overwriting each other with whatever each last read.
+ */
+async saveAutomation(projectId: number, automation: Automation) : Promise<Result<Automation, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_automation", { projectId, automation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAutomation(projectId: number, automationId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_automation", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fire one now, whatever its schedule says.
+ * 
+ * Returns as soon as the server has opened a run for it. What happens next arrives as
+ * `automation-run-changed`, the same way a scheduled run does — there is deliberately no second
+ * path for a run somebody asked for by hand.
+ */
+async runAutomation(projectId: number, automationId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_automation", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAutomationRuns(projectId: number, limit: number | null) : Promise<Result<AutomationRun[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_automation_runs", { projectId, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Forget one run, removing the worktree and branch it made if they are still there, whatever
+ * they hold. Refused for a run still going, or one whose session is still open.
+ */
+async deleteAutomationRun(projectId: number, runId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_automation_run", { projectId, runId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set how much run history this project keeps. Applied straight away.
+ */
+async setRunRetention(projectId: number, retention: RunRetention) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_run_retention", { projectId, retention }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * This machine's webhook listener, for the connection's Settings page.
+ */
+async getWebhookSettings(connection: ConnectionKey) : Promise<Result<WebhookStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_webhook_settings", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Change the listener. The server rebinds before answering, so the status says whether the new
+ * address works.
+ */
+async setWebhookSettings(connection: ConnectionKey, settings: WebhookSettings) : Promise<Result<WebhookStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_webhook_settings", { connection, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replace an automation's webhook secret. Every sender using the old one stops working.
+ */
+async rollWebhookSecret(projectId: number, automationId: string) : Promise<Result<Automation, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("roll_webhook_secret", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listWebhookDeliveries(projectId: number, automationId: string) : Promise<Result<WebhookDelivery[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_webhook_deliveries", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listTemplates() : Promise<Result<Template[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_templates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a template, or replace the one `id` names.
+ */
+async saveTemplate(id: number | null, name: string, tag: string | null, body: TemplateBody) : Promise<Result<Template, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_template", { id, name, tag, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTemplate(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_template", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The connection's server, for its Settings page.
+ */
+async getBackgroundServer(connection: ConnectionKey) : Promise<Result<BackgroundServer, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_background_server", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start the connection's server with its machine, or stop doing so. Never stops the server.
+ */
+async setBackgroundServerAutostart(connection: ConnectionKey, enabled: boolean) : Promise<Result<BackgroundServer, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_background_server_autostart", { connection, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop the connection's server. Every session and run on it ends; the next connection starts a
+ * fresh one.
+ */
+async stopBackgroundServer(connection: ConnectionKey) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_background_server", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
+ * 
+ * Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
+ * daemon is what decides when a run happens, and a second implementation in the editor would be
+ * a second answer to that question.
+ */
+async previewSchedule(projectId: number, cron: string, timezone: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_schedule", { projectId, cron, timezone }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Take over the session an automation just started, so its output and its questions reach this
+ * window.
+ * 
+ * Project opening adopts whatever is already running, but a run the clock or Run now starts
+ * afterwards arrives while the window is attached, and nothing else would pick it up: the
+ * server's messages for it were dropped for want of a session to route them to, elicitations
+ * included. Returns whether it was adopted; `false` for one this window already holds.
+ */
+async adoptAutomationSession(projectId: number, sessionId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("adopt_automation_session", { projectId, sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Resolve the profile for a role and reduce it to what the agent can honour.
  * 
@@ -984,6 +1195,25 @@ async setProjectAccentColor(projectId: number, accentColor: string | null) : Pro
 async primeProjectServer(projectId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("prime_project_server", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ask every server this app is connected to to wind down, and forget them.
+ * 
+ * Exists for the updater. A resident server holds its own binary open, and Windows will not let
+ * the image of a running process be overwritten, so an install that does not do this fails — the
+ * same reason the old child-process servers were killed on quit.
+ * 
+ * Every running agent session ends with them, which is why nothing calls this without telling the
+ * user first. Fire and forget: there is no acknowledgement, and a server that does not hear it
+ * leaves the install to fail as it would have anyway.
+ */
+async stopResidentServers() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_resident_servers") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1451,33 +1681,33 @@ async spawnAcpSession(agentId: string, cwd: string, sessionName: string | null, 
     else return { status: "error", error: e  as any };
 }
 },
-async sendAcpPrompt(logId: number, content: string) : Promise<Result<null, string>> {
+async sendAcpPrompt(sessionId: string, content: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt", { logId, content }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt", { sessionId, content }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async sendAcpPromptStructured(logId: number, contentBlocks: JsonValue) : Promise<Result<null, string>> {
+async sendAcpPromptStructured(sessionId: string, contentBlocks: JsonValue) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt_structured", { logId, contentBlocks }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_acp_prompt_structured", { sessionId, contentBlocks }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async respondAcpPermission(logId: number, requestId: string, optionId: string | null) : Promise<Result<null, string>> {
+async respondAcpPermission(sessionId: string, requestId: string, optionId: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { logId, requestId, optionId }) };
+    return { status: "ok", data: await TAURI_INVOKE("respond_acp_permission", { sessionId, requestId, optionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async respondAcpElicitation(logId: number, requestId: string, response: JsonValue) : Promise<Result<null, string>> {
+async respondAcpElicitation(sessionId: string, requestId: string, response: JsonValue) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("respond_acp_elicitation", { logId, requestId, response }) };
+    return { status: "ok", data: await TAURI_INVOKE("respond_acp_elicitation", { sessionId, requestId, response }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1489,9 +1719,9 @@ async respondAcpElicitation(logId: number, requestId: string, response: JsonValu
  * Silently does nothing when the request is no longer pending: the wait times out on its own
  * schedule, and a click that lands as it expires is a race, not an error worth surfacing.
  */
-async respondHostTool(logId: number, requestId: string, result: JsonValue) : Promise<Result<null, string>> {
+async respondHostTool(sessionId: string, requestId: string, result: JsonValue) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("respond_host_tool", { logId, requestId, result }) };
+    return { status: "ok", data: await TAURI_INVOKE("respond_host_tool", { sessionId, requestId, result }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1500,9 +1730,9 @@ async respondHostTool(logId: number, requestId: string, result: JsonValue) : Pro
 /**
  * Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
  */
-async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
+async cancelAcpSession(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_acp_session", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("cancel_acp_session", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1511,9 +1741,9 @@ async cancelAcpSession(logId: number) : Promise<Result<null, string>> {
 /**
  * Interrupt the current ACP turn without killing the session.
  */
-async interruptAcpTurn(logId: number) : Promise<Result<null, string>> {
+async interruptAcpTurn(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("interrupt_acp_turn", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("interrupt_acp_turn", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1570,57 +1800,57 @@ async discoverAgents(connection: ConnectionKey) : Promise<Result<AgentDiscoveryR
     else return { status: "error", error: e  as any };
 }
 },
-async setAcpModel(logId: number, modelId: string) : Promise<Result<null, string>> {
+async setAcpModel(sessionId: string, modelId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_acp_model", { logId, modelId }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_model", { sessionId, modelId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async setAcpMode(logId: number, modeId: string) : Promise<Result<null, string>> {
+async setAcpMode(sessionId: string, modeId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_acp_mode", { logId, modeId }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_mode", { sessionId, modeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async setAcpConfigOption(logId: number, optionId: string, value: string) : Promise<Result<null, string>> {
+async setAcpConfigOption(sessionId: string, optionId: string, value: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_acp_config_option", { logId, optionId, value }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_acp_config_option", { sessionId, optionId, value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async searchSessionFiles(logId: number, query: string, limit: number | null) : Promise<Result<string[], string>> {
+async searchSessionFiles(sessionId: string, query: string, limit: number | null) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("search_session_files", { logId, query, limit }) };
+    return { status: "ok", data: await TAURI_INVOKE("search_session_files", { sessionId, query, limit }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async readSessionFile(logId: number, relativePath: string) : Promise<Result<string, string>> {
+async readSessionFile(sessionId: string, relativePath: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("read_session_file", { logId, relativePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("read_session_file", { sessionId, relativePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async readSessionFileBinary(logId: number, relativePath: string) : Promise<Result<string, string>> {
+async readSessionFileBinary(sessionId: string, relativePath: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("read_session_file_binary", { logId, relativePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("read_session_file_binary", { sessionId, relativePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async getAcpSessionMeta(sessionKey: number) : Promise<Result<AcpSessionMeta, string>> {
+async getAcpSessionMeta(sessionId: string) : Promise<Result<AcpSessionMeta, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_acp_session_meta", { sessionKey }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_acp_session_meta", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1645,7 +1875,7 @@ async listAcpSessions(projectId: number, agentId: string, cwd: string, connectio
 /**
  * Load an existing ACP session — spawns a full session that resumes from a stored agent session.
  */
-async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connection: ConnectionKey, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<number, string>> {
+async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connection: ConnectionKey, sessionName: string | null, projectId: number | null, worktreeBranch: string | null) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("load_acp_session", { agentId, acpSessionId, cwd, connection, sessionName, projectId, worktreeBranch }) };
 } catch (e) {
@@ -1653,17 +1883,17 @@ async loadAcpSession(agentId: string, acpSessionId: string, cwd: string, connect
     else return { status: "error", error: e  as any };
 }
 },
-async drainAcpReplay(logId: number) : Promise<Result<null, string>> {
+async drainAcpReplay(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("drain_acp_replay", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("drain_acp_replay", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async prepareExternalAttachments(logId: number, files: ExternalFileRequest[], embeddedContext: boolean) : Promise<Result<PreparedAttachment[], string>> {
+async prepareExternalAttachments(sessionId: string, files: ExternalFileRequest[], embeddedContext: boolean) : Promise<Result<PreparedAttachment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("prepare_external_attachments", { logId, files, embeddedContext }) };
+    return { status: "ok", data: await TAURI_INVOKE("prepare_external_attachments", { sessionId, files, embeddedContext }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1705,7 +1935,7 @@ async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectio
  * Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
  * Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
  */
-async recoverTaskSession(taskId: number, projectId: number) : Promise<Result<number, string>> {
+async recoverTaskSession(taskId: number, projectId: number) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("recover_task_session", { taskId, projectId }) };
 } catch (e) {
@@ -1735,25 +1965,25 @@ async renameAcpSession(projectId: number, agentId: string, acpSessionId: string,
  * `html` is the agent's own document plus the `<title>` and `<meta>` tags the frontend folds in;
  * Maestro's injected head is deliberately absent, so the file opens in any browser.
  */
-async saveCanvasSurface(logId: number, surfaceId: string, html: string) : Promise<Result<null, string>> {
+async saveCanvasSurface(sessionId: string, surfaceId: string, html: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { logId, surfaceId, html }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_canvas_surface", { sessionId, surfaceId, html }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async deleteCanvasSurface(logId: number, surfaceId: string) : Promise<Result<null, string>> {
+async deleteCanvasSurface(sessionId: string, surfaceId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_canvas_surface", { logId, surfaceId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_canvas_surface", { sessionId, surfaceId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async loadSavedCanvases(logId: number) : Promise<Result<string[], string>> {
+async loadSavedCanvases(sessionId: string) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("load_saved_canvases", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("load_saved_canvases", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1765,9 +1995,9 @@ async loadSavedCanvases(logId: number) : Promise<Result<string[], string>> {
  * The path is built here rather than in the frontend for the same reason the canvas directory is:
  * for a remote session it names a directory on the agent's machine, not on this one.
  */
-async saveCanvasImport(logId: number, fileName: string, html: string) : Promise<Result<string, string>> {
+async saveCanvasImport(sessionId: string, fileName: string, html: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_canvas_import", { logId, fileName, html }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_canvas_import", { sessionId, fileName, html }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1779,9 +2009,9 @@ async saveCanvasImport(logId: number, fileName: string, html: string) : Promise<
  * Capped per surface: a document whose script throws on every animation frame would otherwise
  * grow this without bound, and the oldest few failures are the ones that explain the rest.
  */
-async canvasReportError(logId: number, surfaceId: string, message: string) : Promise<Result<null, string>> {
+async canvasReportError(sessionId: string, surfaceId: string, message: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("canvas_report_error", { logId, surfaceId, message }) };
+    return { status: "ok", data: await TAURI_INVOKE("canvas_report_error", { sessionId, surfaceId, message }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2556,17 +2786,17 @@ async acpLogout(agentId: string, connection: ConnectionKey) : Promise<Result<nul
  * without sending a Cancel to maestro-server and without tearing down the connection server.
  * This preserves the connection server so that Authenticate can be called afterward.
  */
-async discardFailedSpawn(logId: number) : Promise<Result<null, string>> {
+async discardFailedSpawn(sessionId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("discard_failed_spawn", { logId }) };
+    return { status: "ok", data: await TAURI_INVOKE("discard_failed_spawn", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async acpStartAuthTerminal(agentId: string, methodId: string, connection: ConnectionKey, sessionKey: number) : Promise<Result<string, string>> {
+async acpStartAuthTerminal(agentId: string, methodId: string, connection: ConnectionKey, sessionId: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("acp_start_auth_terminal", { agentId, methodId, connection, sessionKey }) };
+    return { status: "ok", data: await TAURI_INVOKE("acp_start_auth_terminal", { agentId, methodId, connection, sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2604,7 +2834,7 @@ export type AcpSessionMeta = { cwd: string; project_id: number | null; session_s
 /**
  * Active session info — in-memory only, returned by get_active_sessions
  */
-export type ActiveSessionInfo = { session_key: number; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; 
+export type ActiveSessionInfo = { session_id: string; session_name: string | null; agent_id: string | null; execution_mode: ExecutionMode; started_at: string; task_id: number | null; task_name: string | null; 
 /**
  * Which pipeline role this session runs, for a session started from a task. `None` for an
  * ad-hoc session, and for every PTY shell.
@@ -2727,6 +2957,145 @@ rejection: string | null }
  */
 export type AuthMethodDto = { id: string; name: string; description: string | null; methodType: string; args?: string[] }
 /**
+ * TS-exportable version of `maestro_protocol::Automation` — the protocol crate derives no `Type`,
+ * and giving it one would compile specta into the binary deployed to every remote host.
+ */
+export type Automation = { id: string; 
+/**
+ * Canonicalized by the server, so this is the server's answer rather than anything sent to it.
+ */
+project_path: string; name: string; 
+/**
+ * What the agent is asked to do. The whole contract of the run.
+ */
+prompt: string; agent_id: string; 
+/**
+ * Five-field cron. `None` for an automation that only runs when the user asks.
+ */
+cron?: string | null; 
+/**
+ * IANA name the cron is read in, so a laptop that crosses a timezone keeps its schedule.
+ */
+timezone: string; 
+/**
+ * Whether the schedule is live. Disabling stops the clock; Run now still works, which is what
+ * makes this a pause rather than a second kind of delete.
+ */
+enabled: boolean; model?: string | null; 
+/**
+ * The ACP session mode id. `None` leaves it to the agent, which for an unattended run means
+ * whatever that agent's default asks before doing.
+ */
+permission_mode?: string | null; effort?: string | null; workspace: AutomationWorkspace; 
+/**
+ * Whether `POST /hooks/<id>` starts this. `enabled` off stops the webhook too.
+ */
+webhook_enabled: boolean; webhook_overlap: WebhookOverlap; 
+/**
+ * Made by the server and only ever replaced by `roll_webhook_secret`; whatever is sent here
+ * on save is ignored.
+ */
+webhook_secret?: string | null; 
+/**
+ * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
+ */
+next_due_at?: string | null }
+/**
+ * A project's automations, and the one thing about the machine running them the editor has to
+ * know: what "09:00" means there.
+ */
+export type AutomationList = { automations: Automation[]; 
+/**
+ * The IANA zone the background server's machine is set to. The same as this machine's for a
+ * local project, and the only reason the editor offers a choice when it is not.
+ */
+server_timezone: string; retention: RunRetention }
+/**
+ * What happened to one firing of an automation.
+ */
+export type AutomationRun = { id: string; automation_id: string; project_path: string; 
+/**
+ * Copied by the server rather than joined, so a run still says what it was after the
+ * automation that produced it is renamed or deleted.
+ */
+automation_name: string; status: AutomationRunStatus; trigger: RunTrigger; started_at: string; finished_at?: string | null; 
+/**
+ * The session the run is happening in. This is how the app finds a session it did not start.
+ */
+session_id?: string | null; error?: string | null; 
+/**
+ * What it takes to open this run again once the idle sweep has closed its session: the
+ * agent's own id for the conversation, which agent it was, and where it ran.
+ */
+agent_session_id?: string | null; agent_id?: string | null; cwd?: string | null; 
+/**
+ * Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
+ * in, rather than with one that fails.
+ */
+can_reload?: boolean | null; 
+/**
+ * The worktree this run made, while it is still on disk. Cleared by the server once it has
+ * removed it, so a value here means a directory somebody still has to deal with — which is
+ * also what the app adopts a `worktrees` row from.
+ */
+worktree_path?: string | null; worktree_branch?: string | null; 
+/**
+ * What that branch was cut from, so an adopted row can say how much the run committed.
+ */
+worktree_base?: string | null; 
+/**
+ * Why that worktree was kept rather than removed. `None` means nothing was kept, which is
+ * also true of a run still going.
+ */
+worktree_kept?: string | null; 
+/**
+ * Which run of its automation this is, counting from 1, so a session opened from it can be
+ * matched to its entry in run history.
+ */
+ordinal?: number | null; 
+/**
+ * The agent's last message, recorded when the run ends.
+ */
+result?: string | null }
+export type AutomationRunStatus = "running" | "succeeded" | "failed"
+/**
+ * What an automation template keeps: what to do and what starts it.
+ * 
+ * Agent, model and workspace are left out on purpose. They belong to a project, and are taken
+ * from the project a template is used in.
+ */
+export type AutomationTemplate = { prompt: string; cron?: string | null; timezone: string; webhook_enabled: boolean; webhook_overlap: WebhookOverlap }
+/**
+ * Where an automation's agent runs.
+ * 
+ * A path rather than a worktree row id: the server acts on this, and it has no access to this
+ * app's database — for an SSH, WSL or container project, not even to the machine it is on.
+ */
+export type AutomationWorkspace = 
+/**
+ * The project directory itself.
+ */
+{ mode: "repository" } | 
+/**
+ * A directory that already exists, named outright.
+ */
+{ mode: "path"; path: string } | 
+/**
+ * A fresh worktree per run, branched from `base_branch`. Made and unmade by the server, which
+ * is the process on the machine the repository is on; this app adopts a `worktrees` row for
+ * one that outlives its run.
+ */
+{ mode: "new_worktree"; base_branch: string }
+export type Autostart = 
+/**
+ * Nothing starts a server on this kind of connection on its own: WSL and containers.
+ */
+"unsupported" | "off" | 
+/**
+ * At login, on the machine the app runs on.
+ */
+"login" | "systemd" | "cron"
+/**
  * An Azure DevOps project option for combobox display.
  */
 export type AzureDevOpsProjectOption = { id: string; name: string; description: string | null }
@@ -2734,6 +3103,7 @@ export type AzureDevOpsProjectOption = { id: string; name: string; description: 
  * An Azure DevOps git repository option for clone combobox display.
  */
 export type AzureDevOpsRepoOption = { id: string; name: string; project_name: string; clone_url: string | null }
+export type BackgroundServer = { version: string; started_at: string; live_sessions: number; running_runs: number; autostart: Autostart }
 /**
  * What can be said about a file git refuses to diff line by line.
  * 
@@ -2956,6 +3326,7 @@ export type CreateTaskRequest = { project_id: number; title: string; description
  */
 workspace_branch: string | null; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
+export type DeliveryOutcome = "started" | "queued" | "busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | "disabled" | "too_large" | "failed"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
  */
@@ -3345,6 +3716,16 @@ export type ReviewCommentEntry = { file_path: string; comment: string }
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
 /**
+ * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
+ * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
+ * keeps everything. Deleting a run removes its worktree and branch, whatever they hold.
+ */
+export type RunRetention = { keep_last: number | null; max_age_days: number | null }
+/**
+ * What started a run.
+ */
+export type RunTrigger = "schedule" | "manual" | "webhook"
+/**
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null; 
@@ -3365,7 +3746,7 @@ export type SessionListResult = { sessions: SessionListEntryDto[]; supports_sess
  * ran on the project's default agent.
  */
 export type SessionRole = { role: AgentRole; profile_id: string | null }
-export type SpawnSessionResult = { log_id: number }
+export type SpawnSessionResult = { session_id: string }
 /**
  * SSH authentication method configuration
  */
@@ -3510,6 +3891,12 @@ export type TaskRelationship = { id: number; from_task_id: number; to_task_id: n
  */
 export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
+export type Template = { id: number; name: string; 
+/**
+ * A topic the user files it under, shown on its card and searched.
+ */
+tag?: string | null; body: TemplateBody; created_at: string }
+export type TemplateBody = ({ kind: "automation" } & AutomationTemplate)
 export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean; configured_path: string | null; resolved_path: string | null; source: string; error: string | null }
 /**
@@ -3528,6 +3915,24 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
 workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
+export type WebhookDelivery = { id: string; received_at: string; status: number; outcome: DeliveryOutcome; detail?: string | null; run_id?: string | null }
+/**
+ * What a webhook delivery does while a run of the same automation is already going.
+ */
+export type WebhookOverlap = "refuse" | "queue" | "parallel"
+/**
+ * One machine's webhook listener, shared by every project on it.
+ */
+export type WebhookSettings = { port: number; bind_address: string; 
+/**
+ * What senders call, a tunnel's or a reverse proxy's address. Webhook URLs are built from it.
+ */
+public_url?: string | null }
+export type WebhookStatus = { settings: WebhookSettings; 
+/**
+ * Why the listener is not listening, or absent when it is.
+ */
+error?: string | null }
 /**
  * Where an agent works: a worktree of its own, the project directory, or a worktree that already
  * exists. Shared by tasks and by the project default that seeds them.

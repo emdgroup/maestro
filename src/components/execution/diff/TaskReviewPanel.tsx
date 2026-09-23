@@ -308,7 +308,7 @@ export function TaskReviewPanel({
             setReworkModalOpen(false);
             if (activeSession) {
               const blocks = buildReviewFeedbackBlocks(data);
-              await api.sendAcpPromptStructured(activeSession.session_key, blocks);
+              await api.sendAcpPromptStructured(activeSession.session_id, blocks);
             } else {
               execute(task);
             }
@@ -343,7 +343,7 @@ export function TaskReviewPanel({
                   // a PR sitting over a weekend would pin a host slot the whole time.
                   if (activeSession) {
                     cancelSession.mutate({
-                      sessionKey: activeSession.session_key,
+                      sessionId: activeSession.session_id,
                       executionMode: activeSession.execution_mode,
                     });
                   }
@@ -460,7 +460,7 @@ export function TaskReviewPanel({
                         disabled={cancelSession.isPending}
                         onClick={() =>
                           cancelSession.mutate({
-                            sessionKey: activeSession.session_key,
+                            sessionId: activeSession.session_id,
                             executionMode: activeSession.execution_mode,
                           })
                         }

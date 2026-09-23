@@ -1,0 +1,185 @@
+{
+  "$comment": "The built-in templates, shipped with Maestro and read-only. Read by the Templates page (templates.ts) and by the agent-facing template tools (src-tauri/src/templates.rs). `icon` names a lucide icon mapped in templates.ts.",
+  "templates": [
+    {
+      "key": "critical-bugs",
+      "name": "Find critical bugs",
+      "tag": "Code quality",
+      "icon": "Bug",
+      "description": "Analyze recent commits for high-severity correctness bugs and submit safe fixes.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Review the commits made in the last 24 hours for high-severity correctness bugs: crashes, data loss, wrong results, broken error handling, race conditions and security mistakes. Ignore style and minor issues.\n\nFor each bug you are confident about, fix it with the smallest safe change, add a test that fails without the fix, and commit it on its own with a message that explains the bug. Leave anything you are unsure about unfixed and describe it instead.\n\nEnd with a short report: what you fixed, what you suspect but did not touch, and why. If you found nothing, say so and stop.",
+        "cron": "0 6 * * 1-5",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "daily-summary",
+      "name": "Summarize changes daily",
+      "tag": "Status reports",
+      "icon": "Mail",
+      "description": "Write a daily digest of notable repository changes and risks from the previous day.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Summarize what changed in this repository since yesterday morning. Read the commits and their diffs, not just the messages.\n\nWrite a digest a teammate can read in two minutes: the notable changes grouped by area, anything risky or surprising (large refactors, removed checks, new dependencies, schema or config changes), and anything that looks unfinished. Do not modify any files. If nothing changed, say so in one line.",
+        "cron": "0 8 * * 1-5",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "vulnerabilities",
+      "name": "Scan for vulnerabilities",
+      "tag": "Security",
+      "icon": "ShieldAlert",
+      "description": "Review the repository on a schedule and report validated high-impact security issues.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Review this repository for high-impact security issues: injection, broken authentication or authorization, secrets committed to the code, unsafe deserialization, path traversal, SSRF and insecure defaults.\n\nOnly report issues you have validated by reading the code path end to end, with the file, the line, how it can be reached and what an attacker gains. Rank them by impact. Do not change any files. If you find nothing of high impact, say so rather than listing minor findings.",
+        "cron": "0 7 * * 1",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "test-coverage",
+      "name": "Add test coverage",
+      "tag": "Code quality",
+      "icon": "FlaskConical",
+      "description": "Review recent changes and add tests for high-risk logic that lacks coverage.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Look at the code changed in the last week and find high-risk logic with no tests: branching business rules, parsing, money or permission checks, error paths.\n\nWrite focused tests for the most important gaps, following the conventions of the existing test suite. Run them and make sure they pass. If a test reveals a bug, do not fix it: keep the test, mark it as expected to fail or skipped with a comment, and report the bug. Commit the tests, and end with a list of what you covered and what you left.",
+        "cron": "0 3 * * 6",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "fix-reported-bugs",
+      "name": "Fix reported bugs",
+      "tag": "Incidents & triage",
+      "icon": "Wrench",
+      "description": "Investigate the bug report you give it, reproduce it, and fix it in a commit.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Fix the bug described below.\n\nReproduce it first, with a failing test where possible. Find the root cause rather than patching the symptom, fix it with the smallest change that does it, and check that the rest of the test suite still passes. Commit the fix and the test together, with a message that explains the cause.\n\nIf you cannot reproduce it, stop and report what you tried and what you would need to know.\n\nBug report:\n",
+        "cron": null,
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "generate-docs",
+      "name": "Generate docs",
+      "tag": "Documentation",
+      "icon": "BookOpen",
+      "description": "Create and update developer documentation for recently changed or under-documented code.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Find code changed in the last week whose documentation is missing or now out of date: public functions, modules, configuration, commands, and the README or docs pages that describe them.\n\nUpdate the documentation to match what the code does today, in the style the project already uses. Explain why where it is not obvious, not what each line does. Do not change any code. Commit the documentation changes and list what you updated.",
+        "cron": "0 4 * * 5",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "dependency-check",
+      "name": "Dependency check",
+      "tag": "Maintenance",
+      "icon": "Package",
+      "description": "List outdated and vulnerable dependencies with the upgrade each needs. Report only.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Check this project's dependencies with the package managers it uses. List the ones that are outdated or have known vulnerabilities.\n\nFor each, give the current version, the version to move to, whether that is a breaking upgrade, and what in this codebase it would affect. Put vulnerable ones first. Do not change any files. If everything is up to date, say so in one line.",
+        "cron": "0 7 * * 1-5",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "failing-tests",
+      "name": "Fix failing tests",
+      "tag": "Code quality",
+      "icon": "TestTubeDiagonal",
+      "description": "Run the test suite, and fix what fails in a commit. Stops if everything passes.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Run the project's test suite. If everything passes, say so and stop.\n\nFor each failure, find out whether the test or the code is wrong. Fix the code when the test describes the intended behaviour, and the test when the behaviour changed on purpose. Never delete or skip a test to make it pass. Commit each fix separately with the reason, and end with what you fixed and anything you could not.",
+        "cron": "0 2 * * *",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "review-pull-request",
+      "name": "Review a pull request",
+      "tag": "Code review",
+      "icon": "GitPullRequest",
+      "description": "Triggered by a GitHub pull_request event: review the diff and summarize the findings.",
+      "body": {
+        "kind": "automation",
+        "prompt": "A GitHub pull_request event is attached below. If the action is not \"opened\", \"reopened\" or \"synchronize\", stop.\n\nFetch the pull request's head branch and review its diff against the base branch. Look for bugs, missing error handling, risky changes and missing tests, and check that it does what its description says. Do not change any files.\n\nWrite a review: a one-paragraph summary, then each finding with the file and line, why it matters and what to do about it, most important first.",
+        "cron": null,
+        "timezone": "",
+        "webhook_enabled": true,
+        "webhook_overlap": "parallel"
+      }
+    },
+    {
+      "key": "ci-failure",
+      "name": "Investigate a CI failure",
+      "tag": "Incidents & triage",
+      "icon": "Search",
+      "description": "Triggered by a failed workflow run: find the failing step, reproduce it, and fix it.",
+      "body": {
+        "kind": "automation",
+        "prompt": "A CI event describing a workflow run is attached below. If the run did not fail, stop.\n\nFind the failing job and step, read its log if you can reach it, and reproduce the failure locally on the same commit. Work out whether it is a real bug, a flaky test or an environment problem.\n\nFor a real bug, fix it and commit the fix. For a flaky test or an environment problem, do not change anything; explain the cause and what would make it reliable.",
+        "cron": null,
+        "timezone": "",
+        "webhook_enabled": true,
+        "webhook_overlap": "queue"
+      }
+    },
+    {
+      "key": "weekly-changelog",
+      "name": "Weekly changelog",
+      "tag": "Status reports",
+      "icon": "Newspaper",
+      "description": "Group last week's commits into features, fixes and chores, as a draft for release notes.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Read every commit from the last seven days and write a changelog draft for them.\n\nGroup entries under Features, Fixes and Chores, one line each, written for someone who uses the project rather than someone who wrote it. Merge commits that belong to the same change into one entry, and leave out anything nobody would notice. Do not modify any files.",
+        "cron": "0 9 * * 1",
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    },
+    {
+      "key": "todo-sweep",
+      "name": "TODO sweep",
+      "tag": "Planning",
+      "icon": "ListTodo",
+      "description": "Rank TODO and FIXME comments by worth, and turn the top few into Maestro tasks.",
+      "body": {
+        "kind": "automation",
+        "prompt": "Find every TODO, FIXME and HACK comment in this repository. For each, read the code around it and judge whether it still applies, how much it matters and how much work it is.\n\nCreate a Maestro task for each of the five most worthwhile, with a title, what needs doing, why, and the file and line. Do not change any files. End with the full ranked list, including the ones you did not turn into tasks and why.",
+        "cron": null,
+        "timezone": "",
+        "webhook_enabled": false,
+        "webhook_overlap": "refuse"
+      }
+    }
+  ]
+}

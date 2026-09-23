@@ -54,8 +54,8 @@ export function useSessionNotifications(
 
   const acpKeys = sessions
     .filter((session) => session.execution_mode === "acp")
-    .map((session) => session.session_key)
-    .sort((a, b) => a - b)
+    .map((session) => session.session_id)
+    .sort()
     .join(",");
 
   useEffect(() => {
@@ -64,8 +64,8 @@ export function useSessionNotifications(
     let disposed = false;
     const unlistens: UnlistenFn[] = [];
 
-    async function raise(sessionKey: number, build: (agent: string) => SessionSignal | null) {
-      const session = sessionsRef.current.find((s) => s.session_key === sessionKey);
+    async function raise(sessionId: string, build: (agent: string) => SessionSignal | null) {
+      const session = sessionsRef.current.find((s) => s.session_id === sessionId);
       if (!session) return;
       const signal = build(agentLabel(session));
       if (!signal) return;
@@ -79,7 +79,7 @@ export function useSessionNotifications(
       sendNotification({ title: signal.title, body: notificationBody(session, signal.detail) });
     }
 
-    const keys = acpKeys.split(",").map(Number);
+    const keys = acpKeys.split(",");
     void Promise.all(
       keys.flatMap((key) => [
         listen<string>(`acp://turn-ended/${key}`, (event) => {

@@ -72,7 +72,7 @@ function ScrollStateWatcher({
   activeTab,
   activityStatus,
   activitySeen,
-  sessionKey,
+  sessionId,
   markSeen,
   userMessageCount,
   lastAgentSectionId,
@@ -81,8 +81,8 @@ function ScrollStateWatcher({
   activeTab: string;
   activityStatus: string | undefined;
   activitySeen: boolean | undefined;
-  sessionKey: number;
-  markSeen: (key: number) => void;
+  sessionId: string;
+  markSeen: (sessionId: string) => void;
   userMessageCount: number;
   lastAgentSectionId: string | null;
 }) {
@@ -126,25 +126,25 @@ function ScrollStateWatcher({
       activityStatus === "idle" &&
       !activitySeen
     ) {
-      markSeen(sessionKey);
+      markSeen(sessionId);
     }
-  }, [isSelected, activeTab, scrollable.end, activityStatus, activitySeen, sessionKey, markSeen]);
+  }, [isSelected, activeTab, scrollable.end, activityStatus, activitySeen, sessionId, markSeen]);
   return null;
 }
 
 interface AgentActivityPanelProps {
-  sessionKey: number;
+  sessionId: string;
   agentId: string | null;
   connection: ConnectionKey;
   isSelected?: boolean;
   isNewSession?: boolean;
   onUsageChange?: (usage: UsageState | null) => void;
   headerSlot?: React.ReactNode;
-  onSpawnShell?: () => Promise<number | null>;
+  onSpawnShell?: () => Promise<string | null>;
 }
 
 export function AgentActivityPanel({
-  sessionKey,
+  sessionId,
   agentId,
   connection,
   isSelected = false,
@@ -162,7 +162,7 @@ export function AgentActivityPanel({
     setPendingSessionRetry,
   } = useBoardActions();
   const authRequiredTasks = useBoardStore((s) => s.authRequiredTasks);
-  const activityInfo = useSessionActivity(sessionKey);
+  const activityInfo = useSessionActivity(sessionId);
   const activeTab = useActiveTab();
   const selectedProject = useSelectedProject();
 
@@ -182,7 +182,7 @@ export function AgentActivityPanel({
   const canvasesRestoredRef = useRef<((surfaceIds: string[]) => void) | undefined>(undefined);
 
   const [liveState, liveDispatch] = useAcpActivity(
-    sessionKey,
+    sessionId,
     sessionUpdateRef,
     canvasesRestoredRef,
   );
@@ -197,7 +197,7 @@ export function AgentActivityPanel({
     pendingElicitation,
     setPendingElicitation,
     pendingCanvasAwaits,
-  } = useAcpSessionLifecycle(sessionKey, onUsageChangeRef, sessionUpdateRef);
+  } = useAcpSessionLifecycle(sessionId, onUsageChangeRef, sessionUpdateRef);
 
   const [, setScrollRestoreToken] = useState(0);
 
@@ -206,18 +206,18 @@ export function AgentActivityPanel({
   // resets it and resumes — deliberate: a remount looks exactly like the restore case.
   const autoResumeSpentRef = useRef(false);
   useActivityStatusManager(
-    sessionKey,
+    sessionId,
     liveState,
     pendingSendRef,
     !!pendingPermission || !!pendingElicitation,
   );
-  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionKey, liveState.items);
+  const { workingFiles: localWorkingFiles } = useWorkingFileTracker(sessionId, liveState.items);
 
   const { data: activeSessions } = useActiveSessionsQuery(selectedProject?.id);
   const taskId = useMemo(() => {
-    const info = activeSessions?.find((s) => s.session_key === sessionKey);
+    const info = activeSessions?.find((s) => s.session_id === sessionId);
     return info?.task_id ?? null;
-  }, [activeSessions, sessionKey]);
+  }, [activeSessions, sessionId]);
 
   const isSessionActive = isSelected && activeTab === "agents";
 
@@ -226,17 +226,17 @@ export function AgentActivityPanel({
   // hid every file the agent actually touched behind a dot-directory the listing prunes.
   // Shares its fetch with `useSessionDiffStats` below. One value feeds both the panel and
   // `handleOpenFile` so the relative paths handed over always match the tree's root.
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const workspacePath = sessionMeta?.cwd ?? selectedProject?.path ?? "";
 
   // Shares its fetch with SidePanelContent's identical call; read here so the Review tab can
   // open itself when the session's first change lands.
-  const { changedFilesCount } = useSessionDiffStats(sessionKey, isSessionActive);
+  const { changedFilesCount } = useSessionDiffStats(sessionId, isSessionActive);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [hasPreSpawnAuthError, setHasPreSpawnAuthError] = useState(false);
 
-  const effectiveAuthKey = taskId ?? sessionKey;
+  const effectiveAuthKey = taskId == null ? sessionId : String(taskId);
 
   const lastItem = liveState.items[liveState.items.length - 1];
   const hasAuthError = liveState.items.some(
@@ -260,7 +260,7 @@ export function AgentActivityPanel({
     handleElicitationDecline,
     handleElicitationSubmit,
   } = usePermissionHandlers(
-    sessionKey,
+    sessionId,
     agentItemsCountRef,
     pendingPermission,
     setPendingPermission,
@@ -390,12 +390,16 @@ export function AgentActivityPanel({
     return { userMessages: msgs, orderedSectionIds: ids, userMessageCount: standalones };
   }, [agentSections]);
   const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
-  const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
+  // A session waiting on the user is not an empty one, whatever the stream holds. An automation's
+  // opens that way: its prompt came from the server rather than from this window, and the request
+  // is not a stream item, so the centred composer drew over the card it had to give way to.
+  const isCenteredCompose =
+    displayItems.length === 0 && !hasSentFirstMessage && !pendingElicitation && !pendingPermission;
 
   const removeAnnotations = useAnnotationStore((s) => s.removeAnnotations);
 
   const { handleSend, handleCancel, handleSendWithTransition } = useMessageSender({
-    sessionKey,
+    sessionId,
     isProcessing,
     pendingPermission,
     pendingElicitation,
@@ -432,25 +436,25 @@ export function AgentActivityPanel({
     async (annotations: Annotation[]) => {
       if (annotations.length === 0 || isProcessing) return;
       const blocks = await buildAnnotationBlocks(annotations, {
-        logId: sessionKey,
+        sessionId: sessionId,
         canSendImages: promptCapabilities?.image ?? false,
       });
       await handleSend("", blocks);
       removeAnnotations(
-        sessionKey,
+        sessionId,
         annotations.map((a) => a.id),
       );
     },
-    [handleSend, isProcessing, removeAnnotations, sessionKey, promptCapabilities],
+    [handleSend, isProcessing, removeAnnotations, sessionId, promptCapabilities],
   );
 
   const handleConfigChange = useCallback(
     async (optionId: string, value: string) => {
-      await api.setAcpConfigOption(sessionKey, optionId, value).catch(() => {
+      await api.setAcpConfigOption(sessionId, optionId, value).catch(() => {
         toast.error("Failed to save config option");
       });
     },
-    [sessionKey],
+    [sessionId],
   );
 
   // Stable so the stream's memoized rows can bail out: an inline arrow here would be a new prop
@@ -481,10 +485,10 @@ export function AgentActivityPanel({
   const handleCanvasEvent = useCallback(
     (requestId: string | null, event: unknown) => {
       if (requestId) {
-        void api.respondHostTool(sessionKey, requestId, event as JsonValue).catch(() => {
+        void api.respondHostTool(sessionId, requestId, event as JsonValue).catch(() => {
           toast.error("Could not send your answer to the agent");
         });
-        setActivity(sessionKey, "thinking");
+        setActivity(sessionId, "thinking");
         return;
       }
       // Mid-turn there is nowhere to put it: ACP allows one `session/prompt` per turn, and the
@@ -497,7 +501,7 @@ export function AgentActivityPanel({
       }
       void handleSend(buildCanvasEventPrompt([event as CanvasEvent]));
     },
-    [sessionKey, setActivity, isProcessing, handleSend],
+    [sessionId, setActivity, isProcessing, handleSend],
   );
 
   // Drains one event per pass: answering a wait consumes it, which brings the agent back here with
@@ -510,9 +514,9 @@ export function AgentActivityPanel({
     if (waiting) {
       setQueuedCanvasEvents(rest);
       void api
-        .respondHostTool(sessionKey, waiting.requestId, next as unknown as JsonValue)
+        .respondHostTool(sessionId, waiting.requestId, next as unknown as JsonValue)
         .catch(() => toast.error("Could not send your answer to the agent"));
-      setActivity(sessionKey, "thinking");
+      setActivity(sessionId, "thinking");
       return;
     }
     if (isProcessing) return;
@@ -523,7 +527,7 @@ export function AgentActivityPanel({
     pendingCanvasAwaits,
     isProcessing,
     liveState.sessionEnded,
-    sessionKey,
+    sessionId,
     setActivity,
     handleSend,
   ]);
@@ -543,7 +547,7 @@ export function AgentActivityPanel({
   }, [queuedCanvasPrompts, isProcessing, liveState.sessionEnded, handleSend]);
 
   const canvasImport = useCanvasImport({
-    logId: sessionKey,
+    sessionId: sessionId,
     canvasMap: liveState.canvasMap,
     onSurface: (surface) => liveDispatch({ type: "restore_canvases", surfaces: [surface] }),
     onCloseSurface: (surfaceId) => liveDispatch({ type: "close_canvas", surfaceId }),
@@ -586,7 +590,7 @@ export function AgentActivityPanel({
 
   useEffect(() => {
     const unlisten = listen<{ terminal_id: string; output: string }>(
-      `acp://terminal-output/${sessionKey}`,
+      `acp://terminal-output/${sessionId}`,
       (event) => {
         liveDispatch({
           type: "terminal_output",
@@ -600,10 +604,10 @@ export function AgentActivityPanel({
     return () => {
       unlisten.then((fn) => fn?.());
     };
-  }, [sessionKey, liveDispatch, openAcpTerminalTab]);
+  }, [sessionId, liveDispatch, openAcpTerminalTab]);
 
   useEffect(() => {
-    const unlisten = listen<string>(`acp://session-error/${sessionKey}`, (e) => {
+    const unlisten = listen<string>(`acp://session-error/${sessionId}`, (e) => {
       if (e.payload === "auth_required" && agentId) {
         setAuthRequired(effectiveAuthKey, agentId, connection, null);
         setHasPreSpawnAuthError(true);
@@ -612,7 +616,7 @@ export function AgentActivityPanel({
     return () => {
       unlisten.then((fn) => fn?.());
     };
-  }, [sessionKey, agentId, connection, effectiveAuthKey, setAuthRequired]);
+  }, [sessionId, agentId, connection, effectiveAuthKey, setAuthRequired]);
 
   // Detect when auth terminal tab is closed before PTY exits.
   useEffect(() => {
@@ -711,7 +715,7 @@ export function AgentActivityPanel({
   ) : hasPendingPlan && pendingPermission ? (
     <PendingPlanCard
       key={pendingPermission.requestId}
-      sessionKey={sessionKey}
+      sessionId={sessionId}
       modelId={configValues.model ?? null}
       title={
         (livePlanToolCallId ? liveState.toolCallMap.get(livePlanToolCallId)?.title : null) ?? null
@@ -746,7 +750,7 @@ export function AgentActivityPanel({
     isProcessing: isProcessing && pendingCanvasAwaits.length === 0,
     commands: availableCommands,
     embeddedContext: promptCapabilities?.embedded_context ?? false,
-    logId: sessionKey,
+    sessionId: sessionId,
     projectPath: selectedProject?.path ?? null,
     configOptions,
     configValues,
@@ -771,7 +775,7 @@ export function AgentActivityPanel({
             activeTab={activeTab}
             activityStatus={activityInfo?.status}
             activitySeen={activityInfo?.seen}
-            sessionKey={sessionKey}
+            sessionId={sessionId}
             userMessageCount={userMessageCount}
             markSeen={markSeen}
             lastAgentSectionId={lastAgentSectionId}
@@ -856,8 +860,8 @@ export function AgentActivityPanel({
           agentId={agentId}
           agentName={agentId}
           connection={connection}
-          taskId={effectiveAuthKey}
-          sessionKey={sessionKey}
+          authKey={effectiveAuthKey}
+          sessionId={sessionId}
           terminalState={authRequiredTasks[effectiveAuthKey]?.terminalState ?? "idle"}
           open={isAuthModalOpen}
           onAuthSuccess={() => {
@@ -867,7 +871,7 @@ export function AgentActivityPanel({
             if (lastUserMessage) {
               void handleSend(lastUserMessage.content);
             } else if (taskId === null) {
-              setPendingSessionRetry({ sessionKey, lastPrompt: null });
+              setPendingSessionRetry({ sessionId, lastPrompt: null });
             }
           }}
           onRetry={() => {
@@ -922,7 +926,7 @@ export function AgentActivityPanel({
         >
           <ExecutionSidePanel
             fill
-            sessionKey={sessionKey}
+            sessionId={sessionId}
             tabs={tabs}
             activeTabId={activeTabId}
             onTabChange={setActiveTabId}

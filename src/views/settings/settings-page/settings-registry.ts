@@ -1,4 +1,15 @@
-import { Bell, Bot, CircleDot, Cpu, GitBranch, Monitor, Palette, ScrollText } from "lucide-react";
+import {
+  Bell,
+  Bot,
+  CircleDot,
+  Cpu,
+  GitBranch,
+  Monitor,
+  Palette,
+  ScrollText,
+  Server,
+  Webhook,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -60,6 +71,23 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     // project and every tool pointed at it.
     scope: "connection",
     keywords: ["max concurrent agents", "concurrency", "auto mode", "free memory", "queue"],
+  },
+  {
+    id: "background-server",
+    label: "Background server",
+    icon: Server,
+    // Per connection: one server runs on each host, whatever project reached it.
+    scope: "connection",
+    keywords: ["server", "daemon", "autostart", "start automatically", "login", "boot", "stop"],
+  },
+  {
+    id: "webhooks",
+    label: "Webhooks",
+    icon: Webhook,
+    // Per connection because the listener belongs to the host's background server, which every
+    // project on that host shares.
+    scope: "connection",
+    keywords: ["webhook", "public url", "tunnel", "reverse proxy", "port", "listen address"],
   },
   {
     id: "diagnostics",

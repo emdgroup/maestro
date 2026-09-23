@@ -15,6 +15,18 @@ use crate::core::schema::initialize_schema;
 use crate::execution::PtySession;
 use crate::models::{GitConnection, Project};
 
+/// Mint the id a session is known by, everywhere: the key of `AcpState::sessions` and of the three
+/// `PtyState` maps, the routing key maestro-server files an ACP session under, the suffix of every
+/// `acp://` event, and the id React holds.
+///
+/// Opaque and globally unique rather than the counter this replaced, because an ACP session now
+/// outlives the run of the app that started it: a counter restarting at 1 would name a session the
+/// server is already holding for a previous run. PTY sessions still die with the app and take the
+/// same ids only so that one list of sessions has one kind of id in it.
+pub fn new_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 /// Initialize the SQLite database
 ///
 /// This function:
@@ -61,7 +73,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, String> {
 pub struct SshState {
     pub sessions: Arc<tokio::sync::Mutex<HashMap<i32, RemoteSshSession>>>,
     pub passwords: Arc<tokio::sync::Mutex<HashMap<i32, Zeroizing<String>>>>,
-    pub pty_sessions: tokio::sync::Mutex<HashMap<i32, SshPtyHandle>>,
+    pub pty_sessions: tokio::sync::Mutex<HashMap<String, SshPtyHandle>>,
 }
 
 impl SshState {
@@ -90,10 +102,10 @@ impl SshState {
 }
 
 pub struct AcpState {
-    /// Live ACP sessions keyed by session key (monotonic counter).
+    /// Live ACP sessions keyed by session id.
     /// No inner Arc/Mutex needed — only IPC commands write to stdin (under outer lock)
     /// and the reader task owns stdout independently.
-    pub sessions: tokio::sync::Mutex<HashMap<i32, AcpProcess>>,
+    pub sessions: tokio::sync::Mutex<HashMap<String, AcpProcess>>,
     /// Per-connection agent discovery cache (5-minute TTL).
     pub discovery_cache: tokio::sync::Mutex<HashMap<ConnectionKey, AgentDiscoveryCacheEntry>>,
     /// One long-lived maestro-server process per connection.
@@ -109,27 +121,31 @@ pub struct AcpState {
     pub restorable_sessions: tokio::sync::Mutex<HashMap<i32, Vec<RestorableSession>>>,
     /// Auth state per (connection, agent_id). Populated on PreInitializeOk.
     pub agent_auth_info: tokio::sync::Mutex<HashMap<(ConnectionKey, String), AgentAuthInfo>>,
-    /// `canvas_await` calls parked on the user, keyed by `(log_id, request_id)`. The frontend
+    /// `canvas_await` calls parked on the user, keyed by `(session_id, request_id)`. The frontend
     /// resolves one through `respond_host_tool`; whichever of that and the timeout arrives first
     /// takes the sender out.
-    pub pending_host_tools:
-        tokio::sync::Mutex<HashMap<(i32, String), tokio::sync::oneshot::Sender<serde_json::Value>>>,
-    /// What a canvas frame failed to load or run, keyed by `(log_id, surface_id)`. The agent never
+    pub pending_host_tools: tokio::sync::Mutex<
+        HashMap<(String, String), tokio::sync::oneshot::Sender<serde_json::Value>>,
+    >,
+    /// What a canvas frame failed to load or run, keyed by `(session_id, surface_id)`. The agent never
     /// sees its own surface, so a blocked asset or a thrown exception is invisible to it until the
     /// next canvas tool call on that surface drains this and carries it back.
-    pub canvas_errors: tokio::sync::Mutex<HashMap<(i32, String), Vec<String>>>,
+    pub canvas_errors: tokio::sync::Mutex<HashMap<(String, String), Vec<String>>>,
+    /// Messages for a session this side does not hold yet, keyed by session id. A session the
+    /// server starts on its own, such as an automation's, talks before this window has adopted it,
+    /// and what it said first is often the thing the user has to answer. Adoption replays these.
+    pub unclaimed_messages:
+        tokio::sync::Mutex<HashMap<String, Vec<crate::acp::transport::MaestroRpcMessage>>>,
 }
 
 pub struct PtyState {
-    pub sessions: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<PtySession>>>>,
+    pub sessions: tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<PtySession>>>>,
     /// Per-session cancel flag for local PTY attach reader tasks.
     /// When detach_terminal is called, the flag is set to true, causing
     /// the spawn_blocking reader to exit cleanly before a new attach starts.
-    pub attach_cancel: tokio::sync::Mutex<HashMap<i32, Arc<AtomicBool>>>,
-    /// In-memory metadata for active PTY sessions, keyed by session key.
-    pub session_meta: tokio::sync::Mutex<HashMap<i32, crate::models::worktree::PtySessionMeta>>,
-    /// Monotonic counter for assigning session keys.
-    pub session_counter: std::sync::atomic::AtomicI32,
+    pub attach_cancel: tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// In-memory metadata for active PTY sessions, keyed by session id.
+    pub session_meta: tokio::sync::Mutex<HashMap<String, crate::models::worktree::PtySessionMeta>>,
 }
 
 pub struct AppState {
@@ -182,12 +198,12 @@ impl AppState {
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
                 pending_host_tools: tokio::sync::Mutex::new(HashMap::new()),
                 canvas_errors: tokio::sync::Mutex::new(HashMap::new()),
+                unclaimed_messages: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),
                 attach_cancel: tokio::sync::Mutex::new(HashMap::new()),
                 session_meta: tokio::sync::Mutex::new(HashMap::new()),
-                session_counter: std::sync::atomic::AtomicI32::new(1),
             },
             app_data_dir,
             active_project_lock: Mutex::new(None),

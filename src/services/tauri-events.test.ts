@@ -55,7 +55,13 @@ describe("useServerEventSync", () => {
     renderHook(() => useServerEventSync(7));
     await flush();
 
-    expect(eventsRegistered()).toEqual(["tasks-changed", "worktrees-changed", "sessions-changed"]);
+    expect(eventsRegistered()).toEqual([
+      "tasks-changed",
+      "worktrees-changed",
+      "automations-changed",
+      "templates-changed",
+      "sessions-changed",
+    ]);
   });
 
   /**
@@ -108,7 +114,12 @@ describe("useServerEventSync", () => {
     renderHook(() => useServerEventSync(undefined));
     await flush();
 
-    expect(eventsRegistered()).toEqual(["tasks-changed", "worktrees-changed"]);
+    expect(eventsRegistered()).toEqual([
+      "tasks-changed",
+      "worktrees-changed",
+      "automations-changed",
+      "templates-changed",
+    ]);
   });
 
   it("re-subscribes sessions against the new project when it changes", async () => {
@@ -133,7 +144,13 @@ describe("useServerEventSync", () => {
 
     unmount();
 
-    expect(unlistened).toEqual(["tasks-changed", "worktrees-changed", "sessions-changed"]);
+    expect(unlistened).toEqual([
+      "tasks-changed",
+      "worktrees-changed",
+      "automations-changed",
+      "templates-changed",
+      "sessions-changed",
+    ]);
   });
 
   /**
@@ -146,6 +163,12 @@ describe("useServerEventSync", () => {
     unmount();
     await flush();
 
-    expect(unlistened).toEqual(["tasks-changed", "worktrees-changed", "sessions-changed"]);
+    expect(unlistened).toEqual([
+      "tasks-changed",
+      "worktrees-changed",
+      "automations-changed",
+      "templates-changed",
+      "sessions-changed",
+    ]);
   });
 });

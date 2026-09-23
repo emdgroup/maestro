@@ -1,5 +1,6 @@
 pub mod attachment_handlers;
 pub mod auth_handlers;
+pub mod automation_tools;
 pub mod canvas_handlers;
 pub mod completion;
 pub mod connection_server;
@@ -14,6 +15,7 @@ pub mod reader_task;
 pub mod registry;
 pub mod replay;
 pub mod resolve;
+pub mod server_control;
 pub mod session_handlers;
 pub mod session_ops;
 pub mod session_types;
@@ -32,10 +34,6 @@ pub(crate) const HOST_TRIPLE: &str = "aarch64-unknown-linux-gnu";
 pub(crate) const HOST_TRIPLE: &str = "aarch64-apple-darwin";
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub(crate) const HOST_TRIPLE: &str = "x86_64-pc-windows-msvc";
-
-pub(crate) fn session_id_for(log_id: i32) -> String {
-    format!("session-{}", log_id)
-}
 
 /// Identifies which connection server (or local instance) owns a session or cache entry.
 #[derive(
@@ -124,7 +122,8 @@ pub use connection_server::{
     pre_initialize_via_connection_server, query_check_tools_via_server,
     query_install_skills_via_server, query_list_agents_via_connection_server,
     query_session_close_via_server, query_session_delete_via_server, query_session_list_via_server,
-    set_tool_path_via_server, spawn_connection_server, test_tool_path_via_server,
+    set_tool_path_via_server, spawn_connection_server, stop_resident_servers,
+    test_tool_path_via_server,
 };
 pub use registry::{AgentDiscoveryCacheEntry, AgentDiscoveryResult, DiscoveredAgent};
 pub use session_ops::{

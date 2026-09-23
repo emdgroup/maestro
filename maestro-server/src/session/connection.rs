@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use acp::schema::v1::{
@@ -262,7 +263,7 @@ pub(crate) async fn create_session_on_connection(
     maestro_session_id: String,
     cwd: &str,
     additional_directories: &[String],
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Result<SpawnResult, String> {
     let cx = conn.connection.clone();
     crate::send_diag(
@@ -321,9 +322,9 @@ pub(crate) async fn create_session_on_connection(
     let acp_session_id_str = session_id.to_string();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+    let pending_permissions: crate::sessions::PendingPermissions =
         Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+    let pending_elicitations: crate::sessions::PendingElicitations =
         Arc::new(Mutex::new(HashMap::new()));
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
@@ -355,6 +356,7 @@ pub(crate) async fn create_session_on_connection(
     let supports_session_delete = conn.capabilities.supports_session_delete;
 
     let router = Arc::clone(&conn.router);
+    let turn_active = Arc::new(AtomicBool::new(false));
     let task = tokio::spawn(run_command_loop(
         cmd_rx,
         cx,
@@ -362,6 +364,7 @@ pub(crate) async fn create_session_on_connection(
         so,
         sid,
         Some(Arc::clone(&router)),
+        Arc::clone(&turn_active),
     ));
 
     Ok(SpawnResult {
@@ -377,6 +380,9 @@ pub(crate) async fn create_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
+            host_meta: None,
+            turn_active,
+            idle_marked: false,
         },
         models,
         modes,
@@ -402,7 +408,7 @@ pub(crate) async fn load_session_on_connection(
     resume_session_id: String,
     cwd: &str,
     additional_directories: &[String],
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Result<
     Option<(
         ActiveSession,
@@ -416,9 +422,9 @@ pub(crate) async fn load_session_on_connection(
     let cx = conn.connection.clone();
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(16);
-    let pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>> =
+    let pending_permissions: crate::sessions::PendingPermissions =
         Arc::new(Mutex::new(HashMap::new()));
-    let pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>> =
+    let pending_elicitations: crate::sessions::PendingElicitations =
         Arc::new(Mutex::new(HashMap::new()));
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
@@ -508,6 +514,7 @@ pub(crate) async fn load_session_on_connection(
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id;
     let router = Arc::clone(&conn.router);
+    let turn_active = Arc::new(AtomicBool::new(false));
     let task = tokio::spawn(run_command_loop(
         cmd_rx,
         cx,
@@ -515,6 +522,7 @@ pub(crate) async fn load_session_on_connection(
         so,
         sid,
         Some(Arc::clone(&router)),
+        Arc::clone(&turn_active),
     ));
 
     Ok(Some((
@@ -530,6 +538,9 @@ pub(crate) async fn load_session_on_connection(
             agent_id: String::new(),
             cwd: String::new(),
             additional_directories: Vec::new(),
+            host_meta: None,
+            turn_active,
+            idle_marked: false,
         },
         models,
         modes,
@@ -546,7 +557,7 @@ pub(crate) async fn pre_initialize_agent(
     spawn_args: &[String],
     spawn_env: &HashMap<String, String>,
     cwd: &str,
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
 ) -> Option<AgentConnection> {
     let mut child = match agent::spawn_agent_subprocess(spawn_cmd, spawn_args, cwd, spawn_env).await
     {

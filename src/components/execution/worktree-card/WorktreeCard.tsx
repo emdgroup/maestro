@@ -195,10 +195,10 @@ export function WorktreeCard({
                 )}
                 {usage.agents.map((session) => (
                   <button
-                    key={session.session_key}
+                    key={session.session_id}
                     type="button"
                     className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
-                    onClick={() => navigate({ sessionKey: session.session_key })}
+                    onClick={() => navigate({ sessionId: session.session_id })}
                   >
                     <Bot className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="truncate">{agentLabel(session)}</span>

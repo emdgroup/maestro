@@ -3,8 +3,8 @@
 use crate::acp::connection_server::spawn_connection_server;
 use crate::acp::reader_task::spawn_reader_task;
 use crate::acp::session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionRequest,
-    TaskMetadata, TransportTarget,
+    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionHostMeta,
+    SessionRequest, TaskMetadata, TransportTarget,
 };
 use crate::acp::transport::{MaestroRpcMessage, ServerRequest, SessionLoadRequest, SpawnRequest};
 #[cfg(windows)]
@@ -51,6 +51,30 @@ async fn additional_directories_for(req: &SessionRequest) -> Vec<String> {
     }
 }
 
+/// The blob `maestro-server` stores against a session and hands back when a later app run
+/// re-adopts it. See [`SessionHostMeta`].
+///
+/// Serialization cannot fail for this shape, so a failure is reported and the session still
+/// starts: losing the ability to re-adopt it later is not a reason to refuse to run it now.
+fn host_meta_for(req: &SessionRequest, task: &TaskMetadata) -> Option<serde_json::Value> {
+    let meta = SessionHostMeta {
+        project_id: req.project_id,
+        session_name: req.session_name.clone(),
+        connection_key: req.connection_key,
+        task: task.clone(),
+    };
+    match serde_json::to_value(&meta) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            log::warn!(
+                "could not record session metadata for {}: {e}",
+                req.session_id
+            );
+            None
+        }
+    }
+}
+
 /// Fast path: route a new session through a running `ConnectionServer`.
 ///
 /// Returns `true` if the session was registered via the shared server,
@@ -72,6 +96,7 @@ pub async fn try_spawn_via_connection_server(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(req, &task),
     }));
     let bytes = serialize_message(&spawn_req)?;
     let (acp_process, _ctx) = AcpProcess::create(
@@ -88,7 +113,7 @@ pub async fn try_spawn_via_connection_server(
             initial_acp_session_id: None,
             enable_replay_buffer: true,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -97,14 +122,405 @@ pub async fn try_spawn_via_connection_server(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
 
     // Register before sending so a fast SpawnOk can always be routed to this session.
     if writer_tx.send(bytes).await.is_err() {
-        req.app_state.acp.sessions.lock().await.remove(&req.log_id);
+        req.app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .remove(&req.session_id);
         return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
+}
+
+/// Close an idle live session on the agent and load it back, so its transcript comes with it.
+///
+/// The close is what makes the load safe. Without it the agent would hold the same conversation
+/// open twice, and the server would replace its own entry for the first while its command loop
+/// kept running — an agent nothing routes to, still consuming tokens. `SessionClose` also drops
+/// the server's live entry, so what follows genuinely is a fresh load.
+///
+/// Returns whether the session ended up loaded. `false` means the caller should adopt it plainly,
+/// which is always still possible: a failed close leaves the session exactly as it was.
+async fn reload_for_history(
+    session: &maestro_protocol::ListLiveSession,
+    acp_session_id: &str,
+    meta: &SessionHostMeta,
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> bool {
+    let close = crate::acp::connection_server::query_session_close_via_server(
+        connection_key,
+        crate::acp::transport::SessionCloseRequest {
+            agent_id: session.agent_id.clone(),
+            session_id: acp_session_id.to_string(),
+            cwd: session.cwd.clone(),
+        },
+        app_state,
+    )
+    .await;
+    if let Err(e) = close {
+        log::warn!(
+            "could not close session {} to recover its history, adopting it as-is: {e}",
+            session.session_id
+        );
+        return false;
+    }
+
+    // A new routing key: the server forgot the old one when it closed the session, and reusing it
+    // would name a session that no longer exists on either side.
+    let req = SessionRequest {
+        connection_key,
+        agent_id: session.agent_id.clone(),
+        cwd: session.cwd.clone(),
+        session_id: crate::core::new_session_id(),
+        session_name: meta.session_name.clone(),
+        project_id: meta.project_id,
+        task_id: meta.task.task_id,
+        app_state: Arc::clone(app_state),
+    };
+    match try_session_load_via_connection_server(acp_session_id, &req).await {
+        Ok(true) => true,
+        // The session is gone from the server either way now, so there is nothing left to adopt
+        // and the user has to reopen it from the session history.
+        Ok(false) | Err(_) => {
+            log::warn!(
+                "closed session {} but could not load it back",
+                session.session_id
+            );
+            true
+        }
+    }
+}
+
+/// Give this project's `worktrees` table a row for each worktree its automations have provisioned.
+///
+/// The server made these and the server will remove them, but while one is on disk it is a
+/// workspace like any other and belongs on the Workspaces screen. A run clears `worktree_path` once
+/// its directory is gone, so this only ever adopts something that exists; a row whose worktree is
+/// removed later is pruned by `list_worktrees_with_status` on its own.
+///
+/// Local projects only. The path a remote server reports is a path on that machine, which is what
+/// the rest of the worktree code already assumes, so nothing here has to special-case it — the
+/// insert is relative to the project path either way.
+async fn adopt_automation_worktrees(
+    project_id: i32,
+    project_path: &str,
+    runs: &[maestro_protocol::AutomationRun],
+    app_state: &Arc<crate::core::AppState>,
+) {
+    let now = chrono::Utc::now().to_rfc3339();
+    for run in runs {
+        let (Some(path), Some(branch)) =
+            (run.worktree_path.as_deref(), run.worktree_branch.as_deref())
+        else {
+            continue;
+        };
+        // The table stores a path relative to the repository root; the server reports an absolute
+        // one. A worktree outside the project has no relative form and is left alone.
+        let Some(relative) = path
+            .replace('\\', "/")
+            .strip_prefix(&format!("{}/", project_path.replace('\\', "/")))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        if let Err(e) = conn.execute(
+            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at)
+             SELECT ?, NULL, ?, ?, ?, ?
+              WHERE NOT EXISTS (SELECT 1 FROM worktrees WHERE project_id = ? AND path = ?)",
+            rusqlite::params![
+                project_id,
+                branch,
+                run.worktree_base,
+                &relative,
+                &now,
+                project_id,
+                &relative
+            ],
+        ) {
+            log::warn!("cannot adopt the worktree {relative} an automation made: {e}");
+        }
+    }
+}
+
+/// This project's automation runs, as the server's own records have them.
+///
+/// Best effort: a server too old to know about automations, or one whose store would not open,
+/// leaves this empty and costs nothing but an unadopted automation session.
+async fn automation_runs(
+    project_id: i32,
+    app_state: &Arc<crate::core::AppState>,
+) -> (String, Vec<maestro_protocol::AutomationRun>) {
+    let (connection_key, project_path) =
+        match crate::core::get_project_with_git_conn(app_state, project_id).await {
+            Ok((project, _)) => (
+                crate::acp::ConnectionKey::from_all_ids(
+                    project.connection_id,
+                    project.wsl_connection_id,
+                    project.docker_connection_id,
+                ),
+                project.path,
+            ),
+            Err(e) => {
+                log::warn!("cannot read project {project_id} to find its automation runs: {e}");
+                return (String::new(), Vec::new());
+            }
+        };
+
+    match crate::acp::connection_server::query_automation_runs_via_server(
+        connection_key,
+        project_path.clone(),
+        None,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => (project_path, response.runs),
+        Err(e) => {
+            log::warn!("cannot list automation runs on {connection_key:?}: {e}");
+            (project_path, Vec::new())
+        }
+    }
+}
+
+/// Take ownership of sessions the connection's server is already running.
+///
+/// The server outlives the app now, so a freshly started app finds sessions it has no record of:
+/// its own map is empty while the server's is not. This rebuilds a host-side entry for each of
+/// them, keyed by the same id the server files it under, so every later prompt, cancel and event
+/// routes exactly as it did in the run that started the session.
+///
+/// Scoped to one project because the app is: a machine's server holds sessions for every project
+/// opened against it, and the ones belonging to other projects are adopted when those are opened.
+///
+/// A session that is **not** mid-turn is closed on the agent and loaded straight back instead,
+/// which is the only way to recover the transcript it produced while nobody was attached: the
+/// agent persists its own history and `session/load` is what replays it. That cannot be done to a
+/// session mid-turn — closing discards the turn in progress — so those are adopted as they are and
+/// their transcript begins where the app reconnected.
+///
+/// Best effort throughout — a server too old to answer, a session whose metadata cannot be read,
+/// an agent that refuses the reload — must not stop a project from opening. Each failure degrades
+/// to plain adoption rather than to a lost session.
+///
+/// `only` narrows this to one session: an automation's, announced while the window was already
+/// attached. That one is never closed and reloaded, since it has no history yet and closing it
+/// would throw away the prompt it was started with.
+///
+/// Returns how many were taken over, reloaded or not.
+pub async fn adopt_live_sessions(
+    connection_key: crate::acp::ConnectionKey,
+    project_id: i32,
+    only: Option<&str>,
+    app_state: &Arc<crate::core::AppState>,
+) -> usize {
+    let live = match crate::acp::connection_server::query_live_sessions_via_server(
+        connection_key,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => response.sessions,
+        Err(e) => {
+            log::warn!("could not list live sessions on {connection_key:?}: {e}");
+            return 0;
+        }
+    };
+
+    let (writer_tx, pending) = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        match servers.get(&connection_key) {
+            Some(server) => (server.writer_tx.clone(), server.pending.clone()),
+            None => return 0,
+        }
+    };
+
+    // Sessions an automation started carry nothing of ours: the server spawned them with no
+    // `host_meta` because it had none to attach. The run rows pointing at them are what says they
+    // belong to this project, so they are adopted on that evidence instead — and the same rows are
+    // where the worktrees those runs provisioned are found.
+    let (project_path, runs) = automation_runs(project_id, app_state).await;
+    adopt_automation_worktrees(project_id, &project_path, &runs, app_state).await;
+    let automation_sessions: std::collections::HashMap<String, String> = runs
+        .into_iter()
+        .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
+        .filter_map(|run| Some((run.session_id?, run.automation_name)))
+        .collect();
+
+    let mut adopted = 0;
+    for session in live {
+        if only.is_some_and(|wanted| wanted != session.session_id) {
+            continue;
+        }
+        let automation_name = automation_sessions.get(&session.session_id);
+        let meta = session
+            .host_meta
+            .as_ref()
+            .and_then(|value| {
+                serde_json::from_value::<SessionHostMeta>(value.clone())
+                    .map_err(|e| {
+                        log::warn!(
+                            "session {} has unreadable metadata: {e}",
+                            session.session_id
+                        )
+                    })
+                    .ok()
+            })
+            // An automation's session has none, so one is made up from what is known: the project
+            // it belongs to, and the connection it is already running on.
+            .or_else(|| {
+                automation_name.map(|name| SessionHostMeta {
+                    project_id: Some(project_id),
+                    session_name: Some(name.clone()),
+                    connection_key,
+                    task: TaskMetadata::default(),
+                })
+            });
+        let Some(meta) = meta else { continue };
+        if meta.project_id != Some(project_id) {
+            continue;
+        }
+        if app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .contains_key(&session.session_id)
+        {
+            continue;
+        }
+
+        if let Some(acp_session_id) = session.acp_session_id.as_deref() {
+            if only.is_none()
+                && !session.turn_active
+                && reload_for_history(&session, acp_session_id, &meta, connection_key, app_state)
+                    .await
+            {
+                adopted += 1;
+                continue;
+            }
+        }
+
+        let (acp_process, _ctx) = AcpProcess::create(
+            AcpProcessParams {
+                writer: AcpTransportWriter::SharedServer(writer_tx.clone()),
+                child: None,
+                cancel_tx: None,
+                cwd: session.cwd.clone(),
+                session_name: meta.session_name.clone(),
+                agent_id: session.agent_id.clone(),
+                project_id: meta.project_id,
+                connection_key,
+                task: meta.task.clone(),
+                initial_acp_session_id: session.acp_session_id.clone(),
+                // Nothing has subscribed to this session yet, so its updates have to be held
+                // until the frontend opens it, exactly as for a session being loaded.
+                enable_replay_buffer: true,
+            },
+            session.session_id.clone(),
+            app_state.app_handle.clone(),
+            Arc::clone(app_state),
+        );
+        // Initialised already: it is running on the server. `SpawnOk` and `SessionLoadOk` are what
+        // normally set this, and an adopted session receives neither, so without it the replay
+        // drain never announced `replay-drained` and the view sat on its loading skeleton forever.
+        match acp_process.initialized.lock() {
+            Ok(mut initialized) => *initialized = true,
+            Err(e) => log::warn!("session {} lock poisoned: {e}", session.session_id),
+        }
+        app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .insert(session.session_id.clone(), acp_process);
+
+        // After the insert, never before: these go through the same routing every live message
+        // takes, and that routing drops anything addressed to a session this side does not hold
+        // yet. Replaying them is what makes a prompt the previous client was shown answerable
+        // again — the agent is still blocked on it, and the message that asked went to a client
+        // that is gone.
+        //
+        // What this window was sent before it held the session goes first, in the order it came:
+        // a session the server started on its own talks from its first second, and a canvas
+        // asking the user something is exactly what arrives then. A request among them is not
+        // replayed a second time from the server's list.
+        let unclaimed =
+            crate::acp::reader_task::take_unclaimed(app_state, &session.session_id).await;
+        let mut replayed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for msg in unclaimed {
+            match &msg {
+                MaestroRpcMessage::Response(
+                    crate::acp::transport::ServerResponse::PermissionRequest(request),
+                ) => {
+                    replayed.insert(request.request_id.clone());
+                }
+                MaestroRpcMessage::Response(
+                    crate::acp::transport::ServerResponse::ElicitationRequest(request),
+                ) => {
+                    replayed.insert(request.request_id.clone());
+                }
+                _ => {}
+            }
+            crate::acp::reader_task::handle_shared_server_message(
+                msg,
+                connection_key,
+                &app_state.app_handle,
+                app_state,
+                &pending,
+            )
+            .await;
+        }
+        for request in session.pending_requests {
+            let request_id = match &request {
+                maestro_protocol::PendingSessionRequest::Permission(request) => &request.request_id,
+                maestro_protocol::PendingSessionRequest::Elicitation(request) => {
+                    &request.request_id
+                }
+            };
+            if replayed.contains(request_id) {
+                continue;
+            }
+            let msg = match request {
+                maestro_protocol::PendingSessionRequest::Permission(request) => {
+                    MaestroRpcMessage::Response(
+                        crate::acp::transport::ServerResponse::PermissionRequest(request),
+                    )
+                }
+                maestro_protocol::PendingSessionRequest::Elicitation(request) => {
+                    MaestroRpcMessage::Response(
+                        crate::acp::transport::ServerResponse::ElicitationRequest(request),
+                    )
+                }
+            };
+            crate::acp::reader_task::handle_shared_server_message(
+                msg,
+                connection_key,
+                &app_state.app_handle,
+                app_state,
+                &pending,
+            )
+            .await;
+        }
+        adopted += 1;
+    }
+
+    if adopted > 0 {
+        log::info!("adopted {adopted} running session(s) on {connection_key:?}");
+        if let Err(e) = app_state.app_handle.emit("sessions-changed", ()) {
+            log::warn!("could not announce adopted sessions: {e}");
+        }
+    }
+    adopted
 }
 
 /// Open a transport channel, write the initial message, register the ACP process, and
@@ -185,7 +601,7 @@ async fn launch_cold_session(
             initial_acp_session_id,
             enable_replay_buffer,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -195,7 +611,7 @@ async fn launch_cold_session(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
     spawn_reader_task(source, cancel_rx, ctx);
 
     Ok(())
@@ -214,6 +630,7 @@ pub async fn spawn_acp_session_cold(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(req, &task),
     }));
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
@@ -227,10 +644,17 @@ pub async fn load_acp_session_cold(
 ) -> Result<(), String> {
     let initial_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
-        session_id: format!("session-{}", req.log_id),
+        session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(
+            req,
+            &TaskMetadata {
+                task_id: req.task_id,
+                ..TaskMetadata::default()
+            },
+        ),
     }));
     launch_cold_session(
         target,
@@ -244,14 +668,14 @@ pub async fn load_acp_session_cold(
     .await
 }
 
-/// Write a message to an active ACP session's transport by log_id.
+/// Write a message to an active ACP session's transport by session_id.
 ///
 /// Acquires the sessions lock only long enough to extract the writer handle, then
 /// releases the lock before performing any async I/O, preventing sessions-lock
 /// contention while the write is in progress.
 pub async fn write_to_acp_session(
     app_state: &crate::core::AppState,
-    log_id: i32,
+    session_id: &str,
     msg: &MaestroRpcMessage,
 ) -> Result<(), String> {
     enum WriterHandle {
@@ -262,8 +686,8 @@ pub async fn write_to_acp_session(
     let writer_handle = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {}", session_id))?;
         match &session.writer {
             AcpTransportWriter::Local(writer) => WriterHandle::Local(Arc::clone(writer)),
             AcpTransportWriter::RemoteSsh(tx) | AcpTransportWriter::SharedServer(tx) => {
@@ -281,8 +705,8 @@ pub async fn write_to_acp_session(
             let bytes = serialize_message(msg)?;
             tx.send(bytes).await.map_err(|_| {
                 format!(
-                    "ACP session write failed: channel closed for log_id {}",
-                    log_id
+                    "ACP session write failed: channel closed for session_id {}",
+                    session_id
                 )
             })
         }
@@ -329,10 +753,17 @@ pub async fn try_session_load_via_connection_server(
     };
     let load_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
         agent_id: req.agent_id.clone(),
-        session_id: format!("session-{}", req.log_id),
+        session_id: req.session_id.clone(),
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
+        host_meta: host_meta_for(
+            req,
+            &TaskMetadata {
+                task_id: req.task_id,
+                ..TaskMetadata::default()
+            },
+        ),
     }));
     let bytes = serialize_message(&load_msg)?;
 
@@ -355,7 +786,7 @@ pub async fn try_session_load_via_connection_server(
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
-        req.log_id,
+        req.session_id.clone(),
         req.app_state.app_handle.clone(),
         Arc::clone(&req.app_state),
     );
@@ -364,10 +795,15 @@ pub async fn try_session_load_via_connection_server(
         .sessions
         .lock()
         .await
-        .insert(req.log_id, acp_process);
+        .insert(req.session_id.clone(), acp_process);
 
     if writer_tx.send(bytes).await.is_err() {
-        req.app_state.acp.sessions.lock().await.remove(&req.log_id);
+        req.app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .remove(&req.session_id);
         return Err("Connection server writer channel closed".to_string());
     }
     Ok(true)
@@ -375,7 +811,7 @@ pub async fn try_session_load_via_connection_server(
 
 /// Re-spawn the shared maestro-server for a connection and reload sessions that were
 /// active when it died. Called after SSH successfully reconnects.
-/// Emits `acp://session-ended/{log_id}` for any session that cannot be restored.
+/// Emits `acp://session-ended/{session_id}` for any session that cannot be restored.
 pub async fn restore_acp_sessions(
     connection_id: i32,
     app_state: &Arc<crate::core::AppState>,
@@ -404,20 +840,17 @@ pub async fn restore_acp_sessions(
         let Some(acp_session_id) = &s.acp_session_id else {
             let _ = app_state
                 .app_handle
-                .emit(&format!("acp://session-ended/{}", s.log_id), ());
+                .emit(&format!("acp://session-ended/{}", s.session_id), ());
             continue;
         };
 
-        let new_log_id = app_state
-            .pty
-            .session_counter
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let reloaded_session_id = crate::core::new_session_id();
 
         let req = SessionRequest {
             connection_key: crate::acp::ConnectionKey::Ssh { id: connection_id },
             agent_id: s.agent_id.clone(),
             cwd: s.cwd.clone(),
-            log_id: new_log_id,
+            session_id: reloaded_session_id,
             session_name: s.session_name.clone(),
             project_id: s.project_id,
             task_id: s.task_id,
@@ -428,7 +861,7 @@ pub async fn restore_acp_sessions(
             _ => {
                 let _ = app_state
                     .app_handle
-                    .emit(&format!("acp://session-ended/{}", s.log_id), ());
+                    .emit(&format!("acp://session-ended/{}", s.session_id), ());
             }
         }
     }

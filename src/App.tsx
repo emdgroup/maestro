@@ -7,6 +7,8 @@ import { useSelectedProject, useSelectedProjectActions } from "@/store/projectSt
 import { AppHeader } from "@/components/layout/app-header/AppHeader";
 import { ProjectPickerView } from "@/views/project-picker/ProjectPickerView";
 import { useSettings } from "@/services/settings.service";
+import { useActiveSessionsQuery } from "@/services/execution.service";
+import { useSessionNotifications } from "@/hooks/useSessionNotifications";
 import {
   useCleanupZombieWorktreesMutation,
   usePrefetchWorktrees,
@@ -51,8 +53,11 @@ const AgentsView = lazy(() =>
 const WorktreesView = lazy(() =>
   import("@/views/worktrees/WorktreesView").then((m) => ({ default: m.WorktreesView })),
 );
-const SettingsView = lazy(() =>
-  import("@/views/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
+const CollectionsView = lazy(() =>
+  import("@/views/collections/CollectionsView").then((m) => ({ default: m.CollectionsView })),
+);
+const SettingsDialog = lazy(() =>
+  import("@/views/settings/SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
 );
 
 const NOOP = () => {};
@@ -79,16 +84,23 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoading]);
 
+  // Raised here rather than inside AgentsView, which is lazy: an automation that fires while the
+  // user is on another tab asks its question to a view that may never have been mounted, and the
+  // whole point of a scheduled run is that nobody is watching it.
+  const { data: sessions = [] } = useActiveSessionsQuery(currentProject?.id);
+  useSessionNotifications(sessions, appSettings);
+
   // Page routing backed by navigationStore
   const activeTab = useActiveTab();
   const slideDirection = useSlideDirection();
-  const { setActiveTab } = useNavigationActions();
+  const { setActiveTab, openSettings } = useNavigationActions();
 
   useShortcuts("global", {
     "tab-board": () => setActiveTab("kanban"),
     "tab-agents": () => setActiveTab("agents"),
     "tab-worktrees": () => setActiveTab("worktrees"),
-    "tab-settings": () => setActiveTab("settings"),
+    "tab-collections": () => setActiveTab("collections"),
+    "open-settings": () => openSettings(),
     "prevent-reload": () => {},
     "prevent-reload-shift": () => {},
     "prevent-reload-f5": () => {},
@@ -97,7 +109,7 @@ function App() {
   const agentsControls = useAnimationControls();
   const kanbanControls = useAnimationControls();
   const worktreesControls = useAnimationControls();
-  const settingsControls = useAnimationControls();
+  const collectionsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
 
   const viewControls = useMemo(
@@ -106,9 +118,9 @@ function App() {
         kanban: kanbanControls,
         agents: agentsControls,
         worktrees: worktreesControls,
-        settings: settingsControls,
+        collections: collectionsControls,
       }) satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>,
-    [kanbanControls, agentsControls, worktreesControls, settingsControls],
+    [kanbanControls, agentsControls, worktreesControls, collectionsControls],
   );
 
   // Zombie worktree cleanup on project open (REQ-36)
@@ -266,9 +278,12 @@ function App() {
             onViewChange={setActiveTab}
             onProjectChange={setSelectedProject}
             onBackToPicker={clearSelectedProject}
+            onOpenSettings={openSettings}
             connectionQuiet={connectionHealth === "quiet"}
           />
-          <main className="flex-1 overflow-hidden relative">
+          {/* A haze of the panes' own colour rising into the header's bottom strip, so the tinted
+              header and the card-coloured panes meet without a hard edge. */}
+          <main className="relative flex-1 overflow-hidden shadow-[0_-2px_5px_var(--card)]">
             {/* Agents View — always mounted, imperative animation */}
             <motion.div
               initial={{ opacity: activeTab === "agents" ? 1 : 0 }}
@@ -327,24 +342,30 @@ function App() {
               </Suspense>
             </motion.div>
 
-            {/* Settings View — always mounted, imperative animation */}
+            {/* Collections View — always mounted, imperative animation */}
             <motion.div
-              initial={{ opacity: activeTab === "settings" ? 1 : 0 }}
-              animate={settingsControls}
+              initial={{ opacity: activeTab === "collections" ? 1 : 0 }}
+              animate={collectionsControls}
               className={cn(
                 "absolute inset-0 overflow-hidden",
-                activeTab !== "settings" && "pointer-events-none",
+                activeTab !== "collections" && "pointer-events-none",
               )}
             >
-              {/* Not scrollable: the settings surface is two panes and scrolls its own
-                  content column, so an outer scroll would drag the sidebar off screen. */}
-              <div className="h-full overflow-hidden">
-                <Suspense fallback={fallback}>
-                  <SettingsView projectId={currentProject.id} connection={connection} />
-                </Suspense>
-              </div>
+              <Suspense fallback={fallback}>
+                <CollectionsView
+                  projectId={currentProject.id}
+                  projectPath={currentProject.path}
+                  connection={connection}
+                />
+              </Suspense>
             </motion.div>
           </main>
+
+          {/* Settings, over whichever view is showing. Lazy like the views, so its chunk is only
+              fetched once somebody opens it. */}
+          <Suspense fallback={null}>
+            <SettingsDialog projectId={currentProject.id} connection={connection} />
+          </Suspense>
 
           {/* D-19 cascade check: block project access when issue tracking integration is missing */}
           <IntegrationMissingDialog

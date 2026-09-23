@@ -13,13 +13,13 @@ use crate::models::GitConnection;
 /// in — which is also the only place the agent can read a canvas back from.
 async fn canvas_target(
     state: &AppState,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<(GitConnection, String, String), String> {
     let (cwd, connection_key, acp_session_id) = {
         let sessions = state.acp.sessions.lock().await;
         let session = sessions
-            .get(&log_id)
-            .ok_or_else(|| format!("No ACP session for log_id {}", log_id))?;
+            .get(session_id)
+            .ok_or_else(|| format!("No ACP session for session_id {}", session_id))?;
         let acp_session_id = session
             .acp_session_id
             .lock()
@@ -50,12 +50,12 @@ fn plain_file_name(name: &str) -> Result<&str, String> {
 #[specta::specta]
 pub async fn save_canvas_surface(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     surface_id: String,
     html: String,
 ) -> Result<(), String> {
     let surface_id = plain_file_name(&surface_id)?;
-    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    let (conn, _cwd, dir) = canvas_target(&app_state, session_id).await?;
     files::create_dir_all(&conn, &dir).await?;
     files::write_text(&conn, &format!("{dir}/{surface_id}.html"), &html).await
 }
@@ -64,11 +64,11 @@ pub async fn save_canvas_surface(
 #[specta::specta]
 pub async fn delete_canvas_surface(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     surface_id: String,
 ) -> Result<(), String> {
     let surface_id = plain_file_name(&surface_id)?;
-    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    let (conn, _cwd, dir) = canvas_target(&app_state, session_id).await?;
     let file_path = format!("{dir}/{surface_id}.html");
     if !files::exists(&conn, &file_path).await {
         return Ok(());
@@ -80,9 +80,9 @@ pub async fn delete_canvas_surface(
 #[specta::specta]
 pub async fn load_saved_canvases(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<Vec<String>, String> {
-    let (conn, _cwd, dir) = canvas_target(&app_state, log_id).await?;
+    let (conn, _cwd, dir) = canvas_target(&app_state, session_id).await?;
     if !files::exists(&conn, &dir).await {
         return Ok(vec![]);
     }
@@ -109,12 +109,12 @@ pub async fn load_saved_canvases(
 #[specta::specta]
 pub async fn save_canvas_import(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     file_name: String,
     html: String,
 ) -> Result<String, String> {
     let file_name = plain_file_name(&file_name)?;
-    let (conn, cwd, _dir) = canvas_target(&app_state, log_id).await?;
+    let (conn, cwd, _dir) = canvas_target(&app_state, session_id).await?;
     let dir = format!("{cwd}/.maestro/imports");
     files::create_dir_all(&conn, &dir).await?;
     let path = format!("{dir}/{file_name}");
@@ -130,13 +130,15 @@ pub async fn save_canvas_import(
 #[specta::specta]
 pub async fn canvas_report_error(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
     surface_id: String,
     message: String,
 ) -> Result<(), String> {
     const MAX_PER_SURFACE: usize = 10;
     let mut errors = app_state.acp.canvas_errors.lock().await;
-    let entry = errors.entry((log_id, surface_id)).or_default();
+    let entry = errors
+        .entry((session_id.to_string(), surface_id))
+        .or_default();
     if entry.len() < MAX_PER_SURFACE && !entry.contains(&message) {
         entry.push(message);
     }

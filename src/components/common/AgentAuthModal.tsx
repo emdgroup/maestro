@@ -18,8 +18,8 @@ interface AgentAuthModalProps {
   onAuthSuccess: () => void;
   onClose: () => void;
   // Optional: when provided, terminal-type auth methods open a side-panel tab instead of using the mutation.
-  taskId?: number;
-  sessionKey?: number | null;
+  authKey?: string;
+  sessionId?: string | null;
   terminalState?: "idle" | "running" | "interrupted";
   onRetry?: () => void;
 }
@@ -65,8 +65,8 @@ export function AgentAuthModal({
   open,
   onAuthSuccess,
   onClose,
-  taskId,
-  sessionKey,
+  authKey,
+  sessionId,
   terminalState,
   onRetry,
 }: AgentAuthModalProps) {
@@ -106,19 +106,19 @@ export function AgentAuthModal({
     setAuthError(null);
 
     // Terminal methods with a task context open an interactive tab in the side panel.
-    if (methodType === "terminal" && taskId != null && sessionKey != null) {
+    if (methodType === "terminal" && authKey != null && sessionId != null) {
       setIsStartingTerminal(true);
       try {
         const result = await commands.acpStartAuthTerminal(
           agentId,
           methodId,
           connection,
-          sessionKey,
+          sessionId,
         );
         if (result.status === "error") throw new Error(result.error);
         const terminalId = result.data;
-        navigate({ agentId: String(taskId) });
-        setAuthTerminalRunning(taskId, terminalId);
+        navigate({ agentId: authKey });
+        setAuthTerminalRunning(authKey, terminalId);
         onClose();
       } catch (err) {
         setAuthError(err instanceof Error ? err.message : String(err));
@@ -139,7 +139,7 @@ export function AgentAuthModal({
   const isInProgress = authenticate.isPending || isStartingTerminal;
 
   // When a terminal PTY is running: show info message (the terminal tab is in the agents panel).
-  if (terminalState === "running" && taskId != null) {
+  if (terminalState === "running" && authKey != null) {
     return (
       <Dialog
         open={open}
@@ -168,7 +168,7 @@ export function AgentAuthModal({
   }
 
   // When the terminal tab was closed before auth completed: show retry/cancel.
-  if (terminalState === "interrupted" && taskId != null) {
+  if (terminalState === "interrupted" && authKey != null) {
     return (
       <Dialog
         open={open}

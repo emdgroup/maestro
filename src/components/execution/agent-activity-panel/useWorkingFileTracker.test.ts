@@ -19,7 +19,7 @@ function toolCall(partial: Partial<ToolCallItem>): ActivityItem {
 }
 
 function pathsFor(items: ActivityItem[]): string[] {
-  const { result } = renderHook(() => useWorkingFileTracker(1, items));
+  const { result } = renderHook(() => useWorkingFileTracker("1", items));
   return result.current.workingFiles.map((f) => f.path).sort();
 }
 

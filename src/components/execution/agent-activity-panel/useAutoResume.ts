@@ -9,7 +9,7 @@ import type { ToolCallItem } from "../activity/types";
  * `"interrupted"` alone is not that evidence: `interruptStalledToolCalls` marks every pending call
  * interrupted on any turn or session end, and a user pressing Stop is exactly that path. The
  * signal has to come from the local user action, so `handleCancel` marks the same ref spent — the
- * stop reason on `acp://turn-ended/{sessionKey}` cannot be trusted to say "cancelled".
+ * stop reason on `acp://turn-ended/{sessionId}` cannot be trusted to say "cancelled".
  *
  * Spent for the rest of the panel's life either way: nothing ever moves a call off `"interrupted"`,
  * so a per-turn flag would fire on the user's next prompt.

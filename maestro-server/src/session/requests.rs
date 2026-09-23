@@ -9,7 +9,6 @@ use std::sync::Arc;
 use maestro_protocol::{
     MaestroRpcMessage, ServerResponse, SessionListOkResponse, SessionLoadOkResponse,
 };
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::helpers::{
@@ -20,9 +19,9 @@ use crate::session::{
     load_session_on_connection, session_close_on_connection, session_delete_on_connection,
     session_list_on_connection,
 };
-use crate::sessions::{ActiveSession, AgentConnectionHandle, SharedAgentConnections};
+use crate::sessions::{ActiveSession, AgentConnectionHandle, SessionMap, SharedAgentConnections};
 
-type Stdout = Arc<Mutex<tokio::io::Stdout>>;
+use crate::ClientOut as Stdout;
 
 /// List the sessions an agent has on disk for a working directory.
 ///
@@ -146,6 +145,7 @@ pub(crate) async fn load(
                 session.agent_id = req.agent_id;
                 session.cwd = req.cwd;
                 session.additional_directories = req.additional_directories;
+                session.host_meta = req.host_meta;
                 let session_id = req.session_id.clone();
                 // Handed to the dispatch loop only once the host has been told the session
                 // exists, so a registered session is always one the host knows about.
@@ -187,6 +187,7 @@ pub(crate) async fn end(
     kind: EndKind,
     agent_id: String,
     session_id: String,
+    sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
     stdout: &Stdout,
 ) -> bool {
@@ -210,10 +211,34 @@ pub(crate) async fn end(
     };
 
     let response = match result {
-        Ok(()) => MaestroRpcMessage::Response(match kind {
-            EndKind::Close => ServerResponse::SessionCloseOk,
-            EndKind::Delete => ServerResponse::SessionDeleteOk,
-        }),
+        Ok(()) => {
+            // `session_id` here is the agent's own id, and the session the agent just closed may
+            // also be one this server is running. Left in the map it would be a routing key whose
+            // command loop talks to a session that no longer exists on the other end — and since
+            // the daemon outlives the app, it would stay there and be offered for re-adoption.
+            let live: Vec<String> = sessions
+                .iter()
+                .filter(|(_, session)| {
+                    session
+                        .cleanup
+                        .as_ref()
+                        .is_some_and(|c| c.acp_session_id == session_id)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in live {
+                if let Some(session) = sessions.remove(&id) {
+                    session.task.abort();
+                    if let Some(cleanup) = session.cleanup {
+                        cleanup.router.unregister(&cleanup.acp_session_id).await;
+                    }
+                }
+            }
+            MaestroRpcMessage::Response(match kind {
+                EndKind::Close => ServerResponse::SessionCloseOk,
+                EndKind::Delete => ServerResponse::SessionDeleteOk,
+            })
+        }
         Err(e) => {
             if let Some(handle) = &conn_handle {
                 evict_if_same_connection(agent_connections, &agent_id, &handle.router).await;

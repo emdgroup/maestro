@@ -10,6 +10,7 @@ pub mod models;
 pub mod project;
 pub mod settings;
 pub mod task;
+pub mod templates;
 
 pub use core::{
     get_git_connection, get_project_with_git_conn, init_db, AcpState, AppState, PtyState, SshState,
@@ -94,11 +95,31 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::reject_review,
         crate::ipc::list_agent_profiles,
         crate::ipc::save_agent_profiles,
+        crate::ipc::list_automations,
+        crate::ipc::save_automation,
+        crate::ipc::delete_automation,
+        crate::ipc::run_automation,
+        crate::ipc::list_automation_runs,
+        crate::ipc::delete_automation_run,
+        crate::ipc::set_run_retention,
+        crate::ipc::get_webhook_settings,
+        crate::ipc::set_webhook_settings,
+        crate::ipc::roll_webhook_secret,
+        crate::ipc::list_webhook_deliveries,
+        crate::ipc::list_templates,
+        crate::ipc::save_template,
+        crate::ipc::delete_template,
+        crate::ipc::get_background_server,
+        crate::ipc::set_background_server_autostart,
+        crate::ipc::stop_background_server,
+        crate::ipc::preview_schedule,
+        crate::ipc::adopt_automation_session,
         crate::ipc::resolve_agent_profile,
         crate::ipc::get_project_settings,
         crate::ipc::update_project_settings,
         crate::ipc::set_project_accent_color,
         crate::ipc::prime_project_server,
+        crate::ipc::stop_resident_servers,
         crate::ipc::update_task_settings,
         crate::ipc::set_task_profile_overrides,
         crate::ipc::list_ssh_connections,

@@ -12,7 +12,7 @@ vi.mock("@/contexts/KanbanContext", () => ({
 }));
 
 /** Swapped per-test so a card can be rendered with or without a live session behind it. */
-const activeSession = vi.hoisted(() => ({ current: null as { session_key: number } | null }));
+const activeSession = vi.hoisted(() => ({ current: null as { session_id: string } | null }));
 
 const execute = vi.hoisted(() => vi.fn());
 
@@ -291,7 +291,7 @@ describe("TaskCard abandon", () => {
   };
 
   it("does not abandon on the first click", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(running);
 
     await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
@@ -302,7 +302,7 @@ describe("TaskCard abandon", () => {
   });
 
   it("abandons once confirmed", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ ...running, id: 42 });
 
     await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
@@ -323,7 +323,7 @@ describe("TaskCard abandon", () => {
    * with nothing to say whether the click had registered.
    */
   it("closes the dialog once confirmed", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(running);
 
     await userEvent.click(screen.getByRole("button", { name: /abandon/i }));
@@ -416,21 +416,21 @@ async function openAbandonDialog() {
 
 describe("TaskCard send-to-review escape hatch", () => {
   it("is offered when the agent has stopped and is waiting", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Implementing", phase_status: "Waiting", ball: "User" });
     await openAbandonDialog();
     expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
   });
 
   it("is offered when the phase failed", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Implementing", phase_status: "Failed", ball: "User" });
     await openAbandonDialog();
     expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
   });
 
   it("is hidden while the agent is running", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Implementing", phase_status: "Running", ball: "Agent" });
     await openAbandonDialog();
     expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
@@ -438,7 +438,7 @@ describe("TaskCard send-to-review escape hatch", () => {
 
   /** Rework is the other phase that writes code, so the rule is not "Implementing only". */
   it("is offered when a failed rework has work behind it", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Rework", phase_status: "Failed", ball: "User" });
     await openAbandonDialog();
     expect(screen.getByRole("button", { name: SEND_ON })).toBeInTheDocument();
@@ -446,7 +446,7 @@ describe("TaskCard send-to-review escape hatch", () => {
 
   /** The agent is waiting on an answer, so the footer's two slots are Review and Respond. */
   it("stays on the footer while the agent is blocked", () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Implementing", phase_status: "Blocked", ball: "User" });
     expect(screen.getByRole("button", { name: "Send to review" })).toBeInTheDocument();
   });
@@ -456,14 +456,14 @@ describe("TaskCard send-to-review escape hatch", () => {
    * diff to review — the button asked the backend to move the task on anyway.
    */
   it("is withheld while the planner is blocked", () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Drafting", phase_status: "Blocked", ball: "User" });
     expect(screen.getByRole("button", { name: /respond/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
   });
 
   it("is withheld in the abandon dialog of a failed planner", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ phase: "Drafting", phase_status: "Failed", ball: "User" });
     await openAbandonDialog();
     expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
@@ -484,7 +484,7 @@ describe("TaskCard send-to-review escape hatch", () => {
   });
 
   it("is hidden outside In Progress", async () => {
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard({ status: "Review", phase: "Approval", phase_status: "Waiting", ball: "User" });
     expect(screen.queryByRole("button", { name: SEND_ON })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send to review" })).not.toBeInTheDocument();
@@ -516,12 +516,12 @@ describe("TaskCard while a review agent is reading the diff", () => {
   });
 
   it("closes the session and opens the human gate", async () => {
-    activeSession.current = { session_key: 42, execution_mode: "acp" } as never;
+    activeSession.current = { session_id: "42", execution_mode: "acp" } as never;
     const user = userEvent.setup();
     renderCard(selfReviewing);
     await user.click(screen.getByRole("button", { name: "Stop review" }));
 
-    expect(cancelSession).toHaveBeenCalledWith({ sessionKey: 42, executionMode: "acp" });
+    expect(cancelSession).toHaveBeenCalledWith({ sessionId: "42", executionMode: "acp" });
     expect(endSelfReview).toHaveBeenCalledWith(7);
   });
 
@@ -547,7 +547,7 @@ describe("TaskCard empty-review confirmation", () => {
 
   it("asks first when the backend reports nothing to review", async () => {
     const user = userEvent.setup();
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(stuck);
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
@@ -558,7 +558,7 @@ describe("TaskCard empty-review confirmation", () => {
 
   it("forces on confirmation", async () => {
     const user = userEvent.setup();
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(stuck);
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
@@ -570,7 +570,7 @@ describe("TaskCard empty-review confirmation", () => {
   it("does not ask when the task actually moved", async () => {
     sendToReview.result = makeTask({ status: "Review" });
     const user = userEvent.setup();
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(stuck);
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
@@ -581,7 +581,7 @@ describe("TaskCard empty-review confirmation", () => {
   /** Abandoning is what the dialog is for; taking the other door must not also destroy the run. */
   it("does not abandon when the work is kept", async () => {
     const user = userEvent.setup();
-    activeSession.current = { session_key: 1 };
+    activeSession.current = { session_id: "1" };
     renderCard(stuck);
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
@@ -861,7 +861,7 @@ describe("TaskCard session reachability", () => {
   };
 
   it("offers Join on a Review card holding a live session", () => {
-    activeSession.current = { session_key: 42 };
+    activeSession.current = { session_id: "42" };
     renderCard(review);
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
@@ -1014,7 +1014,7 @@ describe("TaskCard refinement", () => {
    * pulsed amber with nothing on the card to answer it.
    */
   it("offers Respond rather than Execute to a blocked refiner", () => {
-    activeSession.current = { session_key: 3 };
+    activeSession.current = { session_id: "3" };
     renderCard({ ...refining, phase_status: "Blocked", ball: "User" });
 
     expect(screen.getByRole("button", { name: /respond/i })).toBeInTheDocument();
@@ -1159,7 +1159,7 @@ describe("TaskCard plan gate", () => {
    * gate takes that itself.
    */
   it("offers nothing to join at the gate", () => {
-    activeSession.current = { session_key: 12 };
+    activeSession.current = { session_id: "12" };
     renderCard(atTheGate);
     expect(screen.queryByRole("button", { name: /join/i })).not.toBeInTheDocument();
   });
@@ -1202,7 +1202,7 @@ describe("TaskCard plan gate", () => {
    * the plan travels as text and the coder always starts clean.
    */
   it("never hands the planner's session to the coder", async () => {
-    activeSession.current = { session_key: 12 };
+    activeSession.current = { session_id: "12" };
     comments.current = [{ id: 1, kind: "plan", body: "1. Do the thing" }];
     renderCard(atTheGate);
     await userEvent.click(screen.getByRole("button", { name: /read plan/i }));
@@ -1498,7 +1498,7 @@ describe("TaskCard when the agent needs credentials", () => {
     await userEvent.click(screen.getByRole("button", { name: /login/i }));
     await userEvent.click(screen.getByRole("button", { name: /finish auth/i }));
 
-    expect(clearAuthRequired).toHaveBeenCalledWith(7);
+    expect(clearAuthRequired).toHaveBeenCalledWith("7");
     expect(screen.queryByRole("button", { name: /finish auth/i })).not.toBeInTheDocument();
   });
 });

@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-const interruptAcpTurn = vi.hoisted(() => vi.fn<(sessionKey: number) => Promise<void>>());
+const interruptAcpTurn = vi.hoisted(() => vi.fn<(sessionId: string) => Promise<void>>());
 const respondHostTool = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const sendAcpPrompt = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("@/lib/tauri-utils", () => ({
   api: {
-    interruptAcpTurn: (sessionKey: number) => interruptAcpTurn(sessionKey),
-    sendAcpPrompt: (sessionKey: number, content: string) => sendAcpPrompt(sessionKey, content),
-    respondHostTool: (sessionKey: number, requestId: string, value: unknown) =>
-      respondHostTool(sessionKey, requestId, value),
+    interruptAcpTurn: (sessionId: string) => interruptAcpTurn(sessionId),
+    sendAcpPrompt: (sessionId: string, content: string) => sendAcpPrompt(sessionId, content),
+    respondHostTool: (sessionId: string, requestId: string, value: unknown) =>
+      respondHostTool(sessionId, requestId, value),
     sendAcpPromptStructured: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -35,7 +35,7 @@ function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {})
   const autoResumeSpentRef = { current: false };
   const view = renderHook(() =>
     useMessageSender({
-      sessionKey: 7,
+      sessionId: "7",
       isProcessing: true,
       pendingPermission: null,
       pendingElicitation: null,
@@ -84,7 +84,7 @@ describe("handleCancel", () => {
     interruptAcpTurn.mockRejectedValue(new Error("no session"));
     const { result, autoResumeSpentRef } = render();
     await result.current.handleCancel();
-    expect(interruptAcpTurn).toHaveBeenCalledWith(7);
+    expect(interruptAcpTurn).toHaveBeenCalledWith("7");
     expect(autoResumeSpentRef.current).toBe(true);
   });
 });
@@ -99,7 +99,7 @@ describe("handleSend", () => {
     // Synchronously: the cancel's turn end can land while this send is still waiting for it.
     expect(autoResumeSpentRef.current).toBe(true);
     await sent;
-    expect(interruptAcpTurn).toHaveBeenCalledWith(7);
+    expect(interruptAcpTurn).toHaveBeenCalledWith("7");
   });
 
   it("leaves auto-resume alone on an ordinary send", async () => {
@@ -117,9 +117,9 @@ describe("handleSend", () => {
       pendingCanvasAwaitsRef: { current: [{ requestId: "w-1", surfaceId: "match" }] },
     });
     await result.current.handleSend("stop that and look at this");
-    expect(interruptAcpTurn).toHaveBeenCalledWith(7);
-    expect(respondHostTool).toHaveBeenCalledWith(7, "w-1", { timeout: true });
-    expect(sendAcpPrompt).toHaveBeenCalledWith(7, "stop that and look at this");
+    expect(interruptAcpTurn).toHaveBeenCalledWith("7");
+    expect(respondHostTool).toHaveBeenCalledWith("7", "w-1", { timeout: true });
+    expect(sendAcpPrompt).toHaveBeenCalledWith("7", "stop that and look at this");
   });
 
   it("still refuses to send while the agent is genuinely working", async () => {

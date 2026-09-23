@@ -21,7 +21,7 @@ export function sessionLabel(session: ActiveSessionInfo): string {
     session.task_name ||
     session.session_name ||
     session.branch_name ||
-    `Session ${session.session_key}`;
+    `Session ${session.session_id}`;
   return raw.length > LABEL_LIMIT ? `${raw.slice(0, LABEL_LIMIT - 1)}…` : raw;
 }
 

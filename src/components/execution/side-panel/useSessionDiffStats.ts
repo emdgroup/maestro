@@ -19,12 +19,12 @@ const UNCOMMITTED_TARGET: DiffTarget = { type: "Head" };
  * `changedFilesCount` is `null` until the first fetch settles, which lets the tab logic
  * treat a resumed session's pre-existing diff as a baseline rather than a new change.
  */
-export function useSessionDiffStats(sessionKey: number, poll: boolean) {
+export function useSessionDiffStats(sessionId: string, poll: boolean) {
   // Polled, unlike every other caller of this hook: the answer carries whether the session's start
   // commit is still reachable, and a rebase or amend can orphan it mid-session. 30s rather than the
   // 10s below because that is the only field that moves and re-asking costs a `git cat-file` that
   // runs over SSH for a remote project.
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey, {
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId, {
     refetchInterval: poll ? 30000 : false,
   });
 

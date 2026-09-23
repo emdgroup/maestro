@@ -18,7 +18,7 @@ pub(crate) async fn handle_create_terminal(
     args: CreateTerminalRequest,
     terminals: Arc<Mutex<HashMap<String, TerminalHandle>>>,
     terminal_counter: Arc<AtomicU64>,
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+    stdout: crate::ClientOut,
     maestro_session_id: String,
 ) -> acp::Result<CreateTerminalResponse> {
     // T-42-01: Validate cwd exists before spawning

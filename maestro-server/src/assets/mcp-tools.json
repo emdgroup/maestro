@@ -12,7 +12,10 @@
             "type": "string",
             "description": "Your identifier for this surface; reuse it in every later call."
           },
-          "title": { "type": "string", "description": "Shown above the surface." },
+          "title": {
+            "type": "string",
+            "description": "Shown above the surface."
+          },
           "html": {
             "type": "string",
             "description": "The document. A full `<html>` page or a fragment — Maestro prepends its own head either way."
@@ -25,7 +28,9 @@
           },
           "sources": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Origins `maestro.fetch` may reach, e.g. [\"https://api.example.com\"]. Anything else is refused. The user is shown this list. Secrets in request headers end up in the transcript and in the saved file."
           }
         }
@@ -38,7 +43,9 @@
         "type": "object",
         "required": ["surfaceId", "html"],
         "properties": {
-          "surfaceId": { "type": "string" },
+          "surfaceId": {
+            "type": "string"
+          },
           "html": {
             "type": "string",
             "description": "With `target`, the replacement for that element — include the element itself, with its id, or you lose the anchor. Without `target`, the whole document."
@@ -57,9 +64,16 @@
         "type": "object",
         "required": ["surfaceId", "path", "value"],
         "properties": {
-          "surfaceId": { "type": "string" },
-          "path": { "type": "string", "description": "JSON Pointer, e.g. /rows" },
-          "value": { "description": "Any JSON value." }
+          "surfaceId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "JSON Pointer, e.g. /rows"
+          },
+          "value": {
+            "description": "Any JSON value."
+          }
         }
       }
     },
@@ -73,7 +87,12 @@
             "type": "string",
             "description": "Restrict the wait to one surface. Omit to accept any."
           },
-          "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 60, "default": 30 }
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 30
+          }
         }
       }
     },
@@ -84,7 +103,11 @@
         "type": "object",
         "required": ["title"],
         "properties": {
-          "title": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 255
+          },
           "description": {
             "type": "string",
             "description": "Markdown. What needs doing and why."
@@ -93,7 +116,12 @@
             "type": "string",
             "enum": ["Urgent", "High", "Medium", "Low", "None"]
           },
-          "labels": { "type": "array", "items": { "type": "string" } }
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -124,15 +152,24 @@
             "type": "string",
             "enum": ["Planning", "Queue", "InProgress", "Review", "Done"]
           },
-          "title": { "type": "string", "minLength": 3, "maxLength": 255 },
-          "description": { "type": "string", "description": "Markdown. Replaces what is there." },
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "description": "Markdown. Replaces what is there."
+          },
           "priority": {
             "type": "string",
             "enum": ["Urgent", "High", "Medium", "Low", "None"]
           },
           "labels": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Replaces the whole list, so include the ones you are keeping."
           }
         }
@@ -149,7 +186,10 @@
             "type": "integer",
             "description": "Omit for the task this session is working on."
           },
-          "body": { "type": "string", "description": "Markdown." }
+          "body": {
+            "type": "string",
+            "description": "Markdown."
+          }
         }
       }
     },
@@ -163,6 +203,330 @@
             "type": "string",
             "enum": ["Planning", "Queue", "InProgress", "Review", "Done"],
             "description": "Only tasks in this column."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_automations",
+      "description": "List the current project's automations: agents Maestro runs on a schedule, from a webhook, or on demand, each in a session of its own. Returns each one's id, name, trigger and whether it is enabled, plus `server_timezone`, the zone of the machine they run on.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_automation",
+      "description": "Read one automation of the current project in full: its prompt, trigger, agent and workspace.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_automation",
+      "description": "Create an automation in the current project, from scratch or from a template (see list_templates). With `template_id` the template's name, prompt and trigger are filled in first and any field you pass replaces them. Anything not given comes from the project's defaults, as in the editor. A schedule or webhook is live as soon as it is created, so tell the user what you made.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "A template id such as `builtin-daily-summary` or `user-3`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Shown on the Automations page and on every run."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What the agent is asked to do on every run. The whole contract of the run: say what to leave behind (a commit, a report, a task) and when to stop, since nobody is there to ask."
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Which agent runs it. Defaults to the project's default agent, else the one running this session."
+          },
+          "model": {
+            "type": ["string", "null"],
+            "description": "The agent's model id. Null leaves it to the agent."
+          },
+          "permission_mode": {
+            "type": ["string", "null"],
+            "description": "The agent's session mode id. Null leaves it to the agent."
+          },
+          "effort": {
+            "type": ["string", "null"],
+            "description": "The agent's effort level. Null leaves it to the agent."
+          },
+          "cron": {
+            "type": ["string", "null"],
+            "description": "Five-field cron (minute hour day-of-month month day-of-week, Sunday is 0), read in `timezone`. Null for no schedule. Cannot be set together with `webhook_enabled`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone the schedule is read in. Defaults to the zone of the machine the automation runs on (`server_timezone` in list_automations)."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the schedule or webhook is live. False pauses it; the automation can still be run by hand."
+          },
+          "workspace": {
+            "type": "object",
+            "description": "Where the agent works. `{\"mode\":\"new_worktree\",\"base_branch\":\"main\"}` makes a fresh worktree per run, `{\"mode\":\"repository\"}` uses the project directory, `{\"mode\":\"path\",\"path\":\"...\"}` an existing directory. Defaults to the project's default workspace.",
+            "required": ["mode"],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["new_worktree", "repository", "path"]
+              },
+              "base_branch": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "webhook_enabled": {
+            "type": "boolean",
+            "description": "Whether POST /hooks/<id> on the machine's webhook listener starts a run. The request body is attached to the prompt. Cannot be set together with `cron`."
+          },
+          "webhook_overlap": {
+            "type": "string",
+            "enum": ["refuse", "queue", "parallel"],
+            "description": "What a webhook delivery does while a run of this automation is already going."
+          }
+        }
+      }
+    },
+    {
+      "name": "update_automation",
+      "description": "Change an automation of the current project. Only the fields you pass are touched; pass null to clear `cron`. Set `enabled` to turn its schedule or webhook on or off.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "Shown on the Automations page and on every run."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What the agent is asked to do on every run. The whole contract of the run: say what to leave behind (a commit, a report, a task) and when to stop, since nobody is there to ask."
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Which agent runs it. Defaults to the project's default agent, else the one running this session."
+          },
+          "model": {
+            "type": ["string", "null"],
+            "description": "The agent's model id. Null leaves it to the agent."
+          },
+          "permission_mode": {
+            "type": ["string", "null"],
+            "description": "The agent's session mode id. Null leaves it to the agent."
+          },
+          "effort": {
+            "type": ["string", "null"],
+            "description": "The agent's effort level. Null leaves it to the agent."
+          },
+          "cron": {
+            "type": ["string", "null"],
+            "description": "Five-field cron (minute hour day-of-month month day-of-week, Sunday is 0), read in `timezone`. Null for no schedule. Cannot be set together with `webhook_enabled`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone the schedule is read in. Defaults to the zone of the machine the automation runs on (`server_timezone` in list_automations)."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the schedule or webhook is live. False pauses it; the automation can still be run by hand."
+          },
+          "workspace": {
+            "type": "object",
+            "description": "Where the agent works. `{\"mode\":\"new_worktree\",\"base_branch\":\"main\"}` makes a fresh worktree per run, `{\"mode\":\"repository\"}` uses the project directory, `{\"mode\":\"path\",\"path\":\"...\"}` an existing directory. Defaults to the project's default workspace.",
+            "required": ["mode"],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["new_worktree", "repository", "path"]
+              },
+              "base_branch": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          "webhook_enabled": {
+            "type": "boolean",
+            "description": "Whether POST /hooks/<id> on the machine's webhook listener starts a run. The request body is attached to the prompt. Cannot be set together with `cron`."
+          },
+          "webhook_overlap": {
+            "type": "string",
+            "enum": ["refuse", "queue", "parallel"],
+            "description": "What a webhook delivery does while a run of this automation is already going."
+          }
+        }
+      }
+    },
+    {
+      "name": "delete_automation",
+      "description": "Delete an automation of the current project. Its schedule and webhook stop. Past runs stay in the run history.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "run_automation",
+      "description": "Run an automation of the current project now, whatever its trigger. The user is asked to confirm first, and this call waits up to a minute for the answer. Returns `{started}` once they approve, `{denied}` if they refuse, or `{pending}` if they have not answered yet. A pending question stays on their screen and the run starts if they approve it later, so do not ask again. The run happens in a session of its own; follow it with list_automation_runs.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_automation_runs",
+      "description": "List the current project's automation runs, newest first: status (running, succeeded, failed), what triggered each, and when. Pass `automation_id` for one automation's runs only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "automation_id": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "get_automation_run",
+      "description": "Read one run of the current project: its status, its error if it failed, `result` (the agent's last message), and the worktree it made if that is still on disk.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_templates",
+      "description": "List automation templates: the user's own (ids `user-<n>`) and the ones built into Maestro (ids `builtin-<name>`, read-only). Templates are shared by every project. Returns each one's name, tag and trigger, without the prompt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_template",
+      "description": "Read one template in full, prompt included.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "update_template",
+      "description": "Change one of the user's own templates. Only the fields you pass are touched. Built-in templates cannot be changed. Automations already made from a template are copies and do not change with it.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tag": {
+            "type": ["string", "null"],
+            "description": "A topic the template is filed under. Null clears it."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What the agent is asked to do on every run. The whole contract of the run: say what to leave behind (a commit, a report, a task) and when to stop, since nobody is there to ask."
+          },
+          "cron": {
+            "type": ["string", "null"],
+            "description": "Five-field cron (minute hour day-of-month month day-of-week, Sunday is 0), read in `timezone`. Null for no schedule. Cannot be set together with `webhook_enabled`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA zone the schedule is read in. Defaults to the zone of the machine the automation runs on (`server_timezone` in list_automations)."
+          },
+          "webhook_enabled": {
+            "type": "boolean",
+            "description": "Whether POST /hooks/<id> on the machine's webhook listener starts a run. The request body is attached to the prompt. Cannot be set together with `cron`."
+          },
+          "webhook_overlap": {
+            "type": "string",
+            "enum": ["refuse", "queue", "parallel"],
+            "description": "What a webhook delivery does while a run of this automation is already going."
+          }
+        }
+      }
+    },
+    {
+      "name": "save_as_template",
+      "description": "Save an automation of the current project as a new template, keeping its name, prompt and trigger. Agent and workspace are left out, since they belong to the project.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["automation_id"],
+        "properties": {
+          "automation_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "Defaults to the automation's name."
+          },
+          "tag": {
+            "type": "string",
+            "description": "A topic to file it under."
+          }
+        }
+      }
+    },
+    {
+      "name": "delete_template",
+      "description": "Delete one of the user's own templates. Built-in templates cannot be deleted.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string"
           }
         }
       }

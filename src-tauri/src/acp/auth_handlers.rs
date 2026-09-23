@@ -24,10 +24,10 @@ fn connection_key_id(key: &crate::acp::ConnectionKey) -> String {
 #[specta::specta]
 pub async fn discard_failed_spawn(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<(), String> {
     let mut sessions = app_state.acp.sessions.lock().await;
-    if let Some(mut session) = sessions.remove(&log_id) {
+    if let Some(mut session) = sessions.remove(session_id) {
         if let Some(cancel_tx) = session.reader_cancel_tx.take() {
             let _ = cancel_tx.send(());
         }
@@ -173,7 +173,7 @@ pub async fn acp_start_auth_terminal(
     agent_id: String,
     method_id: String,
     connection: crate::acp::ConnectionKey,
-    session_key: i32,
+    session_id: String,
 ) -> Result<String, String> {
     let writer_tx = {
         let servers = app_state.acp.connection_servers.lock().await;
@@ -184,14 +184,13 @@ pub async fn acp_start_auth_terminal(
     };
 
     let terminal_id = format!("auth-terminal-{}", connection_key_id(&connection));
-    let session_id = format!("session-{}", session_key);
 
     let req =
         MaestroRpcMessage::Request(ServerRequest::SpawnAuthTerminal(SpawnAuthTerminalRequest {
             agent_id,
             method_id,
             terminal_id: terminal_id.clone(),
-            session_id,
+            session_id: session_id.clone(),
         }));
     let bytes = serialize_message(&req)?;
     writer_tx
@@ -203,7 +202,7 @@ pub async fn acp_start_auth_terminal(
     app_state
         .app_handle
         .emit(
-            &format!("acp://terminal-output/{}", session_key),
+            &format!("acp://terminal-output/{}", session_id),
             &serde_json::json!({ "terminal_id": terminal_id, "output": "" }),
         )
         .ok();

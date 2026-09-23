@@ -282,7 +282,7 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
   function handlePullRequestAction(entry: PullRequestEntry) {
     switch (entry.action.kind) {
       case "open-session":
-        navigate({ sessionKey: entry.action.sessionKey });
+        navigate({ sessionId: entry.action.sessionId });
         return;
       case "reuse-worktree":
         setSpawnSeed({
@@ -434,14 +434,13 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
       <div className="flex-1 min-h-0 overflow-hidden bg-card">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
           <ResizablePanel minSize="28rem" className="flex h-full min-w-0 flex-col">
-            {/* The inset surface, the way the session view's content sits beside its side panel:
-                its own top edge, rounding away from the column on its right. The border is dropped
-                when there is no column to round away from — a curve at the window edge is just a
-                gap. */}
+            {/* The inset surface, shaped like the Agents view's: rounded at both top corners and
+                held off the window edge on each side it meets, so every view reads as the same
+                island. Beside the pull request column it meets that column instead. */}
             <div
               className={cn(
-                "flex flex-1 min-h-0 flex-col overflow-hidden border-t border-border bg-background",
-                showPullRequests && "rounded-tr-xl border-r",
+                "ml-[7px] flex flex-1 min-h-0 flex-col overflow-hidden rounded-t-xl border-x border-t border-border bg-background",
+                !showPullRequests && "mr-[7px]",
               )}
             >
               {isLoading ? (
@@ -547,9 +546,9 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
           connection={connection}
           worktrees={worktrees}
           seed={spawnSeed}
-          onSuccess={(sessionKey) => {
+          onSuccess={(sessionId) => {
             setSpawnSeed(null);
-            navigate({ sessionKey });
+            navigate({ sessionId });
           }}
         />
       )}

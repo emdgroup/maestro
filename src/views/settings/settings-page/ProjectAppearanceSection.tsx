@@ -1,4 +1,4 @@
-import { Bot, FolderGit2, LayoutDashboard, Palette } from "lucide-react";
+import { Bot, FolderGit2, LayoutDashboard, Library, Palette } from "lucide-react";
 import { useTheme } from "@/providers/ThemeProvider";
 import { SwatchPicker } from "@/components/common/accent-color-picker/AccentColorPicker";
 import { Label } from "@/ui/label";
@@ -17,6 +17,7 @@ const STARTUP_TABS: { value: string | null; label: string; icon: typeof Bot }[] 
   // suppresses the first-run intro. Picking the default must not do that.
   { value: null, label: "Tasks", icon: LayoutDashboard },
   { value: "agents", label: "Agents", icon: Bot },
+  { value: "collections", label: "Collections", icon: Library },
   { value: "worktrees", label: "Workspaces", icon: FolderGit2 },
 ];
 
@@ -58,7 +59,7 @@ export function ProjectAppearanceSection({ startupTab, onChange }: ProjectAppear
 
       <div className="space-y-1.5">
         <Label className="text-sm font-medium">Opens On</Label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {STARTUP_TABS.map((tab) => {
             const Icon = tab.icon;
             return (

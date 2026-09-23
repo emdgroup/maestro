@@ -26,7 +26,7 @@ interface AgentBottomBarProps {
   isProcessing: boolean;
   commands: AvailableCommand[];
   embeddedContext: boolean;
-  logId: number;
+  sessionId: string;
   projectPath: string | null;
   configOptions: ConfigOption[];
   configValues: Record<string, string>;
@@ -46,7 +46,7 @@ export function AgentBottomBar({
   isProcessing,
   commands,
   embeddedContext,
-  logId,
+  sessionId,
   projectPath,
   configOptions,
   configValues,
@@ -96,7 +96,7 @@ export function AgentBottomBar({
             isProcessing={isProcessing}
             commands={commands}
             embeddedContext={embeddedContext}
-            logId={logId}
+            sessionId={sessionId}
             projectPath={projectPath}
             configOptions={configOptions}
             configValues={configValues}

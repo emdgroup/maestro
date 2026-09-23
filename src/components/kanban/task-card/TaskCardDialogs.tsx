@@ -41,7 +41,7 @@ interface TaskCardDialogsProps {
   onClose: () => void;
   /** Present when the agent stopped to ask for credentials; the auth modal needs its details. */
   authRequired: AuthRequiredEntry | null;
-  sessionKey: number | null;
+  sessionId: string | null;
   /** What the task left behind, which decides whether the archive prompt can offer to remove it. */
   taskWorktree: WorktreeWithStatus | null;
   projectId: number | null;
@@ -53,7 +53,7 @@ export function TaskCardDialogs({
   dialog,
   onClose,
   authRequired,
-  sessionKey,
+  sessionId,
   taskWorktree,
   projectId,
   actions,
@@ -66,8 +66,8 @@ export function TaskCardDialogs({
           agentName={authRequired.agentId}
           connection={authRequired.connection}
           open={dialog === "auth"}
-          taskId={task.id}
-          sessionKey={sessionKey}
+          authKey={String(task.id)}
+          sessionId={sessionId}
           terminalState={authRequired.terminalState}
           onAuthSuccess={actions.onAuthSuccess}
           onClose={onClose}

@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 28;
+pub const SCHEMA_VERSION: u32 = 29;
 
-pub const SCHEMA_V28_FULL: &str = r#"
+pub const SCHEMA_V29_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -264,6 +264,15 @@ CREATE TABLE IF NOT EXISTS connection_settings (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    tag TEXT,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 -- Indexes for performance
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
@@ -347,7 +356,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V28_FULL)?;
+        conn.execute_batch(SCHEMA_V29_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(
@@ -370,7 +379,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             PRAGMA foreign_keys = ON;
         "#,
         )?;
-        conn.execute_batch(SCHEMA_V28_FULL)?;
+        conn.execute_batch(SCHEMA_V29_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -408,7 +417,24 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 28 {
         migrate_to_v28(conn)?;
     }
+    if from < 29 {
+        migrate_to_v29(conn)?;
+    }
     Ok(())
+}
+
+/// App-wide templates: reusable starting points, one row per template, the body JSON tagged by kind.
+fn migrate_to_v29(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            tag TEXT,
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );",
+    )
 }
 
 /// Move the agent concurrency limit from one app-wide value to one per connection.
@@ -678,9 +704,10 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 28);
+        assert_eq!(version, 29);
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));
+        assert!(tables.contains(&"templates".to_string()));
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

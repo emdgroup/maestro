@@ -79,7 +79,7 @@ function FileContentInner({
 }
 
 interface WorkingFileContentViewProps {
-  sessionKey: number;
+  sessionId: string;
   /**
    * Which machine the file is on. A path outside the session cwd is read directly rather than
    * through the session, and without this that read would land on whichever host runs Maestro.
@@ -92,7 +92,7 @@ interface WorkingFileContentViewProps {
 }
 
 export function WorkingFileContentView({
-  sessionKey,
+  sessionId,
   connection,
   filePath,
   isActive = true,
@@ -102,7 +102,7 @@ export function WorkingFileContentView({
   const panelRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
-  const { data: sessionMeta } = useAcpSessionMeta(sessionKey);
+  const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const cwd = sessionMeta?.cwd.replace(/\/+$/, "") ?? null;
   const project = useSelectedProject();
 
@@ -184,7 +184,7 @@ export function WorkingFileContentView({
   // a synchronous reset.
   const POLL_MS = 3000;
   const sessionFileQuery = useSessionFileQuery(
-    sessionKey,
+    sessionId,
     isAbsoluteOutsideCwd || awaitingCwd ? null : relativePath,
     isBinary,
     isActive ? POLL_MS : undefined,

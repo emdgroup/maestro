@@ -5,18 +5,38 @@ use maestro_protocol::{
     InstallSkillsResponse, ListAgentsResponse, MaestroRpcMessage, PreInitializeResponse,
     ServerRequest, ServerResponse, SessionUpdate, SpawnResponse, AUTH_REQUIRED_ERROR,
 };
-use tokio::sync::Mutex;
 
 use crate::agent;
 use crate::auth::{self, AuthTerminals};
 use crate::file_ops::{handle_file_read, handle_file_search};
 use crate::helpers::{
-    ensure_and_get_connection, evict_if_same_connection, forward_to_session,
+    ensure_and_get_connection, error_response, evict_if_same_connection, forward_to_session,
     resolve_agent_spawn_params, send_diag, send_response,
 };
-use crate::session::{self, create_session_on_connection, pre_initialize_agent};
+use crate::session::{self, create_session_on_connection};
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 use crate::tool_check::check_tools;
+
+/// What every automation request answers with when the store could not be opened. Said plainly
+/// rather than as an empty list, which would look like a project with no automations.
+const NO_AUTOMATION_STORE: &str =
+    "The automation store could not be opened, so automations are unavailable on this machine";
+
+fn server_status(
+    live_sessions: usize,
+    running_runs: u32,
+    autostart: Option<maestro_protocol::AutostartMethod>,
+) -> maestro_protocol::ServerStatus {
+    maestro_protocol::ServerStatus {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        pid: std::process::id(),
+        started_at: crate::STARTED_AT.get().cloned().unwrap_or_default(),
+        live_sessions: live_sessions as u32,
+        running_runs,
+        autostart_supported: crate::autostart::supported(),
+        autostart,
+    }
+}
 
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
     maestro_protocol::ToolCheckResult {
@@ -42,10 +62,11 @@ pub(crate) async fn dispatch_message(
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
     agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     auth_terminals: &AuthTerminals,
     pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
+    automation_store: Option<&crate::automation_runner::Store>,
 ) -> bool {
     // If stdout is broken we return false so the main loop breaks.
     macro_rules! send_or_return {
@@ -77,6 +98,454 @@ pub(crate) async fn dispatch_message(
                 )
                 .await
             );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(_req)) => {
+            let mut live = Vec::with_capacity(sessions.len());
+            for (session_id, session) in sessions.iter() {
+                let mut pending_requests: Vec<maestro_protocol::PendingSessionRequest> = session
+                    .pending_permissions
+                    .lock()
+                    .await
+                    .values()
+                    .map(|(request, _tx)| {
+                        maestro_protocol::PendingSessionRequest::Permission(request.clone())
+                    })
+                    .collect();
+                pending_requests.extend(session.pending_elicitations.lock().await.values().map(
+                    |(request, _tx)| {
+                        maestro_protocol::PendingSessionRequest::Elicitation(request.clone())
+                    },
+                ));
+                live.push(maestro_protocol::ListLiveSession {
+                    session_id: session_id.clone(),
+                    agent_id: session.agent_id.clone(),
+                    cwd: session.cwd.clone(),
+                    acp_session_id: session.cleanup.as_ref().map(|c| c.acp_session_id.clone()),
+                    turn_active: session
+                        .turn_active
+                        .load(std::sync::atomic::Ordering::SeqCst),
+                    host_meta: session.host_meta.clone(),
+                    pending_requests,
+                });
+            }
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(
+                        maestro_protocol::ListLiveSessionsResponse { sessions: live },
+                    )),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
+            send_diag("info", "[server] shutdown requested by the host");
+            return false;
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListAutomations(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let listed = {
+                let conn = store.lock().await;
+                crate::automations::list(&conn, &project_path).and_then(|automations| {
+                    Ok((
+                        automations,
+                        crate::automations::retention(&conn, &project_path)?,
+                    ))
+                })
+            };
+            match listed {
+                Ok((automations, retention)) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(
+                            maestro_protocol::ListAutomationsResponse {
+                                automations,
+                                server_timezone: crate::automations::server_timezone(),
+                                retention,
+                            },
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SaveAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            // Canonicalized here rather than trusted from the client: this is the process on the
+            // machine the path exists on, and every later lookup has to agree with this one.
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let mut automation = req.automation;
+            automation.project_path = project_path.clone();
+            let saved = {
+                let conn = store.lock().await;
+                crate::automations::save(&conn, &project_path, &automation)
+            };
+            match saved {
+                Ok(saved) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(saved)),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let deleted = {
+                let conn = store.lock().await;
+                crate::automations::delete(&conn, &req.automation_id)
+            };
+            match deleted {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::RunAutomation(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            // The run is announced by the runner, whether it starts or fails, so there is nothing
+            // to answer with here beyond an error the request itself could not get past.
+            if let Err(e) = crate::automation_runner::start(
+                store,
+                &req.automation_id,
+                maestro_protocol::RunTrigger::Manual,
+                None,
+                crate::automation_runner::Spawner {
+                    agents_with_spawn,
+                    agent_connections,
+                    stdout,
+                    spawn_result_tx,
+                },
+            )
+            .await
+            {
+                send_or_return!(send_response(stdout, &error_response(e)).await);
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let listed = {
+                let conn = store.lock().await;
+                crate::automations::list_runs(&conn, &project_path, req.limit)
+            };
+            match listed {
+                Ok(runs) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(
+                            maestro_protocol::ListAutomationRunsResponse { runs },
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let run = {
+                let conn = store.lock().await;
+                crate::automations::get_run(&conn, &req.run_id)
+            };
+            // A run still going, or one whose session is still open, has an agent working in its
+            // worktree: removing that from under it is not deleting history.
+            let deleted = match run {
+                Ok(None) => Ok(()),
+                Ok(Some(run))
+                    if matches!(run.status, maestro_protocol::AutomationRunStatus::Running) =>
+                {
+                    Err("Stop this run before deleting it".to_string())
+                }
+                Ok(Some(run))
+                    if run
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|session_id| sessions.contains_key(session_id)) =>
+                {
+                    Err(
+                        "This run's session is still open. Close it before deleting the run"
+                            .to_string(),
+                    )
+                }
+                Ok(Some(run)) => {
+                    // Answered from its own task: removing a worktree is a git process, and the
+                    // loop every session's traffic goes through must not wait on one.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        let response =
+                            match crate::automation_runner::discard_run(&store, &run).await {
+                                Ok(()) => MaestroRpcMessage::Response(
+                                    ServerResponse::DeleteAutomationRunOk,
+                                ),
+                                Err(e) => error_response(e),
+                            };
+                        if let Err(e) = send_response(&stdout, &response).await {
+                            send_diag(
+                                "warn",
+                                format!("[automation] could not answer a run deletion: {e}"),
+                            );
+                        }
+                    });
+                    return true;
+                }
+                Err(e) => Err(e),
+            };
+            match deleted {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationRunOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetRunRetention(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let saved = {
+                let conn = store.lock().await;
+                crate::automations::set_retention(&conn, &project_path, req.retention)
+            };
+            match saved {
+                Ok(()) => {
+                    // Answered once trimmed, so the client's next read of the list is already the
+                    // short one. From its own task, because trimming removes worktrees.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        crate::automation_runner::apply_retention(&store, &project_path).await;
+                        let response =
+                            MaestroRpcMessage::Response(ServerResponse::SetRunRetentionOk);
+                        if let Err(e) = send_response(&stdout, &response).await {
+                            send_diag(
+                                "warn",
+                                format!("[automation] could not answer a retention change: {e}"),
+                            );
+                        }
+                    });
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::GetServerStatus) => {
+            let running_runs = match automation_store {
+                Some(store) => crate::automations::count_running(&*store.lock().await),
+                None => 0,
+            };
+            let status = server_status(sessions.len(), running_runs, crate::autostart::current());
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetAutostart(req)) => {
+            let live_sessions = sessions.len();
+            let running_runs = match automation_store {
+                Some(store) => crate::automations::count_running(&*store.lock().await),
+                None => 0,
+            };
+            // systemctl, loginctl and crontab are child processes; none of them belongs on the
+            // loop every session's traffic goes through.
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let set = tokio::task::spawn_blocking(move || crate::autostart::set(req.enabled))
+                    .await
+                    .unwrap_or_else(|e| Err(format!("autostart task failed: {e}")));
+                let response = match set {
+                    Ok(method) => MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(
+                        server_status(live_sessions, running_runs, method),
+                    )),
+                    Err(e) => error_response(e),
+                };
+                if let Err(e) = send_response(&stdout, &response).await {
+                    send_diag("warn", format!("[autostart] could not answer: {e}"));
+                }
+            });
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::GetWebhookSettings) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let status = {
+                let conn = store.lock().await;
+                crate::webhook::status(&conn)
+            };
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetWebhookSettings(settings)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let saved = {
+                let conn = store.lock().await;
+                crate::webhook::save_settings(&conn, &settings)
+            };
+            if let Err(e) = saved {
+                send_or_return!(send_response(stdout, &error_response(e)).await);
+                return true;
+            }
+            // Rebound straight away, so the answer already says whether the new address works.
+            crate::webhook::restart(store).await;
+            let status = {
+                let conn = store.lock().await;
+                crate::webhook::status(&conn)
+            };
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let rolled = {
+                let conn = store.lock().await;
+                crate::automations::roll_webhook_secret(&conn, &req.automation_id)
+            };
+            match rolled {
+                Ok(automation) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(
+                            automation
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let listed = {
+                let conn = store.lock().await;
+                crate::webhook::list_deliveries(&conn, &req.automation_id)
+            };
+            match listed {
+                Ok(deliveries) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(
+                            maestro_protocol::ListWebhookDeliveriesResponse { deliveries },
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        // No store and no project: an expression being typed belongs to nothing yet. This is here
+        // rather than in the editor because the daemon is the only thing that parses cron, and it
+        // must stay that way while it is also the thing that decides when a run happens.
+        MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(req)) => {
+            match crate::automations::validate_schedule(&req.cron, &req.timezone) {
+                Ok(()) => {
+                    let next =
+                        crate::automations::next_due(&req.cron, &req.timezone, chrono::Utc::now())
+                            .map(|due| due.to_rfc3339());
+                    send_or_return!(
+                        send_response(
+                            stdout,
+                            &MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(
+                                maestro_protocol::PreviewScheduleResponse { next },
+                            )),
+                        )
+                        .await
+                    );
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
         }
 
         MaestroRpcMessage::Request(ServerRequest::Spawn(req)) => {
@@ -153,6 +622,7 @@ pub(crate) async fn dispatch_message(
                 result.session.agent_id = req.agent_id;
                 result.session.cwd = req.cwd;
                 result.session.additional_directories = req.additional_directories;
+                result.session.host_meta = req.host_meta;
                 if send_response(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
@@ -227,6 +697,22 @@ pub(crate) async fn dispatch_message(
             crate::mcp_gateway::cancel_session(pending_host_tools, &req.session_id);
             if let Some(session) = sessions.remove(&req.session_id) {
                 let session_agent_id = session.agent_id.clone();
+                // A run's workspace is settled once its session is closed, whoever closed it. The
+                // sweep only closes sessions nobody is attached to, so with a window open this is
+                // the only close there is.
+                let settle = automation_store.map(|store| {
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    let session_id = req.session_id.clone();
+                    async move {
+                        crate::automation_runner::settle_worktree_for_session(
+                            &store,
+                            &stdout,
+                            &session_id,
+                        )
+                        .await;
+                    }
+                });
                 if session
                     .cmd_tx
                     .try_send(SessionCommand::CloseSession)
@@ -256,6 +742,11 @@ pub(crate) async fn dispatch_message(
                                     .remove(&session_agent_id);
                             }
                         }
+                        // After the close has run, never alongside it: the agent holds files open
+                        // under the workspace until then.
+                        if let Some(settle) = settle {
+                            settle.await;
+                        }
                     });
                 } else {
                     // Channel full or closed — force abort and clean up manually.
@@ -265,6 +756,9 @@ pub(crate) async fn dispatch_message(
                         if c.router.is_empty().await {
                             agent_connections.lock().await.remove(&session_agent_id);
                         }
+                    }
+                    if let Some(settle) = settle {
+                        tokio::spawn(settle);
                     }
                 }
             }
@@ -278,7 +772,7 @@ pub(crate) async fn dispatch_message(
 
         MaestroRpcMessage::Request(ServerRequest::PermitResponse(perm_resp)) => {
             if let Some(session) = sessions.get(&perm_resp.session_id) {
-                if let Some(tx) = session
+                if let Some((_request, tx)) = session
                     .pending_permissions
                     .lock()
                     .await
@@ -291,7 +785,7 @@ pub(crate) async fn dispatch_message(
 
         MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(elicit_resp)) => {
             if let Some(session) = sessions.get(&elicit_resp.session_id) {
-                if let Some(tx) = session
+                if let Some((_request, tx)) = session
                     .pending_elicitations
                     .lock()
                     .await
@@ -395,6 +889,7 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Close,
                 req.agent_id,
                 req.session_id,
+                sessions,
                 agent_connections,
                 stdout,
             )
@@ -406,6 +901,7 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Delete,
                 req.agent_id,
                 req.session_id,
+                sessions,
                 agent_connections,
                 stdout,
             )
@@ -431,27 +927,32 @@ pub(crate) async fn dispatch_message(
             else {
                 return true;
             };
-            match pre_initialize_agent(
+            // Reuse whatever is already connected for this agent rather than spawning a second
+            // process and inserting it: the entry holds the shutdown sender, so replacing it killed
+            // the agent the live sessions were talking to. A client attaching to a daemon probes
+            // capabilities, which is exactly when there are sessions to lose.
+            match ensure_and_get_connection(
+                &req.agent_id,
+                agent_connections,
                 &spawn_cmd,
                 &spawn_args_owned,
                 &spawn_env,
                 &req.cwd,
-                Arc::clone(stdout),
+                stdout,
             )
             .await
             {
-                Some(conn) => {
+                Some(handle) => {
                     let response = PreInitializeResponse {
                         agent_id: req.agent_id.clone(),
-                        prompt_capabilities: conn.capabilities.prompt_capabilities.clone(),
-                        supports_session_list: conn.capabilities.supports_session_list,
-                        supports_session_load: conn.capabilities.supports_session_load,
-                        supports_session_close: conn.capabilities.supports_session_close,
-                        supports_session_delete: conn.capabilities.supports_session_delete,
-                        auth_methods: conn.capabilities.auth_methods.clone(),
-                        supports_auth_logout: conn.capabilities.supports_auth_logout,
+                        prompt_capabilities: handle.capabilities.prompt_capabilities.clone(),
+                        supports_session_list: handle.capabilities.supports_session_list,
+                        supports_session_load: handle.capabilities.supports_session_load,
+                        supports_session_close: handle.capabilities.supports_session_close,
+                        supports_session_delete: handle.capabilities.supports_session_delete,
+                        auth_methods: handle.capabilities.auth_methods.clone(),
+                        supports_auth_logout: handle.capabilities.supports_auth_logout,
                     };
-                    agent_connections.lock().await.insert(req.agent_id, conn);
                     send_or_return!(
                         send_response(
                             stdout,

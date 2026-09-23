@@ -62,7 +62,7 @@ fn resolve_command_path(command: &str) -> Result<PathBuf, String> {
 /// Stores the task ID, PTY master handle, writer, and child process handle
 /// for lifecycle management and I/O operations.
 pub struct PtySession {
-    pub task_id: i32,
+    pub session_id: String,
     pub master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     writer: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
     pub child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>>,
@@ -78,7 +78,7 @@ pub struct PtySession {
 /// the caller-provided shell command, not a managed agent CLI.
 ///
 /// # Arguments
-/// * `task_id` - Task ID for tracking
+/// * `session_id` - Session key for tracking
 /// * `command` - Command to execute (e.g., "node")
 /// * `args` - Command arguments
 /// * `working_dir` - Working directory for the process
@@ -86,7 +86,7 @@ pub struct PtySession {
 /// # Returns
 /// `Result<PtySession, String>` containing the PTY session or error
 pub async fn spawn_agent_cli_pty(
-    task_id: i32,
+    session_id: &str,
     command: String,
     args: Vec<String>,
     working_dir: std::path::PathBuf,
@@ -169,7 +169,7 @@ pub async fn spawn_agent_cli_pty(
         .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
 
     Ok(PtySession {
-        task_id,
+        session_id: session_id.to_string(),
         master: Arc::new(Mutex::new(pair.master)),
         writer: Arc::new(Mutex::new(writer)),
         child: Arc::new(Mutex::new(child)),

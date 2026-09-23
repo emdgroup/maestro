@@ -108,7 +108,7 @@ pub enum ExecutionMode {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ActiveSessionInfo {
-    pub session_key: i32,
+    pub session_id: String,
     pub session_name: Option<String>,
     pub agent_id: Option<String>,
     pub execution_mode: ExecutionMode,

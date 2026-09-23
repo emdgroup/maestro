@@ -11,32 +11,32 @@ async fn cleanup_pty_sessions_for_connection(
     app_state: &Arc<crate::core::AppState>,
     _connection_id: i32,
 ) {
-    let mut log_ids_to_cleanup: Vec<i32> = Vec::new();
+    let mut session_ids_to_cleanup: Vec<String> = Vec::new();
 
     {
         let sessions = app_state.ssh.pty_sessions.lock().await;
-        for (log_id, handle) in sessions.iter() {
-            log_ids_to_cleanup.push(*log_id);
+        for (session_id, handle) in sessions.iter() {
+            session_ids_to_cleanup.push(session_id.clone());
             handle.process_ended.store(true, Ordering::Release);
             handle.notify.notify_one();
         }
     }
 
-    if log_ids_to_cleanup.is_empty() {
+    if session_ids_to_cleanup.is_empty() {
         return;
     }
 
     {
         let mut sessions = app_state.ssh.pty_sessions.lock().await;
-        for log_id in &log_ids_to_cleanup {
-            sessions.remove(log_id);
+        for session_id in &session_ids_to_cleanup {
+            sessions.remove(session_id);
         }
     }
 
     {
         let mut meta = app_state.pty.session_meta.lock().await;
-        for log_id in &log_ids_to_cleanup {
-            meta.remove(log_id);
+        for session_id in &session_ids_to_cleanup {
+            meta.remove(session_id);
         }
     }
 
@@ -138,9 +138,10 @@ pub fn spawn_heartbeat_task(
                                             .remove(&connection_id)
                                             .unwrap_or_default();
                                     for s in remaining {
-                                        let _ = restore_state
-                                            .app_handle
-                                            .emit(&format!("acp://session-ended/{}", s.log_id), ());
+                                        let _ = restore_state.app_handle.emit(
+                                            &format!("acp://session-ended/{}", s.session_id),
+                                            (),
+                                        );
                                     }
                                     restore_state.app_handle.emit("sessions-changed", ()).ok();
                                 }
@@ -165,8 +166,8 @@ pub fn spawn_heartbeat_task(
                             .unwrap_or_default();
                         let had_restorable = !remaining.is_empty();
                         for s in remaining {
-                            let _ =
-                                app_handle.emit(&format!("acp://session-ended/{}", s.log_id), ());
+                            let _ = app_handle
+                                .emit(&format!("acp://session-ended/{}", s.session_id), ());
                         }
                         if had_restorable {
                             app_state.app_handle.emit("sessions-changed", ()).ok();

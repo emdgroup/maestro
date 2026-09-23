@@ -16,7 +16,7 @@ export interface SessionHistoryModalProps {
   projectId: number;
   worktrees: WorktreeWithStatus[];
   onClose: () => void;
-  onSessionLoaded: (sessionKey: number) => void;
+  onSessionLoaded: (sessionId: string) => void;
 }
 
 export function SessionHistoryModal(props: SessionHistoryModalProps) {

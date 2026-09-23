@@ -16,10 +16,10 @@ import { useTheme } from "@/providers/ThemeProvider";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalComponentProps {
-  taskId: number;
+  sessionId: string;
 }
 
-export function TerminalComponent({ taskId }: TerminalComponentProps) {
+export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const channelRef = useRef<Channel<string> | null>(null);
@@ -67,7 +67,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     // Register resize handler BEFORE fitAddon.fit() so the initial fit
     // sends the correct dimensions to the backend PTY immediately.
     terminal.onResize(({ cols, rows }) => {
-      api.resizeTerminal(taskId, cols, rows).catch((err) => {
+      api.resizeTerminal(sessionId, cols, rows).catch((err) => {
         console.error("Failed to resize terminal:", err);
       });
     });
@@ -83,10 +83,10 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
     // Attach to backend PTY using execution service.
     // Retry once after 500ms — PTY may still be initializing for interactive sessions.
     const tryAttach = () => {
-      api.attachTerminal(taskId, channel, null).catch((err) => {
+      api.attachTerminal(sessionId, channel, null).catch((err) => {
         console.error("Failed to attach terminal:", err);
         setTimeout(() => {
-          api.attachTerminal(taskId, channel, null).catch((err2) => {
+          api.attachTerminal(sessionId, channel, null).catch((err2) => {
             console.error("Failed to attach terminal (retry):", err2);
             terminal.write(`\r\nError: Failed to attach terminal: ${err2}\r\n`);
           });
@@ -115,7 +115,7 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
 
     // Set up terminal to send input to backend
     terminal.onData((data: string) => {
-      api.sendTerminalInput(taskId, data).catch((err) => {
+      api.sendTerminalInput(sessionId, data).catch((err) => {
         console.error("Failed to send terminal input:", err);
       });
     });
@@ -137,11 +137,11 @@ export function TerminalComponent({ taskId }: TerminalComponentProps) {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       unregisterTerminal(container);
-      api.detachTerminal(taskId).catch(() => {});
+      api.detachTerminal(sessionId).catch(() => {});
       terminal.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId]);
+  }, [sessionId]);
 
   // Update theme in-place when color mode or light/dark changes — no PTY detach/reattach needed.
   useEffect(() => {

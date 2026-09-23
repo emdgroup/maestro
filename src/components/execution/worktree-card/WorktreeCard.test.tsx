@@ -39,7 +39,7 @@ function worktree(overrides: Partial<WorktreeWithStatus> = {}): WorktreeWithStat
 
 function session(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
   return {
-    session_key: 1,
+    session_id: "1",
     session_name: null,
     agent_id: "claude",
     execution_mode: "acp",
@@ -103,7 +103,7 @@ beforeEach(() => {
     activeTab: "worktrees",
     activeTaskId: null,
     pendingAgentId: null,
-    pendingSessionKey: null,
+    pendingSessionId: null,
     pendingWorktreeId: null,
   });
 });
@@ -329,9 +329,9 @@ describe("WorktreeCard footer", () => {
     const user = userEvent.setup();
     renderCard(worktree({ task_id: 7, task_name: "Fix the diff panel" }), {
       sessions: [
-        session({ session_key: 11, session_name: "claude" }),
-        session({ session_key: 12, session_name: "gemini" }),
-        session({ session_key: 13, execution_mode: "pty" }),
+        session({ session_id: "11", session_name: "claude" }),
+        session({ session_id: "12", session_name: "gemini" }),
+        session({ session_id: "13", execution_mode: "pty" }),
       ],
     });
 
@@ -351,7 +351,7 @@ describe("WorktreeCard footer", () => {
   it("still shows a footer on the repository directory when an agent runs there", async () => {
     const user = userEvent.setup();
     renderCard(worktree({ path: "/repo", branch_name: "main" }), {
-      sessions: [session({ session_key: 21, session_name: "claude", cwd: "/repo" })],
+      sessions: [session({ session_id: "21", session_name: "claude", cwd: "/repo" })],
     });
 
     await user.click(screen.getByRole("button", { name: "Show what uses this worktree" }));
@@ -363,8 +363,8 @@ describe("WorktreeCard footer", () => {
     const user = userEvent.setup();
     renderCard(worktree(), {
       sessions: [
-        session({ session_key: 11, session_name: "claude" }),
-        session({ session_key: 12, session_name: "gemini" }),
+        session({ session_id: "11", session_name: "claude" }),
+        session({ session_id: "12", session_name: "gemini" }),
       ],
     });
 
@@ -373,7 +373,7 @@ describe("WorktreeCard footer", () => {
 
     const state = useNavigationStore.getState();
     expect(state.activeTab).toBe("agents");
-    expect(state.pendingSessionKey).toBe(12);
+    expect(state.pendingSessionId).toBe("12");
   });
 
   it("navigates to the task", async () => {

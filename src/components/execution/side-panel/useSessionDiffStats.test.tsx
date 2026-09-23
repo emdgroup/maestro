@@ -74,7 +74,7 @@ describe("useSessionDiffStats", () => {
     );
     statsByTarget.current.set("Head", stats({ file_count: 2, untracked_count: 1 }));
 
-    const { result } = renderHook(() => useSessionDiffStats(58, true));
+    const { result } = renderHook(() => useSessionDiffStats("58", true));
 
     expect(result.current.scope).toBe("session");
     // Untracked files are part of the change, so both counts include them.
@@ -94,7 +94,7 @@ describe("useSessionDiffStats", () => {
     statsByTarget.current.set("Commit:abc123", sinceStart);
     statsByTarget.current.set("Head", stats({ file_count: 12 }));
 
-    const { result, rerender } = renderHook(() => useSessionDiffStats(58, true));
+    const { result, rerender } = renderHook(() => useSessionDiffStats("58", true));
     expect(result.current.changedFilesCount).toBe(12);
     expect(result.current.uncommittedFilesCount).toBe(12);
 
@@ -111,7 +111,7 @@ describe("useSessionDiffStats", () => {
     meta.current = { ...meta.current, session_start_sha: null };
     statsByTarget.current.set("Head", stats({ file_count: 3 }));
 
-    const { result } = renderHook(() => useSessionDiffStats(58, true));
+    const { result } = renderHook(() => useSessionDiffStats("58", true));
 
     expect(result.current.scope).toBe("uncommitted");
     expect(result.current.changedFilesCount).toBe(3);
@@ -120,7 +120,7 @@ describe("useSessionDiffStats", () => {
   });
 
   it("polls session meta only while the session is on screen, so an orphaned sha is noticed", () => {
-    const { rerender } = renderHook(({ poll }) => useSessionDiffStats(58, poll), {
+    const { rerender } = renderHook(({ poll }) => useSessionDiffStats("58", poll), {
       initialProps: { poll: false },
     });
     expect(metaOptions.current).toEqual({ refetchInterval: false });
@@ -133,7 +133,7 @@ describe("useSessionDiffStats", () => {
   });
 
   it("refetches both stats when the session comes back on screen", () => {
-    const { rerender } = renderHook(({ poll }) => useSessionDiffStats(58, poll), {
+    const { rerender } = renderHook(({ poll }) => useSessionDiffStats("58", poll), {
       initialProps: { poll: false },
     });
     expect(refetches.current).toEqual([]);
@@ -151,7 +151,7 @@ describe("useSessionDiffStats", () => {
   it("reports a failed git diff rather than reading it as an empty one", () => {
     statsError.current = true;
 
-    const { result } = renderHook(() => useSessionDiffStats(58, true));
+    const { result } = renderHook(() => useSessionDiffStats("58", true));
 
     expect(result.current.isError).toBe(true);
     expect(result.current.changedFilesCount).toBeNull();

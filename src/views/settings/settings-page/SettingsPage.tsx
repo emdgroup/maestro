@@ -15,6 +15,8 @@ import { AppearanceSection } from "./AppearanceSection";
 import { ProjectAppearanceSection } from "./ProjectAppearanceSection";
 import { NotificationsSection } from "./NotificationsSection";
 import { ConcurrencySection } from "./ConcurrencySection";
+import { BackgroundServerSection } from "./BackgroundServerSection";
+import { WebhooksSection } from "./WebhooksSection";
 import { DiagnosticsSection } from "./DiagnosticsSection";
 import { AgentProfilesSection } from "./AgentProfilesSection";
 import { IssueTrackingSection } from "./IssueTrackingSection";
@@ -166,6 +168,8 @@ function ConnectionScopePane({
   return (
     <div className="space-y-6">
       {pageId === "concurrency" && <ConcurrencySection connection={connection} />}
+      {pageId === "background-server" && <BackgroundServerSection connection={connection} />}
+      {pageId === "webhooks" && <WebhooksSection connection={connection} />}
     </div>
   );
 }

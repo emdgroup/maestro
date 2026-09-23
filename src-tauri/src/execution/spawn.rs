@@ -44,7 +44,7 @@ fn resolve_windows_shell() -> String {
 /// Spawn a user-controlled interactive shell on a specific branch.
 ///
 /// This creates an execution log with NULL task_id, resolves an existing worktree for the
-/// given branch, and spawns an interactive PTY session keyed by log_id. It does not start
+/// given branch, and spawns an interactive PTY session keyed by session_id. It does not start
 /// or manage an AI agent; managed agents use ACP.
 ///
 /// # Arguments
@@ -58,7 +58,7 @@ fn resolve_windows_shell() -> String {
 /// * `task_description` - Optional task description to inject into the PTY 2s after spawn
 ///
 /// # Returns
-/// Execution log ID (used as PTY session key for attach_terminal)
+/// The new session's id, which `attach_terminal` takes.
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
@@ -71,7 +71,7 @@ pub async fn spawn_interactive_execution(
     worktree_id: Option<i32>,
     task_id: Option<i32>,
     _task_description: Option<String>,
-) -> Result<i32, String> {
+) -> Result<String, String> {
     // Resolve project and git connection (local vs remote SSH) — same pattern as create_worktree
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
@@ -123,10 +123,7 @@ pub async fn spawn_interactive_execution(
     };
 
     let now = chrono::Utc::now().to_rfc3339();
-    let log_id = app_state
-        .pty
-        .session_counter
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let session_id = crate::core::new_session_id();
 
     if let Some(tid) = task_id {
         let conn = app_state
@@ -168,7 +165,7 @@ pub async fn spawn_interactive_execution(
             .await
             .ok_or("SSH session not active. Connect to the remote host first")?;
 
-        let pty_handle = ssh_session.spawn_remote_pty(80, 24, log_id).await?;
+        let pty_handle = ssh_session.spawn_remote_pty(80, 24, &session_id).await?;
 
         // cd into the worktree directory and clear the screen.
         // Single-quote the path to prevent command injection.
@@ -187,7 +184,7 @@ pub async fn spawn_interactive_execution(
             .pty_sessions
             .lock()
             .await
-            .insert(log_id, pty_handle);
+            .insert(session_id.clone(), pty_handle);
     } else if let crate::models::GitConnection::Wsl { ref distro, .. } = git_conn {
         let shell = "wsl.exe".to_string();
         let args = vec![
@@ -202,11 +199,14 @@ pub async fn spawn_interactive_execution(
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("C:\\"));
         let pty_session =
-            crate::execution::spawn_agent_cli_pty(log_id, shell, args, windows_cwd).await?;
+            crate::execution::spawn_agent_cli_pty(&session_id, shell, args, windows_cwd).await?;
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+        sessions.insert(
+            session_id.clone(),
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
         drop(sessions);
     } else if let crate::models::GitConnection::Docker {
         ref container_name, ..
@@ -243,13 +243,20 @@ pub async fn spawn_interactive_execution(
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| std::path::PathBuf::from(fallback))
         };
-        let pty_session =
-            crate::execution::spawn_agent_cli_pty(log_id, cli.binary().to_string(), args, host_cwd)
-                .await?;
+        let pty_session = crate::execution::spawn_agent_cli_pty(
+            &session_id,
+            cli.binary().to_string(),
+            args,
+            host_cwd,
+        )
+        .await?;
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+        sessions.insert(
+            session_id.clone(),
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
         drop(sessions);
     } else {
         #[cfg(windows)]
@@ -257,7 +264,7 @@ pub async fn spawn_interactive_execution(
         #[cfg(not(windows))]
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
         let pty_session = crate::execution::spawn_agent_cli_pty(
-            log_id,
+            &session_id,
             shell,
             vec![],
             std::path::PathBuf::from(&worktree_abs_path),
@@ -266,7 +273,10 @@ pub async fn spawn_interactive_execution(
 
         let app_state_arc: Arc<AppState> = (*app_state).clone();
         let mut sessions = app_state_arc.pty.sessions.lock().await;
-        sessions.insert(log_id, Arc::new(tokio::sync::Mutex::new(pty_session)));
+        sessions.insert(
+            session_id.clone(),
+            Arc::new(tokio::sync::Mutex::new(pty_session)),
+        );
         drop(sessions);
     }
 
@@ -282,9 +292,14 @@ pub async fn spawn_interactive_execution(
             cwd: worktree_abs_path.clone(),
             project_id: Some(project_id),
         };
-        app_state.pty.session_meta.lock().await.insert(log_id, meta);
+        app_state
+            .pty
+            .session_meta
+            .lock()
+            .await
+            .insert(session_id.clone(), meta);
     }
     app_state.app_handle.emit("sessions-changed", ()).ok();
 
-    Ok(log_id)
+    Ok(session_id)
 }

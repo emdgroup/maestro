@@ -38,7 +38,7 @@ const COMPOSER_HEIGHT = 210;
 const COMMENT_HEIGHT = 120;
 
 interface CanvasAnnotationLayerProps {
-  sessionKey: number;
+  sessionId: string;
   /** The surface on screen. Notes are keyed to it, and the bar can span several. */
   surface: CanvasSurface;
   /** The frame's last report of its own elements. The only source of canvas geometry. */
@@ -78,7 +78,7 @@ type Pending = {
  * surface chrome, and navigating between notes needs the scroller this component already holds.
  */
 export function CanvasAnnotationLayer({
-  sessionKey,
+  sessionId,
   surface,
   frameNodes,
   frame,
@@ -92,7 +92,7 @@ export function CanvasAnnotationLayer({
   const scrollRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const all = useSessionAnnotations(sessionKey, "canvas") as CanvasAnnotation[];
+  const all = useSessionAnnotations(sessionId, "canvas") as CanvasAnnotation[];
   const { addAnnotation, updateAnnotation, removeAnnotations, clearAnnotationCapture } =
     useAnnotationStore();
 
@@ -390,7 +390,7 @@ export function CanvasAnnotationLayer({
         pending.ids.length > 0
           ? await frame.current?.describe(pending.ids, MAX_SUBTREE_CHARS)
           : undefined;
-      addAnnotation(sessionKey, {
+      addAnnotation(sessionId, {
         id: crypto.randomUUID(),
         kind: "canvas",
         surfaceId: surface.surfaceId,
@@ -403,7 +403,7 @@ export function CanvasAnnotationLayer({
       });
       setPending(null);
     },
-    [pending, nodes, addAnnotation, sessionKey, surface, frame],
+    [pending, nodes, addAnnotation, sessionId, surface, frame],
   );
 
   /** Reveal one note: page to its surface if needed, scroll to it, and open its bubble. */
@@ -514,7 +514,7 @@ export function CanvasAnnotationLayer({
         <div className="flex-1 min-w-0 flex items-center">{header.title}</div>
         <div className="flex items-center gap-1 shrink-0">
           <AnnotationBar
-            sessionKey={sessionKey}
+            sessionId={sessionId}
             kind="canvas"
             onSend={onSend}
             sendDisabled={sendDisabled}
@@ -675,11 +675,11 @@ export function CanvasAnnotationLayer({
               <PendingCommentBlock
                 bare
                 imageDataUrl={viewing.shotDataUrl}
-                onRemoveImage={() => clearAnnotationCapture(sessionKey, viewing.id)}
+                onRemoveImage={() => clearAnnotationCapture(sessionId, viewing.id)}
                 text={viewing.text}
-                onEdit={(text) => updateAnnotation(sessionKey, viewing.id, text)}
+                onEdit={(text) => updateAnnotation(sessionId, viewing.id, text)}
                 onRemove={() => {
-                  removeAnnotations(sessionKey, [viewing.id]);
+                  removeAnnotations(sessionId, [viewing.id]);
                   setViewingId(null);
                 }}
                 onSend={() => {

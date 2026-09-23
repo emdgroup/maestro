@@ -6,7 +6,8 @@ import type { Project } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
 import { useNavigationStore, type ViewType } from "@/store/navigationStore";
 
-const VALID_STARTUP_TABS = new Set<ViewType>(["kanban", "agents", "worktrees", "settings"]);
+// A project that stored `settings` before it became a dialog falls through to the default tab.
+const VALID_STARTUP_TABS = new Set<ViewType>(["kanban", "agents", "worktrees", "collections"]);
 
 export async function applyProjectStartupTab(projectId: number): Promise<void> {
   try {

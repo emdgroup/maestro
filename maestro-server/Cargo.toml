@@ -34,6 +34,21 @@ ignore = "0.4"
 which = "8.0.2"
 fs2 = "0.4"
 uuid = { version = "1", features = ["v4"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+chrono-tz = "0.10.4"
+cron = "0.17.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+iana-time-zone = "0.1.65"
+# The webhook listener. All already in the workspace lockfile through the app's own dependencies,
+# so no new crate enters the supply chain: an HTTP parser facing the network is not one to hand-roll.
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+subtle = "2"
 
 [dev-dependencies]
 tempfile = "3"

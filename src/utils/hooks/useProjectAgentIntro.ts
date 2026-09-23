@@ -56,7 +56,7 @@ export function useProjectAgentIntro(
   startupTab: string | null | undefined,
   settingsResolved: boolean,
 ) {
-  const { setActiveTab, setPendingSettingsPage } = useNavigationActions();
+  const { openSettings } = useNavigationActions();
 
   useEffect(() => {
     if (projectId == null) return;
@@ -73,7 +73,6 @@ export function useProjectAgentIntro(
     localStorage.setItem(key, "1");
     if (!decision.show) return;
 
-    setActiveTab("settings");
-    setPendingSettingsPage("agents");
-  }, [projectId, startupTab, settingsResolved, setActiveTab, setPendingSettingsPage]);
+    openSettings("agents");
+  }, [projectId, startupTab, settingsResolved, openSettings]);
 }

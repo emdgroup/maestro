@@ -24,7 +24,6 @@ import {
 } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useSettings, useSaveSettings } from "@/services/settings.service";
-import { useSessionNotifications } from "@/hooks/useSessionNotifications";
 import type { ActiveSessionInfo, ConnectionKey } from "@/types/bindings";
 import { useBoardStore, useBoardActions } from "@/store/boardStore";
 import { api } from "@/lib/tauri-utils";
@@ -65,24 +64,22 @@ function connIdMatches(connection: ConnectionKey, connId: string): boolean {
 export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, connection }) => {
   const { data: sessions = [] } = useActiveSessionsQuery(projectId);
   const pendingAgentId = usePendingAgentId();
-  const pendingSessionKey = usePendingSessionKey();
+  const pendingSessionId = usePendingSessionKey();
   const { clearPendingAgent, clearPendingSession } = useNavigationActions();
-  const [selectedSessionKey, setSelectedSessionKey] = useState<number | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSpawnDialog, setShowSpawnDialog] = useState(false);
-  const [lastSpawnedKey, setLastSpawnedKey] = useState<number | null>(null);
+  const [lastSpawnedSessionId, setLastSpawnedSessionId] = useState<string | null>(null);
   // Worktrees this view created for a session, removed again on close when nothing was done in
   // them. Deliberately in-memory: after a reload the worktree is indistinguishable from one the
   // user made themselves, and deleting it then would be a surprise.
-  const autoWorktrees = useRef(new Map<number, CreatedWorktree>());
+  const autoWorktrees = useRef(new Map<string, CreatedWorktree>());
 
   const { data: settings } = useSettings();
   const saveSettings = useSaveSettings({ successToast: false });
-
-  useSessionNotifications(sessions, settings);
 
   const thinkingVisibility = settings?.thinking_visibility ?? "auto";
   const toolCallsVisible = settings?.tool_call_visibility !== "hide";
@@ -129,7 +126,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       if ((discovery?.agents?.length ?? 0) > 0) setShowHistory((v) => !v);
     },
     "agents-close": () => {
-      const session = visibleSessions.find((s) => s.session_key === selectedSessionKey);
+      const session = visibleSessions.find((s) => s.session_id === selectedSessionId);
       if (session) handleCloseSession(session);
     },
   });
@@ -166,20 +163,21 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           ([, e]) => e.terminalState === "running" && connIdMatches(e.connection, connId),
         );
         if (!found) return;
-        const taskId = Number(found[0]);
+        // A task's entry is keyed by its task id, a manual session's by its session id.
+        const authKey = found[0];
         if (event.payload.exit_code === 0) {
-          const lastPrompt = authRequiredTasksRef.current[taskId]?.lastPrompt;
-          clearAuthRequired(taskId);
+          const lastPrompt = authRequiredTasksRef.current[authKey]?.lastPrompt;
+          clearAuthRequired(authKey);
           const isManualSession = sessionsRef.current.some(
-            (s) => s.session_key === taskId && !s.task_id,
+            (s) => s.session_id === authKey && !s.task_id,
           );
           if (isManualSession) {
-            setPendingSessionRetry({ sessionKey: taskId, lastPrompt: lastPrompt ?? null });
+            setPendingSessionRetry({ sessionId: authKey, lastPrompt: lastPrompt ?? null });
           } else {
-            setPendingAuthRetry(taskId);
+            setPendingAuthRetry(Number(authKey));
           }
         } else {
-          setAuthTerminalIdle(taskId);
+          setAuthTerminalIdle(authKey);
         }
       },
     ).catch(console.error);
@@ -208,14 +206,14 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   useEffect(() => {
     if (!pendingSessionRetry || !projectId) return;
-    const { sessionKey, lastPrompt } = pendingSessionRetry;
+    const { sessionId, lastPrompt } = pendingSessionRetry;
     clearPendingSessionRetry();
     void (async () => {
-      const session = sessionsRef.current.find((s) => s.session_key === sessionKey);
+      const session = sessionsRef.current.find((s) => s.session_id === sessionId);
       if (!session) return;
-      const meta = await api.getAcpSessionMeta(sessionKey).catch(() => null);
+      const meta = await api.getAcpSessionMeta(sessionId).catch(() => null);
       if (!meta) return;
-      await api.discardFailedSpawn(sessionKey).catch(() => {});
+      await api.discardFailedSpawn(sessionId).catch(() => {});
       const result = await spawnAcpMutation.mutateAsync({
         agentId: session.agent_id ?? "",
         cwd: meta.cwd,
@@ -224,17 +222,17 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         connection,
         worktreeBranch: session.branch_name ?? null,
       });
-      setSelectedSessionKey(result.log_id);
+      setSelectedSessionId(result.session_id);
       if (lastPrompt != null) {
-        const logId = result.log_id;
+        const sessionId = result.session_id;
         void (async () => {
-          const unlisten = await listen<null>(`acp://spawn-ok/${logId}`, async () => {
+          const unlisten = await listen<null>(`acp://spawn-ok/${sessionId}`, async () => {
             unlisten();
             try {
               if (Array.isArray(lastPrompt)) {
-                await api.sendAcpPromptStructured(logId, lastPrompt);
+                await api.sendAcpPromptStructured(sessionId, lastPrompt);
               } else {
-                await api.sendAcpPrompt(logId, lastPrompt as string);
+                await api.sendAcpPrompt(sessionId, lastPrompt as string);
               }
             } catch (e) {
               console.error("[auth-retry] sendAcpPrompt failed:", e);
@@ -259,26 +257,24 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
   // once the list loads. Both are adjusted during render so the panel opens on the right
   // session in the frame it appears. Clearing the shared navigation store stays in an
   // effect, because writing another component's state during render is not safe.
-  // A session key names one session exactly, so it wins over the task-keyed route, which lands on
+  // A session id names one session exactly, so it wins over the task-keyed route, which lands on
   // whichever of a task's sessions happens to come first.
   const linkedByKey =
-    pendingSessionKey != null
-      ? visibleSessions.find((s) => s.session_key === pendingSessionKey)
+    pendingSessionId != null
+      ? visibleSessions.find((s) => s.session_id === pendingSessionId)
       : undefined;
   const linkedByTask = pendingAgentId
     ? visibleSessions.find((s) => String(s.task_id) === pendingAgentId)
     : undefined;
-  const deepLinkedSessionKey = (linkedByKey ?? linkedByTask)?.session_key ?? null;
+  const deepLinkedSessionKey = (linkedByKey ?? linkedByTask)?.session_id ?? null;
   const defaultSessionKey =
-    selectedSessionKey == null && visibleSessions.length > 0
-      ? visibleSessions[0].session_key
-      : null;
-  const targetSessionKey = deepLinkedSessionKey ?? defaultSessionKey;
+    selectedSessionId == null && visibleSessions.length > 0 ? visibleSessions[0].session_id : null;
+  const targetSessionId = deepLinkedSessionKey ?? defaultSessionKey;
 
-  const [appliedSessionKey, setAppliedSessionKey] = useState<number | null>(targetSessionKey);
-  if (appliedSessionKey !== targetSessionKey) {
-    setAppliedSessionKey(targetSessionKey);
-    if (targetSessionKey != null) setSelectedSessionKey(targetSessionKey);
+  const [appliedSessionId, setAppliedSessionId] = useState<string | null>(targetSessionId);
+  if (appliedSessionId !== targetSessionId) {
+    setAppliedSessionId(targetSessionId);
+    if (targetSessionId != null) setSelectedSessionId(targetSessionId);
   }
 
   useEffect(() => {
@@ -292,7 +288,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       branchName: string | null,
       taskId: number | null,
       embedded = false,
-    ): Promise<number | null> => {
+    ): Promise<string | null> => {
       if (projectId == null || repoPath == null) return null;
       let resolvedBranch = branchName;
       if (resolvedBranch == null && taskId != null) {
@@ -316,20 +312,20 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
 
   function handleCloseSession(session: ActiveSessionInfo) {
     cancelMutation.mutate(
-      { sessionKey: session.session_key, executionMode: session.execution_mode },
+      { sessionId: session.session_id, executionMode: session.execution_mode },
       {
         onSuccess: () => {
-          if (selectedSessionKey === session.session_key) {
-            const remaining = visibleSessions.filter((s) => s.session_key !== session.session_key);
-            setSelectedSessionKey(remaining.length > 0 ? remaining[0].session_key : null);
+          if (selectedSessionId === session.session_id) {
+            const remaining = visibleSessions.filter((s) => s.session_id !== session.session_id);
+            setSelectedSessionId(remaining.length > 0 ? remaining[0].session_id : null);
           }
-          const auto = autoWorktrees.current.get(session.session_key);
+          const auto = autoWorktrees.current.get(session.session_id);
           if (!auto) {
             console.debug(
-              `[worktree-cleanup] session ${session.session_key} did not create a worktree`,
+              `[worktree-cleanup] session ${session.session_id} did not create a worktree`,
             );
           } else if (projectId != null) {
-            autoWorktrees.current.delete(session.session_key);
+            autoWorktrees.current.delete(session.session_id);
             void api
               .cleanupWorktreeIfClean(projectId, auto.path, auto.branchName, auto.id)
               .then((keptBecause) => {
@@ -494,9 +490,9 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
       <div className="flex-1 min-h-0 relative">
         <AgentMonitor
           sessions={visibleSessions}
-          selectedSessionKey={selectedSessionKey}
-          onSelect={setSelectedSessionKey}
-          newSessionKey={lastSpawnedKey}
+          selectedSessionId={selectedSessionId}
+          onSelect={setSelectedSessionId}
+          newSessionId={lastSpawnedSessionId}
           search={search}
           agentIcons={agentIcons}
           agentNames={agentNames}
@@ -515,7 +511,7 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
           worktrees={worktrees}
           onClose={() => setShowHistory(false)}
           onSessionLoaded={(key) => {
-            setSelectedSessionKey(key);
+            setSelectedSessionId(key);
             setShowHistory(false);
           }}
         />
@@ -529,8 +525,8 @@ export const AgentsView: React.FC<AgentsViewProps> = ({ projectId, repoPath, con
         connection={connection}
         worktrees={worktrees}
         onSuccess={(key, createdWorktree) => {
-          setSelectedSessionKey(key);
-          setLastSpawnedKey(key);
+          setSelectedSessionId(key);
+          setLastSpawnedSessionId(key);
           if (createdWorktree) autoWorktrees.current.set(key, createdWorktree);
         }}
       />

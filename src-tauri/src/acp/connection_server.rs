@@ -104,6 +104,369 @@ pub async fn query_list_agents_via_connection_server(
     .await
 }
 
+/// Ask every server this app is connected to to wind down, and forget them.
+///
+/// Exists for the updater. A resident server holds its own binary open, and Windows will not let
+/// the image of a running process be overwritten, so an install that does not do this fails — the
+/// same reason the old child-process servers were killed on quit.
+///
+/// Every running agent session ends with them, which is why nothing calls this without telling the
+/// user first. Fire and forget: there is no acknowledgement, and a server that does not hear it
+/// leaves the install to fail as it would have anyway.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_resident_servers(
+    app_state: tauri::State<'_, Arc<crate::core::AppState>>,
+) -> Result<u32, String> {
+    let servers: Vec<_> = {
+        let mut servers = app_state.acp.connection_servers.lock().await;
+        servers.drain().collect()
+    };
+    let request = serialize_message(&MaestroRpcMessage::Request(ServerRequest::Shutdown))?;
+
+    let mut stopped = 0;
+    for (connection_key, server) in servers {
+        match server.writer_tx.send(request.clone()).await {
+            Ok(()) => stopped += 1,
+            Err(_) => log::warn!("could not reach the server on {connection_key:?} to stop it"),
+        }
+    }
+    app_state.acp.sessions.lock().await.clear();
+    log::info!("asked {stopped} resident server(s) to stop");
+    Ok(stopped)
+}
+
+/// Ask the connection's server which sessions it is running right now.
+///
+/// Not `SessionList`, which asks an *agent* what conversations it has stored on disk. This asks
+/// the server what is alive in its own process, which is what a freshly started app needs to know
+/// about a server that outlived the previous run.
+pub async fn query_live_sessions_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListLiveSessionsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.live_sessions.clone(),
+        "ListLiveSessions already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(
+            maestro_protocol::ListLiveSessionsRequest {},
+        )),
+        15,
+        "ListLiveSessions via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Wherever the server keeps this project's automations, ask it for them.
+///
+/// The path goes as the client knows it and comes back canonicalized: the server is the process on
+/// the machine that path exists on, so it is the only one that can resolve it.
+pub async fn query_list_automations_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListAutomationsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.automations.clone(),
+        "ListAutomations already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListAutomations(
+            maestro_protocol::ListAutomationsRequest { project_path },
+        )),
+        15,
+        "ListAutomations via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_save_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    automation: maestro_protocol::Automation,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::Automation, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.save_automation.clone(),
+        "SaveAutomation already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SaveAutomation(
+            maestro_protocol::SaveAutomationRequest {
+                project_path,
+                automation,
+            },
+        )),
+        15,
+        "SaveAutomation via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_delete_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.delete_automation.clone(),
+        "DeleteAutomation already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomation(
+            maestro_protocol::DeleteAutomationRequest { automation_id },
+        )),
+        15,
+        "DeleteAutomation via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_delete_automation_run_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    run_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.delete_automation_run.clone(),
+        "DeleteAutomationRun already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(
+            maestro_protocol::DeleteAutomationRunRequest { run_id },
+        )),
+        // Removing a worktree is a git process over a whole checkout.
+        60,
+        "DeleteAutomationRun via connection server timed out after 60s",
+    )
+    .await
+}
+
+pub async fn query_set_run_retention_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    retention: maestro_protocol::RunRetention,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.set_run_retention.clone(),
+        "SetRunRetention already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SetRunRetention(
+            maestro_protocol::SetRunRetentionRequest {
+                project_path,
+                retention,
+            },
+        )),
+        // Answered after trimming, which removes worktrees.
+        60,
+        "SetRunRetention via connection server timed out after 60s",
+    )
+    .await
+}
+
+/// Read this machine's webhook listener settings, or change them when `settings` is given. Both
+/// answer with the listener's state after the change.
+pub async fn query_webhook_settings_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    settings: Option<maestro_protocol::WebhookSettings>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::WebhookStatus, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.webhook_settings.clone(),
+        "Webhook settings already in progress",
+        MaestroRpcMessage::Request(match settings {
+            Some(settings) => ServerRequest::SetWebhookSettings(settings),
+            None => ServerRequest::GetWebhookSettings,
+        }),
+        15,
+        "Webhook settings via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// What the connection's server is, or with `autostart`, set it to start with its machine first.
+pub async fn query_server_status_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    autostart: Option<bool>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ServerStatus, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.server_status.clone(),
+        "Server status already in progress",
+        MaestroRpcMessage::Request(match autostart {
+            Some(enabled) => {
+                ServerRequest::SetAutostart(maestro_protocol::SetAutostartRequest { enabled })
+            }
+            None => ServerRequest::GetServerStatus,
+        }),
+        30,
+        "Server status via connection server timed out after 30s",
+    )
+    .await
+}
+
+/// Stop the connection's server, and with it every session and run on it.
+///
+/// The server is forgotten first, so the reader sees the pipe close as a teardown rather than a
+/// lost connection, and the call waits for that close: a project reopened before the old server
+/// had gone would attach to it just as it exited.
+pub async fn stop_connection_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    let server = app_state
+        .acp
+        .connection_servers
+        .lock()
+        .await
+        .remove(&connection_key)
+        .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
+    let request = serialize_message(&MaestroRpcMessage::Request(ServerRequest::Shutdown))?;
+    server
+        .writer_tx
+        .send(request)
+        .await
+        .map_err(|_| "The server could not be reached to stop it".to_string())?;
+    let ended =
+        tokio::time::timeout(std::time::Duration::from_secs(20), server.ended.notified()).await;
+    if ended.is_err() {
+        log::warn!("[acp] server on {connection_key:?} did not close after Shutdown");
+    }
+    // Dropping it kills a local relay still running, and with it any reconnect it had in mind.
+    drop(server);
+    Ok(())
+}
+
+pub async fn query_roll_webhook_secret_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::Automation, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.roll_webhook_secret.clone(),
+        "RollWebhookSecret already in progress",
+        MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(
+            maestro_protocol::AutomationIdRequest { automation_id },
+        )),
+        15,
+        "RollWebhookSecret via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_webhook_deliveries_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListWebhookDeliveriesResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.webhook_deliveries.clone(),
+        "ListWebhookDeliveries already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(
+            maestro_protocol::AutomationIdRequest { automation_id },
+        )),
+        15,
+        "ListWebhookDeliveries via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Ask the server to start an automation now.
+///
+/// There is no reply to wait for beyond the request being accepted: the run announces itself on
+/// `AutomationRunChanged`, exactly as a scheduled one does.
+pub async fn query_run_automation_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    let writer_tx = {
+        let servers = app_state.acp.connection_servers.lock().await;
+        servers
+            .get(&connection_key)
+            .map(|server| server.writer_tx.clone())
+            .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?
+    };
+    let bytes = serialize_message(&MaestroRpcMessage::Request(ServerRequest::RunAutomation(
+        maestro_protocol::RunAutomationRequest { automation_id },
+    )))?;
+    writer_tx
+        .send(bytes)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())
+}
+
+/// When an expression the user is still typing would next come round.
+///
+/// Short timeout on purpose: this fires while somebody edits a field, and a preview nobody is
+/// waiting for any more is worth less than the editor staying responsive.
+pub async fn query_preview_schedule_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    cron: String,
+    timezone: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::PreviewScheduleResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.preview_schedule.clone(),
+        "PreviewSchedule already in progress",
+        MaestroRpcMessage::Request(ServerRequest::PreviewSchedule(
+            maestro_protocol::PreviewScheduleRequest { cron, timezone },
+        )),
+        5,
+        "PreviewSchedule via connection server timed out after 5s",
+    )
+    .await
+}
+
+pub async fn query_automation_runs_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    limit: Option<u32>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListAutomationRunsResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.automation_runs.clone(),
+        "ListAutomationRuns already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListAutomationRuns(
+            maestro_protocol::ListAutomationRunsRequest {
+                project_path,
+                limit,
+            },
+        )),
+        15,
+        "ListAutomationRuns via connection server timed out after 15s",
+    )
+    .await
+}
+
 /// Send `SessionList` through the running connection server and return the result.
 pub async fn query_session_list_via_server(
     connection_key: crate::acp::ConnectionKey,
@@ -368,12 +731,14 @@ pub async fn spawn_connection_server(
     let pending = PendingChannels::new();
     let last_ping_at = Arc::new(AtomicU64::new(0));
     let writer_tx_for_reader = write_tx.clone();
+    let ended = Arc::new(tokio::sync::Notify::new());
 
     let connection_server = ConnectionServer {
         child,
         writer_tx: write_tx,
         pending: pending.clone(),
         last_ping_at: Arc::clone(&last_ping_at),
+        ended: Arc::clone(&ended),
     };
 
     // Re-check under lock to avoid double-spawn race.
@@ -393,6 +758,7 @@ pub async fn spawn_connection_server(
         app_state.app_handle.clone(),
         Arc::clone(app_state),
         pending,
+        ended,
     );
 
     Ok(())

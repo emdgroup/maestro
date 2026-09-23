@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 5;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -64,6 +64,42 @@ pub enum ServerRequest {
     PermitResponse(PermissionResponse),
     ElicitationResponse(ElicitationResponse),
     ListAgents(ListAgentsRequest),
+    /// What is this server running right now. Asked by a client that has just attached.
+    ListLiveSessions(ListLiveSessionsRequest),
+    /// Wind down: end every session and exit.
+    ///
+    /// Asked for before an update installs, because a resident server holds its own binary open
+    /// and Windows will not overwrite the image of a running process. There is no acknowledgement
+    /// to wait for: the connection closing is the answer.
+    Shutdown,
+    /// Every automation stored for one project, with the next time each comes round.
+    ListAutomations(ListAutomationsRequest),
+    /// Create or replace one automation, by id.
+    SaveAutomation(SaveAutomationRequest),
+    DeleteAutomation(DeleteAutomationRequest),
+    /// Fire one now, whatever its schedule says.
+    RunAutomation(RunAutomationRequest),
+    /// What this project's automations have done, newest first.
+    ListAutomationRuns(ListAutomationRunsRequest),
+    /// Forget one run, removing the worktree and branch it made if they are still there.
+    DeleteAutomationRun(DeleteAutomationRunRequest),
+    /// How much run history this project keeps. Applied straight away, and after every run.
+    SetRunRetention(SetRunRetentionRequest),
+    /// This machine's webhook listener: how it is set up, and whether it is listening.
+    GetWebhookSettings,
+    /// Change the listener, which is restarted on the new address straight away.
+    SetWebhookSettings(WebhookSettings),
+    /// Replace an automation's webhook secret. The old one stops working at once.
+    RollWebhookSecret(AutomationIdRequest),
+    /// An automation's last deliveries, newest first.
+    ListWebhookDeliveries(AutomationIdRequest),
+    /// What this server is: since when, which version, and how busy.
+    GetServerStatus,
+    /// Start this server with the machine, or stop doing so. Linux only: on the machines the app
+    /// runs on, the app writes the login entry itself.
+    SetAutostart(SetAutostartRequest),
+    /// When an expression would next come round. For a schedule being written, not a stored one.
+    PreviewSchedule(PreviewScheduleRequest),
     SetModel(SetModelRequest),
     SetMode(SetModeRequest),
     SetConfigOption(SetConfigOptionRequest),
@@ -133,6 +169,38 @@ pub const MCP_GATEWAY_SESSION_ENV: &str = "MAESTRO_MCP_SESSION";
 /// Name of the MCP server Maestro injects. A `.mcp.json` entry using it is skipped.
 pub const MCP_SERVER_NAME: &str = "maestro";
 
+/// Directory holding the resident server's lock and runtime files.
+///
+/// Set by the host for a local connection, so a development build pointed at its own
+/// `MAESTRO_DATA_DIR` gets its own daemon rather than contending with the installed app. Unset on
+/// a remote machine, where there is no such directory and the daemon falls back to
+/// `~/.maestro/daemon`.
+pub const DAEMON_DIR_ENV: &str = "MAESTRO_DAEMON_DIR";
+/// Fallback daemon directory, relative to the home directory of the user the server runs as.
+pub const DAEMON_DIR_DEFAULT: &str = ".maestro/daemon";
+/// Held open by the running daemon for as long as it lives.
+///
+/// The lock, not the runtime file, is what answers "is a daemon alive here": a killed process
+/// leaves its runtime file behind pointing at a dead port, but the OS releases its lock.
+pub const DAEMON_LOCK_FILE: &str = "lock";
+/// Where a running daemon publishes how to reach it. See [`DaemonRuntime`].
+pub const DAEMON_RUNTIME_FILE: &str = "runtime.json";
+
+/// What a running daemon publishes about itself, written once at startup.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DaemonRuntime {
+    /// Loopback port the daemon accepts client connections on.
+    pub port: u16,
+    /// Secret a client must present as its first line. Any local process can reach the port, so
+    /// this is the only thing deciding whether a connection is answered.
+    pub token: String,
+    /// `CARGO_PKG_VERSION` of the daemon binary.
+    pub version: String,
+    /// Protocol the daemon speaks. A client of a different one kills it and starts its own.
+    pub protocol_version: u32,
+    pub pid: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SpawnRequest {
     pub agent_id: String,
@@ -147,10 +215,69 @@ pub struct SpawnRequest {
     /// deployed binary is per project and can lag the app.
     #[serde(default)]
     pub additional_directories: Vec<String>,
+    /// See [`host_meta`](ListLiveSession::host_meta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListAgentsRequest {}
+
+/// Ask the server which sessions it is currently running.
+///
+/// Distinct from [`SessionListRequest`], which asks an *agent* what conversations it has stored on
+/// disk. This asks the *server* what is alive in its own process right now, which is the question
+/// a client that has just attached needs answered.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSessionsRequest {}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSessionsResponse {
+    pub sessions: Vec<ListLiveSession>,
+}
+
+/// One session the server is running, as seen by a client re-adopting it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListLiveSession {
+    /// The routing key the host minted, under which every later request finds this session.
+    pub session_id: String,
+    pub agent_id: String,
+    pub cwd: String,
+    /// The agent's own session id, when the session has one. Needed to replay history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    /// Whether the agent is mid-turn on this session right now.
+    ///
+    /// Decides what a client that has just attached may do to it: a session between turns can be
+    /// closed and reloaded to recover its transcript, one mid-turn cannot without discarding the
+    /// turn in progress.
+    #[serde(default)]
+    pub turn_active: bool,
+    /// Whatever the host attached at spawn, returned verbatim.
+    ///
+    /// The server never reads it. It exists because the host knows things about a session the
+    /// server has no business knowing — which project and task it belongs to, what the user named
+    /// it — and needs them back when re-adopting a session it did not start in this run. Keeping
+    /// it opaque means adding a field to it never touches the protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
+    /// Requests this session is still waiting on an answer to.
+    ///
+    /// A permission or elicitation prompt outlives the client that was shown it: the agent is
+    /// blocked on it, so the session is mid-turn and is adopted as it stands rather than reloaded.
+    /// Replaying these to whoever adopts the session is the only way the prompt becomes answerable
+    /// again, because the message that carried it went to a client that is gone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_requests: Vec<PendingSessionRequest>,
+}
+
+/// A request the server sent a client and is still waiting on, replayed to the next client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PendingSessionRequest {
+    Permission(PermissionRequest),
+    Elicitation(ElicitationRequest),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DiscoveredAgent {
@@ -334,6 +461,253 @@ pub struct LogoutRequest {
     pub agent_id: String,
 }
 
+// --- Automations ---
+
+/// Where an automation's agent runs.
+///
+/// A path rather than the app's worktree row id: the daemon has to act on this with no access to
+/// the app's database, and on a remote project not even to the machine that database is on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum AutomationWorkspace {
+    /// The project directory itself.
+    Repository,
+    /// A directory that already exists, named outright.
+    Path { path: String },
+    /// A fresh worktree per run, branched from `base_branch`.
+    ///
+    /// Created and removed by the daemon, which is the process on the machine the repository is
+    /// on. The app adopts a `worktrees` row for one that outlives its run; see phase 4 of
+    /// `docs/automations-plan.md`.
+    NewWorktree { base_branch: String },
+}
+
+/// One automation, whole.
+///
+/// The agent settings are the automation's own rather than a reference to an agent profile.
+/// Profiles say what a *pipeline role* means on a project, and an automation has no role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Automation {
+    pub id: String,
+    /// Canonicalized path of the project this belongs to, as the daemon resolved it.
+    pub project_path: String,
+    pub name: String,
+    /// What the agent is asked to do. The whole contract of the run.
+    pub prompt: String,
+    pub agent_id: String,
+    /// Five-field cron, or `None` for an automation that only runs when asked.
+    ///
+    /// Cron rather than the editor's presets because the daemon is what evaluates it, and a preset
+    /// is a shape the UI can compile to this rather than a second thing to store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    /// IANA name the cron is read in, so a laptop that crosses a timezone keeps its schedule.
+    pub timezone: String,
+    /// Whether the schedule is live. Disabling stops the clock; running it by hand still works,
+    /// which is what makes this a pause rather than a second kind of delete.
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The ACP session mode id. `None` leaves it to the agent, which for an unattended run means
+    /// whatever that agent's default asks before doing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    pub workspace: AutomationWorkspace,
+    /// Whether `POST /hooks/<id>` starts this. Independent of `enabled` above only in one
+    /// direction: with `enabled` off, nothing automatic fires, webhook included.
+    #[serde(default)]
+    pub webhook_enabled: bool,
+    /// What a delivery does while a run of this automation is already going.
+    #[serde(default)]
+    pub webhook_overlap: WebhookOverlap,
+    /// What a webhook sender signs with, or presents as a bearer token. Made by the server when
+    /// the webhook is first turned on and changed only by `RollWebhookSecret`, so a save from a
+    /// client never touches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<String>,
+    /// When this next comes round, RFC 3339. Computed on read and never stored — a stored one
+    /// would be wrong the moment the clock or the timezone database moved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_due_at: Option<String>,
+}
+
+/// What happened to one firing of an automation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationRun {
+    pub id: String,
+    pub automation_id: String,
+    pub project_path: String,
+    /// Copied rather than joined, so a run still says what it was even after the automation that
+    /// produced it is renamed or deleted.
+    pub automation_name: String,
+    pub status: AutomationRunStatus,
+    /// What started it: the clock, somebody pressing Run now, or a webhook.
+    pub trigger: RunTrigger,
+    pub started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+    /// The session the run is happening in, absent when the spawn itself failed. This is how a
+    /// client finds a session the daemon started, since nothing the host wrote is attached to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// The agent's own id for this conversation, which is what `session/load` resumes from.
+    ///
+    /// `session_id` above names a live session and stops resolving the moment the idle sweep
+    /// closes it. These three are what it takes to open the run again afterwards, and this row is
+    /// the only place they outlive the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Whether that agent answers `session/load`. `None` for a run recorded before this was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_reload: Option<bool>,
+    /// The worktree this run provisioned, while it is still on disk. Cleared once the daemon has
+    /// removed it, so a value here means there is a directory somebody still has to deal with —
+    /// which is also what the app adopts a `worktrees` row from. `cwd` above keeps the record of
+    /// where the run happened either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    /// The local branch created with it, and deleted with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_branch: Option<String>,
+    /// What that branch was cut from, resolved at creation. Carried so the app's adopted row can
+    /// say how many commits the run made, which is the question a kept workspace raises.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_base: Option<String>,
+    /// Why that worktree was kept rather than removed, in words meant for the person who has to
+    /// act on it. `None` means nothing was kept, which is also true of a run still going.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_kept: Option<String>,
+    /// Which run of its automation this is, counting from 1. `None` for a run recorded before
+    /// runs were numbered. It is what a session opened from this run is labelled with, and the
+    /// number in the name of the worktree it made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinal: Option<u32>,
+    /// The agent's last message, the text after its final tool call, recorded when the run ends.
+    /// What a finished run is read by, so nobody has to open a session to see what it concluded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+}
+
+/// Every request below names a project by the path the client knows it by. The daemon
+/// canonicalizes it, because it is the process on the machine that path exists on.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationsRequest {
+    pub project_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationsResponse {
+    pub automations: Vec<Automation>,
+    /// The IANA zone this server's own machine is set to.
+    ///
+    /// Sent with the list because it is what the editor has to offer: an automation on a remote
+    /// project runs on that machine, so "09:00" means one thing there and another where the window
+    /// is. Falls back to `UTC` when the machine cannot say.
+    #[serde(default = "utc")]
+    pub server_timezone: String,
+    /// How much of this project's run history is kept.
+    #[serde(default)]
+    pub retention: RunRetention,
+}
+
+/// Which finished runs a project keeps, per automation. A run is deleted only once it breaks every
+/// limit that is set: past the newest `keep_last` **and** older than `max_age_days`. Both `None`
+/// keeps everything. A running run is never deleted.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunRetention {
+    #[serde(default)]
+    pub keep_last: Option<u32>,
+    #[serde(default)]
+    pub max_age_days: Option<u32>,
+}
+
+/// What a project that never chose gets: enough to look back on, without growing forever on a
+/// machine running an hourly schedule.
+impl Default for RunRetention {
+    fn default() -> Self {
+        Self {
+            keep_last: Some(50),
+            max_age_days: Some(90),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteAutomationRunRequest {
+    pub run_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetRunRetentionRequest {
+    pub project_path: String,
+    pub retention: RunRetention,
+}
+
+fn utc() -> String {
+    "UTC".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveAutomationRequest {
+    pub project_path: String,
+    pub automation: Automation,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteAutomationRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RunAutomationRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationRunsRequest {
+    pub project_path: String,
+    /// Newest first, capped by the server whatever this says.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListAutomationRunsResponse {
+    pub runs: Vec<AutomationRun>,
+}
+
+/// A schedule the editor is in the middle of writing. Nothing is stored, and no project is named:
+/// the answer depends only on the expression and the zone it is read in.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreviewScheduleRequest {
+    pub cron: String,
+    pub timezone: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreviewScheduleResponse {
+    /// RFC 3339, or `None` for an expression with no next occurrence at all. A cron naming
+    /// February 30th is valid syntax and never happens.
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -347,6 +721,21 @@ pub enum ServerResponse {
     ElicitationRequest(ElicitationRequest),
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
+    ListLiveSessionsOk(ListLiveSessionsResponse),
+    ListAutomationsOk(ListAutomationsResponse),
+    SaveAutomationOk(Automation),
+    DeleteAutomationOk,
+    ListAutomationRunsOk(ListAutomationRunsResponse),
+    DeleteAutomationRunOk,
+    SetRunRetentionOk,
+    WebhookSettingsOk(WebhookStatus),
+    RollWebhookSecretOk(Automation),
+    ListWebhookDeliveriesOk(ListWebhookDeliveriesResponse),
+    ServerStatusOk(ServerStatus),
+    PreviewScheduleOk(PreviewScheduleResponse),
+    /// A run started or finished. Pushed unasked to whoever is attached, because the client that
+    /// cares did not ask for it: the clock did.
+    AutomationRunChanged(AutomationRun),
     SetModelOk(SetModelOkResponse),
     SetModeOk(SetModeOkResponse),
     SetConfigOptionOk(SetConfigOptionOkResponse),
@@ -503,7 +892,7 @@ pub struct SessionListRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SessionLoadRequest {
     pub agent_id: String,
-    /// Maestro routing key for this session (e.g. "session-{log_id}"). Used by
+    /// Maestro routing key for this session: the id the host minted for it. Used by
     /// maestro-server to key the session in its internal map so all subsequent
     /// Prompt/Permission/etc. requests (which use the same routing key) find it.
     pub session_id: String,
@@ -513,6 +902,9 @@ pub struct SessionLoadRequest {
     /// See [`SpawnRequest::additional_directories`].
     #[serde(default)]
     pub additional_directories: Vec<String>,
+    /// See [`host_meta`](ListLiveSession::host_meta).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_meta: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -638,7 +1030,7 @@ pub struct SessionUpdate {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PermissionRequest {
     pub session_id: String,
     pub request_id: String,
@@ -652,7 +1044,7 @@ pub struct PermissionResponse {
     pub option_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElicitationRequest {
     pub session_id: String,
     pub request_id: String,
@@ -847,6 +1239,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/home/user/project".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -1028,6 +1421,7 @@ mod tests {
             session_id: "sess-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -1199,6 +1593,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
+            host_meta: None,
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),
@@ -1418,4 +1813,121 @@ mod tests {
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
+}
+
+/// What started a run.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    Schedule,
+    #[default]
+    Manual,
+    Webhook,
+}
+
+/// What a webhook delivery does while a run of the same automation is already going.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookOverlap {
+    /// Answer 409 and run nothing.
+    #[default]
+    Refuse,
+    /// Wait in line, up to a cap, and run once the current run ends.
+    Queue,
+    /// Start another run beside it.
+    Parallel,
+}
+
+/// The webhook listener of one machine's server, shared by every project on it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookSettings {
+    pub port: u16,
+    /// `127.0.0.1` unless a proxy on another machine has to reach it.
+    pub bind_address: String,
+    /// The address senders actually call, a tunnel's or a reverse proxy's. Webhook URLs are built
+    /// from it; `None` means they are shown on the local address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookStatus {
+    pub settings: WebhookSettings,
+    /// Why the listener is not listening, or `None` when it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What became of one delivery.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryOutcome {
+    Started,
+    Queued,
+    /// A run was going and the automation refuses overlap.
+    Busy,
+    QueueFull,
+    RateLimited,
+    Unauthorized,
+    Duplicate,
+    /// The webhook, or everything automatic about the automation, is switched off.
+    Disabled,
+    TooLarge,
+    /// Authorized and accepted, but the run could not be opened.
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookDelivery {
+    pub id: String,
+    pub automation_id: String,
+    pub received_at: String,
+    /// The HTTP status the sender got.
+    pub status: u16,
+    pub outcome: DeliveryOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The run it started, once it has one. A queued delivery gets it when its turn comes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AutomationIdRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListWebhookDeliveriesResponse {
+    pub deliveries: Vec<WebhookDelivery>,
+}
+
+/// How a server was set to start with its machine.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutostartMethod {
+    /// A systemd user unit, with linger so it runs without anyone logged in.
+    Systemd,
+    /// A crontab `@reboot` line, where systemd or linger is not available.
+    Cron,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SetAutostartRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerStatus {
+    pub version: String,
+    pub pid: u32,
+    /// RFC 3339.
+    pub started_at: String,
+    pub live_sessions: u32,
+    /// Automation runs still going, across every project on this machine.
+    pub running_runs: u32,
+    /// Whether this server can set itself to start with its machine at all.
+    pub autostart_supported: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autostart: Option<AutostartMethod>,
 }

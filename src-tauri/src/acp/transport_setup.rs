@@ -37,7 +37,27 @@ pub(crate) async fn handshake_local_child(
     Ok((stdin_writer, source, child))
 }
 
-/// Spawn a local maestro-server subprocess and perform handshake.
+/// The command that reaches the resident server on the machine the transport lands on.
+///
+/// Every transport spawns `maestro-server attach`, never the server itself: the relay dies with
+/// the app, the daemon behind it does not, and that is the whole of what makes a session outlive
+/// the window that started it. `attach` starts the daemon when none is running, so no caller here
+/// has to know whether one is.
+pub(crate) fn attach_command(server_path: &str) -> String {
+    format!("{server_path} attach")
+}
+
+/// Where the local daemon keeps its lock and runtime file.
+///
+/// Under the app's own data directory rather than the home directory, so a development build
+/// pointed at its own `MAESTRO_DATA_DIR` gets a separate daemon instead of contending with the
+/// installed app over one. Remote transports pass nothing and take the home-relative default,
+/// because there is no equivalent directory on the other machine.
+pub(crate) fn local_daemon_dir(app_state: &crate::core::AppState) -> std::path::PathBuf {
+    app_state.app_data_dir.join("daemon")
+}
+
+/// Spawn a local `maestro-server attach` and perform handshake.
 /// Returns (stdin_writer, read_source, child) ready for the caller to use.
 pub(crate) async fn open_local_transport(
     app_state: &std::sync::Arc<crate::core::AppState>,
@@ -48,6 +68,11 @@ pub(crate) async fn open_local_transport(
     let server_path = crate::acp::deploy::ensure_local_server(&app_state.app_handle).await?;
 
     let child = tokio::process::Command::new(server_path)
+        .arg("attach")
+        .env(
+            maestro_protocol::DAEMON_DIR_ENV,
+            local_daemon_dir(app_state),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -66,7 +91,7 @@ pub(crate) async fn open_remote_transport(
     maestro_server_path: &str,
 ) -> Result<(tokio::sync::mpsc::Sender<Vec<u8>>, AcpReadSource), String> {
     let channel = ssh_session
-        .open_exec_channel(maestro_server_path)
+        .open_exec_channel(&attach_command(maestro_server_path))
         .await
         .map_err(|e| format!("Failed to open remote maestro-server channel: {}", e))?;
 
@@ -116,8 +141,9 @@ pub(crate) async fn open_wsl_transport(
     server_path: &str,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
+    let command = attach_command(server_path);
     let child = tokio::process::Command::new("wsl.exe")
-        .args(["-d", distro, "--", "bash", "-lc", server_path])
+        .args(["-d", distro, "--", "bash", "-lc", command.as_str()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -138,8 +164,16 @@ pub(crate) async fn open_container_transport(
     server_path: &str,
 ) -> Result<(BufWriter<ChildStdin>, AcpReadSource, tokio::process::Child), String> {
     use std::process::Stdio;
+    let command = attach_command(server_path);
     let child = tokio::process::Command::new(cli.binary())
-        .args(["exec", "-i", container_name, "bash", "-lc", server_path])
+        .args([
+            "exec",
+            "-i",
+            container_name,
+            "bash",
+            "-lc",
+            command.as_str(),
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

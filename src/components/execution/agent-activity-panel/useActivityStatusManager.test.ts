@@ -9,7 +9,7 @@ import { useActivityStatusManager } from "./useActivityStatusManager";
 import { useSessionActivityStore } from "@/store/sessionActivityStore";
 import type { ActivityItem, ActivityState } from "../activity/types";
 
-const SESSION_KEY = 1;
+const SESSION_ID = "1";
 
 const userMessage: ActivityItem = {
   type: "userMessage",
@@ -28,12 +28,12 @@ function setup(overrides: Partial<LiveState> = {}, awaitingUserInput = false) {
   };
   const pendingSendRef = { current: false };
   return renderHook(() =>
-    useActivityStatusManager(SESSION_KEY, liveState, pendingSendRef, awaitingUserInput),
+    useActivityStatusManager(SESSION_ID, liveState, pendingSendRef, awaitingUserInput),
   );
 }
 
 function status() {
-  return useSessionActivityStore.getState().sessions[SESSION_KEY]?.status;
+  return useSessionActivityStore.getState().sessions[SESSION_ID]?.status;
 }
 
 describe("useActivityStatusManager", () => {

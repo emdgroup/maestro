@@ -4,7 +4,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 
 use agent_client_protocol as acp;
-use maestro_protocol::{AuthMethodInfo, PromptCapabilitiesInfo};
+use maestro_protocol::{
+    AuthMethodInfo, ElicitationRequest, PermissionRequest, PromptCapabilitiesInfo,
+};
 
 pub enum SessionCommand {
     Prompt(String),
@@ -29,10 +31,20 @@ pub struct TerminalExitInfo {
     pub signal: Option<String>,
 }
 
+/// Requests sent to a client and not yet answered, each kept with the message that carried it.
+///
+/// The message is kept because the client it went to may be gone: the agent stays blocked on the
+/// answer, so whoever attaches next has to be shown the prompt again, and re-sending what was sent
+/// is the only way to do that without inventing a second way of describing the same request.
+pub type PendingPermissions =
+    Arc<Mutex<HashMap<String, (PermissionRequest, oneshot::Sender<Option<String>>)>>>;
+pub type PendingElicitations =
+    Arc<Mutex<HashMap<String, (ElicitationRequest, oneshot::Sender<serde_json::Value>)>>>;
+
 /// Per-session state accessed from shared connection handlers via the router.
 pub struct SharedSessionState {
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
-    pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
+    pub pending_permissions: PendingPermissions,
+    pub pending_elicitations: PendingElicitations,
 }
 
 /// Routes ACP session IDs → maestro session IDs → per-session state.
@@ -160,8 +172,8 @@ pub struct SessionCleanup {
 
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<Option<String>>>>>,
-    pub pending_elicitations: Arc<Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
+    pub pending_permissions: PendingPermissions,
+    pub pending_elicitations: PendingElicitations,
     pub task: tokio::task::JoinHandle<()>,
     /// Populated for fast-path sessions (shared connection server).
     /// `None` for cold-path sessions (process killed by kill_on_drop on cancel).
@@ -172,6 +184,19 @@ pub struct ActiveSession {
     pub cwd: String,
     /// Extra workspace roots this session was started with, replayed when the agent restarts.
     pub additional_directories: Vec<String>,
+    /// Opaque blob the host attached at spawn, handed back by `ListLiveSessions`.
+    /// Never read here. See `maestro_protocol::ListLiveSession::host_meta`.
+    pub host_meta: Option<serde_json::Value>,
+    /// Whether a `session/prompt` is outstanding right now. Shared with the command loop.
+    ///
+    /// Reported by `ListLiveSessions` because it decides what an attaching client may do: a
+    /// session between turns can be closed and reloaded to recover its transcript, one mid-turn
+    /// cannot without throwing the turn away.
+    pub turn_active: Arc<AtomicBool>,
+    /// Whether the last sweep found this session idle with no client attached. Set by the sweep
+    /// and cleared by any activity, so only a session idle across two of them is closed. See
+    /// `main::reap_idle_sessions`.
+    pub idle_marked: bool,
 }
 
 pub type SessionMap = HashMap<String, ActiveSession>;

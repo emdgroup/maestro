@@ -1,3 +1,4 @@
+pub mod automations;
 pub mod crud;
 pub mod git_ops;
 pub mod handlers;

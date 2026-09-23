@@ -7,12 +7,10 @@ use tauri::State;
 use crate::acp::{ConnectionKey, SessionRequest, TaskMetadata};
 use crate::core::AppState;
 
-use super::session_id_for;
-
 #[derive(Debug, Clone, Serialize, Type)]
 #[specta(export)]
 pub struct SpawnSessionResult {
-    pub log_id: i32,
+    pub session_id: String,
 }
 
 #[tauri::command]
@@ -49,11 +47,7 @@ pub async fn spawn_acp_session(
             })
     });
 
-    let log_id = app_state
-        .pty
-        .session_counter
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let session_id = session_id_for(log_id);
+    let session_id = crate::core::new_session_id();
 
     let ssh_opt = match connection_id {
         Some(conn_id) => {
@@ -125,7 +119,7 @@ pub async fn spawn_acp_session(
         connection_key,
         agent_id: agent_id.clone(),
         cwd: cwd.clone(),
-        log_id,
+        session_id: session_id.clone(),
         session_name: session_name.clone(),
         project_id: Some(project_id),
         task_id: None,
@@ -155,7 +149,7 @@ pub async fn spawn_acp_session(
     )
     .await?
     {
-        return Ok(finish_spawn(&app_state, task_id, log_id).await);
+        return Ok(finish_spawn(&app_state, task_id, &session_id).await);
     }
 
     // Cold path
@@ -277,7 +271,7 @@ pub async fn spawn_acp_session(
         }
     }
 
-    Ok(finish_spawn(&app_state, task_id, log_id).await)
+    Ok(finish_spawn(&app_state, task_id, &session_id).await)
 }
 
 /// What every successful spawn does once its session exists, whichever path built it.
@@ -289,13 +283,15 @@ pub async fn spawn_acp_session(
 async fn finish_spawn(
     app_state: &Arc<AppState>,
     task_id: Option<i32>,
-    log_id: i32,
+    session_id: &str,
 ) -> SpawnSessionResult {
     if let Some(task_id) = task_id {
-        close_superseded_sessions_for_task(app_state, task_id, log_id).await;
+        close_superseded_sessions_for_task(app_state, task_id, session_id).await;
     }
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    SpawnSessionResult { log_id }
+    SpawnSessionResult {
+        session_id: session_id.to_string(),
+    }
 }
 
 /// Cancel a running ACP session — kills the maestro-server subprocess and cleans up.
@@ -303,9 +299,9 @@ async fn finish_spawn(
 #[specta::specta]
 pub async fn cancel_acp_session(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<(), String> {
-    end_acp_session(&app_state, log_id).await;
+    end_acp_session(&app_state, session_id).await;
     Ok(())
 }
 
@@ -320,26 +316,26 @@ pub async fn cancel_acp_session(
 /// Returns the session's project and task ids, which the caller needs for its own bookkeeping.
 pub(crate) async fn tear_down_session(
     app_state: &Arc<AppState>,
-    log_id: i32,
+    session_id: &str,
 ) -> (Option<i32>, Option<i32>) {
     use crate::acp::transport::{CancelRequest, MaestroRpcMessage, ServerRequest};
 
-    let session_id = session_id_for(log_id);
-    let cancel_msg =
-        MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest { session_id }));
-    if let Err(e) = crate::acp::write_to_acp_session(app_state, log_id, &cancel_msg).await {
+    let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
+        session_id: session_id.to_string(),
+    }));
+    if let Err(e) = crate::acp::write_to_acp_session(app_state, session_id, &cancel_msg).await {
         // Best-effort: the transport may already be gone, which is one of the reasons to cancel.
         // The teardown below is what actually ends the session, so it proceeds regardless.
-        log::debug!("[acp] cancel message not delivered for log_id={log_id}: {e}");
+        log::debug!("[acp] cancel message not delivered for session_id={session_id}: {e}");
     }
 
     // The connection server outlives its sessions deliberately: it is per connection, not per
     // session, and closing the last session used to drop it, which killed the transport and
     // surfaced as a lost connection. It is torn down when the project or the app closes.
     let mut sessions = app_state.acp.sessions.lock().await;
-    let project_id = sessions.get(&log_id).and_then(|p| p.project_id);
-    let task_id = sessions.get(&log_id).and_then(|p| p.task_id);
-    if let Some(mut session) = sessions.remove(&log_id) {
+    let project_id = sessions.get(session_id).and_then(|p| p.project_id);
+    let task_id = sessions.get(session_id).and_then(|p| p.task_id);
+    if let Some(mut session) = sessions.remove(session_id) {
         if let Some(cancel_tx) = session.reader_cancel_tx.take() {
             let _ = cancel_tx.send(());
         }
@@ -353,17 +349,17 @@ pub(crate) async fn tear_down_session(
 /// a writer and a cancel channel, none of which a test can conjure, and the two things that could
 /// be wrong here are ordinary — closing the session that was just built, or closing one belonging
 /// to another task.
-fn superseded_log_ids(
-    live: impl Iterator<Item = (i32, Option<i32>)>,
+fn superseded_session_ids(
+    live: impl Iterator<Item = (String, Option<i32>)>,
     task_id: i32,
-    keep_log_id: i32,
-) -> Vec<i32> {
-    live.filter(|(log_id, owner)| *log_id != keep_log_id && *owner == Some(task_id))
-        .map(|(log_id, _)| log_id)
+    keep_session_id: &str,
+) -> Vec<String> {
+    live.filter(|(session_id, owner)| session_id != keep_session_id && *owner == Some(task_id))
+        .map(|(session_id, _)| session_id)
         .collect()
 }
 
-/// Close any other live session belonging to `task_id`, keeping `keep_log_id`.
+/// Close any other live session belonging to `task_id`, keeping `keep_session_id`.
 ///
 /// A task runs one role at a time but got a new session for each: `resolve_turn_end` moves the task
 /// and never touches `acp.sessions`, so a coder's session was still open while its reviewer ran, and
@@ -377,17 +373,17 @@ fn superseded_log_ids(
 pub(crate) async fn close_superseded_sessions_for_task(
     app_state: &Arc<AppState>,
     task_id: i32,
-    keep_log_id: i32,
+    keep_session_id: &str,
 ) {
     // Collected before tearing anything down: `tear_down_session` takes the same lock.
     let superseded = {
         let sessions = app_state.acp.sessions.lock().await;
-        superseded_log_ids(
+        superseded_session_ids(
             sessions
                 .iter()
-                .map(|(log_id, process)| (*log_id, process.task_id)),
+                .map(|(session_id, process)| (session_id.clone(), process.task_id)),
             task_id,
-            keep_log_id,
+            keep_session_id,
         )
     };
 
@@ -395,11 +391,11 @@ pub(crate) async fn close_superseded_sessions_for_task(
         return;
     }
 
-    for log_id in &superseded {
-        tear_down_session(app_state, *log_id).await;
+    for session_id in &superseded {
+        tear_down_session(app_state, session_id).await;
     }
     log::debug!(
-        "[acp] task {task_id} kept session {keep_log_id} and closed {} superseded: {superseded:?}",
+        "[acp] task {task_id} kept session {keep_session_id} and closed {} superseded: {superseded:?}",
         superseded.len()
     );
 
@@ -412,13 +408,13 @@ pub(crate) async fn close_superseded_sessions_for_task(
 /// because the plan interception ends the planner's session itself: a plan and its implementation
 /// can be different agents entirely, so the session that produced the plan has no part in carrying
 /// it out and is closed at the moment the plan is taken.
-pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
+pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str) {
     // This used to refuse outright when the owning task was InProgress or Review, telling the user
     // to press a Stop button that does not exist on a Review card — and, because the callers
     // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
     // stale-connection case it exists for. What the guard was protecting is handled below instead:
     // the task is failed here rather than being refused.
-    let (project_id_for_save, task_id) = tear_down_session(app_state, log_id).await;
+    let (project_id_for_save, task_id) = tear_down_session(app_state, session_id).await;
 
     // Recorded here, not left to `reader_task`. Only a *direct* session has a reader loop that a
     // cancel breaks; a session on a shared connection server — the ordinary local path — has no
@@ -457,7 +453,7 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, log_id: i32) {
 #[specta::specta]
 pub async fn interrupt_acp_turn(
     app_state: State<'_, Arc<AppState>>,
-    log_id: i32,
+    session_id: &str,
 ) -> Result<(), String> {
     use crate::acp::transport::{InterruptTurnRequest, MaestroRpcMessage, ServerRequest};
 
@@ -466,18 +462,17 @@ pub async fn interrupt_acp_turn(
     // see the field's own comment for why the stop reason cannot be trusted to say so.
     {
         let sessions = app_state.acp.sessions.lock().await;
-        if let Some(session) = sessions.get(&log_id) {
+        if let Some(session) = sessions.get(session_id) {
             session
                 .user_interrupted
                 .store(true, std::sync::atomic::Ordering::Release);
         }
     }
 
-    let session_id = session_id_for(log_id);
     let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
-        session_id,
+        session_id: session_id.to_string(),
     }));
-    crate::acp::write_to_acp_session(&app_state, log_id, &msg).await
+    crate::acp::write_to_acp_session(&app_state, session_id, &msg).await
 }
 
 /// Inner implementation shared by the IPC handler and warmup session restore.
@@ -493,7 +488,7 @@ pub async fn restore_acp_session(
     project_id: Option<i32>,
     worktree_branch: Option<String>,
     task_id: Option<i32>,
-) -> Result<i32, String> {
+) -> Result<String, String> {
     // A webview reload, and leaving a project for the picker, both leave the backend's session map
     // untouched — while `.maestro/state.json` still lists those live sessions, so `prime_project_server`
     // restores them a second time. The user then sees the same session twice: the original, whose
@@ -510,22 +505,19 @@ pub async fn restore_acp_session(
                 .lock()
                 .is_ok_and(|id| id.as_deref() == Some(acp_session_id.as_str()))
         })
-        .map(|(log_id, _)| *log_id);
-    if let Some(log_id) = live {
-        return Ok(log_id);
+        .map(|(session_id, _)| session_id.clone());
+    if let Some(session_id) = live {
+        return Ok(session_id);
     }
 
-    let log_id = app_state
-        .pty
-        .session_counter
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let session_id = crate::core::new_session_id();
 
     let connection_key = connection;
     let req = SessionRequest {
         connection_key,
         agent_id: agent_id.clone(),
         cwd: cwd.clone(),
-        log_id,
+        session_id: session_id.clone(),
         session_name: session_name.clone(),
         project_id,
         task_id,
@@ -534,7 +526,7 @@ pub async fn restore_acp_session(
 
     if crate::acp::try_session_load_via_connection_server(&acp_session_id, &req).await? {
         if let Some(ref branch) = worktree_branch {
-            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&log_id) {
+            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&session_id) {
                 proc.branch_name = Some(branch.clone());
             }
         }
@@ -545,7 +537,7 @@ pub async fn restore_acp_session(
                 state, pid,
             ));
         }
-        return Ok(log_id);
+        return Ok(session_id);
     }
 
     // Cold path
@@ -675,7 +667,7 @@ pub async fn restore_acp_session(
     }
 
     if let Some(ref branch) = worktree_branch {
-        if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&log_id) {
+        if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&session_id) {
             proc.branch_name = Some(branch.clone());
         }
     }
@@ -688,7 +680,7 @@ pub async fn restore_acp_session(
             state, pid,
         ));
     }
-    Ok(log_id)
+    Ok(session_id)
 }
 
 /// Load an existing ACP session — spawns a full session that resumes from a stored agent session.
@@ -706,7 +698,7 @@ pub async fn load_acp_session(
     session_name: Option<String>,
     project_id: Option<i32>,
     worktree_branch: Option<String>,
-) -> Result<i32, String> {
+) -> Result<String, String> {
     restore_acp_session(
         &app_state,
         agent_id,
@@ -729,7 +721,7 @@ pub async fn recover_task_session(
     app_state: State<'_, Arc<AppState>>,
     task_id: i32,
     project_id: i32,
-) -> Result<i32, String> {
+) -> Result<String, String> {
     let (project_path, connection_key) = {
         let conn = app_state
             .db
@@ -799,33 +791,38 @@ pub async fn close_acp_session(
 mod tests {
     use super::*;
 
+    /// Ids are opaque strings now; the tests keep reading as small numbers.
+    fn s(session_id: u32, task_id: Option<i32>) -> (String, Option<i32>) {
+        (session_id.to_string(), task_id)
+    }
+
     /// The review loop is what made this necessary: coder → reviewer → coder leaves a session
     /// behind at every handoff, and one live task was observed holding five. Each of them counts
     /// against the host's agent limit in `occupied_slots`, which filters on `task_id.is_some()`
     /// with no notion of a session having been superseded.
     #[test]
     fn a_new_session_supersedes_the_task_s_older_ones() {
-        let live = [(10, Some(7)), (11, Some(7)), (12, Some(7))];
+        let live = [s(10, Some(7)), s(11, Some(7)), s(12, Some(7))];
 
-        let closing = superseded_log_ids(live.into_iter(), 7, 12);
+        let closing = superseded_session_ids(live.into_iter(), 7, "12");
 
-        assert_eq!(closing, vec![10, 11]);
+        assert_eq!(closing, vec!["10", "11"]);
     }
 
     /// The two ways this could be actively harmful rather than merely useless.
     #[test]
     fn it_keeps_the_new_session_and_leaves_other_tasks_alone() {
-        let live = [(10, Some(7)), (11, Some(8)), (12, None), (13, Some(7))];
+        let live = [s(10, Some(7)), s(11, Some(8)), s(12, None), s(13, Some(7))];
 
-        let closing = superseded_log_ids(live.into_iter(), 7, 13);
+        let closing = superseded_session_ids(live.into_iter(), 7, "13");
 
         assert_eq!(
             closing,
-            vec![10],
+            vec!["10"],
             "task 8's session and the task-less one are not ours"
         );
         assert!(
-            !closing.contains(&13),
+            !closing.contains(&"13".to_string()),
             "the session just spawned must survive its own supersede"
         );
     }
@@ -833,7 +830,7 @@ mod tests {
     /// The ordinary case, and the one that runs on every first spawn: nothing to close.
     #[test]
     fn a_task_s_first_session_supersedes_nothing() {
-        assert!(superseded_log_ids([(10, Some(7))].into_iter(), 7, 10).is_empty());
-        assert!(superseded_log_ids([].into_iter(), 7, 10).is_empty());
+        assert!(superseded_session_ids([s(10, Some(7))].into_iter(), 7, "10").is_empty());
+        assert!(superseded_session_ids([].into_iter(), 7, "10").is_empty());
     }
 }

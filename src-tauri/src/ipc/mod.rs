@@ -1,4 +1,5 @@
 // Re-export all handlers for use in lib.rs collect_commands!
+pub use crate::acp::server_control::*;
 pub use crate::connectivity::docker_handlers::*;
 pub use crate::connectivity::files::*;
 pub use crate::connectivity::filesystem_handlers::*;
@@ -7,6 +8,7 @@ pub use crate::connectivity::ssh_handlers::*;
 pub use crate::connectivity::wsl_handlers::*;
 pub use crate::git::review_handlers::*;
 pub use crate::git::worktree_handlers::*;
+pub use crate::project::automations::*;
 pub use crate::project::handlers::*;
 pub use crate::project::profiles::*;
 pub use crate::task::handlers::*;
@@ -14,6 +16,7 @@ pub use crate::task::handlers::*;
 // resolves through this module, and a named re-export leaves them behind.
 pub use crate::acp::auth_handlers::*;
 pub use crate::acp::canvas_handlers::*;
+pub use crate::acp::connection_server::*;
 pub use crate::acp::discovery_handlers::*;
 pub use crate::acp::file_handlers::*;
 pub use crate::acp::meta_handlers::*;
@@ -27,3 +30,4 @@ pub use crate::integration::issue_tracking_handlers::*;
 pub use crate::integration::lookup_handlers::*;
 pub use crate::integration::pull_request_handlers::*;
 pub use crate::settings::handlers::*;
+pub use crate::templates::*;

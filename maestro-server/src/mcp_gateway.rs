@@ -11,12 +11,12 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use maestro_protocol::{
     GatewayRequest, HostToolCall, HostToolResult, MaestroRpcMessage, ServerResponse, SessionUpdate,
 };
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::helpers::send_response;
 use crate::send_diag;
@@ -159,7 +159,7 @@ pub(crate) async fn handle_host_tool_call(
     reply_tx: oneshot::Sender<HostToolResult>,
     sessions: &SessionMap,
     pending_host_tools: &mut PendingHostTools,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) {
     // Not "no longer open": the shim is handed its session id while `session/new` is still in
     // flight, so an id absent from the map may be one that has not been registered yet.

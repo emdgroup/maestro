@@ -21,7 +21,7 @@ pub(crate) fn emit_or_buffer_payload(
     payload: serde_json::Value,
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     app_handle: &tauri::AppHandle,
-    log_id: i32,
+    session_id: &str,
 ) {
     if let Ok(mut buf) = replay_buffer.lock() {
         if let Some(ref mut vec) = *buf {
@@ -32,8 +32,8 @@ pub(crate) fn emit_or_buffer_payload(
             }
         }
     }
-    if let Err(e) = app_handle.emit(&format!("acp://session-update/{}", log_id), &payload) {
-        log::warn!("[acp] emit session-update/{log_id} failed: {e}");
+    if let Err(e) = app_handle.emit(&format!("acp://session-update/{}", session_id), &payload) {
+        log::warn!("[acp] emit session-update/{session_id} failed: {e}");
     }
 }
 

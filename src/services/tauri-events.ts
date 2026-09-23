@@ -4,9 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import { taskQueryKeys } from "@/services/task.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
+import { automationQueryKeys } from "@/services/automation.service";
+import { templateQueryKeys } from "@/services/template.service";
 
 /**
- * The backend's three "something changed" events, subscribed once for the whole app.
+ * The backend's "something changed" events, subscribed once for the whole app.
  *
  * These lived inside `useTasksQuery`, `useWorktreesQuery` and `useActiveSessionsQuery`, so every
  * component calling one registered a listener of its own: a board of N cards held 2N native
@@ -38,6 +40,15 @@ export function useServerEventSync(projectId: number | undefined) {
 
     subscribe("worktrees-changed", () => {
       void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+    });
+
+    // An agent changed them through Maestro's MCP tools, with no mutation here to invalidate.
+    subscribe("automations-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.base });
+    });
+
+    subscribe("templates-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
     });
 
     // Keyed on the project, so there is nothing to listen for until one is open.

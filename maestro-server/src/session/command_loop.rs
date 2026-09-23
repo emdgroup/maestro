@@ -13,7 +13,7 @@ use maestro_protocol::{
     SessionModeState as ProtocolSessionModeState, SessionModelState as ProtocolSessionModelState,
     SetModeOkResponse, TurnEnded,
 };
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::send_response;
 use crate::sessions::SessionCommand;
@@ -21,7 +21,7 @@ use crate::sessions::SessionCommand;
 pub(crate) async fn handle_prompt_result(
     result: Result<PromptResponse, acp::Error>,
     session_id: String,
-    stdout: &Arc<Mutex<tokio::io::Stdout>>,
+    stdout: &crate::ClientOut,
 ) {
     let stop_reason = match result {
         Ok(resp) => match resp.stop_reason {
@@ -46,6 +46,7 @@ pub(crate) async fn handle_prompt_result(
             .to_string()
         }
     };
+    crate::helpers::note_turn_ended(&session_id, &stop_reason);
     let msg = MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
         session_id,
         stop_reason,
@@ -164,15 +165,18 @@ pub(crate) async fn run_command_loop(
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     cx: acp::ConnectionTo<acp::Agent>,
     session_id: acp::schema::v1::SessionId,
-    so: Arc<Mutex<tokio::io::Stdout>>,
+    so: crate::ClientOut,
     maestro_sid: String,
     router: Option<Arc<crate::sessions::SessionRouter>>,
-) {
     // Whether a `session/prompt` is genuinely outstanding. Without this the
     // cancel handler cannot tell "agent is working" from "the host's view is
     // stale", and answers neither — leaving the UI stuck in "thinking".
-    let turn_active = Arc::new(AtomicBool::new(false));
-
+    //
+    // Owned by the caller rather than created here because `ActiveSession` holds the other end:
+    // a client that has just attached asks which sessions are mid-turn before deciding what it
+    // can safely do to them.
+    turn_active: Arc<AtomicBool>,
+) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             SessionCommand::CloseSession => {

@@ -18,19 +18,19 @@ export interface SessionActivityInfo {
 }
 
 interface SessionActivityState {
-  sessions: Record<number, SessionActivityInfo>;
-  setActivity: (executionId: number, status: SessionActivityStatus, label?: string | null) => void;
-  resetIfStale: (executionId: number) => void;
-  markSeen: (executionId: number) => void;
-  removeActivity: (executionId: number) => void;
+  sessions: Record<string, SessionActivityInfo>;
+  setActivity: (sessionId: string, status: SessionActivityStatus, label?: string | null) => void;
+  resetIfStale: (sessionId: string) => void;
+  markSeen: (sessionId: string) => void;
+  removeActivity: (sessionId: string) => void;
 }
 
 export const useSessionActivityStore = create<SessionActivityState>()(
   immer((set) => ({
     sessions: {},
-    setActivity: (executionId, status, label = null) =>
+    setActivity: (sessionId, status, label = null) =>
       set((state) => {
-        const existing = state.sessions[executionId];
+        const existing = state.sessions[sessionId];
         if (existing) {
           const normalizedLabel = label ?? null;
           if (existing.status === status && existing.label === normalizedLabel) return;
@@ -44,7 +44,7 @@ export const useSessionActivityStore = create<SessionActivityState>()(
           existing.status = status;
           existing.label = normalizedLabel;
         } else {
-          state.sessions[executionId] = {
+          state.sessions[sessionId] = {
             status,
             stateChangedAt: Date.now(),
             label: label ?? null,
@@ -52,30 +52,30 @@ export const useSessionActivityStore = create<SessionActivityState>()(
           };
         }
       }),
-    resetIfStale: (executionId) =>
+    resetIfStale: (sessionId) =>
       set((state) => {
-        const existing = state.sessions[executionId];
+        const existing = state.sessions[sessionId];
         if (existing?.status === "stale") {
           existing.status = "idle";
           existing.stateChangedAt = Date.now();
         }
       }),
-    markSeen: (executionId) =>
+    markSeen: (sessionId) =>
       set((state) => {
-        const existing = state.sessions[executionId];
+        const existing = state.sessions[sessionId];
         if (existing && existing.status === "idle" && !existing.seen) {
           existing.seen = true;
         }
       }),
-    removeActivity: (executionId) =>
+    removeActivity: (sessionId) =>
       set((state) => {
-        delete state.sessions[executionId];
+        delete state.sessions[sessionId];
       }),
   })),
 );
 
 export const useActivitySessions = () => useSessionActivityStore((s) => s.sessions);
-export const useSessionActivity = (key: number | undefined) =>
+export const useSessionActivity = (key: string | undefined) =>
   useSessionActivityStore((s) => (key != null ? s.sessions[key] : undefined));
 export const useSessionActivityActions = () =>
   useSessionActivityStore(

@@ -11,7 +11,7 @@ use crate::core::AppState;
 ///
 /// # Arguments
 /// * `app_state` - Tauri app state with PTY sessions
-/// * `task_id` - Task ID to attach to
+/// * `session_id` - Session key to attach to
 /// * `output_channel` - Tauri IPC channel for streaming output
 /// * `include_history` - If true, prepend terminal_output from execution log to stream
 ///
@@ -28,14 +28,14 @@ use crate::core::AppState;
 #[specta::specta]
 pub async fn attach_terminal(
     app_state: State<'_, Arc<AppState>>,
-    task_id: i32,
+    session_id: String,
     output_channel: tauri::ipc::Channel<String>,
     include_history: Option<bool>,
 ) -> Result<(), String> {
     // Check remote SSH PTY sessions first
     let ssh_handle = {
         let sessions = app_state.ssh.pty_sessions.lock().await;
-        sessions.get(&task_id).cloned()
+        sessions.get(&session_id).cloned()
     };
 
     if let Some(handle) = ssh_handle {
@@ -44,7 +44,7 @@ pub async fn attach_terminal(
         let process_ended = Arc::clone(&handle.process_ended);
         let total_drained = Arc::clone(&handle.total_drained);
         let clear_screen_count = Arc::clone(&handle.clear_screen_count);
-        let _log_id = handle.log_id;
+        let _session_key = handle.session_id.clone();
         let _app_state_arc = (*app_state).clone();
 
         // Cancel any existing SSH reader for this session. Without this, each re-attach
@@ -52,7 +52,7 @@ pub async fn attach_terminal(
         // every other keystroke to be consumed by the stale reader and lost to the UI.
         {
             let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-            if let Some(old_flag) = cancel_map.remove(&task_id) {
+            if let Some(old_flag) = cancel_map.remove(&session_id) {
                 old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
@@ -63,7 +63,7 @@ pub async fn attach_terminal(
         let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
             let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-            cancel_map.insert(task_id, Arc::clone(&cancel_flag));
+            cancel_map.insert(session_id.clone(), Arc::clone(&cancel_flag));
         }
 
         tokio::spawn(async move {
@@ -188,10 +188,10 @@ pub async fn attach_terminal(
     // Get local PTY session from AppState
     let session = {
         let sessions = app_state.pty.sessions.lock().await;
-        sessions.get(&task_id).cloned()
+        sessions.get(&session_id).cloned()
     };
 
-    let session = session.ok_or_else(|| format!("No active PTY session for task {}", task_id))?;
+    let session = session.ok_or_else(|| format!("No active PTY session {}", session_id))?;
     let _ = include_history; // history is in-memory only; no DB fallback
 
     let _app_state_arc = (*app_state).clone();
@@ -199,7 +199,7 @@ pub async fn attach_terminal(
     // Cancel any existing reader for this task (handles re-attach without explicit detach)
     {
         let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-        if let Some(old_flag) = cancel_map.remove(&task_id) {
+        if let Some(old_flag) = cancel_map.remove(&session_id) {
             old_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
@@ -208,7 +208,7 @@ pub async fn attach_terminal(
     let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
         let mut cancel_map = app_state.pty.attach_cancel.lock().await;
-        cancel_map.insert(task_id, Arc::clone(&cancel_flag));
+        cancel_map.insert(session_id.clone(), Arc::clone(&cancel_flag));
     }
 
     // Spawn background task to stream PTY output

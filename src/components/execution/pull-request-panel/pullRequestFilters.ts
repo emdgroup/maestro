@@ -18,7 +18,7 @@ export const LINK_FILTERS: Array<{ value: LinkFilter; label: string }> = [
  * somewhere else.
  */
 export type PullRequestAction =
-  | { kind: "open-session"; sessionKey: number; sessionLabel: string }
+  | { kind: "open-session"; sessionId: string; sessionLabel: string }
   | { kind: "reuse-worktree"; worktree: WorktreeWithStatus }
   | {
       kind: "new-worktree";
@@ -130,9 +130,9 @@ export function pullRequestEntries(
         worktree,
         action: {
           kind: "open-session",
-          sessionKey: session.session_key,
+          sessionId: session.session_id,
           sessionLabel:
-            session.session_name ?? session.task_name ?? `Session ${session.session_key}`,
+            session.session_name ?? session.task_name ?? `Session ${session.session_id}`,
         },
       };
     }

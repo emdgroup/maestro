@@ -31,7 +31,7 @@ interface TruncationInfo {
 }
 
 interface ReviewChangesPanelCompactProps {
-  sessionKey: number;
+  sessionId: string;
   onSendAnnotations: (annotations: Annotation[]) => void;
   annotationSendDisabled?: boolean;
   allDisplayItems: DisplayItem[];
@@ -59,7 +59,7 @@ interface ReviewChangesPanelCompactProps {
 }
 
 export function ReviewChangesPanelCompact({
-  sessionKey,
+  sessionId,
   onSendAnnotations,
   annotationSendDisabled,
   allDisplayItems,
@@ -83,7 +83,7 @@ export function ReviewChangesPanelCompact({
   onOpenFile,
 }: ReviewChangesPanelCompactProps) {
   const scopeLabel = scope === "session" ? "since session start" : "uncommitted changes only";
-  const annotations = useSessionAnnotations(sessionKey, "diff");
+  const annotations = useSessionAnnotations(sessionId, "diff");
   const { addAnnotation, updateAnnotation, removeAnnotations } = useAnnotationStore();
   const stackRef = useRef<DiffFileStackHandle>(null);
   const [fileSearch, setFileSearch] = useState("");
@@ -119,9 +119,9 @@ export function ReviewChangesPanelCompact({
         const existing = diffAnnotations.find(
           (a) => a.filePath === filePath && a.lineNumber === lineNumber && a.side === side,
         );
-        if (existing) updateAnnotation(sessionKey, existing.id, text, fromLineNumber);
+        if (existing) updateAnnotation(sessionId, existing.id, text, fromLineNumber);
         else
-          addAnnotation(sessionKey, {
+          addAnnotation(sessionId, {
             id: crypto.randomUUID(),
             kind: "diff",
             filePath,
@@ -131,8 +131,8 @@ export function ReviewChangesPanelCompact({
             text,
           });
       },
-      onRemoveComment: (id) => removeAnnotations(sessionKey, [id]),
-      onEditComment: (id, text) => updateAnnotation(sessionKey, id, text),
+      onRemoveComment: (id) => removeAnnotations(sessionId, [id]),
+      onEditComment: (id, text) => updateAnnotation(sessionId, id, text),
       onSendComment: (id) => {
         const target = diffAnnotations.find((a) => a.id === id);
         if (target) onSendAnnotations([target]);
@@ -141,7 +141,7 @@ export function ReviewChangesPanelCompact({
     }),
     [
       diffAnnotations,
-      sessionKey,
+      sessionId,
       addAnnotation,
       updateAnnotation,
       removeAnnotations,
@@ -197,7 +197,7 @@ export function ReviewChangesPanelCompact({
           </button>
         </div>
         <AnnotationBar
-          sessionKey={sessionKey}
+          sessionId={sessionId}
           kind="diff"
           onSend={onSendAnnotations}
           sendDisabled={annotationSendDisabled}

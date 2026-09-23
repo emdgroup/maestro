@@ -14,7 +14,7 @@ vi.mock("@/services/execution.service", () => ({
 }));
 
 const baseSession = {
-  session_key: 1,
+  session_id: "1",
   task_id: null,
   task_name: null,
   task_role: null,
@@ -34,7 +34,7 @@ const baseSession = {
 
 const defaultProps = {
   sessions: [] as (typeof baseSession)[],
-  selectedSessionKey: null,
+  selectedSessionId: null,
   onSelect: vi.fn(),
   search: "",
   connection: { type: "local" as const },

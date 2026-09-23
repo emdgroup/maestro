@@ -391,7 +391,20 @@ mod tests {
                 "get_task",
                 "update_task",
                 "comment_task",
-                "list_tasks"
+                "list_tasks",
+                "list_automations",
+                "get_automation",
+                "create_automation",
+                "update_automation",
+                "delete_automation",
+                "run_automation",
+                "list_automation_runs",
+                "get_automation_run",
+                "list_templates",
+                "get_template",
+                "update_template",
+                "save_as_template",
+                "delete_template"
             ]
         );
         for tool in tools {

@@ -13,7 +13,7 @@ vi.mock("./canvas-capture", () => ({
   captureRegion: (...args: unknown[]) => captureRegion(...args),
 }));
 
-const SESSION = 42;
+const SESSION = "42";
 
 const surface: CanvasSurface = {
   surfaceId: "s-1",
@@ -96,7 +96,7 @@ afterEach(() => {
 function renderLayer(props: Partial<React.ComponentProps<typeof CanvasAnnotationLayer>> = {}) {
   return render(
     <CanvasAnnotationLayer
-      sessionKey={SESSION}
+      sessionId={SESSION}
       surface={surface}
       frameNodes={FRAME_NODES}
       frame={{ current: frameHandle }}

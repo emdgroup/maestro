@@ -39,7 +39,7 @@ import { useAnnotationStore } from "@/store/annotationStore";
 import type { DiffAnnotation } from "@/store/annotationStore";
 import type { DisplayItem } from "@/types/review";
 
-const SESSION = 42;
+const SESSION = "42";
 
 function diffItem(name: string): DisplayItem {
   return { kind: "diff", file: { fileName: name, hunks: [`@@ -1 +1 @@\n+${name}`], status: "M" } };
