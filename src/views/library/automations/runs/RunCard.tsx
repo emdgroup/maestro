@@ -63,6 +63,9 @@ export function RunCard({
         <span className={cn("text-muted-foreground", !withName && "font-medium text-foreground")}>
           {startedAt(run.started_at)}
         </span>
+        {run.ordinal != null && (
+          <span className="shrink-0 font-mono text-muted-foreground/60">#{run.ordinal}</span>
+        )}
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
           {run.scheduled ? "scheduled" : "run now"}
         </span>

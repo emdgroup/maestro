@@ -19,6 +19,7 @@ import {
   useCancelActiveSessionMutation,
 } from "@/services/execution.service";
 import { useAgentProfilesQuery } from "@/services/project.service";
+import { useAutomationRunsQuery } from "@/services/automation.service";
 import { ACTIVITY_DOT, ElapsedTime } from "@/components/execution/shared/activityStatus";
 
 const STATUS_FALLBACK: Record<SessionActivityStatus, string> = {
@@ -167,6 +168,8 @@ interface SessionRowProps {
   agentIcons?: Record<string, string>;
   agentNames?: Record<string, string>;
   profileNames: Record<string, string>;
+  /** Which run of its automation this session is, when an automation started it. */
+  runOrdinal?: number;
 }
 
 const SessionRow = memo(function SessionRow({
@@ -176,6 +179,7 @@ const SessionRow = memo(function SessionRow({
   onClose,
   agentIcons,
   profileNames,
+  runOrdinal,
 }: SessionRowProps) {
   const activityInfo = useSessionActivity(session.session_id);
   const ringClass = session.execution_mode === "acp" ? getAvatarRingClass(activityInfo) : null;
@@ -232,8 +236,9 @@ const SessionRow = memo(function SessionRow({
                   {name}
                 </span>
                 <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
-                  {/* A daemon-started session is keyed by a uuid, which would push the name out. */}
-                  #{session.session_id.slice(0, 8)}
+                  {/* An automation's run number matches its entry in run history. Any other
+                      daemon-started session is keyed by a uuid, which would push the name out. */}
+                  #{runOrdinal ?? session.session_id.slice(0, 8)}
                 </span>
               </div>
               {session.execution_mode === "acp" && (
@@ -334,6 +339,18 @@ export function AgentMonitor({
         (profilesDocument?.profiles ?? []).map((profile) => [profile.id, profile.name]),
       ),
     [profilesDocument],
+  );
+  // Joined on the agent's own session id rather than ours: a run reopened after the idle sweep
+  // closed it is a new session here, but the same conversation to the agent.
+  const { data: runs } = useAutomationRunsQuery(projectId ?? null);
+  const runOrdinals = useMemo(
+    () =>
+      new Map(
+        (runs ?? []).flatMap((run) =>
+          run.agent_session_id && run.ordinal != null ? [[run.agent_session_id, run.ordinal]] : [],
+        ),
+      ),
+    [runs],
   );
 
   const commitRename = useCallback(
@@ -545,6 +562,9 @@ export function AgentMonitor({
                 agentIcons={agentIcons}
                 agentNames={agentNames}
                 profileNames={profileNames}
+                runOrdinal={
+                  session.acp_session_id ? runOrdinals.get(session.acp_session_id) : undefined
+                }
               />
             ))}
           </SidebarMenu>

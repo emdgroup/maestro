@@ -2916,7 +2916,12 @@ worktree_base?: string | null;
  * Why that worktree was kept rather than removed. `None` means nothing was kept, which is
  * also true of a run still going.
  */
-worktree_kept?: string | null }
+worktree_kept?: string | null; 
+/**
+ * Which run of its automation this is, counting from 1, so a session opened from it can be
+ * matched to its entry in run history.
+ */
+ordinal?: number | null }
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * Where an automation's agent runs.

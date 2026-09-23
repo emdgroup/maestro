@@ -49,6 +49,7 @@ async fn resolve_cwd(
     store: &Store,
     automation: &maestro_protocol::Automation,
     run_id: &str,
+    ordinal: u32,
 ) -> Result<String, String> {
     match &automation.workspace {
         AutomationWorkspace::Repository => Ok(automation.project_path.clone()),
@@ -60,13 +61,17 @@ async fn resolve_cwd(
             }
         }
         AutomationWorkspace::NewWorktree { base_branch } => {
-            let (slug, ordinal) = {
+            let slug = {
                 let conn = store.lock().await;
-                automations::worktree_name(&conn, automation)?
+                automations::worktree_slug(&conn, automation)?
             };
-            let provisioned =
-                crate::worktree::create(&automation.project_path, base_branch, &slug, ordinal)
-                    .await?;
+            let provisioned = crate::worktree::create(
+                &automation.project_path,
+                base_branch,
+                &slug,
+                i64::from(ordinal),
+            )
+            .await?;
             {
                 let conn = store.lock().await;
                 automations::attach_worktree(
@@ -241,7 +246,7 @@ pub async fn start(
     };
     announce(spawner.stdout, &run).await;
 
-    let cwd = match resolve_cwd(store, &automation, &run.id).await {
+    let cwd = match resolve_cwd(store, &automation, &run.id, run.ordinal.unwrap_or(1)).await {
         Ok(cwd) => cwd,
         Err(e) => {
             fail(store, spawner.stdout, &run.id, e.clone()).await;
@@ -544,6 +549,7 @@ mod tests {
                 path: "/nowhere/at/all".to_string(),
             }),
             "run-1",
+            1,
         )
         .await
         .expect_err("a workspace that is gone");
@@ -553,7 +559,8 @@ mod tests {
             resolve_cwd(
                 &store,
                 &automation(AutomationWorkspace::Repository),
-                "run-1"
+                "run-1",
+                1
             )
             .await
             .expect("the project itself"),

@@ -466,9 +466,12 @@ live here; diff, review, merge, staging and remote are still the app's.
 
 `.maestro/worktrees/automation-<slug>-<n>`, on branch `maestro/automation-<slug>-<n>`. The slug is
 fixed when the automation is first saved and stored in `automations.slug`, so renaming an automation
-does not move the directories its earlier runs made — `worktree_name` reads the column rather than
-re-slugifying the name. `n` is how many runs there have been, so a worktree kept from run 3 never
-blocks run 4.
+does not move the directories its earlier runs made — `worktree_slug` reads the column rather than
+re-slugifying the name. `n` is `runs.ordinal`, the run's number within its automation, counted from 1
+and restarting for an automation deleted and recreated, so a worktree kept from run 3 never blocks
+run 4. The same number is the `#3` on the run card and on the session row, which is how a session is
+matched to its entry in run history: the row joins on `agent_session_id`, so a run reopened after the
+sweep still finds its number.
 
 **The agent process is spawned with the project as its cwd, not the worktree.** The pooled agent
 connection outlives the run, and on Windows a process whose working directory is a directory makes

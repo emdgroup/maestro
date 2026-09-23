@@ -564,6 +564,11 @@ pub struct AutomationRun {
     /// act on it. `None` means nothing was kept, which is also true of a run still going.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_kept: Option<String>,
+    /// Which run of its automation this is, counting from 1. `None` for a run recorded before
+    /// runs were numbered. It is what a session opened from this run is labelled with, and the
+    /// number in the name of the worktree it made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinal: Option<u32>,
 }
 
 /// Every request below names a project by the path the client knows it by. The daemon

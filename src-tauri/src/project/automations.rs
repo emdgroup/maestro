@@ -128,6 +128,10 @@ pub struct AutomationRun {
     /// also true of a run still going.
     #[specta(optional)]
     pub worktree_kept: Option<String>,
+    /// Which run of its automation this is, counting from 1, so a session opened from it can be
+    /// matched to its entry in run history.
+    #[specta(optional)]
+    pub ordinal: Option<u32>,
 }
 
 impl From<maestro_protocol::AutomationWorkspace> for AutomationWorkspace {
@@ -218,6 +222,7 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
             worktree_branch: run.worktree_branch,
             worktree_base: run.worktree_base,
             worktree_kept: run.worktree_kept,
+            ordinal: run.ordinal,
         }
     }
 }

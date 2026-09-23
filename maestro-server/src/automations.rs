@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS runs (
     worktree_branch   TEXT,
     worktree_base     TEXT,
     -- Why it was kept. Null for a run that kept nothing, and for one still going.
-    worktree_kept     TEXT
+    worktree_kept     TEXT,
+    -- Which run of its automation this is, from 1. Null for runs recorded before numbering.
+    ordinal           INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_project ON runs(project_path, started_at DESC);
@@ -104,6 +106,7 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         ("worktree_branch", "TEXT"),
         ("worktree_base", "TEXT"),
         ("worktree_kept", "TEXT"),
+        ("ordinal", "INTEGER"),
     ] {
         add_column_if_missing(&conn, "runs", column, kind)?;
     }
@@ -460,6 +463,7 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
         worktree_branch: row.get("worktree_branch")?,
         worktree_base: row.get("worktree_base")?,
         worktree_kept: row.get("worktree_kept")?,
+        ordinal: row.get("ordinal")?,
     })
 }
 
@@ -480,6 +484,16 @@ pub fn start_run(
     automation: &Automation,
     scheduled: bool,
 ) -> Result<AutomationRun, String> {
+    // Counted rather than kept as a sequence: runs are never deleted, and counting also numbers
+    // correctly past the runs recorded before this column existed. A recreated automation has a
+    // new id, so it starts again at 1.
+    let earlier: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM runs WHERE automation_id = ?",
+            [&automation.id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     let run = AutomationRun {
         id: uuid::Uuid::new_v4().to_string(),
         automation_id: automation.id.clone(),
@@ -501,11 +515,12 @@ pub fn start_run(
         worktree_branch: None,
         worktree_base: None,
         worktree_kept: None,
+        ordinal: Some(earlier + 1),
     };
     conn.execute(
         "INSERT INTO runs (
-            id, automation_id, project_path, automation_name, status, scheduled, started_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            id, automation_id, project_path, automation_name, status, scheduled, started_at, ordinal
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             run.id,
             run.automation_id,
@@ -514,6 +529,7 @@ pub fn start_run(
             status_name(run.status),
             run.scheduled as i64,
             run.started_at,
+            run.ordinal,
         ],
     )
     .map_err(|e| format!("cannot record the run: {e}"))?;
@@ -550,13 +566,13 @@ pub fn attach_session(
     .map_err(|e| format!("cannot record the run's session: {e}"))
 }
 
-/// What this automation's next worktree is called, and how many runs it has had.
+/// The slug this automation's worktrees are named with. The run's `ordinal` is the rest.
 ///
 /// The slug is read rather than recomputed from the name: it was fixed when the automation was
 /// first saved, and recomputing it after a rename would point the next run at a different
 /// directory from every run before it. An automation stored before the column existed gets one
 /// now, from whatever it is called today.
-pub fn worktree_name(conn: &Connection, automation: &Automation) -> Result<(String, i64), String> {
+pub fn worktree_slug(conn: &Connection, automation: &Automation) -> Result<String, String> {
     let stored: Option<String> = conn
         .query_row(
             "SELECT slug FROM automations WHERE id = ?",
@@ -579,14 +595,7 @@ pub fn worktree_name(conn: &Connection, automation: &Automation) -> Result<(Stri
         }
     };
 
-    let runs: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM runs WHERE automation_id = ?",
-            [&automation.id],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    Ok((slug, runs))
+    Ok(slug)
 }
 
 /// Record the worktree a run provisioned, so it can be found again after the session is gone.
@@ -896,20 +905,29 @@ mod tests {
     fn a_renamed_automation_keeps_naming_its_worktrees_the_same_way() {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let (slug, first) = worktree_name(&conn, &saved).expect("name");
-        assert_eq!(slug, "automation-a");
-        assert_eq!(first, 0);
+        let first = start_run(&conn, &saved, true).expect("start");
+        assert_eq!(worktree_slug(&conn, &saved).expect("slug"), "automation-a");
+        assert_eq!(first.ordinal, Some(1));
 
         // A run happened, and then the automation was renamed. The directory the first run made is
         // still on disk under the old slug, so the next run must not start naming things anew.
-        start_run(&conn, &saved, true).expect("start");
         let mut renamed = saved.clone();
         renamed.name = "Something else entirely".to_string();
         let renamed = save(&conn, "/p", &renamed).expect("rename");
 
-        let (slug_after, second) = worktree_name(&conn, &renamed).expect("name");
-        assert_eq!(slug_after, "automation-a");
-        assert_eq!(second, 1);
+        let second = start_run(&conn, &renamed, true).expect("start");
+        assert_eq!(
+            worktree_slug(&conn, &renamed).expect("slug"),
+            "automation-a"
+        );
+        assert_eq!(second.ordinal, Some(2));
+
+        // Recreated under the same name, it is a new automation and counts from 1 again.
+        let mut again = automation("b", None);
+        again.name = saved.name.clone();
+        let recreated = save(&conn, "/p", &again).expect("recreate");
+        let fresh = start_run(&conn, &recreated, true).expect("start");
+        assert_eq!(fresh.ordinal, Some(1));
     }
 
     #[test]
