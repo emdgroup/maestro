@@ -264,6 +264,7 @@ export function TemplatesPanel({
             save.mutate({
               id: editing.id,
               name: automation.name,
+              tag: editing.tag ?? null,
               body: { kind: "automation", ...templateOf(automation) },
             })
           }

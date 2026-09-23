@@ -1046,9 +1046,9 @@ async listTemplates() : Promise<Result<Template[], string>> {
 /**
  * Create a template, or replace the one `id` names.
  */
-async saveTemplate(id: number | null, name: string, body: TemplateBody) : Promise<Result<Template, string>> {
+async saveTemplate(id: number | null, name: string, tag: string | null, body: TemplateBody) : Promise<Result<Template, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_template", { id, name, body }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_template", { id, name, tag, body }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3891,7 +3891,11 @@ export type TaskRelationship = { id: number; from_task_id: number; to_task_id: n
  */
 export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
-export type Template = { id: number; name: string; body: TemplateBody; created_at: string }
+export type Template = { id: number; name: string; 
+/**
+ * A topic the user files it under, shown on its card and searched.
+ */
+tag?: string | null; body: TemplateBody; created_at: string }
 export type TemplateBody = ({ kind: "automation" } & AutomationTemplate)
 export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean; configured_path: string | null; resolved_path: string | null; source: string; error: string | null }

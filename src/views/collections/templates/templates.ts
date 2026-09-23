@@ -31,7 +31,7 @@ export interface TemplateCard {
   key: string;
   name: string;
   description: string;
-  /** A topic, shown first in the footer. Only built-ins have one. */
+  /** A topic, shown first in the footer. Optional on the user's own. */
   tag: string | null;
   icon: LucideIcon;
   body: AutomationTemplate;
@@ -94,7 +94,7 @@ export function userCard(template: Template): TemplateCard {
     key: `user-${template.id}`,
     name: template.name,
     description: body.prompt,
-    tag: null,
+    tag: template.tag ?? null,
     icon: LayoutTemplate,
     body,
     stored: template,

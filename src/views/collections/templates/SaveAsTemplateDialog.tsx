@@ -10,11 +10,11 @@ import {
 } from "@/ui/dialog";
 import { Button, buttonVariants } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { useSaveTemplateMutation } from "@/services/template.service";
-import { describeTrigger, templateOf } from "./templates";
+import { useSaveTemplateMutation, useTemplatesQuery } from "@/services/template.service";
+import { BUILTIN_TEMPLATES, describeTrigger, templateOf } from "./templates";
 import type { Automation } from "@/types/bindings";
 
-/** Asks for a name, then keeps the automation's prompt and trigger as a new template. */
+/** Asks for a name and an optional tag, then keeps the automation's prompt and trigger as a new template. */
 export function SaveAsTemplateDialog({
   automation,
   onClose,
@@ -25,6 +25,17 @@ export function SaveAsTemplateDialog({
 }) {
   const save = useSaveTemplateMutation();
   const [name, setName] = useState("");
+  const [tag, setTag] = useState("");
+  const { data: stored } = useTemplatesQuery();
+  // Offered, not imposed: reusing a tag is what makes it group anything, and a typo would not.
+  const knownTags = [
+    ...new Set(
+      [
+        ...BUILTIN_TEMPLATES.map((card) => card.tag),
+        ...(stored ?? []).map((template) => template.tag),
+      ].filter((known): known is string => !!known),
+    ),
+  ].sort();
 
   // Starts from the automation's own name each time it opens. Adjusted during render rather than
   // from an effect, which would paint one frame of the previous one.
@@ -32,13 +43,21 @@ export function SaveAsTemplateDialog({
   const current = automation?.id ?? null;
   if (shownFor !== current) {
     setShownFor(current);
-    if (automation) setName(automation.name);
+    if (automation) {
+      setName(automation.name);
+      setTag("");
+    }
   }
 
   const submit = () => {
     if (!automation || !name.trim()) return;
     save.mutate(
-      { id: null, name, body: { kind: "automation", ...templateOf(automation) } },
+      {
+        id: null,
+        name,
+        tag: tag.trim() || null,
+        body: { kind: "automation", ...templateOf(automation) },
+      },
       {
         onSuccess: () => {
           toast.success("Saved to Templates");
@@ -60,16 +79,34 @@ export function SaveAsTemplateDialog({
               project.
             </DialogDescription>
           </DialogHeader>
-          <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] text-muted-foreground">Template name</span>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && submit()}
-              className="h-8 text-xs"
-            />
-          </label>
+          <div className="min-w-0 space-y-3">
+            <label className="block min-w-0 space-y-1">
+              <span className="text-[11px] text-muted-foreground">Template name</span>
+              <Input
+                autoFocus
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && submit()}
+                className="h-8 text-xs"
+              />
+            </label>
+            <label className="block min-w-0 space-y-1">
+              <span className="text-[11px] text-muted-foreground">Tag</span>
+              <Input
+                value={tag}
+                list="template-tags"
+                placeholder="Optional, for example Code quality"
+                onChange={(event) => setTag(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && submit()}
+                className="h-8 text-xs"
+              />
+              <datalist id="template-tags">
+                {knownTags.map((known) => (
+                  <option key={known} value={known} />
+                ))}
+              </datalist>
+            </label>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={onClose}>
               Cancel

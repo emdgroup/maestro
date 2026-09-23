@@ -46,29 +46,34 @@ impl TemplateBody {
 pub struct Template {
     pub id: i32,
     pub name: String,
+    /// A topic the user files it under, shown on its card and searched.
+    #[specta(optional)]
+    pub tag: Option<String>,
     pub body: TemplateBody,
     pub created_at: String,
 }
 
 fn read(conn: &Connection, id: i32) -> Result<Option<Template>, String> {
     conn.query_row(
-        "SELECT id, name, body, created_at FROM templates WHERE id = ?",
+        "SELECT id, name, tag, body, created_at FROM templates WHERE id = ?",
         [id],
         |row| {
             Ok((
                 row.get::<_, i32>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ))
         },
     )
     .optional()
     .map_err(|e| format!("Failed to read template: {}", e))?
-    .map(|(id, name, body, created_at)| {
+    .map(|(id, name, tag, body, created_at)| {
         Ok(Template {
             id,
             name,
+            tag,
             body: serde_json::from_str(&body).map_err(|e| format!("Unreadable template: {}", e))?,
             created_at,
         })
@@ -81,7 +86,7 @@ fn read(conn: &Connection, id: i32) -> Result<Option<Template>, String> {
 pub fn list(conn: &Connection) -> Result<Vec<Template>, String> {
     let mut statement = conn
         .prepare(
-            "SELECT id, name, body, created_at FROM templates ORDER BY created_at DESC, id DESC",
+            "SELECT id, name, tag, body, created_at FROM templates ORDER BY created_at DESC, id DESC",
         )
         .map_err(|e| format!("Failed to list templates: {}", e))?;
     let rows = statement
@@ -89,19 +94,21 @@ pub fn list(conn: &Connection) -> Result<Vec<Template>, String> {
             Ok((
                 row.get::<_, i32>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| format!("Failed to list templates: {}", e))?;
     let mut templates = Vec::new();
     for row in rows {
-        let (id, name, body, created_at) =
+        let (id, name, tag, body, created_at) =
             row.map_err(|e| format!("Failed to list templates: {}", e))?;
         match serde_json::from_str(&body) {
             Ok(body) => templates.push(Template {
                 id,
                 name,
+                tag,
                 body,
                 created_at,
             }),
@@ -117,9 +124,11 @@ pub fn save(
     conn: &Connection,
     id: Option<i32>,
     name: &str,
+    tag: Option<&str>,
     body: &TemplateBody,
 ) -> Result<Template, String> {
     let name = name.trim();
+    let tag = tag.map(str::trim).filter(|tag| !tag.is_empty());
     if name.is_empty() {
         return Err("A template needs a name".into());
     }
@@ -128,8 +137,8 @@ pub fn save(
         Some(id) => {
             let changed = conn
                 .execute(
-                    "UPDATE templates SET kind = ?1, name = ?2, body = ?3 WHERE id = ?4",
-                    params![body.kind(), name, json, id],
+                    "UPDATE templates SET kind = ?1, name = ?2, tag = ?3, body = ?4 WHERE id = ?5",
+                    params![body.kind(), name, tag, json, id],
                 )
                 .map_err(|e| format!("Failed to save template: {}", e))?;
             if changed == 0 {
@@ -139,8 +148,8 @@ pub fn save(
         }
         None => {
             conn.execute(
-                "INSERT INTO templates (kind, name, body, created_at) VALUES (?1, ?2, ?3, ?4)",
-                params![body.kind(), name, json, chrono::Utc::now().to_rfc3339()],
+                "INSERT INTO templates (kind, name, tag, body, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![body.kind(), name, tag, json, chrono::Utc::now().to_rfc3339()],
             )
             .map_err(|e| format!("Failed to save template: {}", e))?;
             conn.last_insert_rowid() as i32
@@ -169,9 +178,10 @@ pub fn save_template(
     app_state: State<Arc<AppState>>,
     id: Option<i32>,
     name: String,
+    tag: Option<String>,
     body: TemplateBody,
 ) -> Result<Template, String> {
-    save(&*db(&app_state)?, id, &name, &body)
+    save(&*db(&app_state)?, id, &name, tag.as_deref(), &body)
 }
 
 #[tauri::command]
@@ -202,26 +212,36 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         crate::core::initialize_schema(&conn).unwrap();
 
-        let first = save(&conn, None, " Lint ", &body("lint it")).unwrap();
+        let first = save(&conn, None, " Lint ", Some(" Quality "), &body("lint it")).unwrap();
         assert_eq!(first.name, "Lint");
-        let second = save(&conn, None, "Docs", &body("write docs")).unwrap();
+        assert_eq!(first.tag.as_deref(), Some("Quality"));
+        let second = save(&conn, None, "Docs", Some("  "), &body("write docs")).unwrap();
+        assert_eq!(second.tag, None);
 
-        let edited = save(&conn, Some(first.id), "Lint all", &body("lint all of it")).unwrap();
+        let edited = save(
+            &conn,
+            Some(first.id),
+            "Lint all",
+            None,
+            &body("lint all of it"),
+        )
+        .unwrap();
         assert_eq!(edited.body, body("lint all of it"));
         assert_eq!(edited.created_at, first.created_at);
+        assert_eq!(edited.tag, None);
 
         let names: Vec<_> = list(&conn).unwrap().into_iter().map(|t| t.id).collect();
         assert_eq!(names, vec![second.id, first.id]);
 
-        assert!(save(&conn, None, "  ", &body("x")).is_err());
-        assert!(save(&conn, Some(999), "Gone", &body("x")).is_err());
+        assert!(save(&conn, None, "  ", None, &body("x")).is_err());
+        assert!(save(&conn, Some(999), "Gone", None, &body("x")).is_err());
     }
 
     #[test]
     fn an_unreadable_body_is_skipped() {
         let conn = Connection::open_in_memory().unwrap();
         crate::core::initialize_schema(&conn).unwrap();
-        save(&conn, None, "Good", &body("ok")).unwrap();
+        save(&conn, None, "Good", None, &body("ok")).unwrap();
         conn.execute(
             "INSERT INTO templates (kind, name, body, created_at) VALUES ('skill', 'Future', '{\"kind\":\"skill\"}', '2026-01-01')",
             [],

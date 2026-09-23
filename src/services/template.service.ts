@@ -20,8 +20,17 @@ export function useSaveTemplateMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, name, body }: { id: number | null; name: string; body: TemplateBody }) =>
-      api.saveTemplate(id, name, body),
+    mutationFn: ({
+      id,
+      name,
+      tag,
+      body,
+    }: {
+      id: number | null;
+      name: string;
+      tag: string | null;
+      body: TemplateBody;
+    }) => api.saveTemplate(id, name, tag, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
     },
