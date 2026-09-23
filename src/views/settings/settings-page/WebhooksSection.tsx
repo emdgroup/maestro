@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Webhook } from "lucide-react";
+import { Check, CircleAlert, Webhook } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
@@ -7,7 +7,6 @@ import {
   useSetWebhookSettingsMutation,
   useWebhookSettingsQuery,
 } from "@/services/automation.service";
-import { localBase } from "@/views/library/automations/webhook-url";
 import type { ConnectionKey, WebhookSettings } from "@/types/bindings";
 
 /**
@@ -24,6 +23,8 @@ export function WebhooksSection({ connection }: { connection: ConnectionKey }) {
   if (!status) return null;
   const current = draft ?? status.settings;
   const changed = draft !== null && JSON.stringify(draft) !== JSON.stringify(status.settings);
+  // The status is about the saved address, so it says nothing while an edit is pending.
+  const failing = !changed && status.error != null;
   const exposed = current.bind_address !== "127.0.0.1" && current.bind_address !== "::1";
 
   return (
@@ -40,10 +41,6 @@ export function WebhooksSection({ connection }: { connection: ConnectionKey }) {
         the address it gives you as the public URL.
       </p>
 
-      <p className={status.error ? "text-xs text-destructive" : "text-xs text-emerald-600"}>
-        {status.error ?? `Listening on ${localBase(status.settings)}`}
-      </p>
-
       <div className="grid grid-cols-[8rem_1fr] items-center gap-x-3 gap-y-2">
         <Label htmlFor="webhook-public-url" className="text-sm">
           Public URL
@@ -55,28 +52,42 @@ export function WebhooksSection({ connection }: { connection: ConnectionKey }) {
           onChange={(event) => setDraft({ ...current, public_url: event.target.value || null })}
           className="h-8 text-xs"
         />
-        <Label htmlFor="webhook-port" className="text-sm">
-          Port
-        </Label>
-        <Input
-          id="webhook-port"
-          type="number"
-          min={1}
-          max={65535}
-          value={current.port}
-          onChange={(event) => setDraft({ ...current, port: Number(event.target.value) || 0 })}
-          className="h-8 w-28 text-xs"
-        />
         <Label htmlFor="webhook-bind" className="text-sm">
           Listen on
         </Label>
-        <Input
-          id="webhook-bind"
-          value={current.bind_address}
-          placeholder="127.0.0.1"
-          onChange={(event) => setDraft({ ...current, bind_address: event.target.value })}
-          className="h-8 w-40 font-mono text-xs"
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            id="webhook-bind"
+            value={current.bind_address}
+            placeholder="127.0.0.1"
+            onChange={(event) => setDraft({ ...current, bind_address: event.target.value })}
+            aria-invalid={failing || undefined}
+            className="h-8 w-40 font-mono text-xs"
+          />
+          <span className="text-muted-foreground">:</span>
+          <Input
+            aria-label="Port"
+            type="number"
+            min={1}
+            max={65535}
+            value={current.port}
+            onChange={(event) => setDraft({ ...current, port: Number(event.target.value) || 0 })}
+            aria-invalid={failing || undefined}
+            className="h-8 w-24 font-mono text-xs"
+          />
+          {!changed &&
+            (status.error ? (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs text-destructive">
+                <CircleAlert className="size-3.5 shrink-0" />
+                {status.error}
+              </span>
+            ) : (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs text-emerald-600">
+                <Check className="size-3.5 shrink-0" />
+                Listening
+              </span>
+            ))}
+        </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground">

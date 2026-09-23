@@ -674,12 +674,22 @@ pub async fn restart(store: &Store) {
         }
         Err(e) => {
             send_diag("warn", format!("[webhook] cannot listen on {address}: {e}"));
-            (None, Some(format!("Cannot listen on {address}: {e}")))
+            (None, Some(bind_error(&e)))
         }
     };
     if let Ok(mut listening) = LISTENER.lock() {
         listening.task = task;
         listening.error = error;
+    }
+}
+
+/// Short enough to sit at the end of the address row it is about; the log keeps the full error.
+fn bind_error(error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::AddrInUse => "Port already in use".to_string(),
+        std::io::ErrorKind::AddrNotAvailable => "No such address on this machine".to_string(),
+        std::io::ErrorKind::PermissionDenied => "Not allowed to use this port".to_string(),
+        _ => error.to_string(),
     }
 }
 

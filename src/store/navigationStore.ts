@@ -13,8 +13,8 @@ export type NavigationTarget =
 const PAGE_ORDER: Record<ViewType, number> = {
   kanban: 0,
   agents: 1,
-  worktrees: 2,
-  library: 3,
+  library: 2,
+  worktrees: 3,
 };
 
 function targetViewToTab(view: string): ViewType {

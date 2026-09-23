@@ -43,10 +43,10 @@ const VIEWS: Array<{
 }> = [
   { id: "kanban", label: "Tasks", icon: LayoutDashboard },
   { id: "agents", label: "Agents", icon: Bot },
+  { id: "library", label: "Library", icon: Library },
   // The id stays `worktrees` — it is the persisted startup-tab value and the shortcut scope. Only
   // the label changes, because "worktree" is git vocabulary and this tab is for everyone.
   { id: "worktrees", label: "Workspaces", icon: FolderGit2 },
-  { id: "library", label: "Library", icon: Library },
 ];
 
 export function AppHeader({

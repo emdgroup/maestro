@@ -5,8 +5,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Global — tab switching
   { id: "tab-board", key: "1", ctrl: true, label: "Ctrl+1", scope: "global" },
   { id: "tab-agents", key: "2", ctrl: true, label: "Ctrl+2", scope: "global" },
-  { id: "tab-worktrees", key: "3", ctrl: true, label: "Ctrl+3", scope: "global" },
-  { id: "tab-library", key: "4", ctrl: true, label: "Ctrl+4", scope: "global" },
+  { id: "tab-worktrees", key: "4", ctrl: true, label: "Ctrl+4", scope: "global" },
+  { id: "tab-library", key: "3", ctrl: true, label: "Ctrl+3", scope: "global" },
 
   // Global — settings, a dialog rather than a tab, on the key every desktop app uses for it
   { id: "open-settings", key: ",", ctrl: true, label: "Ctrl+,", scope: "global" },

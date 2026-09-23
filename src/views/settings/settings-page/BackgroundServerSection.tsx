@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Server } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Bot, MessageSquare, Server } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +34,25 @@ function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+function Count({ icon, count, label }: { icon: ReactNode; count: number; label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            aria-label={label}
+            className="flex items-center gap-1 text-muted-foreground [&_svg]:size-3.5"
+          />
+        }
+      >
+        {icon}
+        <span className="text-foreground">{count}</span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /**
  * The server that runs this connection's agents and automations, and outlives the window.
  *
@@ -49,26 +69,21 @@ export function BackgroundServerSection({ connection }: { connection: Connection
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-      <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-        <Server className="w-4 h-4 text-muted-foreground" />
-        Background server
-      </h3>
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Server className="w-4 h-4 text-muted-foreground" />
+          Background server
+        </h3>
+        {server && (
+          <span className="font-mono text-[11px] text-muted-foreground">v{server.version}</span>
+        )}
+      </div>
 
       <p className="text-xs text-muted-foreground">
         Runs this host's agent sessions and automations, and keeps running when Maestro is closed.
         It stops at logout or reboot unless it starts automatically, and until something starts it
         again, schedules and webhooks do not fire.
       </p>
-
-      {server ? (
-        <p className="text-xs text-emerald-600">
-          Running for {relativeAge(server.started_at, now)}, version {server.version},{" "}
-          {plural(server.live_sessions, "session", "sessions")},{" "}
-          {plural(server.running_runs, "automation run", "automation runs")} going
-        </p>
-      ) : (
-        error && <p className="text-xs text-destructive">{String(error)}</p>
-      )}
 
       {server && server.autostart !== "unsupported" && (
         <div className="flex items-start justify-between gap-4">
@@ -85,10 +100,12 @@ export function BackgroundServerSection({ connection }: { connection: Connection
             </p>
           </div>
           <Switch
+            tone="accent"
             id="server-autostart"
             checked={server.autostart !== "off"}
             disabled={autostart.isPending}
             onCheckedChange={(enabled) => autostart.mutate({ connection, enabled })}
+            className="data-unchecked:bg-muted data-unchecked:border-border/50"
           />
         </div>
       )}
@@ -99,7 +116,28 @@ export function BackgroundServerSection({ connection }: { connection: Connection
         </p>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
+        {server ? (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500" />
+              <span className="font-medium">Running for {relativeAge(server.started_at, now)}</span>
+            </span>
+            <span className="h-3 w-px bg-border" />
+            <Count
+              icon={<MessageSquare />}
+              count={server.live_sessions}
+              label={plural(server.live_sessions, "agent session", "agent sessions")}
+            />
+            <Count
+              icon={<Bot />}
+              count={server.running_runs}
+              label={`${plural(server.running_runs, "automation run", "automation runs")} going`}
+            />
+          </div>
+        ) : (
+          <span className="text-xs text-destructive">{error ? String(error) : ""}</span>
+        )}
         <Button
           variant="outline"
           size="sm"
