@@ -307,6 +307,14 @@ pub fn validate(automation: &Automation) -> Result<(), String> {
             automation.name, automation.timezone
         ));
     }
+    // One trigger per automation: a schedule and a webhook on the same prompt would be two jobs
+    // sharing a name, a run history and a workspace.
+    if automation.cron.is_some() && automation.webhook_enabled {
+        return Err(format!(
+            "Automation '{}' can run on a schedule or from a webhook, not both",
+            automation.name
+        ));
+    }
     if let Some(expression) = &automation.cron {
         validate_schedule(expression, &automation.timezone).map_err(|e| {
             format!(

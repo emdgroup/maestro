@@ -20,7 +20,7 @@ import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { useProjectSettings } from "@/services/project.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
-import { Switch } from "@/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
 import { CronEditor } from "./cron/CronEditor";
 import { WebhookSection } from "./WebhookSection";
 import { describeExpression } from "./cron/describe";
@@ -122,46 +122,83 @@ function TimezoneField({
   );
 }
 
+type Trigger = "manual" | "schedule" | "webhook";
+
+const TRIGGERS: Array<{ value: Trigger; label: string; hint: string }> = [
+  { value: "manual", label: "Run now only", hint: "It runs only when you press Run now." },
+  { value: "schedule", label: "Schedule", hint: "It also runs at set times." },
+  { value: "webhook", label: "Webhook", hint: "It also runs when a service calls its URL." },
+];
+
+function triggerOf(automation: Automation): Trigger {
+  if (automation.cron != null) return "schedule";
+  return automation.webhook_enabled ? "webhook" : "manual";
+}
+
 /**
- * The schedule trigger: one switch, and the schedule it turns on.
+ * What starts the automation besides Run now: a schedule or a webhook, never both, since those
+ * would be two jobs sharing one name, one history and one workspace.
  *
- * On means there is an expression. `enabled` is the row's switch, which pauses every trigger at
- * once, so it cannot also be this one. The last expression is remembered while the dialog is open,
- * so switching off and on again finds the same schedule; saving with it off forgets it.
+ * `enabled` is the row's switch, which pauses whichever it is, so it is not written here. The
+ * last expression is remembered while the dialog is open, so going to Webhook and back finds the
+ * same schedule; saving with another choice forgets it.
  */
-function ScheduleSection({
+function TriggerSection({
   projectId,
+  connection,
   automation,
+  saved,
   serverTimezone,
   onChange,
 }: {
   projectId: number;
+  connection: ConnectionKey;
   automation: Automation;
+  saved: boolean;
   serverTimezone: string;
   onChange: (fields: Partial<Automation>) => void;
 }) {
-  const scheduled = automation.cron != null;
+  const trigger = triggerOf(automation);
   const [lastCron, setLastCron] = useState(automation.cron);
+
+  const choose = (next: Trigger) => {
+    if (automation.cron != null) setLastCron(automation.cron);
+    onChange({
+      // Starting a schedule with nothing remembered lands somewhere valid rather than on five
+      // stars, which is a schedule that fires every minute.
+      cron: next === "schedule" ? (lastCron ?? DEFAULT_CRON) : null,
+      webhook_enabled: next === "webhook",
+    });
+  };
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Switch
-          checked={scheduled}
-          // Turning it on with nothing remembered starts somewhere valid rather than on five
-          // stars, which is a schedule that fires every minute.
-          onCheckedChange={(on) => {
-            if (!on) setLastCron(automation.cron);
-            onChange({ cron: on ? (lastCron ?? DEFAULT_CRON) : null });
-          }}
-          aria-label="Schedule"
-          className="data-unchecked:border-border/50 data-unchecked:bg-muted"
-        />
-        <span className="text-xs font-medium">Schedule</span>
-        {!scheduled && <span className="text-[11px] text-muted-foreground">Run at set times</span>}
-      </div>
+      <span className="text-[11px] text-muted-foreground">Trigger</span>
+      <ToggleGroup
+        value={[trigger]}
+        onValueChange={(values) => {
+          const next = values.find((value) => value !== trigger) as Trigger | undefined;
+          if (next) choose(next);
+        }}
+        className="w-full"
+      >
+        {TRIGGERS.map((option) => (
+          <ToggleGroupItem
+            key={option.value}
+            value={option.value}
+            size="sm"
+            variant="outline"
+            className="flex-1 text-xs"
+          >
+            {option.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      <p className="text-[11px] text-muted-foreground/70">
+        {TRIGGERS.find((option) => option.value === trigger)?.hint}
+      </p>
 
-      {scheduled && (
+      {trigger === "schedule" && (
         <>
           <CronEditor
             projectId={projectId}
@@ -179,6 +216,16 @@ function ScheduleSection({
             that machine is off is skipped rather than caught up.
           </p>
         </>
+      )}
+
+      {trigger === "webhook" && (
+        <WebhookSection
+          projectId={projectId}
+          connection={connection}
+          automation={automation}
+          saved={saved}
+          onChange={onChange}
+        />
       )}
     </div>
   );
@@ -318,27 +365,15 @@ export function AutomationEditorDialog({
           </label>
 
           {/* Keyed by automation, so what a section remembers does not carry over to another. */}
-          <ScheduleSection
+          <TriggerSection
             key={draft.id}
-            projectId={projectId}
-            automation={draft}
-            serverTimezone={serverTimezone}
-            onChange={patch}
-          />
-
-          <WebhookSection
             projectId={projectId}
             connection={connection}
             automation={draft}
             saved={editing !== null}
+            serverTimezone={serverTimezone}
             onChange={patch}
           />
-
-          {!draft.cron && !draft.webhook_enabled && (
-            <p className="text-[11px] text-muted-foreground/70">
-              With neither, it runs only when you press Run now.
-            </p>
-          )}
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">

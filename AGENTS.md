@@ -526,8 +526,9 @@ The run is started by the main loop, which alone holds what a spawn needs: `FIRE
 accepted delivery there and the answer back, and the sender gets 202 as soon as the run is opened.
 Queued deliveries live in `webhook_queue` and are drained after a turn ends and on every tick.
 
-`enabled` is the row switch and pauses every trigger. The schedule's own switch is whether there
-is a cron expression, and the webhook's is `webhook_enabled`, so the editor never writes `enabled`.
+An automation has **one trigger**, a schedule or a webhook, never both: `validate` refuses a cron
+expression beside `webhook_enabled`, and the editor offers Run now only, Schedule or Webhook as one
+choice. `enabled` is the row switch and pauses whichever it is, so the editor never writes it.
 
 ### Reading a cron expression, and reopening a run
 
