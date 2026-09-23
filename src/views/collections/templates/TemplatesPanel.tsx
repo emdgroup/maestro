@@ -11,6 +11,8 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -46,6 +48,7 @@ import {
   triggerType,
   userCard,
   type TemplateCard,
+  type TemplateKind,
 } from "./templates";
 import type { Automation, ConnectionKey, Template } from "@/types/bindings";
 
@@ -186,11 +189,16 @@ export function TemplatesPanel({
   projectId,
   projectPath,
   connection,
+  kind,
+  onKindChange,
   onUse,
 }: {
   projectId: number;
   projectPath: string;
   connection: ConnectionKey;
+  /** The kind shown, or `null` for every kind. Held by the view, which can arrive here filtered. */
+  kind: TemplateKind | null;
+  onKindChange: (kind: TemplateKind | null) => void;
   onUse: (card: TemplateCard) => void;
 }) {
   const { data: stored } = useTemplatesQuery();
@@ -203,8 +211,10 @@ export function TemplatesPanel({
 
   const own = (stored ?? []).map(userCard);
   const searchable = own.length + BUILTIN_TEMPLATES.length > SEARCH_FROM;
-  const shownOwn = searchCards(own, query);
-  const shownBuiltin = searchCards(BUILTIN_TEMPLATES, query);
+  const shown = (cards: TemplateCard[]) =>
+    searchCards(cards, query).filter((card) => kind === null || card.kind === kind);
+  const shownOwn = shown(own);
+  const shownBuiltin = shown(BUILTIN_TEMPLATES);
 
   const card = (item: TemplateCard) => (
     <Card
@@ -218,20 +228,50 @@ export function TemplatesPanel({
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
-      {searchable && (
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search templates…"
-            aria-label="Search templates"
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        {searchable && (
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search templates…"
+              aria-label="Search templates"
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        )}
+        <ToggleGroup
+          value={[kind ?? "all"]}
+          onValueChange={(values) => {
+            const next = values.find((value) => value !== (kind ?? "all"));
+            if (next) onKindChange(next === "all" ? null : (next as TemplateKind));
+          }}
+          aria-label="Kind of template"
+          className={cn(!searchable && "ml-auto")}
+        >
+          <ToggleGroupItem value="all" size="sm" variant="outline" className="text-xs">
+            All
+          </ToggleGroupItem>
+          {(Object.keys(TEMPLATE_KIND) as TemplateKind[]).map((option) => {
+            const Icon = TEMPLATE_KIND[option].icon;
+            return (
+              <ToggleGroupItem
+                key={option}
+                value={option}
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs"
+              >
+                <Icon className="size-3.5" />
+                {TEMPLATE_KIND[option].plural}
+              </ToggleGroupItem>
+            );
+          })}
+        </ToggleGroup>
+      </div>
 
-      <Section title="Yours" count={own.length}>
+      <Section title="Yours" count={shownOwn.length}>
         {shownOwn.map(card)}
         {own.length === 0 && (
           <div className="col-span-full flex items-center gap-3 rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
@@ -243,7 +283,7 @@ export function TemplatesPanel({
       </Section>
 
       {shownBuiltin.length > 0 && (
-        <Section title="Built-in" count={BUILTIN_TEMPLATES.length}>
+        <Section title="Built-in" count={shownBuiltin.length}>
           {shownBuiltin.map(card)}
         </Section>
       )}

@@ -1,26 +1,17 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { ChevronDown, Cog, LayoutTemplate, Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useTemplatesQuery } from "@/services/template.service";
 import { AutomationsPanel } from "./automations/AutomationsPanel";
 import { TemplatesPanel } from "./templates/TemplatesPanel";
-import {
-  BUILTIN_TEMPLATES,
-  automationFieldsOf,
-  userCard,
-  type TemplateCard,
-} from "./templates/templates";
+import { automationFieldsOf, type TemplateCard, type TemplateKind } from "./templates/templates";
 import type { Automation, ConnectionKey } from "@/types/bindings";
 
 type Section = "automations" | "templates";
@@ -52,29 +43,6 @@ function NavItem({
   );
 }
 
-function TemplateMenuGroup({
-  label,
-  cards,
-  onUse,
-}: {
-  label: string;
-  cards: TemplateCard[];
-  onUse: (card: TemplateCard) => void;
-}): ReactNode {
-  if (cards.length === 0) return null;
-  return (
-    <DropdownMenuGroup>
-      <DropdownMenuLabel className="text-[10px] uppercase tracking-wide">{label}</DropdownMenuLabel>
-      {cards.map((card) => (
-        <DropdownMenuItem key={card.key} className="text-xs" onClick={() => onUse(card)}>
-          <card.icon className="size-3.5 text-muted-foreground" />
-          {card.name}
-        </DropdownMenuItem>
-      ))}
-    </DropdownMenuGroup>
-  );
-}
-
 /**
  * The project's reusable pieces. Automations today, with skills and MCP servers meant to land
  * beside them; Templates sits apart at the bottom because it holds starting points for every one
@@ -98,7 +66,8 @@ export function CollectionsView({
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
   const [seed, setSeed] = useState<Partial<Automation> | null>(null);
-  const { data: stored } = useTemplatesQuery();
+  // Templates is reached filtered from "New automation" and unfiltered from the sidebar.
+  const [templateKind, setTemplateKind] = useState<TemplateKind | null>(null);
 
   function openEditor(automation: Automation | null) {
     setEditing(automation);
@@ -143,20 +112,15 @@ export function CollectionsView({
                 <ChevronDown className="size-3.5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-auto max-w-80 whitespace-nowrap">
-                <TemplateMenuGroup
-                  label="Your templates"
-                  cards={(stored ?? []).map(userCard)}
-                  onUse={startFromTemplate}
-                />
-                <TemplateMenuGroup
-                  label="Built-in"
-                  cards={BUILTIN_TEMPLATES}
-                  onUse={startFromTemplate}
-                />
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-xs" onClick={() => setSection("templates")}>
+                <DropdownMenuItem
+                  className="text-xs"
+                  onClick={() => {
+                    setTemplateKind("automation");
+                    setSection("templates");
+                  }}
+                >
                   <LayoutTemplate className="size-3.5 text-muted-foreground" />
-                  All templates
+                  From templates
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -180,7 +144,10 @@ export function CollectionsView({
             icon={LayoutTemplate}
             label="Templates"
             active={section === "templates"}
-            onClick={() => setSection("templates")}
+            onClick={() => {
+              setTemplateKind(null);
+              setSection("templates");
+            }}
           />
         </nav>
 
@@ -203,6 +170,8 @@ export function CollectionsView({
               projectId={projectId}
               projectPath={projectPath}
               connection={connection}
+              kind={templateKind}
+              onKindChange={setTemplateKind}
               onUse={startFromTemplate}
             />
           )}

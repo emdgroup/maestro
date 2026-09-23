@@ -27,8 +27,11 @@ import type { Automation, AutomationTemplate, Template, TemplateBody } from "@/t
  * Only automations exist as a kind today, so `body` is an automation's. A second kind makes this a
  * union on `body.kind`, and the card keeps its shape.
  */
+export type TemplateKind = TemplateBody["kind"];
+
 export interface TemplateCard {
   key: string;
+  kind: TemplateKind;
   name: string;
   description: string;
   /** A topic, shown first in the footer. Optional on the user's own. */
@@ -41,8 +44,8 @@ export interface TemplateCard {
 
 /** The kinds a template can be of, each with the icon the Templates page shows it by. */
 export const TEMPLATE_KIND = {
-  automation: { label: "Automation template", icon: Cog },
-} satisfies Record<TemplateBody["kind"], { label: string; icon: LucideIcon }>;
+  automation: { label: "Automation template", plural: "Automations", icon: Cog },
+} satisfies Record<TemplateKind, { label: string; plural: string; icon: LucideIcon }>;
 
 /** What kind of trigger an automation made from this gets, for a chip: no schedule sentence. */
 export function triggerType(body: AutomationTemplate): { label: string; icon: LucideIcon } {
@@ -92,6 +95,7 @@ export function userCard(template: Template): TemplateCard {
   const { kind: _kind, ...body } = template.body;
   return {
     key: `user-${template.id}`,
+    kind: template.body.kind,
     name: template.name,
     description: body.prompt,
     tag: template.tag ?? null,
@@ -112,6 +116,7 @@ function builtin(
 ): TemplateCard {
   return {
     key: `builtin-${key}`,
+    kind: "automation",
     name,
     description,
     tag,
