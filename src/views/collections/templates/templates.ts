@@ -1,5 +1,4 @@
 import {
-  Ban,
   Bug,
   BookOpen,
   CalendarClock,
@@ -11,6 +10,7 @@ import {
   Mail,
   Newspaper,
   Package,
+  Play,
   Search,
   ShieldAlert,
   TestTubeDiagonal,
@@ -48,13 +48,13 @@ export const TEMPLATE_KIND = {
 export function triggerType(body: AutomationTemplate): { label: string; icon: LucideIcon } {
   if (body.cron) return { label: "Schedule", icon: CalendarClock };
   if (body.webhook_enabled) return { label: "Webhook", icon: Webhook };
-  return { label: "No trigger", icon: Ban };
+  return { label: "On demand", icon: Play };
 }
 
-/** "Every day at 09:00", "Webhook" or "No trigger": what starts an automation made from this. */
+/** "Every day at 09:00", "Webhook" or "On demand": what starts an automation made from this. */
 export function describeTrigger(body: AutomationTemplate): string {
   if (body.cron) return describeSchedule(body.cron);
-  return body.webhook_enabled ? "Webhook" : "No trigger";
+  return body.webhook_enabled ? "Webhook" : "On demand";
 }
 
 /** What a template keeps of an automation: what it does and what starts it, nothing of the project. */
