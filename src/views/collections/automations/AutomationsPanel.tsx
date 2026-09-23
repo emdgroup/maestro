@@ -54,6 +54,9 @@ import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import { keptCount, runDuration, waitDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
 
+/** Inline text that acts: the empty state's two ways in. */
+const LINK = "cursor-pointer font-medium text-accent underline-offset-2 hover:underline";
+
 function describeWorkspace(workspace: Automation["workspace"]): string {
   if (workspace.mode === "new_worktree") {
     return `New worktree from ${workspace.base_branch || "the current branch"}`;
@@ -353,6 +356,8 @@ export function AutomationsPanel({
   editing,
   seed,
   onEdit,
+  onNew,
+  onBrowseTemplates,
 }: {
   projectId: number;
   projectPath: string;
@@ -364,6 +369,9 @@ export function AutomationsPanel({
   /** What a new one starts from, when it comes from a template. */
   seed: Partial<Automation> | null;
   onEdit: (automation: Automation) => void;
+  onNew: () => void;
+  /** Templates, filtered to automations. */
+  onBrowseTemplates: () => void;
 }) {
   const { data: list } = useAutomationsQuery(projectId);
   const { data: runs } = useAutomationRunsQuery(projectId);
@@ -407,11 +415,17 @@ export function AutomationsPanel({
             <Cog className="size-8 text-muted-foreground/40" />
             <p className="text-sm font-medium">No automations yet</p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              An automation will run your prompt on demand or on a schedule, in the background and
-              whether or not Maestro is open. You decide what it does and what it produces. Create
-              one from scratch with &ldquo;New automation&rdquo;, or start from a template and
-              adjust it to this project: choose &ldquo;From templates&rdquo; beside that button, or
-              Templates in the sidebar. You can also ask an agent to guide you through it.
+              An automation will run your prompt on demand, on a schedule or from a webhook, in the
+              background and whether or not Maestro is open. You decide what it does and what it
+              produces. Create one{" "}
+              <button type="button" onClick={onNew} className={LINK}>
+                from scratch
+              </button>
+              , or{" "}
+              <button type="button" onClick={onBrowseTemplates} className={LINK}>
+                start from a template
+              </button>{" "}
+              and adjust it to this project. You can also ask an agent to guide you through it.
             </p>
           </div>
         ) : (

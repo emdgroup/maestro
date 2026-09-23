@@ -75,6 +75,11 @@ export function CollectionsView({
     setEditorOpen(true);
   }
 
+  function browseAutomationTemplates() {
+    setTemplateKind("automation");
+    setSection("templates");
+  }
+
   // A template is used over the Automations page, so the new automation is in view once saved.
   function startFromTemplate(card: TemplateCard) {
     setSection("automations");
@@ -112,13 +117,7 @@ export function CollectionsView({
                 <ChevronDown className="size-3.5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-auto max-w-80 whitespace-nowrap">
-                <DropdownMenuItem
-                  className="text-xs"
-                  onClick={() => {
-                    setTemplateKind("automation");
-                    setSection("templates");
-                  }}
-                >
+                <DropdownMenuItem className="text-xs" onClick={browseAutomationTemplates}>
                   <LayoutTemplate className="size-3.5 text-muted-foreground" />
                   From templates
                 </DropdownMenuItem>
@@ -164,6 +163,8 @@ export function CollectionsView({
               editing={editing}
               seed={seed}
               onEdit={openEditor}
+              onNew={() => openEditor(null)}
+              onBrowseTemplates={browseAutomationTemplates}
             />
           ) : (
             <TemplatesPanel
