@@ -602,7 +602,7 @@ export function AgentMonitor({
 
         {selectedSession?.execution_mode !== "acp" && selectedSession != null && (
           <div className="flex-1 flex flex-col min-h-0 bg-card">
-            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_7px]">
+            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 {renderSessionHeader(selectedSession)}
                 <TerminalComponent
@@ -615,7 +615,7 @@ export function AgentMonitor({
         )}
         {!selectedSession && (
           <div className="flex-1 flex flex-col min-h-0 bg-card">
-            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_7px]">
+            <div className="flex flex-col flex-1 min-h-0 p-[8px_7px_0]">
               <div className="flex flex-col flex-1 min-h-0 rounded-t-xl border-t border-l border-r border-border bg-background overflow-hidden">
                 <Empty>
                   <EmptyDescription>Select a session to view its activity</EmptyDescription>

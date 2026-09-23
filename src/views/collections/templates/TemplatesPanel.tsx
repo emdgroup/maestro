@@ -227,7 +227,8 @@ export function TemplatesPanel({
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
+    // Inset from the window edge on the right, as the Agents view is, since nothing sits beside it.
+    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
       <div className="flex items-center gap-2">
         {searchable && (
           <div className="relative flex-1">
