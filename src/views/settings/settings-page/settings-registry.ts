@@ -7,6 +7,7 @@ import {
   Monitor,
   Palette,
   ScrollText,
+  Server,
   Webhook,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -70,6 +71,14 @@ export const SETTINGS_PAGES: SettingsPageDef[] = [
     // project and every tool pointed at it.
     scope: "connection",
     keywords: ["max concurrent agents", "concurrency", "auto mode", "free memory", "queue"],
+  },
+  {
+    id: "background-server",
+    label: "Background server",
+    icon: Server,
+    // Per connection: one server runs on each host, whatever project reached it.
+    scope: "connection",
+    keywords: ["server", "daemon", "autostart", "start automatically", "login", "boot", "stop"],
   },
   {
     id: "webhooks",

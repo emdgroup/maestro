@@ -22,6 +22,22 @@ use crate::tool_check::check_tools;
 const NO_AUTOMATION_STORE: &str =
     "The automation store could not be opened, so automations are unavailable on this machine";
 
+fn server_status(
+    live_sessions: usize,
+    running_runs: u32,
+    autostart: Option<maestro_protocol::AutostartMethod>,
+) -> maestro_protocol::ServerStatus {
+    maestro_protocol::ServerStatus {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        pid: std::process::id(),
+        started_at: crate::STARTED_AT.get().cloned().unwrap_or_default(),
+        live_sessions: live_sessions as u32,
+        running_runs,
+        autostart_supported: crate::autostart::supported(),
+        autostart,
+    }
+}
+
 fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheckResult {
     maestro_protocol::ToolCheckResult {
         tool,
@@ -367,6 +383,46 @@ pub(crate) async fn dispatch_message(
                 }
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::GetServerStatus) => {
+            let running_runs = match automation_store {
+                Some(store) => crate::automations::count_running(&*store.lock().await),
+                None => 0,
+            };
+            let status = server_status(sessions.len(), running_runs, crate::autostart::current());
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetAutostart(req)) => {
+            let live_sessions = sessions.len();
+            let running_runs = match automation_store {
+                Some(store) => crate::automations::count_running(&*store.lock().await),
+                None => 0,
+            };
+            // systemctl, loginctl and crontab are child processes; none of them belongs on the
+            // loop every session's traffic goes through.
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let set = tokio::task::spawn_blocking(move || crate::autostart::set(req.enabled))
+                    .await
+                    .unwrap_or_else(|e| Err(format!("autostart task failed: {e}")));
+                let response = match set {
+                    Ok(method) => MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(
+                        server_status(live_sessions, running_runs, method),
+                    )),
+                    Err(e) => error_response(e),
+                };
+                if let Err(e) = send_response(&stdout, &response).await {
+                    send_diag("warn", format!("[autostart] could not answer: {e}"));
+                }
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::GetWebhookSettings) => {

@@ -53,7 +53,7 @@ pub(crate) fn attach_command(server_path: &str) -> String {
 /// pointed at its own `MAESTRO_DATA_DIR` gets a separate daemon instead of contending with the
 /// installed app over one. Remote transports pass nothing and take the home-relative default,
 /// because there is no equivalent directory on the other machine.
-fn local_daemon_dir(app_state: &crate::core::AppState) -> std::path::PathBuf {
+pub(crate) fn local_daemon_dir(app_state: &crate::core::AppState) -> std::path::PathBuf {
     app_state.app_data_dir.join("daemon")
 }
 

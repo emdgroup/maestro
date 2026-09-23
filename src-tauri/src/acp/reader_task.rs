@@ -1705,6 +1705,13 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(resp)) => {
+            if let Ok(mut guard) = pending.server_status.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(resp)) => {
             if let Ok(mut guard) = pending.roll_webhook_secret.lock() {
                 if let Some(tx) = guard.take() {
@@ -1976,6 +1983,7 @@ pub(crate) async fn handle_shared_server_message(
                 || fail_pending(&pending.delete_automation_run, &err.message)
                 || fail_pending(&pending.set_run_retention, &err.message)
                 || fail_pending(&pending.webhook_settings, &err.message)
+                || fail_pending(&pending.server_status, &err.message)
                 || fail_pending(&pending.roll_webhook_secret, &err.message)
                 || fail_pending(&pending.webhook_deliveries, &err.message);
 
@@ -2148,6 +2156,8 @@ pub(crate) async fn handle_shared_server_message(
     }
 }
 
+// Each argument is a separate piece of the connection server the reader outlives its caller with.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_shared_reader_task(
     source: AcpReadSource,
     connection_key: crate::acp::ConnectionKey,
@@ -2156,6 +2166,7 @@ pub(crate) fn spawn_shared_reader_task(
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::core::AppState>,
     pending: PendingChannels,
+    ended: Arc<tokio::sync::Notify>,
 ) {
     tokio::spawn(async move {
         let mut source = source;
@@ -2248,6 +2259,7 @@ pub(crate) fn spawn_shared_reader_task(
         }
 
         watchdog_alive.store(false, Ordering::Relaxed);
+        ended.notify_one();
 
         // Server process died — clean up all shared sessions for this connection.
         // The entry still being here is what distinguishes a death from a teardown: closing the

@@ -1,4 +1,5 @@
 // Re-export all handlers for use in lib.rs collect_commands!
+pub use crate::acp::server_control::*;
 pub use crate::connectivity::docker_handlers::*;
 pub use crate::connectivity::files::*;
 pub use crate::connectivity::filesystem_handlers::*;

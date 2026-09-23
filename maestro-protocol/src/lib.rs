@@ -93,6 +93,11 @@ pub enum ServerRequest {
     RollWebhookSecret(AutomationIdRequest),
     /// An automation's last deliveries, newest first.
     ListWebhookDeliveries(AutomationIdRequest),
+    /// What this server is: since when, which version, and how busy.
+    GetServerStatus,
+    /// Start this server with the machine, or stop doing so. Linux only: on the machines the app
+    /// runs on, the app writes the login entry itself.
+    SetAutostart(SetAutostartRequest),
     /// When an expression would next come round. For a schedule being written, not a stored one.
     PreviewSchedule(PreviewScheduleRequest),
     SetModel(SetModelRequest),
@@ -726,6 +731,7 @@ pub enum ServerResponse {
     WebhookSettingsOk(WebhookStatus),
     RollWebhookSecretOk(Automation),
     ListWebhookDeliveriesOk(ListWebhookDeliveriesResponse),
+    ServerStatusOk(ServerStatus),
     PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.
@@ -1894,4 +1900,34 @@ pub struct AutomationIdRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListWebhookDeliveriesResponse {
     pub deliveries: Vec<WebhookDelivery>,
+}
+
+/// How a server was set to start with its machine.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutostartMethod {
+    /// A systemd user unit, with linger so it runs without anyone logged in.
+    Systemd,
+    /// A crontab `@reboot` line, where systemd or linger is not available.
+    Cron,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SetAutostartRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerStatus {
+    pub version: String,
+    pub pid: u32,
+    /// RFC 3339.
+    pub started_at: String,
+    pub live_sessions: u32,
+    /// Automation runs still going, across every project on this machine.
+    pub running_runs: u32,
+    /// Whether this server can set itself to start with its machine at all.
+    pub autostart_supported: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autostart: Option<AutostartMethod>,
 }

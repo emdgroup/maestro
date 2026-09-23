@@ -16,6 +16,7 @@ mod agent_restart;
 mod auth;
 mod automation_runner;
 mod automations;
+mod autostart;
 mod client_sink;
 mod command_ext;
 mod daemon;
@@ -320,10 +321,14 @@ async fn reap_idle_sessions(
 }
 
 /// The server proper: dispatch requests until the client channel closes.
+/// When this process began serving, for the status the app shows beside Stop.
+pub(crate) static STARTED_AT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 async fn run_server(
     mut stdin_msg_rx: MsgRx,
     stdout: crate::ClientOut,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    STARTED_AT.get_or_init(|| chrono::Utc::now().to_rfc3339());
     let mut sessions: SessionMap = HashMap::new();
     let agent_connections: SharedAgentConnections =
         Arc::new(tokio::sync::Mutex::new(AgentConnectionMap::new()));

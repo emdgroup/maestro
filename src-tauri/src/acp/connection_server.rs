@@ -297,6 +297,62 @@ pub async fn query_webhook_settings_via_server(
     .await
 }
 
+/// What the connection's server is, or with `autostart`, set it to start with its machine first.
+pub async fn query_server_status_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    autostart: Option<bool>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ServerStatus, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.server_status.clone(),
+        "Server status already in progress",
+        MaestroRpcMessage::Request(match autostart {
+            Some(enabled) => {
+                ServerRequest::SetAutostart(maestro_protocol::SetAutostartRequest { enabled })
+            }
+            None => ServerRequest::GetServerStatus,
+        }),
+        30,
+        "Server status via connection server timed out after 30s",
+    )
+    .await
+}
+
+/// Stop the connection's server, and with it every session and run on it.
+///
+/// The server is forgotten first, so the reader sees the pipe close as a teardown rather than a
+/// lost connection, and the call waits for that close: a project reopened before the old server
+/// had gone would attach to it just as it exited.
+pub async fn stop_connection_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    let server = app_state
+        .acp
+        .connection_servers
+        .lock()
+        .await
+        .remove(&connection_key)
+        .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
+    let request = serialize_message(&MaestroRpcMessage::Request(ServerRequest::Shutdown))?;
+    server
+        .writer_tx
+        .send(request)
+        .await
+        .map_err(|_| "The server could not be reached to stop it".to_string())?;
+    let ended =
+        tokio::time::timeout(std::time::Duration::from_secs(20), server.ended.notified()).await;
+    if ended.is_err() {
+        log::warn!("[acp] server on {connection_key:?} did not close after Shutdown");
+    }
+    // Dropping it kills a local relay still running, and with it any reconnect it had in mind.
+    drop(server);
+    Ok(())
+}
+
 pub async fn query_roll_webhook_secret_via_server(
     connection_key: crate::acp::ConnectionKey,
     automation_id: String,
@@ -675,12 +731,14 @@ pub async fn spawn_connection_server(
     let pending = PendingChannels::new();
     let last_ping_at = Arc::new(AtomicU64::new(0));
     let writer_tx_for_reader = write_tx.clone();
+    let ended = Arc::new(tokio::sync::Notify::new());
 
     let connection_server = ConnectionServer {
         child,
         writer_tx: write_tx,
         pending: pending.clone(),
         last_ping_at: Arc::clone(&last_ping_at),
+        ended: Arc::clone(&ended),
     };
 
     // Re-check under lock to avoid double-spawn race.
@@ -700,6 +758,7 @@ pub async fn spawn_connection_server(
         app_state.app_handle.clone(),
         Arc::clone(app_state),
         pending,
+        ended,
     );
 
     Ok(())

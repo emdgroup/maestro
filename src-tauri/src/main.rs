@@ -162,6 +162,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     fix_path_env::fix().expect("failed to fix PATH");
 
+    // The login entry "Start automatically" writes. After the PATH fix, which the server and the
+    // agents it spawns inherit, and before anything that would open a window.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if args
+        .get(1)
+        .is_some_and(|arg| arg == maestro_lib::acp::server_control::START_SERVER_FLAG)
+    {
+        std::process::exit(maestro_lib::acp::server_control::start_server_at_login(
+            args.get(2..).unwrap_or_default(),
+        ));
+    }
+
     // Generate TypeScript bindings in debug builds
     let builder = maestro_lib::create_builder();
 

@@ -90,6 +90,7 @@ pub struct PendingChannels {
     pub delete_automation_run: PendingReply<()>,
     pub set_run_retention: PendingReply<()>,
     pub webhook_settings: PendingReply<maestro_protocol::WebhookStatus>,
+    pub server_status: PendingReply<maestro_protocol::ServerStatus>,
     pub roll_webhook_secret: PendingReply<maestro_protocol::Automation>,
     pub webhook_deliveries: PendingReply<maestro_protocol::ListWebhookDeliveriesResponse>,
     pub preview_schedule: PendingReply<maestro_protocol::PreviewScheduleResponse>,
@@ -125,6 +126,7 @@ impl PendingChannels {
             delete_automation_run: Arc::new(std::sync::Mutex::new(None)),
             set_run_retention: Arc::new(std::sync::Mutex::new(None)),
             webhook_settings: Arc::new(std::sync::Mutex::new(None)),
+            server_status: Arc::new(std::sync::Mutex::new(None)),
             roll_webhook_secret: Arc::new(std::sync::Mutex::new(None)),
             webhook_deliveries: Arc::new(std::sync::Mutex::new(None)),
             preview_schedule: Arc::new(std::sync::Mutex::new(None)),
@@ -159,6 +161,8 @@ pub struct ConnectionServer {
     /// Unix timestamp (seconds) of the last `Ping` received from maestro-server.
     /// Zero until the first ping arrives. Checked by the heartbeat watchdog.
     pub last_ping_at: Arc<std::sync::atomic::AtomicU64>,
+    /// Signalled once by the reader when the pipe closes. What a deliberate stop waits on.
+    pub ended: Arc<tokio::sync::Notify>,
 }
 
 /// Session capability flags reported by the agent on SpawnOk.

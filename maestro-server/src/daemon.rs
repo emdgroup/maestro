@@ -318,9 +318,30 @@ pub(crate) async fn run_attach() -> Result<(), String> {
             _ = down => {}
         }
 
+        if stopped_on_purpose(&dir).await {
+            // Asked to stop, by the user or by an update. Starting another would undo exactly
+            // that, so the app is told the way it is told of any server ending: the pipe closes.
+            return Ok(());
+        }
+
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(Duration::from_secs(30));
     }
+}
+
+/// Whether a daemon that just dropped us exited cleanly rather than crashed.
+///
+/// A clean exit clears its runtime file before releasing the lock; a crash releases the lock and
+/// leaves the file. A daemon still holding the lock after the wait is alive and merely dropped
+/// this connection, which is a reason to reconnect, not to stop.
+async fn stopped_on_purpose(dir: &Path) -> bool {
+    let Ok(lock) = open_lock(dir) else {
+        return false;
+    };
+    wait_for(SHUTDOWN_WAIT, || !daemon_is_running(&lock))
+        .await
+        .is_ok()
+        && read_runtime(dir).is_none()
 }
 
 /// Connect to the daemon for this environment, starting or replacing it as needed.
@@ -532,6 +553,16 @@ mod tests {
         assert_eq!(fresh.port, 5678);
         // With nothing stale to begin with, any file is the new one.
         assert!(fresh_runtime(tmp.path(), None).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_cleaned_up_stopped_on_purpose_and_one_that_did_not_crashed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path()).unwrap();
+        assert!(stopped_on_purpose(tmp.path()).await);
+        // A crash releases the lock but leaves the runtime file behind.
+        runtime_at(tmp.path(), env!("CARGO_PKG_VERSION"));
+        assert!(!stopped_on_purpose(tmp.path()).await);
     }
 
     #[tokio::test]

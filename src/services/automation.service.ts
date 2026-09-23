@@ -22,6 +22,8 @@ export const automationQueryKeys = {
     [...automationQueryKeys.base, "deliveries", projectId, automationId] as const,
   webhookSettings: (connection: ConnectionKey) =>
     [...automationQueryKeys.base, "webhook-settings", connection] as const,
+  backgroundServer: (connection: ConnectionKey) =>
+    [...automationQueryKeys.base, "background-server", connection] as const,
 };
 
 /**
@@ -258,5 +260,40 @@ export function useWebhookDeliveriesQuery(projectId: number, automationId: strin
     queryFn: () => api.listWebhookDeliveries(projectId, automationId!),
     enabled: automationId != null,
     refetchInterval: 5_000,
+  });
+}
+
+/** The connection's background server: since when, how busy, and whether it starts on its own. */
+export function useBackgroundServerQuery(connection: ConnectionKey | null) {
+  return useQuery({
+    queryKey: automationQueryKeys.backgroundServer(connection!),
+    queryFn: () => api.getBackgroundServer(connection!),
+    enabled: connection != null,
+    refetchInterval: 10_000,
+  });
+}
+
+/** Start the server with its machine, or stop doing so. The answer says how it ended up. */
+export function useSetBackgroundServerAutostartMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ connection, enabled }: { connection: ConnectionKey; enabled: boolean }) =>
+      api.setBackgroundServerAutostart(connection, enabled),
+    onSuccess: (server, { connection }) => {
+      queryClient.setQueryData(automationQueryKeys.backgroundServer(connection), server);
+    },
+    onError: createErrorToastHandler("Could not change how the background server starts"),
+  });
+}
+
+/** Stop the server, ending every session and run on it. */
+export function useStopBackgroundServerMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (connection: ConnectionKey) => api.stopBackgroundServer(connection),
+    onSuccess: () => queryClient.removeQueries({ queryKey: automationQueryKeys.base }),
+    onError: createErrorToastHandler("Could not stop the background server"),
   });
 }

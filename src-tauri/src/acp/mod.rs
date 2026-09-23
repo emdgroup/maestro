@@ -14,6 +14,7 @@ pub mod reader_task;
 pub mod registry;
 pub mod replay;
 pub mod resolve;
+pub mod server_control;
 pub mod session_handlers;
 pub mod session_ops;
 pub mod session_types;

@@ -983,6 +983,16 @@ pub fn expired_runs(
 
 /// Close out runs left open by a daemon that died mid-run.
 ///
+/// Runs still going, across every project on this machine.
+pub fn count_running(conn: &Connection) -> u32 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM runs WHERE status = 'running'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap_or(0)
+}
+
 /// Called once at startup. The sessions they named are gone with the process that held them, so a
 /// row still saying "running" would be a spinner nothing will ever stop.
 pub fn fail_interrupted_runs(conn: &Connection) -> Result<usize, String> {

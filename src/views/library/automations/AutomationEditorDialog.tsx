@@ -18,6 +18,7 @@ import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigF
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
 import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { useProjectSettings } from "@/services/project.service";
+import { useBackgroundServerQuery } from "@/services/automation.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
 import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
@@ -170,6 +171,7 @@ function TriggerSection({
 }) {
   const trigger = triggerOf(automation);
   const [lastCron, setLastCron] = useState(automation.cron);
+  const { data: server } = useBackgroundServerQuery(connection);
 
   const choose = (next: Trigger) => {
     if (automation.cron != null) setLastCron(automation.cron);
@@ -237,6 +239,13 @@ function TriggerSection({
           saved={saved}
           onChange={onChange}
         />
+      )}
+
+      {trigger !== "manual" && server?.autostart === "off" && (
+        <p className="text-[11px] text-muted-foreground/70">
+          Fires only while the background server runs, which stops at logout or reboot. Turn on
+          Start automatically under Settings, Background server, to keep it going.
+        </p>
       )}
     </div>
   );

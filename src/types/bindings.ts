@@ -1036,6 +1036,40 @@ async listWebhookDeliveries(projectId: number, automationId: string) : Promise<R
 }
 },
 /**
+ * The connection's server, for its Settings page.
+ */
+async getBackgroundServer(connection: ConnectionKey) : Promise<Result<BackgroundServer, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_background_server", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start the connection's server with its machine, or stop doing so. Never stops the server.
+ */
+async setBackgroundServerAutostart(connection: ConnectionKey, enabled: boolean) : Promise<Result<BackgroundServer, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_background_server_autostart", { connection, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop the connection's server. Every session and run on it ends; the next connection starts a
+ * fresh one.
+ */
+async stopBackgroundServer(connection: ConnectionKey) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_background_server", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
  * 
  * Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
@@ -3018,6 +3052,15 @@ export type AutomationWorkspace =
  * one that outlives its run.
  */
 { mode: "new_worktree"; base_branch: string }
+export type Autostart = 
+/**
+ * Nothing starts a server on this kind of connection on its own: WSL and containers.
+ */
+"unsupported" | "off" | 
+/**
+ * At login, on the machine the app runs on.
+ */
+"login" | "systemd" | "cron"
 /**
  * An Azure DevOps project option for combobox display.
  */
@@ -3026,6 +3069,7 @@ export type AzureDevOpsProjectOption = { id: string; name: string; description: 
  * An Azure DevOps git repository option for clone combobox display.
  */
 export type AzureDevOpsRepoOption = { id: string; name: string; project_name: string; clone_url: string | null }
+export type BackgroundServer = { version: string; started_at: string; live_sessions: number; running_runs: number; autostart: Autostart }
 /**
  * What can be said about a file git refuses to diff line by line.
  * 

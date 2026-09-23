@@ -40,7 +40,7 @@ becomes one of its clients.
 | 4     | Worktree provisioning moves into the daemon   | Done                          |
 | 5     | The clock                                     | Folded into phase 3           |
 | 6     | Webhooks                                      | Done                          |
-| 7     | Autostart and consent                         | Planned, last before release  |
+| 7     | Autostart and consent                         | In progress                   |
 
 ## Decisions that span every phase
 
@@ -322,9 +322,24 @@ that is not firing is the thing a user comes to that dialog to diagnose.
 
 ## Phase 7: autostart and consent
 
-The last phase before anything ships. The daemon starts with the machine, and the user is asked
-first. A control to stop the background server belongs here, since phases 1 to 6 deliberately
-have none.
+The last phase before anything ships. The daemon can start with the machine, when the user says
+so, and there is a control to stop it, since phases 1 to 6 deliberately have none.
+
+### Decisions (locked)
+
+| Question        | Decision                                                                                                                                                                                                                                                 |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Normal start    | Unchanged: opening a connection starts its server if none runs.                                                                                                                                                                                          |
+| Consent         | A **Start automatically** switch per connection on the Settings page, off by default. Nothing prompts for it.                                                                                                                                            |
+| This computer   | Windows: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. macOS: a LaunchAgent. Linux: an XDG autostart entry. All at login, with no console window.                                                                                  |
+| SSH hosts       | A systemd user unit plus `loginctl enable-linger`; with no systemd or linger refused, a crontab `@reboot` line. The switch says which one is installed. Both start the server through `bash -lc`, as the transport does, so agents get the login `PATH`. |
+| WSL, containers | No switch. Nothing boots a distro or a container on its own.                                                                                                                                                                                             |
+| What it starts  | The deployed binary at its stable path, in `daemon` mode. An update replaces it through the usual version check.                                                                                                                                         |
+| Turning it off  | Removes the entry, whichever kind. It does not stop a running server.                                                                                                                                                                                    |
+| Stop            | A button in the same section, beside the server's status (since when, version, live sessions, running runs). A confirmation says every session and run on that connection ends and the project closes. The next connection starts a fresh server.        |
+| Editor hint     | One line under the trigger choice while autostart is off: the trigger fires only while the server runs, and it stops at logout.                                                                                                                          |
+| Dev builds      | The entry is named after the app identifier and carries the dev daemon directory, so a dev build never touches the installed app's entry.                                                                                                                |
+| Uninstall       | Not handled yet: an entry left behind points at a missing binary and does nothing.                                                                                                                                                                       |
 
 ## Deferred, not scheduled
 
