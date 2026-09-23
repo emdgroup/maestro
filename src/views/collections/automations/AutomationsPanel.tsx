@@ -3,7 +3,9 @@ import {
   Bot,
   ChevronDown,
   CornerDownRight,
+  Ellipsis,
   FolderGit2,
+  LayoutTemplate,
   MessageCircleQuestion,
   Pencil,
   Play,
@@ -16,6 +18,13 @@ import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { Switch } from "@/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import {
@@ -38,6 +47,7 @@ import { automationHistory } from "./runs/deliveries";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { RunDialog } from "./runs/RunDialog";
 import { WebhookCreatedDialog } from "./WebhookSection";
+import { SaveAsTemplateDialog } from "@/views/collections/templates/SaveAsTemplateDialog";
 import { useNow } from "@/hooks/useNow";
 import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
@@ -66,6 +76,7 @@ function AutomationRow({
   now,
   onRun,
   onEdit,
+  onSaveAsTemplate,
   onDelete,
   onToggleEnabled,
 }: {
@@ -85,6 +96,7 @@ function AutomationRow({
   now: number;
   onRun: () => void;
   onEdit: () => void;
+  onSaveAsTemplate: () => void;
   onDelete: () => void;
   onToggleEnabled: (enabled: boolean) => void;
 }) {
@@ -266,30 +278,31 @@ function AutomationRow({
             </Button>
           </ButtonGroup>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={<Button variant="ghost" size="icon" onClick={onEdit} aria-label="Edit" />}
-          >
-            <Pencil className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipContent>Edit</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={`More actions for ${automation.name}`}
             render={
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onDelete}
-                aria-label={`Delete ${automation.name}`}
-                className="text-muted-foreground hover:text-destructive"
-              />
+              <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" />
             }
           >
-            <Trash2 className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipContent>Delete</TooltipContent>
-        </Tooltip>
+            <Ellipsis className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
+            <DropdownMenuItem className="text-xs" onClick={onEdit}>
+              <Pencil className="size-3.5" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-xs" onClick={onSaveAsTemplate}>
+              <LayoutTemplate className="size-3.5" />
+              Save as template
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" className="text-xs" onClick={onDelete}>
+              <Trash2 className="size-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {expanded && history.length > 0 && (
@@ -338,6 +351,7 @@ export function AutomationsPanel({
   editorOpen,
   onEditorOpenChange,
   editing,
+  seed,
   onEdit,
 }: {
   projectId: number;
@@ -347,6 +361,8 @@ export function AutomationsPanel({
   onEditorOpenChange: (open: boolean) => void;
   /** The automation the editor is open on, or null when it is creating one. */
   editing: Automation | null;
+  /** What a new one starts from, when it comes from a template. */
+  seed: Partial<Automation> | null;
   onEdit: (automation: Automation) => void;
 }) {
   const { data: list } = useAutomationsQuery(projectId);
@@ -371,6 +387,7 @@ export function AutomationsPanel({
   // closes on its own once the run is deleted.
   const [shownRunId, setShownRunId] = useState<string | null>(null);
   const [webhookCreated, setWebhookCreated] = useState<Automation | null>(null);
+  const [templateFrom, setTemplateFrom] = useState<Automation | null>(null);
   const shownRun = entries.find((entry) => entry.run.id === shownRunId) ?? null;
   const automations = list?.automations;
   const agents = discovery?.agents ?? [];
@@ -416,6 +433,7 @@ export function AutomationsPanel({
                 onDeleteRun={onDeleteRun}
                 onRun={() => run.mutate({ projectId, automationId: automation.id })}
                 onEdit={() => onEdit(automation)}
+                onSaveAsTemplate={() => setTemplateFrom(automation)}
                 onToggleEnabled={(enabled) =>
                   save.mutate({ projectId, automation: { ...automation, enabled } })
                 }
@@ -429,6 +447,8 @@ export function AutomationsPanel({
             ))}
           </div>
         )}
+
+        <SaveAsTemplateDialog automation={templateFrom} onClose={() => setTemplateFrom(null)} />
 
         <WebhookCreatedDialog
           automation={webhookCreated}
@@ -461,6 +481,7 @@ export function AutomationsPanel({
           // every local project and is replaced the moment the server says otherwise.
           serverTimezone={list?.server_timezone ?? localTimezone()}
           editing={editing}
+          seed={seed}
           onSave={(automation) =>
             save.mutate(
               { projectId, automation },

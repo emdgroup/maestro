@@ -149,7 +149,7 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V28. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V29. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -157,7 +157,7 @@ SQLite with foreign key constraints enabled. Schema V28. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V28_FULL`                              |
+| `0` (fresh install) | create the full schema from `SCHEMA_V29_FULL`                              |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -173,7 +173,7 @@ repository was ever in is three code paths maintained to serve nobody. This is o
 the versions in question are absent from `main` and from every tag; check both before doing it,
 and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`
 
 ### IPC Communication
 
@@ -457,6 +457,13 @@ project the database that would hold it is not even on the machine the agent run
 - **`NewWorktree` is the daemon's own**, made and unmade by `maestro-server/src/worktree.rs`. See
   below.
 
+**Templates are the exception, and app-side on purpose.** `src-tauri/src/templates.rs` keeps them in
+the app's own `templates` table, because a template belongs to the user rather than to a machine and
+has to be there on every connection. An automation template holds a prompt and a trigger, never an
+agent or a workspace, which are the project's. The body is JSON tagged by kind, so skills, MCP
+servers or prompts are a new `TemplateBody` variant rather than a new table. The built-in templates
+are not stored: they are `BUILTIN_TEMPLATES` in `src/views/collections/templates/templates.ts`.
+
 ### A worktree an automation made
 
 `maestro-server/src/worktree.rs` runs plain local `git`. There is no `GitConnection` equivalent and
@@ -735,7 +742,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
-- Schema version: 28 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
+- Schema version: 29 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 5.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it

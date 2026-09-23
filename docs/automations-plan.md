@@ -41,6 +41,7 @@ becomes one of its clients.
 | 5     | The clock                                     | Folded into phase 3           |
 | 6     | Webhooks                                      | Done                          |
 | 7     | Autostart and consent                         | In progress                   |
+| 8     | Templates                                     | In progress                   |
 
 ## Decisions that span every phase
 
@@ -341,8 +342,27 @@ so, and there is a control to stop it, since phases 1 to 6 deliberately have non
 | Dev builds      | The entry is named after the app identifier and carries the dev daemon directory, so a dev build never touches the installed app's entry.                                                                                                                |
 | Uninstall       | Not handled yet: an entry left behind points at a missing binary and does nothing.                                                                                                                                                                       |
 
+## Phase 8: templates
+
+A template is a reusable starting point, saved from something that already exists. Automations are
+the first kind; skills, MCP servers and prompts are meant to join them in the same Collections
+section, so nothing here is automation-shaped except the automation body itself.
+
+### Decisions (locked)
+
+| Question        | Decision                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Where stored    | App-wide, in the app's own SQLite (`templates`, schema v29), so every project on every connection sees them. Not in the daemon and not in the repository.                                        |
+| Shape           | `templates(id, kind, name, body, created_at)`. `body` is JSON tagged by `kind`; a new kind is a new variant of `TemplateBody`, not a new table.                                                  |
+| Automation body | Prompt and trigger only: the schedule with its timezone, or the webhook with its overlap choice, or none. Agent, model and workspace come from the project defaults when the template is used.   |
+| Link            | None. An automation made from a template is a plain copy.                                                                                                                                        |
+| Making one      | Only from an existing automation: **Save as template** in the automation row's ⋯ menu (which also holds Edit and Delete). There is no "New template".                                            |
+| Page            | **Templates** sits last in the Collections sidebar, below the kinds. Cards: icon and name, description, then a footer of category or kind, and the trigger. Search once there are more than six. |
+| Using one       | Clicking a card opens that kind's editor filled in. For an automation that is the automation editor, over the Automations page. "New automation" also carries a menu listing templates.          |
+| Editing one     | The ⋯ menu on the user's own cards: Edit opens the automation editor without the Agent and workspace section; Delete asks first.                                                                 |
+| Built-ins       | Twelve, shipped in the frontend and read-only, listed under **Built-in**.                                                                                                                        |
+
 ## Deferred, not scheduled
 
 - The trigger unit list from the earlier design sketch.
-- A templates library for automations. The cron templates in phase 3.5 are schedules, not prompts.
 - An MCP `create_automation` tool, so an agent can write an automation.

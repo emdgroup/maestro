@@ -159,6 +159,7 @@ function TriggerSection({
   connection,
   automation,
   saved,
+  template,
   serverTimezone,
   onChange,
 }: {
@@ -166,6 +167,7 @@ function TriggerSection({
   connection: ConnectionKey;
   automation: Automation;
   saved: boolean;
+  template: boolean;
   serverTimezone: string;
   onChange: (fields: Partial<Automation>) => void;
 }) {
@@ -237,11 +239,12 @@ function TriggerSection({
           connection={connection}
           automation={automation}
           saved={saved}
+          template={template}
           onChange={onChange}
         />
       )}
 
-      {trigger !== "manual" && server?.autostart === "off" && (
+      {!template && trigger !== "manual" && server?.autostart === "off" && (
         <p className="text-[11px] text-muted-foreground/70">
           Fires only while the background server runs, which stops at logout or reboot. Turn on
           Start automatically under Settings, Background server, to keep it going.
@@ -272,6 +275,8 @@ export function AutomationEditorDialog({
   worktrees,
   serverTimezone,
   editing,
+  seed = null,
+  template = false,
   onSave,
 }: {
   open: boolean;
@@ -285,6 +290,13 @@ export function AutomationEditorDialog({
   serverTimezone: string;
   /** The automation being edited, or null to create one. */
   editing: Automation | null;
+  /** What a new one starts from instead of blank: a template's fields. */
+  seed?: Partial<Automation> | null;
+  /**
+   * Editing a template, passed in as `editing`. Only what a template keeps is shown: the agent and
+   * workspace are the project's, chosen each time the template is used.
+   */
+  template?: boolean;
   onSave: (automation: Automation) => void;
 }) {
   const isGitRepo = useIsGitRepo();
@@ -300,16 +312,17 @@ export function AutomationEditorDialog({
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Reopening shows what is stored rather than what was abandoned last time. Adjusted during
-  // render rather than from an effect, which would paint one frame of the previous edit.
-  const [wasOpen, setWasOpen] = useState(open);
+  // render rather than from an effect, which would paint one frame of the previous edit. Starts
+  // closed so a dialog mounted open, as one from a template is, fills itself in the same way.
+  const [wasOpen, setWasOpen] = useState(false);
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) {
-      const next = editing ?? blank(defaultMode, defaultBaseBranch, defaultAgent);
+      const next = editing ?? { ...blank(defaultMode, defaultBaseBranch, defaultAgent), ...seed };
       setDraft(next);
       // Open for a project with no default agent: there is nothing to run this with, and the
       // disabled Create button would be the only clue about where to fix that.
-      setAdvancedOpen(next.agent_id.trim().length === 0);
+      setAdvancedOpen(!template && next.agent_id.trim().length === 0);
     }
   }
 
@@ -350,16 +363,22 @@ export function AutomationEditorDialog({
   // leave an automation that looks scheduled and never fires.
   const scheduleBroken = draft.cron != null && "error" in describeExpression(draft.cron);
   const canSave =
-    !nameMissing && !promptMissing && !agentMissing && !workspaceMissing && !scheduleBroken;
+    !nameMissing &&
+    !promptMissing &&
+    !scheduleBroken &&
+    (template || (!agentMissing && !workspaceMissing));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit automation" : "New automation"}</DialogTitle>
+          <DialogTitle>
+            {template ? "Edit template" : editing ? "Edit automation" : "New automation"}
+          </DialogTitle>
           <DialogDescription>
-            Give it a name, write in the prompt what it should do, and define which agent should do
-            it and where it should run.
+            {template
+              ? "A template keeps the name, the prompt and the trigger. The agent and the workspace are chosen each time it is used."
+              : "Give it a name, write in the prompt what it should do, and define which agent should do it and where it should run."}
           </DialogDescription>
         </DialogHeader>
 
@@ -392,97 +411,106 @@ export function AutomationEditorDialog({
             connection={connection}
             automation={draft}
             saved={editing !== null}
+            template={template}
             serverTimezone={serverTimezone}
             onChange={patch}
           />
 
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">
-              <ChevronDown
-                className={cn("size-3.5 transition-transform", !advancedOpen && "-rotate-90")}
-              />
-              <span className="font-medium">Agent and workspace</span>
-            </CollapsibleTrigger>
+          {!template && (
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">
+                <ChevronDown
+                  className={cn("size-3.5 transition-transform", !advancedOpen && "-rotate-90")}
+                />
+                <span className="font-medium">Agent and workspace</span>
+              </CollapsibleTrigger>
 
-            {/* Only while collapsed: expanded, the controls themselves say this, and a summary
+              {/* Only while collapsed: expanded, the controls themselves say this, and a summary
                 that repeats them reads as a second, stale copy. */}
-            {!advancedOpen && (
-              <p className="truncate px-1 pl-6 text-[11px] text-muted-foreground/70">{summary}</p>
-            )}
-
-            {/* Kept mounted: `AgentConfigFields` probes the agent and resets any model, mode or
-                effort it does not offer, and remounting it on every toggle re-runs that. */}
-            <CollapsibleContent keepMounted className="space-y-4 px-1 pt-3">
-              <AgentConfigFields
-                value={draft}
-                label={draft.name || "this automation"}
-                agents={agents}
-                projectId={projectId}
-                projectPath={projectPath}
-                connection={connection}
-                // An automation is not a pipeline role, so nothing holds it read-only: what it may
-                // do is the mode the user picks here.
-                readOnly={false}
-                onChange={patch}
-              />
-
-              {isGitRepo && (
-                <div className="space-y-2">
-                  <span className="text-[11px] text-muted-foreground">Workspace</span>
-                  <WorkspaceModeSelect
-                    value={mode}
-                    // Writing the mode rebuilds the workspace, so switching away cannot leave a
-                    // path behind that nothing will look at again.
-                    onChange={(next) => patch({ workspace: workspaceFor(next, defaultBaseBranch) })}
-                    allowNewWorktree
-                    hasReusableWorkspace={reusable.length > 0}
-                  />
-
-                  {mode === "NewWorktree" && (
-                    <>
-                      <BranchPicker
-                        value={baseBranch}
-                        prefix="From"
-                        onChange={(branch) =>
-                          patch({ workspace: { mode: "new_worktree", base_branch: branch } })
-                        }
-                        placeholder="The branch each run starts from"
-                      />
-                      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-                        Each run gets its own worktree and branch. It is removed when the run ends
-                        with nothing to lose, and kept with a note when there is.
-                      </p>
-                    </>
-                  )}
-
-                  {mode === "ReuseWorkspace" && (
-                    <Select
-                      value={pinnedPath}
-                      // The path, not the row id: the server acts on this and cannot read a row of
-                      // ours to resolve one.
-                      onValueChange={(path) =>
-                        patch({ workspace: { mode: "path", path: path ?? "" } })
-                      }
-                    >
-                      <SelectTrigger size="sm" className="w-full text-xs" aria-label="Workspace">
-                        <span className="truncate flex-1 text-left">
-                          {reusable.find((w) => w.path === pinnedPath)?.branch_name ??
-                            "Select a workspace"}
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {reusable.map((worktree) => (
-                          <SelectItem key={worktree.path} value={worktree.path} className="text-xs">
-                            {worktree.branch_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
+              {!advancedOpen && (
+                <p className="truncate px-1 pl-6 text-[11px] text-muted-foreground/70">{summary}</p>
               )}
-            </CollapsibleContent>
-          </Collapsible>
+
+              {/* Kept mounted: `AgentConfigFields` probes the agent and resets any model, mode or
+                effort it does not offer, and remounting it on every toggle re-runs that. */}
+              <CollapsibleContent keepMounted className="space-y-4 px-1 pt-3">
+                <AgentConfigFields
+                  value={draft}
+                  label={draft.name || "this automation"}
+                  agents={agents}
+                  projectId={projectId}
+                  projectPath={projectPath}
+                  connection={connection}
+                  // An automation is not a pipeline role, so nothing holds it read-only: what it may
+                  // do is the mode the user picks here.
+                  readOnly={false}
+                  onChange={patch}
+                />
+
+                {isGitRepo && (
+                  <div className="space-y-2">
+                    <span className="text-[11px] text-muted-foreground">Workspace</span>
+                    <WorkspaceModeSelect
+                      value={mode}
+                      // Writing the mode rebuilds the workspace, so switching away cannot leave a
+                      // path behind that nothing will look at again.
+                      onChange={(next) =>
+                        patch({ workspace: workspaceFor(next, defaultBaseBranch) })
+                      }
+                      allowNewWorktree
+                      hasReusableWorkspace={reusable.length > 0}
+                    />
+
+                    {mode === "NewWorktree" && (
+                      <>
+                        <BranchPicker
+                          value={baseBranch}
+                          prefix="From"
+                          onChange={(branch) =>
+                            patch({ workspace: { mode: "new_worktree", base_branch: branch } })
+                          }
+                          placeholder="The branch each run starts from"
+                        />
+                        <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+                          Each run gets its own worktree and branch. It is removed when the run ends
+                          with nothing to lose, and kept with a note when there is.
+                        </p>
+                      </>
+                    )}
+
+                    {mode === "ReuseWorkspace" && (
+                      <Select
+                        value={pinnedPath}
+                        // The path, not the row id: the server acts on this and cannot read a row of
+                        // ours to resolve one.
+                        onValueChange={(path) =>
+                          patch({ workspace: { mode: "path", path: path ?? "" } })
+                        }
+                      >
+                        <SelectTrigger size="sm" className="w-full text-xs" aria-label="Workspace">
+                          <span className="truncate flex-1 text-left">
+                            {reusable.find((w) => w.path === pinnedPath)?.branch_name ??
+                              "Select a workspace"}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {reusable.map((worktree) => (
+                            <SelectItem
+                              key={worktree.path}
+                              value={worktree.path}
+                              className="text-xs"
+                            >
+                              {worktree.branch_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
         </div>
 
         <DialogFooter>

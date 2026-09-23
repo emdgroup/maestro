@@ -1035,6 +1035,33 @@ async listWebhookDeliveries(projectId: number, automationId: string) : Promise<R
     else return { status: "error", error: e  as any };
 }
 },
+async listTemplates() : Promise<Result<Template[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_templates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a template, or replace the one `id` names.
+ */
+async saveTemplate(id: number | null, name: string, body: TemplateBody) : Promise<Result<Template, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_template", { id, name, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTemplate(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_template", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The connection's server, for its Settings page.
  */
@@ -3032,6 +3059,13 @@ ordinal?: number | null;
 result?: string | null }
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
+ * What an automation template keeps: what to do and what starts it.
+ * 
+ * Agent, model and workspace are left out on purpose. They belong to a project, and are taken
+ * from the project a template is used in.
+ */
+export type AutomationTemplate = { prompt: string; cron?: string | null; timezone: string; webhook_enabled: boolean; webhook_overlap: WebhookOverlap }
+/**
  * Where an automation's agent runs.
  * 
  * A path rather than a worktree row id: the server acts on this, and it has no access to this
@@ -3857,6 +3891,8 @@ export type TaskRelationship = { id: number; from_task_id: number; to_task_id: n
  */
 export type TaskReviewWithComments = { decision: string; general_feedback: string | null; comments: ReviewCommentEntry[]; created_at: string }
 export type TaskStatus = "Planning" | "Queue" | "InProgress" | "Review" | "Done" | "Cancelled"
+export type Template = { id: number; name: string; body: TemplateBody; created_at: string }
+export type TemplateBody = ({ kind: "automation" } & AutomationTemplate)
 export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean; configured_path: string | null; resolved_path: string | null; source: string; error: string | null }
 /**

@@ -104,6 +104,7 @@ export function WebhookSection({
   connection,
   automation,
   saved,
+  template = false,
   onChange,
 }: {
   projectId: number;
@@ -111,6 +112,8 @@ export function WebhookSection({
   automation: Automation;
   /** Whether this automation exists on the server yet. Its secret is made there, on save. */
   saved: boolean;
+  /** A template's trigger, which never has a URL or a secret of its own. */
+  template?: boolean;
   onChange: (fields: Partial<Automation>) => void;
 }) {
   const { data: status } = useWebhookSettingsQuery(connection);
@@ -172,8 +175,9 @@ export function WebhookSection({
       <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
         {overlap}
         <p className="text-[11px] text-muted-foreground/70">
-          The URL and the secret a sender needs are given to you once the automation is{" "}
-          {saved ? "saved" : "created"}.
+          {template
+            ? "Each automation made from this template gets its own URL and secret when it is created."
+            : `The URL and the secret a sender needs are given to you once the automation is ${saved ? "saved" : "created"}.`}
         </p>
       </div>
     );
