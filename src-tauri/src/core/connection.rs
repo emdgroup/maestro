@@ -131,6 +131,11 @@ pub struct AcpState {
     /// sees its own surface, so a blocked asset or a thrown exception is invisible to it until the
     /// next canvas tool call on that surface drains this and carries it back.
     pub canvas_errors: tokio::sync::Mutex<HashMap<(String, String), Vec<String>>>,
+    /// Messages for a session this side does not hold yet, keyed by session id. A session the
+    /// server starts on its own, such as an automation's, talks before this window has adopted it,
+    /// and what it said first is often the thing the user has to answer. Adoption replays these.
+    pub unclaimed_messages:
+        tokio::sync::Mutex<HashMap<String, Vec<crate::acp::transport::MaestroRpcMessage>>>,
 }
 
 pub struct PtyState {
@@ -193,6 +198,7 @@ impl AppState {
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
                 pending_host_tools: tokio::sync::Mutex::new(HashMap::new()),
                 canvas_errors: tokio::sync::Mutex::new(HashMap::new()),
+                unclaimed_messages: tokio::sync::Mutex::new(HashMap::new()),
             },
             pty: PtyState {
                 sessions: tokio::sync::Mutex::new(HashMap::new()),

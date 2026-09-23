@@ -1346,6 +1346,46 @@ fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
     }
 }
 
+/// How much is kept for one session nobody here holds yet, and for how many such sessions.
+///
+/// Most of what lands unclaimed is for a session that is already gone, or belongs to a project
+/// this window does not have open, and is never collected; the bounds are what keep that from
+/// growing. An automation's session is adopted within seconds of starting, well inside both.
+const UNCLAIMED_PER_SESSION: usize = 500;
+const UNCLAIMED_SESSIONS: usize = 16;
+
+/// Keep a message for a session this side does not hold, until adoption collects it.
+async fn park_unclaimed(
+    app_state: &Arc<crate::core::AppState>,
+    session_id: String,
+    msg: MaestroRpcMessage,
+) {
+    let mut unclaimed = app_state.acp.unclaimed_messages.lock().await;
+    // ponytail: dropping every parked session when a new one would exceed the cap loses a
+    // session mid-adoption only if sixteen others are unclaimed at once; evict oldest if it does.
+    if !unclaimed.contains_key(&session_id) && unclaimed.len() >= UNCLAIMED_SESSIONS {
+        unclaimed.clear();
+    }
+    let parked = unclaimed.entry(session_id).or_default();
+    if parked.len() < UNCLAIMED_PER_SESSION {
+        parked.push(msg);
+    }
+}
+
+/// Take whatever was said to a session before this side held it, oldest first.
+pub(crate) async fn take_unclaimed(
+    app_state: &crate::core::AppState,
+    session_id: &str,
+) -> Vec<MaestroRpcMessage> {
+    app_state
+        .acp
+        .unclaimed_messages
+        .lock()
+        .await
+        .remove(session_id)
+        .unwrap_or_default()
+}
+
 /// Route a shared-reader message to the correct per-session handler or to
 /// connection-level pending channels (PreInitialize, SessionList, SessionClose, etc.).
 pub(crate) async fn handle_shared_server_message(
@@ -1564,6 +1604,7 @@ pub(crate) async fn handle_shared_server_message(
                     log::warn!("[acp] emit turn-ended/{session_id} failed: {e}");
                 }
             }
+            park_unclaimed(app_state, session_id, msg).await;
         }
         return;
     }

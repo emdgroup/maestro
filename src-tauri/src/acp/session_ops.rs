@@ -430,6 +430,13 @@ pub async fn adopt_live_sessions(
             app_state.app_handle.clone(),
             Arc::clone(app_state),
         );
+        // Initialised already: it is running on the server. `SpawnOk` and `SessionLoadOk` are what
+        // normally set this, and an adopted session receives neither, so without it the replay
+        // drain never announced `replay-drained` and the view sat on its loading skeleton forever.
+        match acp_process.initialized.lock() {
+            Ok(mut initialized) => *initialized = true,
+            Err(e) => log::warn!("session {} lock poisoned: {e}", session.session_id),
+        }
         app_state
             .acp
             .sessions
@@ -442,7 +449,47 @@ pub async fn adopt_live_sessions(
         // yet. Replaying them is what makes a prompt the previous client was shown answerable
         // again — the agent is still blocked on it, and the message that asked went to a client
         // that is gone.
+        //
+        // What this window was sent before it held the session goes first, in the order it came:
+        // a session the server started on its own talks from its first second, and a canvas
+        // asking the user something is exactly what arrives then. A request among them is not
+        // replayed a second time from the server's list.
+        let unclaimed =
+            crate::acp::reader_task::take_unclaimed(app_state, &session.session_id).await;
+        let mut replayed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for msg in unclaimed {
+            match &msg {
+                MaestroRpcMessage::Response(
+                    crate::acp::transport::ServerResponse::PermissionRequest(request),
+                ) => {
+                    replayed.insert(request.request_id.clone());
+                }
+                MaestroRpcMessage::Response(
+                    crate::acp::transport::ServerResponse::ElicitationRequest(request),
+                ) => {
+                    replayed.insert(request.request_id.clone());
+                }
+                _ => {}
+            }
+            crate::acp::reader_task::handle_shared_server_message(
+                msg,
+                connection_key,
+                &app_state.app_handle,
+                app_state,
+                &pending,
+            )
+            .await;
+        }
         for request in session.pending_requests {
+            let request_id = match &request {
+                maestro_protocol::PendingSessionRequest::Permission(request) => &request.request_id,
+                maestro_protocol::PendingSessionRequest::Elicitation(request) => {
+                    &request.request_id
+                }
+            };
+            if replayed.contains(request_id) {
+                continue;
+            }
             let msg = match request {
                 maestro_protocol::PendingSessionRequest::Permission(request) => {
                     MaestroRpcMessage::Response(
