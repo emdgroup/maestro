@@ -232,7 +232,8 @@ const SessionRow = memo(function SessionRow({
                   {name}
                 </span>
                 <span className="text-xs font-mono text-muted-foreground/40 shrink-0 transition-opacity group-hover/menu-item:opacity-0">
-                  #{session.session_id}
+                  {/* A daemon-started session is keyed by a uuid, which would push the name out. */}
+                  #{session.session_id.slice(0, 8)}
                 </span>
               </div>
               {session.execution_mode === "acp" && (
