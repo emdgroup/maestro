@@ -281,7 +281,9 @@ function App() {
             onOpenSettings={openSettings}
             connectionQuiet={connectionHealth === "quiet"}
           />
-          <main className="flex-1 overflow-hidden relative">
+          {/* A haze of the panes' own colour rising into the header's bottom strip, so the tinted
+              header and the card-coloured panes meet without a hard edge. */}
+          <main className="relative flex-1 overflow-hidden shadow-[0_-2px_5px_var(--card)]">
             {/* Agents View — always mounted, imperative animation */}
             <motion.div
               initial={{ opacity: activeTab === "agents" ? 1 : 0 }}

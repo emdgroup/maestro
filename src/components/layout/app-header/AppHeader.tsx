@@ -96,7 +96,7 @@ export function AppHeader({
     // clicks. The three section wrappers repeat it or their empty space would be dead.
     <header
       data-tauri-drag-region
-      className="relative isolate grid grid-cols-[1fr_auto_1fr] h-12 shrink-0 items-center px-4 gap-4"
+      className="relative isolate grid grid-cols-[1fr_auto_1fr] h-[52px] shrink-0 items-center px-4 pb-1 gap-4"
     >
       {/* Project-colour dressing: bubbles behind the accent gradient, both absolutely
           positioned and -z-10, so the grid layout and the content above are untouched. */}
