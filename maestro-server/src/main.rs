@@ -32,6 +32,7 @@ mod skills;
 mod terminal;
 mod tool_check;
 mod tool_config;
+mod webhook;
 mod workspace_roots;
 mod worktree;
 
@@ -337,6 +338,9 @@ async fn run_server(
     let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<helpers::TurnEnd>();
     let _ = helpers::TURN_TX.set(turn_tx);
 
+    let (fire_tx, mut fire_rx) = tokio::sync::mpsc::unbounded_channel::<webhook::Fire>();
+    let _ = webhook::FIRE_TX.set(fire_tx);
+
     // `None` when the store cannot be opened. Sessions are the server's real job and go on without
     // it; automations answer with the reason instead, which is better than refusing to start.
     let automation_store: Option<automation_runner::Store> = daemon::dir()
@@ -360,6 +364,7 @@ async fn run_server(
     if let Some(store) = automation_store.as_ref() {
         automation_runner::sweep_worktrees(store, &stdout).await;
         automation_runner::apply_all_retention(store).await;
+        webhook::restart(store).await;
     }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
@@ -537,14 +542,55 @@ async fn run_server(
                         },
                     )
                     .await;
+                    automation_runner::drain_webhook_queues(
+                        store,
+                        automation_runner::Spawner {
+                            agents_with_spawn: &mut agents_with_spawn,
+                            agent_connections: &agent_connections,
+                            stdout: &stdout,
+                            spawn_result_tx: &spawn_result_tx,
+                        },
+                    )
+                    .await;
                 }
                 continue;
             }
 
             ended = turn_rx.recv() => {
                 if let (Some(ended), Some(store)) = (ended, automation_store.as_ref()) {
-                        automation_runner::finish_for_session(store, &stdout, ended)
+                    automation_runner::finish_for_session(store, &stdout, ended).await;
+                    automation_runner::drain_webhook_queues(
+                        store,
+                        automation_runner::Spawner {
+                            agents_with_spawn: &mut agents_with_spawn,
+                            agent_connections: &agent_connections,
+                            stdout: &stdout,
+                            spawn_result_tx: &spawn_result_tx,
+                        },
+                    )
                     .await;
+                }
+                continue;
+            }
+
+            fired = fire_rx.recv() => {
+                if let (Some(fired), Some(store)) = (fired, automation_store.as_ref()) {
+                    let started = automation_runner::start(
+                        store,
+                        &fired.automation_id,
+                        maestro_protocol::RunTrigger::Webhook,
+                        Some(fired.payload),
+                        automation_runner::Spawner {
+                            agents_with_spawn: &mut agents_with_spawn,
+                            agent_connections: &agent_connections,
+                            stdout: &stdout,
+                            spawn_result_tx: &spawn_result_tx,
+                        },
+                    )
+                    .await;
+                    if fired.reply.send(started).is_err() {
+                        send_diag("debug", "[webhook] the request gave up before its run opened");
+                    }
                 }
                 continue;
             }

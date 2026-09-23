@@ -13,7 +13,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
-    Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, RunRetention,
+    Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, RunRetention, RunTrigger,
+    WebhookOverlap,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -46,7 +47,11 @@ CREATE TABLE IF NOT EXISTS automations (
     -- renaming an automation leaves the directories its earlier runs made where they are.
     slug            TEXT,
     -- How many runs it has ever started, so a run keeps its number when earlier ones are deleted.
-    runs_started    INTEGER
+    runs_started    INTEGER,
+    -- The webhook trigger. The secret is made by the server and never written by a client.
+    webhook_enabled INTEGER NOT NULL DEFAULT 0,
+    webhook_overlap TEXT,
+    webhook_secret  TEXT
 );
 
 -- A project with no row here keeps RunRetention::default(). A row with both limits null keeps
@@ -87,11 +92,43 @@ CREATE TABLE IF NOT EXISTS runs (
     -- Which run of its automation this is, from 1. Null for runs recorded before numbering.
     ordinal           INTEGER,
     -- What the agent said last, the text after its final tool call. What a finished run is read by.
-    result            TEXT
+    result            TEXT,
+    -- schedule, manual or webhook. Null on rows from before it, which `scheduled` then answers.
+    origin            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_project ON runs(project_path, started_at DESC);
 CREATE INDEX IF NOT EXISTS runs_by_session ON runs(session_id);
+
+-- What each webhook request became, whether or not it started anything. `dedupe_key` is only set
+-- for an authorized one, so a stranger cannot use it to suppress a real delivery.
+CREATE TABLE IF NOT EXISTS deliveries (
+    id             TEXT PRIMARY KEY,
+    automation_id  TEXT NOT NULL,
+    received_at    TEXT NOT NULL,
+    status         INTEGER NOT NULL,
+    outcome        TEXT NOT NULL,
+    detail         TEXT,
+    run_id         TEXT,
+    dedupe_key     TEXT
+);
+CREATE INDEX IF NOT EXISTS deliveries_by_automation ON deliveries(automation_id, received_at DESC);
+
+-- Deliveries waiting for the run ahead of them, in arrival order.
+CREATE TABLE IF NOT EXISTS webhook_queue (
+    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+    automation_id  TEXT NOT NULL,
+    delivery_id    TEXT NOT NULL,
+    payload        TEXT NOT NULL
+);
+
+-- This machine's listener. One row, absent until changed from the defaults.
+CREATE TABLE IF NOT EXISTS webhook_settings (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    port          INTEGER NOT NULL,
+    bind_address  TEXT NOT NULL,
+    public_url    TEXT
+);
 ";
 
 /// Open, or create, the daemon's automation database.
@@ -122,11 +159,20 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         ("worktree_kept", "TEXT"),
         ("ordinal", "INTEGER"),
         ("result", "TEXT"),
+        ("origin", "TEXT"),
     ] {
         add_column_if_missing(&conn, "runs", column, kind)?;
     }
     add_column_if_missing(&conn, "automations", "slug", "TEXT")?;
     add_column_if_missing(&conn, "automations", "runs_started", "INTEGER")?;
+    add_column_if_missing(
+        &conn,
+        "automations",
+        "webhook_enabled",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(&conn, "automations", "webhook_overlap", "TEXT")?;
+    add_column_if_missing(&conn, "automations", "webhook_secret", "TEXT")?;
     Ok(conn)
 }
 
@@ -305,6 +351,12 @@ fn row_to_automation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Automation> {
         // A workspace that will not deserialize would otherwise take the whole list down with it.
         workspace: serde_json::from_str(&workspace).unwrap_or(AutomationWorkspace::Repository),
         next_due_at: None,
+        webhook_enabled: row.get::<_, i64>("webhook_enabled")? != 0,
+        webhook_overlap: row
+            .get::<_, Option<String>>("webhook_overlap")?
+            .and_then(|overlap| serde_json::from_value(serde_json::Value::String(overlap)).ok())
+            .unwrap_or_default(),
+        webhook_secret: row.get("webhook_secret")?,
     })
 }
 
@@ -378,8 +430,9 @@ pub fn save(
         // already created, so a rename must not move it.
         "INSERT INTO automations (
             id, project_path, name, prompt, agent_id, cron, timezone, enabled,
-            model, permission_mode, effort, workspace, created_at, updated_at, slug
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            model, permission_mode, effort, workspace, created_at, updated_at, slug,
+            webhook_enabled, webhook_overlap
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             prompt = excluded.prompt,
@@ -391,6 +444,8 @@ pub fn save(
             permission_mode = excluded.permission_mode,
             effort = excluded.effort,
             workspace = excluded.workspace,
+            webhook_enabled = excluded.webhook_enabled,
+            webhook_overlap = excluded.webhook_overlap,
             updated_at = excluded.updated_at",
         params![
             automation.id,
@@ -408,16 +463,64 @@ pub fn save(
             now,
             now,
             crate::worktree::slugify(&automation.name),
+            automation.webhook_enabled as i64,
+            overlap_name(automation.webhook_overlap),
         ],
     )
     .map_err(|e| format!("cannot save the automation: {e}"))?;
+    // Made the first time the webhook is turned on, and kept after it is turned off, so a sender
+    // configured once keeps working when it is turned back on.
+    if automation.webhook_enabled {
+        conn.execute(
+            "UPDATE automations SET webhook_secret = ? WHERE id = ? AND webhook_secret IS NULL",
+            params![new_secret(), automation.id],
+        )
+        .map_err(|e| format!("cannot make the webhook secret: {e}"))?;
+    }
 
     get(conn, &automation.id)?
         .map(|saved| with_next_due(vec![saved]).remove(0))
         .ok_or_else(|| "the automation vanished as it was written".to_string())
 }
 
+/// A fresh webhook secret: two v4 uuids, which is 244 random bits from the OS generator.
+fn new_secret() -> String {
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
+}
+
+fn overlap_name(overlap: WebhookOverlap) -> &'static str {
+    match overlap {
+        WebhookOverlap::Refuse => "refuse",
+        WebhookOverlap::Queue => "queue",
+        WebhookOverlap::Parallel => "parallel",
+    }
+}
+
+/// Replace an automation's webhook secret. The old one stops working with this write.
+pub fn roll_webhook_secret(conn: &Connection, automation_id: &str) -> Result<Automation, String> {
+    conn.execute(
+        "UPDATE automations SET webhook_secret = ? WHERE id = ?",
+        params![new_secret(), automation_id],
+    )
+    .map_err(|e| format!("cannot replace the webhook secret: {e}"))?;
+    get(conn, automation_id)?
+        .map(|rolled| with_next_due(vec![rolled]).remove(0))
+        .ok_or_else(|| format!("no automation with id {automation_id}"))
+}
+
 pub fn delete(conn: &Connection, automation_id: &str) -> Result<(), String> {
+    // What was waiting for it, and the record of what arrived for it, go with it.
+    for table in ["webhook_queue", "deliveries"] {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE automation_id = ?"),
+            [automation_id],
+        )
+        .map_err(|e| format!("cannot clear {table}: {e}"))?;
+    }
     conn.execute("DELETE FROM automations WHERE id = ?", [automation_id])
         .map(|_| ())
         .map_err(|e| format!("cannot delete the automation: {e}"))
@@ -460,7 +563,13 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
             "succeeded" => AutomationRunStatus::Succeeded,
             _ => AutomationRunStatus::Failed,
         },
-        scheduled: row.get::<_, i64>("scheduled")? != 0,
+        trigger: match row.get::<_, Option<String>>("origin")?.as_deref() {
+            Some("webhook") => RunTrigger::Webhook,
+            Some("manual") => RunTrigger::Manual,
+            Some("schedule") => RunTrigger::Schedule,
+            _ if row.get::<_, i64>("scheduled")? != 0 => RunTrigger::Schedule,
+            _ => RunTrigger::Manual,
+        },
         started_at: row.get("started_at")?,
         finished_at: row.get("finished_at")?,
         session_id: row.get("session_id")?,
@@ -499,7 +608,7 @@ fn status_name(status: AutomationRunStatus) -> &'static str {
 pub fn start_run(
     conn: &Connection,
     automation: &Automation,
-    scheduled: bool,
+    trigger: RunTrigger,
 ) -> Result<AutomationRun, String> {
     // A counter on the automation rather than a count of its runs, because runs can be deleted and
     // a number, once shown, must not come round again. The count covers the runs recorded before
@@ -526,7 +635,7 @@ pub fn start_run(
         project_path: automation.project_path.clone(),
         automation_name: automation.name.clone(),
         status: AutomationRunStatus::Running,
-        scheduled,
+        trigger,
         started_at: Utc::now().to_rfc3339(),
         finished_at: None,
         session_id: None,
@@ -546,17 +655,23 @@ pub fn start_run(
     };
     conn.execute(
         "INSERT INTO runs (
-            id, automation_id, project_path, automation_name, status, scheduled, started_at, ordinal
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, automation_id, project_path, automation_name, status, scheduled, started_at, ordinal,
+            origin
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             run.id,
             run.automation_id,
             run.project_path,
             run.automation_name,
             status_name(run.status),
-            run.scheduled as i64,
+            (trigger == RunTrigger::Schedule) as i64,
             run.started_at,
             run.ordinal,
+            match trigger {
+                RunTrigger::Schedule => "schedule",
+                RunTrigger::Manual => "manual",
+                RunTrigger::Webhook => "webhook",
+            },
         ],
     )
     .map_err(|e| format!("cannot record the run: {e}"))?;
@@ -899,6 +1014,9 @@ mod tests {
             effort: None,
             workspace: AutomationWorkspace::Repository,
             next_due_at: None,
+            webhook_enabled: false,
+            webhook_overlap: Default::default(),
+            webhook_secret: None,
         }
     }
 
@@ -982,7 +1100,7 @@ mod tests {
     fn a_run_outlives_the_automation_that_produced_it() {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let run = start_run(&conn, &saved, true).expect("start");
+        let run = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
         attach_session(
             &conn,
             &run.id,
@@ -1016,7 +1134,7 @@ mod tests {
         conn.execute_batch(&migrated).expect("schema");
 
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let run = start_run(&conn, &saved, true).expect("start");
+        let run = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
         attach_session(&conn, &run.id, "s", "as", "claude", "/p", true).expect("attach");
         let stored: String = conn
             .query_row("SELECT typeof(can_reload) FROM runs", [], |row| row.get(0))
@@ -1033,7 +1151,7 @@ mod tests {
         let now = Utc::now();
         let mut runs = Vec::new();
         for days_ago in [200, 150, 100, 10, 0] {
-            let run = start_run(&conn, &saved, true).expect("start");
+            let run = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
             finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None, None).expect("finish");
             let started = (now - chrono::Duration::days(days_ago)).to_rfc3339();
             conn.execute(
@@ -1076,7 +1194,7 @@ mod tests {
         assert!(expired_runs(&conn, "/p", now).expect("none").is_empty());
 
         delete_run(&conn, &runs[4].id).expect("delete the newest");
-        let next = start_run(&conn, &saved, true).expect("start");
+        let next = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
         assert_eq!(next.ordinal, Some(6));
     }
 
@@ -1084,7 +1202,7 @@ mod tests {
     fn a_renamed_automation_keeps_naming_its_worktrees_the_same_way() {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let first = start_run(&conn, &saved, true).expect("start");
+        let first = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
         assert_eq!(worktree_slug(&conn, &saved).expect("slug"), "automation-a");
         assert_eq!(first.ordinal, Some(1));
 
@@ -1094,7 +1212,7 @@ mod tests {
         renamed.name = "Something else entirely".to_string();
         let renamed = save(&conn, "/p", &renamed).expect("rename");
 
-        let second = start_run(&conn, &renamed, true).expect("start");
+        let second = start_run(&conn, &renamed, RunTrigger::Schedule).expect("start");
         assert_eq!(
             worktree_slug(&conn, &renamed).expect("slug"),
             "automation-a"
@@ -1105,7 +1223,7 @@ mod tests {
         let mut again = automation("b", None);
         again.name = saved.name.clone();
         let recreated = save(&conn, "/p", &again).expect("recreate");
-        let fresh = start_run(&conn, &recreated, true).expect("start");
+        let fresh = start_run(&conn, &recreated, RunTrigger::Schedule).expect("start");
         assert_eq!(fresh.ordinal, Some(1));
     }
 
@@ -1113,7 +1231,7 @@ mod tests {
     fn a_removed_worktree_stops_being_something_to_deal_with() {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let run = start_run(&conn, &saved, true).expect("start");
+        let run = start_run(&conn, &saved, RunTrigger::Schedule).expect("start");
         attach_worktree(
             &conn,
             &run.id,
@@ -1161,7 +1279,7 @@ mod tests {
     fn an_interrupted_run_does_not_stay_running() {
         let conn = store();
         let saved = save(&conn, "/p", &automation("a", None)).expect("save");
-        let run = start_run(&conn, &saved, false).expect("start");
+        let run = start_run(&conn, &saved, RunTrigger::Manual).expect("start");
         attach_session(
             &conn,
             &run.id,

@@ -22,6 +22,7 @@ import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
 import { Switch } from "@/ui/switch";
 import { CronEditor } from "./cron/CronEditor";
+import { WebhookSection } from "./WebhookSection";
 import { describeExpression } from "./cron/describe";
 import { DEFAULT_CRON } from "./cron/templates";
 import { localTimezone } from "./schedule";
@@ -67,6 +68,8 @@ function blank(workspaceMode: WorkspaceMode, baseBranch: string, agentId: string
     timezone: localTimezone(),
     enabled: true,
     workspace: workspaceFor(workspaceMode, baseBranch),
+    webhook_enabled: false,
+    webhook_overlap: "refuse",
   };
 }
 
@@ -120,11 +123,11 @@ function TimezoneField({
 }
 
 /**
- * The trigger section: one switch, and the schedule it turns on.
+ * The schedule trigger: one switch, and the schedule it turns on.
  *
- * "Runs on its own" is one fact, so it is one boolean. The switch writes `enabled`, which is what
- * the row's own switch pauses, and the expression stays underneath it: turning the schedule off
- * and on again finds the same schedule rather than an empty editor.
+ * On means there is an expression. `enabled` is the row's switch, which pauses every trigger at
+ * once, so it cannot also be this one. The last expression is remembered while the dialog is open,
+ * so switching off and on again finds the same schedule; saving with it off forgets it.
  */
 function ScheduleSection({
   projectId,
@@ -137,30 +140,25 @@ function ScheduleSection({
   serverTimezone: string;
   onChange: (fields: Partial<Automation>) => void;
 }) {
-  const scheduled = automation.enabled && automation.cron != null;
+  const scheduled = automation.cron != null;
+  const [lastCron, setLastCron] = useState(automation.cron);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Switch
           checked={scheduled}
-          // Turning it on with nothing stored starts somewhere valid rather than on five stars,
-          // which is a schedule that fires every minute.
-          onCheckedChange={(on) =>
-            onChange({
-              enabled: on,
-              cron: on ? (automation.cron ?? DEFAULT_CRON) : automation.cron,
-            })
-          }
+          // Turning it on with nothing remembered starts somewhere valid rather than on five
+          // stars, which is a schedule that fires every minute.
+          onCheckedChange={(on) => {
+            if (!on) setLastCron(automation.cron);
+            onChange({ cron: on ? (lastCron ?? DEFAULT_CRON) : null });
+          }}
           aria-label="Schedule"
           className="data-unchecked:border-border/50 data-unchecked:bg-muted"
         />
         <span className="text-xs font-medium">Schedule</span>
-        {!scheduled && (
-          <span className="text-[11px] text-muted-foreground">
-            Runs only when you press Run now
-          </span>
-        )}
+        {!scheduled && <span className="text-[11px] text-muted-foreground">Run at set times</span>}
       </div>
 
       {scheduled && (
@@ -283,8 +281,7 @@ export function AutomationEditorDialog({
   const workspaceMissing = mode === "ReuseWorkspace" && pinnedPath.length === 0;
   // A schedule that cannot be read would be refused by the server anyway, and storing it would
   // leave an automation that looks scheduled and never fires.
-  const scheduleBroken =
-    draft.enabled && draft.cron != null && "error" in describeExpression(draft.cron);
+  const scheduleBroken = draft.cron != null && "error" in describeExpression(draft.cron);
   const canSave =
     !nameMissing && !promptMissing && !agentMissing && !workspaceMissing && !scheduleBroken;
 
@@ -320,12 +317,28 @@ export function AutomationEditorDialog({
             />
           </label>
 
+          {/* Keyed by automation, so what a section remembers does not carry over to another. */}
           <ScheduleSection
+            key={draft.id}
             projectId={projectId}
             automation={draft}
             serverTimezone={serverTimezone}
             onChange={patch}
           />
+
+          <WebhookSection
+            projectId={projectId}
+            connection={connection}
+            automation={draft}
+            saved={editing !== null}
+            onChange={patch}
+          />
+
+          {!draft.cron && !draft.webhook_enabled && (
+            <p className="text-[11px] text-muted-foreground/70">
+              With neither, it runs only when you press Run now.
+            </p>
+          )}
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground hover:text-foreground">

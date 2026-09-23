@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use maestro_protocol::{
-    AutomationRun, AutomationRunStatus, AutomationWorkspace, MaestroRpcMessage, ServerResponse,
+    AutomationRun, AutomationRunStatus, AutomationWorkspace, MaestroRpcMessage, RunTrigger,
+    ServerResponse,
 };
 use rusqlite::Connection;
 
@@ -305,7 +306,9 @@ async fn fail(store: &Store, stdout: &crate::ClientOut, run_id: &str, error: Str
 pub async fn start(
     store: &Store,
     automation_id: &str,
-    scheduled: bool,
+    trigger: RunTrigger,
+    // Appended to the prompt: what a webhook delivered, already formatted for the agent.
+    payload: Option<String>,
     spawner: Spawner<'_>,
 ) -> Result<AutomationRun, String> {
     let automation = {
@@ -316,7 +319,7 @@ pub async fn start(
 
     let run = {
         let conn = store.lock().await;
-        automations::start_run(&conn, &automation, scheduled)?
+        automations::start_run(&conn, &automation, trigger)?
     };
     announce(spawner.stdout, &run).await;
 
@@ -435,7 +438,15 @@ pub async fn start(
         if result
             .session
             .cmd_tx
-            .send(SessionCommand::Prompt(automation.prompt.clone()))
+            .send(SessionCommand::Prompt(match &payload {
+                Some(payload) => format!(
+                    "{}
+
+{payload}",
+                    automation.prompt
+                ),
+                None => automation.prompt.clone(),
+            }))
             .await
             .is_err()
         {
@@ -511,6 +522,55 @@ pub async fn finish_for_session(
     trim_in_background(store, &run.project_path);
 }
 
+/// Start the next waiting webhook delivery of every automation whose run has ended.
+///
+/// Called after a turn closes a run and on every tick, the second for runs that ended some other
+/// way, a spawn that failed or a server that restarted with deliveries still queued.
+pub async fn drain_webhook_queues(store: &Store, spawner: Spawner<'_>) {
+    let ready = {
+        let conn = store.lock().await;
+        crate::webhook::ready_to_dequeue(&conn)
+    };
+    let Spawner {
+        agents_with_spawn,
+        agent_connections,
+        stdout,
+        spawn_result_tx,
+    } = spawner;
+    for automation_id in ready {
+        let next = {
+            let conn = store.lock().await;
+            crate::webhook::dequeue(&conn, &automation_id)
+        };
+        let Some((delivery_id, payload)) = next else {
+            continue;
+        };
+        let started = start(
+            store,
+            &automation_id,
+            RunTrigger::Webhook,
+            Some(payload),
+            Spawner {
+                agents_with_spawn: &mut *agents_with_spawn,
+                agent_connections,
+                stdout,
+                spawn_result_tx,
+            },
+        )
+        .await;
+        match started {
+            Ok(run) => {
+                let conn = store.lock().await;
+                crate::webhook::attach_run(&conn, &delivery_id, &run.id);
+            }
+            Err(e) => send_diag(
+                "warn",
+                format!("[webhook] a queued delivery for {automation_id} could not start: {e}"),
+            ),
+        }
+    }
+}
+
 /// Which automations are due, and claiming them so one tick cannot fire the same occurrence twice.
 ///
 /// `floor` is when this server started. An occurrence that passed while it was down is dropped
@@ -577,7 +637,8 @@ pub async fn tick(store: &Store, floor: DateTime<Utc>, spawner: Spawner<'_>) {
         if let Err(e) = start(
             store,
             &automation_id,
-            true,
+            RunTrigger::Schedule,
+            None,
             Spawner {
                 agents_with_spawn,
                 agent_connections,
@@ -611,6 +672,9 @@ mod tests {
             effort: None,
             workspace,
             next_due_at: None,
+            webhook_enabled: false,
+            webhook_overlap: Default::default(),
+            webhook_secret: None,
         }
     }
 

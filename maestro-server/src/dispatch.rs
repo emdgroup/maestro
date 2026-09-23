@@ -227,7 +227,8 @@ pub(crate) async fn dispatch_message(
             if let Err(e) = crate::automation_runner::start(
                 store,
                 &req.automation_id,
-                false,
+                maestro_protocol::RunTrigger::Manual,
+                None,
                 crate::automation_runner::Spawner {
                     agents_with_spawn,
                     agent_connections,
@@ -364,6 +365,106 @@ pub(crate) async fn dispatch_message(
                         }
                     });
                 }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::GetWebhookSettings) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let status = {
+                let conn = store.lock().await;
+                crate::webhook::status(&conn)
+            };
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetWebhookSettings(settings)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let saved = {
+                let conn = store.lock().await;
+                crate::webhook::save_settings(&conn, &settings)
+            };
+            if let Err(e) = saved {
+                send_or_return!(send_response(stdout, &error_response(e)).await);
+                return true;
+            }
+            // Rebound straight away, so the answer already says whether the new address works.
+            crate::webhook::restart(store).await;
+            let status = {
+                let conn = store.lock().await;
+                crate::webhook::status(&conn)
+            };
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(status)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let rolled = {
+                let conn = store.lock().await;
+                crate::automations::roll_webhook_secret(&conn, &req.automation_id)
+            };
+            match rolled {
+                Ok(automation) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(
+                            automation
+                        )),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let listed = {
+                let conn = store.lock().await;
+                crate::webhook::list_deliveries(&conn, &req.automation_id)
+            };
+            match listed {
+                Ok(deliveries) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(
+                            maestro_protocol::ListWebhookDeliveriesResponse { deliveries },
+                        )),
+                    )
+                    .await
+                ),
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }

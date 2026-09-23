@@ -274,6 +274,69 @@ pub async fn query_set_run_retention_via_server(
     .await
 }
 
+/// Read this machine's webhook listener settings, or change them when `settings` is given. Both
+/// answer with the listener's state after the change.
+pub async fn query_webhook_settings_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    settings: Option<maestro_protocol::WebhookSettings>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::WebhookStatus, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.webhook_settings.clone(),
+        "Webhook settings already in progress",
+        MaestroRpcMessage::Request(match settings {
+            Some(settings) => ServerRequest::SetWebhookSettings(settings),
+            None => ServerRequest::GetWebhookSettings,
+        }),
+        15,
+        "Webhook settings via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_roll_webhook_secret_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::Automation, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.roll_webhook_secret.clone(),
+        "RollWebhookSecret already in progress",
+        MaestroRpcMessage::Request(ServerRequest::RollWebhookSecret(
+            maestro_protocol::AutomationIdRequest { automation_id },
+        )),
+        15,
+        "RollWebhookSecret via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_webhook_deliveries_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    automation_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListWebhookDeliveriesResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.webhook_deliveries.clone(),
+        "ListWebhookDeliveries already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListWebhookDeliveries(
+            maestro_protocol::AutomationIdRequest { automation_id },
+        )),
+        15,
+        "ListWebhookDeliveries via connection server timed out after 15s",
+    )
+    .await
+}
+
 /// Ask the server to start an automation now.
 ///
 /// There is no reply to wait for beyond the request being accepted: the run announces itself on

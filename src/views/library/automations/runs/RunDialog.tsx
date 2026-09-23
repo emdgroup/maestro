@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { folderName, relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import { keptWorkspace, runDuration, type RunEntry } from "./runs";
+import { TRIGGER_LABEL } from "./RunCard";
 
 /**
  * A finished run, read without going into its session.
@@ -75,7 +76,7 @@ export function RunDialog({
                 , {relativeAge(run.started_at, now)} ago
               </span>
               <span>took {runDuration(run, now)}</span>
-              <span>{run.scheduled ? "Started by its schedule" : "Started with Run now"}</span>
+              <span>{TRIGGER_LABEL[run.trigger]}</span>
               {run.agent_id && <span>{agentName(run.agent_id)}</span>}
               {run.cwd && <span>in {folderName(run.cwd)}</span>}
             </DialogDescription>

@@ -10,7 +10,7 @@ const run = {
   project_path: "/p",
   automation_name: "Nightly check",
   status: "succeeded",
-  scheduled: true,
+  trigger: "schedule",
   started_at: new Date(0).toISOString(),
   finished_at: new Date(32_000).toISOString(),
   ordinal: 7,

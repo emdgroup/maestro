@@ -994,6 +994,48 @@ async setRunRetention(projectId: number, retention: RunRetention) : Promise<Resu
 }
 },
 /**
+ * This machine's webhook listener, for the connection's Settings page.
+ */
+async getWebhookSettings(connection: ConnectionKey) : Promise<Result<WebhookStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_webhook_settings", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Change the listener. The server rebinds before answering, so the status says whether the new
+ * address works.
+ */
+async setWebhookSettings(connection: ConnectionKey, settings: WebhookSettings) : Promise<Result<WebhookStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_webhook_settings", { connection, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replace an automation's webhook secret. Every sender using the old one stops working.
+ */
+async rollWebhookSecret(projectId: number, automationId: string) : Promise<Result<Automation, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("roll_webhook_secret", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listWebhookDeliveries(projectId: number, automationId: string) : Promise<Result<WebhookDelivery[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_webhook_deliveries", { projectId, automationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
  * 
  * Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
@@ -2885,6 +2927,15 @@ enabled: boolean; model?: string | null;
  */
 permission_mode?: string | null; effort?: string | null; workspace: AutomationWorkspace; 
 /**
+ * Whether `POST /hooks/<id>` starts this. `enabled` off stops the webhook too.
+ */
+webhook_enabled: boolean; webhook_overlap: WebhookOverlap; 
+/**
+ * Made by the server and only ever replaced by `roll_webhook_secret`; whatever is sent here
+ * on save is ignored.
+ */
+webhook_secret?: string | null; 
+/**
  * When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
  */
 next_due_at?: string | null }
@@ -2906,11 +2957,7 @@ export type AutomationRun = { id: string; automation_id: string; project_path: s
  * Copied by the server rather than joined, so a run still says what it was after the
  * automation that produced it is renamed or deleted.
  */
-automation_name: string; status: AutomationRunStatus; 
-/**
- * Whether the clock started this or somebody pressed the button.
- */
-scheduled: boolean; started_at: string; finished_at?: string | null; 
+automation_name: string; status: AutomationRunStatus; trigger: RunTrigger; started_at: string; finished_at?: string | null; 
 /**
  * The session the run is happening in. This is how the app finds a session it did not start.
  */
@@ -3201,6 +3248,7 @@ export type CreateTaskRequest = { project_id: number; title: string; description
  */
 workspace_branch: string | null; model_override: string | null }
 export type CredentialSource = "manual" | "gh_cli" | "glab_cli"
+export type DeliveryOutcome = "started" | "queued" | "busy" | "queue_full" | "rate_limited" | "unauthorized" | "duplicate" | "disabled" | "too_large" | "failed"
 /**
  * What `detect_project_issue_tracking` worked out from the project's git remote.
  */
@@ -3596,6 +3644,10 @@ export type ReviewResult = { success: boolean; review_id: number; task_status: s
  */
 export type RunRetention = { keep_last: number | null; max_age_days: number | null }
 /**
+ * What started a run.
+ */
+export type RunTrigger = "schedule" | "manual" | "webhook"
+/**
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null; 
@@ -3779,6 +3831,24 @@ workspace_mode: WorkspaceMode | null; workspace_worktree_id: number | null;
  * `Checkout` must not leave the name of a branch nobody is going to create.
  */
 workspace_branch_mode: BranchMode | null; workspace_branch: string | null }
+export type WebhookDelivery = { id: string; received_at: string; status: number; outcome: DeliveryOutcome; detail?: string | null; run_id?: string | null }
+/**
+ * What a webhook delivery does while a run of the same automation is already going.
+ */
+export type WebhookOverlap = "refuse" | "queue" | "parallel"
+/**
+ * One machine's webhook listener, shared by every project on it.
+ */
+export type WebhookSettings = { port: number; bind_address: string; 
+/**
+ * What senders call, a tunnel's or a reverse proxy's address. Webhook URLs are built from it.
+ */
+public_url?: string | null }
+export type WebhookStatus = { settings: WebhookSettings; 
+/**
+ * Why the listener is not listening, or absent when it is.
+ */
+error?: string | null }
 /**
  * Where an agent works: a worktree of its own, the project directory, or a worktree that already
  * exists. Shared by tasks and by the project default that seeds them.

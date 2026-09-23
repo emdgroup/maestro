@@ -10,6 +10,7 @@ import {
   Play,
   Square,
   Trash2,
+  Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
@@ -105,17 +106,17 @@ function AutomationRow({
               <Switch
                 checked={automation.enabled}
                 onCheckedChange={onToggleEnabled}
-                disabled={!automation.cron}
+                disabled={!automation.cron && !automation.webhook_enabled}
                 aria-label={`Enable ${automation.name}`}
                 className="shrink-0 data-unchecked:border-border/50 data-unchecked:bg-muted"
               />
             }
           />
           <TooltipContent>
-            {automation.cron
+            {automation.cron || automation.webhook_enabled
               ? automation.enabled
-                ? "On schedule. Turn off to stop it firing."
-                : "Paused. Run now still works."
+                ? "Runs on its own. Turn off to pause its schedule and webhook."
+                : "Paused: neither its schedule nor its webhook starts it. Run now still works."
               : "Nothing to pause: this one only runs when you press Run now."}
           </TooltipContent>
         </Tooltip>
@@ -186,9 +187,17 @@ function AutomationRow({
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="rounded bg-muted/50 px-1.5 py-0.5">
-              {describeSchedule(automation.cron)}
-            </span>
+            {(automation.cron || !automation.webhook_enabled) && (
+              <span className="rounded bg-muted/50 px-1.5 py-0.5">
+                {describeSchedule(automation.cron)}
+              </span>
+            )}
+            {automation.webhook_enabled && (
+              <span className="flex items-center gap-1 rounded bg-muted/50 px-1.5 py-0.5">
+                <Webhook className="size-3" />
+                Webhook
+              </span>
+            )}
             {next && <span>next {describeNextRun(next, new Date(now))}</span>}
             <span className="rounded bg-muted/50 px-1.5 py-0.5">{agentName}</span>
             {automation.model && (

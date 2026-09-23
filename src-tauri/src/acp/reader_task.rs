@@ -1698,6 +1698,27 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(resp)) => {
+            if let Ok(mut guard) = pending.webhook_settings.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(resp)) => {
+            if let Ok(mut guard) = pending.roll_webhook_secret.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(resp)) => {
+            if let Ok(mut guard) = pending.webhook_deliveries.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(resp)) => {
             if let Ok(mut guard) = pending.preview_schedule.lock() {
                 if let Some(tx) = guard.take() {
@@ -1953,7 +1974,10 @@ pub(crate) async fn handle_shared_server_message(
                 || fail_pending(&pending.automation_runs, &err.message)
                 || fail_pending(&pending.preview_schedule, &err.message)
                 || fail_pending(&pending.delete_automation_run, &err.message)
-                || fail_pending(&pending.set_run_retention, &err.message);
+                || fail_pending(&pending.set_run_retention, &err.message)
+                || fail_pending(&pending.webhook_settings, &err.message)
+                || fail_pending(&pending.roll_webhook_secret, &err.message)
+                || fail_pending(&pending.webhook_deliveries, &err.message);
 
             // Pending SessionList / SessionClose / CheckTools
             if !resolved {

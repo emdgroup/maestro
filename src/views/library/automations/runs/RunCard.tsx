@@ -5,6 +5,7 @@ import {
   MessageCircleQuestion,
   Play,
   Trash2,
+  Webhook,
 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { Button } from "@/ui/button";
@@ -12,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import { keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
+import type { RunTrigger } from "@/types/bindings";
 
 function Hint({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -25,10 +27,23 @@ function Hint({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** How the run was started, as an icon: in the spot where the time goes, words read as a time. */
-export function TriggerIcon({ scheduled }: { scheduled: boolean }) {
+export const TRIGGER_LABEL: Record<RunTrigger, string> = {
+  schedule: "Started by its schedule",
+  manual: "Started with Run now",
+  webhook: "Started by a webhook",
+};
+
+const TRIGGER_ICON: Record<RunTrigger, typeof Play> = {
+  schedule: CalendarClock,
+  manual: Play,
+  webhook: Webhook,
+};
+
+export function TriggerIcon({ trigger }: { trigger: RunTrigger }) {
+  const Icon = TRIGGER_ICON[trigger];
   return (
-    <Hint label={scheduled ? "Started by its schedule" : "Started with Run now"}>
-      {scheduled ? <CalendarClock className="size-3" /> : <Play className="size-3" />}
+    <Hint label={TRIGGER_LABEL[trigger]}>
+      <Icon className="size-3" />
     </Hint>
   );
 }
@@ -191,7 +206,7 @@ export function RunCard({
           <StartedAgo iso={run.started_at} now={now} />
         </span>
         <span className="text-muted-foreground">
-          <TriggerIcon scheduled={run.scheduled} />
+          <TriggerIcon trigger={run.trigger} />
         </span>
         <Outcome entry={entry} now={now} />
         {action}
@@ -220,7 +235,7 @@ export function RunCard({
       </div>
       <div className="mt-0.5 flex min-h-5 items-center gap-1.5 text-[10px]">
         <span className="text-muted-foreground">
-          <TriggerIcon scheduled={run.scheduled} />
+          <TriggerIcon trigger={run.trigger} />
         </span>
         {!live && (
           <span className="shrink-0 text-muted-foreground">

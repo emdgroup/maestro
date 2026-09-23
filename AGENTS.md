@@ -505,6 +505,30 @@ owns. The app adopts a `worktrees` row for each one in `adopt_automation_worktre
 workspace appears on the Workspaces screen like any other; `list_worktrees_with_status` prunes that
 row on its own once the directory is gone.
 
+### Webhooks
+
+`maestro-server/src/webhook.rs` serves `POST /hooks/<automation_id>` on a listener of its own, not
+on `attach`'s: that one speaks the framed protocol to a token-holding client, this one faces
+whatever the user points at it. It binds `127.0.0.1:7433` by default. Port, bind address and the
+**public URL** (a tunnel's or reverse proxy's, which the editor builds each webhook URL from) are
+per machine, stored in `webhook_settings` and edited on the Settings page's per-connection Webhooks
+entry. Maestro serves no TLS and runs no tunnel.
+
+A request is judged in an order that keeps a stranger from affecting the real sender: the secret
+first (a GitHub-style `X-Hub-Signature-256` over the body, or `Authorization: Bearer <secret>`,
+both constant time), then the switches, then dedupe, the rate limit and the overlap rule. Nothing
+counts against the dedupe window or the rate limit until the request has proved it knows the
+secret, and only a delivery that started or queued a run is remembered for dedupe, since one refused
+is one the sender is right to retry. `deliveries` keeps the last 20 per automation for the editor,
+plus anything younger than the dedupe window that carries a key.
+
+The run is started by the main loop, which alone holds what a spawn needs: `FIRE_TX` carries an
+accepted delivery there and the answer back, and the sender gets 202 as soon as the run is opened.
+Queued deliveries live in `webhook_queue` and are drained after a turn ends and on every tick.
+
+`enabled` is the row switch and pauses every trigger. The schedule's own switch is whether there
+is a cron expression, and the webhook's is `webhook_enabled`, so the editor never writes `enabled`.
+
 ### Reading a cron expression, and reopening a run
 
 `src/views/library/automations/cron/` parses each field and decides nothing. `fields.ts` turns one

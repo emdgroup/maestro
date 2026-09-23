@@ -6,12 +6,22 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { executionQueryKeys } from "@/services/execution.service";
 import { useNavigationStore } from "@/store/navigationStore";
-import type { Automation, AutomationRun, RunRetention } from "@/types/bindings";
+import type {
+  Automation,
+  AutomationRun,
+  ConnectionKey,
+  RunRetention,
+  WebhookSettings,
+} from "@/types/bindings";
 
 export const automationQueryKeys = {
   base: ["automations"] as const,
   list: (projectId: number) => [...automationQueryKeys.base, "list", projectId] as const,
   runs: (projectId: number) => [...automationQueryKeys.base, "runs", projectId] as const,
+  deliveries: (projectId: number, automationId: string) =>
+    [...automationQueryKeys.base, "deliveries", projectId, automationId] as const,
+  webhookSettings: (connection: ConnectionKey) =>
+    [...automationQueryKeys.base, "webhook-settings", connection] as const,
 };
 
 /**
@@ -93,13 +103,14 @@ export function useAutomationRunEvents(projectId: number | null) {
       }
 
       // An agent starting on its own is worth saying out loud, even on a tab where the row is not
-      // visible. Only the scheduled ones: somebody who pressed Run now is already looking at it.
+      // visible. Not for Run now: somebody who pressed it is already looking at it.
       // Said on the second announcement, once there is a session, so it is said once and can
       // always offer the way in.
-      if (run.scheduled && run.status === "running" && run.session_id) {
+      if (run.trigger !== "manual" && run.status === "running" && run.session_id) {
         const sessionId = run.session_id;
         toast.info(`“${run.automation_name}” started`, {
-          description: "Started by its schedule.",
+          description:
+            run.trigger === "webhook" ? "Started by a webhook." : "Started by its schedule.",
           action: {
             label: "Open session",
             onClick: () => useNavigationStore.getState().navigate({ sessionId }),
@@ -192,5 +203,60 @@ export function useSetRunRetentionMutation() {
       void queryClient.invalidateQueries({ queryKey: automationQueryKeys.runs(projectId) });
     },
     onError: createErrorToastHandler("Failed to save the run history setting"),
+  });
+}
+
+/** This machine's webhook listener: its address, and whether it is listening. */
+export function useWebhookSettingsQuery(connection: ConnectionKey | null) {
+  return useQuery({
+    queryKey: automationQueryKeys.webhookSettings(connection!),
+    queryFn: () => api.getWebhookSettings(connection!),
+    enabled: connection != null,
+  });
+}
+
+/** Change the listener. The answer already says whether the new address could be bound. */
+export function useSetWebhookSettingsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      connection,
+      settings,
+    }: {
+      connection: ConnectionKey;
+      settings: WebhookSettings;
+    }) => api.setWebhookSettings(connection, settings),
+    onSuccess: (status, { connection }) => {
+      queryClient.setQueryData(automationQueryKeys.webhookSettings(connection), status);
+    },
+    onError: createErrorToastHandler("Failed to save the webhook settings"),
+  });
+}
+
+/** Replace one automation's webhook secret. Senders using the old one stop working at once. */
+export function useRollWebhookSecretMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, automationId }: { projectId: number; automationId: string }) =>
+      api.rollWebhookSecret(projectId, automationId),
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.list(projectId) });
+    },
+    onError: createErrorToastHandler("Failed to replace the webhook secret"),
+  });
+}
+
+/**
+ * What arrived at one automation's webhook, newest first. Polled while shown, because a delivery
+ * announces nothing: the editor is where somebody watches for the one they just sent.
+ */
+export function useWebhookDeliveriesQuery(projectId: number, automationId: string | null) {
+  return useQuery({
+    queryKey: automationQueryKeys.deliveries(projectId, automationId!),
+    queryFn: () => api.listWebhookDeliveries(projectId, automationId!),
+    enabled: automationId != null,
+    refetchInterval: 5_000,
   });
 }

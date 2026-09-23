@@ -85,6 +85,14 @@ pub enum ServerRequest {
     DeleteAutomationRun(DeleteAutomationRunRequest),
     /// How much run history this project keeps. Applied straight away, and after every run.
     SetRunRetention(SetRunRetentionRequest),
+    /// This machine's webhook listener: how it is set up, and whether it is listening.
+    GetWebhookSettings,
+    /// Change the listener, which is restarted on the new address straight away.
+    SetWebhookSettings(WebhookSettings),
+    /// Replace an automation's webhook secret. The old one stops working at once.
+    RollWebhookSecret(AutomationIdRequest),
+    /// An automation's last deliveries, newest first.
+    ListWebhookDeliveries(AutomationIdRequest),
     /// When an expression would next come round. For a schedule being written, not a stored one.
     PreviewSchedule(PreviewScheduleRequest),
     SetModel(SetModelRequest),
@@ -502,6 +510,18 @@ pub struct Automation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     pub workspace: AutomationWorkspace,
+    /// Whether `POST /hooks/<id>` starts this. Independent of `enabled` above only in one
+    /// direction: with `enabled` off, nothing automatic fires, webhook included.
+    #[serde(default)]
+    pub webhook_enabled: bool,
+    /// What a delivery does while a run of this automation is already going.
+    #[serde(default)]
+    pub webhook_overlap: WebhookOverlap,
+    /// What a webhook sender signs with, or presents as a bearer token. Made by the server when
+    /// the webhook is first turned on and changed only by `RollWebhookSecret`, so a save from a
+    /// client never touches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<String>,
     /// When this next comes round, RFC 3339. Computed on read and never stored — a stored one
     /// would be wrong the moment the clock or the timezone database moved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -526,8 +546,8 @@ pub struct AutomationRun {
     /// produced it is renamed or deleted.
     pub automation_name: String,
     pub status: AutomationRunStatus,
-    /// Whether the clock started this or somebody pressed the button.
-    pub scheduled: bool,
+    /// What started it: the clock, somebody pressing Run now, or a webhook.
+    pub trigger: RunTrigger,
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -703,6 +723,9 @@ pub enum ServerResponse {
     ListAutomationRunsOk(ListAutomationRunsResponse),
     DeleteAutomationRunOk,
     SetRunRetentionOk,
+    WebhookSettingsOk(WebhookStatus),
+    RollWebhookSecretOk(Automation),
+    ListWebhookDeliveriesOk(ListWebhookDeliveriesResponse),
     PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.
@@ -1784,4 +1807,91 @@ mod tests {
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
     }
+}
+
+/// What started a run.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    Schedule,
+    #[default]
+    Manual,
+    Webhook,
+}
+
+/// What a webhook delivery does while a run of the same automation is already going.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookOverlap {
+    /// Answer 409 and run nothing.
+    #[default]
+    Refuse,
+    /// Wait in line, up to a cap, and run once the current run ends.
+    Queue,
+    /// Start another run beside it.
+    Parallel,
+}
+
+/// The webhook listener of one machine's server, shared by every project on it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookSettings {
+    pub port: u16,
+    /// `127.0.0.1` unless a proxy on another machine has to reach it.
+    pub bind_address: String,
+    /// The address senders actually call, a tunnel's or a reverse proxy's. Webhook URLs are built
+    /// from it; `None` means they are shown on the local address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookStatus {
+    pub settings: WebhookSettings,
+    /// Why the listener is not listening, or `None` when it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What became of one delivery.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryOutcome {
+    Started,
+    Queued,
+    /// A run was going and the automation refuses overlap.
+    Busy,
+    QueueFull,
+    RateLimited,
+    Unauthorized,
+    Duplicate,
+    /// The webhook, or everything automatic about the automation, is switched off.
+    Disabled,
+    TooLarge,
+    /// Authorized and accepted, but the run could not be opened.
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebhookDelivery {
+    pub id: String,
+    pub automation_id: String,
+    pub received_at: String,
+    /// The HTTP status the sender got.
+    pub status: u16,
+    pub outcome: DeliveryOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The run it started, once it has one. A queued delivery gets it when its turn comes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AutomationIdRequest {
+    pub automation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListWebhookDeliveriesResponse {
+    pub deliveries: Vec<WebhookDelivery>,
 }

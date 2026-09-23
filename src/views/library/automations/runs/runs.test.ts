@@ -8,7 +8,7 @@ const run = {
   project_path: "/p",
   automation_name: "A",
   status: "running",
-  scheduled: false,
+  trigger: "manual",
   started_at: new Date(0).toISOString(),
   session_id: "s",
 } as AutomationRun;

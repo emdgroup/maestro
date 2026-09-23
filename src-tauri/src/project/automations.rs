@@ -19,8 +19,10 @@ use tauri::State;
 use crate::acp::connection_server::{
     query_automation_runs_via_server, query_delete_automation_run_via_server,
     query_delete_automation_via_server, query_list_automations_via_server,
-    query_preview_schedule_via_server, query_run_automation_via_server,
-    query_save_automation_via_server, query_set_run_retention_via_server,
+    query_preview_schedule_via_server, query_roll_webhook_secret_via_server,
+    query_run_automation_via_server, query_save_automation_via_server,
+    query_set_run_retention_via_server, query_webhook_deliveries_via_server,
+    query_webhook_settings_via_server,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
@@ -70,9 +72,137 @@ pub struct Automation {
     #[specta(optional)]
     pub effort: Option<String>,
     pub workspace: AutomationWorkspace,
+    /// Whether `POST /hooks/<id>` starts this. `enabled` off stops the webhook too.
+    pub webhook_enabled: bool,
+    pub webhook_overlap: WebhookOverlap,
+    /// Made by the server and only ever replaced by `roll_webhook_secret`; whatever is sent here
+    /// on save is ignored.
+    #[specta(optional)]
+    pub webhook_secret: Option<String>,
     /// When this next comes round, RFC 3339, as the server computed it. Nothing here parses cron.
     #[specta(optional)]
     pub next_due_at: Option<String>,
+}
+
+/// What started a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    Schedule,
+    Manual,
+    Webhook,
+}
+
+/// What a webhook delivery does while a run of the same automation is already going.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookOverlap {
+    Refuse,
+    Queue,
+    Parallel,
+}
+
+impl From<maestro_protocol::WebhookOverlap> for WebhookOverlap {
+    fn from(overlap: maestro_protocol::WebhookOverlap) -> Self {
+        match overlap {
+            maestro_protocol::WebhookOverlap::Refuse => Self::Refuse,
+            maestro_protocol::WebhookOverlap::Queue => Self::Queue,
+            maestro_protocol::WebhookOverlap::Parallel => Self::Parallel,
+        }
+    }
+}
+
+impl From<WebhookOverlap> for maestro_protocol::WebhookOverlap {
+    fn from(overlap: WebhookOverlap) -> Self {
+        match overlap {
+            WebhookOverlap::Refuse => Self::Refuse,
+            WebhookOverlap::Queue => Self::Queue,
+            WebhookOverlap::Parallel => Self::Parallel,
+        }
+    }
+}
+
+/// One machine's webhook listener, shared by every project on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct WebhookSettings {
+    pub port: u16,
+    pub bind_address: String,
+    /// What senders call, a tunnel's or a reverse proxy's address. Webhook URLs are built from it.
+    #[specta(optional)]
+    pub public_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct WebhookStatus {
+    pub settings: WebhookSettings,
+    /// Why the listener is not listening, or absent when it is.
+    #[specta(optional)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryOutcome {
+    Started,
+    Queued,
+    Busy,
+    QueueFull,
+    RateLimited,
+    Unauthorized,
+    Duplicate,
+    Disabled,
+    TooLarge,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct WebhookDelivery {
+    pub id: String,
+    pub received_at: String,
+    pub status: u16,
+    pub outcome: DeliveryOutcome,
+    #[specta(optional)]
+    pub detail: Option<String>,
+    #[specta(optional)]
+    pub run_id: Option<String>,
+}
+
+impl From<maestro_protocol::WebhookStatus> for WebhookStatus {
+    fn from(status: maestro_protocol::WebhookStatus) -> Self {
+        Self {
+            settings: WebhookSettings {
+                port: status.settings.port,
+                bind_address: status.settings.bind_address,
+                public_url: status.settings.public_url,
+            },
+            error: status.error,
+        }
+    }
+}
+
+impl From<maestro_protocol::WebhookDelivery> for WebhookDelivery {
+    fn from(delivery: maestro_protocol::WebhookDelivery) -> Self {
+        use maestro_protocol::DeliveryOutcome as Wire;
+        Self {
+            id: delivery.id,
+            received_at: delivery.received_at,
+            status: delivery.status,
+            outcome: match delivery.outcome {
+                Wire::Started => DeliveryOutcome::Started,
+                Wire::Queued => DeliveryOutcome::Queued,
+                Wire::Busy => DeliveryOutcome::Busy,
+                Wire::QueueFull => DeliveryOutcome::QueueFull,
+                Wire::RateLimited => DeliveryOutcome::RateLimited,
+                Wire::Unauthorized => DeliveryOutcome::Unauthorized,
+                Wire::Duplicate => DeliveryOutcome::Duplicate,
+                Wire::Disabled => DeliveryOutcome::Disabled,
+                Wire::TooLarge => DeliveryOutcome::TooLarge,
+                Wire::Failed => DeliveryOutcome::Failed,
+            },
+            detail: delivery.detail,
+            run_id: delivery.run_id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -93,8 +223,7 @@ pub struct AutomationRun {
     /// automation that produced it is renamed or deleted.
     pub automation_name: String,
     pub status: AutomationRunStatus,
-    /// Whether the clock started this or somebody pressed the button.
-    pub scheduled: bool,
+    pub trigger: RunTrigger,
     pub started_at: String,
     #[specta(optional)]
     pub finished_at: Option<String>,
@@ -175,6 +304,9 @@ impl From<maestro_protocol::Automation> for Automation {
             permission_mode: automation.permission_mode,
             effort: automation.effort,
             workspace: automation.workspace.into(),
+            webhook_enabled: automation.webhook_enabled,
+            webhook_overlap: automation.webhook_overlap.into(),
+            webhook_secret: automation.webhook_secret,
             next_due_at: automation.next_due_at,
         }
     }
@@ -195,6 +327,10 @@ impl From<Automation> for maestro_protocol::Automation {
             permission_mode: automation.permission_mode,
             effort: automation.effort,
             workspace: automation.workspace.into(),
+            webhook_enabled: automation.webhook_enabled,
+            webhook_overlap: automation.webhook_overlap.into(),
+            // The server keeps its own; a client never writes one.
+            webhook_secret: None,
             // Computed by the server on the way back out, never sent to it.
             next_due_at: None,
         }
@@ -213,7 +349,11 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
                 maestro_protocol::AutomationRunStatus::Succeeded => AutomationRunStatus::Succeeded,
                 maestro_protocol::AutomationRunStatus::Failed => AutomationRunStatus::Failed,
             },
-            scheduled: run.scheduled,
+            trigger: match run.trigger {
+                maestro_protocol::RunTrigger::Schedule => RunTrigger::Schedule,
+                maestro_protocol::RunTrigger::Manual => RunTrigger::Manual,
+                maestro_protocol::RunTrigger::Webhook => RunTrigger::Webhook,
+            },
             started_at: run.started_at,
             finished_at: run.finished_at,
             session_id: run.session_id,
@@ -425,4 +565,65 @@ pub async fn set_run_retention(
         &app_state,
     )
     .await
+}
+
+/// This machine's webhook listener, for the connection's Settings page.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_webhook_settings(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+) -> Result<WebhookStatus, String> {
+    query_webhook_settings_via_server(connection, None, &app_state)
+        .await
+        .map(Into::into)
+}
+
+/// Change the listener. The server rebinds before answering, so the status says whether the new
+/// address works.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_webhook_settings(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    settings: WebhookSettings,
+) -> Result<WebhookStatus, String> {
+    query_webhook_settings_via_server(
+        connection,
+        Some(maestro_protocol::WebhookSettings {
+            port: settings.port,
+            bind_address: settings.bind_address,
+            public_url: settings.public_url,
+        }),
+        &app_state,
+    )
+    .await
+    .map(Into::into)
+}
+
+/// Replace an automation's webhook secret. Every sender using the old one stops working.
+#[tauri::command]
+#[specta::specta]
+pub async fn roll_webhook_secret(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    automation_id: String,
+) -> Result<Automation, String> {
+    let (connection_key, _) = target(&app_state, project_id).await?;
+    query_roll_webhook_secret_via_server(connection_key, automation_id, &app_state)
+        .await
+        .map(Into::into)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_webhook_deliveries(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    automation_id: String,
+) -> Result<Vec<WebhookDelivery>, String> {
+    let (connection_key, _) = target(&app_state, project_id).await?;
+    let response =
+        query_webhook_deliveries_via_server(connection_key, automation_id, &app_state).await?;
+    Ok(response.deliveries.into_iter().map(Into::into).collect())
 }
