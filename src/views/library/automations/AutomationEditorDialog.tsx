@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Ban, CalendarClock, ChevronDown, Webhook, type LucideIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -124,10 +124,20 @@ function TimezoneField({
 
 type Trigger = "manual" | "schedule" | "webhook";
 
-const TRIGGERS: Array<{ value: Trigger; label: string; hint: string }> = [
-  { value: "manual", label: "Run now only", hint: "It runs only when you press Run now." },
-  { value: "schedule", label: "Schedule", hint: "It also runs at set times." },
-  { value: "webhook", label: "Webhook", hint: "It also runs when a service calls its URL." },
+const TRIGGERS: Array<{ value: Trigger; label: string; icon: LucideIcon; hint: string }> = [
+  { value: "manual", label: "None", icon: Ban, hint: "It runs only when you press Run now." },
+  {
+    value: "schedule",
+    label: "Schedule",
+    icon: CalendarClock,
+    hint: "It also runs at set times.",
+  },
+  {
+    value: "webhook",
+    label: "Webhook",
+    icon: Webhook,
+    hint: "It also runs when a service calls its URL.",
+  },
 ];
 
 function triggerOf(automation: Automation): Trigger {
@@ -188,8 +198,9 @@ function TriggerSection({
             value={option.value}
             size="sm"
             variant="outline"
-            className="flex-1 text-xs"
+            className="flex-1 gap-1.5 text-xs"
           >
+            <option.icon className="size-3.5" />
             {option.label}
           </ToggleGroupItem>
         ))}

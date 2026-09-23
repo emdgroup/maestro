@@ -36,6 +36,7 @@ import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { RunCard } from "./runs/RunCard";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { RunDialog } from "./runs/RunDialog";
+import { WebhookCreatedDialog } from "./WebhookSection";
 import { useNow } from "@/hooks/useNow";
 import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
@@ -89,6 +90,7 @@ function AutomationRow({
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
   const kept = keptCount(runs);
+  const hasTrigger = automation.cron != null || automation.webhook_enabled;
   // Whether the run in flight is blocked on a question is live session state, joined in by the
   // entry; the row is where it has to show, since the history is collapsed by default.
   const waiting = runs.find((entry) => entry.run.id === running?.id && entry.state === "awaiting");
@@ -104,20 +106,21 @@ function AutomationRow({
           <TooltipTrigger
             render={
               <Switch
-                checked={automation.enabled}
+                // Off with no trigger, whatever `enabled` says: there is nothing to turn on.
+                checked={automation.enabled && hasTrigger}
                 onCheckedChange={onToggleEnabled}
-                disabled={!automation.cron && !automation.webhook_enabled}
+                disabled={!hasTrigger}
                 aria-label={`Enable ${automation.name}`}
                 className="shrink-0 data-unchecked:border-border/50 data-unchecked:bg-muted"
               />
             }
           />
           <TooltipContent>
-            {automation.cron || automation.webhook_enabled
+            {hasTrigger
               ? automation.enabled
                 ? "Runs on its own. Turn off to pause its schedule and webhook."
                 : "Paused: neither its schedule nor its webhook starts it. Run now still works."
-              : "Nothing to pause: this one only runs when you press Run now."}
+              : "No trigger: it only runs when you press Run now. Give it a schedule or a webhook to turn it on."}
           </TooltipContent>
         </Tooltip>
 
@@ -352,6 +355,7 @@ export function AutomationsPanel({
   // By id rather than the entry itself, so the dialog follows the run as the list refreshes, and
   // closes on its own once the run is deleted.
   const [shownRunId, setShownRunId] = useState<string | null>(null);
+  const [webhookCreated, setWebhookCreated] = useState<Automation | null>(null);
   const shownRun = entries.find((entry) => entry.run.id === shownRunId) ?? null;
   const automations = list?.automations;
   const agents = discovery?.agents ?? [];
@@ -417,6 +421,12 @@ export function AutomationsPanel({
           </div>
         )}
 
+        <WebhookCreatedDialog
+          automation={webhookCreated}
+          connection={connection}
+          onClose={() => setWebhookCreated(null)}
+        />
+
         <RunDialog
           entry={shownRun}
           agentName={(agentId) => agents.find((agent) => agent.id === agentId)?.name ?? agentId}
@@ -442,7 +452,18 @@ export function AutomationsPanel({
           // every local project and is replaced the moment the server says otherwise.
           serverTimezone={list?.server_timezone ?? localTimezone()}
           editing={editing}
-          onSave={(automation) => save.mutate({ projectId, automation })}
+          onSave={(automation) =>
+            save.mutate(
+              { projectId, automation },
+              {
+                // The first save with a webhook is what makes its secret, so it is shown now
+                // rather than on reopening. One already on had it in the editor.
+                onSuccess: (saved) => {
+                  if (saved.webhook_enabled && !editing?.webhook_secret) setWebhookCreated(saved);
+                },
+              },
+            )
+          }
         />
       </div>
 

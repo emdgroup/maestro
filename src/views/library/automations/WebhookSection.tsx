@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Check, Copy, Eye, EyeOff, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -13,7 +21,13 @@ import {
 } from "@/services/automation.service";
 import { useNow } from "@/hooks/useNow";
 import { localBase } from "@/views/settings/settings-page/WebhooksSection";
-import type { Automation, ConnectionKey, DeliveryOutcome, WebhookOverlap } from "@/types/bindings";
+import type {
+  Automation,
+  ConnectionKey,
+  DeliveryOutcome,
+  WebhookOverlap,
+  WebhookStatus,
+} from "@/types/bindings";
 
 const OVERLAP: Record<WebhookOverlap, { label: string; description: string }> = {
   refuse: {
@@ -70,6 +84,11 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Where a sender posts to start this automation: the public URL when one is set, else local. */
+export function webhookUrl(status: WebhookStatus, automationId: string): string {
+  return `${status.settings.public_url ?? localBase(status.settings)}/hooks/${automationId}`;
+}
+
 /**
  * The webhook trigger: a URL that starts this automation when something calls it.
  *
@@ -103,8 +122,7 @@ export function WebhookSection({
   const [revealed, setRevealed] = useState(false);
   const now = useNow();
 
-  const base = status ? (status.settings.public_url ?? localBase(status.settings)) : null;
-  const url = base ? `${base}/hooks/${automation.id}` : null;
+  const url = status ? webhookUrl(status, automation.id) : null;
   const sharedDirectory =
     automation.webhook_overlap === "parallel" && automation.workspace.mode !== "new_worktree";
 
@@ -249,5 +267,66 @@ export function WebhookSection({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The URL and secret of a webhook that has just been turned on, shown once on save.
+ *
+ * The secret is made by the server on that save, so the editor that asked for it never had it.
+ * This is where a sender gets set up; the editor shows both again whenever it is reopened.
+ */
+export function WebhookCreatedDialog({
+  automation,
+  connection,
+  onClose,
+}: {
+  /** The automation as saved, carrying its new secret, or `null` when nothing is shown. */
+  automation: Automation | null;
+  connection: ConnectionKey;
+  onClose: () => void;
+}) {
+  const { data: status } = useWebhookSettingsQuery(automation ? connection : null);
+  const url = status && automation ? webhookUrl(status, automation.id) : null;
+  const secret = automation?.webhook_secret;
+
+  return (
+    <Dialog open={automation !== null} onOpenChange={(open) => !open && onClose()}>
+      {automation && (
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Webhook ready</DialogTitle>
+            <DialogDescription>
+              Give these to the service that should start “{automation.name}”.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {[
+              { label: "URL", value: url },
+              { label: "Secret", value: secret },
+            ].map(
+              (field) =>
+                field.value && (
+                  <div key={field.label} className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground">{field.label}</span>
+                    <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+                      <code className="min-w-0 flex-1 truncate text-[11px]">{field.value}</code>
+                      <CopyButton value={field.value} label={`Copy the ${field.label}`} />
+                    </div>
+                  </div>
+                ),
+            )}
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Sign the body with the secret as GitHub does (<code>X-Hub-Signature-256</code>), or
+              send it as <code>Authorization: Bearer &lt;secret&gt;</code>. Both stay available in
+              the automation&apos;s editor.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={onClose}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      )}
+    </Dialog>
   );
 }
