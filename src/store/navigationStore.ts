@@ -2,18 +2,18 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";
 
-export type ViewType = "kanban" | "agents" | "worktrees" | "library";
+export type ViewType = "kanban" | "agents" | "worktrees" | "collections";
 export type NavigationTarget =
   | { taskId: number }
   | { agentId: string }
   | { sessionId: string }
   | { worktreeId: string }
-  | { view: "tasks" | "agents" | "worktree" | "library" | "settings" };
+  | { view: "tasks" | "agents" | "worktree" | "collections" | "settings" };
 
 const PAGE_ORDER: Record<ViewType, number> = {
   kanban: 0,
   agents: 1,
-  library: 2,
+  collections: 2,
   worktrees: 3,
 };
 

@@ -53,8 +53,8 @@ const AgentsView = lazy(() =>
 const WorktreesView = lazy(() =>
   import("@/views/worktrees/WorktreesView").then((m) => ({ default: m.WorktreesView })),
 );
-const LibraryView = lazy(() =>
-  import("@/views/library/LibraryView").then((m) => ({ default: m.LibraryView })),
+const CollectionsView = lazy(() =>
+  import("@/views/collections/CollectionsView").then((m) => ({ default: m.CollectionsView })),
 );
 const SettingsDialog = lazy(() =>
   import("@/views/settings/SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
@@ -99,7 +99,7 @@ function App() {
     "tab-board": () => setActiveTab("kanban"),
     "tab-agents": () => setActiveTab("agents"),
     "tab-worktrees": () => setActiveTab("worktrees"),
-    "tab-library": () => setActiveTab("library"),
+    "tab-collections": () => setActiveTab("collections"),
     "open-settings": () => openSettings(),
     "prevent-reload": () => {},
     "prevent-reload-shift": () => {},
@@ -109,7 +109,7 @@ function App() {
   const agentsControls = useAnimationControls();
   const kanbanControls = useAnimationControls();
   const worktreesControls = useAnimationControls();
-  const libraryControls = useAnimationControls();
+  const collectionsControls = useAnimationControls();
   const prevTabRef = useRef<ViewType>(activeTab);
 
   const viewControls = useMemo(
@@ -118,9 +118,9 @@ function App() {
         kanban: kanbanControls,
         agents: agentsControls,
         worktrees: worktreesControls,
-        library: libraryControls,
+        collections: collectionsControls,
       }) satisfies Record<ViewType, ReturnType<typeof useAnimationControls>>,
-    [kanbanControls, agentsControls, worktreesControls, libraryControls],
+    [kanbanControls, agentsControls, worktreesControls, collectionsControls],
   );
 
   // Zombie worktree cleanup on project open (REQ-36)
@@ -340,17 +340,17 @@ function App() {
               </Suspense>
             </motion.div>
 
-            {/* Library View — always mounted, imperative animation */}
+            {/* Collections View — always mounted, imperative animation */}
             <motion.div
-              initial={{ opacity: activeTab === "library" ? 1 : 0 }}
-              animate={libraryControls}
+              initial={{ opacity: activeTab === "collections" ? 1 : 0 }}
+              animate={collectionsControls}
               className={cn(
                 "absolute inset-0 overflow-hidden",
-                activeTab !== "library" && "pointer-events-none",
+                activeTab !== "collections" && "pointer-events-none",
               )}
             >
               <Suspense fallback={fallback}>
-                <LibraryView
+                <CollectionsView
                   projectId={currentProject.id}
                   projectPath={currentProject.path}
                   connection={connection}

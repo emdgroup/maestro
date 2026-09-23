@@ -17,7 +17,7 @@ const STARTUP_TABS: { value: string | null; label: string; icon: typeof Bot }[] 
   // suppresses the first-run intro. Picking the default must not do that.
   { value: null, label: "Tasks", icon: LayoutDashboard },
   { value: "agents", label: "Agents", icon: Bot },
-  { value: "library", label: "Library", icon: Library },
+  { value: "collections", label: "Collections", icon: Library },
   { value: "worktrees", label: "Workspaces", icon: FolderGit2 },
 ];
 

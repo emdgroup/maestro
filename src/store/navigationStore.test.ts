@@ -85,11 +85,11 @@ describe("navigationStore – navigate() with view targets", () => {
     expect(state.activeTab).toBe("worktrees");
   });
 
-  it("navigate({ view: 'library' }) sets activeTab=library", () => {
+  it("navigate({ view: 'collections' }) sets activeTab=collections", () => {
     const { navigate } = useNavigationStore.getState();
-    navigate({ view: "library" });
+    navigate({ view: "collections" });
     const state = useNavigationStore.getState();
-    expect(state.activeTab).toBe("library");
+    expect(state.activeTab).toBe("collections");
   });
 
   // Settings is a dialog, so navigating to it opens the dialog and leaves the tab alone — the
@@ -121,8 +121,8 @@ describe("navigationStore – slideDirection", () => {
     expect(useNavigationStore.getState().slideDirection).toBe(1);
   });
 
-  it("backward navigation (library->kanban) sets slideDirection=-1", () => {
-    useNavigationStore.setState({ activeTab: "library" });
+  it("backward navigation (collections->kanban) sets slideDirection=-1", () => {
+    useNavigationStore.setState({ activeTab: "collections" });
     const { setActiveTab } = useNavigationStore.getState();
     setActiveTab("kanban");
     expect(useNavigationStore.getState().slideDirection).toBe(-1);

@@ -533,7 +533,7 @@ None there is nothing to pause, and the switch stays off.
 
 ### Reading a cron expression, and reopening a run
 
-`src/views/library/automations/cron/` parses each field and decides nothing. `fields.ts` turns one
+`src/views/collections/automations/cron/` parses each field and decides nothing. `fields.ts` turns one
 token into a value, and that one function is used three times: to colour a slot, to write that
 field's clause in the sentence `describe.ts` builds, and to refuse `25` in an hour field before it
 is saved. **When a schedule fires is never answered here.** `preview_schedule` asks the daemon,

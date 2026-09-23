@@ -6,12 +6,12 @@ describe("resolveProjectStartupTab", () => {
     const first = resolveProjectStartupTab(1, "agents", null);
     expect(first).toEqual({ appliedForProjectId: 1, tab: "agents" });
 
-    const repeated = resolveProjectStartupTab(1, "library", first.appliedForProjectId);
+    const repeated = resolveProjectStartupTab(1, "collections", first.appliedForProjectId);
     expect(repeated).toEqual({ appliedForProjectId: 1, tab: null });
 
-    expect(resolveProjectStartupTab(2, "library", repeated.appliedForProjectId)).toEqual({
+    expect(resolveProjectStartupTab(2, "collections", repeated.appliedForProjectId)).toEqual({
       appliedForProjectId: 2,
-      tab: "library",
+      tab: "collections",
     });
   });
 

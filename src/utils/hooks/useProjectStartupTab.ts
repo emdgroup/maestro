@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ViewType } from "@/store/navigationStore";
 
 // A project that stored `settings` before it became a dialog falls through to the default tab.
-const VALID_STARTUP_TABS: readonly string[] = ["kanban", "agents", "worktrees", "library"];
+const VALID_STARTUP_TABS: readonly string[] = ["kanban", "agents", "worktrees", "collections"];
 
 interface StartupTabTransition {
   appliedForProjectId: number | null;
