@@ -37,7 +37,7 @@ import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { useNow } from "@/hooks/useNow";
 import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
-import { keptCount, runDuration, type RunEntry } from "./runs/runs";
+import { keptCount, runDuration, waitDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
 
 function describeWorkspace(workspace: Automation["workspace"]): string {
@@ -89,7 +89,8 @@ function AutomationRow({
   const kept = keptCount(runs);
   // Whether the run in flight is blocked on a question is live session state, joined in by the
   // entry; the row is where it has to show, since the history is collapsed by default.
-  const awaiting = runs.some((entry) => entry.run.id === running?.id && entry.state === "awaiting");
+  const waiting = runs.find((entry) => entry.run.id === running?.id && entry.state === "awaiting");
+  const awaiting = waiting !== undefined;
 
   // From the server, which is where the clock is. Nothing here works out when it is next due.
   const next = automation.next_due_at ? new Date(automation.next_due_at) : null;
@@ -151,10 +152,10 @@ function AutomationRow({
             </button>
             {/* Status only: getting into the session is the button beside Stop. */}
             {running &&
-              (awaiting ? (
+              (waiting ? (
                 <span className="flex shrink-0 items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600">
                   <MessageCircleQuestion className="size-2.5" />
-                  waiting on you for {runDuration(running, now)}
+                  waiting on you for {waitDuration(waiting, now)}
                 </span>
               ) : (
                 <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-600">

@@ -18,6 +18,9 @@ export interface RunEntry {
   live: ActiveSessionInfo | undefined;
   /** How to get to it, or why there is no way. */
   action: "open" | "load" | "none";
+  /** When the run started waiting on the user, while it is. Its own clock, since the run's
+   *  duration counts from when it started and says nothing about how long the question has sat. */
+  awaitingSince: number | undefined;
 }
 
 export function runState(run: AutomationRun, activity: SessionActivityInfo | undefined): RunState {
@@ -52,9 +55,12 @@ export function entriesOf(
 ): RunEntry[] {
   return runs.map((run) => {
     const live = sessions.find((session) => session.session_id === run.session_id);
+    const info = run.session_id ? activity[run.session_id] : undefined;
+    const state = runState(run, info);
     return {
       run,
-      state: runState(run, run.session_id ? activity[run.session_id] : undefined),
+      state,
+      awaitingSince: state === "awaiting" ? info?.stateChangedAt : undefined,
       live,
       action: runAction(run, live),
     };
@@ -79,11 +85,21 @@ export function keptCount(entries: RunEntry[]): number {
   return entries.filter((entry) => keptWorkspace(entry.run) !== null).length;
 }
 
+/** How long a waiting run has been waiting, falling back to its whole duration if that is unknown. */
+export function waitDuration(entry: RunEntry, now: number): string {
+  if (entry.awaitingSince === undefined) return runDuration(entry.run, now);
+  return formatSeconds((now - entry.awaitingSince) / 1000);
+}
+
 /** How long a run took, or has been going. */
 export function runDuration(run: AutomationRun, now: number): string {
   const started = new Date(run.started_at).getTime();
   const ended = run.finished_at ? new Date(run.finished_at).getTime() : now;
-  const seconds = Math.max(0, Math.round((ended - started) / 1000));
+  return formatSeconds((ended - started) / 1000);
+}
+
+function formatSeconds(elapsed: number): string {
+  const seconds = Math.max(0, Math.round(elapsed));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m`;

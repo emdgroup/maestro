@@ -3,7 +3,7 @@ import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { folderName } from "@/components/execution/worktree-card/worktree-usage";
-import { keptWorkspace, runDuration, type RunEntry, type RunState } from "./runs";
+import { keptWorkspace, runDuration, waitDuration, type RunEntry, type RunState } from "./runs";
 
 const DOT: Record<RunState, string> = {
   running: "bg-emerald-500 animate-pulse",
@@ -101,7 +101,7 @@ export function RunCard({
         {awaiting ? (
           <span className="flex items-center gap-1 text-amber-600">
             <MessageCircleQuestion className="size-3" />
-            waiting on you for {runDuration(run, now)}
+            waiting on you for {waitDuration(entry, now)}
           </span>
         ) : state === "failed" && run.error ? (
           <span className="truncate text-destructive">{run.error}</span>
