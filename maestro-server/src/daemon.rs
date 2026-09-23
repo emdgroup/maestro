@@ -368,9 +368,15 @@ async fn connect(dir: &Path) -> Result<TcpStream, String> {
         }
     }
 
+    // A daemon that was killed rather than stopped leaves its runtime file behind, and a file that
+    // already exists satisfies the wait below at once — pointing at a port nobody listens on. The
+    // app's handshake timed out on that every time a daemon had been killed, and the retry then
+    // found the file the new daemon had written meanwhile. Waiting for a different token rather
+    // than deleting the stale file: another attach may have started a daemon since the lock check.
+    let stale = read_runtime(dir).map(|runtime| runtime.token);
     drop(lock);
     start_daemon().await?;
-    let runtime = wait_for_runtime(dir).await?;
+    let runtime = wait_for_runtime(dir, stale.as_deref()).await?;
     open(runtime.port, &runtime.token, MODE_ATTACH).await
 }
 
@@ -392,11 +398,16 @@ async fn start_daemon() -> Result<(), String> {
         .map_err(|e| format!("cannot start maestro-server daemon: {e}"))
 }
 
-async fn wait_for_runtime(dir: &Path) -> Result<DaemonRuntime, String> {
-    wait_for(STARTUP_WAIT, || read_runtime(dir).is_some())
+/// Wait for a runtime file other than the one left behind by a daemon that is gone.
+fn fresh_runtime(dir: &Path, stale_token: Option<&str>) -> Option<DaemonRuntime> {
+    read_runtime(dir).filter(|runtime| Some(runtime.token.as_str()) != stale_token)
+}
+
+async fn wait_for_runtime(dir: &Path, stale_token: Option<&str>) -> Result<DaemonRuntime, String> {
+    wait_for(STARTUP_WAIT, || fresh_runtime(dir, stale_token).is_some())
         .await
         .map_err(|_| "maestro-server daemon did not start".to_string())?;
-    read_runtime(dir).ok_or_else(|| "maestro-server daemon did not start".to_string())
+    fresh_runtime(dir, stale_token).ok_or_else(|| "maestro-server daemon did not start".to_string())
 }
 
 /// Poll `ready` every 50ms until it holds or `limit` elapses.
@@ -496,6 +507,31 @@ mod tests {
         assert!(daemon_is_running(&lock));
         fs2::FileExt::unlock(&held).unwrap();
         assert!(!daemon_is_running(&lock));
+    }
+
+    #[test]
+    fn a_runtime_file_left_by_a_killed_daemon_is_not_the_new_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Token "t", left behind by a daemon that was killed rather than stopped.
+        runtime_at(tmp.path(), env!("CARGO_PKG_VERSION"));
+        let stale = read_runtime(tmp.path()).map(|runtime| runtime.token);
+        assert!(fresh_runtime(tmp.path(), stale.as_deref()).is_none());
+
+        write_runtime(
+            tmp.path(),
+            &DaemonRuntime {
+                port: 5678,
+                token: "new".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                protocol_version: PROTOCOL_VERSION,
+                pid: 2,
+            },
+        )
+        .unwrap();
+        let fresh = fresh_runtime(tmp.path(), stale.as_deref()).expect("the new daemon's file");
+        assert_eq!(fresh.port, 5678);
+        // With nothing stale to begin with, any file is the new one.
+        assert!(fresh_runtime(tmp.path(), None).is_some());
     }
 
     #[tokio::test]
