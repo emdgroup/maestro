@@ -95,7 +95,7 @@ async fn post_graphql_query(
     let body = GraphqlRequest { query, variables };
     client
         .post("https://api.linear.app/graphql")
-        .header("Authorization", format!("Bearer {}", token))
+        .header("Authorization", token)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
