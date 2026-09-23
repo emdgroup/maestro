@@ -34,7 +34,8 @@ import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { RunCard } from "./runs/RunCard";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
-import { useNow, useOpenRun, useRunEntries } from "./runs/useRunEntries";
+import { useNow } from "@/hooks/useNow";
+import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import { keptCount, runDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
@@ -335,13 +336,14 @@ export function AutomationsPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [filter, setFilter] = useState<RunFilter>("all");
-  const now = useNow();
-
   const automations = list?.automations;
   const agents = discovery?.agents ?? [];
   const running = new Map(
     (runs ?? []).filter((r) => r.status === "running").map((r) => [r.automation_id, r]),
   );
+  // One clock for every duration on the page. Every second while something is running, since those
+  // durations count in seconds; a coarser tick froze a just-started run at 0s until the next one.
+  const now = useNow(running.size > 0 ? 1_000 : 30_000);
 
   return (
     <div className="flex h-full min-w-0 flex-1">

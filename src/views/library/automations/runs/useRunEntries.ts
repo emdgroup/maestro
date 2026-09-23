@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { useActiveSessionsQuery, useLoadAcpSessionMutation } from "@/services/execution.service";
 import { useAutomationRunsQuery } from "@/services/automation.service";
@@ -19,22 +19,6 @@ export function useRunEntries(projectId: number) {
   const activity = useSessionActivityStore((state) => state.sessions);
 
   return entriesOf(runs ?? [], sessions ?? [], activity);
-}
-
-/**
- * One clock for every duration on the page, ticking every half minute.
- *
- * Read during render, so it cannot be `Date.now()` at the point of use: a running automation shows
- * "running for 2m", which has to move on its own, and every card reading its own clock would have
- * them disagree by a second and re-render at different times.
- */
-export function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
 }
 
 /**
