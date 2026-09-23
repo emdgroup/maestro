@@ -485,6 +485,14 @@ in `dispatch.rs` (closing the session in the app, or Stop on the automation row)
 closes sessions nobody is attached to, so with a window open a run's worktree stays until its session
 is closed there, and while it stays the user can still talk to the agent in it. `sweep_worktrees` at startup catches the runs whose sessions died with an earlier daemon.
 
+**Deleting a run takes its worktree and branch, whatever they hold.** That is the user's call, made
+per run from its card or per project through retention (`retention` table, `RunRetention`): a run
+goes once it is past the newest `keep_last` of its automation **and** older than `max_age_days`, and
+a project with no row gets 50 and 90. It is applied after every run ends and at startup, off the
+main loop because removing a worktree is a git process. A running run is never deleted, and the
+server refuses a manual delete while the run's session is still open. Run numbers come from
+`automations.runs_started`, not a count of rows, so a deleted run's number is never reused.
+
 **What "nothing would be lost" means** is the app's own rule, ported: `git status --porcelain` clean,
 **and** `git branch --all --contains HEAD` naming something besides this branch. That second half is
 what makes a merged branch and a pushed branch both safe to delete, and a branch whose commits exist

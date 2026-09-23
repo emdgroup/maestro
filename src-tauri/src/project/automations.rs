@@ -17,9 +17,10 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::acp::connection_server::{
-    query_automation_runs_via_server, query_delete_automation_via_server,
-    query_list_automations_via_server, query_preview_schedule_via_server,
-    query_run_automation_via_server, query_save_automation_via_server,
+    query_automation_runs_via_server, query_delete_automation_run_via_server,
+    query_delete_automation_via_server, query_list_automations_via_server,
+    query_preview_schedule_via_server, query_run_automation_via_server,
+    query_save_automation_via_server, query_set_run_retention_via_server,
 };
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
@@ -251,6 +252,16 @@ pub struct AutomationList {
     /// The IANA zone the background server's machine is set to. The same as this machine's for a
     /// local project, and the only reason the editor offers a choice when it is not.
     pub server_timezone: String,
+    pub retention: RunRetention,
+}
+
+/// Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
+/// `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
+/// keeps everything. Deleting a run removes its worktree and branch, whatever they hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct RunRetention {
+    pub keep_last: Option<u32>,
+    pub max_age_days: Option<u32>,
 }
 
 #[tauri::command]
@@ -265,6 +276,10 @@ pub async fn list_automations(
     Ok(AutomationList {
         automations: response.automations.into_iter().map(Into::into).collect(),
         server_timezone: response.server_timezone,
+        retention: RunRetention {
+            keep_last: response.retention.keep_last,
+            max_age_days: response.retention.max_age_days,
+        },
     })
 }
 
@@ -372,4 +387,38 @@ pub async fn list_automation_runs(
     let response =
         query_automation_runs_via_server(connection_key, project_path, limit, &app_state).await?;
     Ok(response.runs.into_iter().map(Into::into).collect())
+}
+
+/// Forget one run, removing the worktree and branch it made if they are still there, whatever
+/// they hold. Refused for a run still going, or one whose session is still open.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_automation_run(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    run_id: String,
+) -> Result<(), String> {
+    let (connection_key, _) = target(&app_state, project_id).await?;
+    query_delete_automation_run_via_server(connection_key, run_id, &app_state).await
+}
+
+/// Set how much run history this project keeps. Applied straight away.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_run_retention(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    retention: RunRetention,
+) -> Result<(), String> {
+    let (connection_key, project_path) = target(&app_state, project_id).await?;
+    query_set_run_retention_via_server(
+        connection_key,
+        project_path,
+        maestro_protocol::RunRetention {
+            keep_last: retention.keep_last,
+            max_age_days: retention.max_age_days,
+        },
+        &app_state,
+    )
+    .await
 }

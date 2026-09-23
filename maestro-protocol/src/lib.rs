@@ -81,6 +81,10 @@ pub enum ServerRequest {
     RunAutomation(RunAutomationRequest),
     /// What this project's automations have done, newest first.
     ListAutomationRuns(ListAutomationRunsRequest),
+    /// Forget one run, removing the worktree and branch it made if they are still there.
+    DeleteAutomationRun(DeleteAutomationRunRequest),
+    /// How much run history this project keeps. Applied straight away, and after every run.
+    SetRunRetention(SetRunRetentionRequest),
     /// When an expression would next come round. For a schedule being written, not a stored one.
     PreviewSchedule(PreviewScheduleRequest),
     SetModel(SetModelRequest),
@@ -588,6 +592,42 @@ pub struct ListAutomationsResponse {
     /// is. Falls back to `UTC` when the machine cannot say.
     #[serde(default = "utc")]
     pub server_timezone: String,
+    /// How much of this project's run history is kept.
+    #[serde(default)]
+    pub retention: RunRetention,
+}
+
+/// Which finished runs a project keeps, per automation. A run is deleted only once it breaks every
+/// limit that is set: past the newest `keep_last` **and** older than `max_age_days`. Both `None`
+/// keeps everything. A running run is never deleted.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunRetention {
+    #[serde(default)]
+    pub keep_last: Option<u32>,
+    #[serde(default)]
+    pub max_age_days: Option<u32>,
+}
+
+/// What a project that never chose gets: enough to look back on, without growing forever on a
+/// machine running an hourly schedule.
+impl Default for RunRetention {
+    fn default() -> Self {
+        Self {
+            keep_last: Some(50),
+            max_age_days: Some(90),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteAutomationRunRequest {
+    pub run_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetRunRetentionRequest {
+    pub project_path: String,
+    pub retention: RunRetention,
 }
 
 fn utc() -> String {
@@ -657,6 +697,8 @@ pub enum ServerResponse {
     SaveAutomationOk(Automation),
     DeleteAutomationOk,
     ListAutomationRunsOk(ListAutomationRunsResponse),
+    DeleteAutomationRunOk,
+    SetRunRetentionOk,
     PreviewScheduleOk(PreviewScheduleResponse),
     /// A run started or finished. Pushed unasked to whoever is attached, because the client that
     /// cares did not ask for it: the clock did.

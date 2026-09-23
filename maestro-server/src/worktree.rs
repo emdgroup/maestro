@@ -188,6 +188,34 @@ pub async fn remove(project_path: &str, worktree_path: &str, branch: &str) -> Re
     Ok(())
 }
 
+/// Remove a worktree and its branch whatever they hold, tolerating either being gone already.
+///
+/// For a run the user deleted, or one past its project's retention: nobody is asked whether the
+/// work in it matters, which is what deleting a run means.
+pub async fn discard(project_path: &str, worktree_path: &str, branch: &str) -> Result<(), String> {
+    // A project that is gone took its worktrees with it, and there is no repository to ask.
+    if !Path::new(project_path).is_dir() {
+        return Ok(());
+    }
+    if Path::new(worktree_path).exists() {
+        git(
+            project_path,
+            &["worktree", "remove", worktree_path, "--force"],
+        )
+        .await?;
+    } else {
+        git(project_path, &["worktree", "prune"]).await?;
+    }
+    if !git(project_path, &["branch", "--list", branch])
+        .await?
+        .trim()
+        .is_empty()
+    {
+        git(project_path, &["branch", "-D", branch]).await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +254,46 @@ mod tests {
             ".maestro/worktrees/automation-audit-3"
         );
         assert_eq!(branch_name("audit", 3), "maestro/automation-audit-3");
+    }
+
+    #[tokio::test]
+    async fn a_deleted_run_takes_its_worktree_and_branch_even_when_half_gone() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let project = repo.path().to_str().expect("utf-8 path");
+        for args in [
+            vec!["init", "-q", "-b", "main"],
+            vec![
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "root",
+            ],
+        ] {
+            git(project, &args).await.expect("setup");
+        }
+
+        let whole = create(project, "", "audit", 1).await.expect("create");
+        std::fs::write(Path::new(&whole.path).join("unsaved.txt"), "work").expect("dirty it");
+        discard(project, &whole.path, &whole.branch)
+            .await
+            .expect("discard a dirty one");
+        assert!(!Path::new(&whole.path).exists());
+
+        // Somebody already deleted the directory by hand; the branch is still there.
+        let half = create(project, "", "audit", 2).await.expect("create");
+        std::fs::remove_dir_all(&half.path).expect("remove by hand");
+        discard(project, &half.path, &half.branch)
+            .await
+            .expect("discard a half-gone one");
+
+        let branches = git(project, &["branch", "--list", "maestro/*"])
+            .await
+            .expect("list");
+        assert!(branches.trim().is_empty(), "left behind: {branches}");
     }
 }

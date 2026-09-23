@@ -183,6 +183,71 @@ pub async fn sweep_worktrees(store: &Store, stdout: &crate::ClientOut) {
     }
 }
 
+/// Forget one run, removing the worktree and branch it made first if they are still there.
+///
+/// The worktree goes before the row: a row left behind by a failed removal still points at the
+/// directory, where a removed row would leave a directory nothing points at.
+pub async fn discard_run(store: &Store, run: &AutomationRun) -> Result<(), String> {
+    if let (Some(path), Some(branch)) =
+        (run.worktree_path.as_deref(), run.worktree_branch.as_deref())
+    {
+        crate::worktree::discard(&run.project_path, path, branch).await?;
+    }
+    let conn = store.lock().await;
+    automations::delete_run(&conn, &run.id)
+}
+
+/// Delete whatever this project's run history has grown past.
+pub async fn apply_retention(store: &Store, project_path: &str) {
+    let expired = {
+        let conn = store.lock().await;
+        automations::expired_runs(&conn, project_path, Utc::now())
+    };
+    match expired {
+        Ok(runs) => {
+            for run in runs {
+                if let Err(e) = discard_run(store, &run).await {
+                    send_diag(
+                        "warn",
+                        format!("[automation] could not delete an expired run: {e}"),
+                    );
+                }
+            }
+        }
+        Err(e) => send_diag(
+            "warn",
+            format!("[automation] cannot work out which runs have expired: {e}"),
+        ),
+    }
+}
+
+/// Apply retention once a run has ended, off the loop that noticed: removing a worktree is a git
+/// process, and the server's main loop must not wait on one.
+fn trim_in_background(store: &Store, project_path: &str) {
+    let store = Arc::clone(store);
+    let project_path = project_path.to_string();
+    tokio::spawn(async move { apply_retention(&store, &project_path).await });
+}
+
+/// Apply every project's retention, for the history that aged while the server was down.
+pub async fn apply_all_retention(store: &Store) {
+    let projects = {
+        let conn = store.lock().await;
+        automations::projects_with_runs(&conn)
+    };
+    match projects {
+        Ok(projects) => {
+            for project_path in projects {
+                apply_retention(store, &project_path).await;
+            }
+        }
+        Err(e) => send_diag(
+            "warn",
+            format!("[automation] cannot list projects to trim run history: {e}"),
+        ),
+    }
+}
+
 fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
     config_options?
         .iter()
@@ -218,7 +283,10 @@ async fn fail(store: &Store, stdout: &crate::ClientOut, run_id: &str, error: Str
         automations::finish_run(&conn, run_id, AutomationRunStatus::Failed, Some(error))
     };
     match finished {
-        Ok(Some(run)) => announce(stdout, &run).await,
+        Ok(Some(run)) => {
+            announce(stdout, &run).await;
+            trim_in_background(store, &run.project_path);
+        }
         Ok(None) => {}
         Err(e) => send_diag("warn", format!("[automation] could not close a run: {e}")),
     }
@@ -430,6 +498,7 @@ pub async fn finish_for_session(
         Ok(None) => {}
         Err(e) => send_diag("warn", format!("[automation] could not close a run: {e}")),
     }
+    trim_in_background(store, &run.project_path);
 }
 
 /// Which automations are due, and claiming them so one tick cannot fire the same occurrence twice.

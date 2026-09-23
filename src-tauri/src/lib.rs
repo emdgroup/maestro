@@ -99,6 +99,8 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::delete_automation,
         crate::ipc::run_automation,
         crate::ipc::list_automation_runs,
+        crate::ipc::delete_automation_run,
+        crate::ipc::set_run_retention,
         crate::ipc::preview_schedule,
         crate::ipc::adopt_automation_session,
         crate::ipc::resolve_agent_profile,

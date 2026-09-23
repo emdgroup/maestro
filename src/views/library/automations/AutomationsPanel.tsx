@@ -1,7 +1,19 @@
 import { useState } from "react";
-import { Bot, ChevronDown, FolderGit2, History, Pencil, Play, Square, Trash2 } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  CornerDownRight,
+  FolderGit2,
+  History,
+  MessageCircleQuestion,
+  Pencil,
+  Play,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
+import { ButtonGroup } from "@/ui/button-group";
 import { Switch } from "@/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { api } from "@/lib/tauri-utils";
@@ -11,8 +23,10 @@ import {
   useAutomationRunsQuery,
   useAutomationsQuery,
   useDeleteAutomationMutation,
+  useDeleteAutomationRunMutation,
   useRunAutomationMutation,
   useSaveAutomationMutation,
+  useSetRunRetentionMutation,
 } from "@/services/automation.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
@@ -22,7 +36,7 @@ import { RunCard } from "./runs/RunCard";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { useNow, useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
-import { keptCount, type RunEntry } from "./runs/runs";
+import { keptCount, runDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
 
 function describeWorkspace(workspace: Automation["workspace"]): string {
@@ -41,6 +55,7 @@ function AutomationRow({
   expanded,
   onToggleExpanded,
   onOpenRun,
+  onDeleteRun,
   loadingRun,
   now,
   onRun,
@@ -57,6 +72,7 @@ function AutomationRow({
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenRun: (entry: RunEntry) => void;
+  onDeleteRun: (entry: RunEntry) => void;
   loadingRun: string | null;
   /** The page's clock, shared so every duration moves together. */
   now: number;
@@ -70,6 +86,9 @@ function AutomationRow({
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
   const kept = keptCount(runs);
+  // Whether the run in flight is blocked on a question is live session state, joined in by the
+  // entry; the row is where it has to show, since the history is collapsed by default.
+  const awaiting = runs.some((entry) => entry.run.id === running?.id && entry.state === "awaiting");
 
   // From the server, which is where the clock is. Nothing here works out when it is next due.
   const next = automation.next_due_at ? new Date(automation.next_due_at) : null;
@@ -129,18 +148,16 @@ function AutomationRow({
                 {automation.name}
               </span>
             </button>
+            {/* Status only: getting into the session is the button beside Stop. */}
             {running &&
-              (sessionId ? (
-                <button
-                  type="button"
-                  onClick={() => navigate({ sessionId })}
-                  className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-600 hover:bg-emerald-500/25"
-                >
-                  ● running, open session
-                </button>
+              (awaiting ? (
+                <span className="flex shrink-0 items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600">
+                  <MessageCircleQuestion className="size-2.5" />
+                  waiting on you for {runDuration(running, now)}
+                </span>
               ) : (
-                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-600">
-                  ● starting
+                <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-600">
+                  {sessionId ? `● running for ${runDuration(running, now)}` : "● starting"}
                 </span>
               ))}
             {/* Workspaces a run could not clean up: the row is the only place this is visible
@@ -191,16 +208,36 @@ function AutomationRow({
             Run now
           </Button>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={sessionId === null}
-            onClick={() => sessionId && void api.cancelAcpSession(sessionId)}
-            className="shrink-0 text-xs"
-          >
-            <Square className="size-3" />
-            Stop
-          </Button>
+          <ButtonGroup className="shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sessionId === null}
+              onClick={() => sessionId && navigate({ sessionId })}
+              className={cn(
+                "text-xs",
+                awaiting &&
+                  "border-amber-500 bg-amber-500/10 font-medium text-amber-600 hover:bg-amber-500/20 hover:text-amber-600",
+              )}
+            >
+              {awaiting ? (
+                <MessageCircleQuestion className="size-3" />
+              ) : (
+                <CornerDownRight className="size-3" />
+              )}
+              {awaiting ? "Answer" : "Join"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sessionId === null}
+              onClick={() => sessionId && void api.cancelAcpSession(sessionId)}
+              className="text-xs"
+            >
+              <Square className="size-3" />
+              Stop
+            </Button>
+          </ButtonGroup>
         )}
         <Tooltip>
           <TooltipTrigger
@@ -238,6 +275,7 @@ function AutomationRow({
               now={now}
               onOpen={() => onOpenRun(entry)}
               pending={loadingRun === entry.run.id}
+              onDelete={() => onDeleteRun(entry)}
             />
           ))}
           {runs.length > 5 && (
@@ -284,6 +322,9 @@ export function AutomationsPanel({
   const save = useSaveAutomationMutation();
   const remove = useDeleteAutomationMutation();
   const run = useRunAutomationMutation();
+  const deleteRun = useDeleteAutomationRunMutation();
+  const setRetention = useSetRunRetentionMutation();
+  const onDeleteRun = (entry: RunEntry) => deleteRun.mutate({ projectId, runId: entry.run.id });
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const { data: worktrees } = useWorktreesQuery(projectId, projectPath);
 
@@ -339,6 +380,7 @@ export function AutomationsPanel({
                   setExpanded((open) => (open === automation.id ? null : automation.id))
                 }
                 onOpenRun={(entry) => void openRun(entry)}
+                onDeleteRun={onDeleteRun}
                 loadingRun={loadingRun}
                 onRun={() => run.mutate({ projectId, automationId: automation.id })}
                 onEdit={() => onEdit(automation)}
@@ -381,6 +423,9 @@ export function AutomationsPanel({
           onOpen={(entry) => void openRun(entry)}
           loading={loadingRun}
           onClose={() => setPanelOpen(false)}
+          onDelete={onDeleteRun}
+          retention={list?.retention}
+          onRetentionChange={(retention) => setRetention.mutate({ projectId, retention })}
         />
       ) : (
         <div className="shrink-0 bg-card p-2">

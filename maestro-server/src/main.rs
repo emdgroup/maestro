@@ -359,6 +359,7 @@ async fn run_server(
     // evaluated rather than sitting there for ever.
     if let Some(store) = automation_store.as_ref() {
         automation_runner::sweep_worktrees(store, &stdout).await;
+        automation_runner::apply_all_retention(store).await;
     }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not

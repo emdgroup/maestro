@@ -971,6 +971,29 @@ async listAutomationRuns(projectId: number, limit: number | null) : Promise<Resu
 }
 },
 /**
+ * Forget one run, removing the worktree and branch it made if they are still there, whatever
+ * they hold. Refused for a run still going, or one whose session is still open.
+ */
+async deleteAutomationRun(projectId: number, runId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_automation_run", { projectId, runId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set how much run history this project keeps. Applied straight away.
+ */
+async setRunRetention(projectId: number, retention: RunRetention) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_run_retention", { projectId, retention }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * When a schedule being written would next fire, RFC 3339, or `None` for one that never does.
  * 
  * Asked of the server rather than worked out here, for the same reason `next_due_at` is: the
@@ -2874,7 +2897,7 @@ export type AutomationList = { automations: Automation[];
  * The IANA zone the background server's machine is set to. The same as this machine's for a
  * local project, and the only reason the editor offers a choice when it is not.
  */
-server_timezone: string }
+server_timezone: string; retention: RunRetention }
 /**
  * What happened to one firing of an automation.
  */
@@ -3562,6 +3585,12 @@ export type ReviewCommentEntry = { file_path: string; comment: string }
  * Typed response for save_task_review and request_changes IPC commands
  */
 export type ReviewResult = { success: boolean; review_id: number; task_status: string | null }
+/**
+ * Which finished runs a project keeps, per automation. A run is deleted once it is past the newest
+ * `keep_last` **and** older than `max_age_days`; a limit left unset does not apply, and both unset
+ * keeps everything. Deleting a run removes its worktree and branch, whatever they hold.
+ */
+export type RunRetention = { keep_last: number | null; max_age_days: number | null }
 /**
  * TS-exportable version of maestro_protocol::SessionListEntry (protocol crate doesn't derive Type)
  */

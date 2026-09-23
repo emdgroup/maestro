@@ -228,6 +228,52 @@ pub async fn query_delete_automation_via_server(
     .await
 }
 
+pub async fn query_delete_automation_run_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    run_id: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.delete_automation_run.clone(),
+        "DeleteAutomationRun already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(
+            maestro_protocol::DeleteAutomationRunRequest { run_id },
+        )),
+        // Removing a worktree is a git process over a whole checkout.
+        60,
+        "DeleteAutomationRun via connection server timed out after 60s",
+    )
+    .await
+}
+
+pub async fn query_set_run_retention_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    retention: maestro_protocol::RunRetention,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.set_run_retention.clone(),
+        "SetRunRetention already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SetRunRetention(
+            maestro_protocol::SetRunRetentionRequest {
+                project_path,
+                retention,
+            },
+        )),
+        // Answered after trimming, which removes worktrees.
+        60,
+        "SetRunRetention via connection server timed out after 60s",
+    )
+    .await
+}
+
 /// Ask the server to start an automation now.
 ///
 /// There is no reply to wait for beyond the request being accepted: the run announces itself on

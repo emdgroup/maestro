@@ -6,7 +6,7 @@ import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { executionQueryKeys } from "@/services/execution.service";
 import { useNavigationStore } from "@/store/navigationStore";
-import type { Automation, AutomationRun } from "@/types/bindings";
+import type { Automation, AutomationRun, RunRetention } from "@/types/bindings";
 
 export const automationQueryKeys = {
   base: ["automations"] as const,
@@ -159,5 +159,38 @@ export function useRunAutomationMutation() {
       void queryClient.invalidateQueries({ queryKey: automationQueryKeys.runs(projectId) });
     },
     onError: createErrorToastHandler("Failed to start the automation"),
+  });
+}
+
+/**
+ * Forget one run. Its worktree and branch go with it, whatever they hold: that is what the user
+ * asked for. The server refuses a run still going, or one whose session is still open.
+ */
+export function useDeleteAutomationRunMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, runId }: { projectId: number; runId: string }) =>
+      api.deleteAutomationRun(projectId, runId),
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.runs(projectId) });
+    },
+    onError: createErrorToastHandler("Failed to delete the run"),
+  });
+}
+
+/** How much run history this project keeps. The server trims to it before answering. */
+export function useSetRunRetentionMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, retention }: { projectId: number; retention: RunRetention }) =>
+      api.setRunRetention(projectId, retention),
+    onSuccess: (_data, { projectId }) => {
+      // Answered once the trim is done, so this read already has the shorter history.
+      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.list(projectId) });
+      void queryClient.invalidateQueries({ queryKey: automationQueryKeys.runs(projectId) });
+    },
+    onError: createErrorToastHandler("Failed to save the run history setting"),
   });
 }

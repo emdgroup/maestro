@@ -1,8 +1,13 @@
-import { History, PanelRightClose } from "lucide-react";
-import { Button } from "@/ui/button";
+import { useState } from "react";
+import { History, PanelRightClose, Settings2 } from "lucide-react";
+import { Button, buttonVariants } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
+import { Input } from "@/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { cn } from "@/lib/utils";
 import { RunCard } from "./RunCard";
 import { byDay, type RunEntry } from "./runs";
+import type { RunRetention } from "@/types/bindings";
 
 export type RunFilter = "all" | "awaiting" | "failed";
 
@@ -11,6 +16,120 @@ const FILTERS: Array<{ id: RunFilter; label: string }> = [
   { id: "awaiting", label: "Needs input" },
   { id: "failed", label: "Failed" },
 ];
+
+/** A limit the user can switch off, and the number it holds while it is on. */
+function LimitField({
+  id,
+  before,
+  after,
+  value,
+  onChange,
+}: {
+  id: string;
+  before: string;
+  after: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  // Remembered while the limit is off, so switching it back on restores what was there.
+  const [last, setLast] = useState(value ?? 1);
+  return (
+    <label htmlFor={id} className="flex items-center gap-2 text-xs">
+      <Checkbox
+        checked={value !== null}
+        onCheckedChange={(checked) => onChange(checked === true ? last : null)}
+      />
+      {before}
+      <Input
+        id={id}
+        type="number"
+        min={1}
+        value={value ?? last}
+        disabled={value === null}
+        onChange={(event) => {
+          const next = Math.max(1, Math.floor(Number(event.target.value) || 1));
+          setLast(next);
+          onChange(next);
+        }}
+        className="h-6 w-16 px-1.5 text-xs"
+      />
+      {after}
+    </label>
+  );
+}
+
+/**
+ * How much run history this project keeps. Edited as a draft and saved as one, because every save
+ * trims straight away and a half-typed number should not delete anything.
+ */
+function RetentionPopover({
+  retention,
+  onSave,
+}: {
+  retention: RunRetention;
+  onSave: (retention: RunRetention) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(retention);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDraft(retention);
+        setOpen(next);
+      }}
+    >
+      <PopoverTrigger
+        aria-label="Run history settings"
+        className={cn(
+          buttonVariants({ variant: "ghost", size: "icon" }),
+          "size-6 text-muted-foreground",
+        )}
+      >
+        <Settings2 className="size-3.5" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 gap-3">
+        <div className="text-sm font-medium">Run history</div>
+        <div className="space-y-2">
+          <LimitField
+            id="retention-keep-last"
+            before="Keep the last"
+            after="runs of each automation"
+            value={draft.keep_last}
+            onChange={(keep_last) => setDraft({ ...draft, keep_last })}
+          />
+          <LimitField
+            id="retention-max-age"
+            before="Keep anything newer than"
+            after="days"
+            value={draft.max_age_days}
+            onChange={(max_age_days) => setDraft({ ...draft, max_age_days })}
+          />
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {draft.keep_last === null && draft.max_age_days === null
+            ? "Every run is kept."
+            : "A run is deleted once it is outside every limit that is on. Its worktree and branch go with it, even with uncommitted work in them. A run still going is never deleted."}
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              onSave(draft);
+              setOpen(false);
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /**
  * Every automation's runs, newest first, grouped by day.
@@ -29,6 +148,9 @@ export function RunsPanel({
   onOpen,
   loading,
   onClose,
+  onDelete,
+  retention,
+  onRetentionChange,
 }: {
   entries: RunEntry[];
   /** The page's clock, so every duration on screen moves together. */
@@ -39,6 +161,10 @@ export function RunsPanel({
   /** The run id being loaded back into a session, if any. */
   loading: string | null;
   onClose: () => void;
+  onDelete: (entry: RunEntry) => void;
+  /** This project's, or `undefined` until the list has answered. */
+  retention: RunRetention | undefined;
+  onRetentionChange: (retention: RunRetention) => void;
 }) {
   const awaiting = entries.filter((entry) => entry.state === "awaiting").length;
   const shown = entries.filter((entry) =>
@@ -56,12 +182,14 @@ export function RunsPanel({
     <div className="flex h-full w-72 shrink-0 flex-col bg-card">
       <div className="flex items-center gap-1 px-2 py-2">
         <span className="text-[11px] font-medium">Recent runs</span>
+        <span className="ml-auto" />
+        {retention && <RetentionPopover retention={retention} onSave={onRetentionChange} />}
         <Button
           variant="ghost"
           size="icon"
           onClick={onClose}
           aria-label="Hide recent runs"
-          className="ml-auto size-6 text-muted-foreground"
+          className="size-6 text-muted-foreground"
         >
           <PanelRightClose className="size-3.5" />
         </Button>
@@ -114,6 +242,7 @@ export function RunsPanel({
                   now={now}
                   onOpen={() => onOpen(entry)}
                   pending={loading === entry.run.id}
+                  onDelete={() => onDelete(entry)}
                 />
               ))}
             </div>

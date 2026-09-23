@@ -1,4 +1,4 @@
-import { CornerDownRight, FolderGit2, MessageCircleQuestion } from "lucide-react";
+import { CornerDownRight, FolderGit2, MessageCircleQuestion, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,7 @@ export function RunCard({
   now,
   onOpen,
   pending,
+  onDelete,
 }: {
   entry: RunEntry;
   withName: boolean;
@@ -44,6 +45,8 @@ export function RunCard({
   onOpen: () => void;
   /** True while a closed session is being loaded again. */
   pending: boolean;
+  /** Forget this run, and remove its worktree and branch if they are still there. */
+  onDelete: () => void;
 }) {
   const { run, state, action } = entry;
   const awaiting = state === "awaiting";
@@ -52,7 +55,7 @@ export function RunCard({
   return (
     <div
       className={cn(
-        "rounded-md border px-2 py-1.5",
+        "group/run rounded-md border px-2 py-1.5",
         awaiting ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-background",
         state === "failed" && "border-destructive/30 bg-destructive/5",
       )}
@@ -69,6 +72,29 @@ export function RunCard({
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
           {run.scheduled ? "scheduled" : "run now"}
         </span>
+        {/* Not offered while the run is going: its agent is working in that worktree. */}
+        {run.status !== "running" && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onDelete}
+                  aria-label="Delete this run"
+                  className="size-4 shrink-0 text-muted-foreground opacity-0 group-hover/run:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                />
+              }
+            >
+              <Trash2 className="size-2.5" />
+            </TooltipTrigger>
+            <TooltipContent>
+              {run.worktree_path
+                ? "Delete this run, its worktree and its branch"
+                : "Delete this run"}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       <div className="mt-1 flex items-center gap-1.5 text-[10px]">

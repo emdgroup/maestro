@@ -12,7 +12,9 @@ use std::path::Path;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use maestro_protocol::{Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace};
+use maestro_protocol::{
+    Automation, AutomationRun, AutomationRunStatus, AutomationWorkspace, RunRetention,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// Cap on what a run list hands back, whatever the client asks for.
@@ -42,7 +44,17 @@ CREATE TABLE IF NOT EXISTS automations (
     last_fired_at   TEXT,
     -- What this automation's worktrees are named after. Written once and never rewritten, so
     -- renaming an automation leaves the directories its earlier runs made where they are.
-    slug            TEXT
+    slug            TEXT,
+    -- How many runs it has ever started, so a run keeps its number when earlier ones are deleted.
+    runs_started    INTEGER
+);
+
+-- A project with no row here keeps RunRetention::default(). A row with both limits null keeps
+-- everything, which is a choice the user made rather than the absence of one.
+CREATE TABLE IF NOT EXISTS retention (
+    project_path  TEXT PRIMARY KEY,
+    keep_last     INTEGER,
+    max_age_days  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS runs (
@@ -111,6 +123,7 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         add_column_if_missing(&conn, "runs", column, kind)?;
     }
     add_column_if_missing(&conn, "automations", "slug", "TEXT")?;
+    add_column_if_missing(&conn, "automations", "runs_started", "INTEGER")?;
     Ok(conn)
 }
 
@@ -484,16 +497,25 @@ pub fn start_run(
     automation: &Automation,
     scheduled: bool,
 ) -> Result<AutomationRun, String> {
-    // Counted rather than kept as a sequence: runs are never deleted, and counting also numbers
-    // correctly past the runs recorded before this column existed. A recreated automation has a
-    // new id, so it starts again at 1.
-    let earlier: u32 = conn
+    // A counter on the automation rather than a count of its runs, because runs can be deleted and
+    // a number, once shown, must not come round again. The count covers the runs recorded before
+    // the counter existed. A recreated automation has a new id, so it starts again at 1.
+    let ordinal: u32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM runs WHERE automation_id = ?",
+            "SELECT MAX(COALESCE(runs_started, 0),
+                        (SELECT COUNT(*) FROM runs WHERE automation_id = ?1)) + 1
+               FROM automations WHERE id = ?1",
             [&automation.id],
             |row| row.get(0),
         )
-        .map_err(|e| e.to_string())?;
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or(1);
+    conn.execute(
+        "UPDATE automations SET runs_started = ? WHERE id = ?",
+        params![ordinal, automation.id],
+    )
+    .map_err(|e| format!("cannot count the run: {e}"))?;
     let run = AutomationRun {
         id: uuid::Uuid::new_v4().to_string(),
         automation_id: automation.id.clone(),
@@ -515,7 +537,7 @@ pub fn start_run(
         worktree_branch: None,
         worktree_base: None,
         worktree_kept: None,
-        ordinal: Some(earlier + 1),
+        ordinal: Some(ordinal),
     };
     conn.execute(
         "INSERT INTO runs (
@@ -732,6 +754,98 @@ pub fn list_runs(
         .map_err(|e| e.to_string())
 }
 
+pub fn get_run(conn: &Connection, run_id: &str) -> Result<Option<AutomationRun>, String> {
+    conn.query_row("SELECT * FROM runs WHERE id = ?", [run_id], row_to_run)
+        .optional()
+        .map_err(|e| e.to_string())
+}
+
+pub fn delete_run(conn: &Connection, run_id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM runs WHERE id = ?", [run_id])
+        .map(|_| ())
+        .map_err(|e| format!("cannot delete the run: {e}"))
+}
+
+pub fn retention(conn: &Connection, project_path: &str) -> Result<RunRetention, String> {
+    conn.query_row(
+        "SELECT keep_last, max_age_days FROM retention WHERE project_path = ?",
+        [project_path],
+        |row| {
+            Ok(RunRetention {
+                keep_last: row.get(0)?,
+                max_age_days: row.get(1)?,
+            })
+        },
+    )
+    .optional()
+    .map(Option::unwrap_or_default)
+    .map_err(|e| e.to_string())
+}
+
+pub fn set_retention(
+    conn: &Connection,
+    project_path: &str,
+    retention: RunRetention,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO retention (project_path, keep_last, max_age_days) VALUES (?, ?, ?)
+         ON CONFLICT(project_path) DO UPDATE
+            SET keep_last = excluded.keep_last, max_age_days = excluded.max_age_days",
+        params![project_path, retention.keep_last, retention.max_age_days],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("cannot save how much run history to keep: {e}"))
+}
+
+/// Every project with a run on record, so the startup pass can apply each one's retention.
+pub fn projects_with_runs(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut statement = conn
+        .prepare("SELECT DISTINCT project_path FROM runs")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(|e| e.to_string())
+}
+
+/// The runs this project's retention says to delete, counted per automation.
+///
+/// Running runs take part in the ranking, since they are the newest, but are never returned.
+pub fn expired_runs(
+    conn: &Connection,
+    project_path: &str,
+    now: DateTime<Utc>,
+) -> Result<Vec<AutomationRun>, String> {
+    let RunRetention {
+        keep_last,
+        max_age_days,
+    } = retention(conn, project_path)?;
+    if keep_last.is_none() && max_age_days.is_none() {
+        return Ok(Vec::new());
+    }
+    let cutoff =
+        max_age_days.map(|days| (now - chrono::Duration::days(i64::from(days))).to_rfc3339());
+    let mut statement = conn
+        .prepare(
+            "SELECT * FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY automation_id ORDER BY started_at DESC, rowid DESC
+                ) AS rank
+                  FROM runs WHERE project_path = ?1
+             )
+              WHERE status != 'running'
+                AND (?2 IS NULL OR rank > ?2)
+                AND (?3 IS NULL OR started_at < ?3)",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map(params![project_path, keep_last, cutoff], row_to_run)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<AutomationRun>>>()
+        .map_err(|e| e.to_string())
+}
+
 /// Close out runs left open by a daemon that died mid-run.
 ///
 /// Called once at startup. The sessions they named are gone with the process that held them, so a
@@ -899,6 +1013,59 @@ mod tests {
 
         let runs = list_runs(&conn, "/p", None).expect("the list still reads");
         assert_eq!(runs[0].can_reload, Some(true));
+    }
+    #[test]
+    fn history_is_trimmed_only_past_both_limits_and_numbers_are_never_reused() {
+        let conn = store();
+        let saved = save(&conn, "/p", &automation("a", None)).expect("save");
+        let now = Utc::now();
+        let mut runs = Vec::new();
+        for days_ago in [200, 150, 100, 10, 0] {
+            let run = start_run(&conn, &saved, true).expect("start");
+            finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None).expect("finish");
+            let started = (now - chrono::Duration::days(days_ago)).to_rfc3339();
+            conn.execute(
+                "UPDATE runs SET started_at = ? WHERE id = ?",
+                params![started, run.id],
+            )
+            .expect("age");
+            runs.push(run);
+        }
+
+        // The default: past the newest 50 and older than 90 days. Five runs are all within 50.
+        assert!(expired_runs(&conn, "/p", now).expect("default").is_empty());
+
+        set_retention(
+            &conn,
+            "/p",
+            RunRetention {
+                keep_last: Some(2),
+                max_age_days: Some(120),
+            },
+        )
+        .expect("set");
+        let expired: Vec<_> = expired_runs(&conn, "/p", now)
+            .expect("expired")
+            .into_iter()
+            .map(|run| run.id)
+            .collect();
+        // 100 days old is past the newest two but not past 120 days, so it stays.
+        assert_eq!(expired, vec![runs[1].id.clone(), runs[0].id.clone()]);
+
+        set_retention(
+            &conn,
+            "/p",
+            RunRetention {
+                keep_last: None,
+                max_age_days: None,
+            },
+        )
+        .expect("keep everything");
+        assert!(expired_runs(&conn, "/p", now).expect("none").is_empty());
+
+        delete_run(&conn, &runs[4].id).expect("delete the newest");
+        let next = start_run(&conn, &saved, true).expect("start");
+        assert_eq!(next.ordinal, Some(6));
     }
 
     #[test]

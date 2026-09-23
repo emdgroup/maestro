@@ -139,16 +139,22 @@ pub(crate) async fn dispatch_message(
             let project_path = crate::automations::canonical_project_path(&req.project_path);
             let listed = {
                 let conn = store.lock().await;
-                crate::automations::list(&conn, &project_path)
+                crate::automations::list(&conn, &project_path).and_then(|automations| {
+                    Ok((
+                        automations,
+                        crate::automations::retention(&conn, &project_path)?,
+                    ))
+                })
             };
             match listed {
-                Ok(automations) => send_or_return!(
+                Ok((automations, retention)) => send_or_return!(
                     send_response(
                         stdout,
                         &MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(
                             maestro_protocol::ListAutomationsResponse {
                                 automations,
                                 server_timezone: crate::automations::server_timezone(),
+                                retention,
                             },
                         )),
                     )
@@ -257,6 +263,107 @@ pub(crate) async fn dispatch_message(
                     )
                     .await
                 ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::DeleteAutomationRun(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let run = {
+                let conn = store.lock().await;
+                crate::automations::get_run(&conn, &req.run_id)
+            };
+            // A run still going, or one whose session is still open, has an agent working in its
+            // worktree: removing that from under it is not deleting history.
+            let deleted = match run {
+                Ok(None) => Ok(()),
+                Ok(Some(run))
+                    if matches!(run.status, maestro_protocol::AutomationRunStatus::Running) =>
+                {
+                    Err("Stop this run before deleting it".to_string())
+                }
+                Ok(Some(run))
+                    if run
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|session_id| sessions.contains_key(session_id)) =>
+                {
+                    Err(
+                        "This run's session is still open. Close it before deleting the run"
+                            .to_string(),
+                    )
+                }
+                Ok(Some(run)) => {
+                    // Answered from its own task: removing a worktree is a git process, and the
+                    // loop every session's traffic goes through must not wait on one.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        let response =
+                            match crate::automation_runner::discard_run(&store, &run).await {
+                                Ok(()) => MaestroRpcMessage::Response(
+                                    ServerResponse::DeleteAutomationRunOk,
+                                ),
+                                Err(e) => error_response(e),
+                            };
+                        if let Err(e) = send_response(&stdout, &response).await {
+                            send_diag(
+                                "warn",
+                                format!("[automation] could not answer a run deletion: {e}"),
+                            );
+                        }
+                    });
+                    return true;
+                }
+                Err(e) => Err(e),
+            };
+            match deleted {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::DeleteAutomationRunOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetRunRetention(req)) => {
+            let Some(store) = automation_store else {
+                send_or_return!(
+                    send_response(stdout, &error_response(NO_AUTOMATION_STORE.to_string())).await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let saved = {
+                let conn = store.lock().await;
+                crate::automations::set_retention(&conn, &project_path, req.retention)
+            };
+            match saved {
+                Ok(()) => {
+                    // Answered once trimmed, so the client's next read of the list is already the
+                    // short one. From its own task, because trimming removes worktrees.
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    tokio::spawn(async move {
+                        crate::automation_runner::apply_retention(&store, &project_path).await;
+                        let response =
+                            MaestroRpcMessage::Response(ServerResponse::SetRunRetentionOk);
+                        if let Err(e) = send_response(&stdout, &response).await {
+                            send_diag(
+                                "warn",
+                                format!("[automation] could not answer a retention change: {e}"),
+                            );
+                        }
+                    });
+                }
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }
         }
