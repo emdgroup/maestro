@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/emdgroup/maestro/compare/v0.29.0...v0.30.0) (2026-09-23)
+
+
+### Features
+
+* **worktrees:** start a session from a worktree card ([#426](https://github.com/emdgroup/maestro/issues/426)) ([160bacc](https://github.com/emdgroup/maestro/commit/160bacca7db0cfc516f645e270ed942851f792a1))
+
+
+### Bug Fixes
+
+* **integration:** send Linear API keys without the Bearer prefix ([#428](https://github.com/emdgroup/maestro/issues/428)) ([7cc3cea](https://github.com/emdgroup/maestro/commit/7cc3ceae2295cf78ce06002174120b53c1273049))
+
 ## [0.29.0](https://github.com/emdgroup/maestro/compare/v0.28.0...v0.29.0) (2026-09-23)
 
 
