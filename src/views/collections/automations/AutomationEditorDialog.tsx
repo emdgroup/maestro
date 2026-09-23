@@ -131,13 +131,13 @@ const TRIGGERS: Array<{ value: Trigger; label: string; icon: LucideIcon; hint: s
     value: "schedule",
     label: "Schedule",
     icon: CalendarClock,
-    hint: "It also runs at set times.",
+    hint: "Runs at set times.",
   },
   {
     value: "webhook",
     label: "Webhook",
     icon: Webhook,
-    hint: "It also runs when a service calls its URL.",
+    hint: "Runs when a service calls its URL.",
   },
 ];
 
