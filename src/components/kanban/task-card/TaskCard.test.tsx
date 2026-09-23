@@ -43,6 +43,7 @@ vi.mock("@/contexts/BoardActionsContext", () => ({
   }),
   useTaskSession: (taskId: number | null) => (taskId === null ? null : activeSession.current),
   useTaskWorktree: (taskId: number | null) => (taskId === null ? null : taskWorktree.current),
+  useTaskWorkspace: (task: Task | null) => (task === null ? null : taskWorktree.current),
 }));
 
 /** Captures what the card sends, and lets a test decide what the backend answered. */
@@ -113,10 +114,12 @@ vi.mock("@/services/worktree.service", () => ({
  * `vi.fn()` is a fresh spy per render and records nothing a test can read.
  */
 const setActiveTaskId = vi.hoisted(() => vi.fn());
+/** Hoisted for the same reason: the branch badge navigates, and a test has to see where. */
+const navigate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/store/navigationStore", () => ({
   useNavigationActions: () => ({ setActiveTaskId }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
 }));
 
 /**
@@ -208,6 +211,75 @@ beforeEach(() => {
   interrupt.mutate.mockClear();
   openUrl.mockClear();
   setActiveTaskId.mockClear();
+  navigate.mockClear();
+});
+
+/**
+ * The slot that used to read "worktree" on every card of a board whose tasks all use worktrees.
+ */
+describe("TaskCard branch badge", () => {
+  it("shows the branch the task is working on, without Maestro's namespace", () => {
+    taskWorktree.current = {
+      id: 3,
+      task_id: 7,
+      path: "/tmp/wt/7",
+      branch_name: "maestro/7-fix-cleanup",
+    };
+    renderCard();
+
+    expect(screen.getByText("7-fix-cleanup")).toBeInTheDocument();
+    expect(screen.queryByText("worktree")).not.toBeInTheDocument();
+  });
+
+  it("keeps a branch created outside the namespace whole", () => {
+    taskWorktree.current = { id: 3, task_id: 7, path: "/tmp/wt/7", branch_name: "release/2.1" };
+    renderCard();
+
+    expect(screen.getByText("release/2.1")).toBeInTheDocument();
+  });
+
+  it("shows the chosen name before the worktree exists", () => {
+    renderCard({ workspace_branch: "maestro/7-try-this" } as Partial<Task>);
+
+    expect(screen.getByText("7-try-this")).toBeInTheDocument();
+  });
+
+  it("falls back to the mode when no branch is decided yet", () => {
+    renderCard();
+
+    expect(screen.getByText("worktree")).toBeInTheDocument();
+  });
+
+  it("says nothing at all for a task running in the repository itself", () => {
+    renderCard({ workspace_mode: "RepositoryDirectory" });
+
+    expect(screen.queryByText("worktree")).not.toBeInTheDocument();
+  });
+
+  it("opens the worktree without opening the task underneath", async () => {
+    taskWorktree.current = {
+      id: 3,
+      task_id: 7,
+      path: "/tmp/wt/7",
+      branch_name: "maestro/7-fix-cleanup",
+    };
+    renderCard();
+
+    await userEvent.click(screen.getByText("7-fix-cleanup"));
+
+    expect(navigate).toHaveBeenCalledWith({ worktreeId: "3" });
+    expect(setActiveTaskId).not.toHaveBeenCalled();
+  });
+
+  it("is not a button while the branch is only a name", async () => {
+    renderCard({ workspace_branch: "maestro/7-try-this" } as Partial<Task>);
+
+    await userEvent.click(screen.getByText("7-try-this"));
+
+    expect(navigate).not.toHaveBeenCalled();
+    // The click fell through to the card, which is what an inert label should do.
+    expect(setActiveTaskId).toHaveBeenCalledWith(7);
+  });
 });
 
 describe("TaskCard abandon", () => {
@@ -830,8 +902,11 @@ describe("TaskCard archiving unmerged work", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
 
-    expect(screen.getByText(/7-fix-cleanup/)).toBeInTheDocument();
-    expect(screen.getByText(/\/tmp\/wt\/7/)).toBeInTheDocument();
+    // Matched as the whole sentence rather than by branch name alone: the card's own branch badge
+    // now carries that name too, so a bare `/7-fix-cleanup/` finds two nodes.
+    expect(
+      screen.getByText(/committed on 7-fix-cleanup.*still at \/tmp\/wt\/7/),
+    ).toBeInTheDocument();
   });
 
   it("archives without touching anything when asked to keep it", async () => {

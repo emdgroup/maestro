@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { ActiveSessionInfo, WorktreeWithStatus } from "@/types/bindings";
+import type { ActiveSessionInfo, Task, WorktreeWithStatus } from "@/types/bindings";
 
 const profiles = vi.hoisted(() => ({ current: [] as Array<{ id: string; role: string }> }));
 const defaultAgent = vi.hoisted(() => ({ current: null as string | null }));
@@ -54,6 +54,7 @@ import {
   useBoardActionsContext,
   useTaskSession,
   useTaskWorktree,
+  useTaskWorkspace,
 } from "./BoardActionsContext";
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -170,6 +171,40 @@ describe("useTaskWorktree", () => {
     const { result } = renderHook(() => useBoardActionsContext(), { wrapper });
 
     expect(result.current.worktreeByTaskId.size).toBe(0);
+  });
+});
+
+/**
+ * Wider than `useTaskWorktree` on purpose: a `ReuseWorkspace` task only claims its pinned
+ * workspace when it runs, so until then nothing keyed by task id can find where it will work.
+ */
+describe("useTaskWorkspace", () => {
+  const task = (overrides: Partial<Task> = {}) => ({ id: 7, ...overrides }) as Task;
+
+  it("finds a pinned workspace the task has not claimed yet", () => {
+    worktrees.current = [worktree(null, 5)];
+
+    const { result } = renderHook(() => useTaskWorkspace(task({ workspace_worktree_id: 5 })), {
+      wrapper,
+    });
+
+    expect(result.current?.id).toBe(5);
+  });
+
+  it("prefers the task's own worktree over the pin", () => {
+    worktrees.current = [worktree(7, 1), worktree(null, 5)];
+
+    const { result } = renderHook(() => useTaskWorkspace(task({ workspace_worktree_id: 5 })), {
+      wrapper,
+    });
+
+    expect(result.current?.id).toBe(1);
+  });
+
+  it("gives null for a task with neither", () => {
+    const { result } = renderHook(() => useTaskWorkspace(task()), { wrapper });
+
+    expect(result.current).toBeNull();
   });
 });
 

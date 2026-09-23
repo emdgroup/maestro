@@ -229,6 +229,20 @@ export function taskBranchName(taskId: number, title: string): string {
 }
 
 /**
+ * A branch name with Maestro's own namespace taken off the front, for display only.
+ *
+ * Every branch Maestro creates shares that prefix, so on a board of Maestro-created worktrees the
+ * segment repeats on every card and carries nothing — the same reason the label it replaces was
+ * worth removing. A branch created outside the namespace is shown whole, because there the first
+ * segment is the part that says which branch this is.
+ */
+export function shortBranchName(branch: string): string {
+  return branch.startsWith(MAESTRO_BRANCH_PREFIX)
+    ? branch.slice(MAESTRO_BRANCH_PREFIX.length)
+    : branch;
+}
+
+/**
  * Why the part after `maestro/` is not a usable branch name, or null when it is.
  *
  * Checked here rather than left to git so the user is told before they submit rather than after a

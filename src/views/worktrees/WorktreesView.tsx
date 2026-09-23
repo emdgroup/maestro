@@ -461,6 +461,15 @@ export const WorktreesView: React.FC<WorktreesViewProps> = ({
                     const wt = worktrees.find((w) => w.path === path);
                     setWorktreeToDelete(wt ?? null);
                   }}
+                  // The repository checkout is its own workspace mode in the dialog, not a
+                  // worktree to reuse, so it is seeded as one.
+                  onStartSession={(wt) =>
+                    setSpawnSeed(
+                      isRepositoryRoot(wt.path, repoPath ?? "")
+                        ? { workspaceMode: "RepositoryDirectory" }
+                        : { workspaceMode: "ReuseWorkspace", worktree: wt },
+                    )
+                  }
                   repoPath={repoPath ?? ""}
                   projectId={projectId ?? null}
                   pullRequests={showPullRequests && onWorktreesTab}

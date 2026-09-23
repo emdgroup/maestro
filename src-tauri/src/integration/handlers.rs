@@ -311,7 +311,7 @@ async fn validate_credentials(
             let body = serde_json::json!({ "query": "{ viewer { id name } }" });
             let response = client
                 .post("https://api.linear.app/graphql")
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", token)
                 .header("Content-Type", "application/json")
                 .json(&body)
                 .send()

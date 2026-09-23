@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Bot, FolderRoot, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
+import { Bot, FolderRoot, Play, SquareCheckBig, Terminal, Trash2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/ui/tooltip";
@@ -37,6 +37,8 @@ interface WorktreeCardProps {
   pullRequests?: boolean;
   onSelect: (path: string) => void;
   onDelete: (path: string) => void;
+  /** Opens the spawn dialog on this worktree. Without it the card has no start button. */
+  onStartSession?: (worktree: WorktreeWithStatus) => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export function WorktreeCard({
   pullRequests = false,
   onSelect,
   onDelete,
+  onStartSession,
 }: WorktreeCardProps) {
   const navigate = useNavigate();
   // Asked per branch rather than looked up in the panel's list, because that list is now one page
@@ -75,6 +78,9 @@ export function WorktreeCard({
   const isMain = isRepositoryRoot(worktree.path, repoPath);
   const usage = worktreeUsage(worktree, sessions);
   const inUse = isInUse(usage);
+  // A running agent is reached through the footer's "used by" list instead: a second one in the
+  // same checkout would be two writers on one working tree.
+  const canStart = onStartSession != null && usage.agents.length === 0;
   const title = worktreeTitle(worktree);
   const location = relativeWorktreePath(worktree.path, repoPath);
 
@@ -147,65 +153,80 @@ export function WorktreeCard({
         />
       </div>
 
-      {inUse && (
-        <Popover>
-          <PopoverTrigger
-            aria-label="Show what uses this worktree"
-            className="w-full flex items-center gap-3 border-t bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
-          >
-            {usage.task && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <SquareCheckBig className="size-3.5" />1
-              </span>
-            )}
-            {usage.agents.length > 0 && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <Bot className="size-3.5" />
-                {usage.agents.length}
-              </span>
-            )}
-            {usage.shellCount > 0 && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <Terminal className="size-3.5" />
-                {usage.shellCount}
-              </span>
-            )}
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-1">
-            <div className="px-2 py-1.5 text-[10px] tracking-wide text-muted-foreground">
-              USED BY
-            </div>
-            {usage.task && (
-              <button
-                type="button"
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
-                onClick={() => navigate({ taskId: usage.task!.id })}
+      {(inUse || canStart) && (
+        <div className="flex items-center border-t bg-muted/40">
+          {inUse && (
+            <Popover>
+              <PopoverTrigger
+                aria-label="Show what uses this worktree"
+                className="flex-1 flex items-center gap-3 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
               >
-                <SquareCheckBig className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{usage.task.name}</span>
-              </button>
-            )}
-            {usage.agents.map((session) => (
-              <button
-                key={session.session_id}
-                type="button"
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
-                onClick={() => navigate({ sessionId: session.session_id })}
-              >
-                <Bot className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{agentLabel(session)}</span>
-              </button>
-            ))}
-            {usage.shellCount > 0 && (
-              <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-                <Terminal className="size-3.5 shrink-0" />
-                <span>
-                  {usage.shellCount} shell{usage.shellCount === 1 ? "" : "s"} running here
-                </span>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
+                {usage.task && (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <SquareCheckBig className="size-3.5" />1
+                  </span>
+                )}
+                {usage.agents.length > 0 && (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Bot className="size-3.5" />
+                    {usage.agents.length}
+                  </span>
+                )}
+                {usage.shellCount > 0 && (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Terminal className="size-3.5" />
+                    {usage.shellCount}
+                  </span>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-1">
+                <div className="px-2 py-1.5 text-[10px] tracking-wide text-muted-foreground">
+                  USED BY
+                </div>
+                {usage.task && (
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                    onClick={() => navigate({ taskId: usage.task!.id })}
+                  >
+                    <SquareCheckBig className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{usage.task.name}</span>
+                  </button>
+                )}
+                {usage.agents.map((session) => (
+                  <button
+                    key={session.session_id}
+                    type="button"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left hover:bg-muted"
+                    onClick={() => navigate({ sessionId: session.session_id })}
+                  >
+                    <Bot className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{agentLabel(session)}</span>
+                  </button>
+                ))}
+                {usage.shellCount > 0 && (
+                  <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                    <Terminal className="size-3.5 shrink-0" />
+                    <span>
+                      {usage.shellCount} shell{usage.shellCount === 1 ? "" : "s"} running here
+                    </span>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          )}
+          {canStart && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto mr-1.5 my-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => onStartSession?.(worktree)}
+              aria-label="Start session"
+            >
+              <Play className="size-3.5" />
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

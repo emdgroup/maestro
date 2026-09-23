@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.30.0](https://github.com/emdgroup/maestro/compare/v0.29.0...v0.30.0) (2026-09-23)
+
+
+### Features
+
+* **worktrees:** start a session from a worktree card ([#426](https://github.com/emdgroup/maestro/issues/426)) ([160bacc](https://github.com/emdgroup/maestro/commit/160bacca7db0cfc516f645e270ed942851f792a1))
+
+
+### Bug Fixes
+
+* **integration:** send Linear API keys without the Bearer prefix ([#428](https://github.com/emdgroup/maestro/issues/428)) ([7cc3cea](https://github.com/emdgroup/maestro/commit/7cc3ceae2295cf78ce06002174120b53c1273049))
+
+## [0.29.0](https://github.com/emdgroup/maestro/compare/v0.28.0...v0.29.0) (2026-09-23)
+
+
+### Features
+
+* **acp:** drop per-option borders in the elicitation card ([#425](https://github.com/emdgroup/maestro/issues/425)) ([cdce07a](https://github.com/emdgroup/maestro/commit/cdce07ae13c322762a03aa82bdd259486622f3ef))
+* **kanban:** show the branch a task works on instead of a constant label ([#419](https://github.com/emdgroup/maestro/issues/419)) ([d9be2af](https://github.com/emdgroup/maestro/commit/d9be2af1105fae898c596e24f00e23d293bb87eb))
+
+
+### Bug Fixes
+
+* **acp:** make "Other" an option in the elicitation card ([#423](https://github.com/emdgroup/maestro/issues/423)) ([088c25f](https://github.com/emdgroup/maestro/commit/088c25fb4282815c464a6058b306b2daeee01ced))
+
+
+### Performance Improvements
+
+* **diff:** keep a large diff out of a panel resize ([#421](https://github.com/emdgroup/maestro/issues/421)) ([0ccab96](https://github.com/emdgroup/maestro/commit/0ccab96585cd48576f8151d1923434ab9b008444))
+
 ## [0.28.0](https://github.com/emdgroup/maestro/compare/v0.27.2...v0.28.0) (2026-09-19)
 
 
