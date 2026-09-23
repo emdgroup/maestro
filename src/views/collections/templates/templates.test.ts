@@ -5,6 +5,7 @@ import {
   automationFieldsOf,
   describeTrigger,
   searchCards,
+  triggerType,
   userCard,
 } from "./templates";
 
@@ -45,8 +46,9 @@ describe("templates", () => {
 
   it("gives every built-in a unique key and a readable trigger", () => {
     expect(new Set(BUILTIN_TEMPLATES.map((card) => card.key)).size).toBe(BUILTIN_TEMPLATES.length);
-    for (const card of BUILTIN_TEMPLATES) {
-      if (card.body.cron) expect(describeTrigger(card.body)).not.toBe(card.body.cron);
+    for (const card of BUILTIN_TEMPLATES.filter((card) => card.body.cron)) {
+      expect(describeTrigger(card.body)).not.toBe(card.body.cron);
+      expect(triggerType(card.body).label).toBe("Schedule");
     }
   });
 });

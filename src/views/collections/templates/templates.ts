@@ -1,9 +1,12 @@
 import {
-  Bot,
+  Ban,
   Bug,
   BookOpen,
+  CalendarClock,
+  Cog,
   FlaskConical,
   GitPullRequest,
+  LayoutTemplate,
   ListTodo,
   Mail,
   Newspaper,
@@ -11,11 +14,12 @@ import {
   Search,
   ShieldAlert,
   TestTubeDiagonal,
+  Webhook,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { describeSchedule, localTimezone } from "@/views/collections/automations/schedule";
-import type { Automation, AutomationTemplate, Template } from "@/types/bindings";
+import type { Automation, AutomationTemplate, Template, TemplateBody } from "@/types/bindings";
 
 /**
  * One card on the Templates page: a built-in or one of the user's own, drawn the same way.
@@ -27,12 +31,24 @@ export interface TemplateCard {
   key: string;
   name: string;
   description: string;
-  /** What the footer leads with: a topic for a built-in, the kind for one of the user's. */
-  category: string;
+  /** A topic, shown first in the footer. Only built-ins have one. */
+  tag: string | null;
   icon: LucideIcon;
   body: AutomationTemplate;
   /** Set for the user's own, which are the only ones that can be edited or deleted. */
   stored: Template | null;
+}
+
+/** The kinds a template can be of, each with the icon the Templates page shows it by. */
+export const TEMPLATE_KIND = {
+  automation: { label: "Automation template", icon: Cog },
+} satisfies Record<TemplateBody["kind"], { label: string; icon: LucideIcon }>;
+
+/** What kind of trigger an automation made from this gets, for a chip: no schedule sentence. */
+export function triggerType(body: AutomationTemplate): { label: string; icon: LucideIcon } {
+  if (body.cron) return { label: "Schedule", icon: CalendarClock };
+  if (body.webhook_enabled) return { label: "Webhook", icon: Webhook };
+  return { label: "No trigger", icon: Ban };
 }
 
 /** "Every day at 09:00", "Webhook" or "No trigger": what starts an automation made from this. */
@@ -78,8 +94,8 @@ export function userCard(template: Template): TemplateCard {
     key: `user-${template.id}`,
     name: template.name,
     description: body.prompt,
-    category: "Automation",
-    icon: Bot,
+    tag: null,
+    icon: LayoutTemplate,
     body,
     stored: template,
   };
@@ -88,7 +104,7 @@ export function userCard(template: Template): TemplateCard {
 function builtin(
   key: string,
   name: string,
-  category: string,
+  tag: string,
   icon: LucideIcon,
   description: string,
   trigger: Pick<AutomationTemplate, "cron" | "webhook_enabled" | "webhook_overlap">,
@@ -98,7 +114,7 @@ function builtin(
     key: `builtin-${key}`,
     name,
     description,
-    category,
+    tag,
     icon,
     body: { prompt, timezone: "", ...trigger },
     stored: null,
@@ -260,12 +276,12 @@ Create a Maestro task for each of the five most worthwhile, with a title, what n
   ),
 ];
 
-/** Cards whose name, description or category contain the query, case-insensitively. */
+/** Cards whose name, description or tag contain the query, case-insensitively. */
 export function searchCards(cards: TemplateCard[], query: string): TemplateCard[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return cards;
   return cards.filter((card) =>
-    [card.name, card.description, card.category].some((text) =>
+    [card.name, card.description, card.tag ?? ""].some((text) =>
       text.toLowerCase().includes(needle),
     ),
   );

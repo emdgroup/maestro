@@ -350,17 +350,17 @@ section, so nothing here is automation-shaped except the automation body itself.
 
 ### Decisions (locked)
 
-| Question        | Decision                                                                                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Where stored    | App-wide, in the app's own SQLite (`templates`, schema v29), so every project on every connection sees them. Not in the daemon and not in the repository.                                        |
-| Shape           | `templates(id, kind, name, body, created_at)`. `body` is JSON tagged by `kind`; a new kind is a new variant of `TemplateBody`, not a new table.                                                  |
-| Automation body | Prompt and trigger only: the schedule with its timezone, or the webhook with its overlap choice, or none. Agent, model and workspace come from the project defaults when the template is used.   |
-| Link            | None. An automation made from a template is a plain copy.                                                                                                                                        |
-| Making one      | Only from an existing automation: **Save as template** in the automation row's ⋯ menu (which also holds Edit and Delete). There is no "New template".                                            |
-| Page            | **Templates** sits last in the Collections sidebar, below the kinds. Cards: icon and name, description, then a footer of category or kind, and the trigger. Search once there are more than six. |
-| Using one       | Clicking a card opens that kind's editor filled in. For an automation that is the automation editor, over the Automations page. "New automation" also carries a menu listing templates.          |
-| Editing one     | The ⋯ menu on the user's own cards: Edit opens the automation editor without the Agent and workspace section; Delete asks first.                                                                 |
-| Built-ins       | Twelve, shipped in the frontend and read-only, listed under **Built-in**.                                                                                                                        |
+| Question        | Decision                                                                                                                                                                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where stored    | App-wide, in the app's own SQLite (`templates`, schema v29), so every project on every connection sees them. Not in the daemon and not in the repository.                                                                                           |
+| Shape           | `templates(id, kind, name, body, created_at)`. `body` is JSON tagged by `kind`; a new kind is a new variant of `TemplateBody`, not a new table.                                                                                                     |
+| Automation body | Prompt and trigger only: the schedule with its timezone, or the webhook with its overlap choice, or none. Agent, model and workspace come from the project defaults when the template is used.                                                      |
+| Link            | None. An automation made from a template is a plain copy.                                                                                                                                                                                           |
+| Making one      | Only from an existing automation: **Save as template** in the automation row's ⋯ menu (which also holds Edit and Delete). There is no "New template".                                                                                               |
+| Page            | **Templates** sits last in the Collections sidebar, below the kinds. Cards: icon, name and the kind's icon (Cog for automations; Bot is for agents), description, then chips for the tag and the trigger type. Search once there are more than six. |
+| Using one       | Clicking a card opens that kind's editor filled in. For an automation that is the automation editor, over the Automations page. "New automation" also carries a menu listing templates.                                                             |
+| Editing one     | The ⋯ menu on the user's own cards: Edit opens the automation editor without the Agent and workspace section; Delete asks first.                                                                                                                    |
+| Built-ins       | Twelve, shipped in the frontend and read-only, listed under **Built-in**.                                                                                                                                                                           |
 
 ## Deferred, not scheduled
 

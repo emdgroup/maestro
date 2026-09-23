@@ -1,8 +1,17 @@
 import { useState } from "react";
-import { Ellipsis, LayoutTemplate, Pencil, Search, Trash2 } from "lucide-react";
+import {
+  Ellipsis,
+  LayoutTemplate,
+  Pencil,
+  Search,
+  Tag,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,9 +40,10 @@ import { localTimezone } from "@/views/collections/automations/schedule";
 import {
   BUILTIN_TEMPLATES,
   automationFieldsOf,
-  describeTrigger,
+  TEMPLATE_KIND,
   searchCards,
   templateOf,
+  triggerType,
   userCard,
   type TemplateCard,
 } from "./templates";
@@ -59,6 +69,15 @@ function asAutomation(template: Template): Automation {
   };
 }
 
+function Chip({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+  return (
+    <span className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+      <Icon className="size-3" />
+      {label}
+    </span>
+  );
+}
+
 function Card({
   card,
   onUse,
@@ -70,6 +89,9 @@ function Card({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const kind = TEMPLATE_KIND.automation;
+  const trigger = triggerType(card.body);
+
   return (
     <div className="group relative flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60 hover:bg-muted/30">
       {/* The whole card is the button, laid over it, so the menu can sit inside without nesting
@@ -91,7 +113,9 @@ function Card({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="relative -my-1 size-7 shrink-0 text-muted-foreground"
+                  // Out of the way until the card is hovered or reached by keyboard, so the kind icon
+                  // reads as the corner of every card alike.
+                  className="relative -my-1 size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
                 />
               }
             >
@@ -110,13 +134,22 @@ function Card({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        <Tooltip>
+          <TooltipTrigger
+            render={<span aria-label={kind.label} className="relative text-muted-foreground/70" />}
+          >
+            <kind.icon className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent>{kind.label}</TooltipContent>
+        </Tooltip>
       </div>
       <p className="line-clamp-3 flex-1 text-xs leading-relaxed text-muted-foreground">
         {card.description}
       </p>
-      <p className="truncate text-[11px] text-muted-foreground/70">
-        {card.category} · {describeTrigger(card.body)}
-      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {card.tag && <Chip icon={Tag} label={card.tag} />}
+        <Chip icon={trigger.icon} label={trigger.label} />
+      </div>
     </div>
   );
 }

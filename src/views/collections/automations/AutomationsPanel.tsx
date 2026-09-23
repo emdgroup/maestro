@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Bot,
+  Cog,
   ChevronDown,
   CornerDownRight,
   Ellipsis,
@@ -404,7 +404,7 @@ export function AutomationsPanel({
       <div className="flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background p-4 rounded-tr-xl border-r">
         {(automations ?? []).length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <Bot className="size-8 text-muted-foreground/40" />
+            <Cog className="size-8 text-muted-foreground/40" />
             <p className="text-sm font-medium">No automations yet</p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               An automation will run your prompt on demand or on a schedule, in the background and

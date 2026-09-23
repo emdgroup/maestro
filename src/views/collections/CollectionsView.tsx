@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Bot, ChevronDown, LayoutTemplate, Plus, type LucideIcon } from "lucide-react";
+import { ChevronDown, Cog, LayoutTemplate, Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
@@ -170,7 +170,7 @@ export function CollectionsView({
             Collections
           </p>
           <NavItem
-            icon={Bot}
+            icon={Cog}
             label="Automations"
             active={section === "automations"}
             onClick={() => setSection("automations")}

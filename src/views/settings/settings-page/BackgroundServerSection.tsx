@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Bot, MessageSquare, Server } from "lucide-react";
+import { Cog, MessageSquare, Server } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
 import { Label } from "@/ui/label";
@@ -130,7 +130,7 @@ export function BackgroundServerSection({ connection }: { connection: Connection
               label={plural(server.live_sessions, "agent session", "agent sessions")}
             />
             <Count
-              icon={<Bot />}
+              icon={<Cog />}
               count={server.running_runs}
               label={`${plural(server.running_runs, "automation run", "automation runs")} going`}
             />
