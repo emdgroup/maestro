@@ -95,23 +95,30 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("cannot create the automation schema: {e}"))?;
     // Added after the table existed on machines that had already run a daemon. Each is nullable,
     // so a run recorded before them simply cannot be reopened, which is what it was anyway.
-    for column in [
-        "agent_session_id",
-        "agent_id",
-        "cwd",
-        "can_reload",
-        "worktree_path",
-        "worktree_branch",
-        "worktree_base",
-        "worktree_kept",
+    for (column, kind) in [
+        ("agent_session_id", "TEXT"),
+        ("agent_id", "TEXT"),
+        ("cwd", "TEXT"),
+        ("can_reload", "INTEGER"),
+        ("worktree_path", "TEXT"),
+        ("worktree_branch", "TEXT"),
+        ("worktree_base", "TEXT"),
+        ("worktree_kept", "TEXT"),
     ] {
-        add_column_if_missing(&conn, "runs", column)?;
+        add_column_if_missing(&conn, "runs", column, kind)?;
     }
-    add_column_if_missing(&conn, "automations", "slug")?;
+    add_column_if_missing(&conn, "automations", "slug", "TEXT")?;
     Ok(conn)
 }
 
-fn add_column_if_missing(conn: &Connection, table: &str, column: &str) -> Result<(), String> {
+/// The declared type matters: SQLite converts a value to the column's affinity on write, so an
+/// integer stored in a TEXT column comes back as text and no longer reads as a number.
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    kind: &str,
+) -> Result<(), String> {
     let present: bool = conn
         .query_row(
             "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
@@ -122,9 +129,12 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str) -> Result
     if present {
         return Ok(());
     }
-    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} TEXT"), [])
-        .map(|_| ())
-        .map_err(|e| format!("cannot add {table}.{column}: {e}"))
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
+        [],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("cannot add {table}.{column}: {e}"))
 }
 
 /// The name a project is filed under, resolved on the machine the path exists on.
@@ -439,9 +449,13 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
         agent_session_id: row.get("agent_session_id")?,
         agent_id: row.get("agent_id")?,
         cwd: row.get("cwd")?,
-        can_reload: row
-            .get::<_, Option<i64>>("can_reload")?
-            .map(|flag| flag != 0),
+        // Read by hand because a database that ran an earlier build added this column as TEXT, and
+        // holds `"1"` rather than `1`. A strict integer read failed the whole run list over it.
+        can_reload: match row.get_ref("can_reload")? {
+            rusqlite::types::ValueRef::Integer(flag) => Some(flag != 0),
+            rusqlite::types::ValueRef::Text(flag) => Some(flag != b"0"),
+            _ => None,
+        },
         worktree_path: row.get("worktree_path")?,
         worktree_branch: row.get("worktree_branch")?,
         worktree_base: row.get("worktree_base")?,
@@ -854,6 +868,27 @@ mod tests {
         // after the automation that produced it is gone.
         assert_eq!(runs[0].agent_session_id.as_deref(), Some("agent-session-1"));
         assert_eq!(runs[0].agent_id.as_deref(), Some("claude-acp"));
+        assert_eq!(runs[0].can_reload, Some(true));
+    }
+
+    #[test]
+    fn a_run_list_survives_a_flag_stored_as_text() {
+        // What an earlier migration left behind: `can_reload` added as TEXT, so `1` became `"1"`,
+        // and the strict read that followed failed every run list on that machine.
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        let migrated = SCHEMA.replace("can_reload        INTEGER", "can_reload        TEXT");
+        assert_ne!(migrated, SCHEMA, "the column this test is about has moved");
+        conn.execute_batch(&migrated).expect("schema");
+
+        let saved = save(&conn, "/p", &automation("a", None)).expect("save");
+        let run = start_run(&conn, &saved, true).expect("start");
+        attach_session(&conn, &run.id, "s", "as", "claude", "/p", true).expect("attach");
+        let stored: String = conn
+            .query_row("SELECT typeof(can_reload) FROM runs", [], |row| row.get(0))
+            .expect("type");
+        assert_eq!(stored, "text");
+
+        let runs = list_runs(&conn, "/p", None).expect("the list still reads");
         assert_eq!(runs[0].can_reload, Some(true));
     }
 
