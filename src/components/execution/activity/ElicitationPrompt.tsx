@@ -34,13 +34,21 @@ function isMultiSelect(field: ElicitationField): boolean {
   return field.type === "array";
 }
 
+// Rows carry no border of their own: a bordered box per option was too much chrome for a card
+// this small. The fill and the dividers fade out at both sides instead, so a row that spans the
+// card has no hard edge where it meets the sheet's.
 const optionShell = (selected: boolean) =>
   cn(
-    "flex gap-2 rounded-md border cursor-pointer transition-all text-sm",
+    "flex gap-2 cursor-pointer transition-colors text-sm",
     selected
-      ? "border-accent bg-accent/10 text-foreground"
-      : "border-border text-muted-foreground hover:border-accent/50",
+      ? "text-foreground bg-[linear-gradient(to_right,transparent,color-mix(in_oklab,var(--accent)_14%,transparent)_12%,color-mix(in_oklab,var(--accent)_14%,transparent)_88%,transparent)]"
+      : "text-muted-foreground hover:bg-[linear-gradient(to_right,transparent,color-mix(in_oklab,var(--muted)_55%,transparent)_12%,color-mix(in_oklab,var(--muted)_55%,transparent)_88%,transparent)]",
   );
+
+// A hairline between options, faded like the fill. `border-image` rather than `divide-y`, which
+// can only draw a solid colour.
+const optionList =
+  "[&>*+*]:border-t [&>*+*]:[border-image:linear-gradient(to_right,transparent,var(--border)_15%,var(--border)_85%,transparent)_1]";
 
 function OptionGlyph({ type, selected }: { type: "radio" | "checkbox"; selected: boolean }) {
   return (
@@ -87,8 +95,8 @@ function OptionRow({
 }
 
 // "Other" is one option whose body happens to be a text box: same shell, same glyph, and the box
-// inside it rather than under it, so putting the caret in it is picking the option. No divider
-// above it — it is a member of the list, not an aside — and the box stays mounted whether or not
+// inside it rather than under it, so putting the caret in it is picking the option. No separator
+// setting it apart — it is a member of the list, not an aside — and the box stays mounted whether or not
 // it is picked, since revealing it on demand would move every control below it.
 function OtherOption({
   label,
@@ -321,7 +329,7 @@ export function ElicitationPrompt({
 
                     {/* Single-select (radio) */}
                     {isSingleSelect(currentField) && (
-                      <div className="space-y-1">
+                      <div className={optionList}>
                         {singleSelectOptions.map((opt) => (
                           <OptionRow
                             key={opt.const}
@@ -367,7 +375,7 @@ export function ElicitationPrompt({
 
                     {/* Multi-select (checkbox) */}
                     {isMultiSelect(currentField) && (
-                      <div className="space-y-1">
+                      <div className={optionList}>
                         {multiSelectOptions.map((opt) => {
                           const selected = ((values[currentField.key] as string[]) ?? []).includes(
                             opt.const,
