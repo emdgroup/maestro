@@ -197,14 +197,69 @@ async fn reload_for_history(
     }
 }
 
-/// Sessions this project's automation runs are happening in, as the server's own records name them.
+/// Give this project's `worktrees` table a row for each worktree its automations have provisioned.
+///
+/// The server made these and the server will remove them, but while one is on disk it is a
+/// workspace like any other and belongs on the Workspaces screen. A run clears `worktree_path` once
+/// its directory is gone, so this only ever adopts something that exists; a row whose worktree is
+/// removed later is pruned by `list_worktrees_with_status` on its own.
+///
+/// Local projects only. The path a remote server reports is a path on that machine, which is what
+/// the rest of the worktree code already assumes, so nothing here has to special-case it — the
+/// insert is relative to the project path either way.
+async fn adopt_automation_worktrees(
+    project_id: i32,
+    project_path: &str,
+    runs: &[maestro_protocol::AutomationRun],
+    app_state: &Arc<crate::core::AppState>,
+) {
+    let now = chrono::Utc::now().to_rfc3339();
+    for run in runs {
+        let (Some(path), Some(branch)) =
+            (run.worktree_path.as_deref(), run.worktree_branch.as_deref())
+        else {
+            continue;
+        };
+        // The table stores a path relative to the repository root; the server reports an absolute
+        // one. A worktree outside the project has no relative form and is left alone.
+        let Some(relative) = path
+            .replace('\\', "/")
+            .strip_prefix(&format!("{}/", project_path.replace('\\', "/")))
+            .map(str::to_string)
+        else {
+            continue;
+        };
+
+        let Ok(conn) = app_state.db.lock() else {
+            return;
+        };
+        if let Err(e) = conn.execute(
+            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at)
+             SELECT ?, NULL, ?, ?, ?, ?
+              WHERE NOT EXISTS (SELECT 1 FROM worktrees WHERE project_id = ? AND path = ?)",
+            rusqlite::params![
+                project_id,
+                branch,
+                run.worktree_base,
+                &relative,
+                &now,
+                project_id,
+                &relative
+            ],
+        ) {
+            log::warn!("cannot adopt the worktree {relative} an automation made: {e}");
+        }
+    }
+}
+
+/// This project's automation runs, as the server's own records have them.
 ///
 /// Best effort: a server too old to know about automations, or one whose store would not open,
 /// leaves this empty and costs nothing but an unadopted automation session.
-async fn automation_session_ids(
+async fn automation_runs(
     project_id: i32,
     app_state: &Arc<crate::core::AppState>,
-) -> std::collections::HashSet<String> {
+) -> (String, Vec<maestro_protocol::AutomationRun>) {
     let (connection_key, project_path) =
         match crate::core::get_project_with_git_conn(app_state, project_id).await {
             Ok((project, _)) => (
@@ -217,27 +272,22 @@ async fn automation_session_ids(
             ),
             Err(e) => {
                 log::warn!("cannot read project {project_id} to find its automation runs: {e}");
-                return std::collections::HashSet::new();
+                return (String::new(), Vec::new());
             }
         };
 
     match crate::acp::connection_server::query_automation_runs_via_server(
         connection_key,
-        project_path,
+        project_path.clone(),
         None,
         app_state,
     )
     .await
     {
-        Ok(response) => response
-            .runs
-            .into_iter()
-            .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
-            .filter_map(|run| run.session_id)
-            .collect(),
+        Ok(response) => (project_path, response.runs),
         Err(e) => {
             log::warn!("cannot list automation runs on {connection_key:?}: {e}");
-            std::collections::HashSet::new()
+            (project_path, Vec::new())
         }
     }
 }
@@ -291,8 +341,15 @@ pub async fn adopt_live_sessions(
 
     // Sessions an automation started carry nothing of ours: the server spawned them with no
     // `host_meta` because it had none to attach. The run rows pointing at them are what says they
-    // belong to this project, so they are adopted on that evidence instead.
-    let automation_sessions = automation_session_ids(project_id, app_state).await;
+    // belong to this project, so they are adopted on that evidence instead — and the same rows are
+    // where the worktrees those runs provisioned are found.
+    let (project_path, runs) = automation_runs(project_id, app_state).await;
+    adopt_automation_worktrees(project_id, &project_path, &runs, app_state).await;
+    let automation_sessions: std::collections::HashSet<String> = runs
+        .into_iter()
+        .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
+        .filter_map(|run| run.session_id)
+        .collect();
 
     let mut adopted = 0;
     for session in live {

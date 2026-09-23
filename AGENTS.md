@@ -454,8 +454,43 @@ project the database that would hold it is not even on the machine the agent run
 - **The run ends on `TurnEnded`**, routed through `helpers::TURN_TX` because turns end deep inside
   a session's command loop, which holds none of the state that reacts. The session is then left
   idle for the sweep above.
-- **`NewWorktree` is refused**, and the editor disables it with a reason. Creating one goes through
-  the app's `worktrees` table; see phase 4 in `docs/automations-plan.md`.
+- **`NewWorktree` is the daemon's own**, made and unmade by `maestro-server/src/worktree.rs`. See
+  below.
+
+### A worktree an automation made
+
+`maestro-server/src/worktree.rs` runs plain local `git`. There is no `GitConnection` equivalent and
+there must not be: the daemon already runs on the machine the repository is on, which is the whole
+reason the app has to tunnel git over SSH, WSL and Docker and this does not. Creation and removal
+live here; diff, review, merge, staging and remote are still the app's.
+
+`.maestro/worktrees/automation-<slug>-<n>`, on branch `maestro/automation-<slug>-<n>`. The slug is
+fixed when the automation is first saved and stored in `automations.slug`, so renaming an automation
+does not move the directories its earlier runs made — `worktree_name` reads the column rather than
+re-slugifying the name. `n` is how many runs there have been, so a worktree kept from run 3 never
+blocks run 4.
+
+**The agent process is spawned with the project as its cwd, not the worktree.** The pooled agent
+connection outlives the run, and on Windows a process whose working directory is a directory makes
+that directory undeletable. `session/new` carries the worktree path, which is what the agent works
+in.
+
+**Cleanup happens at session close, not at turn end**, for the same reason: the agent holds files
+open under the workspace for as long as the session lives. `reap_idle_sessions` calls
+`settle_worktree_for_session`, so a run's workspace is dealt with one to two minutes after the turn
+ends. `sweep_worktrees` at startup catches the runs whose sessions died with an earlier daemon.
+
+**What "nothing would be lost" means** is the app's own rule, ported: `git status --porcelain` clean,
+**and** `git branch --all --contains HEAD` naming something besides this branch. That second half is
+what makes a merged branch and a pushed branch both safe to delete, and a branch whose commits exist
+nowhere else — including in a repository with no remote — kept.
+
+`runs.worktree_path` is a live pointer, cleared on removal, so a value in it means a directory
+somebody still has to deal with. `runs.worktree_kept` is why. `is_maestro_created_worktree` does not
+match this naming, which is deliberate: the app's zombie sweep must not reap a worktree the daemon
+owns. The app adopts a `worktrees` row for each one in `adopt_automation_worktrees`, so a kept
+workspace appears on the Workspaces screen like any other; `list_worktrees_with_status` prunes that
+row on its own once the directory is gone.
 
 ### Reading a cron expression, and reopening a run
 

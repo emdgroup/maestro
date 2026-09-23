@@ -459,8 +459,9 @@ pub enum AutomationWorkspace {
     Path { path: String },
     /// A fresh worktree per run, branched from `base_branch`.
     ///
-    /// Not implemented yet: creating one is bound to the app's `worktrees` table. An automation
-    /// configured this way records a failed run saying so. See phase 4 of `docs/automations-plan.md`.
+    /// Created and removed by the daemon, which is the process on the machine the repository is
+    /// on. The app adopts a `worktrees` row for one that outlives its run; see phase 4 of
+    /// `docs/automations-plan.md`.
     NewWorktree { base_branch: String },
 }
 
@@ -546,6 +547,23 @@ pub struct AutomationRun {
     /// Whether that agent answers `session/load`. `None` for a run recorded before this was kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub can_reload: Option<bool>,
+    /// The worktree this run provisioned, while it is still on disk. Cleared once the daemon has
+    /// removed it, so a value here means there is a directory somebody still has to deal with —
+    /// which is also what the app adopts a `worktrees` row from. `cwd` above keeps the record of
+    /// where the run happened either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    /// The local branch created with it, and deleted with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_branch: Option<String>,
+    /// What that branch was cut from, resolved at creation. Carried so the app's adopted row can
+    /// say how many commits the run made, which is the question a kept workspace raises.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_base: Option<String>,
+    /// Why that worktree was kept rather than removed, in words meant for the person who has to
+    /// act on it. `None` means nothing was kept, which is also true of a run still going.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_kept: Option<String>,
 }
 
 /// Every request below names a project by the path the client knows it by. The daemon

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, ChevronDown, History, Pencil, Play, Square, Trash2 } from "lucide-react";
+import { Bot, ChevronDown, FolderGit2, History, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Switch } from "@/ui/switch";
@@ -22,12 +22,12 @@ import { RunCard } from "./runs/RunCard";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { useNow, useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
-import type { RunEntry } from "./runs/runs";
+import { keptCount, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
 
 function describeWorkspace(workspace: Automation["workspace"]): string {
   if (workspace.mode === "new_worktree") {
-    return `New worktree from ${workspace.base_branch || "the default branch"}`;
+    return `New worktree from ${workspace.base_branch || "the current branch"}`;
   }
   if (workspace.mode === "path") return "Existing workspace";
   return "Repository directory";
@@ -69,6 +69,7 @@ function AutomationRow({
 
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
+  const kept = keptCount(runs);
 
   // From the server, which is where the clock is. Nothing here works out when it is next due.
   const next = automation.next_due_at ? new Date(automation.next_due_at) : null;
@@ -142,6 +143,27 @@ function AutomationRow({
                   ● starting
                 </span>
               ))}
+            {/* Workspaces a run could not clean up: the row is the only place this is visible
+                without opening the history, and the work in them is nobody's but the user's. */}
+            {kept > 0 && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={onToggleExpanded}
+                      className="flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning hover:bg-warning/25"
+                    />
+                  }
+                >
+                  <FolderGit2 className="size-2.5" />
+                  {kept} workspace{kept > 1 ? "s" : ""} kept
+                </TooltipTrigger>
+                <TooltipContent>
+                  Runs that left work behind. Open the history to see which, and why.
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="rounded bg-muted/50 px-1.5 py-0.5">

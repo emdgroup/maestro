@@ -41,14 +41,17 @@ pub struct Spawner<'a> {
     pub spawn_result_tx: &'a tokio::sync::mpsc::Sender<(String, ActiveSession)>,
 }
 
-/// Where this automation's agent runs.
+/// Where this automation's agent runs, provisioning a worktree when that is what it asked for.
 ///
-/// `NewWorktree` is refused rather than quietly downgraded: falling back to the project directory
-/// would turn an automation that asked for an isolated branch into one editing the user's checkout
-/// unattended. See phase 4 of `docs/automations-plan.md`.
-fn resolve_cwd(workspace: &AutomationWorkspace, project_path: &str) -> Result<String, String> {
-    match workspace {
-        AutomationWorkspace::Repository => Ok(project_path.to_string()),
+/// A missing directory stops the run rather than moving it to the project: an automation that asked
+/// for an isolated workspace must never end up editing the user's checkout unattended.
+async fn resolve_cwd(
+    store: &Store,
+    automation: &maestro_protocol::Automation,
+    run_id: &str,
+) -> Result<String, String> {
+    match &automation.workspace {
+        AutomationWorkspace::Repository => Ok(automation.project_path.clone()),
         AutomationWorkspace::Path { path } => {
             if std::path::Path::new(path).is_dir() {
                 Ok(path.clone())
@@ -56,9 +59,106 @@ fn resolve_cwd(workspace: &AutomationWorkspace, project_path: &str) -> Result<St
                 Err(format!("The workspace {path} is not there any more"))
             }
         }
-        AutomationWorkspace::NewWorktree { .. } => Err(
-            "Running in a fresh worktree is not available yet, so this automation cannot start"
-                .to_string(),
+        AutomationWorkspace::NewWorktree { base_branch } => {
+            let (slug, ordinal) = {
+                let conn = store.lock().await;
+                automations::worktree_name(&conn, automation)?
+            };
+            let provisioned =
+                crate::worktree::create(&automation.project_path, base_branch, &slug, ordinal)
+                    .await?;
+            {
+                let conn = store.lock().await;
+                automations::attach_worktree(
+                    &conn,
+                    run_id,
+                    &provisioned.path,
+                    &provisioned.branch,
+                    &provisioned.base,
+                )?;
+            }
+            Ok(provisioned.path)
+        }
+    }
+}
+
+/// Deal with the worktree a run left behind, once its session is closed.
+///
+/// Waiting for the close is not politeness: the agent holds files open under that directory for as
+/// long as the session lives, and on Windows a removal while it does simply fails. Nothing here
+/// runs for a session that was not an automation's, which is all but a few of them.
+pub async fn settle_worktree_for_session(
+    store: &Store,
+    stdout: &crate::ClientOut,
+    session_id: &str,
+) {
+    let run = {
+        let conn = store.lock().await;
+        automations::any_run_for_session(&conn, session_id)
+    };
+    let Some(run) = run else { return };
+    settle(store, stdout, &run).await;
+}
+
+/// Remove one run's worktree, or record why it was kept.
+async fn settle(store: &Store, stdout: &crate::ClientOut, run: &AutomationRun) {
+    let (Some(path), Some(branch)) = (run.worktree_path.as_deref(), run.worktree_branch.as_deref())
+    else {
+        return;
+    };
+    if run.worktree_kept.is_some() {
+        return;
+    }
+
+    // A git failure says nothing about whether the tree is clean, so it falls on the keep side —
+    // the same rule the app's own sweep follows.
+    let kept = match crate::worktree::reason_to_keep(path, branch).await {
+        Ok(reason) => reason,
+        Err(e) => Some(format!("Maestro could not check it: {e}")),
+    };
+    let kept = match kept {
+        Some(reason) => Some(reason),
+        None => match crate::worktree::remove(&run.project_path, path, branch).await {
+            Ok(()) => None,
+            Err(e) => Some(format!("Maestro could not remove it: {e}")),
+        },
+    };
+
+    if let Some(reason) = &kept {
+        send_diag("info", format!("[automation] keeping {path}: {reason}"));
+    }
+    let settled = {
+        let conn = store.lock().await;
+        automations::settle_worktree(&conn, &run.id, kept.as_deref())
+    };
+    match settled {
+        Ok(Some(run)) => announce(stdout, &run).await,
+        Ok(None) => {}
+        Err(e) => send_diag(
+            "warn",
+            format!("[automation] could not settle a worktree: {e}"),
+        ),
+    }
+}
+
+/// Deal with worktrees whose runs ended when the server did.
+///
+/// Called once at startup, after `fail_interrupted_runs` has closed those runs out. Without it a
+/// crash mid-run would leave a workspace nothing ever looks at again.
+pub async fn sweep_worktrees(store: &Store, stdout: &crate::ClientOut) {
+    let unsettled = {
+        let conn = store.lock().await;
+        automations::runs_with_unsettled_worktrees(&conn)
+    };
+    match unsettled {
+        Ok(runs) => {
+            for run in runs {
+                settle(store, stdout, &run).await;
+            }
+        }
+        Err(e) => send_diag(
+            "warn",
+            format!("[automation] cannot look for leftover worktrees: {e}"),
         ),
     }
 }
@@ -126,7 +226,7 @@ pub async fn start(
     };
     announce(spawner.stdout, &run).await;
 
-    let cwd = match resolve_cwd(&automation.workspace, &automation.project_path) {
+    let cwd = match resolve_cwd(store, &automation, &run.id).await {
         Ok(cwd) => cwd,
         Err(e) => {
             fail(store, spawner.stdout, &run.id, e.clone()).await;
@@ -147,6 +247,11 @@ pub async fn start(
     };
 
     let session_id = uuid::Uuid::new_v4().to_string();
+    // The agent process runs in the project, never in the worktree: the pooled connection outlives
+    // the run, and a process whose working directory is the worktree makes that directory
+    // undeletable on Windows. `session/new` below carries the real cwd, which is what the agent
+    // works in.
+    let agent_cwd = automation.project_path.clone();
     let store = Arc::clone(store);
     let stdout = Arc::clone(spawner.stdout);
     let agent_connections = Arc::clone(spawner.agent_connections);
@@ -160,7 +265,7 @@ pub async fn start(
             &command,
             &args,
             &env,
-            &cwd,
+            &agent_cwd,
             &stdout,
         )
         .await
@@ -392,28 +497,51 @@ pub async fn tick(store: &Store, floor: DateTime<Utc>, spawner: Spawner<'_>) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_missing_workspace_stops_the_run_rather_than_moving_it() {
+    fn automation(workspace: AutomationWorkspace) -> maestro_protocol::Automation {
+        maestro_protocol::Automation {
+            id: "a".to_string(),
+            project_path: "/project".to_string(),
+            name: "Audit".to_string(),
+            prompt: "look".to_string(),
+            agent_id: "claude".to_string(),
+            cron: None,
+            timezone: "UTC".to_string(),
+            enabled: true,
+            model: None,
+            permission_mode: None,
+            effort: None,
+            workspace,
+            next_due_at: None,
+        }
+    }
+
+    fn empty_store() -> Store {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+        Arc::new(tokio::sync::Mutex::new(conn))
+    }
+
+    #[tokio::test]
+    async fn a_missing_workspace_stops_the_run_rather_than_moving_it() {
+        let store = empty_store();
         let error = resolve_cwd(
-            &AutomationWorkspace::Path {
+            &store,
+            &automation(AutomationWorkspace::Path {
                 path: "/nowhere/at/all".to_string(),
-            },
-            "/project",
+            }),
+            "run-1",
         )
+        .await
         .expect_err("a workspace that is gone");
         assert!(error.contains("not there"));
 
-        let refused = resolve_cwd(
-            &AutomationWorkspace::NewWorktree {
-                base_branch: "main".to_string(),
-            },
-            "/project",
-        )
-        .expect_err("worktrees are not available yet");
-        assert!(refused.contains("not available"));
-
         assert_eq!(
-            resolve_cwd(&AutomationWorkspace::Repository, "/project").expect("the project itself"),
+            resolve_cwd(
+                &store,
+                &automation(AutomationWorkspace::Repository),
+                "run-1"
+            )
+            .await
+            .expect("the project itself"),
             "/project"
         );
     }

@@ -35,8 +35,9 @@ pub enum AutomationWorkspace {
     Repository,
     /// A directory that already exists, named outright.
     Path { path: String },
-    /// A fresh worktree per run, branched from `base_branch`. Not available yet: creating one is
-    /// bound to this app's `worktrees` table, which the server cannot reach.
+    /// A fresh worktree per run, branched from `base_branch`. Made and unmade by the server, which
+    /// is the process on the machine the repository is on; this app adopts a `worktrees` row for
+    /// one that outlives its run.
     NewWorktree { base_branch: String },
 }
 
@@ -113,6 +114,20 @@ pub struct AutomationRun {
     /// in, rather than with one that fails.
     #[specta(optional)]
     pub can_reload: Option<bool>,
+    /// The worktree this run made, while it is still on disk. Cleared by the server once it has
+    /// removed it, so a value here means a directory somebody still has to deal with — which is
+    /// also what the app adopts a `worktrees` row from.
+    #[specta(optional)]
+    pub worktree_path: Option<String>,
+    #[specta(optional)]
+    pub worktree_branch: Option<String>,
+    /// What that branch was cut from, so an adopted row can say how much the run committed.
+    #[specta(optional)]
+    pub worktree_base: Option<String>,
+    /// Why that worktree was kept rather than removed. `None` means nothing was kept, which is
+    /// also true of a run still going.
+    #[specta(optional)]
+    pub worktree_kept: Option<String>,
 }
 
 impl From<maestro_protocol::AutomationWorkspace> for AutomationWorkspace {
@@ -199,6 +214,10 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
             agent_id: run.agent_id,
             cwd: run.cwd,
             can_reload: run.can_reload,
+            worktree_path: run.worktree_path,
+            worktree_branch: run.worktree_branch,
+            worktree_base: run.worktree_base,
+            worktree_kept: run.worktree_kept,
         }
     }
 }

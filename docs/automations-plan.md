@@ -36,8 +36,8 @@ becomes one of its clients.
 | 1     | Resident mode: daemon, `attach`, re-adopt     | Done, `0fc3a63c` + `93d2b9b7` |
 | 2     | Session ownership and lifetime                | Done                          |
 | 3     | `automations.db`, and the clock that reads it | Done                          |
-| 3.5   | The schedule editor, and run history          | In progress                   |
-| 4     | Worktree provisioning moves into the daemon   | Planned                       |
+| 3.5   | The schedule editor, and run history          | Done                          |
+| 4     | Worktree provisioning moves into the daemon   | Done                          |
 | 5     | The clock                                     | Folded into phase 3           |
 | 6     | Webhooks                                      | Planned                       |
 | 7     | Autostart and consent                         | Planned, last before release  |
@@ -260,13 +260,37 @@ cron for anything the presets could not name.
 
 ## Phase 4: worktree provisioning in the daemon
 
-Moves worktree creation out of the app so a scheduled or webhook-triggered run can provision one
-with no window open. `git/worktree_lifecycle.rs` reserves a row id in the app's `worktrees` table
-and names the directory from it, so the question is not only what moves but who owns that table
-afterwards.
+A scheduled or webhook-triggered run has to be able to provision a worktree with no window open, so
+creation moves to the daemon. `git/worktree_lifecycle.rs` reserves a row id in the app's `worktrees`
+table and names the directory from it, which is why the interview had to settle who owns that table
+afterwards as well as what moves.
 
-Also decides what a run leaves behind, as a per-automation setting: a branch per run kept for
-review, one workspace reused across runs, or a workspace removed when the run changed nothing.
+| Topic        | Decision                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| Scope now    | Creation and removal only. Diff, review, merge, staging and remote keep going through the app     |
+| Scope later  | The whole git layer follows, and `GitConnection`'s SSH, WSL and Docker tunnelling goes with it    |
+| `worktrees`  | Stays the app's. The daemon creates and removes; the app adopts a row for what it finds           |
+| Why it stays | `task_id` and `project_id` are foreign keys into tables only the app has, and only it joins       |
+| Naming       | `.maestro/worktrees/automation-<slug>-<n>`, branch `maestro/automation-<slug>-<n>`                |
+| The slug     | Fixed at creation from the name and stored, so renaming an automation does not move its runs      |
+| `n`          | How many runs this automation has had. A kept worktree never blocks the next run                  |
+| After a run  | Removed with its local branch when nothing would be lost. Otherwise kept, with the reason         |
+| Nothing lost | Clean working tree, and the branch tip contained by some other ref — merged, or pushed            |
+| When         | At session close, not at turn end: the agent's own process cannot hold the directory open         |
+| Agent cwd    | The project, never the worktree. The session's cwd is the worktree, which is what the agent reads |
+| Leftovers    | Swept at daemon start, for a run whose session died with the process before it was evaluated      |
+| The warning  | A line on the run card naming the path and the reason, and a badge on the automation's row        |
+| App cleanup  | Never. `is_maestro_created_worktree` does not match this naming, so the zombie sweep skips it     |
+
+**The rule for "nothing would be lost" is the app's own**, ported: `git status --porcelain` clean,
+and `git branch --all --contains HEAD` naming something other than this branch. That second half is
+what makes a pushed branch and a merged branch both safe to delete while a branch whose commits
+exist nowhere else is kept. A repository with no remote falls on the keep side by construction.
+
+**The agent process is spawned with the project as its cwd.** It was the worktree, which on Windows
+makes the directory undeletable for as long as the pooled connection lives — and that pool outlives
+the run. `session/new` carries the worktree path, so the agent still works there; only the process's
+own working directory changes.
 
 ## Phase 6: webhooks
 

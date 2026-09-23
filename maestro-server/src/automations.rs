@@ -39,7 +39,10 @@ CREATE TABLE IF NOT EXISTS automations (
     workspace       TEXT NOT NULL,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    last_fired_at   TEXT
+    last_fired_at   TEXT,
+    -- What this automation's worktrees are named after. Written once and never rewritten, so
+    -- renaming an automation leaves the directories its earlier runs made where they are.
+    slug            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS runs (
@@ -61,7 +64,14 @@ CREATE TABLE IF NOT EXISTS runs (
     cwd               TEXT,
     -- Whether that agent answers session/load. Known when the session was made and not after it
     -- is gone, which is exactly when a run needs to say whether it can be opened again.
-    can_reload        INTEGER
+    can_reload        INTEGER,
+    -- The worktree this run made, while it is still on disk, and the branch to delete with it.
+    -- Cleared on removal, so a value here means a directory somebody still has to deal with.
+    worktree_path     TEXT,
+    worktree_branch   TEXT,
+    worktree_base     TEXT,
+    -- Why it was kept. Null for a run that kept nothing, and for one still going.
+    worktree_kept     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_project ON runs(project_path, started_at DESC);
@@ -85,9 +95,19 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("cannot create the automation schema: {e}"))?;
     // Added after the table existed on machines that had already run a daemon. Each is nullable,
     // so a run recorded before them simply cannot be reopened, which is what it was anyway.
-    for column in ["agent_session_id", "agent_id", "cwd", "can_reload"] {
+    for column in [
+        "agent_session_id",
+        "agent_id",
+        "cwd",
+        "can_reload",
+        "worktree_path",
+        "worktree_branch",
+        "worktree_base",
+        "worktree_kept",
+    ] {
         add_column_if_missing(&conn, "runs", column)?;
     }
+    add_column_if_missing(&conn, "automations", "slug")?;
     Ok(conn)
 }
 
@@ -325,10 +345,12 @@ pub fn save(
 
     let workspace = serde_json::to_string(&automation.workspace).map_err(|e| e.to_string())?;
     conn.execute(
+        // `slug` is absent from the update list on purpose: it names directories that earlier runs
+        // already created, so a rename must not move it.
         "INSERT INTO automations (
             id, project_path, name, prompt, agent_id, cron, timezone, enabled,
-            model, permission_mode, effort, workspace, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            model, permission_mode, effort, workspace, created_at, updated_at, slug
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             prompt = excluded.prompt,
@@ -356,6 +378,7 @@ pub fn save(
             workspace,
             now,
             now,
+            crate::worktree::slugify(&automation.name),
         ],
     )
     .map_err(|e| format!("cannot save the automation: {e}"))?;
@@ -419,6 +442,10 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
         can_reload: row
             .get::<_, Option<i64>>("can_reload")?
             .map(|flag| flag != 0),
+        worktree_path: row.get("worktree_path")?,
+        worktree_branch: row.get("worktree_branch")?,
+        worktree_base: row.get("worktree_base")?,
+        worktree_kept: row.get("worktree_kept")?,
     })
 }
 
@@ -456,6 +483,10 @@ pub fn start_run(
         agent_id: None,
         cwd: None,
         can_reload: None,
+        worktree_path: None,
+        worktree_branch: None,
+        worktree_base: None,
+        worktree_kept: None,
     };
     conn.execute(
         "INSERT INTO runs (
@@ -503,6 +534,120 @@ pub fn attach_session(
     )
     .map(|_| ())
     .map_err(|e| format!("cannot record the run's session: {e}"))
+}
+
+/// What this automation's next worktree is called, and how many runs it has had.
+///
+/// The slug is read rather than recomputed from the name: it was fixed when the automation was
+/// first saved, and recomputing it after a rename would point the next run at a different
+/// directory from every run before it. An automation stored before the column existed gets one
+/// now, from whatever it is called today.
+pub fn worktree_name(conn: &Connection, automation: &Automation) -> Result<(String, i64), String> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT slug FROM automations WHERE id = ?",
+            [&automation.id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+    let slug = match stored {
+        Some(slug) if !slug.is_empty() => slug,
+        _ => {
+            let slug = crate::worktree::slugify(&automation.name);
+            conn.execute(
+                "UPDATE automations SET slug = ? WHERE id = ?",
+                params![slug, automation.id],
+            )
+            .map_err(|e| format!("cannot record the automation's slug: {e}"))?;
+            slug
+        }
+    };
+
+    let runs: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM runs WHERE automation_id = ?",
+            [&automation.id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok((slug, runs))
+}
+
+/// Record the worktree a run provisioned, so it can be found again after the session is gone.
+pub fn attach_worktree(
+    conn: &Connection,
+    run_id: &str,
+    path: &str,
+    branch: &str,
+    base: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE runs SET worktree_path = ?, worktree_branch = ?, worktree_base = ? WHERE id = ?",
+        params![path, branch, base, run_id],
+    )
+    .map(|_| ())
+    .map_err(|e| format!("cannot record the run's worktree: {e}"))
+}
+
+/// Close out a run's worktree: `None` once it has been removed, `Some(reason)` when it was kept.
+///
+/// Clearing `worktree_path` on removal is what stops the startup sweep from looking at this run
+/// again, and what stops the app adopting a `worktrees` row for a directory that is gone.
+pub fn settle_worktree(
+    conn: &Connection,
+    run_id: &str,
+    kept: Option<&str>,
+) -> Result<Option<AutomationRun>, String> {
+    match kept {
+        Some(reason) => conn.execute(
+            "UPDATE runs SET worktree_kept = ? WHERE id = ?",
+            params![reason, run_id],
+        ),
+        None => conn.execute(
+            "UPDATE runs SET worktree_path = NULL, worktree_kept = NULL WHERE id = ?",
+            params![run_id],
+        ),
+    }
+    .map_err(|e| format!("cannot settle the run's worktree: {e}"))?;
+    conn.query_row("SELECT * FROM runs WHERE id = ?", [run_id], row_to_run)
+        .optional()
+        .map_err(|e| e.to_string())
+}
+
+/// Runs holding a worktree that has not been settled yet.
+///
+/// Called at startup, for the runs whose sessions died with the process before anything could look
+/// at their workspace. A run still marked running is left alone: `fail_interrupted_runs` closes
+/// those first, so by the time this is called there are none.
+pub fn runs_with_unsettled_worktrees(conn: &Connection) -> Result<Vec<AutomationRun>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT * FROM runs
+              WHERE worktree_path IS NOT NULL AND worktree_kept IS NULL AND status != 'running'",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], row_to_run)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<AutomationRun>>>()
+        .map_err(|e| e.to_string())
+}
+
+/// The run one session belongs to, whatever became of it.
+///
+/// [`run_for_session`] only answers for a run still going, which is what closing a turn wants. The
+/// worktree cleanup runs after that, once the session is closed and its run already finished.
+pub fn any_run_for_session(conn: &Connection, session_id: &str) -> Option<AutomationRun> {
+    conn.query_row(
+        "SELECT * FROM runs WHERE session_id = ?",
+        [session_id],
+        row_to_run,
+    )
+    .optional()
+    .ok()
+    .flatten()
 }
 
 pub fn finish_run(
@@ -710,6 +855,74 @@ mod tests {
         assert_eq!(runs[0].agent_session_id.as_deref(), Some("agent-session-1"));
         assert_eq!(runs[0].agent_id.as_deref(), Some("claude-acp"));
         assert_eq!(runs[0].can_reload, Some(true));
+    }
+
+    #[test]
+    fn a_renamed_automation_keeps_naming_its_worktrees_the_same_way() {
+        let conn = store();
+        let saved = save(&conn, "/p", &automation("a", None)).expect("save");
+        let (slug, first) = worktree_name(&conn, &saved).expect("name");
+        assert_eq!(slug, "automation-a");
+        assert_eq!(first, 0);
+
+        // A run happened, and then the automation was renamed. The directory the first run made is
+        // still on disk under the old slug, so the next run must not start naming things anew.
+        start_run(&conn, &saved, true).expect("start");
+        let mut renamed = saved.clone();
+        renamed.name = "Something else entirely".to_string();
+        let renamed = save(&conn, "/p", &renamed).expect("rename");
+
+        let (slug_after, second) = worktree_name(&conn, &renamed).expect("name");
+        assert_eq!(slug_after, "automation-a");
+        assert_eq!(second, 1);
+    }
+
+    #[test]
+    fn a_removed_worktree_stops_being_something_to_deal_with() {
+        let conn = store();
+        let saved = save(&conn, "/p", &automation("a", None)).expect("save");
+        let run = start_run(&conn, &saved, true).expect("start");
+        attach_worktree(
+            &conn,
+            &run.id,
+            "/p/.maestro/worktrees/automation-a-0",
+            "maestro/a-0",
+            "main",
+        )
+        .expect("attach");
+        finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None).expect("finish");
+
+        assert_eq!(
+            runs_with_unsettled_worktrees(&conn)
+                .expect("unsettled")
+                .len(),
+            1
+        );
+
+        let kept = settle_worktree(&conn, &run.id, Some("it has uncommitted changes"))
+            .expect("settle")
+            .expect("the run");
+        assert_eq!(
+            kept.worktree_kept.as_deref(),
+            Some("it has uncommitted changes")
+        );
+        assert!(
+            kept.worktree_path.is_some(),
+            "a kept worktree is still there"
+        );
+        // Settled either way, so the startup sweep does not keep looking at it.
+        assert!(runs_with_unsettled_worktrees(&conn)
+            .expect("unsettled")
+            .is_empty());
+
+        let removed = settle_worktree(&conn, &run.id, None)
+            .expect("settle")
+            .expect("the run");
+        assert!(
+            removed.worktree_path.is_none(),
+            "nothing left to adopt or warn about"
+        );
+        assert!(removed.worktree_kept.is_none());
     }
 
     #[test]

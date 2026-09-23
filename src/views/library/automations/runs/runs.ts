@@ -61,6 +61,24 @@ export function entriesOf(
   });
 }
 
+/**
+ * The workspace this run left behind, when it left one.
+ *
+ * `worktree_path` is cleared by the daemon the moment it removes the directory, so a value here
+ * means there is something on disk. `worktree_kept` is why it could not be removed, and it only
+ * arrives once the run's session has closed — until then a run that will be cleaned up and one
+ * that will not look the same, which is correct: neither has been decided.
+ */
+export function keptWorkspace(run: AutomationRun): { path: string; reason: string } | null {
+  if (!run.worktree_path || !run.worktree_kept) return null;
+  return { path: run.worktree_path, reason: run.worktree_kept };
+}
+
+/** How many of one automation's runs are still holding a workspace. */
+export function keptCount(entries: RunEntry[]): number {
+  return entries.filter((entry) => keptWorkspace(entry.run) !== null).length;
+}
+
 /** How long a run took, or has been going. */
 export function runDuration(run: AutomationRun, now: number): string {
   const started = new Date(run.started_at).getTime();

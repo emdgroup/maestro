@@ -1,8 +1,9 @@
-import { CornerDownRight, MessageCircleQuestion } from "lucide-react";
+import { CornerDownRight, FolderGit2, MessageCircleQuestion } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { runDuration, type RunEntry, type RunState } from "./runs";
+import { folderName } from "@/components/execution/worktree-card/worktree-usage";
+import { keptWorkspace, runDuration, type RunEntry, type RunState } from "./runs";
 
 const DOT: Record<RunState, string> = {
   running: "bg-emerald-500 animate-pulse",
@@ -46,6 +47,7 @@ export function RunCard({
 }) {
   const { run, state, action } = entry;
   const awaiting = state === "awaiting";
+  const kept = keptWorkspace(run);
 
   return (
     <div
@@ -109,6 +111,17 @@ export function RunCard({
           </Tooltip>
         )}
       </div>
+
+      {/* Only a run that kept its workspace says anything here. One that was cleaned up left
+          nothing to act on, and saying so on every card would bury the ones that did. */}
+      {kept && (
+        <div className="mt-1 flex items-start gap-1 text-[10px] leading-relaxed text-warning">
+          <FolderGit2 className="mt-px size-3 shrink-0" />
+          <span className="min-w-0">
+            Kept <span className="font-mono">{folderName(kept.path)}</span>: {kept.reason}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

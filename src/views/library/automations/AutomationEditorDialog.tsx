@@ -16,6 +16,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collap
 import { cn } from "@/lib/utils";
 import { AgentConfigFields } from "@/components/common/agent-config/AgentConfigFields";
 import { WorkspaceModeSelect } from "@/components/common/workspace-mode/WorkspaceModeSelect";
+import { BranchPicker } from "@/components/kanban/shared/BranchPicker";
 import { useProjectSettings } from "@/services/project.service";
 import { useDefaultBaseBranch } from "@/hooks/useDefaultBaseBranch";
 import { useIsGitRepo } from "@/store/projectStore";
@@ -30,9 +31,6 @@ import type {
   WorkspaceMode,
   WorktreeWithStatus,
 } from "@/types/bindings";
-
-/** Creating a worktree is the app's job, and the background server cannot do it yet. */
-const NO_WORKTREE_YET = "Not available for automations yet";
 
 /** An id the user never sees or types, stable across renames. */
 function newAutomationId(): string {
@@ -227,11 +225,10 @@ export function AutomationEditorDialog({
   const isGitRepo = useIsGitRepo();
   const { data: projectSettings } = useProjectSettings(projectId);
   const defaultBaseBranch = useDefaultBaseBranch(open ? projectId : null);
-  // A non-git project has no worktree to offer and no branch to base one on. Neither does an
-  // automation yet, whatever the project default says, so it never starts on a mode it cannot run.
+  // A non-git project has no worktree to offer and no branch to base one on, so it starts in the
+  // only place it can run.
   const projectDefault = projectSettings?.default_workspace_mode ?? "NewWorktree";
-  const defaultMode: WorkspaceMode =
-    isGitRepo && projectDefault !== "NewWorktree" ? projectDefault : "RepositoryDirectory";
+  const defaultMode: WorkspaceMode = isGitRepo ? projectDefault : "RepositoryDirectory";
   const defaultAgent = projectSettings?.default_agent ?? "";
 
   const [draft, setDraft] = useState<Automation>(() => editing ?? blank(defaultMode, "", ""));
@@ -263,6 +260,7 @@ export function AutomationEditorDialog({
 
   const mode = modeOf(draft.workspace);
   const pinnedPath = draft.workspace.mode === "path" ? draft.workspace.path : "";
+  const baseBranch = draft.workspace.mode === "new_worktree" ? draft.workspace.base_branch : "";
 
   // What the disclosure hides, said on its own row: collapsed is only safe while the user can see
   // what they are collapsing over.
@@ -270,9 +268,11 @@ export function AutomationEditorDialog({
     agents.find((a) => a.id === draft.agent_id)?.name || draft.agent_id || "no agent",
     draft.model,
     draft.permission_mode,
-    isGitRepo && mode === "ReuseWorkspace"
-      ? (reusable.find((w) => w.path === pinnedPath)?.branch_name ?? "no workspace")
-      : "repository directory",
+    !isGitRepo || mode === "RepositoryDirectory"
+      ? "repository directory"
+      : mode === "NewWorktree"
+        ? `a worktree from ${baseBranch || "the current branch"}`
+        : (reusable.find((w) => w.path === pinnedPath)?.branch_name ?? "no workspace"),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -364,13 +364,27 @@ export function AutomationEditorDialog({
                     value={mode}
                     // Writing the mode rebuilds the workspace, so switching away cannot leave a
                     // path behind that nothing will look at again.
-                    onChange={(next) => patch({ workspace: workspaceFor(next, "") })}
-                    // The background server is what runs an automation, and it cannot create a
-                    // worktree: that is bound to this app's own bookkeeping.
-                    allowNewWorktree={false}
-                    unavailableReason={{ NewWorktree: NO_WORKTREE_YET }}
+                    onChange={(next) => patch({ workspace: workspaceFor(next, defaultBaseBranch) })}
+                    allowNewWorktree
                     hasReusableWorkspace={reusable.length > 0}
                   />
+
+                  {mode === "NewWorktree" && (
+                    <>
+                      <BranchPicker
+                        value={baseBranch}
+                        prefix="From"
+                        onChange={(branch) =>
+                          patch({ workspace: { mode: "new_worktree", base_branch: branch } })
+                        }
+                        placeholder="The branch each run starts from"
+                      />
+                      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+                        Each run gets its own worktree and branch. It is removed when the run ends
+                        with nothing to lose, and kept with a note when there is.
+                      </p>
+                    </>
+                  )}
 
                   {mode === "ReuseWorkspace" && (
                     <Select

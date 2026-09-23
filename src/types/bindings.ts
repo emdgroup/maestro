@@ -2884,7 +2884,22 @@ agent_session_id?: string | null; agent_id?: string | null; cwd?: string | null;
  * Whether that agent answers `session/load`. A run whose agent cannot is shown without a way
  * in, rather than with one that fails.
  */
-can_reload?: boolean | null }
+can_reload?: boolean | null; 
+/**
+ * The worktree this run made, while it is still on disk. Cleared by the server once it has
+ * removed it, so a value here means a directory somebody still has to deal with — which is
+ * also what the app adopts a `worktrees` row from.
+ */
+worktree_path?: string | null; worktree_branch?: string | null; 
+/**
+ * What that branch was cut from, so an adopted row can say how much the run committed.
+ */
+worktree_base?: string | null; 
+/**
+ * Why that worktree was kept rather than removed. `None` means nothing was kept, which is
+ * also true of a run still going.
+ */
+worktree_kept?: string | null }
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * Where an automation's agent runs.
@@ -2902,8 +2917,9 @@ export type AutomationWorkspace =
  */
 { mode: "path"; path: string } | 
 /**
- * A fresh worktree per run, branched from `base_branch`. Not available yet: creating one is
- * bound to this app's `worktrees` table, which the server cannot reach.
+ * A fresh worktree per run, branched from `base_branch`. Made and unmade by the server, which
+ * is the process on the machine the repository is on; this app adopts a `worktrees` row for
+ * one that outlives its run.
  */
 { mode: "new_worktree"; base_branch: string }
 /**

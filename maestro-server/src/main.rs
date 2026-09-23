@@ -33,6 +33,7 @@ mod terminal;
 mod tool_check;
 mod tool_config;
 mod workspace_roots;
+mod worktree;
 
 #[cfg(test)]
 mod tests;
@@ -266,7 +267,11 @@ const AUTOMATION_TICK: std::time::Duration = std::time::Duration::from_secs(60);
 /// `session/close` is what leaves the agent holding a transcript that `session/load` can replay.
 /// An agent that does not support `session/load` loses that transcript here; reaping uniformly is
 /// the accepted cost of not keeping an unbounded number of agent processes alive.
-async fn reap_idle_sessions(sessions: &mut SessionMap, stdout: &crate::ClientOut) {
+async fn reap_idle_sessions(
+    sessions: &mut SessionMap,
+    stdout: &crate::ClientOut,
+    automation_store: Option<&automation_runner::Store>,
+) {
     let attached = stdout.lock().await.is_attached();
     let mut reap: Vec<String> = Vec::new();
 
@@ -305,6 +310,11 @@ async fn reap_idle_sessions(sessions: &mut SessionMap, stdout: &crate::ClientOut
             "info",
             format!("[reap] closed idle session={session_id} with no client attached"),
         );
+        // Only now: the agent held files open under its workspace for as long as the session
+        // lived, and on Windows a removal while it does simply fails.
+        if let Some(store) = automation_store {
+            automation_runner::settle_worktree_for_session(store, stdout, &session_id).await;
+        }
     }
 }
 
@@ -344,6 +354,12 @@ async fn run_server(
         })
         .map_err(|e| send_diag("warn", format!("[automation] store unavailable: {e}")))
         .ok();
+
+    // After the runs above are closed out, so a workspace left by a server that died mid-run is
+    // evaluated rather than sitting there for ever.
+    if let Some(store) = automation_store.as_ref() {
+        automation_runner::sweep_worktrees(store, &stdout).await;
+    }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
     // time out waiting on slow PATH scans on Windows.
@@ -497,7 +513,7 @@ async fn run_server(
             }
 
             _ = reap_interval.tick() => {
-                reap_idle_sessions(&mut sessions, &stdout).await;
+                reap_idle_sessions(&mut sessions, &stdout, automation_store.as_ref()).await;
                 continue;
             }
 

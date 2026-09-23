@@ -221,19 +221,19 @@ async fn test_reap_closes_only_idle_unwatched_sessions() {
     sessions.insert("busy".to_string(), busy);
 
     // Somebody is watching: nothing is idle, whatever the turn state or how long it lasts.
-    crate::reap_idle_sessions(&mut sessions, &attached).await;
-    crate::reap_idle_sessions(&mut sessions, &attached).await;
+    crate::reap_idle_sessions(&mut sessions, &attached, None).await;
+    crate::reap_idle_sessions(&mut sessions, &attached, None).await;
     assert_eq!(sessions.len(), 2);
     assert!(!sessions["idle"].idle_marked);
 
     // Nobody watching: the idle one is marked, the mid-turn one is not.
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert_eq!(sessions.len(), 2, "one sweep marks, it does not close");
     assert!(sessions["idle"].idle_marked);
     assert!(!sessions["busy"].idle_marked);
 
     // Marked, and still idle on the next sweep.
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert_eq!(sessions.len(), 1, "the idle session is gone");
     assert!(sessions.contains_key("busy"));
     assert!(
@@ -246,7 +246,7 @@ async fn test_reap_closes_only_idle_unwatched_sessions() {
 
     // A turn that ends while nobody is attached is marked by the next sweep, not closed by it.
     sessions["busy"].turn_active.store(false, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert_eq!(sessions.len(), 1);
     assert!(sessions["busy"].idle_marked);
 }
@@ -279,19 +279,19 @@ async fn test_reap_mark_is_cleared_by_activity() {
     );
 
     let detached = crate::client_sink::ClientSink::detached();
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert!(sessions["session"].idle_marked);
 
     // A turn starts before the sweep that would have closed it.
     turn_active.store(true, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert_eq!(sessions.len(), 1, "the mark is cancelled, not honoured");
     assert!(!sessions["session"].idle_marked);
 
     // The turn ends, and the whole grace period runs again from there.
     turn_active.store(false, Ordering::SeqCst);
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert_eq!(sessions.len(), 1);
-    crate::reap_idle_sessions(&mut sessions, &detached).await;
+    crate::reap_idle_sessions(&mut sessions, &detached, None).await;
     assert!(sessions.is_empty());
 }
