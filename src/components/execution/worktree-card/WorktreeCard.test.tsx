@@ -74,7 +74,12 @@ function withClient(node: React.ReactNode) {
 
 function renderCard(
   wt: WorktreeWithStatus,
-  { sessions = [] as ActiveSessionInfo[], onSelect = vi.fn(), onDelete = vi.fn() } = {},
+  {
+    sessions = [] as ActiveSessionInfo[],
+    onSelect = vi.fn(),
+    onDelete = vi.fn(),
+    onStartSession = vi.fn(),
+  } = {},
 ) {
   render(
     withClient(
@@ -86,10 +91,11 @@ function renderCard(
         now={NOW}
         onSelect={onSelect}
         onDelete={onDelete}
+        onStartSession={onStartSession}
       />,
     ),
   );
-  return { onSelect, onDelete };
+  return { onSelect, onDelete, onStartSession };
 }
 
 beforeEach(() => {
@@ -131,6 +137,23 @@ describe("WorktreeCard", () => {
 
     expect(onDelete).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("starts a session on the worktree without opening its diff", async () => {
+    const user = userEvent.setup();
+    const wt = worktree();
+    const { onSelect, onStartSession } = renderCard(wt);
+
+    await user.click(screen.getByRole("button", { name: "Start session" }));
+
+    expect(onStartSession).toHaveBeenCalledWith(wt);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("offers no new session while an agent is already running in the worktree", () => {
+    renderCard(worktree(), { sessions: [session()] });
+
+    expect(screen.queryByRole("button", { name: "Start session" })).not.toBeInTheDocument();
   });
 });
 
