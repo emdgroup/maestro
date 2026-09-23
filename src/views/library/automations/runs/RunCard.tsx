@@ -1,8 +1,15 @@
-import { CornerDownRight, FolderGit2, MessageCircleQuestion, Trash2 } from "lucide-react";
+import {
+  CalendarClock,
+  CornerDownRight,
+  FolderGit2,
+  MessageCircleQuestion,
+  Play,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { folderName } from "@/components/execution/worktree-card/worktree-usage";
+import { folderName, relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import { keptWorkspace, runDuration, waitDuration, type RunEntry, type RunState } from "./runs";
 
 const DOT: Record<RunState, string> = {
@@ -69,9 +76,20 @@ export function RunCard({
         {run.ordinal != null && (
           <span className="shrink-0 font-mono text-muted-foreground/60">#{run.ordinal}</span>
         )}
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-          {run.scheduled ? "scheduled" : "run now"}
-        </span>
+        {/* How it started is an icon: the words read as a time in the spot where the time goes. */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground" />
+            }
+          >
+            {run.scheduled ? <CalendarClock className="size-2.5" /> : <Play className="size-2.5" />}
+            {relativeAge(run.started_at, now)} ago
+          </TooltipTrigger>
+          <TooltipContent>
+            {run.scheduled ? "Started by its schedule" : "Started with Run now"}
+          </TooltipContent>
+        </Tooltip>
         {/* Not offered while the run is going: its agent is working in that worktree. */}
         {run.status !== "running" && (
           <Tooltip>
