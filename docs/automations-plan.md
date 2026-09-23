@@ -276,7 +276,7 @@ afterwards as well as what moves.
 | `n`          | How many runs this automation has had. A kept worktree never blocks the next run                  |
 | After a run  | Removed with its local branch when nothing would be lost. Otherwise kept, with the reason         |
 | Nothing lost | Clean working tree, and the branch tip contained by some other ref — merged, or pushed            |
-| When         | At session close, not at turn end: the agent's own process cannot hold the directory open         |
+| When         | At every session close, never turn end: Cancel from the app, or the sweep once nobody is attached |
 | Agent cwd    | The project, never the worktree. The session's cwd is the worktree, which is what the agent reads |
 | Leftovers    | Swept at daemon start, for a run whose session died with the process before it was evaluated      |
 | The warning  | A line on the run card naming the path and the reason, and a badge on the automation's row        |

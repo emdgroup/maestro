@@ -433,6 +433,22 @@ pub(crate) async fn dispatch_message(
             crate::mcp_gateway::cancel_session(pending_host_tools, &req.session_id);
             if let Some(session) = sessions.remove(&req.session_id) {
                 let session_agent_id = session.agent_id.clone();
+                // A run's workspace is settled once its session is closed, whoever closed it. The
+                // sweep only closes sessions nobody is attached to, so with a window open this is
+                // the only close there is.
+                let settle = automation_store.map(|store| {
+                    let store = Arc::clone(store);
+                    let stdout = Arc::clone(stdout);
+                    let session_id = req.session_id.clone();
+                    async move {
+                        crate::automation_runner::settle_worktree_for_session(
+                            &store,
+                            &stdout,
+                            &session_id,
+                        )
+                        .await;
+                    }
+                });
                 if session
                     .cmd_tx
                     .try_send(SessionCommand::CloseSession)
@@ -462,6 +478,11 @@ pub(crate) async fn dispatch_message(
                                     .remove(&session_agent_id);
                             }
                         }
+                        // After the close has run, never alongside it: the agent holds files open
+                        // under the workspace until then.
+                        if let Some(settle) = settle {
+                            settle.await;
+                        }
                     });
                 } else {
                     // Channel full or closed — force abort and clean up manually.
@@ -471,6 +492,9 @@ pub(crate) async fn dispatch_message(
                         if c.router.is_empty().await {
                             agent_connections.lock().await.remove(&session_agent_id);
                         }
+                    }
+                    if let Some(settle) = settle {
+                        tokio::spawn(settle);
                     }
                 }
             }

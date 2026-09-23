@@ -476,9 +476,11 @@ that directory undeletable. `session/new` carries the worktree path, which is wh
 in.
 
 **Cleanup happens at session close, not at turn end**, for the same reason: the agent holds files
-open under the workspace for as long as the session lives. `reap_idle_sessions` calls
-`settle_worktree_for_session`, so a run's workspace is dealt with one to two minutes after the turn
-ends. `sweep_worktrees` at startup catches the runs whose sessions died with an earlier daemon.
+open under the workspace for as long as the session lives. Every close settles it: the `Cancel` arm
+in `dispatch.rs` (closing the session in the app, or Stop on the automation row) and
+`reap_idle_sessions` both call `settle_worktree_for_session` once the close has run. The sweep only
+closes sessions nobody is attached to, so with a window open a run's worktree stays until its session
+is closed there, and while it stays the user can still talk to the agent in it. `sweep_worktrees` at startup catches the runs whose sessions died with an earlier daemon.
 
 **What "nothing would be lost" means** is the app's own rule, ported: `git status --porcelain` clean,
 **and** `git branch --all --contains HEAD` naming something besides this branch. That second half is
