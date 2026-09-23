@@ -145,8 +145,8 @@ export function RunsPanel({
   now,
   filter,
   onFilterChange,
-  onOpen,
-  loading,
+  onJoin,
+  onShow,
   onClose,
   onDelete,
   retention,
@@ -157,9 +157,8 @@ export function RunsPanel({
   now: number;
   filter: RunFilter;
   onFilterChange: (filter: RunFilter) => void;
-  onOpen: (entry: RunEntry) => void;
-  /** The run id being loaded back into a session, if any. */
-  loading: string | null;
+  onJoin: (entry: RunEntry) => void;
+  onShow: (entry: RunEntry) => void;
   onClose: () => void;
   onDelete: (entry: RunEntry) => void;
   /** This project's, or `undefined` until the list has answered. */
@@ -238,10 +237,10 @@ export function RunsPanel({
                 <RunCard
                   key={entry.run.id}
                   entry={entry}
-                  withName
+                  layout="card"
                   now={now}
-                  onOpen={() => onOpen(entry)}
-                  pending={loading === entry.run.id}
+                  onJoin={() => onJoin(entry)}
+                  onShow={() => onShow(entry)}
                   onDelete={() => onDelete(entry)}
                 />
               ))}

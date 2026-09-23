@@ -527,6 +527,12 @@ survive. `can_reload` is recorded rather than asked because whether an agent ans
 cannot be discovered once its session is gone, and `DiscoveredAgent` does not carry it. A run
 without it draws no button rather than one that fails.
 
+**A finished run is read, not joined.** `runs.result` is the agent's last block of text, what it wrote
+after its final tool call, followed per session by `helpers::note_session_update` and handed over
+with the turn end, capped at 64 KB. Clicking a finished run opens `RunDialog` with that result (or the
+failure reason), and Open session is only in there. A run still going carries Join, or Answer when
+it waits on the user, instead.
+
 **Needs input is a join, not a column.** A run is Running, Succeeded or Failed to the database;
 whether it is blocked on a permission or an elicitation is live session state, and the panel
 crosses the run's session id with `sessionActivityStore`. That also means the count is only as

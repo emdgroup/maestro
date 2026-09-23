@@ -573,6 +573,10 @@ pub struct AutomationRun {
     /// number in the name of the worktree it made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ordinal: Option<u32>,
+    /// The agent's last message, the text after its final tool call, recorded when the run ends.
+    /// What a finished run is read by, so nobody has to open a session to see what it concluded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 /// Every request below names a project by the path the client knows it by. The daemon

@@ -85,7 +85,9 @@ CREATE TABLE IF NOT EXISTS runs (
     -- Why it was kept. Null for a run that kept nothing, and for one still going.
     worktree_kept     TEXT,
     -- Which run of its automation this is, from 1. Null for runs recorded before numbering.
-    ordinal           INTEGER
+    ordinal           INTEGER,
+    -- What the agent said last, the text after its final tool call. What a finished run is read by.
+    result            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_project ON runs(project_path, started_at DESC);
@@ -119,6 +121,7 @@ pub fn open(dir: &Path) -> Result<Connection, String> {
         ("worktree_base", "TEXT"),
         ("worktree_kept", "TEXT"),
         ("ordinal", "INTEGER"),
+        ("result", "TEXT"),
     ] {
         add_column_if_missing(&conn, "runs", column, kind)?;
     }
@@ -477,6 +480,7 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutomationRun> {
         worktree_base: row.get("worktree_base")?,
         worktree_kept: row.get("worktree_kept")?,
         ordinal: row.get("ordinal")?,
+        result: row.get("result")?,
     })
 }
 
@@ -538,6 +542,7 @@ pub fn start_run(
         worktree_base: None,
         worktree_kept: None,
         ordinal: Some(ordinal),
+        result: None,
     };
     conn.execute(
         "INSERT INTO runs (
@@ -700,10 +705,17 @@ pub fn finish_run(
     run_id: &str,
     status: AutomationRunStatus,
     error: Option<String>,
+    result: Option<String>,
 ) -> Result<Option<AutomationRun>, String> {
     conn.execute(
-        "UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?",
-        params![status_name(status), Utc::now().to_rfc3339(), error, run_id],
+        "UPDATE runs SET status = ?, finished_at = ?, error = ?, result = ? WHERE id = ?",
+        params![
+            status_name(status),
+            Utc::now().to_rfc3339(),
+            error,
+            result,
+            run_id
+        ],
     )
     .map_err(|e| format!("cannot close the run: {e}"))?;
     conn.query_row("SELECT * FROM runs WHERE id = ?", [run_id], row_to_run)
@@ -1022,7 +1034,7 @@ mod tests {
         let mut runs = Vec::new();
         for days_ago in [200, 150, 100, 10, 0] {
             let run = start_run(&conn, &saved, true).expect("start");
-            finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None).expect("finish");
+            finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None, None).expect("finish");
             let started = (now - chrono::Duration::days(days_ago)).to_rfc3339();
             conn.execute(
                 "UPDATE runs SET started_at = ? WHERE id = ?",
@@ -1110,7 +1122,7 @@ mod tests {
             "main",
         )
         .expect("attach");
-        finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None).expect("finish");
+        finish_run(&conn, &run.id, AutomationRunStatus::Succeeded, None, None).expect("finish");
 
         assert_eq!(
             runs_with_unsettled_worktrees(&conn)

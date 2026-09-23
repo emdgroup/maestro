@@ -34,6 +34,7 @@ import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
 import { RunCard } from "./runs/RunCard";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
+import { RunDialog } from "./runs/RunDialog";
 import { useNow } from "@/hooks/useNow";
 import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
@@ -55,9 +56,9 @@ function AutomationRow({
   runs,
   expanded,
   onToggleExpanded,
-  onOpenRun,
+  onJoinRun,
+  onShowRun,
   onDeleteRun,
-  loadingRun,
   now,
   onRun,
   onEdit,
@@ -72,9 +73,9 @@ function AutomationRow({
   runs: RunEntry[];
   expanded: boolean;
   onToggleExpanded: () => void;
-  onOpenRun: (entry: RunEntry) => void;
+  onJoinRun: (entry: RunEntry) => void;
+  onShowRun: (entry: RunEntry) => void;
   onDeleteRun: (entry: RunEntry) => void;
-  loadingRun: string | null;
   /** The page's clock, shared so every duration moves together. */
   now: number;
   onRun: () => void;
@@ -268,20 +269,22 @@ function AutomationRow({
       </div>
 
       {expanded && runs.length > 0 && (
-        <div className="ml-6 mt-2 space-y-1.5">
-          {runs.slice(0, 5).map((entry) => (
-            <RunCard
-              key={entry.run.id}
-              entry={entry}
-              withName={false}
-              now={now}
-              onOpen={() => onOpenRun(entry)}
-              pending={loadingRun === entry.run.id}
-              onDelete={() => onDeleteRun(entry)}
-            />
-          ))}
+        <div className="ml-6 mt-2">
+          <div className="divide-y divide-border/60 overflow-hidden rounded-md border border-border bg-background">
+            {runs.slice(0, 5).map((entry) => (
+              <RunCard
+                key={entry.run.id}
+                entry={entry}
+                layout="row"
+                now={now}
+                onJoin={() => onJoinRun(entry)}
+                onShow={() => onShowRun(entry)}
+                onDelete={() => onDeleteRun(entry)}
+              />
+            ))}
+          </div>
           {runs.length > 5 && (
-            <p className="text-[10px] text-muted-foreground">
+            <p className="mt-1 text-[10px] text-muted-foreground">
               {runs.length - 5} older, in Recent runs
             </p>
           )}
@@ -337,6 +340,10 @@ export function AutomationsPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [filter, setFilter] = useState<RunFilter>("all");
+  // By id rather than the entry itself, so the dialog follows the run as the list refreshes, and
+  // closes on its own once the run is deleted.
+  const [shownRunId, setShownRunId] = useState<string | null>(null);
+  const shownRun = entries.find((entry) => entry.run.id === shownRunId) ?? null;
   const automations = list?.automations;
   const agents = discovery?.agents ?? [];
   const running = new Map(
@@ -382,9 +389,9 @@ export function AutomationsPanel({
                 onToggleExpanded={() =>
                   setExpanded((open) => (open === automation.id ? null : automation.id))
                 }
-                onOpenRun={(entry) => void openRun(entry)}
+                onJoinRun={(entry) => void openRun(entry)}
+                onShowRun={(entry) => setShownRunId(entry.run.id)}
                 onDeleteRun={onDeleteRun}
-                loadingRun={loadingRun}
                 onRun={() => run.mutate({ projectId, automationId: automation.id })}
                 onEdit={() => onEdit(automation)}
                 onToggleEnabled={(enabled) =>
@@ -400,6 +407,19 @@ export function AutomationsPanel({
             ))}
           </div>
         )}
+
+        <RunDialog
+          entry={shownRun}
+          agentName={(agentId) => agents.find((agent) => agent.id === agentId)?.name ?? agentId}
+          now={now}
+          opening={shownRun !== null && loadingRun === shownRun.run.id}
+          onOpenChange={(open) => !open && setShownRunId(null)}
+          onOpenSession={(entry) => {
+            void openRun(entry);
+            setShownRunId(null);
+          }}
+          onDelete={onDeleteRun}
+        />
 
         <AutomationEditorDialog
           open={editorOpen}
@@ -423,8 +443,8 @@ export function AutomationsPanel({
           now={now}
           filter={filter}
           onFilterChange={setFilter}
-          onOpen={(entry) => void openRun(entry)}
-          loading={loadingRun}
+          onJoin={(entry) => void openRun(entry)}
+          onShow={(entry) => setShownRunId(entry.run.id)}
           onClose={() => setPanelOpen(false)}
           onDelete={onDeleteRun}
           retention={list?.retention}

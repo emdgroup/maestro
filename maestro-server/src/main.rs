@@ -334,7 +334,7 @@ async fn run_server(
     let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
 
-    let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+    let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<helpers::TurnEnd>();
     let _ = helpers::TURN_TX.set(turn_tx);
 
     // `None` when the store cannot be opened. Sessions are the server's real job and go on without
@@ -542,15 +542,8 @@ async fn run_server(
             }
 
             ended = turn_rx.recv() => {
-                if let (Some((session_id, stop_reason)), Some(store)) =
-                    (ended, automation_store.as_ref())
-                {
-                    automation_runner::finish_for_session(
-                        store,
-                        &stdout,
-                        &session_id,
-                        &stop_reason,
-                    )
+                if let (Some(ended), Some(store)) = (ended, automation_store.as_ref()) {
+                        automation_runner::finish_for_session(store, &stdout, ended)
                     .await;
                 }
                 continue;

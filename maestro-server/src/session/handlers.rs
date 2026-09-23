@@ -289,6 +289,7 @@ impl ConnectionHandlers {
 
         let payload = serde_json::to_value(&notification.update)
             .map_err(|e| acp::Error::new(-32603, e.to_string()))?;
+        crate::helpers::note_session_update(&maestro_sid, &payload);
         let msg = MaestroRpcMessage::Response(ServerResponse::SessionUpdate(SessionUpdate {
             session_id: maestro_sid,
             payload,

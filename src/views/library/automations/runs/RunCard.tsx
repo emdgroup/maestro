@@ -6,169 +6,230 @@ import {
   Play,
   Trash2,
 } from "lucide-react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { folderName, relativeAge } from "@/components/execution/worktree-card/worktree-usage";
-import { keptWorkspace, runDuration, waitDuration, type RunEntry, type RunState } from "./runs";
+import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
+import { keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
 
-const DOT: Record<RunState, string> = {
-  running: "bg-emerald-500 animate-pulse",
-  awaiting: "bg-amber-500 animate-pulse",
-  succeeded: "bg-emerald-500",
-  failed: "bg-destructive",
-};
+function Hint({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
-function startedAt(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+/** How the run was started, as an icon: in the spot where the time goes, words read as a time. */
+export function TriggerIcon({ scheduled }: { scheduled: boolean }) {
+  return (
+    <Hint label={scheduled ? "Started by its schedule" : "Started with Run now"}>
+      {scheduled ? <CalendarClock className="size-3" /> : <Play className="size-3" />}
+    </Hint>
+  );
+}
+
+function StartedAgo({ iso, now }: { iso: string; now: number }) {
+  return (
+    <Hint label={new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}>
+      {relativeAge(iso, now)} ago
+    </Hint>
+  );
+}
+
+/** What happened, in one line: the wait, the time it took, or why it failed. */
+function Outcome({ entry, now }: { entry: RunEntry; now: number }) {
+  const { run, state } = entry;
+  if (state === "awaiting") {
+    return (
+      <span className="min-w-0 flex-1 truncate text-amber-600">
+        waiting on you for {waitDuration(entry, now)}
+      </span>
+    );
+  }
+  if (state === "running") {
+    return (
+      <span className="min-w-0 flex-1 truncate text-emerald-600">
+        {entry.live ? `running for ${runDuration(run, now)}` : "starting"}
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span className="min-w-0 flex-1 truncate text-destructive">{run.error ?? "Failed"}</span>
+    );
+  }
+  return (
+    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+      took {runDuration(run, now)}
+    </span>
+  );
 }
 
 /**
  * One firing of an automation.
  *
- * Running and awaiting are the same row to the database, so the colour and the word are the only
- * thing that separates a run getting on with it from one that has been waiting on an answer since
- * three in the morning. The button says `Answer` for the second, because that is what it leads to.
+ * A finished run is read, not joined: clicking it opens its result, and the session is one more
+ * click away in there. A run still going is the opposite, since what it needs is somebody in the
+ * session, so its card carries Join, or Answer when it is blocked on a question.
  *
- * Nothing happens on clicking the card itself: the action is a button, and a card that also acted
- * would make the button decorative and every stray click consequential.
+ * `row` is the automation's own list, where the name is already known and there is width to lay
+ * the details out as columns. `card` is Recent runs, narrow, where the name is the headline.
  */
 export function RunCard({
   entry,
-  /** Shown in the panel, where the row alone does not say which automation this was. */
-  withName,
+  layout,
   now,
-  onOpen,
-  pending,
+  onJoin,
+  onShow,
   onDelete,
 }: {
   entry: RunEntry;
-  withName: boolean;
+  layout: "row" | "card";
   now: number;
-  onOpen: () => void;
-  /** True while a closed session is being loaded again. */
-  pending: boolean;
+  /** Go into the live session this run is happening in. */
+  onJoin: () => void;
+  /** Open the finished run's result. */
+  onShow: () => void;
   /** Forget this run, and remove its worktree and branch if they are still there. */
   onDelete: () => void;
 }) {
-  const { run, state, action } = entry;
-  const awaiting = state === "awaiting";
+  const { run, state } = entry;
+  const live = state === "running" || state === "awaiting";
   const kept = keptWorkspace(run);
+
+  const action = live ? (
+    entry.live && (
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={onJoin}
+        className={cn(
+          "h-5 shrink-0 gap-1 border px-1.5 text-[10px]",
+          state === "awaiting"
+            ? "border-amber-500 text-amber-600 hover:bg-amber-500/10 hover:text-amber-600"
+            : "border-accent text-accent hover:bg-accent/10 hover:text-accent",
+        )}
+      >
+        {state === "awaiting" ? (
+          <MessageCircleQuestion className="size-2.5" />
+        ) : (
+          <CornerDownRight className="size-2.5" />
+        )}
+        {state === "awaiting" ? "Answer" : "Join"}
+      </Button>
+    )
+  ) : (
+    <>
+      {kept && (
+        <Hint label="This run's workspace was kept. Open the run for details.">
+          <FolderGit2 className="size-3 text-warning" />
+        </Hint>
+      )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(event: MouseEvent) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+              aria-label="Delete this run"
+              className="size-4 shrink-0 text-muted-foreground hover:text-destructive"
+            />
+          }
+        >
+          <Trash2 className="size-2.5" />
+        </TooltipTrigger>
+        <TooltipContent>
+          {run.worktree_path ? "Delete this run, its worktree and its branch" : "Delete this run"}
+        </TooltipContent>
+      </Tooltip>
+    </>
+  );
+
+  // Only a finished run opens anything; a live one's way in is its button.
+  const showable = !live;
+  const interactive = showable
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        onClick: onShow,
+        onKeyDown: (event: KeyboardEvent) => {
+          if (
+            event.target === event.currentTarget &&
+            (event.key === "Enter" || event.key === " ")
+          ) {
+            event.preventDefault();
+            onShow();
+          }
+        },
+      }
+    : {};
+
+  if (layout === "row") {
+    return (
+      <div
+        {...interactive}
+        className={cn(
+          "flex h-7 items-center gap-2 px-2 text-[11px]",
+          state === "awaiting" && "bg-amber-500/5",
+          state === "failed" && "bg-destructive/5",
+          showable && "cursor-pointer hover:bg-muted/60",
+        )}
+      >
+        <span className="w-8 shrink-0 font-mono text-muted-foreground/70">
+          {run.ordinal != null ? `#${run.ordinal}` : ""}
+        </span>
+        <span className="w-16 shrink-0 text-muted-foreground">
+          <StartedAgo iso={run.started_at} now={now} />
+        </span>
+        <span className="text-muted-foreground">
+          <TriggerIcon scheduled={run.scheduled} />
+        </span>
+        <Outcome entry={entry} now={now} />
+        {action}
+      </div>
+    );
+  }
 
   return (
     <div
+      {...interactive}
       className={cn(
-        "group/run rounded-md border px-2 py-1.5",
-        awaiting ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-background",
-        state === "failed" && "border-destructive/30 bg-destructive/5",
+        "rounded-md border px-2 py-1.5",
+        state === "awaiting"
+          ? "border-amber-500/40 bg-amber-500/5"
+          : state === "failed"
+            ? "border-destructive/30 bg-destructive/5"
+            : "border-border bg-background",
+        showable && "cursor-pointer hover:bg-muted/60",
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px]">
-        <span className={cn("size-1.5 shrink-0 rounded-full", DOT[state])} />
-        {withName && <span className="truncate font-medium">{run.automation_name}</span>}
-        <span className={cn("text-muted-foreground", !withName && "font-medium text-foreground")}>
-          {startedAt(run.started_at)}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-medium">{run.automation_name}</span>
         {run.ordinal != null && (
           <span className="shrink-0 font-mono text-muted-foreground/60">#{run.ordinal}</span>
         )}
-        {/* How it started is an icon: the words read as a time in the spot where the time goes. */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground" />
-            }
-          >
-            {run.scheduled ? <CalendarClock className="size-2.5" /> : <Play className="size-2.5" />}
-            {relativeAge(run.started_at, now)} ago
-          </TooltipTrigger>
-          <TooltipContent>
-            {run.scheduled ? "Started by its schedule" : "Started with Run now"}
-          </TooltipContent>
-        </Tooltip>
-        {/* Not offered while the run is going: its agent is working in that worktree. */}
-        {run.status !== "running" && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onDelete}
-                  aria-label="Delete this run"
-                  className="size-4 shrink-0 text-muted-foreground opacity-0 group-hover/run:opacity-100 hover:text-destructive focus-visible:opacity-100"
-                />
-              }
-            >
-              <Trash2 className="size-2.5" />
-            </TooltipTrigger>
-            <TooltipContent>
-              {run.worktree_path
-                ? "Delete this run, its worktree and its branch"
-                : "Delete this run"}
-            </TooltipContent>
-          </Tooltip>
-        )}
       </div>
-
-      <div className="mt-1 flex items-center gap-1.5 text-[10px]">
-        {awaiting ? (
-          <span className="flex items-center gap-1 text-amber-600">
-            <MessageCircleQuestion className="size-3" />
-            waiting on you for {waitDuration(entry, now)}
-          </span>
-        ) : state === "failed" && run.error ? (
-          <span className="truncate text-destructive">{run.error}</span>
-        ) : (
-          <span className="text-muted-foreground">
-            {state === "running" ? `running for ${runDuration(run, now)}` : runDuration(run, now)}
+      <div className="mt-0.5 flex min-h-5 items-center gap-1.5 text-[10px]">
+        <span className="text-muted-foreground">
+          <TriggerIcon scheduled={run.scheduled} />
+        </span>
+        {!live && (
+          <span className="shrink-0 text-muted-foreground">
+            <StartedAgo iso={run.started_at} now={now} />
           </span>
         )}
-
-        {action !== "none" && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  disabled={pending}
-                  onClick={onOpen}
-                  className={cn(
-                    "ml-auto h-5 shrink-0 gap-1 border px-1.5 text-[10px]",
-                    awaiting
-                      ? "border-amber-500 text-amber-600 hover:bg-amber-500/10 hover:text-amber-600"
-                      : "border-accent text-accent hover:bg-accent/10 hover:text-accent",
-                  )}
-                />
-              }
-            >
-              <CornerDownRight className="size-2.5" />
-              {pending ? "Opening" : awaiting ? "Answer" : "Go to session"}
-            </TooltipTrigger>
-            <TooltipContent>
-              {action === "open"
-                ? "Open the session this run is in"
-                : "Load this run's transcript back into a session"}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        <Outcome entry={entry} now={now} />
+        {action}
       </div>
-
-      {/* Only a run that kept its workspace says anything here. One that was cleaned up left
-          nothing to act on, and saying so on every card would bury the ones that did. */}
-      {kept && (
-        <div className="mt-1 flex items-start gap-1 text-[10px] leading-relaxed text-warning">
-          <FolderGit2 className="mt-px size-3 shrink-0" />
-          <span className="min-w-0">
-            Kept <span className="font-mono">{folderName(kept.path)}</span>: {kept.reason}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

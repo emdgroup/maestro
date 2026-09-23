@@ -2944,7 +2944,11 @@ worktree_kept?: string | null;
  * Which run of its automation this is, counting from 1, so a session opened from it can be
  * matched to its entry in run history.
  */
-ordinal?: number | null }
+ordinal?: number | null; 
+/**
+ * The agent's last message, recorded when the run ends.
+ */
+result?: string | null }
 export type AutomationRunStatus = "running" | "succeeded" | "failed"
 /**
  * Where an automation's agent runs.

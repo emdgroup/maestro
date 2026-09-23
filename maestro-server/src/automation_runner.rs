@@ -280,7 +280,13 @@ async fn fail(store: &Store, stdout: &crate::ClientOut, run_id: &str, error: Str
     send_diag("warn", format!("[automation] {error}"));
     let finished = {
         let conn = store.lock().await;
-        automations::finish_run(&conn, run_id, AutomationRunStatus::Failed, Some(error))
+        automations::finish_run(
+            &conn,
+            run_id,
+            AutomationRunStatus::Failed,
+            Some(error),
+            None,
+        )
     };
     match finished {
         Ok(Some(run)) => {
@@ -471,18 +477,22 @@ pub async fn start(
 pub async fn finish_for_session(
     store: &Store,
     stdout: &crate::ClientOut,
-    session_id: &str,
-    stop_reason: &str,
+    ended: crate::helpers::TurnEnd,
 ) {
+    let crate::helpers::TurnEnd {
+        session_id,
+        stop_reason,
+        final_message,
+    } = ended;
     let run = {
         let conn = store.lock().await;
-        automations::run_for_session(&conn, session_id)
+        automations::run_for_session(&conn, &session_id)
     };
     let Some(run) = run else { return };
 
     // Anything other than the agent deciding it was done leaves the work unfinished, whether it
     // ran out of budget, refused, or was stopped by hand.
-    let (status, error) = match stop_reason {
+    let (status, error) = match stop_reason.as_str() {
         "end_turn" => (AutomationRunStatus::Succeeded, None),
         other => (
             AutomationRunStatus::Failed,
@@ -491,7 +501,7 @@ pub async fn finish_for_session(
     };
     let finished = {
         let conn = store.lock().await;
-        automations::finish_run(&conn, &run.id, status, error)
+        automations::finish_run(&conn, &run.id, status, error, final_message)
     };
     match finished {
         Ok(Some(run)) => announce(stdout, &run).await,

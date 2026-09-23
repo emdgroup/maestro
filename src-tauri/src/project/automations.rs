@@ -133,6 +133,9 @@ pub struct AutomationRun {
     /// matched to its entry in run history.
     #[specta(optional)]
     pub ordinal: Option<u32>,
+    /// The agent's last message, recorded when the run ends.
+    #[specta(optional)]
+    pub result: Option<String>,
 }
 
 impl From<maestro_protocol::AutomationWorkspace> for AutomationWorkspace {
@@ -224,6 +227,7 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
             worktree_base: run.worktree_base,
             worktree_kept: run.worktree_kept,
             ordinal: run.ordinal,
+            result: run.result,
         }
     }
 }
