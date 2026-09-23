@@ -30,6 +30,7 @@ describe("describeNextRun", () => {
 
   it("gives a date once the weekday would be ambiguous", () => {
     const now = new Date(2026, 0, 1, 12, 0);
-    expect(describeNextRun(new Date(2026, 1, 1, 7, 0), now)).toMatch(/^1 .+ at 07:00$/);
+    // "1 Feb" or "Feb 1", depending on the locale: only the day number and the time are fixed.
+    expect(describeNextRun(new Date(2026, 1, 1, 7, 0), now)).toMatch(/^(1 \S+|\S+ 1) at 07:00$/);
   });
 });
