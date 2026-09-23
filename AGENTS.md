@@ -527,8 +527,9 @@ accepted delivery there and the answer back, and the sender gets 202 as soon as 
 Queued deliveries live in `webhook_queue` and are drained after a turn ends and on every tick.
 
 An automation has **one trigger**, a schedule or a webhook, never both: `validate` refuses a cron
-expression beside `webhook_enabled`, and the editor offers Run now only, Schedule or Webhook as one
-choice. `enabled` is the row switch and pauses whichever it is, so the editor never writes it.
+expression beside `webhook_enabled`, and the editor offers None, Schedule or Webhook as one
+choice. `enabled` is the row switch and pauses whichever it is, so the editor never writes it; with
+None there is nothing to pause, and the switch stays off.
 
 ### Reading a cron expression, and reopening a run
 

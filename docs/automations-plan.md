@@ -39,7 +39,7 @@ becomes one of its clients.
 | 3.5   | The schedule editor, and run history          | Done                          |
 | 4     | Worktree provisioning moves into the daemon   | Done                          |
 | 5     | The clock                                     | Folded into phase 3           |
-| 6     | Webhooks                                      | In progress                   |
+| 6     | Webhooks                                      | Done                          |
 | 7     | Autostart and consent                         | Planned, last before release  |
 
 ## Decisions that span every phase
@@ -292,7 +292,7 @@ makes the directory undeletable for as long as the pooled connection lives — a
 the run. `session/new` carries the worktree path, so the agent still works there; only the process's
 own working directory changes.
 
-## Phase 6: webhooks
+## Phase 6: webhooks (done)
 
 `POST /hooks/<automation_id>` on the daemon, with a per-automation secret, request dedupe, a body
 size cap and a rate limit.
@@ -315,7 +315,7 @@ that is not firing is the thing a user comes to that dialog to diagnose.
 | Overlap                   | Per automation, **for webhooks only**: refuse (409), queue, or run in parallel. The schedule keeps skipping a busy automation and Run now is unchanged. Parallel on an automation working in the project directory is allowed with a warning in the editor.                                                                                                     |
 | Queue                     | Up to 10 deliveries per automation, in order, stored in the database so a restart keeps them. The 11th is refused with 429.                                                                                                                                                                                                                                     |
 | Limits                    | Body 1 MB (413). 30 authorized deliveries per minute per automation (429), counted per automation and not per IP, since behind a proxy every request has the proxy's address. A repeated delivery id (`X-GitHub-Delivery`, `X-Gitlab-Webhook-UUID`, `Idempotency-Key`, else a hash of the body) within 24 h answers 200 and runs nothing. Not configurable yet. |
-| On/off                    | **One trigger per automation**: Run now only, a schedule, or a webhook, chosen as one option in the editor and enforced by the server. The row switch pauses whichever it is (a paused webhook answers 503). Run now always works.                                                                                                                              |
+| On/off                    | **One trigger per automation**: None, a schedule, or a webhook, chosen as one option in the editor and enforced by the server. The row switch pauses whichever it is (a paused webhook answers 503) and cannot be turned on with None. Run now always works.                                                                                                    |
 | Response                  | 202 as soon as the run is opened or queued, with `{run_id, ordinal}` or `{queued, position}`. Senders time out long before a run ends.                                                                                                                                                                                                                          |
 | Deliveries                | The last 20 per automation, with their outcome and run, shown in the editor.                                                                                                                                                                                                                                                                                    |
 | Run origin                | `runs.trigger` is `schedule`, `manual` or `webhook`, replacing the `scheduled` flag.                                                                                                                                                                                                                                                                            |
