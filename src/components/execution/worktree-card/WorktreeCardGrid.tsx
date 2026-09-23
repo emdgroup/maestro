@@ -19,6 +19,7 @@ interface WorktreeCardGridProps {
   onToggleGroup: (group: string) => void;
   onSelectWorktree: (path: string) => void;
   onDeleteWorktree: (path: string) => void;
+  onStartSession?: (worktree: WorktreeWithStatus) => void;
   repoPath: string;
   projectId: number | null;
   /** Whether cards should look their own branch's pull request up. See `WorktreeCard`. */
@@ -35,6 +36,7 @@ export function WorktreeCardGrid({
   onToggleGroup,
   onSelectWorktree,
   onDeleteWorktree,
+  onStartSession,
   repoPath,
   projectId,
   pullRequests,
@@ -51,6 +53,7 @@ export function WorktreeCardGrid({
       pullRequests={pullRequests}
       onSelect={onSelectWorktree}
       onDelete={onDeleteWorktree}
+      onStartSession={onStartSession}
     />
   );
 
