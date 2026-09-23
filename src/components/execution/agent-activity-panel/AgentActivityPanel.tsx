@@ -390,7 +390,11 @@ export function AgentActivityPanel({
     return { userMessages: msgs, orderedSectionIds: ids, userMessageCount: standalones };
   }, [agentSections]);
   const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
-  const isCenteredCompose = displayItems.length === 0 && !hasSentFirstMessage;
+  // A session waiting on the user is not an empty one, whatever the stream holds. An automation's
+  // opens that way: its prompt came from the server rather than from this window, and the request
+  // is not a stream item, so the centred composer drew over the card it had to give way to.
+  const isCenteredCompose =
+    displayItems.length === 0 && !hasSentFirstMessage && !pendingElicitation && !pendingPermission;
 
   const removeAnnotations = useAnnotationStore((s) => s.removeAnnotations);
 
