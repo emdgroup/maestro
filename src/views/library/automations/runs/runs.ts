@@ -6,7 +6,7 @@
  * fourth state below is a join rather than a column.
  */
 
-import type { ActiveSessionInfo, AutomationRun } from "@/types/bindings";
+import type { ActiveSessionInfo, AutomationRun, RunTrigger } from "@/types/bindings";
 import type { SessionActivityInfo } from "@/store/sessionActivityStore";
 
 export type RunState = "running" | "awaiting" | "succeeded" | "failed";
@@ -128,3 +128,9 @@ export function byDay(entries: RunEntry[], now: Date): Array<[string, RunEntry[]
   }
   return [...days.entries()];
 }
+
+export const TRIGGER_LABEL: Record<RunTrigger, string> = {
+  schedule: "Started by its schedule",
+  manual: "Started with Run now",
+  webhook: "Started by a webhook",
+};

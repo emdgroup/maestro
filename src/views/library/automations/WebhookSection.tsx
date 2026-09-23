@@ -20,14 +20,8 @@ import {
   useWebhookSettingsQuery,
 } from "@/services/automation.service";
 import { useNow } from "@/hooks/useNow";
-import { localBase } from "@/views/settings/settings-page/WebhooksSection";
-import type {
-  Automation,
-  ConnectionKey,
-  DeliveryOutcome,
-  WebhookOverlap,
-  WebhookStatus,
-} from "@/types/bindings";
+import { webhookUrl } from "./webhook-url";
+import type { Automation, ConnectionKey, DeliveryOutcome, WebhookOverlap } from "@/types/bindings";
 
 const OVERLAP: Record<WebhookOverlap, { label: string; description: string }> = {
   refuse: {
@@ -112,11 +106,6 @@ function SecretField({ secret, children }: { secret: string; children?: ReactNod
       {children}
     </div>
   );
-}
-
-/** Where a sender posts to start this automation: the public URL when one is set, else local. */
-export function webhookUrl(status: WebhookStatus, automationId: string): string {
-  return `${status.settings.public_url ?? localBase(status.settings)}/hooks/${automationId}`;
 }
 
 /**
@@ -309,7 +298,8 @@ export function WebhookCreatedDialog({
               Give these to the service that should start “{automation.name}”.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          {/* min-w-0: the dialog is a grid, and a grid item will not shrink below a long secret. */}
+          <div className="min-w-0 space-y-3">
             {url && (
               <div className="space-y-1">
                 <span className="text-[11px] text-muted-foreground">URL</span>

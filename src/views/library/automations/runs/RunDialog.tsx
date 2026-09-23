@@ -11,8 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { MarkdownBlock } from "@/components/execution/activity/MarkdownBlock";
 import { folderName, relativeAge } from "@/components/execution/worktree-card/worktree-usage";
-import { keptWorkspace, runDuration, type RunEntry } from "./runs";
-import { TRIGGER_LABEL } from "./RunCard";
+import { TRIGGER_LABEL, keptWorkspace, runDuration, type RunEntry } from "./runs";
 
 /**
  * A finished run, read without going into its session.

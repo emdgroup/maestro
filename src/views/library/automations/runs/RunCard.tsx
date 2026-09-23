@@ -12,7 +12,7 @@ import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
-import { keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
+import { TRIGGER_LABEL, keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
 import type { RunTrigger } from "@/types/bindings";
 
 function Hint({ label, children }: { label: string; children: ReactNode }) {
@@ -27,12 +27,6 @@ function Hint({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** How the run was started, as an icon: in the spot where the time goes, words read as a time. */
-export const TRIGGER_LABEL: Record<RunTrigger, string> = {
-  schedule: "Started by its schedule",
-  manual: "Started with Run now",
-  webhook: "Started by a webhook",
-};
-
 const TRIGGER_ICON: Record<RunTrigger, typeof Play> = {
   schedule: CalendarClock,
   manual: Play,

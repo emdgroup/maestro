@@ -7,16 +7,8 @@ import {
   useSetWebhookSettingsMutation,
   useWebhookSettingsQuery,
 } from "@/services/automation.service";
+import { localBase } from "@/views/library/automations/webhook-url";
 import type { ConnectionKey, WebhookSettings } from "@/types/bindings";
-
-/** The address the listener would be reached on from this machine, for when no public one is set. */
-export function localBase(settings: WebhookSettings): string {
-  const host =
-    settings.bind_address === "0.0.0.0" || settings.bind_address === "::"
-      ? "127.0.0.1"
-      : settings.bind_address;
-  return `http://${host.includes(":") ? `[${host}]` : host}:${settings.port}`;
-}
 
 /**
  * The webhook listener of this host's background server, shared by every project on it.
