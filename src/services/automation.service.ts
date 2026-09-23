@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
+import { executionQueryKeys } from "@/services/execution.service";
 import { useNavigationStore } from "@/store/navigationStore";
 import type { Automation, AutomationRun } from "@/types/bindings";
 
@@ -77,18 +78,32 @@ export function useAutomationRunEvents(projectId: number | null) {
       // A finished run moves the next occurrence along with it.
       void queryClient.invalidateQueries({ queryKey: automationQueryKeys.list(projectId) });
 
+      // The server announces a run again once its session is live. Opening a project adopts what
+      // is already running, but nothing else would take over one started while this window was
+      // open, and its output and its questions would have nowhere to go.
+      if (run.status === "running" && run.session_id) {
+        void api
+          .adoptAutomationSession(projectId, run.session_id)
+          .then(() =>
+            queryClient.invalidateQueries({
+              queryKey: executionQueryKeys.activeSessions(projectId),
+            }),
+          )
+          .catch((error: unknown) => console.warn("could not take over an automation run", error));
+      }
+
       // An agent starting on its own is worth saying out loud, even on a tab where the row is not
       // visible. Only the scheduled ones: somebody who pressed Run now is already looking at it.
-      if (run.scheduled && run.status === "running") {
+      // Said on the second announcement, once there is a session, so it is said once and can
+      // always offer the way in.
+      if (run.scheduled && run.status === "running" && run.session_id) {
+        const sessionId = run.session_id;
         toast.info(`“${run.automation_name}” started`, {
           description: "Started by its schedule.",
-          action: run.session_id
-            ? {
-                label: "Open session",
-                onClick: () =>
-                  useNavigationStore.getState().navigate({ sessionId: run.session_id! }),
-              }
-            : undefined,
+          action: {
+            label: "Open session",
+            onClick: () => useNavigationStore.getState().navigate({ sessionId }),
+          },
         });
       }
       if (run.status === "failed" && run.error) {

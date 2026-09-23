@@ -466,7 +466,13 @@ async fn run_server(
 
             result = spawn_result_rx.recv() => {
                 if let Some((session_id, session)) = result {
-                    sessions.insert(session_id, session);
+                    sessions.insert(session_id.clone(), session);
+                    // Only now can a client adopt it: `ListLiveSessions` answers from this map. An
+                    // automation's run is announced again here, carrying the session, so a window
+                    // already attached picks up a session it did not start.
+                    if let Some(store) = automation_store.as_ref() {
+                        automation_runner::announce_session(store, &stdout, &session_id).await;
+                    }
                 }
                 continue;
             }

@@ -100,6 +100,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::run_automation,
         crate::ipc::list_automation_runs,
         crate::ipc::preview_schedule,
+        crate::ipc::adopt_automation_session,
         crate::ipc::resolve_agent_profile,
         crate::ipc::get_project_settings,
         crate::ipc::update_project_settings,

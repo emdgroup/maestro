@@ -986,6 +986,23 @@ async previewSchedule(projectId: number, cron: string, timezone: string) : Promi
 }
 },
 /**
+ * Take over the session an automation just started, so its output and its questions reach this
+ * window.
+ * 
+ * Project opening adopts whatever is already running, but a run the clock or Run now starts
+ * afterwards arrives while the window is attached, and nothing else would pick it up: the
+ * server's messages for it were dropped for want of a session to route them to, elicitations
+ * included. Returns whether it was adopted; `false` for one this window already holds.
+ */
+async adoptAutomationSession(projectId: number, sessionId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("adopt_automation_session", { projectId, sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Resolve the profile for a role and reduce it to what the agent can honour.
  * 
  * Takes the agent's advertised capabilities as arguments rather than looking them up, because

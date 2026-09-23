@@ -82,6 +82,21 @@ async fn resolve_cwd(
     }
 }
 
+/// Announce the run a session belongs to, once that session is live.
+///
+/// The run was announced when it opened, before it had a session, and a client holding that copy
+/// has nothing to open and nothing to stop. Every session passes through here, and all but an
+/// automation's find no run.
+pub async fn announce_session(store: &Store, stdout: &crate::ClientOut, session_id: &str) {
+    let run = {
+        let conn = store.lock().await;
+        automations::run_for_session(&conn, session_id)
+    };
+    if let Some(run) = run {
+        announce(stdout, &run).await;
+    }
+}
+
 /// Deal with the worktree a run left behind, once its session is closed.
 ///
 /// Waiting for the close is not politeness: the agent holds files open under that directory for as

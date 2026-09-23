@@ -331,6 +331,31 @@ pub async fn preview_schedule(
     Ok(response.next)
 }
 
+/// Take over the session an automation just started, so its output and its questions reach this
+/// window.
+///
+/// Project opening adopts whatever is already running, but a run the clock or Run now starts
+/// afterwards arrives while the window is attached, and nothing else would pick it up: the
+/// server's messages for it were dropped for want of a session to route them to, elicitations
+/// included. Returns whether it was adopted; `false` for one this window already holds.
+#[tauri::command]
+#[specta::specta]
+pub async fn adopt_automation_session(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    session_id: String,
+) -> Result<bool, String> {
+    let (connection_key, _) = target(&app_state, project_id).await?;
+    let adopted = crate::acp::session_ops::adopt_live_sessions(
+        connection_key,
+        project_id,
+        Some(&session_id),
+        &app_state,
+    )
+    .await;
+    Ok(adopted > 0)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn list_automation_runs(

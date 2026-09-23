@@ -200,7 +200,8 @@ pub async fn prime_project_server(
     // Before the snapshot restore below, not after: a session the server is still running is
     // already in `acp.sessions` once this returns, and `restore_acp_session` hands that live one
     // back rather than loading a second copy of the same conversation.
-    crate::acp::session_ops::adopt_live_sessions(connection_key, project_id, &app_state).await;
+    crate::acp::session_ops::adopt_live_sessions(connection_key, project_id, None, &app_state)
+        .await;
 
     let snapshots =
         read_and_clear_restorable_sessions(&app_state, &project_path, connection_key).await;

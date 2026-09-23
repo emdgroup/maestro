@@ -312,10 +312,15 @@ async fn automation_runs(
 /// an agent that refuses the reload — must not stop a project from opening. Each failure degrades
 /// to plain adoption rather than to a lost session.
 ///
+/// `only` narrows this to one session: an automation's, announced while the window was already
+/// attached. That one is never closed and reloaded, since it has no history yet and closing it
+/// would throw away the prompt it was started with.
+///
 /// Returns how many were taken over, reloaded or not.
 pub async fn adopt_live_sessions(
     connection_key: crate::acp::ConnectionKey,
     project_id: i32,
+    only: Option<&str>,
     app_state: &Arc<crate::core::AppState>,
 ) -> usize {
     let live = match crate::acp::connection_server::query_live_sessions_via_server(
@@ -353,6 +358,9 @@ pub async fn adopt_live_sessions(
 
     let mut adopted = 0;
     for session in live {
+        if only.is_some_and(|wanted| wanted != session.session_id) {
+            continue;
+        }
         let from_automation = automation_sessions.contains(&session.session_id);
         let meta = session
             .host_meta
@@ -392,7 +400,8 @@ pub async fn adopt_live_sessions(
         }
 
         if let Some(acp_session_id) = session.acp_session_id.as_deref() {
-            if !session.turn_active
+            if only.is_none()
+                && !session.turn_active
                 && reload_for_history(&session, acp_session_id, &meta, connection_key, app_state)
                     .await
             {
