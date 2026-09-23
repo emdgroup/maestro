@@ -2,7 +2,8 @@
 //!
 //! `maestro-server` answers the canvas rendering tools itself — they are session updates it
 //! already owns the channel for. What reaches here is the rest: the task tools, which need the
-//! database, and `canvas_await`, which needs a user.
+//! database, `canvas_await`, which needs a user, and the automation and template tools in
+//! `automation_tools`.
 //!
 //! Every task tool is scoped to the project the session belongs to. Ids are small integers, so
 //! without that an agent could read or move another project's board by guessing.
@@ -10,6 +11,7 @@
 use std::sync::Arc;
 use tauri::Emitter;
 
+use crate::acp::automation_tools;
 use crate::acp::transport::{HostToolCall, HostToolResult, MaestroRpcMessage, ServerRequest};
 use crate::core::AppState;
 use crate::models::{BranchMode, TaskStatus};
@@ -45,6 +47,33 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
         "get_task" => get_task(&app_state, session_id, &call.arguments).await,
         "update_task" => update_task(&app_state, session_id, &call.arguments).await,
         "comment_task" => comment_task(&app_state, session_id, &call.arguments).await,
+        "list_automations" => automation_tools::list_automations(&app_state, session_id).await,
+        "get_automation" => {
+            automation_tools::get_automation(&app_state, session_id, &call.arguments).await
+        }
+        "create_automation" => {
+            automation_tools::create_automation(&app_state, session_id, &call.arguments).await
+        }
+        "update_automation" => {
+            automation_tools::update_automation(&app_state, session_id, &call.arguments).await
+        }
+        "delete_automation" => {
+            automation_tools::delete_automation(&app_state, session_id, &call.arguments).await
+        }
+        "run_automation" => automation_tools::run_automation(&app_state, session_id, &call).await,
+        "list_automation_runs" => {
+            automation_tools::list_automation_runs(&app_state, session_id, &call.arguments).await
+        }
+        "get_automation_run" => {
+            automation_tools::get_automation_run(&app_state, session_id, &call.arguments).await
+        }
+        "list_templates" => automation_tools::list_templates(&app_state),
+        "get_template" => automation_tools::get_template(&app_state, &call.arguments),
+        "update_template" => automation_tools::update_template(&app_state, &call.arguments),
+        "save_as_template" => {
+            automation_tools::save_as_template(&app_state, session_id, &call.arguments).await
+        }
+        "delete_template" => automation_tools::delete_template(&app_state, &call.arguments),
         "canvas_await" => canvas_await(&app_state, session_id, &call).await,
         "canvas_create" | "canvas_update" | "canvas_data" => {
             canvas_ack(&app_state, session_id, &call.arguments).await
@@ -70,7 +99,10 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
     }
 }
 
-async fn session_project_id(app_state: &Arc<AppState>, session_id: &str) -> Result<i32, String> {
+pub(super) async fn session_project_id(
+    app_state: &Arc<AppState>,
+    session_id: &str,
+) -> Result<i32, String> {
     app_state
         .acp
         .sessions
@@ -137,6 +169,24 @@ fn string_list(value: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The branch new work is cut from, in the same order the create dialog resolves it: the
+/// project's configured default, else whatever the repository is on.
+pub(super) async fn default_base_branch(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    config: &crate::project::models::ProjectConfig,
+) -> String {
+    match config.base_branch.clone() {
+        Some(branch) => branch,
+        None => match crate::core::get_project_with_git_conn(app_state, project_id).await {
+            Ok((_, conn)) => crate::git::ops::get_current_branch(&conn)
+                .await
+                .unwrap_or_else(|_| "main".to_string()),
+            Err(_) => "main".to_string(),
+        },
+    }
+}
+
 async fn create_task(
     app_state: &Arc<AppState>,
     session_id: &str,
@@ -149,17 +199,7 @@ async fn create_task(
     let config = crate::project::settings::load_project_config_for(app_state, project_id)
         .await
         .unwrap_or_default();
-    // The branch a task is cut from, in the same order the create dialog resolves it: the
-    // project's configured default, else whatever the repository is on.
-    let base_branch = match config.base_branch.clone() {
-        Some(branch) => branch,
-        None => match crate::core::get_project_with_git_conn(app_state, project_id).await {
-            Ok((_, conn)) => crate::git::ops::get_current_branch(&conn)
-                .await
-                .unwrap_or_else(|_| "main".to_string()),
-            Err(_) => "main".to_string(),
-        },
-    };
+    let base_branch = default_base_branch(app_state, project_id, &config).await;
 
     let task = {
         let conn = app_state

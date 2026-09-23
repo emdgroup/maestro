@@ -86,6 +86,19 @@ pub async fn respond_acp_permission(
     };
     clear_task_blocked(&app_state, task_id);
 
+    // A question Maestro asked itself, such as `run_automation`'s, is answered here: the server
+    // never saw it and has nothing waiting on it.
+    let host_question = app_state
+        .acp
+        .pending_host_tools
+        .lock()
+        .await
+        .remove(&(session_id.to_string(), request_id.clone()));
+    if let Some(sender) = host_question {
+        let _ = sender.send(serde_json::json!(option_id));
+        return Ok(());
+    }
+
     let msg = MaestroRpcMessage::Request(ServerRequest::PermitResponse(PermissionResponse {
         session_id: session_id.to_string(),
         request_id,

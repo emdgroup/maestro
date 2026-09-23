@@ -42,6 +42,7 @@ becomes one of its clients.
 | 6     | Webhooks                                      | Done                          |
 | 7     | Autostart and consent                         | In progress                   |
 | 8     | Templates                                     | In progress                   |
+| 9     | Automations over Maestro's MCP server         | In progress                   |
 
 ## Decisions that span every phase
 
@@ -360,7 +361,24 @@ section, so nothing here is automation-shaped except the automation body itself.
 | Page            | **Templates** sits last in the Collections sidebar, below the kinds. Cards: icon, name and the kind's icon (Cog for automations; Bot is for agents), description, then chips for the tag and the trigger type. Search once there are more than six. |
 | Using one       | Clicking a card opens that kind's editor filled in. For an automation that is the automation editor, over the Automations page. "New automation" has a **From templates** entry that opens Templates filtered to automations.                       |
 | Editing one     | The ⋯ menu on the user's own cards: Edit opens the automation editor without the Agent and workspace section; Delete asks first.                                                                                                                    |
-| Built-ins       | Twelve, shipped in the frontend and read-only, listed under **Built-in**.                                                                                                                                                                           |
+| Built-ins       | Twelve, shipped in `src-tauri/assets/builtin-templates.json` and read-only, listed under **Built-in**.                                                                                                                                              |
+
+## Phase 9: automations over Maestro's MCP server
+
+An agent can manage automations and templates the way the user does on the Collections page, through
+tools on Maestro's own MCP server, answered by the host in `src-tauri/src/acp/automation_tools.rs`.
+
+### Decisions (locked)
+
+| Question     | Decision                                                                                                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tools        | `list/get/create/update/delete_automation`, `run_automation`, `list_automation_runs` (optionally for one automation), `get_automation_run`, `list/get/update/delete_template` and `save_as_template`. |
+| Scope        | Automations and runs are the session's project only, checked by looking the id up in that project's list. Templates are app-wide, as on the page.                                                     |
+| Enable       | A field of `update_automation`, not a tool of its own.                                                                                                                                                |
+| Creating     | From scratch or with `template_id`; the editor's defaults fill the rest: the project's default agent (else the session's), its default workspace, the server's timezone.                              |
+| Confirmation | `run_automation` only, as the ordinary permission sheet (Deny / Run now). Everything else is visible on the page and can be undone there.                                                             |
+| Built-ins    | Visible and usable by the agent, never changed by it. Ids are the page's card keys, `builtin-<key>` and `user-<id>`.                                                                                  |
+| Secrets      | The webhook secret is never returned to an agent.                                                                                                                                                     |
 
 ## Deferred, not scheduled
 

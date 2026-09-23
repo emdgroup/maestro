@@ -373,7 +373,7 @@ impl From<maestro_protocol::AutomationRun> for AutomationRun {
 }
 
 /// Which server to ask, and what this project is called on it.
-async fn target(
+pub(crate) async fn target(
     app_state: &Arc<AppState>,
     project_id: i32,
 ) -> Result<(ConnectionKey, String), String> {

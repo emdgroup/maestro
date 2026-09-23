@@ -462,7 +462,8 @@ the app's own `templates` table, because a template belongs to the user rather t
 has to be there on every connection. An automation template holds a prompt and a trigger, never an
 agent or a workspace, which are the project's. The body is JSON tagged by kind, so skills, MCP
 servers or prompts are a new `TemplateBody` variant rather than a new table. The built-in templates
-are not stored: they are `BUILTIN_TEMPLATES` in `src/views/collections/templates/templates.ts`.
+are not stored: they are `src-tauri/assets/builtin-templates.json`, read by `templates.ts` for the
+Templates page and by `templates::builtins` for the agent's template tools.
 
 ### A worktree an automation made
 
@@ -595,7 +596,8 @@ Three files:
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
-- `src-tauri/src/acp/host_tools.rs` — the host end: the task tools and `canvas_await`.
+- `src-tauri/src/acp/host_tools.rs` — the host end: the task tools and `canvas_await`, with the
+  automation and template tools in `acp/automation_tools.rs`.
 
 Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
 so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
@@ -610,6 +612,14 @@ without canvas and task tools.
 | `canvas_await`                                    | the host, after the user acts on the surface   | `{event}` or `{timeout}`      |
 | `create_task` / `list_tasks`                      | the host, against the database                 | the task, or the list         |
 | `get_task` / `update_task` / `comment_task`       | the host, scoped to the session's project      | the task, or the new entry    |
+| automation and run tools (`*_automation*`)        | the host, scoped to the session's project      | the automation, or the run    |
+| template tools (`*_template*`)                    | the host, app-wide; built-ins are read-only    | the template                  |
+
+**`run_automation` asks the user first**, as an ordinary permission prompt: it emits
+`acp://permission-request/<session>` itself and parks the answer in `pending_host_tools`, and
+`respond_acp_permission` takes it from there before anything is forwarded to the server. The call
+waits at most 60 seconds, under the gateway's 90, and answers `{pending}` after that; the answer is
+acted on by a task of its own, so a run approved later still starts.
 
 A canvas call goes both ways on purpose: the gateway emits the session update because it owns that
 channel, and the _same_ call is then forwarded to `host_tools::canvas_ack`, whose answer carries

@@ -1,5 +1,6 @@
 pub mod attachment_handlers;
 pub mod auth_handlers;
+pub mod automation_tools;
 pub mod canvas_handlers;
 pub mod completion;
 pub mod connection_server;

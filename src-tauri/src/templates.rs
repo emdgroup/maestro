@@ -53,7 +53,7 @@ pub struct Template {
     pub created_at: String,
 }
 
-fn read(conn: &Connection, id: i32) -> Result<Option<Template>, String> {
+pub(crate) fn read(conn: &Connection, id: i32) -> Result<Option<Template>, String> {
     conn.query_row(
         "SELECT id, name, tag, body, created_at FROM templates WHERE id = ?",
         [id],
@@ -158,6 +158,37 @@ pub fn save(
     read(conn, id)?.ok_or_else(|| "Template vanished while saving".into())
 }
 
+/// Delete one, answering whether it was there.
+pub(crate) fn delete(conn: &Connection, id: i32) -> Result<bool, String> {
+    conn.execute("DELETE FROM templates WHERE id = ?", [id])
+        .map(|changed| changed > 0)
+        .map_err(|e| format!("Failed to delete template: {}", e))
+}
+
+/// One of the templates shipped with Maestro. Read-only, and never stored: the list is
+/// `assets/builtin-templates.json`, which the Templates page reads too.
+#[derive(Debug, Deserialize)]
+pub struct BuiltinTemplate {
+    pub key: String,
+    pub name: String,
+    pub tag: String,
+    pub description: String,
+    pub body: TemplateBody,
+}
+
+pub fn builtins() -> &'static [BuiltinTemplate] {
+    #[derive(Deserialize)]
+    struct Manifest {
+        templates: Vec<BuiltinTemplate>,
+    }
+    static BUILTINS: std::sync::OnceLock<Vec<BuiltinTemplate>> = std::sync::OnceLock::new();
+    BUILTINS.get_or_init(|| {
+        serde_json::from_str::<Manifest>(include_str!("../assets/builtin-templates.json"))
+            .expect("the bundled built-in templates are valid")
+            .templates
+    })
+}
+
 fn db(app_state: &AppState) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
     app_state
         .db
@@ -187,10 +218,7 @@ pub fn save_template(
 #[tauri::command]
 #[specta::specta]
 pub fn delete_template(app_state: State<Arc<AppState>>, id: i32) -> Result<(), String> {
-    db(&app_state)?
-        .execute("DELETE FROM templates WHERE id = ?", [id])
-        .map_err(|e| format!("Failed to delete template: {}", e))?;
-    Ok(())
+    delete(&*db(&app_state)?, id).map(|_| ())
 }
 
 #[cfg(test)]
@@ -235,6 +263,11 @@ mod tests {
 
         assert!(save(&conn, None, "  ", None, &body("x")).is_err());
         assert!(save(&conn, Some(999), "Gone", None, &body("x")).is_err());
+    }
+
+    #[test]
+    fn the_builtins_parse() {
+        assert_eq!(builtins().len(), 12);
     }
 
     #[test]
