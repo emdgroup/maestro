@@ -126,12 +126,18 @@ export function WebhookSection({
 
   const overlap = (
     <div className="space-y-1">
-      <span className="text-[11px] text-muted-foreground">If a run is already going</span>
+      <span className="text-[11px] text-muted-foreground">
+        If a request is received while a run is already going
+      </span>
       <Select
         value={automation.webhook_overlap}
         onValueChange={(value) => value && onChange({ webhook_overlap: value as WebhookOverlap })}
       >
-        <SelectTrigger size="sm" className="w-full text-xs" aria-label="If a run is going">
+        <SelectTrigger
+          size="sm"
+          className="w-full text-xs"
+          aria-label="If a request is received while a run is already going"
+        >
           <span className="flex-1 truncate text-left">
             {OVERLAP[automation.webhook_overlap].label}
           </span>
