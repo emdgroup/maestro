@@ -83,8 +83,9 @@ function SecretField({ secret, children }: { secret: string; children?: ReactNod
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
-      {/* Wrapped rather than cut: a secret that ends in "…" reads as one that was not all copied. */}
-      <code className="min-w-0 flex-1 break-all text-[11px]">
+      {/* One line that scrolls rather than one cut short: a secret ending in "…" reads as one that
+          was not all copied. At this size it fits both dialogs, so the scroll is for narrow windows. */}
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[11px]">
         {revealed ? secret : "•".repeat(secret.length)}
       </code>
       <Tooltip>
