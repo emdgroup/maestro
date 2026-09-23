@@ -408,9 +408,10 @@ export function AutomationsPanel({
             <p className="text-sm font-medium">No automations yet</p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               An automation will run your prompt on demand or on a schedule, in the background and
-              whether or not Maestro is open. You decide what it does and what it produces. You can
-              either create one by pressing &ldquo;New automation&rdquo; or ask an agent to guide
-              you through it.
+              whether or not Maestro is open. You decide what it does and what it produces. Create
+              one from scratch with &ldquo;New automation&rdquo;, or start from a template and
+              adjust it to this project: choose &ldquo;From templates&rdquo; beside that button, or
+              Templates in the sidebar. You can also ask an agent to guide you through it.
             </p>
           </div>
         ) : (
