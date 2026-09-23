@@ -84,7 +84,7 @@ function SecretField({ secret, children }: { secret: string; children?: ReactNod
   return (
     <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
       <code className="min-w-0 flex-1 truncate text-[11px]">
-        {revealed ? secret : "•".repeat(24)}
+        {revealed ? secret : "•".repeat(secret.length)}
       </code>
       <Tooltip>
         <TooltipTrigger
