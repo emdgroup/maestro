@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { History, PanelRightClose, Settings2 } from "lucide-react";
+import { History, Settings2 } from "lucide-react";
 import { Button, buttonVariants } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
@@ -147,7 +147,6 @@ export function RunsPanel({
   onFilterChange,
   onJoin,
   onShow,
-  onClose,
   onDelete,
   retention,
   onRetentionChange,
@@ -159,7 +158,6 @@ export function RunsPanel({
   onFilterChange: (filter: RunFilter) => void;
   onJoin: (entry: RunEntry) => void;
   onShow: (entry: RunEntry) => void;
-  onClose: () => void;
   onDelete: (entry: RunEntry) => void;
   /** This project's, or `undefined` until the list has answered. */
   retention: RunRetention | undefined;
@@ -180,18 +178,10 @@ export function RunsPanel({
     // which is what the rounded corner beside it is for. Same treatment as the pull request panel.
     <div className="flex h-full w-72 shrink-0 flex-col bg-card">
       <div className="flex items-center gap-1 px-2 py-2">
+        <History className="size-3.5 text-muted-foreground" />
         <span className="text-[11px] font-medium">Recent runs</span>
         <span className="ml-auto" />
         {retention && <RetentionPopover retention={retention} onSave={onRetentionChange} />}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          aria-label="Hide recent runs"
-          className="size-6 text-muted-foreground"
-        >
-          <PanelRightClose className="size-3.5" />
-        </Button>
       </div>
 
       <div className="flex gap-1 px-2 pb-2">

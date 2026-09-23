@@ -4,7 +4,6 @@ import {
   ChevronDown,
   CornerDownRight,
   FolderGit2,
-  History,
   MessageCircleQuestion,
   Pencil,
   Play,
@@ -367,7 +366,6 @@ export function AutomationsPanel({
   const entries = useRunEntries(projectId);
   const { open: openRun, loading: loadingRun } = useOpenRun(projectId, connection);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
   const [filter, setFilter] = useState<RunFilter>("all");
   // By id rather than the entry itself, so the dialog follows the run as the list refreshes, and
   // closes on its own once the run is deleted.
@@ -385,15 +383,8 @@ export function AutomationsPanel({
 
   return (
     <div className="flex h-full min-w-0 flex-1">
-      {/* Its own top edge, rounding away from the column on its right, and the left corner rounding
-          away from the sidebar. The right border is dropped when there is no column to round away
-          from, because a curve at the window edge is just a gap. */}
-      <div
-        className={cn(
-          "flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background p-4",
-          panelOpen && "rounded-tr-xl border-r",
-        )}
-      >
+      {/* Its own top edge, rounding away from Recent runs on its right and the sidebar on its left. */}
+      <div className="flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background p-4 rounded-tr-xl border-r">
         {(automations ?? []).length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
             <Bot className="size-8 text-muted-foreground/40" />
@@ -485,39 +476,17 @@ export function AutomationsPanel({
         />
       </div>
 
-      {panelOpen ? (
-        <RunsPanel
-          entries={entries}
-          now={now}
-          filter={filter}
-          onFilterChange={setFilter}
-          onJoin={(entry) => void openRun(entry)}
-          onShow={(entry) => setShownRunId(entry.run.id)}
-          onClose={() => setPanelOpen(false)}
-          onDelete={onDeleteRun}
-          retention={list?.retention}
-          onRetentionChange={(retention) => setRetention.mutate({ projectId, retention })}
-        />
-      ) : (
-        <div className="shrink-0 bg-card p-2">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setPanelOpen(true)}
-                  aria-label="Show recent runs"
-                  className="size-6 text-muted-foreground"
-                />
-              }
-            >
-              <History className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipContent>Recent runs</TooltipContent>
-          </Tooltip>
-        </div>
-      )}
+      <RunsPanel
+        entries={entries}
+        now={now}
+        filter={filter}
+        onFilterChange={setFilter}
+        onJoin={(entry) => void openRun(entry)}
+        onShow={(entry) => setShownRunId(entry.run.id)}
+        onDelete={onDeleteRun}
+        retention={list?.retention}
+        onRetentionChange={(retention) => setRetention.mutate({ projectId, retention })}
+      />
     </div>
   );
 }

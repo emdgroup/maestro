@@ -97,6 +97,8 @@
 
 /* Dark mode CSS variables */
 .dark {
+  /* Native controls (a number input's spinner, a date picker) draw their dark variant only when told. */
+  color-scheme: dark;
   --background: oklch(25% 0.01 250);
   --foreground: oklch(90% 0.01 250);
 
