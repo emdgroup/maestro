@@ -13,7 +13,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { relativeAge } from "@/components/execution/worktree-card/worktree-usage";
 import { TRIGGER_LABEL, keptWorkspace, runDuration, waitDuration, type RunEntry } from "./runs";
-import type { RunTrigger } from "@/types/bindings";
+import type { RunTrigger, WebhookDelivery } from "@/types/bindings";
+import { OUTCOME } from "./deliveries";
 
 function Hint({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -239,6 +240,32 @@ export function RunCard({
         <Outcome entry={entry} now={now} />
         {action}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A webhook delivery that started no run, in an automation's own history.
+ *
+ * Laid out on the run row's columns so the two read as one list, with the number column left
+ * empty: there is no run to number. Kept out of the project-wide history, which is about runs.
+ */
+export function DeliveryRow({ delivery, now }: { delivery: WebhookDelivery; now: number }) {
+  const outcome = OUTCOME[delivery.outcome];
+  return (
+    <div className="flex h-7 items-center gap-2 px-2 text-[11px]">
+      <span className="w-8 shrink-0" />
+      <span className="w-16 shrink-0 text-muted-foreground">
+        <StartedAgo iso={delivery.received_at} now={now} />
+      </span>
+      <span className="text-muted-foreground">
+        <TriggerIcon trigger="webhook" />
+      </span>
+      <span className={cn("shrink-0", outcome.tone)}>{outcome.label}</span>
+      <span className="shrink-0 font-mono text-muted-foreground/70">{delivery.status}</span>
+      {delivery.detail && (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{delivery.detail}</span>
+      )}
     </div>
   );
 }

@@ -363,7 +363,8 @@ export function AutomationEditorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* min-w-0: the dialog is a grid, and a grid item will not shrink below a one-line secret. */}
+        <div className="min-w-0 space-y-4">
           <label className="block space-y-1">
             <span className="text-[11px] text-muted-foreground">Name</span>
             <Input

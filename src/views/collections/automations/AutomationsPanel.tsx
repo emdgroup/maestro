@@ -28,12 +28,14 @@ import {
   useRunAutomationMutation,
   useSaveAutomationMutation,
   useSetRunRetentionMutation,
+  useWebhookDeliveriesQuery,
 } from "@/services/automation.service";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useNavigate } from "@/store/navigationStore";
 import { AutomationEditorDialog } from "./AutomationEditorDialog";
-import { RunCard } from "./runs/RunCard";
+import { DeliveryRow, RunCard } from "./runs/RunCard";
+import { automationHistory } from "./runs/deliveries";
 import { RunsPanel, type RunFilter } from "./runs/RunsPanel";
 import { RunDialog } from "./runs/RunDialog";
 import { WebhookCreatedDialog } from "./WebhookSection";
@@ -52,6 +54,7 @@ function describeWorkspace(workspace: Automation["workspace"]): string {
 }
 
 function AutomationRow({
+  projectId,
   automation,
   agents,
   running,
@@ -67,6 +70,7 @@ function AutomationRow({
   onDelete,
   onToggleEnabled,
 }: {
+  projectId: number;
   automation: Automation;
   agents: Array<{ id: string; name: string }>;
   /** The run in flight for this automation, if there is one. */
@@ -90,6 +94,15 @@ function AutomationRow({
   const agentName = agents.find((a) => a.id === automation.agent_id)?.name ?? automation.agent_id;
   const sessionId = running?.session_id ?? null;
   const kept = keptCount(runs);
+  const { data: deliveries } = useWebhookDeliveriesQuery(
+    projectId,
+    automation.webhook_enabled ? automation.id : null,
+  );
+  // Refused deliveries sit among the runs, since a webhook that did nothing is what a user comes
+  // to this history to find out about.
+  const history = automationHistory(runs, deliveries ?? []);
+  const shown = history.slice(0, 5);
+  const olderRuns = runs.length - shown.filter((item) => item.kind === "run").length;
   const hasTrigger = automation.cron != null || automation.webhook_enabled;
   // Whether the run in flight is blocked on a question is live session state, joined in by the
   // entry; the row is where it has to show, since the history is collapsed by default.
@@ -131,14 +144,14 @@ function AutomationRow({
             <button
               type="button"
               onClick={onToggleExpanded}
-              disabled={runs.length === 0}
+              disabled={history.length === 0}
               aria-expanded={expanded}
               className={cn(
                 "flex min-w-0 items-center gap-1 text-left",
-                runs.length > 0 && "cursor-pointer",
+                history.length > 0 && "cursor-pointer",
               )}
             >
-              {runs.length > 0 && (
+              {history.length > 0 && (
                 <ChevronDown
                   className={cn(
                     "size-3 shrink-0 text-muted-foreground transition-transform",
@@ -280,24 +293,28 @@ function AutomationRow({
         </Tooltip>
       </div>
 
-      {expanded && runs.length > 0 && (
+      {expanded && history.length > 0 && (
         <div className="ml-6 mt-2">
           <div className="divide-y divide-border/60 overflow-hidden rounded-md border border-border bg-background">
-            {runs.slice(0, 5).map((entry) => (
-              <RunCard
-                key={entry.run.id}
-                entry={entry}
-                layout="row"
-                now={now}
-                onJoin={() => onJoinRun(entry)}
-                onShow={() => onShowRun(entry)}
-                onDelete={() => onDeleteRun(entry)}
-              />
-            ))}
+            {shown.map((item) =>
+              item.kind === "run" ? (
+                <RunCard
+                  key={item.entry.run.id}
+                  entry={item.entry}
+                  layout="row"
+                  now={now}
+                  onJoin={() => onJoinRun(item.entry)}
+                  onShow={() => onShowRun(item.entry)}
+                  onDelete={() => onDeleteRun(item.entry)}
+                />
+              ) : (
+                <DeliveryRow key={item.delivery.id} delivery={item.delivery} now={now} />
+              ),
+            )}
           </div>
-          {runs.length > 5 && (
+          {olderRuns > 0 && (
             <p className="mt-1 text-[10px] text-muted-foreground">
-              {runs.length - 5} older, in Recent runs
+              {olderRuns} older, in Recent runs
             </p>
           )}
         </div>
@@ -393,6 +410,7 @@ export function AutomationsPanel({
             {(automations ?? []).map((automation) => (
               <AutomationRow
                 key={automation.id}
+                projectId={projectId}
                 automation={automation}
                 agents={agents}
                 running={running.get(automation.id)}

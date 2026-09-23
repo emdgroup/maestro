@@ -519,8 +519,9 @@ first (a GitHub-style `X-Hub-Signature-256` over the body, or `Authorization: Be
 both constant time), then the switches, then dedupe, the rate limit and the overlap rule. Nothing
 counts against the dedupe window or the rate limit until the request has proved it knows the
 secret, and only a delivery that started or queued a run is remembered for dedupe, since one refused
-is one the sender is right to retry. `deliveries` keeps the last 20 per automation for the editor,
-plus anything younger than the dedupe window that carries a key.
+is one the sender is right to retry. `deliveries` keeps the last 20 per automation, plus anything younger than the dedupe window that
+carries a key. The ones that started no run appear in that automation's own history among its runs,
+and nowhere else: the project-wide history is about runs.
 
 The run is started by the main loop, which alone holds what a spawn needs: `FIRE_TX` carries an
 accepted delivery there and the answer back, and the sender gets 202 as soon as the run is opened.
