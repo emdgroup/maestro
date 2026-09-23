@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, Copy, Eye, EyeOff, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/ui/button";
 import {
@@ -84,6 +84,36 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** A secret, hidden until asked for, with a way to copy it whether shown or not. */
+function SecretField({ secret, children }: { secret: string; children?: ReactNode }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+      <code className="min-w-0 flex-1 truncate text-[11px]">
+        {revealed ? secret : "•".repeat(24)}
+      </code>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={revealed ? "Hide the secret" : "Show the secret"}
+              className="size-6 shrink-0 text-muted-foreground"
+              onClick={() => setRevealed(!revealed)}
+            />
+          }
+        >
+          {revealed ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+        </TooltipTrigger>
+        <TooltipContent>{revealed ? "Hide" : "Show"}</TooltipContent>
+      </Tooltip>
+      <CopyButton value={secret} label="Copy the secret" />
+      {children}
+    </div>
+  );
+}
+
 /** Where a sender posts to start this automation: the public URL when one is set, else local. */
 export function webhookUrl(status: WebhookStatus, automationId: string): string {
   return `${status.settings.public_url ?? localBase(status.settings)}/hooks/${automationId}`;
@@ -119,7 +149,6 @@ export function WebhookSection({
     projectId,
     saved && automation.webhook_enabled ? automation.id : null,
   );
-  const [revealed, setRevealed] = useState(false);
   const now = useNow();
 
   const url = status ? webhookUrl(status, automation.id) : null;
@@ -151,27 +180,7 @@ export function WebhookSection({
       <div className="space-y-1">
         <span className="text-[11px] text-muted-foreground">Secret</span>
         {secret ? (
-          <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
-            <code className="min-w-0 flex-1 truncate text-[11px]">
-              {revealed ? secret : "•".repeat(24)}
-            </code>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={revealed ? "Hide the secret" : "Show the secret"}
-                    className="size-6 shrink-0 text-muted-foreground"
-                    onClick={() => setRevealed(!revealed)}
-                  />
-                }
-              >
-                {revealed ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-              </TooltipTrigger>
-              <TooltipContent>{revealed ? "Hide" : "Show"}</TooltipContent>
-            </Tooltip>
-            <CopyButton value={secret} label="Copy the secret" />
+          <SecretField secret={secret}>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -191,10 +200,10 @@ export function WebhookSection({
                 Replace it. Senders using the current one stop working at once.
               </TooltipContent>
             </Tooltip>
-          </div>
+          </SecretField>
         ) : (
           <p className="text-[11px] text-muted-foreground">
-            Made when you save. Reopen the automation to copy it.
+            Made when you save, and shown to you then.
           </p>
         )}
         <p className="text-[11px] leading-relaxed text-muted-foreground/70">
@@ -301,20 +310,20 @@ export function WebhookCreatedDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {[
-              { label: "URL", value: url },
-              { label: "Secret", value: secret },
-            ].map(
-              (field) =>
-                field.value && (
-                  <div key={field.label} className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground">{field.label}</span>
-                    <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
-                      <code className="min-w-0 flex-1 truncate text-[11px]">{field.value}</code>
-                      <CopyButton value={field.value} label={`Copy the ${field.label}`} />
-                    </div>
-                  </div>
-                ),
+            {url && (
+              <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">URL</span>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+                  <code className="min-w-0 flex-1 truncate text-[11px]">{url}</code>
+                  <CopyButton value={url} label="Copy the URL" />
+                </div>
+              </div>
+            )}
+            {secret && (
+              <div className="space-y-1">
+                <span className="text-[11px] text-muted-foreground">Secret</span>
+                <SecretField secret={secret} />
+              </div>
             )}
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Sign the body with the secret as GitHub does (<code>X-Hub-Signature-256</code>), or
