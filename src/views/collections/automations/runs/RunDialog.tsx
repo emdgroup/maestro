@@ -46,7 +46,7 @@ export function RunDialog({
   return (
     <Dialog open={entry !== null} onOpenChange={onOpenChange}>
       {entry && run && (
-        <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-xl">
+        <DialogContent className="flex max-h-[85vh] flex-col gap-4 sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span className="truncate">{run.automation_name}</span>
