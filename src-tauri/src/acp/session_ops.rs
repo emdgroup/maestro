@@ -350,10 +350,10 @@ pub async fn adopt_live_sessions(
     // where the worktrees those runs provisioned are found.
     let (project_path, runs) = automation_runs(project_id, app_state).await;
     adopt_automation_worktrees(project_id, &project_path, &runs, app_state).await;
-    let automation_sessions: std::collections::HashSet<String> = runs
+    let automation_sessions: std::collections::HashMap<String, String> = runs
         .into_iter()
         .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
-        .filter_map(|run| run.session_id)
+        .filter_map(|run| Some((run.session_id?, run.automation_name)))
         .collect();
 
     let mut adopted = 0;
@@ -361,7 +361,7 @@ pub async fn adopt_live_sessions(
         if only.is_some_and(|wanted| wanted != session.session_id) {
             continue;
         }
-        let from_automation = automation_sessions.contains(&session.session_id);
+        let automation_name = automation_sessions.get(&session.session_id);
         let meta = session
             .host_meta
             .as_ref()
@@ -378,9 +378,9 @@ pub async fn adopt_live_sessions(
             // An automation's session has none, so one is made up from what is known: the project
             // it belongs to, and the connection it is already running on.
             .or_else(|| {
-                from_automation.then(|| SessionHostMeta {
+                automation_name.map(|name| SessionHostMeta {
                     project_id: Some(project_id),
-                    session_name: None,
+                    session_name: Some(name.clone()),
                     connection_key,
                     task: TaskMetadata::default(),
                 })
