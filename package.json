@@ -104,7 +104,7 @@
     "@rolldown/plugin-babel": "^0.2.4",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.11.5",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
