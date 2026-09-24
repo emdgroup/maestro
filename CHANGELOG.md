@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.1](https://github.com/emdgroup/maestro/compare/v0.30.0...v0.30.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **canvas:** stop the canvas import from catching composer pastes ([#442](https://github.com/emdgroup/maestro/issues/442)) ([4f88f62](https://github.com/emdgroup/maestro/commit/4f88f62ad647d56d8a987abb3d27f412639e6882))
+* **server:** ask before replacing a busy maestro-server from another build ([#439](https://github.com/emdgroup/maestro/issues/439)) ([cf260bf](https://github.com/emdgroup/maestro/commit/cf260bf5ea46dc9ba8ab444cd6a2325eb928eec7))
+
 ## [0.30.0](https://github.com/emdgroup/maestro/compare/v0.29.0...v0.30.0) (2026-09-23)
 
 
