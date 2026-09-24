@@ -10,7 +10,7 @@ import {
 } from "@/ui/dialog";
 import { Button, buttonVariants } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { Textarea } from "@/ui/textarea";
+import { MarkdownEditor } from "@/components/kanban/shared/MarkdownEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collapsible";
 import { cn } from "@/lib/utils";
@@ -394,15 +394,19 @@ export function AutomationEditorDialog({
             />
           </label>
 
-          <label className="block space-y-1">
+          <div className="space-y-1">
             <span className="text-[11px] text-muted-foreground">Prompt</span>
-            <Textarea
-              value={draft.prompt}
-              onChange={(e) => patch({ prompt: e.target.value })}
-              placeholder="What the agent should do, and what it should leave behind."
-              className="min-h-28 text-xs"
-            />
-          </label>
+            <div className="h-48">
+              <MarkdownEditor
+                value={draft.prompt}
+                onSave={(prompt) => patch({ prompt })}
+                onDraftChange={(prompt) => patch({ prompt })}
+                isEditable
+                fill
+                placeholder="What the agent should do, and what it should leave behind."
+              />
+            </div>
+          </div>
 
           {/* Keyed by automation, so what a section remembers does not carry over to another. */}
           <TriggerSection

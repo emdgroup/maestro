@@ -60,6 +60,7 @@ describe("useServerEventSync", () => {
       "worktrees-changed",
       "automations-changed",
       "templates-changed",
+      "prompts-changed",
       "sessions-changed",
     ]);
   });
@@ -119,6 +120,7 @@ describe("useServerEventSync", () => {
       "worktrees-changed",
       "automations-changed",
       "templates-changed",
+      "prompts-changed",
     ]);
   });
 
@@ -149,6 +151,7 @@ describe("useServerEventSync", () => {
       "worktrees-changed",
       "automations-changed",
       "templates-changed",
+      "prompts-changed",
       "sessions-changed",
     ]);
   });
@@ -168,6 +171,7 @@ describe("useServerEventSync", () => {
       "worktrees-changed",
       "automations-changed",
       "templates-changed",
+      "prompts-changed",
       "sessions-changed",
     ]);
   });

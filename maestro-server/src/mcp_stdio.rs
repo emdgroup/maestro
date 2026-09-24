@@ -404,7 +404,12 @@ mod tests {
                 "get_template",
                 "update_template",
                 "save_as_template",
-                "delete_template"
+                "delete_template",
+                "list_prompts",
+                "get_prompt",
+                "create_prompt",
+                "update_prompt",
+                "delete_prompt"
             ]
         );
         for tool in tools {

@@ -8,6 +8,7 @@ pub mod integration;
 pub mod ipc;
 pub mod models;
 pub mod project;
+pub mod prompts;
 pub mod settings;
 pub mod task;
 pub mod templates;
@@ -109,6 +110,11 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::list_templates,
         crate::ipc::save_template,
         crate::ipc::delete_template,
+        crate::ipc::list_prompts,
+        crate::ipc::save_prompt,
+        crate::ipc::set_prompt_favorite,
+        crate::ipc::set_prompt_shared,
+        crate::ipc::delete_prompt,
         crate::ipc::get_background_server,
         crate::ipc::set_background_server_autostart,
         crate::ipc::stop_background_server,

@@ -29,5 +29,6 @@ pub use crate::integration::handlers::*;
 pub use crate::integration::issue_tracking_handlers::*;
 pub use crate::integration::lookup_handlers::*;
 pub use crate::integration::pull_request_handlers::*;
+pub use crate::prompts::*;
 pub use crate::settings::handlers::*;
 pub use crate::templates::*;
