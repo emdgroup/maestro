@@ -4,6 +4,7 @@ import { createErrorToastHandler } from "@/lib/error-utils";
 import type { PromptInput } from "@/types/bindings";
 
 export const promptQueryKeys = {
+  base: ["prompts"] as const,
   list: (projectId: number) => ["prompts", projectId] as const,
 };
 
@@ -18,7 +19,7 @@ export function usePromptsQuery(projectId: number) {
 // Every project's list holds the shared prompts, so a change invalidates them all.
 function useInvalidatePrompts() {
   const queryClient = useQueryClient();
-  return () => void queryClient.invalidateQueries({ queryKey: ["prompts"] });
+  return () => void queryClient.invalidateQueries({ queryKey: promptQueryKeys.base });
 }
 
 /** Create a prompt, or replace the one `prompt.id` names. */

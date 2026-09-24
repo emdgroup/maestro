@@ -6,6 +6,7 @@ import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
 import { templateQueryKeys } from "@/services/template.service";
+import { promptQueryKeys } from "@/services/prompt.service";
 
 /**
  * The backend's "something changed" events, subscribed once for the whole app.
@@ -49,6 +50,10 @@ export function useServerEventSync(projectId: number | undefined) {
 
     subscribe("templates-changed", () => {
       void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
+    });
+
+    subscribe("prompts-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: promptQueryKeys.base });
     });
 
     // Keyed on the project, so there is nothing to listen for until one is open.

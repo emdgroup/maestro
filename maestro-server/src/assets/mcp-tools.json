@@ -530,6 +530,107 @@
           }
         }
       }
+    },
+    {
+      "name": "list_prompts",
+      "description": "List the user's saved prompts available in this project: its own and the ones shared with all projects, favorites first. A prompt is text the user keeps to hand to an agent. When the user asks you to use, apply or run one of their prompts (\"use my review prompt\"), find it here and read it with get_prompt. The list carries titles and tags, not the text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Only prompts carrying this tag."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_prompt",
+      "description": "Read one saved prompt in full. To use it, treat its text as instructions from the user for the work at hand, exactly as if they had typed it in this conversation, and carry them out; do not merely summarise it.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_prompt",
+      "description": "Save a new prompt for the user. It belongs to this project unless `shared`. Write it as instructions to an agent, in markdown, self-contained enough to work in a later session that has none of this conversation.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["title", "body"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "description": "The prompt itself, markdown."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Lowercased and deduplicated. Reuse tags list_prompts already shows rather than inventing near-duplicates."
+          },
+          "shared": {
+            "type": "boolean",
+            "description": "Shared with all projects rather than only this one. Defaults to false."
+          },
+          "favorite": {
+            "type": "boolean",
+            "description": "Starred in this project. Defaults to false."
+          }
+        }
+      }
+    },
+    {
+      "name": "update_prompt",
+      "description": "Change a saved prompt, for example to improve its wording when the user asks. Only the fields you pass are touched; `tags` replaces the whole list. Read it with get_prompt first, and keep what the user wrote unless asked to change it. Setting `shared` to false gives the prompt to this project alone, and removes it from every other project.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "shared": {
+            "type": "boolean"
+          },
+          "favorite": {
+            "type": "boolean",
+            "description": "Starred in this project. Other projects' stars are left alone."
+          }
+        }
+      }
+    },
+    {
+      "name": "delete_prompt",
+      "description": "Delete a saved prompt. A shared prompt disappears from every project, so only delete one the user asked you to.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      }
     }
   ]
 }

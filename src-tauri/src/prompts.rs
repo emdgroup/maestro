@@ -7,6 +7,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use specta::Type;
 use std::sync::Arc;
 use tauri::State;
@@ -59,9 +60,12 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Prompt> {
     })
 }
 
+/// A prompt `project_id` can see: its own, or a shared one.
 fn read(conn: &Connection, project_id: i32, id: i32) -> Result<Option<Prompt>, String> {
     conn.query_row(
-        &format!("SELECT {COLUMNS} FROM prompts WHERE id = ?2"),
+        &format!(
+            "SELECT {COLUMNS} FROM prompts WHERE id = ?2 AND (project_id = ?1 OR project_id IS NULL)"
+        ),
         [project_id, id],
         from_row,
     )
@@ -178,6 +182,110 @@ fn delete(conn: &Connection, id: i32) -> Result<(), String> {
     conn.execute("DELETE FROM prompts WHERE id = ?", [id])
         .map(|_| ())
         .map_err(|e| format!("Failed to delete prompt: {}", e))
+}
+
+/// Answer one of the agent's prompt tools, for the project its session belongs to. Ids are
+/// small integers, so every lookup goes through `read`, which only finds a prompt that project
+/// can see.
+pub(crate) fn tool(
+    conn: &Connection,
+    project_id: i32,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let json = |value: &Prompt| serde_json::to_value(value).map_err(|e| e.to_string());
+    let visible = |id: i32| {
+        read(conn, project_id, id)?.ok_or_else(|| format!("no prompt {id} in this project"))
+    };
+    match name {
+        "list_prompts" => {
+            let tag = arguments.get("tag").and_then(Value::as_str);
+            let mut prompts: Vec<Prompt> = list(conn, project_id)?
+                .into_iter()
+                .filter(|prompt| tag.is_none_or(|tag| prompt.tags.iter().any(|t| t == tag)))
+                .collect();
+            prompts.sort_by_key(|prompt| !prompt.favorite);
+            Ok(Value::Array(
+                prompts
+                    .iter()
+                    .map(|prompt| {
+                        json!({
+                            "id": prompt.id,
+                            "title": prompt.title,
+                            "tags": prompt.tags,
+                            "shared": prompt.shared,
+                            "favorite": prompt.favorite,
+                        })
+                    })
+                    .collect(),
+            ))
+        }
+        "get_prompt" => json(&visible(id_argument(arguments)?)?),
+        "create_prompt" => {
+            let input = PromptInput {
+                id: None,
+                title: string_argument(arguments, "title")?.unwrap_or_default(),
+                body: string_argument(arguments, "body")?.unwrap_or_default(),
+                tags: tags_argument(arguments)?.unwrap_or_default(),
+                shared: bool_argument(arguments, "shared")?.unwrap_or(false),
+                favorite: bool_argument(arguments, "favorite")?.unwrap_or(false),
+            };
+            json(&save(conn, project_id, &input)?)
+        }
+        "update_prompt" => {
+            let current = visible(id_argument(arguments)?)?;
+            let input = PromptInput {
+                id: Some(current.id),
+                title: string_argument(arguments, "title")?.unwrap_or(current.title),
+                body: string_argument(arguments, "body")?.unwrap_or(current.body),
+                tags: tags_argument(arguments)?.unwrap_or(current.tags),
+                shared: bool_argument(arguments, "shared")?.unwrap_or(current.shared),
+                favorite: bool_argument(arguments, "favorite")?.unwrap_or(current.favorite),
+            };
+            json(&save(conn, project_id, &input)?)
+        }
+        "delete_prompt" => {
+            let prompt = visible(id_argument(arguments)?)?;
+            delete(conn, prompt.id)?;
+            Ok(json!({ "deleted": prompt.id }))
+        }
+        other => Err(format!("unknown Maestro tool: {other}")),
+    }
+}
+
+fn id_argument(arguments: &Value) -> Result<i32, String> {
+    arguments
+        .get("id")
+        .and_then(Value::as_i64)
+        .and_then(|id| i32::try_from(id).ok())
+        .ok_or_else(|| "id is required".to_string())
+}
+
+// Absent and null both mean "leave it"; a value of the wrong type is refused with the field's
+// name rather than coerced, since nothing validates a host tool's schema before it gets here.
+fn string_argument(arguments: &Value, key: &str) -> Result<Option<String>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(format!("{key} must be a string")),
+    }
+}
+
+fn bool_argument(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
+        Some(_) => Err(format!("{key} must be true or false")),
+    }
+}
+
+fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
+    match arguments.get("tags") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|_| "tags must be a list of strings".to_string()),
+    }
 }
 
 fn db(app_state: &AppState) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
@@ -365,6 +473,61 @@ mod tests {
         let mut gone = input("Gone", false);
         gone.id = Some(999);
         assert!(save(&conn, 1, &gone).is_err());
+    }
+
+    #[test]
+    fn the_agent_tools_are_scoped_to_the_project() {
+        let conn = setup();
+        let theirs = save(&conn, 2, &input("Theirs", false)).unwrap();
+        let created = tool(
+            &conn,
+            1,
+            "create_prompt",
+            &json!({ "title": "Mine", "body": "Do it.", "tags": ["Review"], "favorite": true }),
+        )
+        .unwrap();
+        let id = created["id"].as_i64().unwrap();
+        assert_eq!(created["tags"], json!(["review"]));
+        save(&conn, 1, &input("Shared", true)).unwrap();
+
+        let listed = tool(&conn, 1, "list_prompts", &json!({})).unwrap();
+        let titles: Vec<_> = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["title"].as_str().unwrap())
+            .collect();
+        // Favorites first, and nothing of project 2's.
+        assert_eq!(titles, vec!["Mine", "Shared"]);
+        assert!(listed[0].get("body").is_none());
+        let tagged = tool(&conn, 1, "list_prompts", &json!({ "tag": "review" })).unwrap();
+        assert_eq!(tagged.as_array().unwrap().len(), 2);
+
+        for name in ["get_prompt", "update_prompt", "delete_prompt"] {
+            let error = tool(&conn, 1, name, &json!({ "id": theirs.id })).unwrap_err();
+            assert_eq!(error, format!("no prompt {} in this project", theirs.id));
+        }
+
+        let updated = tool(
+            &conn,
+            1,
+            "update_prompt",
+            &json!({ "id": id, "body": "Do it better." }),
+        )
+        .unwrap();
+        assert_eq!(updated["title"], "Mine");
+        assert_eq!(updated["body"], "Do it better.");
+        assert_eq!(updated["favorite"], true);
+        assert!(tool(
+            &conn,
+            1,
+            "update_prompt",
+            &json!({ "id": id, "shared": "yes" })
+        )
+        .is_err());
+
+        tool(&conn, 1, "delete_prompt", &json!({ "id": id })).unwrap();
+        assert!(tool(&conn, 1, "get_prompt", &json!({ "id": id })).is_err());
     }
 
     #[test]

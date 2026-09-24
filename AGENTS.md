@@ -616,7 +616,7 @@ Three files:
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
 - `src-tauri/src/acp/host_tools.rs` — the host end: the task tools and `canvas_await`, with the
-  automation and template tools in `acp/automation_tools.rs`.
+  automation and template tools in `acp/automation_tools.rs` and the prompt tools in `prompts.rs`.
 
 Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
 so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
@@ -633,6 +633,7 @@ without canvas and task tools.
 | `get_task` / `update_task` / `comment_task`       | the host, scoped to the session's project      | the task, or the new entry    |
 | automation and run tools (`*_automation*`)        | the host, scoped to the session's project      | the automation, or the run    |
 | template tools (`*_template*`)                    | the host, app-wide; built-ins are read-only    | the template                  |
+| prompt tools (`*_prompt*`)                        | the host, the project's own and shared ones    | the prompt, or the list       |
 
 **`run_automation` asks the user first**, as an ordinary permission prompt: it emits
 `acp://permission-request/<session>` itself and parks the answer in `pending_host_tools`, and

@@ -74,6 +74,9 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
             automation_tools::save_as_template(&app_state, session_id, &call.arguments).await
         }
         "delete_template" => automation_tools::delete_template(&app_state, &call.arguments),
+        "list_prompts" | "get_prompt" | "create_prompt" | "update_prompt" | "delete_prompt" => {
+            prompt_tool(&app_state, session_id, &call).await
+        }
         "canvas_await" => canvas_await(&app_state, session_id, &call).await,
         "canvas_create" | "canvas_update" | "canvas_data" => {
             canvas_ack(&app_state, session_id, &call.arguments).await
@@ -97,6 +100,26 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
             call.name
         );
     }
+}
+
+async fn prompt_tool(
+    app_state: &Arc<AppState>,
+    session_id: &str,
+    call: &HostToolCall,
+) -> Result<Value, String> {
+    let project_id = session_project_id(app_state, session_id).await?;
+    let result = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {}", e))?;
+        crate::prompts::tool(&conn, project_id, &call.name, &call.arguments)?
+    };
+    // The Prompts page has no mutation of its own to invalidate after an agent's change.
+    if !matches!(call.name.as_str(), "list_prompts" | "get_prompt") {
+        app_state.app_handle.emit("prompts-changed", ()).ok();
+    }
+    Ok(result)
 }
 
 pub(super) async fn session_project_id(
