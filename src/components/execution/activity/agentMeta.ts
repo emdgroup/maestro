@@ -187,9 +187,12 @@ function extractClaudeCodeMeta(raw: Record<string, unknown>): AgentMeta {
 function extractGenericMeta(raw: Record<string, unknown>): AgentMeta {
   const result: AgentMeta = {};
 
-  // Any vendor namespace under _meta that names its tool — not just claudeCode.
+  // ACP's own `name` (stable since schema 1.8), else any vendor namespace under
+  // _meta that names its tool. A `null` name on an update means "unchanged",
+  // which `str` turns into undefined so the merge keeps the earlier one.
+  result.toolName = str(raw.name);
   const meta = obj(raw._meta);
-  if (meta) {
+  if (meta && !result.toolName) {
     for (const value of Object.values(meta)) {
       const name = str(obj(value)?.toolName);
       if (name) {
