@@ -166,12 +166,16 @@ pub async fn ensure_remote_server(
         .await
         .map_err(|e| format!("Failed to create remote dir: {}", e))?;
 
+        // Renamed aside rather than removed: a resident daemon holds its own image open, and
+        // Windows refuses to delete a running executable but lets it be renamed. The daemon is
+        // retired or kept by `attach` afterwards, which is where that decision belongs. The
+        // previous `.old` goes first, and may itself still be running, hence SilentlyContinue.
         ssh.execute_command(&powershell_encoded(&format!(
-            "if (Test-Path '{}') {{ Remove-Item -Force '{}' }}",
-            abs_remote_path, abs_remote_path
+            "if (Test-Path '{0}') {{ Remove-Item -Force '{0}.old' -ErrorAction SilentlyContinue; Move-Item -Force '{0}' '{0}.old' }}",
+            abs_remote_path
         )))
         .await
-        .map_err(|e| format!("Failed to remove existing binary: {}", e))?;
+        .map_err(|e| format!("Failed to move existing binary aside: {}", e))?;
     } else {
         ssh.execute_command(&format!("mkdir -p {}", abs_dir))
             .await

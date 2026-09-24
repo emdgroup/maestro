@@ -536,7 +536,8 @@ async fn launch_cold_session(
 ) -> Result<(), String> {
     let (writer, source, child) = match target {
         TransportTarget::Local => {
-            let (mut stdin_writer, source, child) = open_local_transport(&req.app_state).await?;
+            let (mut stdin_writer, source, child) =
+                open_local_transport(&req.app_state, false).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
             (
                 AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))),
@@ -545,7 +546,7 @@ async fn launch_cold_session(
             )
         }
         TransportTarget::Remote { ssh, server_path } => {
-            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
+            let (write_tx, source) = open_remote_transport(ssh, server_path, false).await?;
             let bytes = serialize_message(initial_msg)?;
             write_tx.send(bytes).await.map_err(|_| {
                 format!("Failed to queue {} for remote channel", remote_error_label)
@@ -557,7 +558,8 @@ async fn launch_cold_session(
             distro,
             server_path,
         } => {
-            let (mut stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
+            let (mut stdin_writer, source, child) =
+                open_wsl_transport(distro, server_path, false).await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;
             (
                 AcpTransportWriter::Local(Arc::new(tokio::sync::Mutex::new(stdin_writer))),
@@ -575,6 +577,7 @@ async fn launch_cold_session(
                     cli,
                     container_name,
                     server_path,
+                    false,
                 )
                 .await?;
             write_to_acp_session_raw(&mut stdin_writer, initial_msg).await?;

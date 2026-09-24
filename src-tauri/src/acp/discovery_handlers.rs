@@ -60,13 +60,22 @@ const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
 ];
 
 /// Validate the environment for a connection and boot the persistent server.
+///
+/// `replace` is the user choosing to update a server from another build of Maestro that is in use
+/// on that machine, which is otherwise refused with `SERVER_BUSY_ERROR`.
 #[tauri::command]
 #[specta::specta]
 pub async fn preflight_connection(
     app_state: State<'_, Arc<AppState>>,
     connection: crate::acp::ConnectionKey,
+    replace: bool,
 ) -> Result<PreflightResult, String> {
     let connection_key = connection;
+    if replace {
+        if let Ok(mut keys) = app_state.acp.replace_server.lock() {
+            keys.insert(connection_key);
+        }
+    }
     let server_already_running = app_state
         .acp
         .connection_servers

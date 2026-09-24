@@ -220,20 +220,36 @@ pub(crate) async fn run_resident(
     tokio::spawn({
         let sink = Arc::clone(&sink);
         async move {
+            let token = Arc::new(token);
+            let attach_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let mut clients = tokio::task::JoinSet::new();
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    continue;
-                };
-                // One client at a time: the app is the only one there is, and serving a second
-                // concurrently would interleave two streams onto one sink.
-                let shutdown = daemon::serve_client(stream, &token, &sink, &msg_tx).await;
-                sink.lock().await.detach();
-                send_diag("info", "[daemon] client detached");
-                if shutdown {
-                    break;
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else {
+                            continue;
+                        };
+                        let (token, sink, msg_tx, attach_gate) = (
+                            Arc::clone(&token),
+                            Arc::clone(&sink),
+                            msg_tx.clone(),
+                            Arc::clone(&attach_gate),
+                        );
+                        clients.spawn(async move {
+                            daemon::serve_client(stream, &token, &sink, &msg_tx, &attach_gate).await
+                        });
+                    }
+                    // Matched inside rather than in the pattern: a pattern that misses disables the
+                    // branch until the next accept, and a shutdown finishing then would wait on it.
+                    Some(joined) = clients.join_next() => {
+                        if matches!(joined, Ok(true)) {
+                            break;
+                        }
+                    }
                 }
             }
-            // Dropping the last sender ends the server loop, which tears down every session.
+            // Dropping the set aborts every client task and with it their senders; dropping ours,
+            // the last one, ends the server loop, which tears down every session.
         }
     });
 

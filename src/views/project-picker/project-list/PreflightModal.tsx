@@ -7,6 +7,9 @@ import { useProjectPickerNavigation } from "@/hooks/useProjectPickerNavigation";
 import { useSetToolPathMutation } from "@/services/execution.service";
 import type { ConnectionKey, ToolCheckEntry } from "@/types/bindings";
 
+/** `maestro_protocol::SERVER_BUSY_ERROR`: a server from another build is in use on that machine. */
+const SERVER_BUSY_ERROR = "server_busy: ";
+
 function IssueRow({
   label,
   detail,
@@ -121,6 +124,7 @@ export function PreflightModal() {
   // The only way preflight fails outright: reaching or booting maestro-server returns `Err`, and
   // a result that exists at all means the server answered.
   const serverFailed = preflightError !== null;
+  const busyServer = preflightError?.split(SERVER_BUSY_ERROR)[1];
   const failedTools = preflightResult?.tool_checks.filter((t) => !t.available) ?? [];
   const hasMandatoryFail = serverFailed || failedTools.some((t) => t.mandatory);
   const boundedStep = Math.min(currentStep, Math.max(failedTools.length - 1, 0));
@@ -149,7 +153,11 @@ export function PreflightModal() {
           {(preflightError || serverFailed) && (
             <IssueRow
               label="maestro-server"
-              detail={preflightError ?? "Failed to start"}
+              detail={
+                busyServer
+                  ? `Needs an update, but ${busyServer}. Updating stops it and ends every session it is running.`
+                  : (preflightError ?? "Failed to start")
+              }
               mandatory
             />
           )}
@@ -173,6 +181,19 @@ export function PreflightModal() {
               Go Back
             </Button>
           </div>
+          {busyServer && activeConnection && (
+            <div className="col-start-3 justify-self-end max-sm:col-start-2 max-sm:row-start-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-amber-400/50 text-amber-500 hover:border-amber-400 hover:bg-amber-400/10"
+                onClick={() => void startPreflight(activeConnection, true)}
+              >
+                Update anyway
+              </Button>
+            </div>
+          )}
           {!serverFailed && failedTools.length > 0 && (
             <div
               className="flex items-center justify-center gap-2.5 max-sm:col-span-2 max-sm:col-start-1 max-sm:row-start-1"
