@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { ChevronDown, Cog, LayoutTemplate, Plus, type LucideIcon } from "lucide-react";
+import {
+  ChevronDown,
+  Cog,
+  LayoutTemplate,
+  MessageSquareText,
+  Plus,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
@@ -10,9 +17,12 @@ import {
 } from "@/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { AutomationsPanel, type AutomationsTab } from "./automations/AutomationsPanel";
+import { PromptsPanel } from "./prompts/PromptsPanel";
 import { TemplatesPanel } from "./templates/TemplatesPanel";
 import { automationFieldsOf, type TemplateCard } from "./templates/templates";
-import type { Automation, ConnectionKey } from "@/types/bindings";
+import type { Automation, ConnectionKey, Prompt } from "@/types/bindings";
+
+type Section = "automations" | "prompts";
 
 function NavItem({
   icon: Icon,
@@ -42,7 +52,7 @@ function NavItem({
 }
 
 /**
- * The project's reusable pieces. Automations today, with skills and MCP servers meant to land
+ * The project's reusable pieces. Automations and prompts today, with skills and MCP servers meant to land
  * beside them, each section carrying its own templates in a tab rather than one page for all.
  *
  * Same shape as the other views: `bg-card` all the way up, an action bar across the top carrying
@@ -60,10 +70,19 @@ export function CollectionsView({
   projectPath: string;
   connection: ConnectionKey;
 }) {
+  const [section, setSection] = useState<Section>("automations");
   const [tab, setTab] = useState<AutomationsTab>("dashboard");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Automation | null>(null);
   const [seed, setSeed] = useState<Partial<Automation> | null>(null);
+
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+
+  function openPromptEditor(prompt: Prompt | null) {
+    setEditingPrompt(prompt);
+    setPromptEditorOpen(true);
+  }
 
   function openEditor(automation: Automation | null) {
     setEditing(automation);
@@ -84,32 +103,48 @@ export function CollectionsView({
       {/* No bottom border: the inset pane's own `border-t` is the seam, and it starts after the
           rounded corner so no line runs under the sidebar. */}
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
-        <span className="text-sm font-medium">Automations</span>
-        <ButtonGroup>
+        <span className="text-sm font-medium">
+          {section === "automations" ? "Automations" : "Prompts"}
+        </span>
+        {section === "prompts" ? (
           <Button
             variant="accent"
             size="sm"
             className="h-8 bg-clip-border text-xs"
-            onClick={() => openEditor(null)}
+            onClick={() => openPromptEditor(null)}
           >
             <Plus className="mr-1 size-3.5" />
-            New automation
+            New prompt
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="New automation from a template"
-              render={<Button variant="accent" size="sm" className="h-8 bg-clip-border px-1.5!" />}
+        ) : (
+          <ButtonGroup>
+            <Button
+              variant="accent"
+              size="sm"
+              className="h-8 bg-clip-border text-xs"
+              onClick={() => openEditor(null)}
             >
-              <ChevronDown className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-auto max-w-80 whitespace-nowrap">
-              <DropdownMenuItem className="text-xs" onClick={() => setTab("templates")}>
-                <LayoutTemplate className="size-3.5 text-muted-foreground" />
-                From templates
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </ButtonGroup>
+              <Plus className="mr-1 size-3.5" />
+              New automation
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="New automation from a template"
+                render={
+                  <Button variant="accent" size="sm" className="h-8 bg-clip-border px-1.5!" />
+                }
+              >
+                <ChevronDown className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-auto max-w-80 whitespace-nowrap">
+                <DropdownMenuItem className="text-xs" onClick={() => setTab("templates")}>
+                  <LayoutTemplate className="size-3.5 text-muted-foreground" />
+                  From templates
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </ButtonGroup>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -117,35 +152,60 @@ export function CollectionsView({
           <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
             Collections
           </p>
-          <NavItem icon={Cog} label="Automations" active onClick={() => setTab("dashboard")} />
+          <NavItem
+            icon={Cog}
+            label="Automations"
+            active={section === "automations"}
+            onClick={() => {
+              setSection("automations");
+              setTab("dashboard");
+            }}
+          />
+          <NavItem
+            icon={MessageSquareText}
+            label="Prompts"
+            active={section === "prompts"}
+            onClick={() => setSection("prompts")}
+          />
         </nav>
 
         {/* The inset surface is the panel's own, not this one's: it rounds away from the runs
             column when that is open, which this cannot know. Same shape as Worktrees. */}
         <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
-          <AutomationsPanel
-            projectId={projectId}
-            projectPath={projectPath}
-            connection={connection}
-            editorOpen={editorOpen}
-            onEditorOpenChange={setEditorOpen}
-            editing={editing}
-            seed={seed}
-            onEdit={openEditor}
-            onNew={() => openEditor(null)}
-            onBrowseTemplates={() => setTab("templates")}
-            tab={tab}
-            onTabChange={setTab}
-            templates={
-              <TemplatesPanel
-                projectId={projectId}
-                projectPath={projectPath}
-                connection={connection}
-                kind="automation"
-                onUse={startFromTemplate}
-              />
-            }
-          />
+          {section === "prompts" ? (
+            <PromptsPanel
+              projectId={projectId}
+              editorOpen={promptEditorOpen}
+              onEditorOpenChange={setPromptEditorOpen}
+              editing={editingPrompt}
+              onEdit={openPromptEditor}
+              onNew={() => openPromptEditor(null)}
+            />
+          ) : (
+            <AutomationsPanel
+              projectId={projectId}
+              projectPath={projectPath}
+              connection={connection}
+              editorOpen={editorOpen}
+              onEditorOpenChange={setEditorOpen}
+              editing={editing}
+              seed={seed}
+              onEdit={openEditor}
+              onNew={() => openEditor(null)}
+              onBrowseTemplates={() => setTab("templates")}
+              tab={tab}
+              onTabChange={setTab}
+              templates={
+                <TemplatesPanel
+                  projectId={projectId}
+                  projectPath={projectPath}
+                  connection={connection}
+                  kind="automation"
+                  onUse={startFromTemplate}
+                />
+              }
+            />
+          )}
         </div>
       </div>
     </div>

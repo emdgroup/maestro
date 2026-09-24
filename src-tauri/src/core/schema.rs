@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 29;
+pub const SCHEMA_VERSION: u32 = 30;
 
-pub const SCHEMA_V29_FULL: &str = r#"
+pub const SCHEMA_V30_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -273,6 +273,24 @@ CREATE TABLE IF NOT EXISTS templates (
     created_at TEXT NOT NULL
 );
 
+-- A NULL project_id is a shared prompt, listed in every project.
+CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Favorites are per project: a shared prompt starred in one project is not starred in another.
+CREATE TABLE IF NOT EXISTS prompt_favorites (
+    prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    PRIMARY KEY (prompt_id, project_id)
+);
+
 -- Indexes for performance
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_reviews_task_id ON task_reviews(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_hosts_project_fingerprint ON known_hosts(project_id, host_fingerprint);
@@ -356,7 +374,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V29_FULL)?;
+        conn.execute_batch(SCHEMA_V30_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(
@@ -379,7 +397,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             PRAGMA foreign_keys = ON;
         "#,
         )?;
-        conn.execute_batch(SCHEMA_V29_FULL)?;
+        conn.execute_batch(SCHEMA_V30_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -420,7 +438,30 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     if from < 29 {
         migrate_to_v29(conn)?;
     }
+    if from < 30 {
+        migrate_to_v30(conn)?;
+    }
     Ok(())
+}
+
+/// Saved prompts, one project's or shared by all of them, and which projects starred each.
+fn migrate_to_v30(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS prompt_favorites (
+            prompt_id INTEGER NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            PRIMARY KEY (prompt_id, project_id)
+        );",
+    )
 }
 
 /// App-wide templates: reusable starting points, one row per template, the body JSON tagged by kind.
@@ -704,10 +745,12 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 29);
+        assert_eq!(version, 30);
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));
         assert!(tables.contains(&"templates".to_string()));
+        assert!(tables.contains(&"prompts".to_string()));
+        assert!(tables.contains(&"prompt_favorites".to_string()));
 
         // Verify worktrees table has expected columns
         let worktree_columns: Vec<String> = conn

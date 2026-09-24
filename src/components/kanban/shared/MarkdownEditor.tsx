@@ -10,6 +10,16 @@ interface MarkdownEditorProps {
   onSave: (v: string) => void;
   isEditable: boolean;
   placeholder?: string;
+  /**
+   * Called with the text as it is typed, for a caller whose Save button has to know there is text
+   * before the editor loses focus and calls `onSave`.
+   */
+  onDraftChange?: (v: string) => void;
+  /**
+   * Fill the parent's height instead of growing with the text: the empty field takes the whole
+   * space, and long text scrolls inside the editor under its toolbar.
+   */
+  fill?: boolean;
 }
 
 function autoResize(el: HTMLTextAreaElement) {
@@ -22,6 +32,8 @@ export function MarkdownEditor({
   onSave,
   isEditable,
   placeholder = "",
+  onDraftChange,
+  fill = false,
 }: MarkdownEditorProps) {
   const project = useSelectedProject();
   const projectId = project?.id;
@@ -36,9 +48,17 @@ export function MarkdownEditor({
   const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
 
   useEffect(() => {
+    if (editing) onDraftChange?.(draft);
+    // Only the text is watched: a caller passing an inline callback must not re-fire this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
+  useEffect(() => {
     if (editing && textareaRef.current) {
       textareaRef.current.focus();
-      if (capturedSizeRef.current !== null) {
+      if (fill) {
+        capturedSizeRef.current = null;
+      } else if (capturedSizeRef.current !== null) {
         textareaRef.current.style.width = `${capturedSizeRef.current.width}px`;
         textareaRef.current.style.height = `${capturedSizeRef.current.height}px`;
         capturedSizeRef.current = null;
@@ -46,7 +66,7 @@ export function MarkdownEditor({
         autoResize(textareaRef.current);
       }
     }
-  }, [editing]);
+  }, [editing, fill]);
 
   // Restore cursor position after formatting helpers update `draft`
   useEffect(() => {
@@ -183,6 +203,7 @@ export function MarkdownEditor({
         onFocus={() => isEditable && enterEdit()}
         className={cn(
           "rounded px-1 py-0.5 min-h-[1.5em] text-sm leading-relaxed",
+          fill && "h-full overflow-y-auto border-border! px-2 py-2",
           isEditable && "border border-transparent hover:border-border cursor-text",
           !isEditable && "cursor-default",
           !value && "text-muted-foreground",
@@ -201,7 +222,9 @@ export function MarkdownEditor({
 
   // --- Edit mode ---
   return (
-    <div className="flex flex-col rounded border border-ring overflow-hidden">
+    <div
+      className={cn("flex flex-col rounded border border-ring overflow-hidden", fill && "h-full")}
+    >
       {/* Header: tabs + toolbar */}
       <div className="flex items-stretch bg-muted/30 border-b border-border">
         <button
@@ -309,18 +332,21 @@ export function MarkdownEditor({
       </div>
 
       {/* Content area: textarea always in DOM, preview overlaid on top */}
-      <div className="relative">
+      <div className={cn("relative", fill && "min-h-0 flex-1")}>
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
-            autoResize(e.target);
+            if (!fill) autoResize(e.target);
           }}
           onKeyDown={handleKeyDown}
           onBlur={commit}
           placeholder={placeholder}
-          className="w-full min-h-32 resize-none outline-none px-2 py-2 text-sm font-mono text-muted-foreground leading-relaxed bg-transparent"
+          className={cn(
+            "w-full min-h-32 resize-none outline-none px-2 py-2 text-sm font-mono text-muted-foreground leading-relaxed bg-transparent",
+            fill && "block h-full overflow-y-auto",
+          )}
         />
         {activeTab === "preview" && (
           <div

@@ -1062,6 +1062,49 @@ async deleteTemplate(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listPrompts(projectId: number) : Promise<Result<Prompt[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_prompts", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a prompt, or replace the one `prompt.id` names.
+ */
+async savePrompt(projectId: number, prompt: PromptInput) : Promise<Result<Prompt, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_prompt", { projectId, prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setPromptFavorite(projectId: number, id: number, favorite: boolean) : Promise<Result<Prompt, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_prompt_favorite", { projectId, id, favorite }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setPromptShared(projectId: number, id: number, shared: boolean) : Promise<Result<Prompt, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_prompt_shared", { projectId, id, shared }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deletePrompt(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_prompt", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The connection's server, for its Settings page.
  */
@@ -3631,6 +3674,23 @@ from_fork: boolean;
  * produced the row, so on GitHub that command is never called at all.
  */
 detail: PullRequestRowDetail | null }
+export type Prompt = { id: number; title: string; body: string; tags: string[]; 
+/**
+ * Listed in every project rather than only the one it was saved in.
+ */
+shared: boolean; 
+/**
+ * Starred in the project it was read for.
+ */
+favorite: boolean; created_at: string; updated_at: string }
+/**
+ * What the editor sends. `id` is `None` for a new prompt.
+ */
+export type PromptInput = { id: number | null; title: string; body: string; tags: string[]; shared: boolean; 
+/**
+ * Starred in the project it is saved from. Other projects' stars are left alone.
+ */
+favorite: boolean }
 /**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.
