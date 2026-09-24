@@ -11,6 +11,8 @@ interface UseFileInputOpts {
   onDrop?: () => void;
   onLeave?: () => void;
   onOver?: () => void;
+  /** Also take images pasted anywhere in the document. Off for a drop target that is not an attachment. */
+  paste?: boolean;
 }
 
 export function useFileInput(
@@ -27,8 +29,9 @@ export function useFileInput(
     optsRef.current = opts;
   });
 
+  const acceptPaste = opts?.paste ?? true;
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !acceptPaste) return;
     async function handlePaste(e: ClipboardEvent) {
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -67,7 +70,7 @@ export function useFileInput(
     }
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
-  }, [isActive]);
+  }, [isActive, acceptPaste]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -103,9 +106,11 @@ export function useFileInput(
 export function useDraggableFileInput(
   isActive: boolean,
   onFile: (filename: string, filePath: string) => void,
+  { paste = true }: { paste?: boolean } = {},
 ) {
   const [isDragging, setIsDragging] = useState(false);
   const { pickFiles } = useFileInput(isActive, onFile, {
+    paste,
     onOver: () => setIsDragging(true),
     onDrop: () => setIsDragging(false),
     onLeave: () => setIsDragging(false),

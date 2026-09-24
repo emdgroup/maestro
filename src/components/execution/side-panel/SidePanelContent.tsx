@@ -145,8 +145,11 @@ export function SidePanelContent({
   );
   const canImportCanvas =
     isSessionActive && (activeTabId === "overview" || activeTabId === "canvas");
-  const { isDragging } = useDraggableFileInput(canImportCanvas, (_name, path) =>
-    importCanvasFrom(path),
+  // Paste stays with the composer: an image pasted there is an attachment, not a canvas.
+  const { isDragging } = useDraggableFileInput(
+    canImportCanvas,
+    (_name, path) => importCanvasFrom(path),
+    { paste: false },
   );
   // Not `pickFiles` from the hook above: that picker takes anything, and the one useful filter
   // here is the file extension the drop path has to check for anyway.
