@@ -106,6 +106,19 @@ describe("extractAgentMeta — agents other than claude code", () => {
     expect(meta.toolName).toBe("ReadFile");
   });
 
+  it("names the tool from ACP's own name field, over a vendor namespace", () => {
+    const meta = extractAgentMeta({
+      name: "read_file",
+      _meta: { gemini: { toolName: "ReadFile" } },
+    });
+    expect(meta.toolName).toBe("read_file");
+  });
+
+  it("keeps the earlier name when an update sends name: null", () => {
+    const merged = mergeAgentMeta(extractAgentMeta({ name: null }), { toolName: "read_file" });
+    expect(merged.toolName).toBe("read_file");
+  });
+
   it("derives output, intent and edit counts with no _meta at all", () => {
     const meta = extractAgentMeta({
       kind: "edit",
