@@ -11,8 +11,6 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/ui/toggle-group";
-import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -180,25 +178,23 @@ function Section({
 }
 
 /**
- * Every template, the user's own above the built-in ones.
+ * Every template of one kind, the user's own above the built-in ones.
  *
- * App-wide, so the same list whatever project is open. Clicking a card hands it to `onUse`; the
- * view decides what "use" means for its kind, which for an automation is the editor, filled in.
+ * Drawn inside the section of the kind it serves, so it brings no surface of its own. App-wide,
+ * so the same list whatever project is open. Clicking a card hands it to `onUse`; the section
+ * decides what "use" means, which for an automation is the editor, filled in.
  */
 export function TemplatesPanel({
   projectId,
   projectPath,
   connection,
   kind,
-  onKindChange,
   onUse,
 }: {
   projectId: number;
   projectPath: string;
   connection: ConnectionKey;
-  /** The kind shown, or `null` for every kind. Held by the view, which can arrive here filtered. */
-  kind: TemplateKind | null;
-  onKindChange: (kind: TemplateKind | null) => void;
+  kind: TemplateKind;
   onUse: (card: TemplateCard) => void;
 }) {
   const { data: stored } = useTemplatesQuery();
@@ -209,12 +205,11 @@ export function TemplatesPanel({
   const [editing, setEditing] = useState<Template | null>(null);
   const [deleting, setDeleting] = useState<Template | null>(null);
 
-  const own = (stored ?? []).map(userCard);
-  const searchable = own.length + BUILTIN_TEMPLATES.length > SEARCH_FROM;
-  const shown = (cards: TemplateCard[]) =>
-    searchCards(cards, query).filter((card) => kind === null || card.kind === kind);
-  const shownOwn = shown(own);
-  const shownBuiltin = shown(BUILTIN_TEMPLATES);
+  const own = (stored ?? []).map(userCard).filter((card) => card.kind === kind);
+  const builtin = BUILTIN_TEMPLATES.filter((card) => card.kind === kind);
+  const searchable = own.length + builtin.length > SEARCH_FROM;
+  const shownOwn = searchCards(own, query);
+  const shownBuiltin = searchCards(builtin, query);
 
   const card = (item: TemplateCard) => (
     <Card
@@ -227,50 +222,19 @@ export function TemplatesPanel({
   );
 
   return (
-    // Inset from the window edge on the right, as the Agents view is, since nothing sits beside it.
-    <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-6 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
-      <div className="flex items-center gap-2">
-        {searchable && (
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search templates…"
-              aria-label="Search templates"
-              className="h-8 pl-8 text-xs"
-            />
-          </div>
-        )}
-        <ToggleGroup
-          value={[kind ?? "all"]}
-          onValueChange={(values) => {
-            const next = values.find((value) => value !== (kind ?? "all"));
-            if (next) onKindChange(next === "all" ? null : (next as TemplateKind));
-          }}
-          aria-label="Kind of template"
-          className={cn(!searchable && "ml-auto")}
-        >
-          <ToggleGroupItem value="all" size="sm" variant="outline" className="text-xs">
-            All
-          </ToggleGroupItem>
-          {(Object.keys(TEMPLATE_KIND) as TemplateKind[]).map((option) => {
-            const Icon = TEMPLATE_KIND[option].icon;
-            return (
-              <ToggleGroupItem
-                key={option}
-                value={option}
-                size="sm"
-                variant="outline"
-                className="gap-1.5 text-xs"
-              >
-                <Icon className="size-3.5" />
-                {TEMPLATE_KIND[option].plural}
-              </ToggleGroupItem>
-            );
-          })}
-        </ToggleGroup>
-      </div>
+    <div className="flex flex-col gap-6">
+      {searchable && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search templates…"
+            aria-label="Search templates"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      )}
 
       <Section title="Yours" count={shownOwn.length}>
         {shownOwn.map(card)}

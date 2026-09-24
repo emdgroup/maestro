@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import { Switch } from "@/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -53,6 +54,8 @@ import { useOpenRun, useRunEntries } from "./runs/useRunEntries";
 import { describeNextRun, describeSchedule, localTimezone } from "./schedule";
 import { keptCount, runDuration, waitDuration, type RunEntry } from "./runs/runs";
 import type { Automation, AutomationRun, ConnectionKey } from "@/types/bindings";
+
+export type AutomationsTab = "dashboard" | "templates";
 
 /** Inline text that acts: the empty state's two ways in. */
 const LINK = "cursor-pointer font-medium text-accent underline-offset-2 hover:underline";
@@ -358,6 +361,9 @@ export function AutomationsPanel({
   onEdit,
   onNew,
   onBrowseTemplates,
+  tab,
+  onTabChange,
+  templates,
 }: {
   projectId: number;
   projectPath: string;
@@ -370,8 +376,13 @@ export function AutomationsPanel({
   seed: Partial<Automation> | null;
   onEdit: (automation: Automation) => void;
   onNew: () => void;
-  /** Templates, filtered to automations. */
+  /** Switches to the Templates tab. */
   onBrowseTemplates: () => void;
+  /** Held by the view, because "From templates" in its action bar switches it. */
+  tab: AutomationsTab;
+  onTabChange: (tab: AutomationsTab) => void;
+  /** What the Templates tab shows. */
+  templates: React.ReactNode;
 }) {
   const { data: list } = useAutomationsQuery(projectId);
   const { data: runs } = useAutomationRunsQuery(projectId);
@@ -408,60 +419,79 @@ export function AutomationsPanel({
 
   return (
     <div className="flex h-full min-w-0 flex-1">
-      {/* Its own top edge, rounding away from Recent runs on its right and the sidebar on its left. */}
-      <div className="flex h-full min-w-0 flex-1 flex-col gap-3 overflow-y-auto rounded-tl-xl border-l border-t border-border bg-background p-4 rounded-tr-xl border-r">
-        {(automations ?? []).length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <Cog className="size-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium">No automations yet</p>
-            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              An automation will run your prompt on demand, on a schedule or from a webhook, in the
-              background and whether or not Maestro is open. You decide what it does and what it
-              produces. Create one{" "}
-              <button type="button" onClick={onNew} className={LINK}>
-                from scratch
-              </button>
-              , or{" "}
-              <button type="button" onClick={onBrowseTemplates} className={LINK}>
-                start from a template
-              </button>{" "}
-              and adjust it to this project. You can also ask an agent to guide you through it.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border rounded-lg border border-border bg-card">
-            {(automations ?? []).map((automation) => (
-              <AutomationRow
-                key={automation.id}
-                projectId={projectId}
-                automation={automation}
-                agents={agents}
-                running={running.get(automation.id)}
-                runs={entries.filter((entry) => entry.run.automation_id === automation.id)}
-                now={now}
-                expanded={expanded === automation.id}
-                onToggleExpanded={() =>
-                  setExpanded((open) => (open === automation.id ? null : automation.id))
-                }
-                onJoinRun={(entry) => void openRun(entry)}
-                onShowRun={(entry) => setShownRunId(entry.run.id)}
-                onDeleteRun={onDeleteRun}
-                onRun={() => run.mutate({ projectId, automationId: automation.id })}
-                onEdit={() => onEdit(automation)}
-                onSaveAsTemplate={() => setTemplateFrom(automation)}
-                onToggleEnabled={(enabled) =>
-                  save.mutate({ projectId, automation: { ...automation, enabled } })
-                }
-                onDelete={() => {
-                  remove.mutate(
-                    { projectId, automationId: automation.id },
-                    { onSuccess: () => toast.success(`Deleted “${automation.name}”`) },
-                  );
-                }}
-              />
-            ))}
-          </div>
-        )}
+      {/* Its own top edge, rounding away from Recent runs on its right and the sidebar on its left.
+          Recent runs stays beside both tabs, so switching moves nothing but this pane's body. */}
+      <div className="flex h-full min-w-0 flex-1 flex-col rounded-t-xl border-x border-t border-border bg-background">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => onTabChange(value as AutomationsTab)}
+          className="shrink-0 border-b border-border px-4 pt-2"
+        >
+          <TabsList variant="line">
+            <TabsTrigger value="dashboard" className="text-xs">
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="templates" className="text-xs">
+              Templates
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+          {tab === "templates" ? (
+            templates
+          ) : (automations ?? []).length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+              <Cog className="size-8 text-muted-foreground/40" />
+              <p className="text-sm font-medium">No automations yet</p>
+              <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+                An automation will run your prompt on demand, on a schedule or from a webhook, in
+                the background and whether or not Maestro is open. You decide what it does and what
+                it produces. Create one{" "}
+                <button type="button" onClick={onNew} className={LINK}>
+                  from scratch
+                </button>
+                , or{" "}
+                <button type="button" onClick={onBrowseTemplates} className={LINK}>
+                  start from a template
+                </button>{" "}
+                and adjust it to this project. You can also ask an agent to guide you through it.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border rounded-lg border border-border bg-card">
+              {(automations ?? []).map((automation) => (
+                <AutomationRow
+                  key={automation.id}
+                  projectId={projectId}
+                  automation={automation}
+                  agents={agents}
+                  running={running.get(automation.id)}
+                  runs={entries.filter((entry) => entry.run.automation_id === automation.id)}
+                  now={now}
+                  expanded={expanded === automation.id}
+                  onToggleExpanded={() =>
+                    setExpanded((open) => (open === automation.id ? null : automation.id))
+                  }
+                  onJoinRun={(entry) => void openRun(entry)}
+                  onShowRun={(entry) => setShownRunId(entry.run.id)}
+                  onDeleteRun={onDeleteRun}
+                  onRun={() => run.mutate({ projectId, automationId: automation.id })}
+                  onEdit={() => onEdit(automation)}
+                  onSaveAsTemplate={() => setTemplateFrom(automation)}
+                  onToggleEnabled={(enabled) =>
+                    save.mutate({ projectId, automation: { ...automation, enabled } })
+                  }
+                  onDelete={() => {
+                    remove.mutate(
+                      { projectId, automationId: automation.id },
+                      { onSuccess: () => toast.success(`Deleted “${automation.name}”`) },
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         <SaveAsTemplateDialog automation={templateFrom} onClose={() => setTemplateFrom(null)} />
 
