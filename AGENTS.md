@@ -370,10 +370,22 @@ port. The directory is `<MAESTRO_DATA_DIR>/daemon/` locally — so a dev build g
 rather than contending with the installed app — and `~/.maestro/daemon/` on a remote machine,
 passed through `MAESTRO_DAEMON_DIR`.
 
-A daemon whose `version` or `protocol_version` differs from the connecting client is asked to stop
-over a plain-text `SHUTDOWN` line, which is read before any framing so it works across protocol
-versions. **Its running sessions die with it**, and remote daemons are not version-namespaced, so
-pointing a dev build and a released app at the same SSH host makes them retire each other's.
+A daemon whose `version` or `protocol_version` differs from the connecting client is replaced, but
+only silently when nothing would be lost. `attach` first asks it over a plain-text `STATUS` line,
+answered with one `DaemonActivity` JSON line: a window attached, or any session mid-turn (which
+covers a pending permission prompt and a running automation), makes it busy, and so does no answer
+within two seconds. A busy daemon is left alone and `attach` answers the app's handshake with a
+`SERVER_BUSY_ERROR`, which the preflight modal turns into an **Update anyway** button;
+`attach --replace` (from `preflight_connection`'s `replace`, one spawn only) skips the question.
+Retiring is a plain-text `SHUTDOWN` line. Both lines are read before any framing so they work
+across protocol versions, and every connection is served on its own task so both are answered
+while another window is attached. **A retired daemon's sessions die with it**, and remote daemons
+are not version-namespaced, so a dev build and a released app pointed at the same SSH host keep
+asking to replace each other's.
+
+Deploy replaces the binary before `attach` decides anything: `rm` on Unix, where the running image
+keeps its inode, and a rename to `.old` on native Windows, which refuses to delete a running
+executable but allows renaming one.
 
 `ClientSink` (`maestro-server/src/client_sink.rs`) is what made this possible without touching a
 dozen signatures: every response leaves through `helpers::send_response`, so swapping the

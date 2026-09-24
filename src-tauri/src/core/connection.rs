@@ -115,6 +115,9 @@ pub struct AcpState {
     /// calls (from prefetch_agent_discovery and preflight_connection racing) for the same
     /// connection from running SFTP uploads simultaneously.
     pub deploy_locks: tokio::sync::Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>,
+    /// Connections whose next server spawn may retire a busy daemon from another build. Set by
+    /// `preflight_connection` when the user chose to update anyway, taken by the spawn.
+    pub replace_server: Mutex<std::collections::HashSet<ConnectionKey>>,
     /// Sessions captured at connection server death, awaiting restore after SSH reconnects.
     /// Keyed by connection_id. Consumed by restore_acp_sessions on successful reconnect,
     /// or finalized as ended on permanent failure.
@@ -194,6 +197,7 @@ impl AppState {
                 discovery_cache: tokio::sync::Mutex::new(HashMap::new()),
                 connection_servers: tokio::sync::Mutex::new(HashMap::new()),
                 deploy_locks: tokio::sync::Mutex::new(HashMap::new()),
+                replace_server: Mutex::new(std::collections::HashSet::new()),
                 restorable_sessions: tokio::sync::Mutex::new(HashMap::new()),
                 agent_auth_info: tokio::sync::Mutex::new(HashMap::new()),
                 pending_host_tools: tokio::sync::Mutex::new(HashMap::new()),

@@ -667,6 +667,13 @@ pub async fn spawn_connection_server(
 
     log::debug!("[acp] spawning connection server for {connection_key:?}");
 
+    // Taken, not read: the user agreed to replace what was running this once.
+    let replace = app_state
+        .acp
+        .replace_server
+        .lock()
+        .is_ok_and(|mut keys| keys.remove(&connection_key));
+
     // Commands run through a second process started from the same binary. Record where it lives
     // while we have the resolved path — the command call sites are free functions with no
     // `AppHandle` to deploy or locate it themselves.
@@ -697,11 +704,11 @@ pub async fn spawn_connection_server(
 
     let (write_tx, source, child) = match target {
         TransportTarget::Local => {
-            let (stdin_writer, source, child) = open_local_transport(app_state).await?;
+            let (stdin_writer, source, child) = open_local_transport(app_state, replace).await?;
             (spawn_stdin_writer_task(stdin_writer), source, Some(child))
         }
         TransportTarget::Remote { ssh, server_path } => {
-            let (write_tx, source) = open_remote_transport(ssh, server_path).await?;
+            let (write_tx, source) = open_remote_transport(ssh, server_path, replace).await?;
             (write_tx, source, None)
         }
         #[cfg(windows)]
@@ -709,7 +716,8 @@ pub async fn spawn_connection_server(
             distro,
             server_path,
         } => {
-            let (stdin_writer, source, child) = open_wsl_transport(distro, server_path).await?;
+            let (stdin_writer, source, child) =
+                open_wsl_transport(distro, server_path, replace).await?;
             (spawn_stdin_writer_task(stdin_writer), source, Some(child))
         }
         TransportTarget::Docker {
@@ -722,6 +730,7 @@ pub async fn spawn_connection_server(
                     cli,
                     container_name,
                     server_path,
+                    replace,
                 )
                 .await?;
             (spawn_stdin_writer_task(stdin_writer), source, Some(child))

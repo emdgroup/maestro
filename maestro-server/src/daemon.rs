@@ -18,8 +18,8 @@
 
 use fs2::FileExt;
 use maestro_protocol::{
-    DaemonRuntime, DAEMON_DIR_DEFAULT, DAEMON_DIR_ENV, DAEMON_LOCK_FILE, DAEMON_RUNTIME_FILE,
-    PROTOCOL_VERSION,
+    DaemonActivity, DaemonRuntime, DAEMON_DIR_DEFAULT, DAEMON_DIR_ENV, DAEMON_LOCK_FILE,
+    DAEMON_RUNTIME_FILE, PROTOCOL_VERSION, SERVER_BUSY_ERROR,
 };
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -30,11 +30,16 @@ use tokio::net::{TcpListener, TcpStream};
 /// so it keeps working against a daemon speaking a protocol version this binary does not.
 const MODE_ATTACH: &str = "ATTACH";
 const MODE_SHUTDOWN: &str = "SHUTDOWN";
+/// Answered with one [`DaemonActivity`] JSON line, then the connection closes.
+const MODE_STATUS: &str = "STATUS";
 
 /// How long to wait for a daemon we asked to exit to release its lock.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 /// How long to wait for a daemon we just started to publish its runtime file.
 const STARTUP_WAIT: Duration = Duration::from_secs(10);
+/// How long a daemon from another build has to say whether it is in use. One that cannot answer
+/// in time is treated as busy: asking the user is recoverable, ending their sessions is not.
+const STATUS_WAIT: Duration = Duration::from_secs(2);
 
 /// Where the lock and runtime files live.
 ///
@@ -151,7 +156,11 @@ fn write_runtime(dir: &Path, runtime: &DaemonRuntime) -> Result<(), String> {
         .map_err(|e| format!("cannot publish runtime file: {e}"))
 }
 
-/// Serve one client for as long as it stays connected.
+/// Serve one connection for as long as it stays open.
+///
+/// Every connection gets a task of its own, so a `STATUS` or `SHUTDOWN` from another build is
+/// answered while a window is attached; `attach_gate` is what still keeps attached clients to one
+/// at a time, since two would interleave their streams onto one sink.
 ///
 /// Returns `true` when the client asked the daemon to shut down. Everything else — a bad token, a
 /// protocol mismatch, a dropped connection — returns `false`, because none of them is a reason for
@@ -161,6 +170,7 @@ pub(crate) async fn serve_client(
     token: &str,
     sink: &crate::ClientOut,
     msg_tx: &tokio::sync::mpsc::Sender<Result<maestro_protocol::MaestroRpcMessage, String>>,
+    attach_gate: &tokio::sync::Mutex<()>,
 ) -> bool {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
@@ -177,20 +187,45 @@ pub(crate) async fn serve_client(
     match line.trim() {
         MODE_SHUTDOWN => {
             crate::send_diag("info", "[daemon] shutdown requested by a client");
-            return true;
+            true
         }
-        MODE_ATTACH => {}
+        MODE_STATUS => {
+            let activity = DaemonActivity {
+                client_attached: sink.lock().await.is_attached(),
+                turn_active: crate::sessions::any_turn_active(),
+            };
+            let body = serde_json::to_string(&activity).unwrap_or_default();
+            if let Err(e) = write_half.write_all(format!("{body}\n").as_bytes()).await {
+                crate::send_diag("debug", format!("[daemon] could not answer STATUS: {e}"));
+            }
+            false
+        }
+        MODE_ATTACH => {
+            let _attached = attach_gate.lock().await;
+            serve_attached(reader, write_half, sink, msg_tx).await;
+            sink.lock().await.detach();
+            crate::send_diag("info", "[daemon] client detached");
+            false
+        }
         other => {
             crate::send_diag("warn", format!("[daemon] unknown client mode {other:?}"));
-            return false;
+            false
         }
     }
+}
 
+/// Handshake with an attaching client, then relay its messages to the server loop until it goes.
+async fn serve_attached(
+    mut reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
+    mut write_half: tokio::net::tcp::OwnedWriteHalf,
+    sink: &crate::ClientOut,
+    msg_tx: &tokio::sync::mpsc::Sender<Result<maestro_protocol::MaestroRpcMessage, String>>,
+) {
     // Handshake before the sink is attached, so a client of the wrong protocol version never
     // receives a byte of session traffic.
     let first = match read_framed(&mut reader).await {
         Ok(msg) => msg,
-        Err(_) => return false,
+        Err(_) => return,
     };
     let client_version = match first {
         maestro_protocol::MaestroRpcMessage::Request(
@@ -202,7 +237,7 @@ pub(crate) async fn serve_client(
                 "expected Handshake as first message".to_string(),
             )
             .await;
-            return false;
+            return;
         }
     };
     if client_version != PROTOCOL_VERSION {
@@ -213,7 +248,7 @@ pub(crate) async fn serve_client(
             ),
         )
         .await;
-        return false;
+        return;
     }
     if write_framed(
         &mut write_half,
@@ -226,7 +261,7 @@ pub(crate) async fn serve_client(
     .await
     .is_err()
     {
-        return false;
+        return;
     }
 
     sink.lock().await.attach(Box::new(write_half));
@@ -239,12 +274,12 @@ pub(crate) async fn serve_client(
         match read {
             Ok(msg) => {
                 if msg_tx.send(Ok(msg)).await.is_err() {
-                    return false;
+                    return;
                 }
             }
             // The client is gone, or sent something unreadable. Either way this connection is
             // over; the sessions it started are not.
-            Err(_) => return false,
+            Err(_) => return,
         }
     }
 }
@@ -294,12 +329,33 @@ async fn write_framed<W: tokio::io::AsyncWrite + Unpin>(
 /// Reconnects with backoff when the daemon dies under us: a resident process that goes away is a
 /// failure the app should survive, and the next connection starts a fresh daemon. Ends when our
 /// own stdin closes, which is the app telling us it is done.
+///
+/// `--replace` retires a busy daemon from another build instead of refusing. It applies to the
+/// first connection only: the user agreed to replace what was running then, not whatever a
+/// reconnect finds later.
 pub(crate) async fn run_attach() -> Result<(), String> {
     let dir = dir()?;
+    let replace = std::env::args().any(|arg| arg == "--replace");
+    let mut first = true;
     let mut backoff = Duration::from_secs(1);
 
     loop {
-        let stream = connect(&dir).await?;
+        let stream = match connect(&dir, first && replace).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                // The app is waiting on a handshake answer, and the stderr this would otherwise go
+                // to is discarded, so this is the only way it can show the user why.
+                if first {
+                    let _ = write_framed(
+                        &mut tokio::io::stdout(),
+                        &crate::helpers::error_response(e.clone()),
+                    )
+                    .await;
+                }
+                return Err(e);
+            }
+        };
+        first = false;
         let (mut read_half, mut write_half) = stream.into_split();
         let mut stdin = tokio::io::stdin();
         let mut stdout = tokio::io::stdout();
@@ -345,7 +401,11 @@ async fn stopped_on_purpose(dir: &Path) -> bool {
 }
 
 /// Connect to the daemon for this environment, starting or replacing it as needed.
-async fn connect(dir: &Path) -> Result<TcpStream, String> {
+///
+/// A daemon from another build is replaced without asking only when nothing would be lost: no
+/// window attached to it and no turn in flight. Otherwise the answer is a [`SERVER_BUSY_ERROR`]
+/// unless `replace` says the user has already agreed.
+async fn connect(dir: &Path, replace: bool) -> Result<TcpStream, String> {
     let lock = open_lock(dir)?;
 
     if daemon_is_running(&lock) {
@@ -360,6 +420,14 @@ async fn connect(dir: &Path) -> Result<TcpStream, String> {
             // machine cannot both hold the lock, and the sessions it carries are not ours to
             // resume across a protocol change anyway.
             Some(runtime) => {
+                if !replace {
+                    if let Some(reason) = busy_reason(&runtime).await {
+                        return Err(format!(
+                            "{SERVER_BUSY_ERROR}: maestro-server {} is running on this machine and {reason}",
+                            runtime.version
+                        ));
+                    }
+                }
                 // A daemon whose port no longer answers is one already on its way out, so the
                 // wait below is the real test either way.
                 if let Err(e) = open(runtime.port, &runtime.token, MODE_SHUTDOWN).await {
@@ -399,6 +467,35 @@ async fn connect(dir: &Path) -> Result<TcpStream, String> {
     start_daemon().await?;
     let runtime = wait_for_runtime(dir, stale.as_deref()).await?;
     open(runtime.port, &runtime.token, MODE_ATTACH).await
+}
+
+/// Why a daemon from another build cannot be retired without asking, or `None` if nothing would be
+/// lost. A daemon that does not answer counts as busy.
+async fn busy_reason(runtime: &DaemonRuntime) -> Option<&'static str> {
+    let activity = tokio::time::timeout(STATUS_WAIT, query_activity(runtime))
+        .await
+        .ok()
+        .and_then(Result::ok);
+    match activity {
+        None => Some("could not say whether it is in use"),
+        Some(activity) if activity.client_attached => {
+            Some("another Maestro window is connected to it")
+        }
+        Some(activity) if activity.turn_active => {
+            Some("an agent is working in one of its sessions")
+        }
+        Some(_) => None,
+    }
+}
+
+async fn query_activity(runtime: &DaemonRuntime) -> Result<DaemonActivity, String> {
+    let stream = open(runtime.port, &runtime.token, MODE_STATUS).await?;
+    let mut line = String::new();
+    BufReader::new(stream)
+        .read_line(&mut line)
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(line.trim()).map_err(|e| e.to_string())
 }
 
 /// Start a daemon that outlives us.
@@ -569,5 +666,94 @@ mod tests {
     async fn wait_for_gives_up() {
         assert!(wait_for(Duration::from_millis(80), || false).await.is_err());
         assert!(wait_for(Duration::from_millis(80), || true).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn another_build_learns_whether_retiring_the_daemon_would_cost_anything() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let runtime = DaemonRuntime {
+            port: listener.local_addr().unwrap().port(),
+            token: "t".to_string(),
+            version: "0.0.1".to_string(),
+            protocol_version: PROTOCOL_VERSION,
+            pid: 1,
+        };
+        let sink = crate::client_sink::ClientSink::detached();
+        let (msg_tx, _msg_rx) = tokio::sync::mpsc::channel(4);
+        let gate = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        tokio::spawn({
+            let sink = sink.clone();
+            async move {
+                loop {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let (sink, msg_tx, gate) = (sink.clone(), msg_tx.clone(), gate.clone());
+                    tokio::spawn(async move {
+                        serve_client(stream, "t", &sink, &msg_tx, &gate).await;
+                    });
+                }
+            }
+        });
+
+        assert_eq!(busy_reason(&runtime).await, None);
+
+        // A window attaches and stays: the status is still answered, and says so.
+        let mut window = open(runtime.port, &runtime.token, MODE_ATTACH)
+            .await
+            .unwrap();
+        write_framed(
+            &mut window,
+            &maestro_protocol::MaestroRpcMessage::Request(
+                maestro_protocol::ServerRequest::Handshake(maestro_protocol::HandshakeRequest {
+                    protocol_version: PROTOCOL_VERSION,
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+        read_framed(&mut window).await.unwrap();
+        assert_eq!(
+            busy_reason(&runtime).await,
+            Some("another Maestro window is connected to it")
+        );
+
+        // A turn in flight anywhere in the process is busy too.
+        drop(window);
+        wait_for(Duration::from_secs(2), || {
+            sink.try_lock().is_ok_and(|s| !s.is_attached())
+        })
+        .await
+        .unwrap();
+        let turn = crate::sessions::new_turn_flag();
+        turn.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            busy_reason(&runtime).await,
+            Some("an agent is working in one of its sessions")
+        );
+        drop(turn);
+        assert_eq!(busy_reason(&runtime).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_cannot_answer_status_counts_as_busy() {
+        // What a daemon from before `STATUS` existed does: read the mode, not know it, hang up.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                drop(stream);
+            }
+        });
+        let runtime = DaemonRuntime {
+            port,
+            token: "t".to_string(),
+            version: "0.0.1".to_string(),
+            protocol_version: PROTOCOL_VERSION,
+            pid: 1,
+        };
+        assert_eq!(
+            busy_reason(&runtime).await,
+            Some("could not say whether it is in use")
+        );
     }
 }

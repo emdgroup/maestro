@@ -1751,10 +1751,13 @@ async interruptAcpTurn(sessionId: string) : Promise<Result<null, string>> {
 },
 /**
  * Validate the environment for a connection and boot the persistent server.
+ * 
+ * `replace` is the user choosing to update a server from another build of Maestro that is in use
+ * on that machine, which is otherwise refused with `SERVER_BUSY_ERROR`.
  */
-async preflightConnection(connection: ConnectionKey) : Promise<Result<PreflightResult, string>> {
+async preflightConnection(connection: ConnectionKey, replace: boolean) : Promise<Result<PreflightResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connection }) };
+    return { status: "ok", data: await TAURI_INVOKE("preflight_connection", { connection, replace }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

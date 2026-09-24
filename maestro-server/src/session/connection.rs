@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use acp::schema::v1::{
@@ -356,7 +355,7 @@ pub(crate) async fn create_session_on_connection(
     let supports_session_delete = conn.capabilities.supports_session_delete;
 
     let router = Arc::clone(&conn.router);
-    let turn_active = Arc::new(AtomicBool::new(false));
+    let turn_active = crate::sessions::new_turn_flag();
     let task = tokio::spawn(run_command_loop(
         cmd_rx,
         cx,
@@ -514,7 +513,7 @@ pub(crate) async fn load_session_on_connection(
     let so = Arc::clone(&stdout);
     let sid = maestro_session_id;
     let router = Arc::clone(&conn.router);
-    let turn_active = Arc::new(AtomicBool::new(false));
+    let turn_active = crate::sessions::new_turn_flag();
     let task = tokio::spawn(run_command_loop(
         cmd_rx,
         cx,

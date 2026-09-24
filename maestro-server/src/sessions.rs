@@ -1,12 +1,38 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 
 use agent_client_protocol as acp;
 use maestro_protocol::{
     AuthMethodInfo, ElicitationRequest, PermissionRequest, PromptCapabilitiesInfo,
 };
+
+/// Every session's `turn_active` flag, so a `STATUS` asked from outside the server loop can tell
+/// whether any turn is in flight without reaching into the session map the loop owns.
+///
+/// Held weakly: a flag whose session is gone drops out on its own.
+static TURN_FLAGS: std::sync::Mutex<Vec<Weak<AtomicBool>>> = std::sync::Mutex::new(Vec::new());
+
+/// A fresh `turn_active` flag, registered for [`any_turn_active`].
+pub(crate) fn new_turn_flag() -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut flags) = TURN_FLAGS.lock() {
+        flags.retain(|weak| weak.strong_count() > 0);
+        flags.push(Arc::downgrade(&flag));
+    }
+    flag
+}
+
+/// Whether any live session is mid-turn.
+pub(crate) fn any_turn_active() -> bool {
+    TURN_FLAGS.lock().is_ok_and(|flags| {
+        flags
+            .iter()
+            .filter_map(Weak::upgrade)
+            .any(|flag| flag.load(Ordering::SeqCst))
+    })
+}
 
 pub enum SessionCommand {
     Prompt(String),

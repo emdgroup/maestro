@@ -18,6 +18,10 @@ pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
 /// `reader_task` and by substring in `useAcpActivity.ts`, so older deployed servers — which
 /// spell the same string literally — keep working.
 pub const SESSION_LOAD_FAILED_ERROR: &str = "ACP session/load failed";
+/// Prefix of the error `attach` answers with when the resident server belongs to another build of
+/// Maestro and is in use, so replacing it would end work somebody is doing. `attach --replace`
+/// replaces it regardless. Matched by substring in `PreflightModal.tsx`.
+pub const SERVER_BUSY_ERROR: &str = "server_busy";
 
 // --- Top-level envelope ---
 
@@ -199,6 +203,20 @@ pub struct DaemonRuntime {
     /// Protocol the daemon speaks. A client of a different one kills it and starts its own.
     pub protocol_version: u32,
     pub pid: u32,
+}
+
+/// What a daemon answers to a `STATUS` line: whether retiring it would cost anybody anything.
+///
+/// Asked by an `attach` from another build before it replaces the daemon, so it is read as one
+/// JSON line before any framing and must stay readable across protocol versions. Add fields with
+/// `#[serde(default)]` only.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonActivity {
+    /// A Maestro window is connected to it right now.
+    pub client_attached: bool,
+    /// A session is mid-turn, which includes one waiting on a permission prompt and every
+    /// automation run still going.
+    pub turn_active: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

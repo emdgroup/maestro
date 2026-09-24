@@ -34,7 +34,8 @@ interface ConnectionContextValue {
   preflightStatus: PreflightStatus;
   preflightResult: PreflightResult | null;
   preflightError: string | null;
-  startPreflight: (connection: Connection) => Promise<void>;
+  /** `replace` updates a server from another build that is in use; see `SERVER_BUSY_ERROR`. */
+  startPreflight: (connection: Connection, replace?: boolean) => Promise<void>;
   ignoreWarnings: () => void;
   resetPreflight: () => void;
 }
@@ -53,7 +54,7 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
   const [preflightError, setPreflightError] = useState<string | null>(null);
 
   const startPreflight = useCallback(
-    async (connection: Connection) => {
+    async (connection: Connection, replace = false) => {
       if (preflightStatus === "checking") return;
 
       const connectionKey: ConnectionKey =
@@ -69,7 +70,7 @@ export function ConnectionProvider({ children }: ConnectionProviderProps) {
       setPreflightResult(null);
       setPreflightError(null);
 
-      const response = await commands.preflightConnection(connectionKey);
+      const response = await commands.preflightConnection(connectionKey, replace);
       if (response.status === "error") {
         setPreflightError(response.error as string);
         setPreflightStatus("failed");
