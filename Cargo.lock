@@ -3723,6 +3723,7 @@ dependencies = [
  "iana-time-zone",
  "ignore",
  "maestro-protocol",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

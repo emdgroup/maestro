@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod collections;
 pub mod command_ext;
 pub mod connectivity;
 pub mod core;
@@ -115,6 +116,18 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::set_prompt_favorite,
         crate::ipc::set_prompt_shared,
         crate::ipc::delete_prompt,
+        crate::ipc::list_mcp_servers,
+        crate::ipc::save_mcp_server,
+        crate::ipc::delete_mcp_server,
+        crate::ipc::test_mcp_server,
+        crate::ipc::mcp_catalog,
+        crate::ipc::list_skills,
+        crate::ipc::save_skill,
+        crate::ipc::set_skill_agents,
+        crate::ipc::delete_skill,
+        crate::ipc::install_catalog_skill,
+        crate::ipc::skills_catalog,
+        crate::ipc::skill_description,
         crate::ipc::get_background_server,
         crate::ipc::set_background_server_autostart,
         crate::ipc::stop_background_server,

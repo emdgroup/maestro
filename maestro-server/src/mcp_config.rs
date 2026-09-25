@@ -47,20 +47,20 @@ struct McpJsonFile {
     mcp_servers: BTreeMap<String, McpJsonEntry>,
 }
 
-#[derive(Debug, Deserialize)]
-struct McpJsonEntry {
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct McpJsonEntry {
     #[serde(default, rename = "type")]
-    transport: Option<String>,
+    pub(crate) transport: Option<String>,
     #[serde(default)]
-    command: Option<String>,
+    pub(crate) command: Option<String>,
     #[serde(default)]
-    args: Vec<String>,
+    pub(crate) args: Vec<String>,
     #[serde(default)]
-    env: BTreeMap<String, String>,
+    pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
-    url: Option<String>,
+    pub(crate) url: Option<String>,
     #[serde(default)]
-    headers: BTreeMap<String, String>,
+    pub(crate) headers: BTreeMap<String, String>,
 }
 
 /// Read and convert `<cwd>/.mcp.json`. A missing file is the common case and yields no servers
@@ -78,6 +78,44 @@ pub(crate) async fn load_mcp_servers(cwd: &str, support: McpTransportSupport) ->
         }
     };
     parse_mcp_servers(&contents, support, &std::env::vars().collect())
+}
+
+/// `<cwd>/.mcp.json` as written, for listing rather than sending: nothing is expanded or checked
+/// against an agent. An unreadable file lists nothing; the session path reports why.
+pub(crate) fn project_servers(cwd: &str) -> Vec<maestro_protocol::ManagedMcpServer> {
+    let Ok(contents) = std::fs::read_to_string(Path::new(cwd).join(MCP_CONFIG_FILE)) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = serde_json::from_str::<McpJsonFile>(&contents) else {
+        return Vec::new();
+    };
+    let pairs = |map: BTreeMap<String, String>| {
+        map.into_iter()
+            .map(|(key, value)| maestro_protocol::McpKeyValue {
+                key,
+                value,
+                secret: false,
+            })
+            .collect()
+    };
+    parsed
+        .mcp_servers
+        .into_iter()
+        .filter(|(name, _)| name != maestro_protocol::MCP_SERVER_NAME)
+        .map(|(name, entry)| maestro_protocol::ManagedMcpServer {
+            transport: entry
+                .transport
+                .unwrap_or_else(|| if entry.url.is_some() { "http" } else { "stdio" }.to_string()),
+            name,
+            command: entry.command,
+            args: entry.args,
+            env: pairs(entry.env),
+            url: entry.url,
+            headers: pairs(entry.headers),
+            agents: Vec::new(),
+            catalog_id: None,
+        })
+        .collect()
 }
 
 /// Split from `load_mcp_servers` so the conversion is testable without a filesystem or a
@@ -117,7 +155,7 @@ pub(crate) fn parse_mcp_servers(
     out
 }
 
-fn convert_entry(
+pub(crate) fn convert_entry(
     name: &str,
     entry: McpJsonEntry,
     support: McpTransportSupport,

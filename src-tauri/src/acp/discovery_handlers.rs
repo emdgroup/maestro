@@ -359,6 +359,18 @@ pub async fn preflight_connection(
         });
     }
 
+    // The daemon holds MCP secrets in memory only, so one that restarted since the last window
+    // has none until this runs. Detached for the same reason as the skills above.
+    {
+        let app_state = Arc::clone(&*app_state);
+        tokio::spawn(async move {
+            if let Err(e) = crate::collections::mcp::push_secrets(&app_state, connection_key).await
+            {
+                log::warn!("[preflight] handing MCP secrets to {connection_key:?} failed: {e}");
+            }
+        });
+    }
+
     {
         let mut cache = app_state.acp.discovery_cache.lock().await;
         let maestro_server_path = cache

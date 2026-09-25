@@ -27,6 +27,7 @@ mod helpers;
 mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;
+mod mcp_store;
 mod session;
 mod sessions;
 mod skills;

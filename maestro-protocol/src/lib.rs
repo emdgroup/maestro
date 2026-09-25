@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -120,6 +120,23 @@ pub enum ServerRequest {
     SetToolPath(SetToolPathRequest),
     TestToolPath(TestToolPathRequest),
     InstallSkills(InstallSkillsRequest),
+    /// The MCP servers the user manages for this machine, secrets blanked, and the ones a
+    /// project's own `.mcp.json` declares.
+    ListMcpServers(ProjectScopedRequest),
+    /// Replace the whole list. One round trip and no ids: the list is short and has one writer.
+    SaveMcpServers(SaveMcpServersRequest),
+    /// Replace the secret values held in memory for the managed servers. Never written to disk.
+    SetMcpSecrets(SetMcpSecretsRequest),
+    /// Connect to a server from this machine and list its tools: a stdio one is started and
+    /// stopped, an http or sse one is reached over the network the agents would use.
+    TestMcpServer(TestMcpServerRequest),
+    /// The skills the user manages for this machine, which agents each is deployed to, and the
+    /// ones a project carries in its own agent directories.
+    ListSkills(ProjectScopedRequest),
+    /// Write a skill into the library if files are given, then install or remove it per agent.
+    ApplySkill(ApplySkillRequest),
+    /// Remove a skill from every agent, and from the library.
+    DeleteSkill(DeleteSkillRequest),
     DetectInstalledAgents(DetectInstalledAgentsRequest),
     DetectProjectAgents(DetectProjectAgentsRequest),
     SpawnAuthTerminal(SpawnAuthTerminalRequest),
@@ -376,6 +393,141 @@ pub struct InstallSkillsRequest {
 pub struct InstallSkillsResponse {
     /// `false` when the target already had these exact skills and nothing was run.
     pub installed: bool,
+}
+
+/// One environment variable or header of a managed MCP server.
+///
+/// A secret's `value` is always `""` in `SaveMcpServers` and `ListMcpServersOk`: the app keeps it
+/// in the OS keychain and hands it over through `SetMcpSecrets`, so it is never on disk here.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpKeyValue {
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub secret: bool,
+}
+
+/// An MCP server the user added through Maestro, injected into the sessions of the agents it lists.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ManagedMcpServer {
+    pub name: String,
+    /// `stdio`, `http` or `sse`.
+    pub transport: String,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: Vec<McpKeyValue>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<McpKeyValue>,
+    /// Maestro agent ids, e.g. `claude-acp`.
+    #[serde(default)]
+    pub agents: Vec<String>,
+    /// The registry entry it was installed from, if any.
+    #[serde(default)]
+    pub catalog_id: Option<String>,
+}
+
+/// A listing that can also look inside one project.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProjectScopedRequest {
+    #[serde(default)]
+    pub project_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct McpServerList {
+    pub servers: Vec<ManagedMcpServer>,
+    /// The project's `.mcp.json`, read as it is: every agent gets these, and Maestro does not
+    /// edit them.
+    #[serde(default)]
+    pub project: Vec<ManagedMcpServer>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveMcpServersRequest {
+    pub servers: Vec<ManagedMcpServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpSecret {
+    pub server: String,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetMcpSecretsRequest {
+    pub secrets: Vec<McpSecret>,
+}
+
+/// The server to try, with its secret values filled in.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TestMcpServerRequest {
+    pub server: ManagedMcpServer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpTestResult {
+    pub ok: bool,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// A skill in this machine's library.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ManagedSkill {
+    pub name: String,
+    /// `owner/repo` for a skill installed from the catalog, `None` for one written in Maestro.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// The whole `SKILL.md`, frontmatter included. Parsed by the app, which is what writes it.
+    pub skill_md: String,
+    /// Maestro agent id to whether the skill is installed for it. An agent set to `false` keeps
+    /// its place, so the card still shows a switch to turn it back on.
+    pub agents: std::collections::BTreeMap<String, bool>,
+}
+
+/// A skill a project carries in one of its agent directories, such as `.claude/skills/<name>`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectSkill {
+    pub name: String,
+    /// Relative to the project root, e.g. `.claude/skills/review`.
+    pub dir: String,
+    pub skill_md: String,
+    /// Maestro agent ids that read that directory.
+    pub agents: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SkillList {
+    pub skills: Vec<ManagedSkill>,
+    /// Maestro agent ids the skills CLI can install for. The rest are drawn disabled.
+    pub supported_agents: Vec<String>,
+    #[serde(default)]
+    pub project: Vec<ProjectSkill>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ApplySkillRequest {
+    pub name: String,
+    /// Paths relative to the skill's own directory, e.g. `SKILL.md`. `None` leaves the library
+    /// copy as it is, which is all a switch on the card needs.
+    #[serde(default)]
+    pub files: Option<Vec<SkillFile>>,
+    #[serde(default)]
+    pub source: Option<String>,
+    pub agents: std::collections::BTreeMap<String, bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteSkillRequest {
+    pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -774,6 +926,13 @@ pub enum ServerResponse {
     SetToolPathOk(ToolCheckResult),
     TestToolPathOk(ToolCheckResult),
     InstallSkillsOk(InstallSkillsResponse),
+    ListMcpServersOk(McpServerList),
+    SaveMcpServersOk,
+    SetMcpSecretsOk,
+    TestMcpServerOk(McpTestResult),
+    ListSkillsOk(SkillList),
+    ApplySkillOk,
+    DeleteSkillOk,
     DetectInstalledAgentsOk(DetectInstalledAgentsResponse),
     DetectProjectAgentsOk(DetectProjectAgentsResponse),
     /// An agent called a Maestro MCP tool the host has to answer. Tauri replies with

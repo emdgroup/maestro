@@ -1,7 +1,7 @@
-import { Bot, BotOff, Check } from "lucide-react";
+import { BotOff, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/ui/popover";
-import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
+import { AgentIcon } from "@/components/common/AgentIcon";
 import { PILL, POPOVER_ITEM } from "./pill-styles";
 
 export interface Agent {
@@ -14,13 +14,6 @@ interface AgentPickerProps {
   agentId: string | null;
   agents: Agent[];
   onChange?: (id: string | null) => void;
-}
-
-function AgentIcon({ agent }: { agent: Agent }) {
-  if (hasBrandIcon(agent.id)) return <BrandIcon slug={agent.id} className="size-3 shrink-0" />;
-  if (agent.icon)
-    return <img src={agent.icon} className="size-3 shrink-0 dark:[filter:invert(1)]" alt="" />;
-  return <Bot className="size-3 shrink-0 text-muted-foreground" />;
 }
 
 export function AgentPicker({ agentId, agents, onChange }: AgentPickerProps) {
