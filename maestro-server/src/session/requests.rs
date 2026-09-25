@@ -125,6 +125,7 @@ pub(crate) async fn load(
             &conn_handle,
             req.session_id.clone(),
             req.resume_session_id.clone(),
+            &req.agent_id,
             &req.cwd,
             &req.additional_directories,
             Arc::clone(&stdout_task),

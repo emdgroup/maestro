@@ -48,7 +48,8 @@ pub(crate) struct SpawnResult {
     pub(crate) config_options: Option<Vec<serde_json::Value>>,
 }
 
-/// Load `.mcp.json` for `cwd` and report what was dropped and why.
+/// Load `.mcp.json` for `cwd`, then the servers the user manages for `agent_id` on this machine,
+/// and report what was dropped and why.
 ///
 /// Shared by `session/new` and `session/load` so a resumed session sees the same servers as a
 /// fresh one — an agent that reconnects its MCP servers on load would otherwise lose them.
@@ -56,8 +57,21 @@ async fn mcp_servers_for(
     cwd: &str,
     support: McpTransportSupport,
     maestro_session_id: &str,
+    agent_id: &str,
 ) -> Vec<McpServer> {
-    let loaded = crate::mcp_config::load_mcp_servers(cwd, support).await;
+    let mut loaded = crate::mcp_config::load_mcp_servers(cwd, support).await;
+    let taken = loaded.servers.iter().map(mcp_server_name).collect();
+    let managed = crate::mcp_store::servers_for(agent_id, support, &taken);
+    if !managed.servers.is_empty() {
+        crate::send_diag(
+            "info",
+            format!(
+                "[mcp] forwarding {} managed server(s) for {agent_id}",
+                managed.servers.len()
+            ),
+        );
+    }
+    loaded.skipped.extend(managed.skipped);
     for reason in &loaded.skipped {
         crate::send_diag("warn", format!("[mcp] skipped {reason}"));
     }
@@ -72,10 +86,20 @@ async fn mcp_servers_for(
         );
     }
     let mut servers = loaded.servers;
+    servers.extend(managed.servers);
     if let Some(server) = maestro_mcp_server(maestro_session_id) {
         servers.push(server);
     }
     servers
+}
+
+fn mcp_server_name(server: &McpServer) -> String {
+    match server {
+        McpServer::Stdio(s) => s.name.clone(),
+        McpServer::Http(s) => s.name.clone(),
+        McpServer::Sse(s) => s.name.clone(),
+        _ => String::new(),
+    }
 }
 
 /// Maestro's own MCP server, as a stdio entry pointing back at this binary.
@@ -260,6 +284,7 @@ pub(crate) async fn session_delete_on_connection(
 pub(crate) async fn create_session_on_connection(
     conn: &AgentConnectionHandle,
     maestro_session_id: String,
+    agent_id: &str,
     cwd: &str,
     additional_directories: &[String],
     stdout: crate::ClientOut,
@@ -269,8 +294,13 @@ pub(crate) async fn create_session_on_connection(
         "info",
         format!("[session] session/new maestro_id={maestro_session_id}"),
     );
-    let mcp_servers =
-        mcp_servers_for(cwd, conn.capabilities.mcp_transports, &maestro_session_id).await;
+    let mcp_servers = mcp_servers_for(
+        cwd,
+        conn.capabilities.mcp_transports,
+        &maestro_session_id,
+        agent_id,
+    )
+    .await;
     let roots = additional_directories_for(
         additional_directories,
         conn.capabilities.supports_additional_directories,
@@ -405,6 +435,7 @@ pub(crate) async fn load_session_on_connection(
     conn: &AgentConnectionHandle,
     maestro_session_id: String,
     resume_session_id: String,
+    agent_id: &str,
     cwd: &str,
     additional_directories: &[String],
     stdout: crate::ClientOut,
@@ -443,7 +474,13 @@ pub(crate) async fn load_session_on_connection(
     let load_req =
         LoadSessionRequest::new(resume_session_id.clone(), std::path::PathBuf::from(cwd))
             .mcp_servers(
-                mcp_servers_for(cwd, conn.capabilities.mcp_transports, &maestro_session_id).await,
+                mcp_servers_for(
+                    cwd,
+                    conn.capabilities.mcp_transports,
+                    &maestro_session_id,
+                    agent_id,
+                )
+                .await,
             )
             .additional_directories(
                 additional_directories_for(

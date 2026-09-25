@@ -682,6 +682,40 @@ a surface can read a live local endpoint.
 Saved canvases are `.maestro/canvases/<acp_session_id>/<surfaceId>.html`, self-contained and
 openable in a browser. `.json` files from before this change are left alone, not migrated.
 
+### Skills and MCP servers in Collections
+
+Both are per machine and live with the daemon, beside `tools.json`: `~/.maestro/mcp-servers.json`
+(`maestro-server/src/mcp_store.rs`), and `~/.maestro/skills.json` with the files under
+`~/.maestro/skill-library/<name>/` (`maestro-server/src/skills.rs`). The app's half, commands and
+catalogs, is `src-tauri/src/collections/`.
+
+- **MCP servers reach agents by injection.** `mcp_servers_for` appends every managed server that
+  lists the session's agent id, after `.mcp.json`, through the same `convert_entry`, so capability
+  gating and `${VAR}` expansion apply. The project's file wins a name collision; `maestro` is
+  reserved.
+- **Secrets never touch the daemon's disk.** Secret rows are stored blank there. The values are in
+  the OS keychain (`maestro.mcp`, account `<connection>:<server>:<key>`, through
+  `KeychainStore::set_secret`) and pushed into the daemon's memory with `SetMcpSecrets` after every
+  preflight and every change. A daemon restarted with no window open has none, and skips those
+  servers until the app connects again.
+- **Skills deploy through the pinned skills CLI**: `add <library>/<name> -g -y -a <agents>` and
+  `remove <name> -g -y -a <agents>`, mapped by `AGENT_SKILL_TARGETS` from Maestro agent ids to the
+  CLI's keys, checked against its agent table. Several CLI agents share `~/.agents/skills`, so
+  switching a skill off for one can switch it off for its neighbours.
+- **Catalogs**: the GitHub MCP Registry (`api.mcp.github.com`) for MCP. For skills, skills.sh's
+  all-time leaderboard (`/api/skills/all-time/<page>`, 200 a page, most installed first) and its
+  search. The leaderboard endpoint is undocumented, the one the skills.sh site pages through
+  itself. Fetched in Rust because skills.sh sends no CORS headers. A skill's files, and so its
+  description, come from `skills.sh/api/download/<owner>/<repo>/<skill>`, the endpoint the skills CLI
+  uses; GitHub's trees API is only the fallback. Only `owner/repo` sources are listed.
+- **Test connection runs in the daemon**, for every transport (`mcp_store::test`): a stdio command
+  has to exist on the connection's machine and a URL has to be reachable from it, since that is
+  where the agents run. `reqwest` is in `maestro-server` for this alone.
+- **Listed but not managed**: the project's `.mcp.json` and the skills in its agent directories
+  (`AGENT_SKILL_TARGETS`' third column, e.g. `.claude/skills`), read by the daemon on
+  `ListMcpServers` / `ListSkills` with a `project_path`; and Maestro's own `maestro` server and
+  bundled skills, drawn read-only.
+
 ### Bundled ACP agent registry
 
 `maestro-server/src/assets/registry.json` is vendored: it is committed, `include_str!`'d by
@@ -773,7 +807,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 30 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 5.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 6.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

@@ -1,12 +1,6 @@
-import { useState } from "react";
-import {
-  ChevronDown,
-  Cog,
-  LayoutTemplate,
-  MessageSquareText,
-  Plus,
-  type LucideIcon,
-} from "lucide-react";
+import { useState, type ComponentType } from "react";
+import { BookOpen, ChevronDown, Cog, LayoutTemplate, MessageSquareText, Plus } from "lucide-react";
+import { McpIcon } from "@/components/common/icons/McpIcon";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
 import {
@@ -17,12 +11,21 @@ import {
 } from "@/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { AutomationsPanel, type AutomationsTab } from "./automations/AutomationsPanel";
+import { McpPanel, type McpDraft } from "./mcp/McpPanel";
 import { PromptsPanel } from "./prompts/PromptsPanel";
+import { SkillsPanel } from "./skills/SkillsPanel";
 import { TemplatesPanel } from "./templates/TemplatesPanel";
 import { automationFieldsOf, type TemplateCard } from "./templates/templates";
-import type { Automation, ConnectionKey, Prompt } from "@/types/bindings";
+import type { Automation, ConnectionKey, Prompt, SkillInfo } from "@/types/bindings";
 
-type Section = "automations" | "prompts";
+type Section = "automations" | "prompts" | "skills" | "mcp";
+
+const TITLES: Record<Section, string> = {
+  automations: "Automations",
+  prompts: "Prompts",
+  skills: "Skills",
+  mcp: "MCP servers",
+};
 
 function NavItem({
   icon: Icon,
@@ -30,7 +33,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   active: boolean;
   onClick: () => void;
@@ -52,8 +55,9 @@ function NavItem({
 }
 
 /**
- * The project's reusable pieces. Automations and prompts today, with skills and MCP servers meant to land
- * beside them, each section carrying its own templates in a tab rather than one page for all.
+ * The project's reusable pieces: automations and prompts, and the skills and MCP servers its agents
+ * get. Skills and MCP servers belong to the connection's machine rather than to the project, so
+ * every project on that connection shares them.
  *
  * Same shape as the other views: `bg-card` all the way up, an action bar across the top carrying
  * the section's primary action, and the content inset behind a rounded top-left corner so the bar
@@ -79,6 +83,15 @@ export function CollectionsView({
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
 
+  const [skillEditorOpen, setSkillEditorOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<SkillInfo | null>(null);
+  const [mcpDraft, setMcpDraft] = useState<McpDraft | null>(null);
+
+  function openSkillEditor(skill: SkillInfo | null) {
+    setEditingSkill(skill);
+    setSkillEditorOpen(true);
+  }
+
   function openPromptEditor(prompt: Prompt | null) {
     setEditingPrompt(prompt);
     setPromptEditorOpen(true);
@@ -103,10 +116,28 @@ export function CollectionsView({
       {/* No bottom border: the inset pane's own `border-t` is the seam, and it starts after the
           rounded corner so no line runs under the sidebar. */}
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
-        <span className="text-sm font-medium">
-          {section === "automations" ? "Automations" : "Prompts"}
-        </span>
-        {section === "prompts" ? (
+        <span className="text-sm font-medium">{TITLES[section]}</span>
+        {section === "skills" ? (
+          <Button
+            variant="accent"
+            size="sm"
+            className="h-8 bg-clip-border text-xs"
+            onClick={() => openSkillEditor(null)}
+          >
+            <Plus className="mr-1 size-3.5" />
+            New skill
+          </Button>
+        ) : section === "mcp" ? (
+          <Button
+            variant="accent"
+            size="sm"
+            className="h-8 bg-clip-border text-xs"
+            onClick={() => setMcpDraft({ editing: null, seed: null })}
+          >
+            <Plus className="mr-1 size-3.5" />
+            New MCP server
+          </Button>
+        ) : section === "prompts" ? (
           <Button
             variant="accent"
             size="sm"
@@ -167,12 +198,40 @@ export function CollectionsView({
             active={section === "prompts"}
             onClick={() => setSection("prompts")}
           />
+          <NavItem
+            icon={BookOpen}
+            label="Skills"
+            active={section === "skills"}
+            onClick={() => setSection("skills")}
+          />
+          <NavItem
+            icon={McpIcon}
+            label="MCP servers"
+            active={section === "mcp"}
+            onClick={() => setSection("mcp")}
+          />
         </nav>
 
         {/* The inset surface is the panel's own, not this one's: it rounds away from the runs
             column when that is open, which this cannot know. Same shape as Worktrees. */}
         <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
-          {section === "prompts" ? (
+          {section === "skills" ? (
+            <SkillsPanel
+              connection={connection}
+              projectPath={projectPath}
+              editorOpen={skillEditorOpen}
+              onEditorOpenChange={setSkillEditorOpen}
+              editing={editingSkill}
+              onEdit={openSkillEditor}
+            />
+          ) : section === "mcp" ? (
+            <McpPanel
+              connection={connection}
+              projectPath={projectPath}
+              draft={mcpDraft}
+              onDraftChange={setMcpDraft}
+            />
+          ) : section === "prompts" ? (
             <PromptsPanel
               projectId={projectId}
               editorOpen={promptEditorOpen}

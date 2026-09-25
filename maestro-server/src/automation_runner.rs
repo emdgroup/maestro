@@ -380,6 +380,7 @@ pub async fn start(
         let result = create_session_on_connection(
             &connection,
             session_id.clone(),
+            &automation.agent_id,
             &cwd,
             &[],
             Arc::clone(&stdout),

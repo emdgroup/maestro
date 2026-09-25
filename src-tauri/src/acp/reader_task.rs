@@ -1787,6 +1787,55 @@ pub(crate) async fn handle_shared_server_message(
                 }
             }
         }
+        MaestroRpcMessage::Response(ServerResponse::ListMcpServersOk(resp)) => {
+            if let Ok(mut guard) = pending.list_mcp_servers.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::SaveMcpServersOk) => {
+            if let Ok(mut guard) = pending.save_mcp_servers.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::SetMcpSecretsOk) => {
+            if let Ok(mut guard) = pending.set_mcp_secrets.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::TestMcpServerOk(resp)) => {
+            if let Ok(mut guard) = pending.test_mcp_server.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::ListSkillsOk(resp)) => {
+            if let Ok(mut guard) = pending.list_skills.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::ApplySkillOk) => {
+            if let Ok(mut guard) = pending.apply_skill.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::DeleteSkillOk) => {
+            if let Ok(mut guard) = pending.delete_skill.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
+        }
         MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
             log::debug!(
                 "[registry] DetectInstalledAgentsOk: {:?}",
@@ -1985,7 +2034,12 @@ pub(crate) async fn handle_shared_server_message(
                 || fail_pending(&pending.webhook_settings, &err.message)
                 || fail_pending(&pending.server_status, &err.message)
                 || fail_pending(&pending.roll_webhook_secret, &err.message)
-                || fail_pending(&pending.webhook_deliveries, &err.message);
+                || fail_pending(&pending.webhook_deliveries, &err.message)
+                || fail_pending(&pending.list_mcp_servers, &err.message)
+                || fail_pending(&pending.save_mcp_servers, &err.message)
+                || fail_pending(&pending.list_skills, &err.message)
+                || fail_pending(&pending.apply_skill, &err.message)
+                || fail_pending(&pending.delete_skill, &err.message);
 
             // Pending SessionList / SessionClose / CheckTools
             if !resolved {

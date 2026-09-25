@@ -1105,6 +1105,129 @@ async deletePrompt(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listMcpServers(connection: ConnectionKey, projectPath: string | null) : Promise<Result<McpServerList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_mcp_servers", { connection, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a server, or replace the one called `previous_name` (the same name when not renamed).
+ */
+async saveMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_mcp_server", { connection, server, previousName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteMcpServer(connection: ConnectionKey, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_mcp_server", { connection, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Connect to a server from the connection's machine, where the agents run, and list its tools.
+ */
+async testMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null) : Promise<Result<McpTestResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_mcp_server", { connection, server, previousName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A page of the GitHub MCP Registry: its curated, star-ranked list with no query, a search with
+ * one. Each entry carries the server the editor should open with.
+ */
+async mcpCatalog(query: string | null, cursor: string | null) : Promise<Result<McpCatalogPage, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_catalog", { query, cursor }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSkills(connection: ConnectionKey, projectPath: string | null) : Promise<Result<SkillLibrary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_skills", { connection, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create or rewrite a skill written in Maestro, and install it for the agents switched on.
+ */
+async saveSkill(connection: ConnectionKey, name: string, description: string, instructions: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_skill", { connection, name, description, instructions, agents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Install or remove a skill per agent, leaving its files alone.
+ */
+async setSkillAgents(connection: ConnectionKey, name: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_skill_agents", { connection, name, agents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteSkill(connection: ConnectionKey, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_skill", { connection, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Download a catalog skill into the connection's library and install it for `agents`.
+ */
+async installCatalogSkill(connection: ConnectionKey, source: string, skillId: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_catalog_skill", { connection, source, skillId, agents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The most installed skills with no query, a page of 200 at a time; a skills.sh search with one
+ * of two characters or more. Both most installed first.
+ */
+async skillsCatalog(query: string | null, page: number | null) : Promise<Result<SkillCatalogPage, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("skills_catalog", { query, page }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A catalog skill's description, read from its `SKILL.md`. Asked per card as it scrolls into
+ * view, since the listings carry none.
+ */
+async skillDescription(source: string, skillId: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("skill_description", { source, skillId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * The connection's server, for its Settings page.
  */
@@ -3509,6 +3632,18 @@ export type LandingMode =
  */
 export type LinearTeam = { id: string; name: string; key: string }
 /**
+ * A skill Maestro lists but does not manage: one of its own, or one the project carries.
+ */
+export type ListedSkill = { name: string; description: string; 
+/**
+ * Where it lives: `.claude/skills/review` in the project, or `Maestro`.
+ */
+location: string; 
+/**
+ * Maestro agent ids that see it. Empty means every agent.
+ */
+agents: string[] }
+/**
  * Where logs go now versus where they will go next launch.
  * 
  * Two fields rather than one because a directory change needs a restart, and the UI has to be
@@ -3523,6 +3658,45 @@ active_directory: string;
  * Directory that will be used at the next launch.
  */
 configured_directory: string }
+export type McpCatalogEntry = { id: string; name: string; description: string; icon_url: string | null; stars: number | null; repo_url: string | null; 
+/**
+ * What the editor opens prefilled with. Required values the user has to supply are left
+ * blank, or as the registry's `{placeholder}`.
+ */
+install: McpServerConfig; 
+/**
+ * Every package identifier and remote URL the entry offers, so a server installed some other
+ * way can still be recognised as this one.
+ */
+packages: string[]; urls: string[] }
+export type McpCatalogPage = { entries: McpCatalogEntry[]; next_cursor: string | null }
+/**
+ * One environment variable or header. A secret's `value` is `""` when read back; sending `""`
+ * for a secret on save keeps what the keychain already holds.
+ */
+export type McpKeyValue = { key: string; value: string; secret: boolean }
+/**
+ * An MCP server the user manages, as the editor and the cards see it. Same shape as
+ * `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
+ */
+export type McpServerConfig = { name: string; 
+/**
+ * `stdio`, `http` or `sse`.
+ */
+transport: string; command: string | null; args: string[]; env: McpKeyValue[]; url: string | null; headers: McpKeyValue[]; 
+/**
+ * Maestro agent ids the server is injected for.
+ */
+agents: string[]; catalog_id: string | null }
+/**
+ * The managed servers, and the ones the project's own `.mcp.json` declares.
+ */
+export type McpServerList = { servers: McpServerConfig[]; 
+/**
+ * From `.mcp.json`, sent to every agent and not edited here.
+ */
+project: McpServerConfig[] }
+export type McpTestResult = { ok: boolean; tools: string[]; error: string | null }
 /**
  * Typed response for approve_task_and_merge IPC command
  */
@@ -3809,6 +3983,42 @@ export type SessionListResult = { sessions: SessionListEntryDto[]; supports_sess
  * ran on the project's default agent.
  */
 export type SessionRole = { role: AgentRole; profile_id: string | null }
+export type SkillCatalogEntry = { 
+/**
+ * `owner/repo/skill`.
+ */
+id: string; source: string; skill_id: string; name: string; installs: number | null }
+export type SkillCatalogPage = { entries: SkillCatalogEntry[]; 
+/**
+ * The leaderboard page to ask for next, while there is one. A search is a single page.
+ */
+next_page: number | null }
+export type SkillInfo = { name: string; description: string; 
+/**
+ * `SKILL.md` without its frontmatter.
+ */
+instructions: string; 
+/**
+ * `owner/repo` for a catalog skill, which is not edited in Maestro.
+ */
+source: string | null; 
+/**
+ * Maestro agent id to whether the skill is installed for it.
+ */
+agents: Partial<{ [key in string]: boolean }> }
+export type SkillLibrary = { skills: SkillInfo[]; 
+/**
+ * Agents the skills CLI can install for; the others are drawn disabled.
+ */
+supported_agents: string[]; 
+/**
+ * Maestro's own skills, installed for every agent on every connection it preflights.
+ */
+builtin: ListedSkill[]; 
+/**
+ * Skills in the project's agent directories.
+ */
+project: ListedSkill[] }
 export type SpawnSessionResult = { session_id: string }
 /**
  * SSH authentication method configuration

@@ -343,6 +343,102 @@ impl KeychainStore {
         }
     }
 
+    // ── Generic string secrets ───────────────────────────────────────────────
+
+    /// Store `value` under `service`/`account`, falling back to an encrypted file like the
+    /// integration API does when the OS keychain is unavailable.
+    pub fn set_secret(
+        service: &str,
+        account: &str,
+        value: &str,
+        app_data_dir: &Path,
+    ) -> Result<(), String> {
+        let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
+        match entry.set_password(value) {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
+                Self::encrypt_to_file(
+                    &Self::secret_file_path(service, account, app_data_dir),
+                    value.as_bytes(),
+                    app_data_dir,
+                )
+            }
+            Err(e) => Err(format!("Failed to save secret: {}", e)),
+        }
+    }
+
+    pub fn get_secret(
+        service: &str,
+        account: &str,
+        app_data_dir: &Path,
+    ) -> Result<Option<String>, String> {
+        let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
+                Ok(Self::decrypt_from_file(
+                    &Self::secret_file_path(service, account, app_data_dir),
+                    app_data_dir,
+                )
+                .and_then(|bytes| String::from_utf8(bytes).ok()))
+            }
+            Err(e) => Err(format!("Keyring error: {}", e)),
+        }
+    }
+
+    pub fn delete_secret(service: &str, account: &str, app_data_dir: &Path) -> Result<(), String> {
+        let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
+        let keyring_result = entry.delete_credential();
+        let _ = std::fs::remove_file(Self::secret_file_path(service, account, app_data_dir));
+        match keyring_result {
+            Ok(())
+            | Err(keyring::Error::NoEntry)
+            | Err(keyring::Error::NoStorageAccess(_))
+            | Err(keyring::Error::PlatformFailure(_)) => Ok(()),
+            Err(e) => Err(format!("Failed to delete secret: {}", e)),
+        }
+    }
+
+    /// Hashed, because an account name may hold characters a file name cannot.
+    fn secret_file_path(service: &str, account: &str, app_data_dir: &Path) -> PathBuf {
+        let digest: String = Sha256::digest(account.as_bytes())
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        app_data_dir
+            .join("tokens")
+            .join(format!("{}_{}.enc", service, digest))
+    }
+
+    fn encrypt_to_file(path: &Path, plaintext: &[u8], app_data_dir: &Path) -> Result<(), String> {
+        std::fs::create_dir_all(app_data_dir.join("tokens"))
+            .map_err(|e| format!("Failed to create tokens directory: {}", e))?;
+        let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
+        let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+        let mut nonce_arr = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_arr);
+        let nonce = Nonce::from(nonce_arr);
+        let ciphertext = cipher
+            .encrypt(&nonce, plaintext)
+            .map_err(|e| format!("Encryption failed: {}", e))?;
+        let mut output = nonce.to_vec();
+        output.extend_from_slice(&ciphertext);
+        std::fs::write(path, &output).map_err(|e| format!("Failed to write secret file: {}", e))
+    }
+
+    fn decrypt_from_file(path: &Path, app_data_dir: &Path) -> Option<Vec<u8>> {
+        let data = std::fs::read(path).ok()?;
+        if data.len() < 12 {
+            return None;
+        }
+        let (nonce_bytes, ciphertext) = data.split_at(12);
+        let key_bytes = Self::derive_key(&Self::get_encryption_seed(app_data_dir));
+        let cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from(key_bytes));
+        let nonce = Nonce::from(<[u8; 12]>::try_from(nonce_bytes).ok()?);
+        cipher.decrypt(&nonce, ciphertext).ok()
+    }
+
     // ── Shared cryptographic helpers ─────────────────────────────────────────
 
     // Key derivation uses SHA-256 (not a KDF). This provides defense-in-depth

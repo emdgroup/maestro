@@ -586,6 +586,7 @@ pub(crate) async fn dispatch_message(
                 let result = create_session_on_connection(
                     &conn_handle,
                     req.session_id.clone(),
+                    &req.agent_id,
                     &req.cwd,
                     &req.additional_directories,
                     Arc::clone(&stdout_task),
@@ -1018,6 +1019,86 @@ pub(crate) async fn dispatch_message(
                 })),
             };
             send_or_return!(send_response(stdout, &response).await);
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListMcpServers(req)) => {
+            let response = match crate::mcp_store::list() {
+                Ok(servers) => MaestroRpcMessage::Response(ServerResponse::ListMcpServersOk(
+                    maestro_protocol::McpServerList {
+                        servers,
+                        project: req
+                            .project_path
+                            .as_deref()
+                            .map(crate::mcp_config::project_servers)
+                            .unwrap_or_default(),
+                    },
+                )),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &response).await);
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SaveMcpServers(req)) => {
+            let response = match crate::mcp_store::save(req.servers) {
+                Ok(()) => MaestroRpcMessage::Response(ServerResponse::SaveMcpServersOk),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &response).await);
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::SetMcpSecrets(req)) => {
+            crate::mcp_store::set_secrets(req.secrets);
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::SetMcpSecretsOk)
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListSkills(req)) => {
+            let response = match crate::skills::list(req.project_path.as_deref()) {
+                Ok(list) => MaestroRpcMessage::Response(ServerResponse::ListSkillsOk(list)),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &response).await);
+        }
+
+        // Offloaded, like a spawn: starting a server or running the skills CLI takes seconds, and
+        // the loop has permission answers and heartbeats to keep serving meanwhile.
+        MaestroRpcMessage::Request(ServerRequest::TestMcpServer(req)) => {
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let result = crate::mcp_store::test(req.server).await;
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::TestMcpServerOk(result)),
+                )
+                .await;
+            });
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ApplySkill(req)) => {
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let response = match crate::skills::apply(req).await {
+                    Ok(()) => MaestroRpcMessage::Response(ServerResponse::ApplySkillOk),
+                    Err(e) => error_response(e),
+                };
+                let _ = send_response(&stdout, &response).await;
+            });
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::DeleteSkill(req)) => {
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let response = match crate::skills::delete(&req.name).await {
+                    Ok(()) => MaestroRpcMessage::Response(ServerResponse::DeleteSkillOk),
+                    Err(e) => error_response(e),
+                };
+                let _ = send_response(&stdout, &response).await;
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::SetToolPath(req)) => {

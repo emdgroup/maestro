@@ -43,6 +43,7 @@ becomes one of its clients.
 | 7     | Autostart and consent                         | In progress                   |
 | 8     | Templates                                     | In progress                   |
 | 9     | Automations over Maestro's MCP server         | In progress                   |
+| 10    | Skills and MCP servers in Collections         | In progress                   |
 
 ## Decisions that span every phase
 
@@ -379,6 +380,23 @@ tools on Maestro's own MCP server, answered by the host in `src-tauri/src/acp/au
 | Confirmation | `run_automation` only, as the ordinary permission sheet (Deny / Run now). Everything else is visible on the page and can be undone there.                                                             |
 | Built-ins    | Visible and usable by the agent, never changed by it. Ids are the page's card keys, `builtin-<key>` and `user-<id>`.                                                                                  |
 | Secrets      | The webhook secret is never returned to an agent.                                                                                                                                                     |
+
+## Phase 10: skills and MCP servers in Collections
+
+Two more Collections sections, for what agents get rather than what they are asked. Both are kept by
+the daemon per machine, so every project on a connection shares them and a headless automation's
+session gets them too.
+
+### Decisions (locked)
+
+| Question      | Decision                                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP delivery  | Injected by `maestro-server` on `session/new` and `session/load`, for the agents each server lists, after the project's `.mcp.json`, which wins a name collision. Only Maestro sessions see them. |
+| Scope         | Per machine: `~/.maestro/mcp-servers.json`, `~/.maestro/skills.json` and `~/.maestro/skill-library/` on the connection's machine. No per-project scope.                                           |
+| MCP secrets   | OS keychain app-side, pushed to the daemon's memory with `SetMcpSecrets` after every preflight and change. Never on disk there; a server missing one is skipped with a reason in the log.         |
+| Skill deploys | The pinned skills CLI, per agent, from the library copy. Turning one off keeps the agent listed with its switch off. Agents the CLI has no key for are drawn disabled.                            |
+| Catalogs      | GitHub MCP Registry for MCP; skills.sh for skills, its all-time leaderboard with no query and its search with one, most installed first.                                                          |
+| Out of scope  | Skills or MCP servers installed outside Maestro are not listed. No OAuth login for MCP servers: a bearer token or a custom header only.                                                           |
 
 ## Deferred, not scheduled
 

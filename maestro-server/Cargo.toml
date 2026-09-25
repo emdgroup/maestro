@@ -42,6 +42,9 @@ iana-time-zone = "0.1.65"
 # The webhook listener. All already in the workspace lockfile through the app's own dependencies,
 # so no new crate enters the supply chain: an HTTP parser facing the network is not one to hand-roll.
 hyper = { version = "1", features = ["http1", "server"] }
+# Already in the workspace through the app; here so an MCP server test reaches the URL from the
+# machine the agents run on.
+reqwest = "0.13"
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"

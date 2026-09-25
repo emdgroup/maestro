@@ -813,3 +813,145 @@ pub async fn pre_initialize_via_connection_server(
 
     Ok(response)
 }
+
+/// The MCP servers the user manages on this connection's machine, secrets blanked.
+pub async fn query_list_mcp_servers_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: Option<String>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::McpServerList, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.list_mcp_servers.clone(),
+        "ListMcpServers already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListMcpServers(
+            maestro_protocol::ProjectScopedRequest { project_path },
+        )),
+        15,
+        "ListMcpServers via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_save_mcp_servers_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    servers: Vec<maestro_protocol::ManagedMcpServer>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.save_mcp_servers.clone(),
+        "SaveMcpServers already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SaveMcpServers(
+            maestro_protocol::SaveMcpServersRequest { servers },
+        )),
+        15,
+        "SaveMcpServers via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_set_mcp_secrets_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    secrets: Vec<maestro_protocol::McpSecret>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.set_mcp_secrets.clone(),
+        "SetMcpSecrets already in progress",
+        MaestroRpcMessage::Request(ServerRequest::SetMcpSecrets(
+            maestro_protocol::SetMcpSecretsRequest { secrets },
+        )),
+        15,
+        "SetMcpSecrets via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Connect to a server from the target and list its tools. The server answers within 15 seconds
+/// whatever happens, so the margin here only covers the round trip.
+pub async fn query_test_mcp_server_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    server: maestro_protocol::ManagedMcpServer,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::McpTestResult, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.test_mcp_server.clone(),
+        "TestMcpServer already in progress",
+        MaestroRpcMessage::Request(ServerRequest::TestMcpServer(
+            maestro_protocol::TestMcpServerRequest { server },
+        )),
+        30,
+        "TestMcpServer via connection server timed out after 30s",
+    )
+    .await
+}
+
+pub async fn query_list_skills_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_path: Option<String>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::SkillList, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.list_skills.clone(),
+        "ListSkills already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListSkills(
+            maestro_protocol::ProjectScopedRequest { project_path },
+        )),
+        15,
+        "ListSkills via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Same timeout as `InstallSkills`: the first skills CLI run on a machine downloads it.
+pub async fn query_apply_skill_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::ApplySkillRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.apply_skill.clone(),
+        "ApplySkill already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ApplySkill(request)),
+        150,
+        "ApplySkill via connection server timed out after 150s",
+    )
+    .await
+}
+
+pub async fn query_delete_skill_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    name: String,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        "Connection not initialized. Run preflight first.",
+        |s| s.pending.delete_skill.clone(),
+        "DeleteSkill already in progress",
+        MaestroRpcMessage::Request(ServerRequest::DeleteSkill(
+            maestro_protocol::DeleteSkillRequest { name },
+        )),
+        150,
+        "DeleteSkill via connection server timed out after 150s",
+    )
+    .await
+}

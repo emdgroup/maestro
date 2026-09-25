@@ -100,6 +100,7 @@ pub(crate) async fn handle_agent_restart(
                 &conn_handle,
                 maestro_sid.clone(),
                 acp_session_id.clone(),
+                &dead_agent_id,
                 session_cwd,
                 session_roots,
                 Arc::clone(stdout),
