@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/emdgroup/maestro/compare/v0.30.1...v0.31.0) (2026-09-25)
+
+
+### Features
+
+* **collections:** add Skills and MCP servers sections ([#444](https://github.com/emdgroup/maestro/issues/444)) ([61f13c4](https://github.com/emdgroup/maestro/commit/61f13c4654518b3b0476f6b04ce69fb078ed58e4))
+
 ## [0.30.1](https://github.com/emdgroup/maestro/compare/v0.30.0...v0.30.1) (2026-09-24)
 
 
