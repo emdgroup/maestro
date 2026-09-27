@@ -1317,32 +1317,8 @@ pub(crate) async fn update_session_from_response(
 
 fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::SpawnOk(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::SessionUpdate(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::PermissionRequest(r)) => {
-            Some(r.session_id.clone())
-        }
-        MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(r)) => {
-            Some(r.session_id.clone())
-        }
-        MaestroRpcMessage::Response(ServerResponse::TerminalOutput(r)) => {
-            Some(r.session_id.clone())
-        }
-        MaestroRpcMessage::Response(ServerResponse::TurnEnded(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::HostToolCall(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::SetModelOk(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::SetModeOk(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::SetConfigOptionOk(r)) => {
-            Some(r.session_id.clone())
-        }
-        MaestroRpcMessage::Response(ServerResponse::ConfigOptionUpdated(r)) => {
-            Some(r.session_id.clone())
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionLoadOk(r)) => Some(r.session_id.clone()),
-        MaestroRpcMessage::Response(ServerResponse::Error(err)) if err.session_id.is_some() => {
-            err.session_id.clone()
-        }
-        _ => None,
+        MaestroRpcMessage::Response(_) => msg.session_id().map(str::to_owned),
+        MaestroRpcMessage::Request(_) => None,
     }
 }
 
@@ -1419,12 +1395,27 @@ pub(crate) async fn handle_shared_server_message(
         // Before the cache borrow below: this needs none of it, and the shared reader serves
         // every session on the connection, so a `canvas_await` answered inline would block all
         // of them for as long as the user takes.
-        if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
-            let state = Arc::clone(app_state);
-            tokio::spawn(async move {
-                crate::acp::host_tools::handle(state, &session_id, call).await;
-            });
-            return;
+        //
+        // Only for a session this window holds: a daemon serving several windows sends a session
+        // with no owner to all of them, and two answers to one call would race. The window that
+        // does not hold it parks the call below, to answer it if it adopts the session.
+        let held = matches!(
+            msg,
+            MaestroRpcMessage::Response(ServerResponse::HostToolCall(_))
+        ) && app_state
+            .acp
+            .sessions
+            .lock()
+            .await
+            .contains_key(&session_id);
+        if held {
+            if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+                let state = Arc::clone(app_state);
+                tokio::spawn(async move {
+                    crate::acp::host_tools::handle(state, &session_id, call).await;
+                });
+                return;
+            }
         }
 
         let caches = {

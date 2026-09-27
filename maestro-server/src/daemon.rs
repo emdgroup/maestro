@@ -159,8 +159,8 @@ fn write_runtime(dir: &Path, runtime: &DaemonRuntime) -> Result<(), String> {
 /// Serve one connection for as long as it stays open.
 ///
 /// Every connection gets a task of its own, so a `STATUS` or `SHUTDOWN` from another build is
-/// answered while a window is attached; `attach_gate` is what still keeps attached clients to one
-/// at a time, since two would interleave their streams onto one sink.
+/// answered while a window is attached, and so is every other window: each Maestro window on this
+/// machine attaches at once, and the sink routes each its own traffic.
 ///
 /// Returns `true` when the client asked the daemon to shut down. Everything else — a bad token, a
 /// protocol mismatch, a dropped connection — returns `false`, because none of them is a reason for
@@ -169,8 +169,7 @@ pub(crate) async fn serve_client(
     stream: TcpStream,
     token: &str,
     sink: &crate::ClientOut,
-    msg_tx: &tokio::sync::mpsc::Sender<Result<maestro_protocol::MaestroRpcMessage, String>>,
-    attach_gate: &tokio::sync::Mutex<()>,
+    msg_tx: &tokio::sync::mpsc::Sender<crate::Inbound>,
 ) -> bool {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
@@ -201,10 +200,7 @@ pub(crate) async fn serve_client(
             false
         }
         MODE_ATTACH => {
-            let _attached = attach_gate.lock().await;
             serve_attached(reader, write_half, sink, msg_tx).await;
-            sink.lock().await.detach();
-            crate::send_diag("info", "[daemon] client detached");
             false
         }
         other => {
@@ -219,7 +215,7 @@ async fn serve_attached(
     mut reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
     mut write_half: tokio::net::tcp::OwnedWriteHalf,
     sink: &crate::ClientOut,
-    msg_tx: &tokio::sync::mpsc::Sender<Result<maestro_protocol::MaestroRpcMessage, String>>,
+    msg_tx: &tokio::sync::mpsc::Sender<crate::Inbound>,
 ) {
     // Handshake before the sink is attached, so a client of the wrong protocol version never
     // receives a byte of session traffic.
@@ -264,8 +260,9 @@ async fn serve_attached(
         return;
     }
 
-    sink.lock().await.attach(Box::new(write_half));
-    crate::send_diag("info", "[daemon] client attached");
+    let id = sink.lock().await.attach(Box::new(write_half)).await;
+    let route = crate::client_sink::ClientSink::for_client(sink, id).await;
+    crate::send_diag("info", format!("[daemon] client {id} attached"));
 
     loop {
         // Converted before the match so nothing from the protocol's boxed error, which is not
@@ -273,15 +270,22 @@ async fn serve_attached(
         let read = read_framed(&mut reader).await;
         match read {
             Ok(msg) => {
-                if msg_tx.send(Ok(msg)).await.is_err() {
-                    return;
+                // Before it is handled, so the session's answer already knows where to go. This
+                // is also how a window takes over a session another one started, or adopts one.
+                if let Some(session_id) = msg.session_id() {
+                    sink.lock().await.claim(id, session_id).await;
+                }
+                if msg_tx.send(Ok((msg, Some(route.clone())))).await.is_err() {
+                    break;
                 }
             }
             // The client is gone, or sent something unreadable. Either way this connection is
             // over; the sessions it started are not.
-            Err(_) => return,
+            Err(_) => break,
         }
     }
+    sink.lock().await.detach(id).await;
+    crate::send_diag("info", format!("[daemon] client {id} detached"));
 }
 
 /// Tell a client why it is being turned away, then let the caller drop the connection.
@@ -680,15 +684,14 @@ mod tests {
         };
         let sink = crate::client_sink::ClientSink::detached();
         let (msg_tx, _msg_rx) = tokio::sync::mpsc::channel(4);
-        let gate = std::sync::Arc::new(tokio::sync::Mutex::new(()));
         tokio::spawn({
             let sink = sink.clone();
             async move {
                 loop {
                     let (stream, _) = listener.accept().await.unwrap();
-                    let (sink, msg_tx, gate) = (sink.clone(), msg_tx.clone(), gate.clone());
+                    let (sink, msg_tx) = (sink.clone(), msg_tx.clone());
                     tokio::spawn(async move {
-                        serve_client(stream, "t", &sink, &msg_tx, &gate).await;
+                        serve_client(stream, "t", &sink, &msg_tx).await;
                     });
                 }
             }
