@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.32.0](https://github.com/emdgroup/maestro/compare/v0.31.0...v0.32.0) (2026-09-27)
+
+
+### Features
+
+* **collections:** rework the skill and MCP editors ([#446](https://github.com/emdgroup/maestro/issues/446)) ([ef55d54](https://github.com/emdgroup/maestro/commit/ef55d54fb91a5b2b8b9acf071adf4fe50da4d21d))
+
+
+### Bug Fixes
+
+* **collections:** install catalog skills whole and stop spending the download limit on cards ([#450](https://github.com/emdgroup/maestro/issues/450)) ([a887eea](https://github.com/emdgroup/maestro/commit/a887eea0dc450b92f23ce713da01b09160132264))
+* **csp:** allow audio and video sources in the app CSP ([#451](https://github.com/emdgroup/maestro/issues/451)) ([1a76857](https://github.com/emdgroup/maestro/commit/1a76857669caa66826d5206da38f59c82924d77a))
+* **integration:** list Linear issues and show the team by name ([#448](https://github.com/emdgroup/maestro/issues/448)) ([9520bbb](https://github.com/emdgroup/maestro/commit/9520bbb0b718dd6c162d7c5e38a714b3596ff839))
+* **server:** let every Maestro window attach to the daemon at once ([#449](https://github.com/emdgroup/maestro/issues/449)) ([33099df](https://github.com/emdgroup/maestro/commit/33099dfb49c10d9001056fc69fb0c07713c1fe35))
+
 ## [0.31.0](https://github.com/emdgroup/maestro/compare/v0.30.1...v0.31.0) (2026-09-25)
 
 
