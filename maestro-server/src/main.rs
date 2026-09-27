@@ -119,7 +119,10 @@ fn main() {
 }
 
 /// Channel the server loop receives client requests on, whatever carried them.
-type MsgRx = tokio::sync::mpsc::Receiver<Result<MaestroRpcMessage, String>>;
+type MsgRx = tokio::sync::mpsc::Receiver<Inbound>;
+
+/// A client request, with the route its replies take: `None` for the stdio client, the only one.
+pub(crate) type Inbound = Result<(MaestroRpcMessage, Option<ClientOut>), String>;
 
 /// Stdio mode: one client, this process's parent, for the life of the process.
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,15 +136,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Fix: one dedicated blocking thread owns stdin forever and forwards messages
     // over a channel, so the future the select polls is always the channel receive,
     // never a raw stdin read.
-    let (stdin_msg_tx, mut stdin_msg_rx) =
-        tokio::sync::mpsc::channel::<Result<MaestroRpcMessage, String>>(4);
+    let (stdin_msg_tx, mut stdin_msg_rx) = tokio::sync::mpsc::channel::<Inbound>(4);
     tokio::task::spawn_blocking(move || {
         let stdin = std::io::stdin();
         let mut locked = stdin.lock();
         loop {
             match maestro_protocol::read_message_sync(&mut locked) {
                 Ok(msg) => {
-                    if stdin_msg_tx.blocking_send(Ok(msg)).is_err() {
+                    if stdin_msg_tx.blocking_send(Ok((msg, None))).is_err() {
                         break;
                     }
                 }
@@ -163,7 +165,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate the protocol version handshake before entering the main dispatch loop.
     let first_msg = match stdin_msg_rx.recv().await {
-        Some(Ok(msg)) => msg,
+        Some(Ok((msg, _))) => msg,
         _ => return Ok(()),
     };
     match first_msg {
@@ -216,13 +218,12 @@ pub(crate) async fn run_resident(
     token: String,
 ) -> Result<(), String> {
     let sink = client_sink::ClientSink::detached();
-    let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<Result<MaestroRpcMessage, String>>(4);
+    let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<Inbound>(4);
 
     tokio::spawn({
         let sink = Arc::clone(&sink);
         async move {
             let token = Arc::new(token);
-            let attach_gate = Arc::new(tokio::sync::Mutex::new(()));
             let mut clients = tokio::task::JoinSet::new();
             loop {
                 tokio::select! {
@@ -230,14 +231,10 @@ pub(crate) async fn run_resident(
                         let Ok((stream, _)) = accepted else {
                             continue;
                         };
-                        let (token, sink, msg_tx, attach_gate) = (
-                            Arc::clone(&token),
-                            Arc::clone(&sink),
-                            msg_tx.clone(),
-                            Arc::clone(&attach_gate),
-                        );
+                        let (token, sink, msg_tx) =
+                            (Arc::clone(&token), Arc::clone(&sink), msg_tx.clone());
                         clients.spawn(async move {
-                            daemon::serve_client(stream, &token, &sink, &msg_tx, &attach_gate).await
+                            daemon::serve_client(stream, &token, &sink, &msg_tx).await
                         });
                     }
                     // Matched inside rather than in the pattern: a pattern that misses disables the
@@ -459,12 +456,12 @@ async fn run_server(
     automations_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        let msg = tokio::select! {
+        let (msg, route) = tokio::select! {
             biased;
 
             msg_result = stdin_msg_rx.recv() => {
                 match msg_result {
-                    Some(Ok(msg)) => msg,
+                    Some(Ok(inbound)) => inbound,
                     Some(Err(e)) => {
                         let is_eof = e.contains("failed to fill whole buffer")
                             || e.contains("early eof")
@@ -623,7 +620,7 @@ async fn run_server(
             &mut sessions,
             &agent_connections,
             &mut agents_with_spawn,
-            &stdout,
+            route.as_ref().unwrap_or(&stdout),
             &spawn_result_tx,
             &auth_terminals,
             &mut pending_host_tools,

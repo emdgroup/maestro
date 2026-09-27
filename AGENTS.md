@@ -392,6 +392,12 @@ dozen signatures: every response leaves through `helpers::send_response`, so swa
 destination is one indirection. A write with no client attached succeeds and drops the bytes —
 nobody watching is the normal state of a daemon between app runs, not an error.
 
+**Every window attaches at once.** The host matches replies by type, not by request id, so the
+sink routes: a reply goes to the window that asked, a message naming a session goes to that
+session's owner (the window that last sent a request naming it), and anything unowned or
+unprompted goes to every window. A window receiving a session it does not hold parks it, and
+answers a `HostToolCall` only for a session it holds, so two windows never both answer one call.
+
 **Sessions are re-adopted, not reloaded.** `SpawnRequest` and `SessionLoadRequest` carry
 `host_meta`, an opaque blob the server stores and never reads, holding what the host knows and the
 server does not (project, task, session name, connection). `ListLiveSessions` hands it back, and

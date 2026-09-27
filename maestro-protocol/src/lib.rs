@@ -32,6 +32,50 @@ pub enum MaestroRpcMessage {
     Response(ServerResponse),
 }
 
+impl MaestroRpcMessage {
+    /// The host-side session a message is about, if it is about one.
+    ///
+    /// A daemon serving several windows routes by this: a request naming a session makes its
+    /// sender that session's owner, and a response naming one goes to the owner. The host routes
+    /// what it receives by the same answer, so the two sides cannot disagree on which messages
+    /// belong to a session.
+    pub fn session_id(&self) -> Option<&str> {
+        let id = match self {
+            Self::Request(req) => match req {
+                ServerRequest::Spawn(r) => &r.session_id,
+                ServerRequest::Prompt(r) => &r.session_id,
+                ServerRequest::Cancel(r) => &r.session_id,
+                ServerRequest::InterruptTurn(r) => &r.session_id,
+                ServerRequest::PermitResponse(r) => &r.session_id,
+                ServerRequest::ElicitationResponse(r) => &r.session_id,
+                ServerRequest::SetModel(r) => &r.session_id,
+                ServerRequest::SetMode(r) => &r.session_id,
+                ServerRequest::SetConfigOption(r) => &r.session_id,
+                ServerRequest::SessionLoad(r) => &r.session_id,
+                ServerRequest::HostToolResult(r) => &r.session_id,
+                _ => return None,
+            },
+            Self::Response(resp) => match resp {
+                ServerResponse::SpawnOk(r) => &r.session_id,
+                ServerResponse::SessionUpdate(r) => &r.session_id,
+                ServerResponse::PermissionRequest(r) => &r.session_id,
+                ServerResponse::ElicitationRequest(r) => &r.session_id,
+                ServerResponse::TerminalOutput(r) => &r.session_id,
+                ServerResponse::TurnEnded(r) => &r.session_id,
+                ServerResponse::HostToolCall(r) => &r.session_id,
+                ServerResponse::SetModelOk(r) => &r.session_id,
+                ServerResponse::SetModeOk(r) => &r.session_id,
+                ServerResponse::SetConfigOptionOk(r) => &r.session_id,
+                ServerResponse::ConfigOptionUpdated(r) => &r.session_id,
+                ServerResponse::SessionLoadOk(r) => &r.session_id,
+                ServerResponse::Error(err) => return err.session_id.as_deref(),
+                _ => return None,
+            },
+        };
+        Some(id)
+    }
+}
+
 // --- Client -> Server ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
