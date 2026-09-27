@@ -2,17 +2,18 @@
 //!
 //! The library and the per-agent installs are the daemon's (`maestro-server/src/skills.rs`),
 //! for the same reason MCP servers are: they belong to the machine the agents run on. What is
-//! done here is what needs the internet or knows the `SKILL.md` format: the catalog, downloading
-//! a catalog skill's files, and reading a skill's name and description. The editor writes the
-//! whole `SKILL.md` (`skills.ts`), so frontmatter Maestro has no field for is kept.
+//! done here is what needs the internet or knows the `SKILL.md` format: the catalog and reading a
+//! skill's name and description. A catalog skill is fetched by the daemon, with the skills CLI.
+//! The editor writes the whole `SKILL.md` (`skills.ts`), so frontmatter Maestro has no field for is
+//! kept.
 //!
 //! The catalog is skills.sh: its all-time leaderboard, most installed first, when nothing is
 //! searched, and its search when something is. The whole leaderboard is ~50 pages of 200 against
 //! a limit of 30 requests a minute, so it is paged in on demand rather than read at once. The
 //! leaderboard endpoint is the one the skills.sh site pages through itself, undocumented, so a
-//! change there empties the list rather than breaking anything else. A skill's files come from the skills.sh download endpoint the skills CLI uses,
-//! which is also where a card's description is read; GitHub's trees API (60 calls an hour
-//! unauthenticated) and `raw.githubusercontent.com` are only the fallback for an install.
+//! change there empties the list rather than breaking anything else. No listing carries
+//! descriptions: a card's summary is read from the skill's page, and the whole description, from
+//! the download endpoint (60 requests an hour), only when the card is hovered.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -212,7 +213,8 @@ pub async fn delete_skill(
     query_delete_skill_via_server(connection, name, &app_state).await
 }
 
-/// Download a catalog skill into the connection's library and install it for `agents`.
+/// Install a catalog skill into the connection's library and for `agents`. The daemon fetches it
+/// with the skills CLI, so the skill arrives whole, binary assets included.
 #[tauri::command]
 #[specta::specta]
 pub async fn install_catalog_skill(
@@ -223,18 +225,11 @@ pub async fn install_catalog_skill(
     agents: BTreeMap<String, bool>,
 ) -> Result<(), String> {
     validate_name(&skill_id)?;
-    let files = match skills_sh_files(&source, &skill_id).await {
-        Ok(files) => files,
-        Err(e) => {
-            log::warn!("[skills] skills.sh download failed, reading GitHub instead: {e}");
-            download_skill(&source, &skill_id).await?
-        }
-    };
     query_apply_skill_via_server(
         connection,
         maestro_protocol::ApplySkillRequest {
             name: skill_id,
-            files: Some(files),
+            files: None,
             source: Some(source),
             agents,
         },
@@ -265,8 +260,7 @@ pub async fn skills_catalog(
                 urlencoding::encode(&query)
             );
             let mut page = catalog_page(&url, None).await?;
-            page.entries
-                .sort_by_key(|entry| std::cmp::Reverse(entry.installs.unwrap_or(0)));
+            sort_search_results(&mut page.entries, &query);
             Ok(page)
         }
         None => {
@@ -275,6 +269,17 @@ pub async fn skills_catalog(
             catalog_page(&url, Some(page)).await
         }
     }
+}
+
+/// Most installed first, except that a skill named exactly what was typed leads: someone who typed
+/// a whole name is looking for that skill, not the most popular one that also matched.
+fn sort_search_results(entries: &mut [SkillCatalogEntry], query: &str) {
+    entries.sort_by_key(|entry| {
+        (
+            !entry.name.eq_ignore_ascii_case(query) && !entry.skill_id.eq_ignore_ascii_case(query),
+            std::cmp::Reverse(entry.installs.unwrap_or(0)),
+        )
+    });
 }
 
 async fn get(url: &str) -> Result<reqwest::Response, String> {
@@ -330,24 +335,21 @@ fn catalog_entry(skill: &Value) -> Option<SkillCatalogEntry> {
     })
 }
 
-fn blobs(tree: &Value) -> Vec<String> {
-    tree.get("tree")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter(|i| i.get("type").and_then(Value::as_str) == Some("blob"))
-                .filter_map(|i| i.get("path")?.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+/// The start of a catalog skill's description, from the `<meta name="description">` of its
+/// skills.sh page, cut at about 160 characters and ending in `…` when it was. Asked per card as it
+/// scrolls into view, since the listings carry none: the pages are served from a cache and are
+/// not held to the download endpoint's 60 requests an hour.
+#[tauri::command]
+#[specta::specta]
+pub async fn skill_summary(source: String, skill_id: String) -> Result<Option<String>, String> {
+    let url = format!(
+        "https://www.skills.sh/{source}/{}",
+        urlencoding::encode(&skill_id)
+    );
+    Ok(meta_description(&fetch_page(&url).await?))
 }
 
-fn raw_url(source: &str, path: &str) -> String {
-    format!("https://raw.githubusercontent.com/{source}/HEAD/{path}")
-}
-
-async fn fetch_text(url: &str) -> Result<String, String> {
+async fn fetch_page(url: &str) -> Result<String, String> {
     get(url)
         .await?
         .text()
@@ -355,8 +357,22 @@ async fn fetch_text(url: &str) -> Result<String, String> {
         .map_err(|e| format!("{url} could not be read: {e}"))
 }
 
-/// A catalog skill's description, read from its `SKILL.md`. Asked per card as it scrolls into
-/// view, since the listings carry none.
+fn meta_description(html: &str) -> Option<String> {
+    const TAG: &str = r#"<meta name="description" content=""#;
+    let start = html.find(TAG)? + TAG.len();
+    let content = &html[start..start + html[start..].find('"')?];
+    let text = content
+        .replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&");
+    Some(text).filter(|text| !text.trim().is_empty())
+}
+
+/// A catalog skill's whole description, read from its `SKILL.md`. Asked only when the pointer
+/// rests on a card, since it costs one of the download endpoint's 60 requests an hour.
 #[tauri::command]
 #[specta::specta]
 pub async fn skill_description(source: String, skill_id: String) -> Result<Option<String>, String> {
@@ -416,59 +432,6 @@ fn skill_files(found: &Value) -> Result<Vec<maestro_protocol::SkillFile>, String
     } else {
         Err("skills.sh returned no SKILL.md".to_string())
     }
-}
-
-/// Every text file in the directory whose `SKILL.md` is named `skill_id`, relative to it.
-async fn download_skill(
-    source: &str,
-    skill_id: &str,
-) -> Result<Vec<maestro_protocol::SkillFile>, String> {
-    let url = format!("https://api.github.com/repos/{source}/git/trees/HEAD?recursive=1");
-    let tree: Value = get(&url)
-        .await?
-        .json()
-        .await
-        .map_err(|e| format!("GitHub sent something unexpected for {source}: {e}"))?;
-    let all = blobs(&tree);
-    // The directory is usually named after the skill, so those are read first.
-    let mut candidates: Vec<&String> = all
-        .iter()
-        .filter(|p| p.as_str() == "SKILL.md" || p.ends_with("/SKILL.md"))
-        .collect();
-    candidates.sort_by_key(|p| !p.ends_with(&format!("{skill_id}/SKILL.md")));
-    let mut found = None;
-    for path in candidates {
-        let contents = fetch_text(&raw_url(source, path)).await?;
-        if parse_skill_md(&contents).name.as_deref() == Some(skill_id) {
-            found = Some(path.trim_end_matches("SKILL.md").to_string());
-            break;
-        }
-    }
-    let dir = found.ok_or_else(|| format!("{source} has no skill named {skill_id}"))?;
-
-    let mut files = Vec::new();
-    let mut total = 0;
-    for path in all.iter().filter(|p| p.starts_with(&dir)) {
-        let bytes = get(&raw_url(source, path))
-            .await?
-            .bytes()
-            .await
-            .map_err(|e| format!("{path} could not be read: {e}"))?;
-        total += bytes.len();
-        if total > MAX_SKILL_BYTES {
-            return Err(format!("{skill_id} is larger than {MAX_SKILL_BYTES} bytes"));
-        }
-        // ponytail: skill files travel as text, so a binary asset (an image, a font) is left out.
-        // Carry bytes in `SkillFile` if a skill that needs one turns up.
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(contents) => files.push(maestro_protocol::SkillFile {
-                path: path[dir.len()..].to_string(),
-                contents,
-            }),
-            Err(_) => log::warn!("[skills] {source}/{path} is not text and was left out"),
-        }
-    }
-    Ok(files)
 }
 
 /// The Agent Skills name rule, which `isSkillName` in `skills.ts` mirrors.
@@ -541,6 +504,39 @@ fn parse_skill_md(text: &str) -> ParsedSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_exact_name_leads_the_search_whatever_its_installs() {
+        let entry = |skill_id: &str, installs: u32| SkillCatalogEntry {
+            id: format!("owner/repo/{skill_id}"),
+            source: "owner/repo".to_string(),
+            skill_id: skill_id.to_string(),
+            name: skill_id.to_string(),
+            installs: Some(installs),
+        };
+        let mut entries = vec![
+            entry("ai-sdk", 60_000),
+            entry("brag", 8_000),
+            entry("code-review", 600_000),
+        ];
+        sort_search_results(&mut entries, "Brag");
+        let order: Vec<&str> = entries.iter().map(|e| e.skill_id.as_str()).collect();
+        assert_eq!(order, ["brag", "code-review", "ai-sdk"]);
+    }
+
+    #[test]
+    fn a_page_summary_is_read_and_unescaped() {
+        let html = r#"<head><meta name="description" content="Say &quot;/brag&quot;, let&#x27;s go &amp; &lt;ship&gt;…"/></head>"#;
+        assert_eq!(
+            meta_description(html).as_deref(),
+            Some(r#"Say "/brag", let's go & <ship>…"#)
+        );
+        assert_eq!(meta_description("<head></head>"), None);
+        assert_eq!(
+            meta_description(r#"<meta name="description" content=""/>"#),
+            None
+        );
+    }
 
     #[test]
     fn names_follow_the_agent_skills_rule() {

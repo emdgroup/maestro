@@ -131,6 +131,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::install_catalog_skill,
         crate::ipc::skills_catalog,
         crate::ipc::skill_description,
+        crate::ipc::skill_summary,
         crate::ipc::get_background_server,
         crate::ipc::set_background_server_autostart,
         crate::ipc::stop_background_server,

@@ -135,8 +135,11 @@ const CLAMPED = "line-clamp-3 text-xs leading-relaxed text-muted-foreground";
  * A card's description, clamped to three lines, with the whole of it in a popup on hover. The
  * popup only opens when the clamp actually cut something, measured as the pointer arrives, so a
  * card resized since render is judged at its current width.
+ *
+ * `full` replaces the popup's text, for a `text` that is itself cut short (ending in `…`); it is
+ * only mounted while the popup is open, so whatever it fetches is fetched on hover.
  */
-export function Description({ text }: { text: string }) {
+export function Description({ text, full }: { text: string; full?: React.ReactNode }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [open, setOpen] = useState(false);
   if (!text) return <p className={CLAMPED} />;
@@ -145,7 +148,8 @@ export function Description({ text }: { text: string }) {
       open={open}
       onOpenChange={(next) => {
         const p = ref.current;
-        setOpen(next && p !== null && p.scrollHeight > p.clientHeight);
+        const cut = p !== null && p.scrollHeight > p.clientHeight;
+        setOpen(next && (cut || (full !== undefined && text.endsWith("…"))));
       }}
     >
       <HoverCardTrigger delay={400} render={<p ref={ref} className={CLAMPED} />}>
@@ -156,7 +160,7 @@ export function Description({ text }: { text: string }) {
         align="start"
         className="max-h-80 w-96 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed"
       >
-        {text}
+        {full ?? text}
       </HoverCardContent>
     </HoverCard>
   );

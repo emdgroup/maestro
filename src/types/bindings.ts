@@ -1228,7 +1228,8 @@ async deleteSkill(connection: ConnectionKey, name: string) : Promise<Result<null
 }
 },
 /**
- * Download a catalog skill into the connection's library and install it for `agents`.
+ * Install a catalog skill into the connection's library and for `agents`. The daemon fetches it
+ * with the skills CLI, so the skill arrives whole, binary assets included.
  */
 async installCatalogSkill(connection: ConnectionKey, source: string, skillId: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
     try {
@@ -1251,12 +1252,26 @@ async skillsCatalog(query: string | null, page: number | null) : Promise<Result<
 }
 },
 /**
- * A catalog skill's description, read from its `SKILL.md`. Asked per card as it scrolls into
- * view, since the listings carry none.
+ * A catalog skill's whole description, read from its `SKILL.md`. Asked only when the pointer
+ * rests on a card, since it costs one of the download endpoint's 60 requests an hour.
  */
 async skillDescription(source: string, skillId: string) : Promise<Result<string | null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("skill_description", { source, skillId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The start of a catalog skill's description, from the `<meta name="description">` of its
+ * skills.sh page, cut at about 160 characters and ending in `…` when it was. Asked per card as it
+ * scrolls into view, since the listings carry none: the pages are served from a cache and are
+ * not held to the download endpoint's 60 requests an hour.
+ */
+async skillSummary(source: string, skillId: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("skill_summary", { source, skillId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

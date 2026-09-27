@@ -719,9 +719,11 @@ catalogs, is `src-tauri/src/collections/`.
   minute (429). Both are cached for the life of the window (`staleTime`/`gcTime: Infinity`); only
   the refresh button reads them again. The leaderboard endpoint is undocumented, the one the
   skills.sh site pages through itself. Fetched in Rust because skills.sh sends no CORS
-  headers. A skill's files, and so its
-  description, come from `skills.sh/api/download/<owner>/<repo>/<skill>`, the endpoint the skills CLI
-  uses; GitHub's trees API is only the fallback. Only `owner/repo` sources are listed.
+  headers. No listing carries descriptions. A card shows the `<meta name="description">` of the
+  skill's skills.sh page (cached, cut at ~160 characters); hovering it fetches the whole one from
+  `skills.sh/api/download/<owner>/<repo>/<skill>`, which allows 60 requests an hour. Installing is the daemon's: it runs `add <owner/repo> --skill <name>`
+  at project scope in `~/.maestro/skill-fetch/`, moves the copy into the library, and installs from
+  there, so a skill's binary assets arrive with it. Only `owner/repo` sources are listed.
 - **Test connection runs in the daemon**, for every transport (`mcp_store::test`): a stdio command
   has to exist on the connection's machine and a URL has to be reachable from it, since that is
   where the agents run. `reqwest` is in `maestro-server` for this alone.
