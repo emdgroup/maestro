@@ -3656,6 +3656,7 @@ dependencies = [
  "htmd",
  "image",
  "jc-adf",
+ "jsonwebtoken",
  "keyring",
  "log",
  "machine-uid",

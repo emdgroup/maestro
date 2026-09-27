@@ -1116,9 +1116,9 @@ async listMcpServers(connection: ConnectionKey, projectPath: string | null) : Pr
 /**
  * Create a server, or replace the one called `previous_name` (the same name when not renamed).
  */
-async saveMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null) : Promise<Result<null, string>> {
+async saveMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null, oauth: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_mcp_server", { connection, server, previousName }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_mcp_server", { connection, server, previousName, oauth }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1135,21 +1135,54 @@ async deleteMcpServer(connection: ConnectionKey, name: string) : Promise<Result<
 /**
  * Connect to a server from the connection's machine, where the agents run, and list its tools.
  */
-async testMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null) : Promise<Result<McpTestResult, string>> {
+async testMcpServer(connection: ConnectionKey, server: McpServerConfig, previousName: string | null, oauth: string | null) : Promise<Result<McpTestResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("test_mcp_server", { connection, server, previousName }) };
+    return { status: "ok", data: await TAURI_INVOKE("test_mcp_server", { connection, server, previousName, oauth }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * A page of the GitHub MCP Registry: its curated, star-ranked list with no query, a search with
- * one. Each entry carries the server the editor should open with.
+ * Sign in to the MCP server at `url` in the browser. Returns the id the sign-in is held under
+ * until `save_mcp_server` stores it or `discard_mcp_authorization` drops it. `stored_as` names
+ * the saved server being edited, whose client secret or key fills one left blank.
  */
-async mcpCatalog(query: string | null, cursor: string | null) : Promise<Result<McpCatalogPage, string>> {
+async authorizeMcpServer(connection: ConnectionKey, url: string, settings: McpOAuthSettings | null, storedAs: string | null) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("mcp_catalog", { query, cursor }) };
+    return { status: "ok", data: await TAURI_INVOKE("authorize_mcp_server", { connection, url, settings, storedAs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Forget a sign-in the user did not save.
+ */
+async discardMcpAuthorization(id: string) : Promise<void> {
+    await TAURI_INVOKE("discard_mcp_authorization", { id });
+},
+/**
+ * Whether the server at `url` needs an OAuth sign-in: it turns away a client with no credentials
+ * and publishes protected resource metadata, which the MCP spec requires of an OAuth server and a
+ * plain API key server has no reason to. Asked from this machine, not the connection's.
+ */
+async mcpRequiresOauth(url: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_requires_oauth", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The whole GitHub MCP Registry, star-ranked: a few hundred servers, read 100 at a time, the
+ * most the registry pages by. Searched in the webview. Each entry carries the server the editor
+ * should open with.
+ */
+async mcpCatalog() : Promise<Result<McpCatalogEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mcp_catalog") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1165,10 +1198,11 @@ async listSkills(connection: ConnectionKey, projectPath: string | null) : Promis
 },
 /**
  * Create or rewrite a skill written in Maestro, and install it for the agents switched on.
+ * `skill_md` is stored as written, so frontmatter the editor does not know survives.
  */
-async saveSkill(connection: ConnectionKey, name: string, description: string, instructions: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
+async saveSkill(connection: ConnectionKey, name: string, skillMd: string, agents: Partial<{ [key in string]: boolean }>) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_skill", { connection, name, description, instructions, agents }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_skill", { connection, name, skillMd, agents }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3669,12 +3703,46 @@ install: McpServerConfig;
  * way can still be recognised as this one.
  */
 packages: string[]; urls: string[] }
-export type McpCatalogPage = { entries: McpCatalogEntry[]; next_cursor: string | null }
 /**
  * One environment variable or header. A secret's `value` is `""` when read back; sending `""`
  * for a secret on save keeps what the keychain already holds.
  */
 export type McpKeyValue = { key: string; value: string; secret: boolean }
+/**
+ * How to sign in to a remote server with OAuth. With no client ID, Maestro registers itself
+ * with the server (dynamic client registration) and the rest is decided for it.
+ */
+export type McpOAuthSettings = { 
+/**
+ * A client registered with the provider by the user, for a server that does not register
+ * clients itself.
+ */
+client_id: string | null; 
+/**
+ * `auto`, `none`, `client_secret_basic`, `client_secret_post`, `client_secret_jwt` or
+ * `private_key_jwt`.
+ */
+client_auth: string; 
+/**
+ * Space-separated. None asks for what the server says it needs.
+ */
+scopes: string | null; 
+/**
+ * The `kid` of a `private_key_jwt` key, when the provider holds more than one.
+ */
+key_id: string | null; 
+/**
+ * The signing algorithm of a `private_key_jwt` key, `RS256` when unset.
+ */
+algorithm: string | null; 
+/**
+ * Written, never read back: `""` keeps what is stored. Lives in the keychain with the grant.
+ */
+client_secret: string; 
+/**
+ * A PEM private key, same as `client_secret`.
+ */
+private_key: string }
 /**
  * An MCP server the user manages, as the editor and the cards see it. Same shape as
  * `maestro_protocol::ManagedMcpServer`, which cannot derive `Type`.
@@ -3687,7 +3755,11 @@ transport: string; command: string | null; args: string[]; env: McpKeyValue[]; u
 /**
  * Maestro agent ids the server is injected for.
  */
-agents: string[]; catalog_id: string | null }
+agents: string[]; catalog_id: string | null; 
+/**
+ * Set when the server signs in with OAuth, even with every field left to its default.
+ */
+oauth?: McpOAuthSettings | null }
 /**
  * The managed servers, and the ones the project's own `.mcp.json` declares.
  */
@@ -3995,9 +4067,9 @@ export type SkillCatalogPage = { entries: SkillCatalogEntry[];
 next_page: number | null }
 export type SkillInfo = { name: string; description: string; 
 /**
- * `SKILL.md` without its frontmatter.
+ * The whole file, frontmatter included. The editor reads and writes it.
  */
-instructions: string; 
+skill_md: string; 
 /**
  * `owner/repo` for a catalog skill, which is not edited in Maestro.
  */

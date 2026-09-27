@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Download,
-  Ellipsis,
-  Info,
-  Pencil,
-  RefreshCw,
-  Search,
-  BookOpen,
-  Trash2,
-} from "lucide-react";
+import { Download, Ellipsis, Info, Pencil, RefreshCw, BookOpen, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -40,12 +30,20 @@ import {
   useSkillDescriptionQuery,
   useSkillsCatalogQuery,
   useSkillsQuery,
-  type SkillAgents,
 } from "@/services/skill.service";
-import { AgentStack, AgentsMenu, agentFor } from "../AgentsMenu";
-import { CARD, CardSection, Description, EveryAgent, ListedCard } from "../CardSection";
+import { ALL_AGENTS, AgentStack, AgentsDialog, AgentsSummary, agentFor } from "../AgentsDialog";
+import {
+  CARD,
+  CardSection,
+  CardTitle,
+  CATALOG_STEP,
+  Description,
+  EveryAgent,
+  ListedCard,
+  SearchBox,
+} from "../CardSection";
 import { SkillEditorDialog } from "./SkillEditorDialog";
-import { filterSkills } from "./skills";
+import { filterSkills, skillAgents, skillPage } from "./skills";
 import type {
   ConnectionKey,
   DiscoveredAgent,
@@ -77,13 +75,13 @@ function InstalledCard({
   const setAgents = useSetSkillAgentsMutation(connection);
   // An agent switched off keeps its entry, so it is unchecked here rather than forgotten.
   const enabled = Object.keys(skill.agents).filter((id) => skill.agents[id]);
-  const change = (next: SkillAgents) => setAgents.mutate({ name: skill.name, agents: next });
+  const [choosing, setChoosing] = useState(false);
 
   return (
     <div className={CARD}>
       <div className="flex items-center gap-2">
         <BookOpen className="size-4 shrink-0 text-accent" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{skill.name}</span>
+        <CardTitle title={skill.name} href={skill.source && skillPage(skill.source, skill.name)} />
         <span className="truncate rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
           {skill.source ?? "Custom"}
         </span>
@@ -120,7 +118,13 @@ function InstalledCard({
       </div>
       <Description text={description} />
       <div className="mt-auto flex items-center gap-1.5">
-        <AgentStack agents={enabled.map((id) => agentFor(agents, id))} empty="Turned off" />
+        <AgentsSummary
+          agents={agents}
+          ids={enabled}
+          empty="Turned off"
+          disabled={setAgents.isPending}
+          onClick={() => setChoosing(true)}
+        />
         <Tooltip>
           <TooltipTrigger
             render={
@@ -134,26 +138,23 @@ function InstalledCard({
           </TooltipTrigger>
           <TooltipContent className="max-w-72">{SHARED_DIRECTORY_HINT}</TooltipContent>
         </Tooltip>
-        <AgentsMenu
-          agents={agents}
-          supported={supported}
-          selected={enabled}
-          label={setAgents.isPending ? "Installing…" : "Agents"}
-          className="ml-auto"
-          disabled={setAgents.isPending}
-          onSelectAll={() =>
-            change({
-              ...skill.agents,
-              ...Object.fromEntries(
-                agents
-                  .filter((agent) => supported.includes(agent.id))
-                  .map((agent) => [agent.id, true]),
-              ),
-            })
-          }
-          onToggle={(id, on) => change({ ...skill.agents, [id]: on })}
-        />
+        {setAgents.isPending && (
+          <span className="ml-auto text-[11px] text-muted-foreground">Installing…</span>
+        )}
       </div>
+      <AgentsDialog
+        open={choosing}
+        onOpenChange={setChoosing}
+        name={skill.name}
+        agents={agents}
+        supported={supported}
+        value={enabled}
+        confirmLabel="Save"
+        onConfirm={(picked) => {
+          setAgents.mutate({ name: skill.name, agents: skillAgents(picked, skill.agents) });
+          setChoosing(false);
+        }}
+      />
     </div>
   );
 }
@@ -189,24 +190,25 @@ function CatalogCard({
   connection: ConnectionKey;
 }) {
   const install = useInstallCatalogSkillMutation(connection);
-  const [chosen, setChosen] = useState<string[]>([]);
+  const [choosing, setChoosing] = useState(false);
   const [ref, seen] = useSeen<HTMLDivElement>();
   const description = useSkillDescriptionQuery(entry.source, entry.skill_id, seen);
-  const installFor = (ids: string[]) =>
+  const installFor = (picked: string[]) =>
     install.mutate(
+      { source: entry.source, skillId: entry.skill_id, agents: skillAgents(picked) },
       {
-        source: entry.source,
-        skillId: entry.skill_id,
-        agents: Object.fromEntries(ids.map((id) => [id, true])),
+        onSuccess: () => {
+          setChoosing(false);
+          toast.success(`Installed ${entry.name}`);
+        },
       },
-      { onSuccess: () => toast.success(`Installed ${entry.name}`) },
     );
 
   return (
     <div ref={ref} className={CARD}>
       <div className="flex items-center gap-2">
         <BookOpen className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{entry.name}</span>
+        <CardTitle title={entry.name} href={skillPage(entry.source, entry.skill_id)} />
         {entry.installs !== null && (
           <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
             <Download className="size-3" />
@@ -221,35 +223,27 @@ function CatalogCard({
       )}
       <div className="mt-auto flex items-center gap-2">
         <span className="truncate font-mono text-[11px] text-muted-foreground">{entry.source}</span>
-        <AgentsMenu
-          agents={agents}
-          supported={supported}
-          selected={chosen}
-          label={install.isPending ? "Installing…" : "Install"}
-          className="ml-auto"
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-7 text-xs"
           disabled={install.isPending}
-          onToggle={(id, on) =>
-            setChosen(on ? [...chosen, id] : chosen.filter((chosenId) => chosenId !== id))
-          }
-          actions={[
-            // One action whose reach follows the checkboxes: every agent until some are checked.
-            chosen.length
-              ? {
-                  label: `Install for ${chosen.length} selected agent${chosen.length === 1 ? "" : "s"}`,
-                  onSelect: () => installFor(chosen),
-                }
-              : {
-                  label: "Install for all agents",
-                  onSelect: () =>
-                    installFor(
-                      agents
-                        .filter((agent) => supported.includes(agent.id))
-                        .map((agent) => agent.id),
-                    ),
-                },
-          ]}
-        />
+          onClick={() => setChoosing(true)}
+        >
+          {install.isPending ? "Installing…" : "Install"}
+        </Button>
       </div>
+      <AgentsDialog
+        open={choosing}
+        onOpenChange={setChoosing}
+        name={entry.name}
+        agents={agents}
+        supported={supported}
+        value={[ALL_AGENTS]}
+        confirmLabel={install.isPending ? "Installing…" : "Install"}
+        pending={install.isPending}
+        onConfirm={installFor}
+      />
     </div>
   );
 }
@@ -279,6 +273,8 @@ export function SkillsPanel({
   const [query, setQuery] = useState("");
   const search = useDebouncedValue(query.trim(), 350);
   const catalog = useSkillsCatalogQuery(search.length >= 2 ? search : "");
+  const [shown, setShown] = useState({ search, count: CATALOG_STEP });
+  const count = shown.search === search ? shown.count : CATALOG_STEP;
   const remove = useDeleteSkillMutation(connection);
   const [removing, setRemoving] = useState<SkillInfo | null>(null);
 
@@ -322,16 +318,12 @@ export function SkillsPanel({
 
   return (
     <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-5 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search installed skills and skills.sh…"
-          aria-label="Search skills"
-          className="h-8 pl-8 text-xs"
-        />
-      </div>
+      <SearchBox
+        value={query}
+        onChange={setQuery}
+        placeholder="Search installed skills and skills.sh…"
+        label="Search skills"
+      />
 
       {error ? (
         <p className="text-xs text-destructive">{String(error)}</p>
@@ -379,26 +371,32 @@ export function SkillsPanel({
         ) : catalog.data && entries.length === 0 ? (
           <p className="col-span-full text-xs text-muted-foreground">No skill matches.</p>
         ) : (
-          entries.map((entry) => (
-            <CatalogCard
-              key={entry.id}
-              entry={entry}
-              agents={agents}
-              supported={supported}
-              connection={connection}
-            />
-          ))
+          entries
+            .slice(0, count)
+            .map((entry) => (
+              <CatalogCard
+                key={entry.id}
+                entry={entry}
+                agents={agents}
+                supported={supported}
+                connection={connection}
+              />
+            ))
         )}
       </CardSection>
-      {catalog.hasNextPage && (
+      {(entries.length > count || catalog.hasNextPage) && (
         <Button
           variant="outline"
           size="sm"
           className="self-center text-xs"
           disabled={catalog.isFetchingNextPage}
-          onClick={() => void catalog.fetchNextPage()}
+          onClick={() => {
+            setShown({ search, count: count + CATALOG_STEP });
+            // The next leaderboard page only once the loaded ones run out.
+            if (count + CATALOG_STEP > entries.length) void catalog.fetchNextPage();
+          }}
         >
-          {catalog.isFetchingNextPage ? "Loading…" : "Load more"}
+          {catalog.isFetchingNextPage ? "Loading…" : "Show more"}
         </Button>
       )}
 
@@ -406,8 +404,6 @@ export function SkillsPanel({
         open={editorOpen}
         onOpenChange={onEditorOpenChange}
         connection={connection}
-        agents={agents}
-        supported={supported}
         editing={editing}
       />
 

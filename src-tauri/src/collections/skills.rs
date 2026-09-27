@@ -3,12 +3,14 @@
 //! The library and the per-agent installs are the daemon's (`maestro-server/src/skills.rs`),
 //! for the same reason MCP servers are: they belong to the machine the agents run on. What is
 //! done here is what needs the internet or knows the `SKILL.md` format: the catalog, downloading
-//! a catalog skill's files, and writing and reading frontmatter.
+//! a catalog skill's files, and reading a skill's name and description. The editor writes the
+//! whole `SKILL.md` (`skills.ts`), so frontmatter Maestro has no field for is kept.
 //!
 //! The catalog is skills.sh: its all-time leaderboard, most installed first, when nothing is
-//! searched, and its search when something is. The leaderboard endpoint is the one the skills.sh
-//! site pages through itself, undocumented, so a change there empties the list rather than breaking
-//! anything else. A skill's files come from the skills.sh download endpoint the skills CLI uses,
+//! searched, and its search when something is. The whole leaderboard is ~50 pages of 200 against
+//! a limit of 30 requests a minute, so it is paged in on demand rather than read at once. The
+//! leaderboard endpoint is the one the skills.sh site pages through itself, undocumented, so a
+//! change there empties the list rather than breaking anything else. A skill's files come from the skills.sh download endpoint the skills CLI uses,
 //! which is also where a card's description is read; GitHub's trees API (60 calls an hour
 //! unauthenticated) and `raw.githubusercontent.com` are only the fallback for an install.
 
@@ -28,13 +30,15 @@ use crate::core::AppState;
 
 /// A skill the size of this is not a skill; it keeps a bad download off the wire.
 const MAX_SKILL_BYTES: usize = 8 * 1024 * 1024;
+/// The Agent Skills spec limit, in characters.
+const MAX_DESCRIPTION: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct SkillInfo {
     pub name: String,
     pub description: String,
-    /// `SKILL.md` without its frontmatter.
-    pub instructions: String,
+    /// The whole file, frontmatter included. The editor reads and writes it.
+    pub skill_md: String,
     /// `owner/repo` for a catalog skill, which is not edited in Maestro.
     pub source: Option<String>,
     /// Maestro agent id to whether the skill is installed for it.
@@ -96,8 +100,8 @@ pub async fn list_skills(
                 let parsed = parse_skill_md(&skill.skill_md);
                 SkillInfo {
                     description: parsed.description.unwrap_or_default(),
-                    instructions: parsed.body,
                     name: skill.name,
+                    skill_md: skill.skill_md,
                     source: skill.source,
                     agents: skill.agents,
                 }
@@ -136,26 +140,36 @@ pub async fn list_skills(
 }
 
 /// Create or rewrite a skill written in Maestro, and install it for the agents switched on.
+/// `skill_md` is stored as written, so frontmatter the editor does not know survives.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_skill(
     app_state: State<'_, Arc<AppState>>,
     connection: ConnectionKey,
     name: String,
-    description: String,
-    instructions: String,
+    skill_md: String,
     agents: BTreeMap<String, bool>,
 ) -> Result<(), String> {
     validate_name(&name)?;
+    let parsed = parse_skill_md(&skill_md);
+    if parsed.name.as_deref() != Some(name.as_str()) {
+        return Err(format!("The name in SKILL.md has to be {name}"));
+    }
+    let description = parsed.description.unwrap_or_default();
     if description.trim().is_empty() {
         return Err("A skill needs a description: it is how an agent knows when to use it".into());
+    }
+    if description.trim().chars().count() > MAX_DESCRIPTION {
+        return Err(format!(
+            "A skill description is at most {MAX_DESCRIPTION} characters"
+        ));
     }
     query_apply_skill_via_server(
         connection,
         maestro_protocol::ApplySkillRequest {
             files: Some(vec![maestro_protocol::SkillFile {
                 path: "SKILL.md".to_string(),
-                contents: render_skill_md(&name, &description, &instructions),
+                contents: skill_md,
             }]),
             name,
             source: None,
@@ -457,36 +471,30 @@ async fn download_skill(
     Ok(files)
 }
 
+/// The Agent Skills name rule, which `isSkillName` in `skills.ts` mirrors.
 fn validate_name(name: &str) -> Result<(), String> {
     let valid = (1..=64).contains(&name.len())
         && name
             .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--");
     if valid {
         Ok(())
     } else {
-        Err("A skill name is 1 to 64 lowercase letters, digits and hyphens".to_string())
+        Err("A skill name is 1 to 64 lowercase letters, numbers and hyphens, with no hyphen at either end or two in a row".to_string())
     }
-}
-
-/// A JSON string is a valid YAML double-quoted scalar, which makes it the one quoting that needs
-/// no rules of its own.
-fn render_skill_md(name: &str, description: &str, instructions: &str) -> String {
-    let description = serde_json::to_string(description.trim()).unwrap_or_default();
-    format!(
-        "---\nname: {name}\ndescription: {description}\n---\n\n{}\n",
-        instructions.trim()
-    )
 }
 
 #[derive(Debug, Default, PartialEq)]
 struct ParsedSkill {
     name: Option<String>,
     description: Option<String>,
-    body: String,
 }
 
-/// `name` and `description` from `SKILL.md` frontmatter, and what follows it.
+/// `name` and `description` from `SKILL.md` frontmatter. The editor reads the rest itself, in
+/// `skills.ts`.
 ///
 /// ponytail: reads single-line scalars (plain, single- or double-quoted) and `>`/`|` blocks,
 /// which is what skill frontmatter uses in practice. A YAML parser if anything stranger appears.
@@ -496,18 +504,9 @@ fn parse_skill_md(text: &str) -> ParsedSkill {
         .strip_prefix("---\n")
         .or_else(|| text.strip_prefix("---\r\n"))
     else {
-        return ParsedSkill {
-            body: text.trim().to_string(),
-            ..ParsedSkill::default()
-        };
+        return ParsedSkill::default();
     };
-    let (front, body) = match rest.find("\n---") {
-        Some(end) => {
-            let after = &rest[end + 4..];
-            (&rest[..end], after.split_once('\n').map_or("", |(_, b)| b))
-        }
-        None => (rest, ""),
-    };
+    let front = rest.find("\n---").map_or(rest, |end| &rest[..end]);
     let lines: Vec<&str> = front.lines().collect();
     let field = |key: &str| -> Option<String> {
         let at = lines
@@ -536,7 +535,6 @@ fn parse_skill_md(text: &str) -> ParsedSkill {
     ParsedSkill {
         name: field("name"),
         description: field("description"),
-        body: body.trim().to_string(),
     }
 }
 
@@ -545,15 +543,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_rendered_skill_parses_back() {
-        let md = render_skill_md("my-skill", "Use when \"quoted\": always", "Do the thing.\n");
-        let parsed = parse_skill_md(&md);
-        assert_eq!(parsed.name.as_deref(), Some("my-skill"));
-        assert_eq!(
-            parsed.description.as_deref(),
-            Some("Use when \"quoted\": always")
-        );
-        assert_eq!(parsed.body, "Do the thing.");
+    fn names_follow_the_agent_skills_rule() {
+        assert!(validate_name("pdf-processing").is_ok());
+        let long = "a".repeat(65);
+        for bad in ["", "PDF", "-pdf", "pdf-", "pdf--x", "pdf_x", long.as_str()] {
+            assert!(validate_name(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
@@ -565,16 +560,13 @@ mod tests {
             parsed.description.as_deref(),
             Some("Read PDFs and fill forms.")
         );
-        assert_eq!(parsed.body, "# PDF");
         let single = parse_skill_md("---\nname: 'it''s'\n---\nbody");
         assert_eq!(single.name.as_deref(), Some("it's"));
     }
 
     #[test]
-    fn a_file_without_frontmatter_is_all_body() {
-        let parsed = parse_skill_md("just text");
-        assert_eq!(parsed.name, None);
-        assert_eq!(parsed.body, "just text");
+    fn a_file_without_frontmatter_has_no_name() {
+        assert_eq!(parse_skill_md("just text"), ParsedSkill::default());
     }
 
     #[test]

@@ -23,6 +23,32 @@ pub enum KeychainOutcome<T> {
 
 const SERVICE: &str = "maestro.ticketing";
 
+/// UTF-16 units per keychain entry. Windows caps a credential at 2560 bytes and `keyring` stores
+/// it as UTF-16, so 1280 is the ceiling; an OAuth access token is often longer.
+const PART_UNITS: usize = 1200;
+/// What an entry holding a split value starts with, followed by its number of parts.
+const PARTS_MARKER: &str = "\u{1}maestro-parts:";
+
+fn split_secret(value: &str) -> Vec<String> {
+    let mut parts = vec![String::new()];
+    let mut units = 0;
+    for character in value.chars() {
+        if units + character.len_utf16() > PART_UNITS {
+            parts.push(String::new());
+            units = 0;
+        }
+        units += character.len_utf16();
+        if let Some(part) = parts.last_mut() {
+            part.push(character);
+        }
+    }
+    parts
+}
+
+fn parts_count(stored: &str) -> Option<usize> {
+    stored.strip_prefix(PARTS_MARKER)?.parse().ok()
+}
+
 fn integration_key_legacy(provider: &str) -> String {
     format!("maestro:integration:{}", provider)
 }
@@ -353,8 +379,7 @@ impl KeychainStore {
         value: &str,
         app_data_dir: &Path,
     ) -> Result<(), String> {
-        let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.set_password(value) {
+        match Self::keychain_set(service, account, value) {
             Ok(()) => Ok(()),
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
                 Self::encrypt_to_file(
@@ -372,8 +397,7 @@ impl KeychainStore {
         account: &str,
         app_data_dir: &Path,
     ) -> Result<Option<String>, String> {
-        let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
-        match entry.get_password() {
+        match Self::keychain_get(service, account) {
             Ok(value) => Ok(Some(value)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(keyring::Error::NoStorageAccess(_)) | Err(keyring::Error::PlatformFailure(_)) => {
@@ -389,6 +413,7 @@ impl KeychainStore {
 
     pub fn delete_secret(service: &str, account: &str, app_data_dir: &Path) -> Result<(), String> {
         let entry = Entry::new(service, account).map_err(|e| format!("Keyring error: {}", e))?;
+        Self::delete_parts(service, account, &entry);
         let keyring_result = entry.delete_credential();
         let _ = std::fs::remove_file(Self::secret_file_path(service, account, app_data_dir));
         match keyring_result {
@@ -397,6 +422,47 @@ impl KeychainStore {
             | Err(keyring::Error::NoStorageAccess(_))
             | Err(keyring::Error::PlatformFailure(_)) => Ok(()),
             Err(e) => Err(format!("Failed to delete secret: {}", e)),
+        }
+    }
+
+    /// Store `value`, split across `<account>#1`, `<account>#2`… when it is too long for one
+    /// entry, with `account` itself holding only how many parts there are.
+    fn keychain_set(service: &str, account: &str, value: &str) -> keyring::Result<()> {
+        let entry = Entry::new(service, account)?;
+        Self::delete_parts(service, account, &entry);
+        let parts = split_secret(value);
+        if parts.len() == 1 {
+            return entry.set_password(value);
+        }
+        for (index, part) in parts.iter().enumerate() {
+            Entry::new(service, &format!("{account}#{}", index + 1))?.set_password(part)?;
+        }
+        entry.set_password(&format!("{PARTS_MARKER}{}", parts.len()))
+    }
+
+    fn keychain_get(service: &str, account: &str) -> keyring::Result<String> {
+        let stored = Entry::new(service, account)?.get_password()?;
+        let Some(count) = parts_count(&stored) else {
+            return Ok(stored);
+        };
+        let mut value = String::new();
+        for index in 1..=count {
+            value.push_str(&Entry::new(service, &format!("{account}#{index}"))?.get_password()?);
+        }
+        Ok(value)
+    }
+
+    /// Remove the parts of a split value, so a shorter one stored after it leaves none behind.
+    fn delete_parts(service: &str, account: &str, entry: &Entry) {
+        let Some(count) = entry.get_password().ok().as_deref().and_then(parts_count) else {
+            return;
+        };
+        for index in 1..=count {
+            let part = format!("{account}#{index}");
+            match Entry::new(service, &part).and_then(|entry| entry.delete_credential()) {
+                Ok(()) | Err(keyring::Error::NoEntry) => {}
+                Err(e) => log::warn!("Deleting {service}/{part} from the keychain failed: {e}"),
+            }
         }
     }
 
@@ -564,6 +630,44 @@ impl KeychainStore {
 mod tests {
     use super::*;
     use crate::models::integration::CredentialSource;
+
+    #[test]
+    fn long_secrets_split_under_the_windows_limit_and_rejoin() {
+        assert_eq!(split_secret("short"), ["short"]);
+        let long = format!("Bearer {}", "é😀x".repeat(900));
+        let parts = split_secret(&long);
+        assert!(parts.len() > 1);
+        assert!(parts
+            .iter()
+            .all(|part| part.encode_utf16().count() <= PART_UNITS));
+        assert_eq!(parts.concat(), long);
+        assert_eq!(parts_count(&format!("{PARTS_MARKER}3")), Some(3));
+        assert_eq!(parts_count("Bearer abc"), None);
+    }
+
+    /// Touches the real OS keychain, so it only runs when asked for.
+    #[test]
+    #[ignore]
+    fn a_long_secret_round_trips_through_the_os_keychain() {
+        let dir = std::env::temp_dir();
+        let (service, account) = ("maestro.test", "long-secret");
+        let long = "x".repeat(5000);
+        KeychainStore::set_secret(service, account, &long, &dir).unwrap();
+        assert_eq!(
+            KeychainStore::get_secret(service, account, &dir).unwrap(),
+            Some(long)
+        );
+        KeychainStore::set_secret(service, account, "short", &dir).unwrap();
+        assert!(Entry::new(service, &format!("{account}#1"))
+            .unwrap()
+            .get_password()
+            .is_err());
+        KeychainStore::delete_secret(service, account, &dir).unwrap();
+        assert_eq!(
+            KeychainStore::get_secret(service, account, &dir).unwrap(),
+            None
+        );
+    }
 
     fn test_token() -> StoredToken {
         StoredToken {

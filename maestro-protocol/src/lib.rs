@@ -407,6 +407,10 @@ pub struct McpKeyValue {
     pub secret: bool,
 }
 
+/// Stands for every agent in a managed MCP server's or skill's agent list, those installed later
+/// included, where the other entries name one agent each.
+pub const ALL_AGENTS: &str = "*";
+
 /// An MCP server the user added through Maestro, injected into the sessions of the agents it lists.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ManagedMcpServer {
@@ -423,12 +427,16 @@ pub struct ManagedMcpServer {
     pub url: Option<String>,
     #[serde(default)]
     pub headers: Vec<McpKeyValue>,
-    /// Maestro agent ids, e.g. `claude-acp`.
+    /// Maestro agent ids, e.g. `claude-acp`, or [`ALL_AGENTS`].
     #[serde(default)]
     pub agents: Vec<String>,
     /// The registry entry it was installed from, if any.
     #[serde(default)]
     pub catalog_id: Option<String>,
+    /// How the app signs in to a remote server with OAuth. Kept for the app, never read here: the
+    /// token it gets reaches the server as an ordinary `Authorization` secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<serde_json::Value>,
 }
 
 /// A listing that can also look inside one project.
@@ -489,7 +497,8 @@ pub struct ManagedSkill {
     /// The whole `SKILL.md`, frontmatter included. Parsed by the app, which is what writes it.
     pub skill_md: String,
     /// Maestro agent id to whether the skill is installed for it. An agent set to `false` keeps
-    /// its place, so the card still shows a switch to turn it back on.
+    /// its place, so the card still shows a switch to turn it back on. [`ALL_AGENTS`] set to
+    /// `true` installs it for every agent the skills CLI knows.
     pub agents: std::collections::BTreeMap<String, bool>,
 }
 

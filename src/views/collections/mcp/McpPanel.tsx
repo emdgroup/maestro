@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Ellipsis, Pencil, PlugZap, RefreshCw, Search, Star, Trash2 } from "lucide-react";
+import { Ellipsis, Pencil, PlugZap, RefreshCw, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
-import { Input } from "@/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +21,7 @@ import {
 } from "@/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { McpIcon } from "@/components/common/icons/McpIcon";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import maestroIconUrl from "../../../../src-tauri/icons/32x32.png?url";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import {
   useDeleteMcpServerMutation,
@@ -31,10 +30,19 @@ import {
   useSaveMcpServerMutation,
   useTestMcpServerMutation,
 } from "@/services/mcp.service";
-import { AgentStack, AgentsMenu, agentFor } from "../AgentsMenu";
-import { CARD, CardSection, Description, EveryAgent, ListedCard } from "../CardSection";
+import { AgentsDialog, AgentsSummary } from "../AgentsDialog";
+import {
+  CARD,
+  CardSection,
+  CardTitle,
+  CATALOG_STEP,
+  Description,
+  EveryAgent,
+  ListedCard,
+  SearchBox,
+} from "../CardSection";
 import { McpEditorDialog } from "./McpEditorDialog";
-import { catalogMatch, filterServers } from "./mcp";
+import { catalogMatch, filterCatalog, filterServers } from "./mcp";
 import type {
   ConnectionKey,
   DiscoveredAgent,
@@ -71,6 +79,7 @@ function InstalledCard({
 }) {
   const save = useSaveMcpServerMutation(connection);
   const test = useTestMcpServerMutation(connection);
+  const [choosing, setChoosing] = useState(false);
 
   const runTest = () =>
     test.mutate(
@@ -89,9 +98,7 @@ function InstalledCard({
     <div className={CARD}>
       <div className="flex items-center gap-2">
         <ServerIcon url={match?.icon_url} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {match?.name ?? server.name}
-        </span>
+        <CardTitle title={match?.name ?? server.name} href={match?.repo_url} />
         <span className="rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
           {server.transport}
         </span>
@@ -128,30 +135,28 @@ function InstalledCard({
       {match?.description && <Description text={match.description} />}
       <p className="truncate font-mono text-[11px] text-muted-foreground">{commandLine(server)}</p>
       <div className="mt-auto flex items-center gap-1.5">
-        <AgentStack agents={server.agents.map((id) => agentFor(agents, id))} />
-        <AgentsMenu
+        <AgentsSummary
           agents={agents}
-          selected={server.agents}
-          onSelectAll={() =>
-            save.mutate({
-              previousName: server.name,
-              server: { ...server, agents: agents.map((agent) => agent.id) },
-            })
-          }
-          label={save.isPending ? "Saving…" : "Agents"}
-          className="ml-auto"
+          ids={server.agents}
           disabled={save.isPending}
-          onToggle={(id, on) =>
-            save.mutate({
-              previousName: server.name,
-              server: {
-                ...server,
-                agents: on ? [...server.agents, id] : server.agents.filter((a) => a !== id),
-              },
-            })
-          }
+          onClick={() => setChoosing(true)}
         />
+        {save.isPending && (
+          <span className="ml-auto text-[11px] text-muted-foreground">Saving…</span>
+        )}
       </div>
+      <AgentsDialog
+        open={choosing}
+        onOpenChange={setChoosing}
+        name={server.name}
+        agents={agents}
+        value={server.agents}
+        confirmLabel="Save"
+        onConfirm={(picked) => {
+          save.mutate({ previousName: server.name, server: { ...server, agents: picked } });
+          setChoosing(false);
+        }}
+      />
     </div>
   );
 }
@@ -161,7 +166,7 @@ function CatalogCard({ entry, onInstall }: { entry: McpCatalogEntry; onInstall: 
     <div className={CARD}>
       <div className="flex items-center gap-2">
         <ServerIcon url={entry.icon_url} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{entry.name}</span>
+        <CardTitle title={entry.name} href={entry.repo_url} />
         {entry.stars !== null && (
           <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
             <Star className="size-3" />
@@ -208,46 +213,38 @@ export function McpPanel({
   const servers = listed?.servers;
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const [query, setQuery] = useState("");
-  const search = useDebouncedValue(query.trim(), 350);
-  const catalog = useMcpCatalogQuery(search);
-  // The unsearched list too, so what is installed keeps its catalog name and icon while searching.
-  const recommended = useMcpCatalogQuery("");
+  const catalog = useMcpCatalogQuery();
+  const [shown, setShown] = useState({ query: "", count: CATALOG_STEP });
+  const count = shown.query === query ? shown.count : CATALOG_STEP;
   const remove = useDeleteMcpServerMutation(connection);
   const [removing, setRemoving] = useState<McpServerConfig | null>(null);
 
   const agents = discovery?.agents ?? [];
   const installed = filterServers(servers ?? [], query);
   const inProject = filterServers(listed?.project ?? [], query);
-  const loaded = [...(catalog.data?.pages ?? []), ...(recommended.data?.pages ?? [])].flatMap(
-    (page) => page.entries,
-  );
-  const matchOf = (server: McpServerConfig) => catalogMatch(server, loaded);
+  const matchOf = (server: McpServerConfig) => catalogMatch(server, catalog.data ?? []);
   const matched = new Set(
     [...(servers ?? []), ...(listed?.project ?? [])].map((server) => matchOf(server)?.id),
   );
-  const entries = (catalog.data?.pages.flatMap((page) => page.entries) ?? []).filter(
+  const entries = filterCatalog(catalog.data ?? [], query).filter(
     (entry) => !matched.has(entry.id),
   );
 
   return (
     <div className="mr-[7px] flex h-full min-w-0 flex-1 flex-col gap-5 overflow-y-auto rounded-t-xl border-x border-t border-border bg-background p-4">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search installed servers and the catalog…"
-          aria-label="Search MCP servers"
-          className="h-8 pl-8 text-xs"
-        />
-      </div>
+      <SearchBox
+        value={query}
+        onChange={setQuery}
+        placeholder="Search installed servers and the catalog…"
+        label="Search MCP servers"
+      />
 
       {error ? (
         <p className="text-xs text-destructive">{String(error)}</p>
       ) : (
         <CardSection title="Installed" count={installed.length + 1}>
           <ListedCard
-            icon={<McpIcon className="size-5 shrink-0 text-accent" />}
+            icon={<img src={maestroIconUrl} alt="" className="size-5 shrink-0 rounded" />}
             title="maestro"
             badge="Maestro"
             description="Canvas surfaces, tasks, automations, templates and prompts. Added to every session Maestro starts."
@@ -276,6 +273,7 @@ export function McpPanel({
                 key={server.name}
                 icon={<ServerIcon url={match?.icon_url} />}
                 title={match?.name ?? server.name}
+                href={match?.repo_url}
                 description={match?.description || commandLine(server)}
                 footer={<EveryAgent />}
               />
@@ -285,7 +283,8 @@ export function McpPanel({
       )}
 
       <CardSection
-        title={search ? `Catalog results for “${search}”` : "Catalog"}
+        title={query.trim() ? `Catalog results for “${query.trim()}”` : "Catalog"}
+        count={entries.length}
         action={
           <Button
             variant="ghost"
@@ -306,24 +305,25 @@ export function McpPanel({
             Nothing in the catalog matches.
           </p>
         ) : (
-          entries.map((entry) => (
-            <CatalogCard
-              key={entry.id}
-              entry={entry}
-              onInstall={() => onDraftChange({ editing: null, seed: entry.install })}
-            />
-          ))
+          entries
+            .slice(0, count)
+            .map((entry) => (
+              <CatalogCard
+                key={entry.id}
+                entry={entry}
+                onInstall={() => onDraftChange({ editing: null, seed: entry.install })}
+              />
+            ))
         )}
       </CardSection>
-      {catalog.hasNextPage && (
+      {entries.length > count && (
         <Button
           variant="outline"
           size="sm"
           className="self-center text-xs"
-          disabled={catalog.isFetchingNextPage}
-          onClick={() => void catalog.fetchNextPage()}
+          onClick={() => setShown({ query, count: count + CATALOG_STEP })}
         >
-          {catalog.isFetchingNextPage ? "Loading…" : "Load more"}
+          Show more
         </Button>
       )}
 
@@ -331,7 +331,6 @@ export function McpPanel({
         open={draft !== null}
         onOpenChange={(open) => !open && onDraftChange(null)}
         connection={connection}
-        agents={agents}
         editing={draft?.editing ?? null}
         seed={draft?.seed ?? null}
       />

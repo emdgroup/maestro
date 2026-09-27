@@ -35,6 +35,9 @@ octocrab = { version = "0.54", default-features = false, features = [
   "rustls-ring",
   "jwt-rust-crypto",
 ] }
+# Already in the tree through octocrab with these features; signs the private_key_jwt and
+# client_secret_jwt assertions of MCP OAuth clients.
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 graphql_client = { version = "0.16", default-features = false }
 jc-adf = "0.2"
 htmd = "0.5.4"

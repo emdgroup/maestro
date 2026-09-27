@@ -1,5 +1,65 @@
 import { useRef, useState } from "react";
+import { ExternalLink, Search, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui/hover-card";
+
+/** The search box above a panel's sections, with a button that clears it. */
+export function SearchBox({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  label: string;
+}) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) onChange("");
+        }}
+        placeholder={placeholder}
+        aria-label={label}
+        className="h-8 px-8 text-xs"
+      />
+      {value && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Clear search"
+          className="absolute right-1 top-1/2 size-6 -translate-y-1/2 text-muted-foreground"
+          onClick={() => onChange("")}
+        >
+          <X className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** A card's title, opening `href` in the browser when there is one. */
+export function CardTitle({ title, href }: { title: string; href?: string | null }) {
+  if (!href) return <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>;
+  return (
+    <button
+      type="button"
+      title={href}
+      onClick={() => void openUrl(href)}
+      className="group/title flex min-w-0 flex-1 items-center gap-1 text-left text-sm font-semibold hover:underline"
+    >
+      <span className="truncate">{title}</span>
+      <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100" />
+    </button>
+  );
+}
 
 /** A titled grid of cards, with a count and an optional control beside the title. */
 export function CardSection({
@@ -36,12 +96,14 @@ export const CARD =
 export function ListedCard({
   icon,
   title,
+  href,
   badge,
   description,
   footer,
 }: {
   icon: React.ReactNode;
   title: string;
+  href?: string | null;
   badge?: string;
   description: string;
   footer: React.ReactNode;
@@ -50,7 +112,7 @@ export function ListedCard({
     <div className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card p-4">
       <div className="flex items-center gap-2">
         {icon}
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</span>
+        <CardTitle title={title} href={href} />
         {badge && (
           <span className="truncate rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
             {badge}
@@ -99,3 +161,6 @@ export function Description({ text }: { text: string }) {
     </HoverCard>
   );
 }
+
+/** Catalog cards drawn at first, and added by each "Show more". */
+export const CATALOG_STEP = 60;

@@ -163,7 +163,11 @@ fn convert_for(
 ) -> LoadedMcpServers {
     let mut out = LoadedMcpServers::default();
     for server in servers {
-        if !server.agents.iter().any(|a| a == agent_id) {
+        if !server
+            .agents
+            .iter()
+            .any(|a| a == agent_id || a == maestro_protocol::ALL_AGENTS)
+        {
             continue;
         }
         let name = server.name.clone();
@@ -539,6 +543,7 @@ mod tests {
             headers: Vec::new(),
             agents: agents.iter().map(|a| a.to_string()).collect(),
             catalog_id: None,
+            oauth: None,
         }
     }
 
@@ -600,6 +605,19 @@ mod tests {
             panic!("stdio")
         };
         assert!(s.env.iter().any(|e| e.name == "TOKEN" && e.value == "t0k"));
+    }
+
+    #[test]
+    fn a_server_for_all_agents_reaches_any_agent() {
+        let loaded = convert_for(
+            vec![stdio("ctx", &["*"])],
+            "an-agent-added-later",
+            McpTransportSupport::default(),
+            &BTreeSet::new(),
+            &secret("ctx"),
+            &BTreeMap::new(),
+        );
+        assert_eq!(loaded.servers.len(), 1);
     }
 
     #[test]
