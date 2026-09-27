@@ -33,6 +33,10 @@ export function LinearForm({ fields, onFieldsChange }: Props) {
         onValueChange={(v) => onFieldsChange({ ...fields, team_id: v ?? "" })}
         onInputValueChange={(v) => setSearch(v)}
         filter={null}
+        itemToStringLabel={(id: string) => {
+          const team = teams.find((t) => t.id === id);
+          return team ? `${team.key} ${team.name}` : id;
+        }}
       >
         <ComboboxInput
           placeholder={isLoading ? "Loading teams…" : "Search teams… (optional)"}
