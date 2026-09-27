@@ -30,11 +30,6 @@ struct IssuesConnection {
 }
 
 #[derive(serde::Deserialize)]
-struct LinearIssueType {
-    name: String,
-}
-
-#[derive(serde::Deserialize)]
 struct LinearIssue {
     identifier: String,
     title: String,
@@ -44,8 +39,6 @@ struct LinearIssue {
     updated_at: Option<String>,
     labels: LabelConnection,
     priority: Option<i32>, // 0=null, 1=Urgent, 2=High, 3=Medium, 4=Low
-    #[serde(rename = "issueType")]
-    issue_type: Option<LinearIssueType>,
 }
 
 #[derive(serde::Deserialize)]
@@ -81,8 +74,8 @@ pub struct LinearTeam {
 
 const VIEWER_QUERY: &str = "{ viewer { name } }";
 const TEAMS_QUERY: &str = "{ teams { nodes { id name key } } }";
-const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } issueType { name } } } }"#;
-const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } issueType { name } } } }"#;
+const ISSUES_QUERY_ALL: &str = r#"{ issues(first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
+const ISSUES_QUERY_TEAM: &str = r#"query IssuesByTeam($teamId: ID!) { issues(filter: { team: { id: { eq: $teamId } } }, first: 100) { nodes { identifier title description url updatedAt priority labels { nodes { name } } } } }"#;
 
 // ── HTTP helper ──────────────────────────────────────────────────────────────
 
@@ -258,7 +251,8 @@ pub async fn fetch_issues(token: &str, team_id: Option<&str>) -> Result<Vec<Remo
                 Some(4) => Some("Low".to_string()),
                 _ => None,
             },
-            issue_type: issue.issue_type.map(|t| t.name),
+            // Linear has no issue types, and asking for one fails the whole query.
+            issue_type: None,
         })
         .collect();
 
