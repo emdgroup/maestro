@@ -24,7 +24,9 @@ use crate::acp::ConnectionKey;
 use crate::core::AppState;
 use crate::integration::keychain::KeychainStore;
 
-const KEYCHAIN_SERVICE: &str = "maestro.mcp";
+use super::mcp_oauth::{self, AUTHORIZATION, OAUTH_KEY};
+
+pub(crate) const KEYCHAIN_SERVICE: &str = "maestro.mcp";
 const REGISTRY_URL: &str = "https://api.mcp.github.com/v0.1/servers";
 
 /// One environment variable or header. A secret's `value` is `""` when read back; sending `""`
@@ -51,6 +53,32 @@ pub struct McpServerConfig {
     /// Maestro agent ids the server is injected for.
     pub agents: Vec<String>,
     pub catalog_id: Option<String>,
+    /// Set when the server signs in with OAuth, even with every field left to its default.
+    #[serde(default)]
+    pub oauth: Option<McpOAuthSettings>,
+}
+
+/// How to sign in to a remote server with OAuth. With no client ID, Maestro registers itself
+/// with the server (dynamic client registration) and the rest is decided for it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct McpOAuthSettings {
+    /// A client registered with the provider by the user, for a server that does not register
+    /// clients itself.
+    pub client_id: Option<String>,
+    /// `auto`, `none`, `client_secret_basic`, `client_secret_post`, `client_secret_jwt` or
+    /// `private_key_jwt`.
+    pub client_auth: String,
+    /// Space-separated. None asks for what the server says it needs.
+    pub scopes: Option<String>,
+    /// The `kid` of a `private_key_jwt` key, when the provider holds more than one.
+    pub key_id: Option<String>,
+    /// The signing algorithm of a `private_key_jwt` key, `RS256` when unset.
+    pub algorithm: Option<String>,
+    /// Written, never read back: `""` keeps what is stored. Lives in the keychain with the grant.
+    pub client_secret: String,
+    /// A PEM private key, same as `client_secret`.
+    pub private_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -77,12 +105,6 @@ pub struct McpCatalogEntry {
     pub urls: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct McpCatalogPage {
-    pub entries: Vec<McpCatalogEntry>,
-    pub next_cursor: Option<String>,
-}
-
 /// Same field names on both sides, so a JSON round trip is the whole conversion.
 fn convert<A: Serialize, B: serde::de::DeserializeOwned>(value: A) -> Result<B, String> {
     serde_json::to_value(value)
@@ -90,7 +112,7 @@ fn convert<A: Serialize, B: serde::de::DeserializeOwned>(value: A) -> Result<B, 
         .map_err(|e| format!("Failed to convert the MCP server: {e}"))
 }
 
-fn account(connection: ConnectionKey, server: &str, key: &str) -> String {
+pub(crate) fn account(connection: ConnectionKey, server: &str, key: &str) -> String {
     format!("{}:{server}:{key}", connection.storage_id())
 }
 
@@ -129,7 +151,13 @@ pub(crate) async fn push_secrets(
 ) -> Result<(), String> {
     let servers = list(app_state, connection).await?;
     let mut secrets = Vec::new();
+    let mut soonest: Option<u64> = None;
     for server in &servers {
+        if secret_pairs(server).any(|pair| pair.key == AUTHORIZATION) {
+            if let Some(at) = mcp_oauth::refresh_if_due(connection, &server.name, app_state).await {
+                soonest = Some(soonest.map_or(at, |s| s.min(at)));
+            }
+        }
         for pair in secret_pairs(server) {
             let account = account(connection, &server.name, &pair.key);
             match KeychainStore::get_secret(KEYCHAIN_SERVICE, &account, &app_state.app_data_dir) {
@@ -143,7 +171,9 @@ pub(crate) async fn push_secrets(
             }
         }
     }
-    query_set_mcp_secrets_via_server(connection, secrets, app_state).await
+    query_set_mcp_secrets_via_server(connection, secrets, app_state).await?;
+    mcp_oauth::schedule_refresh(app_state, connection, soonest);
+    Ok(())
 }
 
 #[tauri::command]
@@ -168,6 +198,7 @@ pub async fn save_mcp_server(
     connection: ConnectionKey,
     server: McpServerConfig,
     previous_name: Option<String>,
+    oauth: Option<String>,
 ) -> Result<(), String> {
     let mut servers = list(&app_state, connection).await?;
     let previous = previous_name.unwrap_or_else(|| server.name.clone());
@@ -191,6 +222,8 @@ pub async fn save_mcp_server(
         pair.key.trim().is_empty()
             || (pair.secret
                 && pair.value.is_empty()
+                // A sign-in about to be stored fills it.
+                && !(oauth.is_some() && pair.key == AUTHORIZATION)
                 && KeychainStore::get_secret(
                     KEYCHAIN_SERVICE,
                     &account(connection, &previous, &pair.key),
@@ -214,6 +247,21 @@ pub async fn save_mcp_server(
             }
         }
     }
+    // An OAuth grant follows the Authorization header it fills: renamed with it, or forgotten
+    // when the header goes or the user types a token of their own, which a refresh would overwrite.
+    let grant = account(connection, &previous, OAUTH_KEY);
+    let own_token = secret_pairs(&server)
+        .find(|pair| pair.key == AUTHORIZATION)
+        .map(|pair| !pair.value.is_empty());
+    if own_token.unwrap_or(true) {
+        KeychainStore::delete_secret(KEYCHAIN_SERVICE, &grant, dir)?;
+    } else if previous != server.name {
+        if let Some(value) = KeychainStore::get_secret(KEYCHAIN_SERVICE, &grant, dir)? {
+            let target = account(connection, &server.name, OAUTH_KEY);
+            KeychainStore::set_secret(KEYCHAIN_SERVICE, &target, &value, dir)?;
+            KeychainStore::delete_secret(KEYCHAIN_SERVICE, &grant, dir)?;
+        }
+    }
     // Forget the values this server no longer names, under its old name as well as its new one.
     if let Some(i) = old {
         for pair in secret_pairs(&servers[i]) {
@@ -226,17 +274,33 @@ pub async fn save_mcp_server(
         }
     }
 
+    let name = server.name.clone();
+    let fills_authorization = secret_pairs(&server).any(|pair| pair.key == AUTHORIZATION);
+    // A new sign-in carries the client settings in its grant; without one they go into the stored
+    // grant once the save is through.
+    let client_update = server.oauth.clone().filter(|_| oauth.is_none());
     let mut stored = server;
     for pair in stored.env.iter_mut().chain(stored.headers.iter_mut()) {
         if pair.secret {
             pair.value.clear();
         }
     }
+    if let Some(settings) = stored.oauth.as_mut() {
+        settings.client_secret.clear();
+        settings.private_key.clear();
+    }
     match old {
         Some(i) => servers[i] = stored,
         None => servers.push(stored),
     }
     query_save_mcp_servers_via_server(connection, convert(servers)?, &app_state).await?;
+    // Only once the save went through, so a sign-in never outlives a server that was not saved.
+    if let (Some(id), true) = (&oauth, fills_authorization) {
+        mcp_oauth::commit(connection, &name, id, &app_state)?;
+    }
+    if let Some(settings) = client_update {
+        mcp_oauth::update_stored_client(connection, &name, &settings, &app_state)?;
+    }
     push_secrets(&app_state, connection).await
 }
 
@@ -250,8 +314,9 @@ pub async fn delete_mcp_server(
     let mut servers = list(&app_state, connection).await?;
     if let Some(i) = servers.iter().position(|s| s.name == name) {
         let removed = servers.remove(i);
-        for pair in secret_pairs(&removed) {
-            let account = account(connection, &name, &pair.key);
+        let keys = secret_pairs(&removed).map(|pair| pair.key.as_str());
+        for key in keys.chain([OAUTH_KEY]) {
+            let account = account(connection, &name, key);
             KeychainStore::delete_secret(KEYCHAIN_SERVICE, &account, &app_state.app_data_dir)?;
         }
     }
@@ -267,11 +332,18 @@ pub async fn test_mcp_server(
     connection: ConnectionKey,
     server: McpServerConfig,
     previous_name: Option<String>,
+    oauth: Option<String>,
 ) -> Result<McpTestResult, String> {
     let mut server = server;
     let stored_under = previous_name.unwrap_or_else(|| server.name.clone());
+    mcp_oauth::refresh_if_due(connection, &stored_under, &app_state).await;
+    let signed_in = oauth.as_deref().and_then(mcp_oauth::pending_authorization);
     for pair in server.env.iter_mut().chain(server.headers.iter_mut()) {
-        if pair.secret && pair.value.is_empty() {
+        if let (AUTHORIZATION, true, Some(value)) =
+            (pair.key.as_str(), pair.value.is_empty(), &signed_in)
+        {
+            pair.value = value.clone();
+        } else if pair.secret && pair.value.is_empty() {
             let account = account(connection, &stored_under, &pair.key);
             if let Some(value) =
                 KeychainStore::get_secret(KEYCHAIN_SERVICE, &account, &app_state.app_data_dir)?
@@ -283,42 +355,41 @@ pub async fn test_mcp_server(
     convert(query_test_mcp_server_via_server(connection, convert(server)?, &app_state).await?)
 }
 
-/// A page of the GitHub MCP Registry: its curated, star-ranked list with no query, a search with
-/// one. Each entry carries the server the editor should open with.
+/// The whole GitHub MCP Registry, star-ranked: a few hundred servers, read 100 at a time, the
+/// most the registry pages by. Searched in the webview. Each entry carries the server the editor
+/// should open with.
 #[tauri::command]
 #[specta::specta]
-pub async fn mcp_catalog(
-    query: Option<String>,
-    cursor: Option<String>,
-) -> Result<McpCatalogPage, String> {
-    let mut url = format!("{REGISTRY_URL}?limit=50");
-    if let Some(query) = query.filter(|query| !query.trim().is_empty()) {
-        url.push_str(&format!("&search={}", urlencoding::encode(query.trim())));
-    }
-    if let Some(cursor) = cursor {
-        url.push_str(&format!("&cursor={}", urlencoding::encode(&cursor)));
-    }
-    let page: Value = crate::integration::providers::http_client()?
-        .get(&url)
-        .header("User-Agent", "maestro")
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| format!("The MCP registry could not be reached: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("The MCP registry sent something unexpected: {e}"))?;
-    Ok(McpCatalogPage {
-        entries: page
-            .get("servers")
-            .and_then(Value::as_array)
-            .map(|servers| servers.iter().filter_map(catalog_entry).collect())
-            .unwrap_or_default(),
-        next_cursor: page
+pub async fn mcp_catalog() -> Result<Vec<McpCatalogEntry>, String> {
+    let client = crate::integration::providers::http_client()?;
+    let mut entries = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut url = format!("{REGISTRY_URL}?limit=100");
+        if let Some(cursor) = &cursor {
+            url.push_str(&format!("&cursor={}", urlencoding::encode(cursor)));
+        }
+        let page: Value = client
+            .get(&url)
+            .header("User-Agent", "maestro")
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|e| format!("The MCP registry could not be reached: {e}"))?
+            .json()
+            .await
+            .map_err(|e| format!("The MCP registry sent something unexpected: {e}"))?;
+        if let Some(servers) = page.get("servers").and_then(Value::as_array) {
+            entries.extend(servers.iter().filter_map(catalog_entry));
+        }
+        cursor = page
             .pointer("/metadata/nextCursor")
             .and_then(Value::as_str)
-            .map(str::to_string),
-    })
+            .map(str::to_string);
+        if cursor.is_none() {
+            return Ok(entries);
+        }
+    }
 }
 
 fn text(value: &Value, key: &str) -> Option<String> {
@@ -399,6 +470,7 @@ fn install_config(server: &Value, name: &str) -> Option<McpServerConfig> {
         headers: Vec::new(),
         agents: Vec::new(),
         catalog_id: None,
+        oauth: None,
     };
     let packages = server.get("packages").and_then(Value::as_array);
     if let Some(config) = packages
@@ -482,7 +554,8 @@ fn package_config(package: &Value, base: McpServerConfig) -> Option<McpServerCon
                         Some(McpKeyValue {
                             key: text(v, "name")?,
                             value: text(v, "default").unwrap_or_default(),
-                            secret: v.get("isSecret").and_then(Value::as_bool).unwrap_or(false),
+                            // The environment is plain text, a secret included, like `.mcp.json`.
+                            secret: false,
                         })
                     })
                     .collect()
@@ -570,7 +643,7 @@ mod tests {
         assert_eq!(install.command.as_deref(), Some("npx"));
         assert_eq!(install.args, vec!["-y", "@upstash/context7-mcp@4.1.1"]);
         assert_eq!(install.env[0].key, "CONTEXT7_API_KEY");
-        assert!(install.env[0].secret);
+        assert!(!install.env[0].secret, "the environment is plain text");
         assert_eq!(
             install.catalog_id.as_deref(),
             Some("io.github.upstash/context7")

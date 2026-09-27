@@ -114,6 +114,7 @@ pub(crate) fn project_servers(cwd: &str) -> Vec<maestro_protocol::ManagedMcpServ
             headers: pairs(entry.headers),
             agents: Vec::new(),
             catalog_id: None,
+            oauth: None,
         })
         .collect()
 }

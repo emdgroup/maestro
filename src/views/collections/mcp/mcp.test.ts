@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { catalogMatch, filterServers, needsValue } from "./mcp";
+import {
+  catalogMatch,
+  filterServers,
+  guessName,
+  needsValue,
+  parseEnvLines,
+  parseMcpJson,
+  splitCommand,
+  toMcpJson,
+  usedVariables,
+} from "./mcp";
 import type { McpCatalogEntry, McpServerConfig } from "@/types/bindings";
 
 const server = (name: string, patch: Partial<McpServerConfig> = {}): McpServerConfig => ({
@@ -87,5 +97,90 @@ describe("catalogMatch", () => {
 
   it("leaves an unknown server unmatched", () => {
     expect(catalogMatch(server("mine", { args: ["./server.js"] }), entries)).toBeUndefined();
+  });
+});
+
+describe("the STDIO command", () => {
+  it("splits like a shell, quotes kept whole and Windows paths intact", () => {
+    expect(splitCommand(`npx -y pkg "C:\\My Files" ''`)).toEqual([
+      "npx",
+      "-y",
+      "pkg",
+      "C:\\My Files",
+      "",
+    ]);
+  });
+
+  it("names the server after its package, and finds the variables it uses", () => {
+    const server = { transport: "stdio", url: null, command: "npx" };
+    expect(
+      guessName({ ...server, args: ["-y", "@modelcontextprotocol/server-filesystem@1.0"] }),
+    ).toBe("filesystem");
+    expect(guessName({ ...server, command: "uvx", args: ["mcp-server-git"] })).toBe("git");
+    expect(
+      guessName({ transport: "http", command: null, args: [], url: "https://mcp.linear.app/mcp" }),
+    ).toBe("linear");
+    expect(usedVariables(["--root", "${ROOT}", "${ROOT}/x"])).toEqual(["ROOT"]);
+  });
+
+  it("reads .env lines", () => {
+    expect(parseEnvLines('# token\nexport TOKEN="abc"\n\nLOG=debug=1')).toEqual([
+      { key: "TOKEN", value: "abc" },
+      { key: "LOG", value: "debug=1" },
+    ]);
+  });
+});
+
+describe("MCP JSON", () => {
+  it("takes the first server of an mcpServers block and says how many it left", () => {
+    const parsed = parseMcpJson(
+      JSON.stringify({
+        mcpServers: {
+          github: { command: "npx", args: ["-y", "gh"], env: { TOKEN: "x" } },
+          linear: { url: "https://mcp.linear.app/sse", type: "sse" },
+        },
+      }),
+    );
+    expect(parsed).toMatchObject({
+      skipped: 1,
+      server: {
+        name: "github",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "gh"],
+        env: [{ key: "TOKEN", value: "x", secret: false }],
+      },
+    });
+  });
+
+  it("reads one remote server, headers as secrets, and writes it back", () => {
+    const parsed = parseMcpJson(
+      '{"url":"https://x.dev/mcp","headers":{"Authorization":"Bearer t"}}',
+    );
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.server.transport).toBe("http");
+    expect(parsed.server.headers).toEqual([
+      { key: "Authorization", value: "Bearer t", secret: true },
+    ]);
+    const written = JSON.parse(
+      toMcpJson({
+        name: "x",
+        transport: "http",
+        command: null,
+        args: [],
+        env: [],
+        url: "https://x.dev/mcp",
+        headers: [{ key: "Authorization", value: "Bearer t", secret: true }],
+        agents: [],
+        catalog_id: null,
+        oauth: null,
+      }),
+    );
+    expect(written).toEqual({
+      mcpServers: {
+        x: { type: "http", url: "https://x.dev/mcp", headers: { Authorization: "Bearer t" } },
+      },
+    });
+    expect(parseMcpJson("{nope")).toHaveProperty("error");
   });
 });

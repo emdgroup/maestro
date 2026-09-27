@@ -1,19 +1,13 @@
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
-import type { ConnectionKey, McpServerConfig } from "@/types/bindings";
+import type { ConnectionKey, McpOAuthSettings, McpServerConfig } from "@/types/bindings";
 
 export const mcpQueryKeys = {
   list: (connection: ConnectionKey) => ["mcp-servers", connection] as const,
   listFor: (connection: ConnectionKey, projectPath: string) =>
     ["mcp-servers", connection, projectPath] as const,
-  catalog: (query: string) => ["mcp-catalog", query] as const,
+  catalog: ["mcp-catalog"] as const,
 };
 
 /**
@@ -28,17 +22,14 @@ export function useMcpServersQuery(connection: ConnectionKey, projectPath: strin
 }
 
 /**
- * The GitHub MCP Registry: its curated list with no query, a search with one, a page of 50 at a
- * time. Cached for an hour, since the list barely moves and the registry rate-limits.
+ * The whole GitHub MCP Registry, fetched once and kept until the refresh button asks again.
  */
-export function useMcpCatalogQuery(query: string) {
-  return useInfiniteQuery({
-    queryKey: mcpQueryKeys.catalog(query),
-    queryFn: ({ pageParam }) => api.mcpCatalog(query || null, pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor,
-    staleTime: 60 * 60 * 1000,
-    placeholderData: keepPreviousData,
+export function useMcpCatalogQuery() {
+  return useQuery({
+    queryKey: mcpQueryKeys.catalog,
+    queryFn: () => api.mcpCatalog(),
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 }
 
@@ -54,10 +45,13 @@ export function useSaveMcpServerMutation(connection: ConnectionKey) {
     mutationFn: ({
       server,
       previousName,
+      oauth,
     }: {
       server: McpServerConfig;
       previousName: string | null;
-    }) => api.saveMcpServer(connection, server, previousName),
+      /** A sign-in from `useAuthorizeMcpServerMutation`, stored only once the save succeeds. */
+      oauth?: string | null;
+    }) => api.saveMcpServer(connection, server, previousName, oauth ?? null),
     onSuccess: invalidate,
     onError: createErrorToastHandler("Failed to save the MCP server"),
   });
@@ -78,10 +72,51 @@ export function useTestMcpServerMutation(connection: ConnectionKey) {
     mutationFn: ({
       server,
       previousName,
+      oauth,
     }: {
       server: McpServerConfig;
       previousName: string | null;
-    }) => api.testMcpServer(connection, server, previousName),
+      oauth?: string | null;
+    }) => api.testMcpServer(connection, server, previousName, oauth ?? null),
     onError: createErrorToastHandler("Failed to test the MCP server"),
+  });
+}
+
+/**
+ * Sign in to a remote server in the browser. Resolves to an id the token is held under in the
+ * app's memory until a save stores it; the token itself never comes to the webview.
+ */
+export function useAuthorizeMcpServerMutation(connection: ConnectionKey) {
+  return useMutation({
+    mutationFn: ({
+      url,
+      settings,
+      storedAs,
+    }: {
+      url: string;
+      settings: McpOAuthSettings | null;
+      /** The saved server being edited, whose stored client secret or key fills a blank one. */
+      storedAs: string | null;
+    }) => api.authorizeMcpServer(connection, url, settings, storedAs),
+    onError: createErrorToastHandler("Failed to sign in to the MCP server"),
+  });
+}
+
+/** Drop a sign-in the user did not save. */
+export function discardMcpAuthorization(id: string) {
+  void api.discardMcpAuthorization(id);
+}
+
+/**
+ * Whether the server at `url` needs an OAuth sign-in, asked once per URL. Unknown while `url` is
+ * empty, and when the server cannot be reached from here.
+ */
+export function useMcpRequiresOauthQuery(url: string) {
+  return useQuery({
+    queryKey: ["mcp-requires-oauth", url] as const,
+    queryFn: () => api.mcpRequiresOauth(url),
+    enabled: /^https?:\/\/\S+$/.test(url),
+    staleTime: Infinity,
+    retry: false,
   });
 }

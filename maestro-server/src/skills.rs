@@ -13,7 +13,9 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use maestro_protocol::{ApplySkillRequest, ManagedSkill, ProjectSkill, SkillFile, SkillList};
+use maestro_protocol::{
+    ApplySkillRequest, ManagedSkill, ProjectSkill, SkillFile, SkillList, ALL_AGENTS,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::command_ext::NoConsoleWindow;
@@ -119,7 +121,11 @@ async fn run_installer(stage: &Path) -> Result<(), String> {
 async fn run_cli(args: Vec<OsString>) -> Result<(), String> {
     let npx = crate::tool_check::resolve_tool_path("npx").await?;
     let mut command = crate::tool_check::command_for(&npx);
-    command.arg("-y").arg(SKILLS_CLI).args(args);
+    command
+        .arg("-y")
+        .arg(SKILLS_CLI)
+        .args(args)
+        .env("NO_COLOR", "1");
     crate::tool_check::prepend_parent_to_path(&mut command, &npx, None);
 
     let output = tokio::time::timeout(
@@ -136,8 +142,19 @@ async fn run_cli(args: Vec<OsString>) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
+    // The CLI reports its own errors on stdout; stderr is mostly Node's warnings.
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let detail = stderr.trim().lines().rev().take(3).collect::<Vec<_>>();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = stderr
+        .lines()
+        .chain(stdout.lines())
+        .map(|line| line.trim_start_matches(['│', '■', '●', '◇', ' ']).trim())
+        .filter(|line| {
+            !line.is_empty() && !line.starts_with("(node:") && !line.starts_with("(Use `node")
+        })
+        .filter(|line| !line.starts_with("Valid agents:"))
+        .collect::<Vec<_>>();
+    let detail = detail.into_iter().rev().take(3).collect::<Vec<_>>();
     Err(format!(
         "skills CLI exited with {}: {}",
         output.status,
@@ -307,11 +324,32 @@ pub(crate) fn list(project_path: Option<&str>) -> Result<SkillList, String> {
 
 /// Which CLI agents to install for and which to remove from, to get from `before` to `after`.
 /// `rewritten` reinstalls every enabled agent, since the library copy changed under them.
+///
+/// [`ALL_AGENTS`] is the CLI's own `*`, every agent it knows. Leaving it for a list removes the
+/// skill from all of them and installs the list afresh, the one way to be sure nothing lingers in
+/// a directory only `*` wrote to.
 fn reconcile(
     before: &BTreeMap<String, bool>,
     after: &BTreeMap<String, bool>,
     rewritten: bool,
 ) -> (Vec<&'static str>, Vec<&'static str>) {
+    let everyone = |agents: &BTreeMap<String, bool>| agents.get(ALL_AGENTS) == Some(&true);
+    if everyone(after) {
+        let add = if rewritten || !everyone(before) {
+            vec![ALL_AGENTS]
+        } else {
+            Vec::new()
+        };
+        return (add, Vec::new());
+    }
+    if everyone(before) {
+        let add = after
+            .iter()
+            .filter(|(_, on)| **on)
+            .filter_map(|(agent, _)| cli_agent(agent))
+            .collect();
+        return (add, vec![ALL_AGENTS]);
+    }
     let was_on = |agent: &str| before.get(agent) == Some(&true);
     let mut add = Vec::new();
     let mut remove = Vec::new();
@@ -408,7 +446,13 @@ pub(crate) async fn delete(name: &str) -> Result<(), String> {
 }
 
 fn cli_args(verb: &str, target: OsString, agents: &[&str]) -> Vec<OsString> {
-    let mut args: Vec<OsString> = vec![verb.into(), target, "-g".into(), "-y".into(), "-a".into()];
+    let mut args: Vec<OsString> = vec![verb.into(), target, "-g".into(), "-y".into()];
+    // `remove` refuses `-a '*'` although its help offers it, and targets every agent when given
+    // no `-a` at all, which is what `*` means.
+    if verb == "remove" && agents.contains(&ALL_AGENTS) {
+        return args;
+    }
+    args.push("-a".into());
     args.extend(agents.iter().map(OsString::from));
     args
 }
@@ -450,6 +494,31 @@ mod tests {
         assert_eq!(
             reconcile(&before, &BTreeMap::new(), false),
             (vec![], vec!["claude-code"])
+        );
+    }
+
+    #[test]
+    fn remove_from_every_agent_leaves_the_agent_flag_out() {
+        let args = cli_args("remove", "x".into(), &[ALL_AGENTS]);
+        assert!(!args.iter().any(|arg| arg == "-a"));
+        let args = cli_args("add", "x".into(), &[ALL_AGENTS]);
+        assert!(args.iter().any(|arg| arg == "*"));
+    }
+
+    #[test]
+    fn reconcile_hands_all_agents_to_the_cli_as_its_wildcard() {
+        let all = agents(&[("*", true)]);
+        let claude = agents(&[("claude-acp", true)]);
+        assert_eq!(reconcile(&claude, &all, false), (vec!["*"], vec![]));
+        assert_eq!(reconcile(&all, &all, false), (vec![], vec![]));
+        assert_eq!(reconcile(&all, &all, true), (vec!["*"], vec![]));
+        assert_eq!(
+            reconcile(&all, &claude, false),
+            (vec!["claude-code"], vec!["*"])
+        );
+        assert_eq!(
+            reconcile(&all, &BTreeMap::new(), false),
+            (vec![], vec!["*"])
         );
     }
 

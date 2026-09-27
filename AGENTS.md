@@ -697,15 +697,23 @@ catalogs, is `src-tauri/src/collections/`.
   the OS keychain (`maestro.mcp`, account `<connection>:<server>:<key>`, through
   `KeychainStore::set_secret`) and pushed into the daemon's memory with `SetMcpSecrets` after every
   preflight and every change. A daemon restarted with no window open has none, and skips those
-  servers until the app connects again.
+  servers until the app connects again. Secret rows are a remote server's headers (bearer token,
+  OAuth token, custom headers); a stdio server's environment is plain text, as in `.mcp.json`,
+  by the user's choice. OAuth client settings ride along as `ManagedMcpServer.oauth`, opaque to the
+  daemon; a client secret or private key lives in the keychain grant (`<server>:oauth`), and a
+  user-registered client redirects to the fixed port `mcp_oauth::REDIRECT_PORT`.
 - **Skills deploy through the pinned skills CLI**: `add <library>/<name> -g -y -a <agents>` and
   `remove <name> -g -y -a <agents>`, mapped by `AGENT_SKILL_TARGETS` from Maestro agent ids to the
   CLI's keys, checked against its agent table. Several CLI agents share `~/.agents/skills`, so
   switching a skill off for one can switch it off for its neighbours.
-- **Catalogs**: the GitHub MCP Registry (`api.mcp.github.com`) for MCP. For skills, skills.sh's
-  all-time leaderboard (`/api/skills/all-time/<page>`, 200 a page, most installed first) and its
-  search. The leaderboard endpoint is undocumented, the one the skills.sh site pages through
-  itself. Fetched in Rust because skills.sh sends no CORS headers. A skill's files, and so its
+- **Catalogs**: the GitHub MCP Registry (`api.mcp.github.com`, ~300 servers, 100 a page) for MCP,
+  read whole on first view and searched in the webview. For skills, skills.sh's all-time
+  leaderboard (`/api/skills/all-time/<page>`, ~10k skills, 200 a page, most installed first) and its
+  search, paged in on demand: reading all ~50 pages at once trips skills.sh's limit of 30 requests a
+  minute (429). Both are cached for the life of the window (`staleTime`/`gcTime: Infinity`); only
+  the refresh button reads them again. The leaderboard endpoint is undocumented, the one the
+  skills.sh site pages through itself. Fetched in Rust because skills.sh sends no CORS
+  headers. A skill's files, and so its
   description, come from `skills.sh/api/download/<owner>/<repo>/<skill>`, the endpoint the skills CLI
   uses; GitHub's trees API is only the fallback. Only `owner/repo` sources are listed.
 - **Test connection runs in the daemon**, for every transport (`mcp_store::test`): a stdio command

@@ -1,10 +1,4 @@
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import type { ConnectionKey } from "@/types/bindings";
@@ -32,7 +26,7 @@ export function useSkillsQuery(connection: ConnectionKey, projectPath: string) {
 
 /**
  * skills.sh, most installed first: its leaderboard 200 at a time with no query, a search with one.
- * Cached for an hour, since install counts barely move in that time.
+ * Kept until the refresh button asks again: skills.sh allows 30 requests a minute.
  */
 export function useSkillsCatalogQuery(query: string) {
   return useInfiniteQuery({
@@ -40,8 +34,8 @@ export function useSkillsCatalogQuery(query: string) {
     queryFn: ({ pageParam }) => api.skillsCatalog(query || null, pageParam),
     initialPageParam: null as number | null,
     getNextPageParam: (page) => page.next_page,
-    staleTime: 60 * 60 * 1000,
-    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 }
 
@@ -55,15 +49,13 @@ export function useSaveSkillMutation(connection: ConnectionKey) {
   return useMutation({
     mutationFn: ({
       name,
-      description,
-      instructions,
+      skillMd,
       agents,
     }: {
       name: string;
-      description: string;
-      instructions: string;
+      skillMd: string;
       agents: SkillAgents;
-    }) => api.saveSkill(connection, name, description, instructions, agents),
+    }) => api.saveSkill(connection, name, skillMd, agents),
     onSuccess: invalidate,
     onError: createErrorToastHandler("Failed to save the skill"),
   });
