@@ -126,7 +126,7 @@ Before enabling any README image:
 2. Check every visible path, branch, remote, issue, terminal line, and diff for sensitive data.
 3. Confirm the capture matches the current released interface and the adjacent README claim.
 4. Optimize the file without scaling it below the documented capture size.
-5. Add the asset under `docs/assets/` and point the README markup at it.
-6. Preview the README locally or on GitHub and verify the image has useful alt text and no broken link.
+5. Add the asset under `docs/assets/` and point the README or the website page in `website/` at it.
+6. Preview it (`bun run dev` in `website/` for the site) and verify the image has useful alt text and no broken link.
 
 Refresh a capture when the surrounding interface changes materially. A smaller honest set is preferable to stale screenshots.

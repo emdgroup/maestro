@@ -47,3 +47,6 @@ release/
 # WebdriverIO E2E artifacts
 logs/
 .wdio-*/
+
+# VitePress build cache
+website/.vitepress/cache/
