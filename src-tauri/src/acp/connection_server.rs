@@ -917,7 +917,8 @@ pub async fn query_list_skills_via_server(
     .await
 }
 
-/// Same timeout as `InstallSkills`: the first skills CLI run on a machine downloads it.
+/// Two skills CLI runs for a catalog skill, fetching it and then installing it, each allowed
+/// `INSTALL_TIMEOUT` in the server; the first run on a machine also downloads the CLI.
 pub async fn query_apply_skill_via_server(
     connection_key: crate::acp::ConnectionKey,
     request: maestro_protocol::ApplySkillRequest,
@@ -930,8 +931,8 @@ pub async fn query_apply_skill_via_server(
         |s| s.pending.apply_skill.clone(),
         "ApplySkill already in progress",
         MaestroRpcMessage::Request(ServerRequest::ApplySkill(request)),
-        150,
-        "ApplySkill via connection server timed out after 150s",
+        300,
+        "ApplySkill via connection server timed out after 300s",
     )
     .await
 }

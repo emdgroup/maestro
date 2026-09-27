@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, Ellipsis, Info, Pencil, RefreshCw, BookOpen, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
+import { Spinner } from "@/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 import {
   DropdownMenu,
@@ -28,6 +29,7 @@ import {
   useInstallCatalogSkillMutation,
   useSetSkillAgentsMutation,
   useSkillDescriptionQuery,
+  useSkillSummaryQuery,
   useSkillsCatalogQuery,
   useSkillsQuery,
 } from "@/services/skill.service";
@@ -178,6 +180,21 @@ function useSeen<T extends Element>() {
   return [ref, seen] as const;
 }
 
+/** The whole `SKILL.md` description, fetched when the hover popup mounts this. */
+function FullDescription({
+  source,
+  skillId,
+  fallback,
+}: {
+  source: string;
+  skillId: string;
+  fallback: string;
+}) {
+  const description = useSkillDescriptionQuery(source, skillId);
+  if (description.isPending) return <Spinner className="size-3.5" />;
+  return description.data ?? fallback;
+}
+
 function CatalogCard({
   entry,
   agents,
@@ -192,7 +209,7 @@ function CatalogCard({
   const install = useInstallCatalogSkillMutation(connection);
   const [choosing, setChoosing] = useState(false);
   const [ref, seen] = useSeen<HTMLDivElement>();
-  const description = useSkillDescriptionQuery(entry.source, entry.skill_id, seen);
+  const summary = useSkillSummaryQuery(entry.source, entry.skill_id, seen);
   const installFor = (picked: string[]) =>
     install.mutate(
       { source: entry.source, skillId: entry.skill_id, agents: skillAgents(picked) },
@@ -216,8 +233,19 @@ function CatalogCard({
           </span>
         )}
       </div>
-      {description.data || description.isError ? (
-        <Description text={description.data ?? "No description available."} />
+      {summary.isSuccess || summary.isError ? (
+        <Description
+          text={summary.data ?? "No description available."}
+          full={
+            summary.data ? (
+              <FullDescription
+                source={entry.source}
+                skillId={entry.skill_id}
+                fallback={summary.data}
+              />
+            ) : undefined
+          }
+        />
       ) : (
         <span className="inline-block h-3 w-3/4 animate-pulse rounded bg-muted" />
       )}

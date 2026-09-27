@@ -98,14 +98,27 @@ export function useInstallCatalogSkillMutation(connection: ConnectionKey) {
 }
 
 /**
- * A catalog skill's description, read from its `SKILL.md`. `enabled` once its card is on screen,
- * so a page of 200 cards costs only the downloads someone scrolls to. Kept for the session.
+ * The start of a catalog skill's description, from its skills.sh page. `enabled` once its card is
+ * on screen, so a page of 200 cards costs only the pages someone scrolls to. Kept for the session.
  */
-export function useSkillDescriptionQuery(source: string, skillId: string, enabled: boolean) {
+export function useSkillSummaryQuery(source: string, skillId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["skill-summary", source, skillId] as const,
+    queryFn: () => api.skillSummary(source, skillId),
+    enabled,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/**
+ * A catalog skill's whole description, read from its `SKILL.md`. Mounted only with the hover
+ * popup, since skills.sh allows 60 of these downloads an hour. Kept for the session.
+ */
+export function useSkillDescriptionQuery(source: string, skillId: string) {
   return useQuery({
     queryKey: ["skill-description", source, skillId] as const,
     queryFn: () => api.skillDescription(source, skillId),
-    enabled,
     staleTime: Infinity,
     retry: false,
   });

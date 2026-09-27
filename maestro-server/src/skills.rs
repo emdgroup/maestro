@@ -109,18 +109,19 @@ fn is_installed(home: &Path, relative_path: &str) -> bool {
 async fn run_installer(stage: &Path) -> Result<(), String> {
     // `--all` is the CLI's shorthand for `--skill '*' --agent '*' -y`: every skill in the source,
     // every agent it knows about, no prompts. `-g` keeps this out of the user's projects.
-    run_cli(vec![
-        "add".into(),
-        stage.into(),
-        "-g".into(),
-        "--all".into(),
-    ])
+    run_cli(
+        None,
+        vec!["add".into(), stage.into(), "-g".into(), "--all".into()],
+    )
     .await
 }
 
-async fn run_cli(args: Vec<OsString>) -> Result<(), String> {
+async fn run_cli(current_dir: Option<&Path>, args: Vec<OsString>) -> Result<(), String> {
     let npx = crate::tool_check::resolve_tool_path("npx").await?;
     let mut command = crate::tool_check::command_for(&npx);
+    if let Some(dir) = current_dir {
+        command.current_dir(dir);
+    }
     command
         .arg("-y")
         .arg(SKILLS_CLI)
@@ -403,17 +404,20 @@ pub(crate) async fn apply(req: ApplySkillRequest) -> Result<(), String> {
             std::fs::write(&target, &file.contents)
                 .map_err(|error| format!("Failed to write {}: {error}", target.display()))?;
         }
+    } else if let Some(source) = &req.source {
+        fetch(&home, source, &req.name, &dir).await?;
     } else if !dir.join("SKILL.md").is_file() {
         return Err(format!("{} is not in the skill library", req.name));
     }
 
-    let (add, remove) = reconcile(&before.agents, &req.agents, req.files.is_some());
+    let rewritten = req.files.is_some() || req.source.is_some();
+    let (add, remove) = reconcile(&before.agents, &req.agents, rewritten);
     // Removal first: agents sharing a directory would otherwise lose what was just added.
     if !remove.is_empty() {
-        run_cli(cli_args("remove", req.name.as_str().into(), &remove)).await?;
+        run_cli(None, cli_args("remove", req.name.as_str().into(), &remove)).await?;
     }
     if !add.is_empty() {
-        run_cli(cli_args("add", dir.into_os_string(), &add)).await?;
+        run_cli(None, cli_args("add", dir.into_os_string(), &add)).await?;
     }
 
     state.skills.insert(
@@ -426,6 +430,58 @@ pub(crate) async fn apply(req: ApplySkillRequest) -> Result<(), String> {
     write_state(&home, state)
 }
 
+/// A catalog skill, fetched whole by the skills CLI: its own discovery finds the skill in the
+/// repository, and binary assets come along with the text. The CLI has no "download to" option,
+/// so it installs at project scope into a scratch directory, for one agent, copied rather than
+/// symlinked, and that copy is moved into the library.
+async fn fetch(home: &Path, source: &str, name: &str, dir: &Path) -> Result<(), String> {
+    let scratch = home.join(".maestro").join("skill-fetch");
+    remove_dir_if_present(&scratch)?;
+    std::fs::create_dir_all(&scratch)
+        .map_err(|error| format!("Failed to create {}: {error}", scratch.display()))?;
+    let result = async {
+        run_cli(
+            Some(&scratch),
+            vec![
+                "add".into(),
+                source.into(),
+                "--skill".into(),
+                name.into(),
+                "-y".into(),
+                "--copy".into(),
+                "-a".into(),
+                "claude-code".into(),
+            ],
+        )
+        .await?;
+        let fetched = scratch.join(".claude").join("skills").join(name);
+        if !fetched.join("SKILL.md").is_file() {
+            return Err(format!("{source} has no skill named {name}"));
+        }
+        remove_dir_if_present(dir)?;
+        if let Some(parent) = dir.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
+        }
+        std::fs::rename(&fetched, dir)
+            .map_err(|error| format!("Failed to move {name} into the library: {error}"))
+    }
+    .await;
+    if let Err(error) = remove_dir_if_present(&scratch) {
+        crate::helpers::send_diag("warn", format!("[skills] {error}"));
+    }
+    result
+}
+
+fn remove_dir_if_present(dir: &Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("Failed to clear {}: {error}", dir.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
 pub(crate) async fn delete(name: &str) -> Result<(), String> {
     validate_name(name)?;
     let _guard = MANAGED.lock().await;
@@ -434,7 +490,7 @@ pub(crate) async fn delete(name: &str) -> Result<(), String> {
     if let Some(entry) = state.skills.remove(name) {
         let (_, remove) = reconcile(&entry.agents, &BTreeMap::new(), false);
         if !remove.is_empty() {
-            run_cli(cli_args("remove", name.into(), &remove)).await?;
+            run_cli(None, cli_args("remove", name.into(), &remove)).await?;
         }
     }
     let dir = library_root(&home).join(name);
