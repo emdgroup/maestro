@@ -151,7 +151,7 @@ export function TerminalComponent({ sessionId }: TerminalComponentProps) {
   }, [terminalColorMode, effectiveTheme]);
 
   return (
-    <div className="pt-2 pl-2 h-full w-full">
+    <div className="py-2 pl-2 h-full w-full">
       <div
         ref={terminalRef}
         {...{ [TERMINAL_CONTAINER_ATTRIBUTE]: "" }}
