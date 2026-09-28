@@ -278,6 +278,11 @@
     background: transparent;
   }
 
+  /* xterm draws its own scrollbar; its width and colors are set in terminalTheme.ts. */
+  .xterm .xterm-scrollable-element > .scrollbar > .slider {
+    border-radius: 4px;
+  }
+
   /* Firefox scrollbar styling */
   * {
     scrollbar-width: thin;
