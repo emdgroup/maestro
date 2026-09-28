@@ -36,6 +36,7 @@ import {
   CardSection,
   CardTitle,
   CATALOG_STEP,
+  Chip,
   Description,
   EveryAgent,
   ListedCard,
@@ -99,9 +100,6 @@ function InstalledCard({
       <div className="flex items-center gap-2">
         <ServerIcon url={match?.icon_url} />
         <CardTitle title={match?.name ?? server.name} href={match?.repo_url} />
-        <span className="rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
-          {server.transport}
-        </span>
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`More actions for ${server.name}`}
@@ -141,9 +139,8 @@ function InstalledCard({
           disabled={save.isPending}
           onClick={() => setChoosing(true)}
         />
-        {save.isPending && (
-          <span className="ml-auto text-[11px] text-muted-foreground">Saving…</span>
-        )}
+        {save.isPending && <span className="text-[11px] text-muted-foreground">Saving…</span>}
+        <Chip>{server.transport}</Chip>
       </div>
       <AgentsDialog
         open={choosing}
