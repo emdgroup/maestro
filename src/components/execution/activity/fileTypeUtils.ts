@@ -120,3 +120,31 @@ const BINARY_EXT_MIME: Record<string, string> = {
 export function binaryMimeForExtension(path: string): string | undefined {
   return BINARY_EXT_MIME[extOf(path)];
 }
+
+// ponytail: an extension list, not a content sniff. A binary format missing here opens in the
+// Files tab and shows "Cannot display binary file", where "Open in default application" still works.
+const EXTERNAL_ONLY_EXTENSIONS = new Set([
+  ".xlsx",
+  ".xlsm",
+  ".xls",
+  ".docx",
+  ".doc",
+  ".pptx",
+  ".ppt",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".zip",
+  ".7z",
+  ".rar",
+  ".gz",
+  ".tar",
+  ".exe",
+  ".msi",
+  ".dll",
+]);
+
+/** Whether the side panel has no viewer for this file, so it should open in the system's own app. */
+export function opensExternally(path: string): boolean {
+  return EXTERNAL_ONLY_EXTENSIONS.has(extOf(path));
+}

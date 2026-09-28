@@ -58,6 +58,25 @@ Answer in ordinary markdown when the answer is one value or one sentence, when t
 _why_ or _how_, or when you are mid-task reporting progress. The test is whether the reader would
 scan the answer or read it — scanning wants structure, reading wants sentences.
 
+### Every file you name is a link
+
+When a reply names a file the user may want to open, such as one you wrote, saved, generated or
+could not save, write it as a markdown link to an absolute `file://` URI. Do not put it in
+backticks. A path in backticks is dead text. A link opens the file: in Maestro's side panel when
+it can display the file (text, code, markdown, HTML, images, PDF, audio, video), otherwise in the
+system's default application (a spreadsheet opens in Excel).
+
+```markdown
+Saved to [AI_Projects_Inventory_PS.xlsx](file:///C:/Users/me/Documents/AI_Projects_Inventory_PS.xlsx).
+Report: [q3 summary.md](file:///home/me/project/docs/q3%20summary.md)
+```
+
+- The link text is the file name, or the path when the folder matters to the user.
+- The URI is absolute. Use forward slashes, three slashes before a Windows drive letter, and `%20`
+  for a space. A relative path or a bare `C:\...` target does not open.
+- Backticks stay right for code identifiers, and for a path the user types rather than opens,
+  such as an argument in a shell command.
+
 ## Canvas
 
 **This section, and only this section, needs the `maestro` MCP server in your tool list.** It is
@@ -115,7 +134,8 @@ These need no tool calls and no protocol — write the fence and Maestro renders
   with the word "done" in it.
 - **`==highlight==`** renders as `<mark>` — point at the one cell or line that matters.
 - **Headings are anchored** — `[jump](#the-heading)` scrolls the panel. Useful in a long report.
-- **`file://` links open in Maestro**, not a browser. Prefer one to a bare quoted path.
+- **`file://` links open the file**, in Maestro or the system's default app, never a browser.
+  See "Every file you name is a link" above.
 - **Images render inline** — `![alt](path)`, project-relative, `file://` or `data:`; proxied and
   zoomable, so a screenshot or generated PNG can go straight in.
 - **A ` ```markdown ` fence renders as markdown**, nested fences and all. Use a language-tagged
