@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.33.0](https://github.com/emdgroup/maestro/compare/v0.32.0...v0.33.0) (2026-09-28)
+
+
+### Features
+
+* **kanban:** move issue import into the create task header ([#458](https://github.com/emdgroup/maestro/issues/458)) ([6136023](https://github.com/emdgroup/maestro/commit/6136023575707c66435735e6c389bfc35e89b43a))
+
+
+### Bug Fixes
+
+* **activity:** make file paths in agent replies open the file ([#459](https://github.com/emdgroup/maestro/issues/459)) ([e31ae58](https://github.com/emdgroup/maestro/commit/e31ae583a762d7b9f3cfd38e4cd15768d66131fb))
+* **collections:** move card tag chips to the footer ([#460](https://github.com/emdgroup/maestro/issues/460)) ([9e2f8ba](https://github.com/emdgroup/maestro/commit/9e2f8bafb7b9723418a00b585f7a077ae4136041))
+* **kanban:** show an imported issue's title in the task title field ([#454](https://github.com/emdgroup/maestro/issues/454)) ([fdcc57c](https://github.com/emdgroup/maestro/commit/fdcc57c65ba6d3d023459e8a86d79aabf2575cc5))
+
 ## [0.32.0](https://github.com/emdgroup/maestro/compare/v0.31.0...v0.32.0) (2026-09-27)
 
 
