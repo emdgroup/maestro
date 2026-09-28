@@ -28,6 +28,9 @@ import type { UsageState, ToolCallItem, UserMessageItem } from "../activity/type
 import { api } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import { fileUriToPath, toPosixPath } from "@/lib/path-utils";
+import { openFileWithConnection } from "@/lib/file-opener";
+import { opensExternally } from "../activity/fileTypeUtils";
+import { useWslConnections } from "@/services/connection.service";
 import { useSessionActivity, useSessionActivityActions } from "@/store/sessionActivityStore";
 import { useActiveTab } from "@/store/navigationStore";
 import { useBoardActions, useBoardStore } from "@/store/boardStore";
@@ -228,6 +231,11 @@ export function AgentActivityPanel({
   // `handleOpenFile` so the relative paths handed over always match the tree's root.
   const { data: sessionMeta } = useAcpSessionMeta(sessionId);
   const workspacePath = sessionMeta?.cwd ?? selectedProject?.path ?? "";
+  const { data: wslConnections } = useWslConnections();
+  const wslDistroName =
+    connection.type === "wsl"
+      ? (wslConnections?.find((c) => c.id === connection.id)?.distro_name ?? undefined)
+      : undefined;
 
   // Shares its fetch with SidePanelContent's identical call; read here so the Review tab can
   // open itself when the session's first change lands.
@@ -574,12 +582,20 @@ export function AgentActivityPanel({
       // drive letter, so compare on a normalised copy — a missed prefix would send
       // an absolute path to a panel that resolves everything against the workspace.
       const abs = fileUriToPath(uri);
+      // A spreadsheet or archive has no viewer in the panel, so it goes to the system's own app.
+      if (opensExternally(abs)) {
+        openFileWithConnection(connection, abs, {
+          sshConnectionId: connection.type === "ssh" ? connection.id : undefined,
+          wslDistroName,
+        }).catch((e) => toast.error(`Could not open ${abs}: ${e}`));
+        return;
+      }
       const base = toPosixPath(workspacePath).replace(/\/+$/, "");
       const inWorkspace = base !== "" && abs.toLowerCase().startsWith(`${base.toLowerCase()}/`);
       addDynamicTab("files", inWorkspace ? abs.slice(base.length + 1) : abs);
       setSidePanelCollapsed(false);
     },
-    [addDynamicTab, workspacePath, setSidePanelCollapsed],
+    [addDynamicTab, workspacePath, setSidePanelCollapsed, connection, wslDistroName],
   );
 
   useEffect(() => {
