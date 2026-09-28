@@ -113,15 +113,22 @@ export function ListedCard({
       <div className="flex items-center gap-2">
         {icon}
         <CardTitle title={title} href={href} />
-        {badge && (
-          <span className="truncate rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
-            {badge}
-          </span>
-        )}
       </div>
       <Description text={description} />
-      <div className="mt-auto flex flex-wrap items-center gap-1.5">{footer}</div>
+      <div className="mt-auto flex flex-wrap items-center gap-1.5">
+        {footer}
+        {badge && <Chip>{badge}</Chip>}
+      </div>
     </div>
+  );
+}
+
+/** A card's tag, pushed to the end of its footer so the title keeps the header's width. */
+export function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="ml-auto min-w-0 truncate rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
+      {children}
+    </span>
   );
 }
 

@@ -39,6 +39,7 @@ import {
   CardSection,
   CardTitle,
   CATALOG_STEP,
+  Chip,
   Description,
   EveryAgent,
   ListedCard,
@@ -84,9 +85,6 @@ function InstalledCard({
       <div className="flex items-center gap-2">
         <BookOpen className="size-4 shrink-0 text-accent" />
         <CardTitle title={skill.name} href={skill.source && skillPage(skill.source, skill.name)} />
-        <span className="truncate rounded-md border border-border px-1.5 text-[10px] text-muted-foreground">
-          {skill.source ?? "Custom"}
-        </span>
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`More actions for ${skill.name}`}
@@ -141,8 +139,9 @@ function InstalledCard({
           <TooltipContent className="max-w-72">{SHARED_DIRECTORY_HINT}</TooltipContent>
         </Tooltip>
         {setAgents.isPending && (
-          <span className="ml-auto text-[11px] text-muted-foreground">Installing…</span>
+          <span className="text-[11px] text-muted-foreground">Installing…</span>
         )}
+        <Chip>{skill.source ?? "Custom"}</Chip>
       </div>
       <AgentsDialog
         open={choosing}
