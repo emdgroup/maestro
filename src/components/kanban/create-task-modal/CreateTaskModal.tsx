@@ -34,6 +34,7 @@ import type {
   WorktreeWithStatus,
 } from "@/types/bindings";
 import { IssueSearchCombobox } from "./IssueSearchCombobox";
+import { PRIORITIES } from "@/utils/constants/priority";
 
 interface FormData {
   baseBranch: string;
@@ -95,6 +96,7 @@ export function CreateTaskModal({
   const [error, setError] = useState<string | null>(null);
   const [createAnother, setCreateAnother] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<RemoteIssue | null>(null);
+  const issuePopupAnchor = useRef<HTMLSpanElement>(null);
   const [labels, setLabels] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
 
@@ -188,17 +190,20 @@ export function CreateTaskModal({
   }, [isOpen, baseBranch, defaultBaseBranch, setValue]);
 
   const handleIssueSelect = (issue: RemoteIssue | null) => {
+    setSelectedIssue(issue);
     if (!issue) {
-      setSelectedIssue(null);
       setTitle("");
       setDescription("");
       setLabels([]);
+      setValue("priority", "None");
       return;
     }
-    setSelectedIssue(issue);
     setTitle(issue.title);
     setDescription(issue.body ?? "");
     setLabels(issue.issue_type ? [issue.issue_type] : []);
+    if (PRIORITIES.includes(issue.priority as TaskPriority)) {
+      setValue("priority", issue.priority as TaskPriority);
+    }
   };
 
   const onSubmit: SubmitHandler<FormData> = (data) => {
@@ -289,10 +294,26 @@ export function CreateTaskModal({
         className="sm:w-fit sm:min-w-160 sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-6 pt-3 shrink-0">
+        <div className="relative flex items-center gap-3 px-6 pt-3 shrink-0">
+          {/* The issue popup's anchor: the header's width less its padding, which is the
+              body's content box, so the popup lines up with the fields and stays in the dialog. */}
+          <span
+            ref={issuePopupAnchor}
+            className="pointer-events-none absolute inset-x-6 bottom-0"
+          />
           <DialogTitle className="text-xs font-semibold tracking-widest uppercase text-foreground">
             CREATE TASK
           </DialogTitle>
+          {hasProvider && issueConfig && (
+            <IssueSearchCombobox
+              issueConfig={issueConfig}
+              selectedIssue={selectedIssue}
+              onSelect={handleIssueSelect}
+              remoteIssues={remoteIssues ?? []}
+              issuesFetching={issuesFetching}
+              popupAnchor={issuePopupAnchor}
+            />
+          )}
           <div className="flex-1" />
           <DialogClose render={<Button variant="ghost" size="icon" className="shrink-0" />}>
             <X className="size-4" />
@@ -311,19 +332,6 @@ export function CreateTaskModal({
             {error && (
               <div className="shrink-0 bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded text-sm">
                 {error}
-              </div>
-            )}
-
-            {/* Issue search */}
-            {hasProvider && issueConfig && (
-              <div className="shrink-0">
-                <IssueSearchCombobox
-                  issueConfig={issueConfig}
-                  selectedIssue={selectedIssue}
-                  onSelect={handleIssueSelect}
-                  remoteIssues={remoteIssues ?? []}
-                  issuesFetching={issuesFetching}
-                />
               </div>
             )}
 
