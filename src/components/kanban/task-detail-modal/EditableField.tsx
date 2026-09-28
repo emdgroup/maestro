@@ -58,7 +58,7 @@ export function EditableField({
       capturedSizeRef.current = null;
     }
     // The draft is seeded here rather than mirrored from `value` by an effect: it is only
-    // ever read while editing, and this is the sole way in.
+    // ever read while editing, and this is the multiline view's sole way in.
     setDraft(value);
     setEditing(true);
   }
@@ -128,11 +128,19 @@ export function EditableField({
   return (
     <input
       type="text"
-      value={draft}
+      // Same rule as the multiline view: `value` unless editing, so a value set from outside
+      // (an imported issue's title) shows up rather than the draft seeded at mount.
+      value={editing ? draft : value}
       readOnly={!isEditable}
       placeholder={placeholder}
+      onFocus={() => {
+        if (!isEditable) return;
+        setDraft(value);
+        setEditing(true);
+      }}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
+        setEditing(false);
         const trimmed = draft.trim();
         if (trimmed !== value) onSave(trimmed);
       }}
