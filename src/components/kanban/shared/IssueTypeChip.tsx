@@ -32,7 +32,7 @@ const COLORS: Record<string, string> = {
   epic: "bg-purple-500/15 text-purple-400",
   task: "bg-green-500/15 text-green-400",
   "product backlog item": "bg-green-500/15 text-green-400",
-  feature: "bg-amber-500/15 text-amber-400",
+  feature: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
   improvement: "bg-teal-500/15 text-teal-400",
   incident: "bg-orange-500/15 text-orange-400",
   test: "bg-violet-500/15 text-violet-400",
