@@ -12,7 +12,8 @@ terminal. Maestro installs that skill on every machine it connects to, so the ag
 format: it asks what you want to add and writes the file for you. It is a slash command, so it
 never fires on its own.
 
-**By hand.** One entry per agent, each with an `id`, a `name` and exactly one launch method:
+**By hand.** One entry per agent, each with an `id`, a `name`, an optional `icon` and exactly
+one launch method:
 
 ```json
 {
@@ -20,6 +21,7 @@ never fires on its own.
     {
       "id": "ollama-claude-acp",
       "name": "Claude Code (Ollama)",
+      "icon": "https://cdn.agentclientprotocol.com/registry/v1/latest/claude-acp.svg",
       "distribution": {
         "npx": {
           "package": "@agentclientprotocol/claude-agent-acp@0.64.0",
@@ -39,6 +41,20 @@ That example adds nothing new to your machine. It is the same Claude Code ACP pa
 already ships, launched with a different environment — Ollama's endpoint instead of Anthropic's,
 and gateway model discovery on so Maestro's model selector lists the models you have pulled
 locally. Your normal Claude Code entry keeps working alongside it.
+
+## Fields
+
+| Field          | Required | Meaning                                                                  |
+| -------------- | -------- | ------------------------------------------------------------------------ |
+| `id`           | yes      | Unique and stable: lowercase, hyphenated. Must not match a bundled agent |
+| `name`         | yes      | What the agent picker and the session list show                          |
+| `icon`         | no       | Image shown beside the name, as an `https:` URL or a `data:` URI         |
+| `distribution` | yes      | Exactly one launch method, below                                         |
+
+The `icon` is drawn at a small size and inverted in the dark theme, so a single-colour SVG on a
+transparent background works best; every agent in the bundled registry has one you can reuse, at
+`https://cdn.agentclientprotocol.com/registry/v1/latest/<id>.svg`. Without an `icon`, Maestro shows a
+generic robot.
 
 ## Launch methods
 
