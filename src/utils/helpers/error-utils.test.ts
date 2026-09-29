@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getErrorMessage, isProjectLockedError } from "./error-utils";
+import { getErrorMessage, isProjectLockedError, projectLockHolder } from "./error-utils";
 
 describe("getErrorMessage", () => {
   it("returns message from Error instance", () => {
@@ -58,5 +58,15 @@ describe("isProjectLockedError", () => {
   it("does not match null or undefined", () => {
     expect(isProjectLockedError(null)).toBe(false);
     expect(isProjectLockedError(undefined)).toBe(false);
+  });
+});
+
+describe("projectLockHolder", () => {
+  it("reads the holder's label after the prefix", () => {
+    expect(projectLockHolder(new Error("PROJECT_LOCKED:desktop-7"))).toBe("desktop-7");
+  });
+
+  it("falls back when the label is missing", () => {
+    expect(projectLockHolder("PROJECT_LOCKED:")).toBe("another machine");
   });
 });

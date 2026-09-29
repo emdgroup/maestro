@@ -1193,6 +1193,57 @@ pub(crate) async fn dispatch_message(
             );
         }
 
+        MaestroRpcMessage::Request(ServerRequest::AcquireProjectLock(req)) => {
+            let path = crate::automations::canonical_project_path(&req.project_path);
+            let resp = stdout.lock().await.acquire_project(path, req.label).await;
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::AcquireProjectLockOk(resp)),
+                )
+                .await
+            );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ReleaseProjectLock) => {
+            stdout.lock().await.release_project().await;
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::ListProjectLocks(req)) => {
+            let paths = req
+                .project_paths
+                .into_iter()
+                .map(|sent| {
+                    let canonical = crate::automations::canonical_project_path(&sent);
+                    (sent, canonical)
+                })
+                .collect();
+            let locks = stdout.lock().await.list_projects(paths).await;
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::ProjectLocksOk(
+                        maestro_protocol::ListProjectLocksResponse { locks },
+                    )),
+                )
+                .await
+            );
+        }
+
+        // Answered through the sink, not here: the answer may be ten seconds away.
+        MaestroRpcMessage::Request(ServerRequest::RequestTakeover(req)) => {
+            let path = crate::automations::canonical_project_path(&req.project_path);
+            stdout.lock().await.start_takeover(path, req.label).await;
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::TakeoverAnswer(answer)) => {
+            stdout
+                .lock()
+                .await
+                .answer_takeover(answer.request_id, answer.accept)
+                .await;
+        }
+
         // The host logs both sides of the heartbeat at trace; echoing it here would either be
         // discarded (this process is spawned with a null stderr on one path) or, if forwarded as
         // a diagnostic, put every ping on the IPC channel.

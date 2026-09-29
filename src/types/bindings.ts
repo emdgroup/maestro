@@ -50,12 +50,11 @@ async getProject(projectId: number) : Promise<Result<Project, string>> {
 }
 },
 /**
- * Open a project by ID: acquire the project lock, mark orphaned sessions as failed,
- * update last_opened, and return the Project.
+ * Open a project by ID: acquire the project lock, update last_opened, and return the Project.
  * 
- * This is the entry point for project selection. It enforces single-instance access:
- * if another live Maestro instance has the project open, it returns an error of the
- * form "PROJECT_LOCKED:<id>" which the frontend interprets to show a toast.
+ * This is the entry point for project selection. It enforces single-window access through the
+ * resident server of the project's connection: if another window holds the project, it returns
+ * an error of the form "PROJECT_LOCKED:<holder label>", which the frontend offers a takeover for.
  */
 async openProject(projectId: number) : Promise<Result<Project, string>> {
     try {
@@ -82,11 +81,38 @@ async releaseActiveProjectLock() : Promise<Result<null, string>> {
 }
 },
 /**
- * Return the subset of project IDs that are currently locked by another live instance.
- * Used by the project picker to show visual lock indicators before the user clicks.
+ * Which of these projects some window holds, for the picker's lock badges.
  */
-async checkProjectLocks(projectIds: number[]) : Promise<number[]> {
-    return await TAURI_INVOKE("check_project_locks", { projectIds });
+async listProjectLocks(connection: ConnectionKey, projectIds: number[]) : Promise<Result<ProjectLockEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_project_locks", { connection, projectIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
+ * it as usual after that.
+ */
+async requestProjectTakeover(projectId: number) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("request_project_takeover", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * This window's answer to a `project-takeover-requested` event.
+ */
+async answerProjectTakeover(connection: ConnectionKey, requestId: string, accept: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("answer_project_takeover", { connection, requestId, accept }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 /**
  * remove project by id
@@ -3907,6 +3933,11 @@ remote_name: string | null;
  */
 base_branch: string | null }
 export type ProjectIssueTrackingConfig = { provider: string; integration_id?: string | null; owner?: string | null; repo?: string | null; project_path?: string | null; team_id?: string | null; project_key?: string | null; project_name?: string | null }
+export type ProjectLockEntry = { project_id: number; holder_label: string; 
+/**
+ * Held by this window.
+ */
+yours: boolean }
 /**
  * One open pull request, as the Worktrees view's panel reads it.
  * 

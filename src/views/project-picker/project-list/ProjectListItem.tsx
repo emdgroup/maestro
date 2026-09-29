@@ -10,7 +10,8 @@ interface ProjectListItemProps {
   onClick: () => void;
   onRemove?: () => void;
   disabled?: boolean;
-  locked?: boolean;
+  /** Label of the Maestro window holding this project, when another one does. */
+  lockedBy?: string;
 }
 
 export function ProjectListItem({
@@ -18,12 +19,13 @@ export function ProjectListItem({
   onClick,
   onRemove,
   disabled = false,
-  locked = false,
+  lockedBy,
 }: ProjectListItemProps) {
-  const isDisabled = disabled || locked;
+  // Still clickable: opening a held project is how its takeover is asked for.
+  const locked = lockedBy !== undefined;
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Delete" && onRemove && !isDisabled) {
+    if (e.key === "Delete" && onRemove && !disabled) {
       e.preventDefault();
       onRemove();
     }
@@ -33,11 +35,11 @@ export function ProjectListItem({
     <Button
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      disabled={isDisabled}
+      disabled={disabled}
       variant="outline"
       className={cn(
         "w-full text-left justify-start font-mono text-sm h-auto py-3 px-4 pr-12 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 hover:bg-background hover:border-accent hover:text-accent dark:hover:border-accent dark:hover:text-accent dark:bg-background! shadow-md",
-        locked && "opacity-50 cursor-not-allowed",
+        locked && "opacity-70",
       )}
     >
       <div className="flex flex-col items-start gap-1 w-full">
@@ -55,7 +57,7 @@ export function ProjectListItem({
       {locked ? (
         <Tooltip>
           <TooltipTrigger render={<div className="w-full">{button}</div>} />
-          <TooltipContent side="top">Project already open in another instance</TooltipContent>
+          <TooltipContent side="top">Open in Maestro on {lockedBy}</TooltipContent>
         </Tooltip>
       ) : (
         button

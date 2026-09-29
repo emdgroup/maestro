@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -27,7 +29,9 @@ export const projectQueryKeys = {
   details: (id: number) => [...projectQueryKeys.base, "details", id] as const,
   settings: () => [...projectQueryKeys.base, "settings"] as const,
   settingsDetail: (projectId: number) => [...projectQueryKeys.settings(), projectId] as const,
-  locks: (ids: number[]) => [...projectQueryKeys.base, "locks", ids] as const,
+  locks: () => [...projectQueryKeys.base, "locks"] as const,
+  locksFor: (connectionId: number | string, ids: number[]) =>
+    [...projectQueryKeys.locks(), connectionId, ids] as const,
   profiles: (projectId: number) => [...projectQueryKeys.base, "profiles", projectId] as const,
   remotes: (projectId: number) => [...projectQueryKeys.base, "remotes", projectId] as const,
 };
@@ -103,16 +107,49 @@ export function useProjectRemotes(projectId: number | null) {
 }
 
 /**
- * Query hook for checking which projects are locked by another Maestro instance.
- * Refetches on window focus to detect locks acquired while the window was backgrounded.
+ * Which of these projects a Maestro window holds, as the connection's server sees it.
+ *
+ * Refetched whenever that server says a lock changed, which it tells every window it serves.
  */
-export function useProjectLocks(projectIds: number[]) {
+export function useProjectLocks(connection: ConnectionKey, projectIds: number[]) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const unlisten = listen("project-locks-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.locks() });
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [queryClient]);
+
   return useQuery({
-    queryKey: projectQueryKeys.locks(projectIds),
-    queryFn: () => api.checkProjectLocks(projectIds),
+    queryKey: projectQueryKeys.locksFor(connectionQueryKey(connection), projectIds),
+    queryFn: () => api.listProjectLocks(connection, projectIds),
     enabled: projectIds.length > 0,
     staleTime: 5000,
-    refetchOnWindowFocus: true,
+  });
+}
+
+/** Ask the window holding a project for it. Resolves `true` once it is this window's. */
+export function useRequestProjectTakeover() {
+  return useMutation({
+    mutationFn: (projectId: number) => api.requestProjectTakeover(projectId),
+  });
+}
+
+/** This window's answer to another window asking for its project. */
+export function useAnswerProjectTakeover() {
+  return useMutation({
+    mutationFn: ({
+      connection,
+      requestId,
+      accept,
+    }: {
+      connection: ConnectionKey;
+      requestId: string;
+      accept: boolean;
+    }) => api.answerProjectTakeover(connection, requestId, accept),
+    onError: createErrorToastHandler("Failed to answer the takeover request"),
   });
 }
 

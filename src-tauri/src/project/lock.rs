@@ -1,189 +1,233 @@
-use fs2::FileExt;
-use std::fs::{self, File, OpenOptions};
-use std::path::{Path, PathBuf};
+//! Project locks, held by the resident server of the connection a project lives on.
+//!
+//! The server owns them, in memory, keyed by canonical project path: two windows are kept off one
+//! project whether they share a data directory or not, and a lock dies with the relay that took it,
+//! so a crashed window never leaves a project stuck. This side only asks, and remembers in
+//! `AppState::active_project_lock` which project it holds and on which connection.
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::sync::{Arc, OnceLock};
+use tauri::State;
+
+use crate::acp::connection_server::{
+    query_acquire_project_lock_via_server, query_project_locks_via_server,
+    query_takeover_via_server, send_via_server,
+};
+use crate::acp::discovery_handlers::ensure_connection_server;
+use crate::acp::transport::{MaestroRpcMessage, ServerRequest};
+use crate::acp::ConnectionKey;
+use crate::command_ext::NoConsoleWindow;
+use crate::core::AppState;
+use crate::project::Project;
 
 /// Marks the one error the frontend branches on rather than just displaying.
 /// `isProjectLockedError` in `src/utils/helpers/error-utils.ts` matches this prefix, so the
-/// two must be changed together.
+/// two must be changed together. What follows it is the holder's label.
 pub const PROJECT_LOCKED_PREFIX: &str = "PROJECT_LOCKED:";
 
-fn lock_file_path(app_data_dir: &Path, project_id: i32) -> PathBuf {
-    app_data_dir
-        .join("locks")
-        .join(format!("{}.lock", project_id))
+/// How this window introduces itself to whoever it takes a project from.
+fn label() -> &'static str {
+    static LABEL: OnceLock<String> = OnceLock::new();
+    LABEL.get_or_init(|| {
+        std::process::Command::new("hostname")
+            .no_console_window()
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "another machine".to_string())
+    })
 }
 
-/// Acquire an exclusive advisory lock on the project lock file.
-/// Returns the open File handle — the lock is held as long as this handle is alive.
-/// Dropping the File releases the lock automatically (on crash, kill -9, or clean exit).
-/// Returns Err with `PROJECT_LOCKED_PREFIX` followed by the id if another process holds the lock.
-pub fn acquire_project_lock(app_data_dir: &Path, project_id: i32) -> Result<File, String> {
-    let lock_path = lock_file_path(app_data_dir, project_id);
+fn connection_of(project: &Project) -> ConnectionKey {
+    ConnectionKey::from_all_ids(
+        project.connection_id,
+        project.wsl_connection_id,
+        project.docker_connection_id,
+    )
+}
 
-    if let Some(parent) = lock_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("Failed to create locks dir: {}", e))?;
+pub(crate) fn load_project(app_state: &AppState, project_id: i32) -> Result<Project, String> {
+    let conn = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Lock failed: {}", e))?;
+    conn.query_row(
+        "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+        [project_id],
+        Project::from_row,
+    )
+    .map_err(|_| "Project not found".to_string())
+}
+
+fn request(project: &Project) -> maestro_protocol::AcquireProjectLockRequest {
+    maestro_protocol::AcquireProjectLockRequest {
+        project_path: project.path.clone(),
+        label: label().to_string(),
+    }
+}
+
+/// Take `project` for this window. Errors with [`PROJECT_LOCKED_PREFIX`] when another window
+/// holds it, and plainly when the server cannot be reached: the project cannot be opened safely
+/// without asking.
+pub async fn acquire(app_state: &Arc<AppState>, project: &Project) -> Result<(), String> {
+    let key = connection_of(project);
+    ensure_connection_server(app_state, key).await?;
+    let resp = query_acquire_project_lock_via_server(key, request(project), app_state).await?;
+    if !resp.acquired {
+        return Err(format!(
+            "{PROJECT_LOCKED_PREFIX}{}",
+            resp.holder_label.as_deref().unwrap_or("another machine")
+        ));
     }
 
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&lock_path)
-        .map_err(|e| format!("Failed to open lock file: {}", e))?;
-
-    file.try_lock_exclusive()
-        .map_err(|_| format!("{}{}", PROJECT_LOCKED_PREFIX, project_id))?;
-
-    Ok(file)
+    // The server let go of whatever this relay held before. A lock on another connection is held
+    // by another relay, and has to be let go of by hand.
+    let previous = app_state
+        .active_project_lock
+        .lock()
+        .map_err(|e| format!("Lock state error: {}", e))?
+        .replace((project.id, key));
+    if let Some((_, previous_key)) = previous.filter(|(_, k)| *k != key) {
+        let release = MaestroRpcMessage::Request(ServerRequest::ReleaseProjectLock);
+        if let Err(e) = send_via_server(previous_key, app_state, release).await {
+            log::warn!("could not release the project lock on {previous_key:?}: {e}");
+        }
+    }
+    Ok(())
 }
 
-/// Check if a project is currently locked by another process (non-blocking probe).
-/// Returns true if locked, false if available (including non-existent lock file).
+/// Take the project back after a relay was replaced, as an SSH reconnect does.
 ///
-/// Only contention counts as locked. A probe that fails for any other reason reports the project
-/// as available: `acquire_project_lock` is the real gate and would still refuse, whereas a false
-/// "locked" shuts the user out of a project nothing is holding. `flock` can also return `EINTR`
-/// even when told not to block, which is a retry rather than an answer.
-pub fn is_project_locked(app_data_dir: &Path, project_id: i32) -> bool {
-    let lock_path = lock_file_path(app_data_dir, project_id);
-
-    if !lock_path.exists() {
-        return false;
-    }
-
-    let file = match OpenOptions::new().write(true).open(&lock_path) {
-        Ok(f) => f,
-        Err(_) => return false,
-    };
-
-    // Compared by raw code rather than `ErrorKind`: contention is `EWOULDBLOCK` on Unix and
-    // `ERROR_LOCK_VIOLATION` on Windows, and only the former maps to `ErrorKind::WouldBlock`.
-    let contended = fs2::lock_contended_error().raw_os_error();
-
-    for _ in 0..3 {
-        match file.try_lock_exclusive() {
-            Ok(()) => {
-                if let Err(e) = file.unlock() {
-                    log::warn!("Failed to release the lock probe on project {project_id}: {e}");
+/// The old relay's lock is only released once the server notices it is gone, which for a dropped
+/// network can take until it goes stale, so a refusal is retried for that long before this window
+/// concludes someone else really has the project.
+pub async fn reacquire(app_state: Arc<AppState>, key: ConnectionKey) {
+    const ATTEMPTS: u32 = 8;
+    for attempt in 1..=ATTEMPTS {
+        let held = app_state
+            .active_project_lock
+            .lock()
+            .ok()
+            .and_then(|held| *held)
+            .filter(|(_, k)| *k == key);
+        let Some((project_id, _)) = held else {
+            return;
+        };
+        let Ok(project) = load_project(&app_state, project_id) else {
+            return;
+        };
+        match query_acquire_project_lock_via_server(key, request(&project), &app_state).await {
+            // Checked again because `acquire` may have moved this window to another project on the
+            // same connection meanwhile, and that one is what should end up held.
+            Ok(resp) if resp.acquired => {
+                let still = app_state
+                    .active_project_lock
+                    .lock()
+                    .is_ok_and(|held| *held == Some((project_id, key)));
+                if still {
+                    return;
                 }
-                return false;
             }
-            Err(e) if e.raw_os_error() == contended => return true,
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Ok(resp) if attempt == ATTEMPTS => {
+                if let Ok(mut held) = app_state.active_project_lock.lock() {
+                    *held = None;
+                }
+                let by = resp
+                    .holder_label
+                    .unwrap_or_else(|| "another machine".into());
+                crate::core::emit_or_log(
+                    &app_state.app_handle,
+                    "project-kicked",
+                    &serde_json::json!({
+                        "project_path": project.path,
+                        "reason": { "kind": "taken_over", "by": by },
+                    }),
+                );
+                return;
+            }
+            Ok(_) => tokio::time::sleep(std::time::Duration::from_secs(5)).await,
             Err(e) => {
-                log::warn!("Could not probe the lock on project {project_id}: {e}");
-                return false;
+                log::warn!("could not take project {project_id} back on {key:?}: {e}");
+                return;
             }
         }
     }
-
-    log::warn!("Lock probe on project {project_id} was interrupted repeatedly");
-    false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::sync::{Arc, Barrier};
-    use std::thread;
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ProjectLockEntry {
+    pub project_id: i32,
+    pub holder_label: String,
+    /// Held by this window.
+    pub yours: bool,
+}
 
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
+/// Which of these projects some window holds, for the picker's lock badges.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_project_locks(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    project_ids: Vec<i32>,
+) -> Result<Vec<ProjectLockEntry>, String> {
+    let projects: Vec<(i32, String)> = project_ids
+        .into_iter()
+        .filter_map(|id| load_project(&app_state, id).ok())
+        .map(|project| (project.id, project.path))
+        .collect();
+    ensure_connection_server(&app_state, connection).await?;
+    let resp = query_project_locks_via_server(
+        connection,
+        projects.iter().map(|(_, path)| path.clone()).collect(),
+        &app_state,
+    )
+    .await?;
+    Ok(resp
+        .locks
+        .into_iter()
+        .filter_map(|lock| {
+            let (project_id, _) = projects.iter().find(|(_, p)| *p == lock.project_path)?;
+            Some(ProjectLockEntry {
+                project_id: *project_id,
+                holder_label: lock.holder_label,
+                yours: lock.yours,
+            })
+        })
+        .collect())
+}
 
-    fn tmp_dir() -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = PathBuf::from(format!(
-            "/tmp/maestro-lock-test-{}-{}",
-            std::process::id(),
-            n
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+/// Ask whoever holds a project to give it up. `true` once it is this window's; the caller opens
+/// it as usual after that.
+#[tauri::command]
+#[specta::specta]
+pub async fn request_project_takeover(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+) -> Result<bool, String> {
+    let project = load_project(&app_state, project_id)?;
+    let key = connection_of(&project);
+    ensure_connection_server(&app_state, key).await?;
+    query_takeover_via_server(key, request(&project), &app_state).await
+}
 
-    #[test]
-    fn acquire_returns_file_handle() {
-        let dir = tmp_dir();
-        let file = acquire_project_lock(&dir, 1).unwrap();
-        let lock_path = dir.join("locks/1.lock");
-        assert!(lock_path.exists());
-        drop(file);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn is_locked_false_when_no_lock_file() {
-        let dir = tmp_dir();
-        assert!(!is_project_locked(&dir, 99));
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn is_locked_false_after_handle_dropped() {
-        let dir = tmp_dir();
-        let file = acquire_project_lock(&dir, 2).unwrap();
-        drop(file);
-        // Lock released — probe should report unlocked
-        assert!(!is_project_locked(&dir, 2));
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn is_locked_true_while_held_by_another_thread() {
-        let dir = tmp_dir();
-        let dir_arc = Arc::new(dir.clone());
-
-        // Barrier to synchronize: thread holds lock, main checks, then thread releases
-        let barrier_acquired = Arc::new(Barrier::new(2));
-        let barrier_release = Arc::new(Barrier::new(2));
-
-        let dir_clone = Arc::clone(&dir_arc);
-        let ba = Arc::clone(&barrier_acquired);
-        let br = Arc::clone(&barrier_release);
-
-        let handle = thread::spawn(move || {
-            let _file = acquire_project_lock(&dir_clone, 3).unwrap();
-            ba.wait(); // signal: lock is held
-            br.wait(); // wait: main has checked
-        });
-
-        barrier_acquired.wait(); // wait for thread to hold the lock
-        assert!(is_project_locked(&dir, 3));
-        barrier_release.wait(); // let thread release
-
-        handle.join().unwrap();
-
-        // After thread exits and drops the handle, lock is released
-        assert!(!is_project_locked(&dir, 3));
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn second_acquire_fails_while_held() {
-        let dir = tmp_dir();
-        let ba = Arc::new(Barrier::new(2));
-        let br = Arc::new(Barrier::new(2));
-        let dir_arc = Arc::new(dir.clone());
-
-        let ba2 = Arc::clone(&ba);
-        let br2 = Arc::clone(&br);
-        let dir2 = Arc::clone(&dir_arc);
-
-        let t = thread::spawn(move || {
-            let _file = acquire_project_lock(&dir2, 4).unwrap();
-            ba2.wait();
-            br2.wait();
-        });
-
-        ba.wait();
-        let result = acquire_project_lock(&dir, 4);
-        assert!(result.is_err());
-        // The frontend matches on this exact prefix to distinguish "already open elsewhere"
-        // from a generic failure, so the shape of the message is part of the contract.
-        assert_eq!(result.unwrap_err(), format!("{}4", PROJECT_LOCKED_PREFIX));
-        br.wait();
-
-        t.join().unwrap();
-        let _ = fs::remove_dir_all(&dir);
-    }
+/// This window's answer to a `project-takeover-requested` event.
+#[tauri::command]
+#[specta::specta]
+pub async fn answer_project_takeover(
+    app_state: State<'_, Arc<AppState>>,
+    connection: ConnectionKey,
+    request_id: String,
+    accept: bool,
+) -> Result<(), String> {
+    send_via_server(
+        connection,
+        &app_state,
+        MaestroRpcMessage::Request(ServerRequest::TakeoverAnswer(
+            maestro_protocol::TakeoverAnswer { request_id, accept },
+        )),
+    )
+    .await
 }

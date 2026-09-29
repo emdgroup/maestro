@@ -12,12 +12,13 @@ import {
   useDeleteProject,
   useGitInitProject,
   useCheckIsGitRepo,
+  useRequestProjectTakeover,
   connectionQueryKey,
 } from "@/services/project.service";
 import { useSelectedProjectActions, applyProjectStartupTab } from "@/store/projectStore";
 import type { ConnectionKey } from "@/types/bindings";
 import { api } from "@/lib/tauri-utils";
-import { getErrorMessage, isProjectLockedError } from "@/lib/error-utils";
+import { getErrorMessage, isProjectLockedError, projectLockHolder } from "@/lib/error-utils";
 import { useConnectionContext } from "@/contexts/ConnectionContext";
 import { Folder, Loader2, Container } from "lucide-react";
 import { ConnectionHeader } from "../connection-list/ConnectionHeader";
@@ -25,6 +26,16 @@ import { WslConnectionHeader } from "./WslConnectionHeader";
 import { FilePicker } from "../file-picker/FilePicker";
 import { GitInitDialog } from "./GitInitDialog";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/ui/alert-dialog";
 import { useMemo, useState } from "react";
 
 export function ProjectList() {
@@ -41,14 +52,21 @@ export function ProjectList() {
   const { data: recentProjects = [], isLoading: projectsLoading } =
     useRecentProjects(activeConnectionKey);
   const projectIds = useMemo(() => recentProjects.map((p) => p.id), [recentProjects]);
-  const { data: lockedProjectIds = [] } = useProjectLocks(projectIds);
-  const lockedSet = useMemo(() => new Set(lockedProjectIds), [lockedProjectIds]);
+  const { data: locks = [] } = useProjectLocks(activeConnectionKey, projectIds);
+  // This window's own project is not "locked" to it: a webview reload lands here still holding it.
+  const lockHolders = useMemo(
+    () => new Map(locks.filter((l) => !l.yours).map((l) => [l.project_id, l.holder_label])),
+    [locks],
+  );
 
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
+  const [takeover, setTakeover] = useState<{ projectId: number; holder: string } | null>(null);
+  const [waitingOn, setWaitingOn] = useState<string | null>(null);
   const { setSelectedProject } = useSelectedProjectActions();
+  const { mutateAsync: requestTakeover } = useRequestProjectTakeover();
 
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useDeleteProject(connectionQueryKey(activeConnectionKey));
@@ -80,7 +98,15 @@ export function ProjectList() {
             ? { type: "ssh", id: connectionId }
             : { type: "local" };
     const created = await createProject({ path: selectedPath, connection });
-    const project = await api.openProject(created.id);
+    let project;
+    try {
+      project = await api.openProject(created.id);
+    } catch (error) {
+      if (!isProjectLockedError(error)) throw error;
+      setShowFilePickerModal(false);
+      setTakeover({ projectId: created.id, holder: projectLockHolder(error) });
+      return;
+    }
     await Promise.all([
       api.primeProjectServer(created.id).catch(() => {}),
       applyProjectStartupTab(project.id),
@@ -115,11 +141,7 @@ export function ProjectList() {
         setShowGitInitDialog(true);
       }
     } catch (error) {
-      if (isProjectLockedError(error)) {
-        toast.error("Project already open in another Maestro instance");
-      } else {
-        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
-      }
+      toast.error(`Failed to open project: ${getErrorMessage(error)}`);
     } finally {
       setProjectLoading(false);
     }
@@ -165,11 +187,7 @@ export function ProjectList() {
         false,
       );
     } catch (error) {
-      if (isProjectLockedError(error)) {
-        toast.error("Project already open in another Maestro instance");
-      } else {
-        toast.error(`Failed to open project: ${getErrorMessage(error)}`);
-      }
+      toast.error(`Failed to open project: ${getErrorMessage(error)}`);
     } finally {
       setProjectLoading(false);
       setPendingSelection(null);
@@ -193,13 +211,32 @@ export function ProjectList() {
       setSelectedProject(project, isGitRepo);
     } catch (error) {
       if (isProjectLockedError(error)) {
-        toast.error("Project already open in another Maestro instance");
+        setTakeover({ projectId, holder: projectLockHolder(error) });
       } else {
         toast.error(`Failed to open project: ${getErrorMessage(error)}`);
       }
     } finally {
       setProjectLoading(false);
     }
+  };
+
+  const handleTakeover = async () => {
+    if (!takeover) return;
+    const { projectId, holder } = takeover;
+    setTakeover(null);
+    setProjectLoading(true);
+    setWaitingOn(holder);
+    let granted = false;
+    try {
+      granted = await requestTakeover(projectId);
+      if (!granted) toast.error(`Maestro on ${holder} kept the project`);
+    } catch (error) {
+      toast.error(`Takeover failed: ${getErrorMessage(error)}`);
+    } finally {
+      setWaitingOn(null);
+      setProjectLoading(false);
+    }
+    if (granted) await handleProjectClick(projectId);
   };
 
   const handleRemoveProject = async (projectId: number) => {
@@ -257,7 +294,9 @@ export function ProjectList() {
           {projectLoading && (
             <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Warming up…</span>
+              <span className="text-sm text-muted-foreground">
+                {waitingOn ? `Waiting for Maestro on ${waitingOn}…` : "Warming up…"}
+              </span>
             </div>
           )}
           {!projectLoading &&
@@ -273,7 +312,7 @@ export function ProjectList() {
                     onClick={() => handleProjectClick(project.id)}
                     onRemove={() => handleRemoveProject(project.id)}
                     disabled={loading}
-                    locked={lockedSet.has(project.id)}
+                    lockedBy={lockHolders.get(project.id)}
                   />
                 ))}
               </ul>
@@ -281,6 +320,28 @@ export function ProjectList() {
         </ProjectsListLayout>
 
         {showFailureModal && <PreflightModal />}
+
+        <AlertDialog
+          open={takeover !== null}
+          onOpenChange={(open) => {
+            if (!open) setTakeover(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Project is open elsewhere</AlertDialogTitle>
+              <AlertDialogDescription>
+                Open in Maestro on {takeover?.holder}. Request takeover?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void handleTakeover()}>
+                Request takeover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <Dialog open={showFilePickerModal} onOpenChange={setShowFilePickerModal}>
           <DialogContent className="h-150 md:max-w-4xl p-0 flex flex-col [&>button:hover]:text-accent">

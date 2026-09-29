@@ -28,6 +28,7 @@ mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
+mod project_locks;
 mod session;
 mod sessions;
 mod skills;
@@ -420,6 +421,13 @@ async fn run_server(
                 {
                     break;
                 }
+                // Checked on the ping's own clock: a client that has let three of these go by
+                // without a word loses its project lock.
+                stdout
+                    .lock()
+                    .await
+                    .release_stale(project_locks::STALE_AFTER)
+                    .await;
             }
         }
     });

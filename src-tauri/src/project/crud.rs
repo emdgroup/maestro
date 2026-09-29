@@ -230,35 +230,21 @@ pub fn get_project(
     }
 }
 
-/// Open a project by ID: acquire the project lock, mark orphaned sessions as failed,
-/// update last_opened, and return the Project.
+/// Open a project by ID: acquire the project lock, update last_opened, and return the Project.
 ///
-/// This is the entry point for project selection. It enforces single-instance access:
-/// if another live Maestro instance has the project open, it returns an error of the
-/// form "PROJECT_LOCKED:<id>" which the frontend interprets to show a toast.
+/// This is the entry point for project selection. It enforces single-window access through the
+/// resident server of the project's connection: if another window holds the project, it returns
+/// an error of the form "PROJECT_LOCKED:<holder label>", which the frontend offers a takeover for.
 #[tauri::command]
 #[specta::specta]
 pub async fn open_project(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Project, String> {
-    // Scoped so the database guard is released before any await: a `MutexGuard` held across one
-    // would make this future non-Send and Tauri will not accept it.
-    let project: Project = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.query_row(
-            "SELECT id, name, path, created_at, updated_at, last_opened, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-            [&project_id],
-            Project::from_row,
-        )
-        .map_err(|_| "Project not found".to_string())?
-    };
+    let project = crate::project::lock::load_project(&app_state, project_id)?;
 
-    // Acquire project lock — errors if another live instance owns it.
-    app_state.acquire_project_lock(project_id)?;
+    // Errors if another window holds it, or if its server cannot be reached to ask.
+    crate::project::lock::acquire(&app_state, &project).await?;
 
     {
         let conn = app_state
@@ -310,29 +296,6 @@ pub async fn release_active_project_lock(
     app_state.release_active_project_lock();
     app_state.acp.connection_servers.lock().await.clear();
     Ok(())
-}
-
-/// Return the subset of project IDs that are currently locked by another live instance.
-/// Used by the project picker to show visual lock indicators before the user clicks.
-#[tauri::command]
-#[specta::specta]
-pub fn check_project_locks(app_state: State<'_, Arc<AppState>>, project_ids: Vec<i32>) -> Vec<i32> {
-    // The project this instance already holds is skipped rather than probed. `is_project_locked`
-    // asks the OS by opening a second handle and trying to lock it, which our own lock blocks just
-    // as another process's would — so the probe cannot tell "someone else has it" from "I have it".
-    // The frontend returning to the picker while the lock is still held, as a webview reload does,
-    // would otherwise report the user's own open project as taken by another instance.
-    let own_project = app_state
-        .active_project_lock
-        .lock()
-        .ok()
-        .and_then(|held| held.as_ref().map(|(id, _)| *id));
-
-    project_ids
-        .into_iter()
-        .filter(|&id| Some(id) != own_project)
-        .filter(|&id| crate::project::lock::is_project_locked(&app_state.app_data_dir, id))
-        .collect()
 }
 
 /// remove project by id

@@ -1729,6 +1729,58 @@ pub(crate) async fn handle_shared_server_message(
         MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
             crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
         }
+        MaestroRpcMessage::Response(ServerResponse::AcquireProjectLockOk(resp)) => {
+            if let Ok(mut guard) = pending.acquire_project_lock.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::ProjectLocksOk(resp)) => {
+            if let Ok(mut guard) = pending.project_locks.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp));
+                }
+            }
+        }
+        MaestroRpcMessage::Response(ServerResponse::TakeoverResultOk(resp)) => {
+            if let Ok(mut guard) = pending.takeover.lock() {
+                if let Some(tx) = guard.take() {
+                    let _ = tx.send(Ok(resp.granted));
+                }
+            }
+        }
+        // Unsolicited, like a run changing: some window somewhere opened or left a project.
+        MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged) => {
+            crate::core::emit_or_log(app_handle, "project-locks-changed", &connection_key);
+        }
+        MaestroRpcMessage::Response(ServerResponse::TakeoverRequested(req)) => {
+            crate::core::emit_or_log(
+                app_handle,
+                "project-takeover-requested",
+                &serde_json::json!({
+                    "connection": connection_key,
+                    "request_id": req.request_id,
+                    "project_path": req.project_path,
+                    "requester_label": req.requester_label,
+                }),
+            );
+        }
+        MaestroRpcMessage::Response(ServerResponse::ProjectKicked(kicked)) => {
+            if let Ok(mut held) = app_state.active_project_lock.lock() {
+                if held.is_some_and(|(_, key)| key == connection_key) {
+                    *held = None;
+                }
+            }
+            crate::core::emit_or_log(
+                app_handle,
+                "project-kicked",
+                &serde_json::json!({
+                    "project_path": kicked.project_path,
+                    "reason": kicked.reason,
+                }),
+            );
+        }
         MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
             if let Ok(mut guard) = pending.session_list.lock() {
                 if let Some(tx) = guard.take() {

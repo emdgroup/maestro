@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -188,6 +188,18 @@ pub enum ServerRequest {
     AuthTerminalInput(AuthTerminalInputRequest),
     /// Answer to a [`ServerResponse::HostToolCall`] the host resolved.
     HostToolResult(HostToolResult),
+    /// Hold a project for this client, releasing whichever one it held before. Refused, not
+    /// queued, when another client holds it.
+    AcquireProjectLock(AcquireProjectLockRequest),
+    /// Let go of whatever project this client holds.
+    ReleaseProjectLock,
+    /// Who holds each of these projects, for the picker.
+    ListProjectLocks(ListProjectLocksRequest),
+    /// Ask the holder of a project to hand it over. Answered with `TakeoverResultOk` once the
+    /// holder agrees, refuses or fails to answer in time.
+    RequestTakeover(AcquireProjectLockRequest),
+    /// The holder's answer to a [`ServerResponse::TakeoverRequested`].
+    TakeoverAnswer(TakeoverAnswer),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -931,6 +943,75 @@ pub struct PreviewScheduleResponse {
     pub next: Option<String>,
 }
 
+/// A project named by the path the client knows it by, and who is asking, in words a user on
+/// another machine would recognise.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AcquireProjectLockRequest {
+    pub project_path: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AcquireProjectLockResponse {
+    pub acquired: bool,
+    /// Who holds it, when `acquired` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder_label: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListProjectLocksRequest {
+    pub project_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListProjectLocksResponse {
+    /// Only the projects somebody holds.
+    pub locks: Vec<ProjectLockInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectLockInfo {
+    /// As the client sent it, so it can be matched without knowing how the daemon canonicalizes.
+    pub project_path: String,
+    pub holder_label: String,
+    /// Held by the client that asked.
+    pub yours: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TakeoverAnswer {
+    pub request_id: String,
+    pub accept: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TakeoverResult {
+    pub granted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TakeoverRequested {
+    pub request_id: String,
+    pub project_path: String,
+    pub requester_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectKicked {
+    pub project_path: String,
+    pub reason: KickReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum KickReason {
+    /// Another client asked for the project and this one gave it up or did not answer.
+    TakenOver { by: String },
+    /// This client stopped answering pings.
+    Stale,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -991,6 +1072,17 @@ pub enum ServerResponse {
     /// An agent called a Maestro MCP tool the host has to answer. Tauri replies with
     /// `ServerRequest::HostToolResult` carrying the same `request_id`.
     HostToolCall(HostToolCall),
+    AcquireProjectLockOk(AcquireProjectLockResponse),
+    ProjectLocksOk(ListProjectLocksResponse),
+    /// The answer to `RequestTakeover`, sent once the holder has been dealt with.
+    TakeoverResultOk(TakeoverResult),
+    /// Some project was locked or released. Pushed to every client, so pickers can refetch.
+    ProjectLocksChanged,
+    /// Another client wants the project this one holds. Sent to the holder alone, which answers
+    /// with `TakeoverAnswer`; no answer within ten seconds counts as yes.
+    TakeoverRequested(TakeoverRequested),
+    /// This client no longer holds its project. Sent to that client alone.
+    ProjectKicked(ProjectKicked),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,

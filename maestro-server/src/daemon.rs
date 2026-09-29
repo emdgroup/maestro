@@ -270,6 +270,8 @@ async fn serve_attached(
         let read = read_framed(&mut reader).await;
         match read {
             Ok(msg) => {
+                // Anything at all, `Pong` included, is proof of life for the project lock.
+                sink.lock().await.touch(id).await;
                 // Before it is handled, so the session's answer already knows where to go. This
                 // is also how a window takes over a session another one started, or adopts one.
                 if let Some(session_id) = msg.session_id() {
