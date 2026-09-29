@@ -33,6 +33,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The home page video is kept on the `website-media` release rather than in git. Pages
+      # serves it from the site as video/mp4; linking the release directly would not play in
+      # Safari, which gets it as application/octet-stream.
+      - run: bun run media
+
       - run: bun run build
 
       - uses: actions/configure-pages@v6
