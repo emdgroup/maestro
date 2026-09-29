@@ -112,6 +112,9 @@ pub struct PendingChannels {
     pub detect_project: PendingReply<DetectProjectAgentsResponse>,
     pub authenticate: PendingReply<()>,
     pub logout: PendingReply<()>,
+    pub acquire_project_lock: PendingReply<maestro_protocol::AcquireProjectLockResponse>,
+    pub project_locks: PendingReply<maestro_protocol::ListProjectLocksResponse>,
+    pub takeover: PendingReply<bool>,
 }
 
 impl Default for PendingChannels {
@@ -155,6 +158,9 @@ impl PendingChannels {
             detect_project: Arc::new(std::sync::Mutex::new(None)),
             authenticate: Arc::new(std::sync::Mutex::new(None)),
             logout: Arc::new(std::sync::Mutex::new(None)),
+            acquire_project_lock: Arc::new(std::sync::Mutex::new(None)),
+            project_locks: Arc::new(std::sync::Mutex::new(None)),
+            takeover: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }

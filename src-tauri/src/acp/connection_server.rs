@@ -104,6 +104,83 @@ pub async fn query_list_agents_via_connection_server(
     .await
 }
 
+/// Send a request that has no answer. Fails only when there is no relay to send it through.
+pub async fn send_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+    request: MaestroRpcMessage,
+) -> Result<(), String> {
+    let writer_tx = app_state
+        .acp
+        .connection_servers
+        .lock()
+        .await
+        .get(&connection_key)
+        .map(|server| server.writer_tx.clone())
+        .ok_or_else(|| format!("No connection server for connection {:?}", connection_key))?;
+    writer_tx
+        .send(serialize_message(&request)?)
+        .await
+        .map_err(|_| "Connection server writer channel closed".to_string())
+}
+
+pub async fn query_acquire_project_lock_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::AcquireProjectLockRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::AcquireProjectLockResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.acquire_project_lock.clone(),
+        "AcquireProjectLock already in progress",
+        MaestroRpcMessage::Request(ServerRequest::AcquireProjectLock(request)),
+        15,
+        "AcquireProjectLock via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_project_locks_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    project_paths: Vec<String>,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<maestro_protocol::ListProjectLocksResponse, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.project_locks.clone(),
+        "ListProjectLocks already in progress",
+        MaestroRpcMessage::Request(ServerRequest::ListProjectLocks(
+            maestro_protocol::ListProjectLocksRequest { project_paths },
+        )),
+        15,
+        "ListProjectLocks via connection server timed out after 15s",
+    )
+    .await
+}
+
+/// Fifteen seconds: the server gives the holder ten to answer before deciding for it.
+pub async fn query_takeover_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::AcquireProjectLockRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<bool, String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        |s| s.pending.takeover.clone(),
+        "A takeover is already in progress",
+        MaestroRpcMessage::Request(ServerRequest::RequestTakeover(request)),
+        15,
+        "The takeover request timed out after 15s",
+    )
+    .await
+}
+
 /// Ask every server this app is connected to to wind down, and forget them.
 ///
 /// Exists for the updater. A resident server holds its own binary open, and Windows will not let
@@ -769,6 +846,12 @@ pub async fn spawn_connection_server(
         pending,
         ended,
     );
+
+    // A new relay is a new client to the daemon, which knows nothing of what the old one held.
+    tokio::spawn(crate::project::lock::reacquire(
+        Arc::clone(app_state),
+        connection_key,
+    ));
 
     Ok(())
 }

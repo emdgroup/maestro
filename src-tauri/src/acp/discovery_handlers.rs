@@ -59,6 +59,206 @@ const MAESTRO_REQUIRED_TOOLS: [(&str, &str); 2] = [
     ),
 ];
 
+/// Start the relay to a connection's resident server unless one is already up, deploying the
+/// server first where the connection needs it.
+///
+/// Preflight is the usual caller, but not the only one: going back to the picker drops every
+/// relay, and the picker still has to ask the server who holds which project.
+pub async fn ensure_connection_server(
+    app_state: &Arc<AppState>,
+    connection_key: ConnectionKey,
+) -> Result<(), String> {
+    if app_state
+        .acp
+        .connection_servers
+        .lock()
+        .await
+        .contains_key(&connection_key)
+    {
+        return Ok(());
+    }
+
+    match &connection_key {
+        ConnectionKey::Ssh { id: conn_id } => {
+            let conn_id = *conn_id;
+            let ssh = app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
+                format!(
+                    "No active SSH session for connection_id {}. Connect first.",
+                    conn_id
+                )
+            })?;
+            let deploy_lock = {
+                let mut locks = app_state.acp.deploy_locks.lock().await;
+                locks
+                    .entry(conn_id)
+                    .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+                    .clone()
+            };
+            let _deploy_guard = deploy_lock.lock().await;
+            let cached_path = app_state
+                .acp
+                .discovery_cache
+                .lock()
+                .await
+                .get(&ConnectionKey::Ssh { id: conn_id })
+                .and_then(|e| e.maestro_server_path.clone());
+            let maestro_path = match cached_path {
+                Some(p) => p,
+                None => {
+                    let deploy = crate::acp::deploy::ensure_remote_server(
+                        &ssh,
+                        &app_state.app_handle,
+                        conn_id,
+                    )
+                    .await
+                    .map_err(|e| format!("Failed to deploy maestro-server: {}", e))?;
+                    let path = deploy.path.clone();
+                    app_state
+                        .acp
+                        .discovery_cache
+                        .lock()
+                        .await
+                        .entry(ConnectionKey::Ssh { id: conn_id })
+                        .or_insert_with(|| AgentDiscoveryCacheEntry {
+                            result: AgentDiscoveryResult {
+                                maestro_server_available: true,
+                                agents: Vec::new(),
+                                error: None,
+                            },
+                            maestro_server_path: None,
+                            fetched_at: std::time::Instant::now(),
+                        })
+                        .maestro_server_path = Some(path.clone());
+                    path
+                }
+            };
+            crate::acp::spawn_connection_server(
+                ConnectionKey::Ssh { id: conn_id },
+                crate::acp::TransportTarget::Remote {
+                    ssh: &ssh,
+                    server_path: &maestro_path,
+                },
+                app_state,
+            )
+            .await
+            .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
+        }
+        ConnectionKey::Wsl { id: wsl_id } => {
+            let wsl_id = *wsl_id;
+            let distro = {
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT distro_name FROM wsl_connections WHERE id = ?",
+                    [wsl_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
+            };
+            #[cfg(windows)]
+            {
+                let cached_path = app_state
+                    .acp
+                    .discovery_cache
+                    .lock()
+                    .await
+                    .get(&connection_key)
+                    .and_then(|e| e.maestro_server_path.clone());
+                let maestro_path = match cached_path {
+                    Some(p) => p,
+                    None => {
+                        let deploy =
+                            crate::acp::deploy::ensure_wsl_server(&distro, &app_state.app_handle)
+                                .await
+                                .map_err(|e| {
+                                    format!("Failed to deploy maestro-server to WSL: {}", e)
+                                })?;
+                        deploy.path
+                    }
+                };
+                crate::acp::spawn_connection_server(
+                    connection_key,
+                    crate::acp::TransportTarget::Wsl {
+                        distro: &distro,
+                        server_path: &maestro_path,
+                    },
+                    app_state,
+                )
+                .await
+                .map_err(|e| format!("Failed to start WSL maestro-server: {}", e))?;
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = distro;
+                return Err("WSL connections are only supported on Windows".to_string());
+            }
+        }
+        ConnectionKey::Local => {
+            crate::acp::deploy::ensure_local_server(&app_state.app_handle)
+                .await
+                .map_err(|e| format!("maestro-server not available: {}", e))?;
+            crate::acp::spawn_connection_server(
+                ConnectionKey::Local,
+                crate::acp::TransportTarget::Local,
+                app_state,
+            )
+            .await
+            .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
+        }
+        ConnectionKey::Docker { id: docker_id } => {
+            let docker_id = *docker_id;
+            let container_name = {
+                let conn = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Lock failed: {}", e))?;
+                conn.query_row(
+                    "SELECT container_name FROM docker_connections WHERE id = ?",
+                    [docker_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
+            };
+            let cli = crate::connectivity::docker::ContainerCli::detect()
+                .map_err(|e| format!("No container CLI found: {}", e))?;
+            let cached_path = app_state
+                .acp
+                .discovery_cache
+                .lock()
+                .await
+                .get(&connection_key)
+                .and_then(|e| e.maestro_server_path.clone());
+            let maestro_path = match cached_path {
+                Some(p) => p,
+                None => {
+                    crate::acp::deploy::ensure_container_server(
+                        &cli,
+                        &container_name,
+                        &app_state.app_handle,
+                    )
+                    .await
+                    .map_err(|e| format!("Failed to deploy maestro-server to container: {}", e))?
+                    .path
+                }
+            };
+            crate::acp::spawn_connection_server(
+                connection_key,
+                crate::acp::TransportTarget::Docker {
+                    cli: &cli,
+                    container_name: &container_name,
+                    server_path: &maestro_path,
+                },
+                app_state,
+            )
+            .await
+            .map_err(|e| format!("Failed to start container maestro-server: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Validate the environment for a connection and boot the persistent server.
 ///
 /// `replace` is the user choosing to update a server from another build of Maestro that is in use
@@ -76,197 +276,7 @@ pub async fn preflight_connection(
             keys.insert(connection_key);
         }
     }
-    let server_already_running = app_state
-        .acp
-        .connection_servers
-        .lock()
-        .await
-        .contains_key(&connection_key);
-
-    if !server_already_running {
-        match &connection_key {
-            ConnectionKey::Ssh { id: conn_id } => {
-                let conn_id = *conn_id;
-                let ssh = app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
-                    format!(
-                        "No active SSH session for connection_id {}. Connect first.",
-                        conn_id
-                    )
-                })?;
-                let deploy_lock = {
-                    let mut locks = app_state.acp.deploy_locks.lock().await;
-                    locks
-                        .entry(conn_id)
-                        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
-                        .clone()
-                };
-                let _deploy_guard = deploy_lock.lock().await;
-                let cached_path = app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .get(&ConnectionKey::Ssh { id: conn_id })
-                    .and_then(|e| e.maestro_server_path.clone());
-                let maestro_path = match cached_path {
-                    Some(p) => p,
-                    None => {
-                        let deploy = crate::acp::deploy::ensure_remote_server(
-                            &ssh,
-                            &app_state.app_handle,
-                            conn_id,
-                        )
-                        .await
-                        .map_err(|e| format!("Failed to deploy maestro-server: {}", e))?;
-                        let path = deploy.path.clone();
-                        app_state
-                            .acp
-                            .discovery_cache
-                            .lock()
-                            .await
-                            .entry(ConnectionKey::Ssh { id: conn_id })
-                            .or_insert_with(|| AgentDiscoveryCacheEntry {
-                                result: AgentDiscoveryResult {
-                                    maestro_server_available: true,
-                                    agents: Vec::new(),
-                                    error: None,
-                                },
-                                maestro_server_path: None,
-                                fetched_at: std::time::Instant::now(),
-                            })
-                            .maestro_server_path = Some(path.clone());
-                        path
-                    }
-                };
-                crate::acp::spawn_connection_server(
-                    ConnectionKey::Ssh { id: conn_id },
-                    crate::acp::TransportTarget::Remote {
-                        ssh: &ssh,
-                        server_path: &maestro_path,
-                    },
-                    &app_state,
-                )
-                .await
-                .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
-            }
-            ConnectionKey::Wsl { id: wsl_id } => {
-                let wsl_id = *wsl_id;
-                let distro = {
-                    let conn = app_state
-                        .db
-                        .lock()
-                        .map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.query_row(
-                        "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                        [wsl_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .map_err(|e| format!("WSL connection {} not found: {}", wsl_id, e))?
-                };
-                #[cfg(windows)]
-                {
-                    let cached_path = app_state
-                        .acp
-                        .discovery_cache
-                        .lock()
-                        .await
-                        .get(&connection_key)
-                        .and_then(|e| e.maestro_server_path.clone());
-                    let maestro_path = match cached_path {
-                        Some(p) => p,
-                        None => {
-                            let deploy = crate::acp::deploy::ensure_wsl_server(
-                                &distro,
-                                &app_state.app_handle,
-                            )
-                            .await
-                            .map_err(|e| {
-                                format!("Failed to deploy maestro-server to WSL: {}", e)
-                            })?;
-                            deploy.path
-                        }
-                    };
-                    crate::acp::spawn_connection_server(
-                        connection_key,
-                        crate::acp::TransportTarget::Wsl {
-                            distro: &distro,
-                            server_path: &maestro_path,
-                        },
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| format!("Failed to start WSL maestro-server: {}", e))?;
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = distro;
-                    return Err("WSL connections are only supported on Windows".to_string());
-                }
-            }
-            ConnectionKey::Local => {
-                crate::acp::deploy::ensure_local_server(&app_state.app_handle)
-                    .await
-                    .map_err(|e| format!("maestro-server not available: {}", e))?;
-                crate::acp::spawn_connection_server(
-                    ConnectionKey::Local,
-                    crate::acp::TransportTarget::Local,
-                    &app_state,
-                )
-                .await
-                .map_err(|e| format!("Failed to start maestro-server: {}", e))?;
-            }
-            ConnectionKey::Docker { id: docker_id } => {
-                let docker_id = *docker_id;
-                let container_name = {
-                    let conn = app_state
-                        .db
-                        .lock()
-                        .map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.query_row(
-                        "SELECT container_name FROM docker_connections WHERE id = ?",
-                        [docker_id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .map_err(|e| format!("Docker connection {} not found: {}", docker_id, e))?
-                };
-                let cli = crate::connectivity::docker::ContainerCli::detect()
-                    .map_err(|e| format!("No container CLI found: {}", e))?;
-                let cached_path = app_state
-                    .acp
-                    .discovery_cache
-                    .lock()
-                    .await
-                    .get(&connection_key)
-                    .and_then(|e| e.maestro_server_path.clone());
-                let maestro_path = match cached_path {
-                    Some(p) => p,
-                    None => {
-                        crate::acp::deploy::ensure_container_server(
-                            &cli,
-                            &container_name,
-                            &app_state.app_handle,
-                        )
-                        .await
-                        .map_err(|e| {
-                            format!("Failed to deploy maestro-server to container: {}", e)
-                        })?
-                        .path
-                    }
-                };
-                crate::acp::spawn_connection_server(
-                    connection_key,
-                    crate::acp::TransportTarget::Docker {
-                        cli: &cli,
-                        container_name: &container_name,
-                        server_path: &maestro_path,
-                    },
-                    &app_state,
-                )
-                .await
-                .map_err(|e| format!("Failed to start container maestro-server: {}", e))?;
-            }
-        }
-    }
+    ensure_connection_server(&app_state, connection_key).await?;
 
     let (agents, _) = fetch_and_filter_agents(connection_key, &app_state).await;
 

@@ -1,4 +1,3 @@
-use crate::project::lock as project_lock;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -157,11 +156,11 @@ pub struct AppState {
     pub ssh: SshState,
     pub acp: AcpState,
     pub pty: PtyState,
-    /// App data directory used for project lock files.
+    /// App data directory: the database, keychain fallbacks, the local daemon's directory.
     pub app_data_dir: PathBuf,
-    /// Active project lock: the project ID and the open File whose flock holds the lock.
-    /// Dropping the File releases the lock (including on crash/kill-9).
-    pub active_project_lock: Mutex<Option<(i32, std::fs::File)>>,
+    /// The project this window holds, and the connection whose server holds it for us. See
+    /// `project::lock`.
+    pub active_project_lock: Mutex<Option<(i32, crate::acp::ConnectionKey)>>,
     /// Mutex-guarded token storage for ticketing provider tokens.
     /// Per-project locks prevent concurrent refresh races (AUTH-06).
     pub token_manager: crate::integration::TokenManager,
@@ -219,30 +218,8 @@ impl AppState {
         }
     }
 
-    /// Acquire a project lock for this instance, releasing any previous lock first.
-    /// Returns an error string if the project is locked by another live instance.
-    pub fn acquire_project_lock(&self, project_id: i32) -> Result<(), String> {
-        let mut current = self
-            .active_project_lock
-            .lock()
-            .map_err(|e| format!("Lock state error: {}", e))?;
-
-        // Already holding this project's lock — nothing to do
-        if let Some((current_id, _)) = current.as_ref() {
-            if *current_id == project_id {
-                return Ok(());
-            }
-        }
-
-        // Release previous lock by dropping the File handle
-        *current = None;
-
-        let file = project_lock::acquire_project_lock(&self.app_data_dir, project_id)?;
-        *current = Some((project_id, file));
-        Ok(())
-    }
-
-    /// Release the active project lock held by this instance.
+    /// Forget the project this window holds. The server lets go of it when the relay that took it
+    /// detaches, which every caller of this brings about by dropping the relays.
     pub fn release_active_project_lock(&self) {
         if let Ok(mut current) = self.active_project_lock.lock() {
             *current = None;

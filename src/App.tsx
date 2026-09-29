@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, lazy, Suspense, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { ShortcutHintProvider } from "@/components/common/shortcut-hint/ShortcutHintProvider";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { motion, useAnimationControls } from "framer-motion";
@@ -41,6 +43,8 @@ import { useProjectStartupTab } from "@/hooks/useProjectStartupTab";
 import { useDefaultAgentFallback } from "@/hooks/useDefaultAgentFallback";
 import { useProjectAgentIntro } from "@/hooks/useProjectAgentIntro";
 import { UpdateSplashScreen } from "@/components/execution/UpdateSplashScreen";
+import { ProjectTakeoverDialog } from "@/components/common/ProjectTakeoverDialog";
+import { getFolderName } from "@/lib/path-utils";
 import "./App.css";
 
 // Lazy load views for code splitting (performance optimization)
@@ -185,6 +189,26 @@ function App() {
     dismissBackdrop();
     clearSelectedProject();
   }, [dismissBackdrop, clearSelectedProject]);
+
+  // This window lost its project to another one, or went quiet long enough for the server to take
+  // it. Back to the picker either way; the app itself stays open.
+  useEffect(() => {
+    const unlisten = listen<{
+      project_path: string;
+      reason: { kind: "taken_over"; by: string } | { kind: "stale" };
+    }>("project-kicked", ({ payload }) => {
+      clearSelectedProject();
+      const project = getFolderName(payload.project_path);
+      toast.info(
+        payload.reason.kind === "taken_over"
+          ? `Maestro on ${payload.reason.by} took over ${project}`
+          : `${project} was released after this window stopped answering its server`,
+      );
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [clearSelectedProject]);
 
   useEffect(() => {
     const prevTab = prevTabRef.current;
@@ -366,6 +390,8 @@ function App() {
           <Suspense fallback={null}>
             <SettingsDialog projectId={currentProject.id} connection={connection} />
           </Suspense>
+
+          <ProjectTakeoverDialog />
 
           {/* D-19 cascade check: block project access when issue tracking integration is missing */}
           <IntegrationMissingDialog

@@ -125,7 +125,7 @@ handlers (`handlers.rs` or `*_handlers.rs`), models (`models.rs` or `*_models.rs
 and logic, so a feature touches one directory rather than three.
 
 - `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
-- `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (file-based single-instance locking), `session_state.rs`, `prime.rs`
+- `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
 - `task/` — task CRUD, handlers, models, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
@@ -439,6 +439,23 @@ before: that routing drops anything addressed to a session this side does not ho
 open and Windows will not overwrite the image of a running process — the same reason the old
 child-process servers were killed on quit. Every running session ends with them, which is what the
 Install button's tooltip says.
+
+### Project locks live in the daemon
+
+A project is held by one Maestro window at a time, and the daemon of the connection it lives on is
+what decides: `maestro-server/src/project_locks.rs`, in memory, keyed by canonical project path, one
+lock per attached client (a second acquire releases the first). It sits in `client_sink`'s
+`Clients`, so `Clients::remove` releases a client's lock the moment it detaches or a write to it
+fails, and the daemon dying takes every lock with it. A client that sends nothing, `Pong` included,
+for 30 seconds loses its lock and is told so with `ProjectKicked { Stale }`; its connection is left
+alone.
+
+Opening a held project fails with `PROJECT_LOCKED:<holder label>`, and the picker offers a takeover:
+the daemon asks the holder (`TakeoverRequested`), and a yes, or no answer within ten seconds, moves
+the lock and sends the holder back to the picker with `ProjectKicked { TakenOver }`. The label is the
+machine's hostname. Every change is broadcast as `ProjectLocksChanged`, which is what refetches the
+picker's lock badges. The app side is `src-tauri/src/project/lock.rs`; `spawn_connection_server`
+re-acquires the held project whenever a relay is replaced, since the daemon sees a new client.
 
 ### Automations live in the daemon
 
@@ -823,7 +840,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
 - Schema version: 30 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 6.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 7.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

@@ -15,11 +15,21 @@
 //! a `ClientOut` whose `reply_to` is its sender, and everything that request spawns inherits it.
 //! A message about a session goes to that session's owner instead, the window that last sent a
 //! request naming it, since a session outlives the request that started it.
+//!
+//! The same table of clients is where project locks live (`project_locks`), because a lock
+//! belongs to a client and has to go when it does: `Clients::remove` is the one place a client
+//! is forgotten, whether it detached or a write to it failed.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
+
+use maestro_protocol::{
+    AcquireProjectLockResponse, MaestroRpcMessage, ProjectLockInfo, ServerResponse, TakeoverResult,
+};
+
+use crate::project_locks::{Effect, ProjectLocks, TAKEOVER_TIMEOUT};
 
 /// Handle every component holds to talk back to the client.
 pub type ClientOut = Arc<Mutex<ClientSink>>;
@@ -34,6 +44,10 @@ struct Clients {
     next_id: ClientId,
     writers: HashMap<ClientId, Writer>,
     owners: HashMap<String, ClientId>,
+    locks: ProjectLocks,
+    /// Lock messages owed and not yet written. Filled by code that cannot await, such as
+    /// `remove`, and emptied by `flush`.
+    outbox: Vec<Effect>,
 }
 
 impl Clients {
@@ -57,7 +71,40 @@ impl Clients {
     fn remove(&mut self, id: ClientId) {
         self.writers.remove(&id);
         self.owners.retain(|_, owner| *owner != id);
+        let effects = self.locks.remove_client(id);
+        self.outbox.extend(effects);
     }
+
+    /// Write every lock message owed. A client that fails here is removed, which can owe more, so
+    /// this runs until nothing is left.
+    async fn flush(&mut self) {
+        while !self.outbox.is_empty() {
+            for effect in std::mem::take(&mut self.outbox) {
+                let (to, msg) = match effect {
+                    Effect::To(id, msg) => (Some(id), msg),
+                    Effect::Broadcast(msg) => (None, msg),
+                };
+                let Ok(buf) = encode(msg).await else {
+                    continue;
+                };
+                match to {
+                    Some(id) => self.write_to(id, &buf).await,
+                    None => self.broadcast(&buf).await,
+                }
+            }
+        }
+    }
+
+    async fn apply(&mut self, effects: Vec<Effect>) {
+        self.outbox.extend(effects);
+        self.flush().await;
+    }
+}
+
+async fn encode(msg: ServerResponse) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut buf = Vec::new();
+    maestro_protocol::write_message(&mut buf, &MaestroRpcMessage::Response(msg)).await?;
+    Ok(buf)
 }
 
 enum Route {
@@ -116,6 +163,7 @@ impl ClientSink {
                 clients.next_id += 1;
                 let id = clients.next_id;
                 clients.writers.insert(id, writer);
+                clients.locks.touch(id, tokio::time::Instant::now());
                 id
             }
         }
@@ -124,8 +172,120 @@ impl ClientSink {
     pub async fn detach(&mut self, id: ClientId) {
         match &mut self.route {
             Route::Stdio(slot) => *slot = None,
-            Route::Daemon { clients, .. } => clients.lock().await.remove(id),
+            Route::Daemon { clients, .. } => {
+                let mut clients = clients.lock().await;
+                clients.remove(id);
+                clients.flush().await;
+            }
         }
+    }
+
+    /// Run a change to the lock table as the client this route replies to, and write what it owes.
+    /// `None` on the stdio route, which has one client and so nobody to contend with.
+    ///
+    /// `&mut self` throughout, not `&self`: the stdio writer is not `Sync`, so a shared borrow held
+    /// across an await would make every caller's future unsendable.
+    async fn with_locks<R>(
+        &mut self,
+        change: impl FnOnce(&mut ProjectLocks, Option<ClientId>) -> (R, Vec<Effect>),
+    ) -> Option<R> {
+        let Route::Daemon { clients, reply_to } = &self.route else {
+            return None;
+        };
+        let mut clients = clients.lock().await;
+        let (result, effects) = change(&mut clients.locks, *reply_to);
+        clients.apply(effects).await;
+        Some(result)
+    }
+
+    pub async fn acquire_project(
+        &mut self,
+        path: String,
+        label: String,
+    ) -> AcquireProjectLockResponse {
+        let granted = || AcquireProjectLockResponse {
+            acquired: true,
+            holder_label: None,
+        };
+        self.with_locks(|locks, me| match me {
+            Some(me) => locks.acquire(me, path, label),
+            None => (granted(), Vec::new()),
+        })
+        .await
+        .unwrap_or_else(granted)
+    }
+
+    pub async fn release_project(&mut self) {
+        self.with_locks(|locks, me| ((), me.map(|me| locks.release(me)).unwrap_or_default()))
+            .await;
+    }
+
+    /// `paths` pairs what the client sent with its canonical form.
+    pub async fn list_projects(&mut self, paths: Vec<(String, String)>) -> Vec<ProjectLockInfo> {
+        self.with_locks(|locks, me| (locks.list(me, paths), Vec::new()))
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Ask for a project on behalf of this route's client. The answer, `TakeoverResultOk`, goes to
+    /// that client once the holder has agreed, refused, gone, or run out of time.
+    pub async fn start_takeover(&mut self, path: String, label: String) {
+        let pending = self
+            .with_locks(|locks, me| match me {
+                Some(me) => locks.start_takeover(me, path, label),
+                None => (None, Vec::new()),
+            })
+            .await;
+        match (pending, &self.route) {
+            (Some(Some(request_id)), Route::Daemon { clients, .. }) => {
+                let clients = Arc::clone(clients);
+                tokio::spawn(async move {
+                    tokio::time::sleep(TAKEOVER_TIMEOUT).await;
+                    let mut clients = clients.lock().await;
+                    let effects = clients.locks.answer(None, &request_id, true);
+                    clients.apply(effects).await;
+                });
+            }
+            (Some(_), _) => {}
+            // Stdio: nobody else to ask.
+            (None, _) => {
+                let buf = encode(ServerResponse::TakeoverResultOk(TakeoverResult {
+                    granted: true,
+                }))
+                .await
+                .ok();
+                if let Some(buf) = buf {
+                    let _ = self.write(None, &buf).await;
+                }
+            }
+        }
+    }
+
+    pub async fn answer_takeover(&mut self, request_id: String, accept: bool) {
+        self.with_locks(|locks, me| ((), locks.answer(me, &request_id, accept)))
+            .await;
+    }
+
+    /// `id` said something, so it is alive.
+    pub async fn touch(&mut self, id: ClientId) {
+        if let Route::Daemon { clients, .. } = &self.route {
+            clients
+                .lock()
+                .await
+                .locks
+                .touch(id, tokio::time::Instant::now());
+        }
+    }
+
+    /// Take the locks of clients that have gone quiet. See `project_locks::STALE_AFTER`.
+    pub async fn release_stale(&mut self, max_age: tokio::time::Duration) {
+        self.with_locks(|locks, _| {
+            (
+                (),
+                locks.release_stale(tokio::time::Instant::now(), max_age),
+            )
+        })
+        .await;
     }
 
     /// Make `id` the owner of `session_id`, so what that session says from now on goes to it.
@@ -190,6 +350,8 @@ impl ClientSink {
                     (None, None, Some(id)) => clients.write_to(id, buf).await,
                     _ => clients.broadcast(buf).await,
                 }
+                // A client this write dropped may have held a lock.
+                clients.flush().await;
             }
         }
         Ok(())
@@ -252,5 +414,31 @@ mod tests {
         // A reply to a window that has gone goes nowhere, not to another window.
         to_b.lock().await.write(None, &[5]).await.unwrap();
         assert_eq!(read(&mut a_rx).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_lock_goes_with_the_client_that_held_it() {
+        let root = ClientSink::detached();
+        // Roomy enough that nobody reading does not block the broadcasts.
+        let attach = |sink: ClientOut| async move {
+            let (ours, theirs) = tokio::io::duplex(1 << 16);
+            (sink.lock().await.attach(Box::new(ours)).await, theirs)
+        };
+        let (a, _a_rx) = attach(root.clone()).await;
+        let (b, _b_rx) = attach(root.clone()).await;
+        let to_a = ClientSink::for_client(&root, a).await;
+        let to_b = ClientSink::for_client(&root, b).await;
+
+        let acquire = |sink: ClientOut| async move {
+            sink.lock()
+                .await
+                .acquire_project("/p".into(), "host".into())
+                .await
+                .acquired
+        };
+        assert!(acquire(to_a.clone()).await);
+        assert!(!acquire(to_b.clone()).await);
+        root.lock().await.detach(a).await;
+        assert!(acquire(to_b.clone()).await);
     }
 }

@@ -16,7 +16,8 @@ export function getErrorMessage(error: unknown): string {
 }
 
 /**
- * Prefix the Rust side uses to mark a project that is already open in another Maestro instance.
+ * Prefix the Rust side uses to mark a project that is already open in another Maestro window,
+ * followed by that window's label.
  * Defined as `PROJECT_LOCKED_PREFIX` in `src-tauri/src/project/lock.rs`; the two must be
  * changed together.
  */
@@ -29,6 +30,13 @@ const PROJECT_LOCKED_PREFIX = "PROJECT_LOCKED:";
  */
 export function isProjectLockedError(error: unknown): boolean {
   return getErrorMessage(error).includes(PROJECT_LOCKED_PREFIX);
+}
+
+/** Who holds the project, from an error `isProjectLockedError` accepts. */
+export function projectLockHolder(error: unknown): string {
+  const message = getErrorMessage(error);
+  const start = message.indexOf(PROJECT_LOCKED_PREFIX);
+  return message.slice(start + PROJECT_LOCKED_PREFIX.length).trim() || "another machine";
 }
 
 /**
