@@ -48,9 +48,3 @@ features:
     details: Import issues from GitHub, GitLab, Jira, Linear and others. Open pull requests on your forge.
     link: /guide/start-screen#integrations
 ---
-
-<div style="max-width: 1152px; margin: 64px auto 0; padding: 0 24px">
-
-![Running a task from the Kanban board, watching the agent work, and reviewing its diff in Maestro](../docs/assets/workflow.webp)
-
-</div>

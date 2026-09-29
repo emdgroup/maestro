@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vitepress dev",
     "build": "vitepress build",
-    "preview": "vitepress preview"
+    "preview": "vitepress preview",
+    "media": "bun -e \"const r = await fetch('https://github.com/emdgroup/maestro/releases/download/website-media/maestro.mp4'); if (!r.ok) throw new Error('maestro.mp4: HTTP ' + r.status); await Bun.write('public/maestro.mp4', r)\""
   },
   "dependencies": {
     "medium-zoom": "^1.1.0"
