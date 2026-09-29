@@ -1,49 +1,68 @@
-# How a task moves
+# Tasks
 
-Every task crosses the board left to right: **Planning → Queue → In progress → Review → Done**. Each stage can have its own agent, model and permissions, configured once per project as an _agent profile_ (Settings → Agents). Stages without a profile are skipped, and any task can skip Planning or Review individually from its **Agents** button.
+The Tasks tab (**Ctrl+1**) is the Kanban board. Every task crosses it from left to right, and each stage can be handed to a different agent.
+
+## The board
 
 <img src="../../docs/assets/board.webp" alt="Maestro Kanban board with two agents running on isolated tasks and more waiting in Queue and Review" width="960" />
 
-## Planning
+The toolbar above the columns:
 
-A new task is a title and a description. Pull one in from your issue tracker, or write it by hand. If the description is thin, press **Refine**: a read-only Refiner agent reads the repository and proposes a better one, which you accept or discard. Nothing runs until you move the card.
+- **Search tasks...** (**Ctrl+F**) filters by title, and **Priority** and **Label** filter by those.
+- The agent slots badge, such as `2/4`, shows how many agents are running against how many the connection allows. A session waiting in Review still holds its slot.
+- **Manual** or **Auto** decides whether tasks in Queue start on their own.
+- **Needs me** shows only the tasks waiting on you.
+- **Archive** lists finished and cancelled tasks, searchable, and reopens any of them.
+- **New Task** (**Ctrl+N**).
 
-## Queue
+## Creating a task
 
-Drag a card to Queue and Maestro starts it as soon as there is room. **Auto** starts everything eligible; **Manual** starts only tasks you deferred yourself. Room is measured per connection, either from free memory or as a fixed number of agents, and a session parked in Review still holds its slot until you deal with it.
+**New Task** opens the task dialog. A task is a title and a description, and everything else has a default:
 
-## In progress
+- **Description**: Markdown, with a small toolbar, rendered when you are not editing it.
+- **Attachments**: drop files on the dialog, paste an image, or browse. They are handed to the agent with the task.
+- **Workspace** (git projects): where the agent will work. **Create new worktree** gives the task a branch of its own, cut from the base branch you pick; you can also check out an existing branch, **Use the repository directory**, or **Reuse an existing workspace** another task left behind.
+- **Priority**: None, Low, Medium, High or Urgent.
 
-If the project has a Planner profile, the Planner runs first, read-only, and stops at the plan gate. You can annotate the plan passage by passage, send the notes back for another round, or start implementing. Approving starts a fresh Coder session with the plan text.
+Turn on **Create another** to keep the dialog open for the next one.
 
-The Coder gets a workspace of its own. The default is a new worktree on a new branch; you can instead point a task at the repository directory or reuse a worktree another task left behind. Two tasks running at once are two worktrees, so neither sees the other's edits.
+<img src="../../docs/assets/new-task.webp" alt="The Create Task dialog filled from GitHub issue #324, with the issue's title, description and Bug label" width="960" />
 
-While it runs you see the full session: every tool call, permission prompt and question in the stream, and a side panel beside it.
+### From your issue tracker
 
-<img src="../../docs/assets/session.webp" alt="A running Maestro session showing the agent activity feed, its tool calls, and the changed files panel" width="960" />
+When the project has issue tracking set up (see [Settings, Issue tracking](./settings#issue-tracking)), the dialog header carries an **Import issue** button with the tracker's logo. It opens a searchable list of the project's open issues, with a preview of the one under the cursor and a link to open it in the browser.
 
-The side panel is a tab strip. Some tabs open themselves when the agent produces something, the rest you add:
+Picking an issue fills the dialog: its title and body become the task's, its type becomes a label, and its priority carries over when it matches one of Maestro's. You can still edit everything before pressing **Create**. **Choose another issue** swaps it, and removing the issue clears what it filled in. Import works with GitHub, GitLab, Gitea, Forgejo, Azure DevOps and Jira Cloud.
 
-- **Overview** and **Plan**: what the task is, and the plan when a Planner wrote one, with passage-level annotations.
-- **Changes**: the diff so far, updating as the agent edits.
-- **Files**: the workspace tree with an editor. Change a file yourself, create one, show hidden files, open it in your OS or download it.
-- **Terminal**: a shell in the workspace, as many as you want.
-- **Subagents** and **Artifacts**: nested agents the main one spawned, and files it handed back.
-- **Canvas**: see below.
+<img src="../../docs/assets/issue-import.webp" alt="The Import issue list for emdgroup/maestro with a preview of the highlighted bug report" width="960" />
 
-<img src="../../docs/assets/side-panel-files.webp" alt="The Files tab of the side panel with store.ts open in the editor next to the agent stream" width="960" />
+An agent's answer can become a task too: every message in a session has **Create task from message**, which takes the first line as the title and the rest as the description. Select part of the message first to use only that.
 
-The canvas is where an agent shows work instead of describing it. A surface is an HTML document the agent writes, rendered in a sandboxed frame with Maestro's own theme — tables, charts, dashboards and real UI controls, in your colours. Click an element or drag a rectangle over it to attach a note, and the note goes back to the agent anchored to what you pointed at. Saved canvases are plain `.html` files that open in any browser.
+### Refining a thin description
 
-<img src="../../docs/assets/side-panel-canvas.webp" alt="The Canvas tab showing stat cards, a bar chart and a table the agent rendered for the repository" width="960" />
+**Refine** on a Planning card asks a read-only Refiner agent to read the repository and propose a better description. **Read proposal** shows it when it is ready, and **Use this description** replaces yours; nothing changes until you accept. It needs a Refinement profile under [Settings, Agents](./settings#agents).
 
-The stream itself renders more than text. Mermaid diagrams, SVG, images, KaTeX and chemical structures all draw inline, so an answer can be a flowchart or a formula rather than a description of one.
+## How a task moves
 
-<img src="../../docs/assets/rendering.webp" alt="One agent reply in the stream rendering a Mermaid flowchart, an SVG figure, a generated PNG, a KaTeX equation, a caffeine molecule from SMILES and a table" width="960" />
+Every task crosses the board left to right: **Planning → Queue → In progress → Review → Done**. Each stage can have its own agent, model and permissions, configured once per project as an _agent profile_ (Settings → Agents). Stages without a profile are skipped, and any task can skip Planning or Review individually from its **Agents** button.
 
-**Abandon** on a running card tears down the session, deletes the worktree and its branch, and puts the task back in Planning as if it had never run.
+### Planning
 
-## Review
+Nothing runs until you move the card. Refine it, edit it, or pick its agents here.
+
+### Queue
+
+Drag a card to Queue and Maestro starts it as soon as there is room. **Auto** starts everything eligible; **Manual** starts only tasks you start yourself with **Execute**. Room is measured per connection, either from free memory or as a fixed number of agents.
+
+### In progress
+
+If the project has a Planner profile, the Planner runs first, read-only, and stops at the plan gate. You can annotate the plan passage by passage, send the notes back for another round with **Refine plan**, or **Start implementing**. Approving starts a fresh Coder session with the plan text.
+
+The Coder gets the workspace the task asked for. Two tasks running at once are two worktrees, so neither sees the other's edits.
+
+The running card has **Join**, which opens the session in the [Agents tab](./agents): the live stream, the side panel with its diff, files, terminals and canvas, and every question the agent asks. **Abandon** tears the session down, deletes the worktree and its branch, and puts the task back in Planning as if it had never run.
+
+### Review
 
 When the Coder's turn ends with changes, the task moves to Review. If the project has a Reviewer profile, that agent goes first: read-only, with your project's review instructions, and it may send the work back to the Coder for rework up to three times without you.
 
@@ -60,6 +79,12 @@ A reviewer that can write is not a reviewer, so every role except the Coder runs
 
 <img src="../../docs/assets/review.webp" alt="Maestro diff viewer showing two hunks of an agent's change" width="960" />
 
-## Done
+### Done
 
 A task is Done with a record of how: merged, merged through a pull request, committed locally, or finished with no changes.
+
+## The task screen
+
+Click a card to open it. **Details** edits the title, description, attachments, labels, workspace and priority while the task has not started. **Outcome** is the task's thread: each agent's closing message when its phase ends (the proposal, the plan, the review verdict, the outcome), and notes you add yourself. Agents can read and comment on this thread too.
+
+**Cancel task** moves it to the archive and keeps its worktree and branch. **Delete task** (**Ctrl+D**) removes it.
