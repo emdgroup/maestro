@@ -226,7 +226,7 @@ Tasks:
 
 - [x] T0 Slow daemon arms answer off the main loop, so a board query does not wait behind a skills
       install (`f30ebea7`). `RunAutomation` still runs `git worktree add` inline
-- [ ] T1 `maestro-protocol`: row types, the transition event and its guard, the requests, the
+- [x] T1 `maestro-protocol`: row types, the transition event and its guard, the requests, the
       pushes; `PROTOCOL_VERSION` 9
 - [ ] T2 `maestro-server` store for tasks and threads: schema, migration, per-project counter,
       `transition` rules and guards moved with their tests

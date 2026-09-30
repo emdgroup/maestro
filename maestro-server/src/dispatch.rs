@@ -1482,6 +1482,55 @@ pub(crate) async fn dispatch_message(
         // a diagnostic, put every ping on the IPC channel.
         MaestroRpcMessage::Request(ServerRequest::Pong { seq: _ }) => {}
 
+        // Wire types only for now: the task, worktree and review store lands in phase 2 T2-T4,
+        // which replaces this arm.
+        MaestroRpcMessage::Request(
+            ServerRequest::ListTasks(_)
+            | ServerRequest::GetTask(_)
+            | ServerRequest::CreateTask(_)
+            | ServerRequest::UpdateTask(_)
+            | ServerRequest::ArchiveTask(_)
+            | ServerRequest::CancelTask(_)
+            | ServerRequest::DeleteTask(_)
+            | ServerRequest::ApplyTaskTransition(_)
+            | ServerRequest::EndTaskTurn(_)
+            | ServerRequest::CloseRefinement(_)
+            | ServerRequest::RequestTaskExecution(_)
+            | ServerRequest::ListQueueCandidates(_)
+            | ServerRequest::ListTasksAwaitingMerge(_)
+            | ServerRequest::ImportTasks(_)
+            | ServerRequest::ListTaskComments(_)
+            | ServerRequest::AddTaskComment(_)
+            | ServerRequest::ListTaskAttachments(_)
+            | ServerRequest::AddTaskAttachment(_)
+            | ServerRequest::DeleteTaskAttachment(_)
+            | ServerRequest::ListTaskRelationships(_)
+            | ServerRequest::AddTaskRelationship(_)
+            | ServerRequest::DeleteTaskRelationship(_)
+            | ServerRequest::ListTaskInstructions(_)
+            | ServerRequest::AddTaskInstruction(_)
+            | ServerRequest::ListWorktrees(_)
+            | ServerRequest::GetWorktree(_)
+            | ServerRequest::InsertWorktree(_)
+            | ServerRequest::UpdateWorktree(_)
+            | ServerRequest::DeleteWorktrees(_)
+            | ServerRequest::ClaimWorktreeForTask(_)
+            | ServerRequest::GetTaskReview(_)
+            | ServerRequest::SaveTaskReview(_)
+            | ServerRequest::ClearTaskReview(_),
+        ) => {
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: "This server does not store tasks yet".to_string(),
+                        session_id: None,
+                    })),
+                )
+                .await
+            );
+        }
+
         MaestroRpcMessage::Response(_) => {}
     }
 

@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -214,6 +214,46 @@ pub enum ServerRequest {
     RequestTakeover(AcquireProjectLockRequest),
     /// The holder's answer to a [`ServerResponse::TakeoverRequested`].
     TakeoverAnswer(TakeoverAnswer),
+    /// Every task of the project, newest first, archived ones included.
+    ListTasks(ProjectRef),
+    GetTask(TaskRef),
+    CreateTask(CreateTaskRequest),
+    UpdateTask(UpdateTaskRequest),
+    ArchiveTask(TaskRef),
+    /// Archive and apply `Cancelled`, in that order.
+    CancelTask(TaskRef),
+    DeleteTask(TaskRef),
+    /// One guarded transition, the guard read under the same lock as the write.
+    ApplyTaskTransition(ApplyTaskTransitionRequest),
+    EndTaskTurn(EndTaskTurnRequest),
+    CloseRefinement(CloseRefinementRequest),
+    RequestTaskExecution(RequestTaskExecutionRequest),
+    /// Queued tasks with no phase, deferred first, then by priority and age.
+    ListQueueCandidates(ListQueueCandidatesRequest),
+    /// Unarchived tasks at `AwaitingMerge` with a pull request number, for the forge sweep.
+    ListTasksAwaitingMerge(ProjectRef),
+    ImportTasks(ImportTasksRequest),
+    /// A task's thread, oldest first.
+    ListTaskComments(TaskRef),
+    /// A `proposal` or `plan` replaces the task's previous one of that kind.
+    AddTaskComment(AddTaskCommentRequest),
+    ListTaskAttachments(TaskRef),
+    AddTaskAttachment(AddTaskAttachmentRequest),
+    DeleteTaskAttachment(DeleteTaskAttachmentRequest),
+    ListTaskRelationships(TaskRef),
+    AddTaskRelationship(AddTaskRelationshipRequest),
+    DeleteTaskRelationship(DeleteTaskRelationshipRequest),
+    ListTaskInstructions(TaskRef),
+    AddTaskInstruction(AddTaskInstructionRequest),
+    ListWorktrees(ListWorktreesRequest),
+    GetWorktree(WorktreeRef),
+    InsertWorktree(InsertWorktreeRequest),
+    UpdateWorktree(UpdateWorktreeRequest),
+    DeleteWorktrees(DeleteWorktreesRequest),
+    ClaimWorktreeForTask(ClaimWorktreeForTaskRequest),
+    GetTaskReview(TaskRef),
+    SaveTaskReview(SaveTaskReviewRequest),
+    ClearTaskReview(TaskRef),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -1095,6 +1135,749 @@ pub enum KickReason {
     Stale,
 }
 
+// --- Tasks, their threads, worktrees and reviews ---
+//
+// Rows of the daemon's `projects.db`, keyed by project path where the app's tables carried a
+// `projects.id`. Task ids are per project, so every request naming one names the project too.
+// Plain serde: the app mirrors these with its own `specta::Type` structs, as it does `Automation`,
+// so the binary deployed to every remote host does not compile specta in.
+
+/// Deserializes a present `null` as `Some(None)`, so an update can tell "clear this column" from
+/// "leave it alone". Paired with `default`, which gives the absent field its `None`.
+fn clearable<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskStatus {
+    Planning,
+    Queue,
+    InProgress,
+    Review,
+    Done,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPriority {
+    Urgent,
+    High,
+    Medium,
+    Low,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkspaceMode {
+    NewWorktree,
+    RepositoryDirectory,
+    ReuseWorkspace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BranchMode {
+    Create,
+    Checkout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPhase {
+    Spawning,
+    Refining,
+    Drafting,
+    PlanReview,
+    Implementing,
+    Rework,
+    SelfReview,
+    Approval,
+    AwaitingMerge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PhaseStatus {
+    Running,
+    Blocked,
+    Waiting,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskBall {
+    Agent,
+    User,
+    External,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskCompletion {
+    Merged,
+    MergedViaPR,
+    LocalOnly,
+    NoChanges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PullRequestCi {
+    Passing,
+    Failing,
+    Pending,
+}
+
+/// The pipeline role a session was started for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentRole {
+    Refiner,
+    Planner,
+    Coder,
+    Reviewer,
+}
+
+/// One task, every column the app reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Task {
+    pub id: i32,
+    pub project_path: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub status: TaskStatus,
+    pub priority: TaskPriority,
+    pub base_branch: String,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub is_imported: Option<bool>,
+    #[serde(default)]
+    pub import_source: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub model_override: Option<String>,
+    #[serde(default)]
+    pub mcp_allowlist: Option<Vec<String>>,
+    #[serde(default)]
+    pub skills_override: Option<Vec<String>>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub external_url: Option<String>,
+    #[serde(default)]
+    pub external_updated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub auto_approve: bool,
+    pub workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    pub workspace_worktree_id: Option<i32>,
+    pub workspace_branch_mode: BranchMode,
+    #[serde(default)]
+    pub workspace_branch: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub permission_mode_override: Option<String>,
+    #[serde(default)]
+    pub execution_start_sha: Option<String>,
+    #[serde(default)]
+    pub phase: Option<TaskPhase>,
+    #[serde(default)]
+    pub phase_status: Option<PhaseStatus>,
+    pub ball: TaskBall,
+    #[serde(default)]
+    pub completion: Option<TaskCompletion>,
+    #[serde(default)]
+    pub execute_requested_at: Option<String>,
+    #[serde(default)]
+    pub pull_request_url: Option<String>,
+    #[serde(default)]
+    pub pull_request_number: Option<i64>,
+    pub review_rounds: i32,
+    pub fix_rounds: i32,
+    #[serde(default)]
+    pub pull_request_ci: Option<PullRequestCi>,
+    /// JSON keyed by role name, stored and returned as the app wrote it.
+    #[serde(default)]
+    pub profile_overrides: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskRelationship {
+    pub id: i32,
+    pub from_task_id: i32,
+    pub to_task_id: i32,
+    pub relationship_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskInstruction {
+    pub id: i32,
+    pub task_id: i32,
+    pub content: String,
+    pub source: String,
+    pub created_at: String,
+}
+
+/// One entry in a task's outcome thread.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskComment {
+    pub id: i32,
+    pub task_id: i32,
+    pub kind: String,
+    pub author: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub external_ref: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskAttachment {
+    pub id: i32,
+    pub task_id: i32,
+    pub filename: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Worktree {
+    pub id: i32,
+    pub project_path: String,
+    /// `None` for a worktree no task owns: a session's, or one an automation kept.
+    #[serde(default)]
+    pub task_id: Option<i32>,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    /// Relative to the project root. Empty while a session's worktree is reserved but not made.
+    pub path: String,
+    #[serde(default)]
+    pub git_status: Option<String>,
+    pub created_at: String,
+}
+
+/// A task's review, with the per-file comments hanging off it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskReview {
+    pub id: i32,
+    pub task_id: i32,
+    /// `Approve` or `RequestChanges`, as the app wrote it.
+    pub decision: String,
+    #[serde(default)]
+    pub general_feedback: Option<String>,
+    #[serde(default)]
+    pub reviewed_at: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub comments: Vec<ReviewComment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReviewComment {
+    pub id: i32,
+    pub review_id: i32,
+    pub file_path: String,
+    pub comment: String,
+    pub created_at: String,
+}
+
+/// A project, for the requests and pushes that need nothing else.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectRef {
+    pub project_path: String,
+}
+
+/// One task of one project.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TaskRef {
+    pub project_path: String,
+    pub task_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreateTaskRequest {
+    pub project_path: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    pub base_branch: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    /// `None` is `Medium`, the column default.
+    #[serde(default)]
+    pub priority: Option<TaskPriority>,
+    #[serde(default)]
+    pub auto_approve: bool,
+    pub workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    pub workspace_worktree_id: Option<i32>,
+    pub workspace_branch_mode: BranchMode,
+    #[serde(default)]
+    pub workspace_branch: Option<String>,
+    #[serde(default)]
+    pub model_override: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdateTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub update: TaskUpdate,
+}
+
+/// The columns an update writes. An absent field is left alone; for the `Option<Option<_>>` ones a
+/// `null` clears the column.
+///
+/// One struct for the user's edits, the task settings form, issue sync and the pipeline's own
+/// columns. The pipeline's (`execution_start_sha`, the pull request fields, `increment_fix_rounds`)
+/// leave `updated_at` alone, because a poll or a spawn is not an edit to the task; any other field
+/// bumps it.
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct TaskUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_approve: Option<bool>,
+    /// Writes `workspace_worktree_id` with it, so leaving `ReuseWorkspace` drops the pin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<WorkspaceMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_worktree_id: Option<i32>,
+    /// Writes `workspace_branch` with it, so `Checkout` drops the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_branch_mode: Option<BranchMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_branch: Option<String>,
+    /// A manual move: goes through the `ManualMove` transition, and un-archives the task unless
+    /// the move is to `Cancelled`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model_override: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mcp_allowlist: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub skills_override: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permission_mode_override: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub profile_overrides: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub external_updated_at: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub execution_start_sha: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_number: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "clearable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pull_request_ci: Option<Option<PullRequestCi>>,
+    /// Count one more CI fix round.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub increment_fix_rounds: bool,
+}
+
+/// Something that happened to a task, mirroring the app's `task::transition::TaskTransition`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskTransition {
+    ManualMove(TaskStatus),
+    ExecutionStarted,
+    SessionReady(AgentRole),
+    SpawnAborted,
+    AwaitingUserInput,
+    Unblocked,
+    TurnCompleted {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
+    ReviewFinished,
+    ReviewRejected,
+    ArtifactDelivered,
+    Stopped,
+    RefinementClosed,
+    ReworkRequested,
+    MergeConflict,
+    Merged,
+    ApprovedWithoutMerge,
+    PullRequestOpened,
+    PullRequestMerged,
+    PullRequestClosed,
+    PullRequestConflicted,
+    PullRequestMergeable,
+    CiFixRequested,
+    CiFixPushed,
+    Discarded,
+    Cancelled,
+    PhaseFailed,
+}
+
+/// What must hold, read under the store's lock, for a transition to apply. One per guarded
+/// function in the app's `task::transition`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransitionGuard {
+    /// `apply`: nothing, and a missing task is an error.
+    #[default]
+    Always,
+    /// `apply_if_status`: the task is in one of these columns.
+    Status(Vec<TaskStatus>),
+    /// `claim_for_execution`: a handoff, or claimable and in one of these columns. The event is
+    /// `ExecutionStarted` whatever the request says.
+    Claim(Vec<TaskStatus>),
+    /// `apply_if_spawning`.
+    Spawning,
+    /// `apply_if_active`: the task still has a phase.
+    Active,
+    /// `apply_if_changed`: the transition would change the stored state.
+    Changed,
+    /// The task is in this phase, as `end_self_review` asks of `SelfReview`.
+    Phase(TaskPhase),
+    /// `clear_blocked`: the phase status is `Blocked`.
+    Blocked,
+    /// `fail_if_agent_running`: the phase status is `Running` or `Blocked`.
+    AgentRunning,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ApplyTaskTransitionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub event: TaskTransition,
+    #[serde(default)]
+    pub guard: TransitionGuard,
+}
+
+/// A task, or `None` where the guard refused or nothing was found.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalTask {
+    #[serde(default)]
+    pub task: Option<Task>,
+}
+
+/// How an agent's turn on a task ended, as the app classified it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnEnding {
+    Completed {
+        is_git_repo: bool,
+        has_changes: Option<bool>,
+        reviewer_pending: bool,
+    },
+    Stalled,
+    Failed,
+    /// A read-only role's deliverable arrived as a request to leave plan mode.
+    ArtifactDelivered,
+}
+
+/// The turn end, under one lock: read the phase, turn a reviewer's reply into its verdict
+/// (counting the round when it rejects), apply the transition while the task still has a phase,
+/// and file the closing message in the thread by what the phase produced.
+///
+/// A CI fix ending at `AwaitingMerge` is not sent here: the app pushes it and applies
+/// `CiFixPushed` itself.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct EndTaskTurnRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub ending: TurnEnding,
+    /// The reply read as an approving verdict. Consulted only when the phase is `SelfReview`.
+    #[serde(default)]
+    pub review_approved: bool,
+    pub closing_message: String,
+}
+
+/// Answer the refiner's proposal gate: on accept, the latest proposal becomes the description and
+/// leaves the thread; either way `RefinementClosed` applies.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CloseRefinementRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub accept: bool,
+}
+
+/// Defer an Execute the host has no slot for: a Planning task moves to Queue, and a task parked
+/// there is stamped with `execute_requested_at` if it has none.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RequestTaskExecutionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RequestTaskExecutionResponse {
+    /// `false` when the task moved away first, and the caller should let the claim refuse it.
+    pub deferred: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListQueueCandidatesRequest {
+    pub project_path: String,
+    /// Auto mode. Without it only deferred tasks are candidates.
+    #[serde(default)]
+    pub include_undeferred: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskIdList {
+    pub task_ids: Vec<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskList {
+    pub tasks: Vec<Task>,
+}
+
+/// Create a task per issue not already imported into the project.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportTasksRequest {
+    pub project_path: String,
+    pub base_branch: String,
+    pub issues: Vec<ImportedIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportedIssue {
+    pub external_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub url: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    pub priority: TaskPriority,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskCommentRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub kind: String,
+    pub author: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub external_ref: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskCommentList {
+    pub comments: Vec<TaskComment>,
+}
+
+/// Returns the existing row when that file is already attached.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskAttachmentRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub filename: String,
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteTaskAttachmentRequest {
+    pub project_path: String,
+    pub attachment_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskAttachmentList {
+    pub attachments: Vec<TaskAttachment>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskRelationshipRequest {
+    pub project_path: String,
+    pub from_task_id: i32,
+    pub to_task_id: i32,
+    pub relationship_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteTaskRelationshipRequest {
+    pub project_path: String,
+    pub relationship_id: i32,
+}
+
+/// Every relationship the task is on either end of.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskRelationshipList {
+    pub relationships: Vec<TaskRelationship>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AddTaskInstructionRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub content: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TaskInstructionList {
+    pub instructions: Vec<TaskInstruction>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListWorktreesRequest {
+    pub project_path: String,
+    /// Only the worktrees this task owns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct WorktreeList {
+    pub worktrees: Vec<Worktree>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct WorktreeRef {
+    pub project_path: String,
+    pub worktree_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalWorktree {
+    #[serde(default)]
+    pub worktree: Option<Worktree>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct InsertWorktreeRequest {
+    pub project_path: String,
+    #[serde(default)]
+    pub task_id: Option<i32>,
+    pub branch_name: String,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    /// Empty reserves the row's id for a session worktree not made yet.
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdateWorktreeRequest {
+    pub project_path: String,
+    pub worktree_id: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct DeleteWorktreesRequest {
+    pub project_path: String,
+    pub worktree_ids: Vec<i32>,
+}
+
+/// Hand a worktree to a task, releasing any other the task owned. An error when the worktree is
+/// gone.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ClaimWorktreeForTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub worktree_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalTaskReview {
+    #[serde(default)]
+    pub review: Option<TaskReview>,
+}
+
+/// Write a task's review.
+///
+/// With `comments` the review is replaced, and its comments with it. Without, it is updated in
+/// place and keeps the comments it has, which is what a merge conflict's feedback needs.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveTaskReviewRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub decision: String,
+    #[serde(default)]
+    pub general_feedback: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<Vec<ReviewCommentInput>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewCommentInput {
+    pub file_path: String,
+    pub comment: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SaveTaskReviewResponse {
+    pub review_id: i32,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1168,6 +1951,48 @@ pub enum ServerResponse {
     TakeoverRequested(TakeoverRequested),
     /// This client no longer holds its project. Sent to that client alone.
     ProjectKicked(ProjectKicked),
+    ListTasksOk(TaskList),
+    GetTaskOk(OptionalTask),
+    CreateTaskOk(Task),
+    UpdateTaskOk(Task),
+    ArchiveTaskOk(Task),
+    CancelTaskOk(Task),
+    DeleteTaskOk,
+    ApplyTaskTransitionOk(OptionalTask),
+    /// The task when the turn's transition applied, `None` when the task had already been parked.
+    EndTaskTurnOk(OptionalTask),
+    CloseRefinementOk(Task),
+    RequestTaskExecutionOk(RequestTaskExecutionResponse),
+    ListQueueCandidatesOk(TaskIdList),
+    ListTasksAwaitingMergeOk(TaskList),
+    /// The tasks created, not the issues skipped.
+    ImportTasksOk(TaskList),
+    ListTaskCommentsOk(TaskCommentList),
+    AddTaskCommentOk(TaskComment),
+    ListTaskAttachmentsOk(TaskAttachmentList),
+    AddTaskAttachmentOk(TaskAttachment),
+    DeleteTaskAttachmentOk,
+    ListTaskRelationshipsOk(TaskRelationshipList),
+    AddTaskRelationshipOk(TaskRelationship),
+    DeleteTaskRelationshipOk,
+    ListTaskInstructionsOk(TaskInstructionList),
+    AddTaskInstructionOk(TaskInstruction),
+    ListWorktreesOk(WorktreeList),
+    GetWorktreeOk(OptionalWorktree),
+    InsertWorktreeOk(Worktree),
+    UpdateWorktreeOk(Worktree),
+    DeleteWorktreesOk,
+    ClaimWorktreeForTaskOk(Worktree),
+    GetTaskReviewOk(OptionalTaskReview),
+    SaveTaskReviewOk(SaveTaskReviewResponse),
+    ClearTaskReviewOk,
+    /// Some task of the project changed. Pushed to every client, whoever wrote it, so a second
+    /// window refetches its board.
+    TasksChanged(ProjectRef),
+    /// A task's thread changed.
+    TaskCommentsChanged(TaskRef),
+    /// Some worktree row of the project changed.
+    WorktreesChanged(ProjectRef),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,
@@ -1196,6 +2021,9 @@ impl ServerResponse {
             | Self::ProjectLocksChanged
             | Self::TakeoverRequested(_)
             | Self::ProjectKicked(_)
+            | Self::TasksChanged(_)
+            | Self::TaskCommentsChanged(_)
+            | Self::WorktreesChanged(_)
             | Self::Ping { .. }
             | Self::Diagnostic(_) => false,
             Self::HandshakeOk(_)
@@ -1243,7 +2071,40 @@ impl ServerResponse {
             | Self::DetectProjectAgentsOk(_)
             | Self::AcquireProjectLockOk(_)
             | Self::ProjectLocksOk(_)
-            | Self::TakeoverResultOk(_) => true,
+            | Self::TakeoverResultOk(_)
+            | Self::ListTasksOk(_)
+            | Self::GetTaskOk(_)
+            | Self::CreateTaskOk(_)
+            | Self::UpdateTaskOk(_)
+            | Self::ArchiveTaskOk(_)
+            | Self::CancelTaskOk(_)
+            | Self::DeleteTaskOk
+            | Self::ApplyTaskTransitionOk(_)
+            | Self::EndTaskTurnOk(_)
+            | Self::CloseRefinementOk(_)
+            | Self::RequestTaskExecutionOk(_)
+            | Self::ListQueueCandidatesOk(_)
+            | Self::ListTasksAwaitingMergeOk(_)
+            | Self::ImportTasksOk(_)
+            | Self::ListTaskCommentsOk(_)
+            | Self::AddTaskCommentOk(_)
+            | Self::ListTaskAttachmentsOk(_)
+            | Self::AddTaskAttachmentOk(_)
+            | Self::DeleteTaskAttachmentOk
+            | Self::ListTaskRelationshipsOk(_)
+            | Self::AddTaskRelationshipOk(_)
+            | Self::DeleteTaskRelationshipOk
+            | Self::ListTaskInstructionsOk(_)
+            | Self::AddTaskInstructionOk(_)
+            | Self::ListWorktreesOk(_)
+            | Self::GetWorktreeOk(_)
+            | Self::InsertWorktreeOk(_)
+            | Self::UpdateWorktreeOk(_)
+            | Self::DeleteWorktreesOk
+            | Self::ClaimWorktreeForTaskOk(_)
+            | Self::GetTaskReviewOk(_)
+            | Self::SaveTaskReviewOk(_)
+            | Self::ClearTaskReviewOk => true,
         }
     }
 }
@@ -1775,7 +2636,7 @@ mod tests {
     use super::*;
 
     fn id_samples() -> Vec<MaestroRpcMessage> {
-        vec![
+        let mut samples = vec![
             MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
                 session_id: "session".to_string(),
                 terminal_id: "terminal".to_string(),
@@ -1830,7 +2691,175 @@ mod tests {
                 project_path: "/srv/shop".to_string(),
                 requester_label: "laptop".to_string(),
             })),
+        ];
+        samples.extend(task_messages());
+        samples
+    }
+
+    fn sample_task() -> Task {
+        Task {
+            id: 3,
+            project_path: "/srv/shop".to_string(),
+            title: "Fix login".to_string(),
+            description: Some("It fails".to_string()),
+            status: TaskStatus::Review,
+            priority: TaskPriority::High,
+            base_branch: "main".to_string(),
+            archived_at: None,
+            external_id: Some("jira:SHOP-1".to_string()),
+            is_imported: Some(true),
+            import_source: Some("jira".to_string()),
+            skills: vec!["rust".to_string()],
+            model_override: None,
+            mcp_allowlist: Some(vec!["maestro".to_string()]),
+            skills_override: None,
+            labels: vec!["bug".to_string()],
+            external_url: None,
+            external_updated_at: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-02T00:00:00Z".to_string(),
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::ReuseWorkspace,
+            workspace_worktree_id: Some(4),
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            agent_id: Some("claude-acp".to_string()),
+            permission_mode_override: None,
+            execution_start_sha: Some("abc123".to_string()),
+            phase: Some(TaskPhase::AwaitingMerge),
+            phase_status: Some(PhaseStatus::Waiting),
+            ball: TaskBall::External,
+            completion: None,
+            execute_requested_at: None,
+            pull_request_url: Some("https://example.com/pr/9".to_string()),
+            pull_request_number: Some(9),
+            review_rounds: 1,
+            fix_rounds: 0,
+            pull_request_ci: Some(PullRequestCi::Pending),
+            profile_overrides: Some(r#"{"Planner":null}"#.to_string()),
+        }
+    }
+
+    /// Payloads carrying an `id` of their own, a transition with a guard, a composite step and a
+    /// push, which is what the `rpc_id` round trip and `is_reply` have to hold for.
+    fn task_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Response(ServerResponse::CreateTaskOk(sample_task())),
+            MaestroRpcMessage::Response(ServerResponse::GetTaskOk(OptionalTask { task: None })),
+            MaestroRpcMessage::Request(ServerRequest::UpdateTask(UpdateTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                update: TaskUpdate {
+                    title: Some("Fix login".to_string()),
+                    description: Some(None),
+                    status: Some(TaskStatus::Queue),
+                    pull_request_ci: Some(None),
+                    execution_start_sha: Some(Some("abc123".to_string())),
+                    increment_fix_rounds: true,
+                    ..TaskUpdate::default()
+                },
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::TurnCompleted {
+                        is_git_repo: true,
+                        has_changes: None,
+                        reviewer_pending: false,
+                    },
+                    guard: TransitionGuard::Status(vec![TaskStatus::Planning, TaskStatus::Queue]),
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::SessionReady(AgentRole::Coder),
+                    guard: TransitionGuard::Phase(TaskPhase::SelfReview),
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                ending: TurnEnding::Completed {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: true,
+                },
+                review_approved: false,
+                closing_message: "Done.".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::InsertWorktreeOk(Worktree {
+                id: 4,
+                project_path: "/srv/shop".to_string(),
+                task_id: None,
+                branch_name: "maestro/3-fix-login".to_string(),
+                base_branch: Some("main".to_string()),
+                path: String::new(),
+                git_status: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TasksChanged(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(TaskRef {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+            })),
         ]
+    }
+
+    #[test]
+    fn roundtrip_task_messages() {
+        for message in task_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+            assert_eq!(message.session_id(), None);
+        }
+    }
+
+    #[test]
+    fn task_pushes_are_not_replies_and_task_answers_are() {
+        assert!(!ServerResponse::TasksChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(!ServerResponse::WorktreesChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(ServerResponse::EndTaskTurnOk(OptionalTask { task: None }).is_reply());
+        assert!(ServerResponse::DeleteWorktreesOk.is_reply());
+    }
+
+    /// `null` clears a column and an absent key leaves it alone, which a plain `Option<Option<_>>`
+    /// cannot tell apart on the way in.
+    #[test]
+    fn task_update_tells_a_cleared_column_from_an_untouched_one() {
+        let json = r#"{"direction":"request","type":"update_task","project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}"#;
+        let MaestroRpcMessage::Request(ServerRequest::UpdateTask(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected an update_task request");
+        };
+        assert_eq!(request.update.pull_request_ci, Some(None));
+        assert_eq!(request.update.description, Some(Some("New".to_string())));
+        assert_eq!(request.update.execution_start_sha, None);
+        assert!(!request.update.increment_fix_rounds);
+    }
+
+    #[test]
+    fn a_transition_without_a_guard_is_unguarded() {
+        let json = r#"{"direction":"request","type":"apply_task_transition","project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}"#;
+        let MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected an apply_task_transition request");
+        };
+        assert_eq!(request.event, TaskTransition::ManualMove(TaskStatus::Queue));
+        assert_eq!(request.guard, TransitionGuard::Always);
     }
 
     #[tokio::test]
