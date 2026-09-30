@@ -37,7 +37,7 @@ async fn send_prompt_impl(
         }
         session.and_then(|s| s.task_key())
     };
-    clear_task_blocked(app_state, task);
+    clear_task_blocked(app_state, task).await;
 
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id.to_string(),
@@ -84,7 +84,7 @@ pub async fn respond_acp_permission(
         }
         session.and_then(|s| s.task_key())
     };
-    clear_task_blocked(&app_state, task);
+    clear_task_blocked(&app_state, task).await;
 
     // A question Maestro asked itself, such as `run_automation`'s, is answered here: the server
     // never saw it and has nothing waiting on it.
@@ -112,14 +112,21 @@ pub async fn respond_acp_permission(
 /// Paired with `mark_task_blocked` in `reader_task`. Missing this leaves the card pulsing for an
 /// answer that has already been given — the cost of persisting the blocked state rather than
 /// deriving it from live session events, which used to self-heal on reload.
-pub(crate) fn clear_task_blocked(app_state: &Arc<AppState>, task: Option<crate::acp::TaskKey>) {
+///
+/// Awaited rather than spawned: every caller is a command or a host tool, off the shared reader,
+/// and a spawned clear could land before a mark still in flight.
+pub(crate) async fn clear_task_blocked(
+    app_state: &Arc<AppState>,
+    task: Option<crate::acp::TaskKey>,
+) {
     if let Some(task) = task {
-        crate::acp::reader_task::spawn_transition(
+        crate::acp::reader_task::transition_task(
             app_state,
             task,
             maestro_protocol::TaskTransition::Unblocked,
             maestro_protocol::TransitionGuard::Blocked,
-        );
+        )
+        .await;
     }
 }
 
@@ -135,7 +142,7 @@ pub async fn respond_acp_elicitation(
         let sessions = app_state.acp.sessions.lock().await;
         sessions.get(session_id).and_then(|s| s.task_key())
     };
-    clear_task_blocked(&app_state, task);
+    clear_task_blocked(&app_state, task).await;
 
     let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id: session_id.to_string(),

@@ -860,6 +860,97 @@ mod tests {
         );
     }
 
+    /// A status from `update_task` is the user dragging the card: it takes the task out of the
+    /// pipeline rather than leaving a phase claiming an agent is still at work.
+    #[tokio::test]
+    async fn update_task_moves_a_task_as_the_user_would() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let canonical = crate::automations::canonical_project_path(&project_path);
+        let store: Store = Arc::new(tokio::sync::Mutex::new(
+            crate::project_store::open_in_memory(),
+        ));
+        let mut sessions = SessionMap::new();
+        sessions.insert("session".to_string(), session_in(&project_path, None));
+
+        ok(call(
+            &sessions,
+            Some(&store),
+            "create_task",
+            json!({ "title": "Ship it" }),
+        )
+        .await);
+        crate::task_store::transition::apply_transition(
+            &mut *store.lock().await,
+            &maestro_protocol::ApplyTaskTransitionRequest {
+                project_path: canonical.clone(),
+                task_id: 1,
+                event: maestro_protocol::TaskTransition::SessionReady(
+                    maestro_protocol::AgentRole::Coder,
+                ),
+                guard: maestro_protocol::TransitionGuard::Always,
+                update: None,
+                comment: None,
+            },
+        )
+        .expect("apply")
+        .expect("applied");
+
+        let moved = ok(call(
+            &sessions,
+            Some(&store),
+            "update_task",
+            json!({ "id": 1, "status": "Review" }),
+        )
+        .await);
+        assert_eq!(moved["status"], "Review");
+        let stored = crate::task_store::list(&*store.lock().await, &canonical).expect("list");
+        assert_eq!(stored[0].phase, None);
+        assert_eq!(stored[0].phase_status, None);
+        assert_eq!(stored[0].ball, maestro_protocol::TaskBall::None);
+    }
+
+    /// Ids are small integers per project, so an id from another project must not reach its board.
+    #[tokio::test]
+    async fn update_task_refuses_another_projects_task() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let other = tempfile::tempdir().expect("other project dir");
+        let other_path = other.path().to_string_lossy().into_owned();
+        let store: Store = Arc::new(tokio::sync::Mutex::new(
+            crate::project_store::open_in_memory(),
+        ));
+        let mut sessions = SessionMap::new();
+        sessions.insert("session".to_string(), session_in(&other_path, None));
+        for title in ["First", "Second"] {
+            ok(call(
+                &sessions,
+                Some(&store),
+                "create_task",
+                json!({ "title": title }),
+            )
+            .await);
+        }
+        sessions.insert("session".to_string(), session_in(&project_path, None));
+
+        let refused = call(
+            &sessions,
+            Some(&store),
+            "update_task",
+            json!({ "id": 2, "status": "Done" }),
+        )
+        .await;
+        assert_eq!(refused.error.as_deref(), Some("no task 2 in this project"));
+        let untouched = crate::task_store::list(
+            &*store.lock().await,
+            &crate::automations::canonical_project_path(&other_path),
+        )
+        .expect("list");
+        assert!(untouched
+            .iter()
+            .all(|task| task.status == TaskStatus::Planning));
+    }
+
     #[tokio::test]
     async fn cancel_fails_only_the_closing_session() {
         let (mut pending, mut receivers) =

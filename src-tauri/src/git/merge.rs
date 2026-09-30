@@ -668,14 +668,19 @@ pub async fn reconcile_pull_requests(
                 // CI-fix coder is mid-turn would take the session's task out from under it, and
                 // that turn ends in a push the next sweep should be reading anyway.
                 if task.ball == TaskBall::External && details.mergeable == Some(false) {
-                    apply_transition_on_server(
+                    // Guarded on the ball read above: a coder may have claimed the task since.
+                    if apply_transition_on_server(
                         &app_state,
                         project_id,
                         task_id,
                         TaskTransition::PullRequestConflicted,
-                        TransitionGuard::Always,
+                        TransitionGuard::Ball(maestro_protocol::TaskBall::External),
                     )
-                    .await?;
+                    .await?
+                    .is_none()
+                    {
+                        continue;
+                    }
                     log::info!(
                         "Pull request #{} conflicts; task {} needs a rebase",
                         number,
@@ -696,14 +701,19 @@ pub async fn reconcile_pull_requests(
                     if details.mergeable != Some(true) {
                         continue;
                     }
-                    apply_transition_on_server(
+                    // Guarded on the ball read above: a coder may have claimed the task since.
+                    if apply_transition_on_server(
                         &app_state,
                         project_id,
                         task_id,
                         TaskTransition::PullRequestMergeable,
-                        TransitionGuard::Always,
+                        TransitionGuard::Ball(maestro_protocol::TaskBall::User),
                     )
-                    .await?;
+                    .await?
+                    .is_none()
+                    {
+                        continue;
+                    }
                     log::info!(
                         "Pull request #{} merges again; task {} is back with the forge",
                         number,
@@ -811,7 +821,7 @@ async fn record_pull_request_ci(
     task: &Task,
     ci: Option<PullRequestCi>,
 ) -> Result<bool, String> {
-    if task.pull_request_ci == ci {
+    if !ci_is_news(task.pull_request_ci, ci) {
         return Ok(false);
     }
     update_task_on_server(
@@ -826,6 +836,12 @@ async fn record_pull_request_ci(
     .await
     .map_err(|e| format!("Could not record CI for task {}: {}", task.id, e))?;
     Ok(true)
+}
+
+/// Whether CI said something the task does not already hold. `stored` has been through the daemon
+/// and back, so this is only as good as that round trip.
+fn ci_is_news(stored: Option<PullRequestCi>, seen: Option<PullRequestCi>) -> bool {
+    stored != seen
 }
 
 /// Send an agent to fix a red build, if the loop has rounds left, and report whether one was sent.
@@ -1048,8 +1064,8 @@ pub(crate) async fn finalize_successful_merge(
 /// Reject a merge and move task back to InProgress with conflict feedback
 ///
 /// Called when merge conflicts are detected:
-/// 1. Updates task status back to InProgress for the agent to rework
-/// 2. Records a RequestChanges review with formatted conflict feedback
+/// 1. Records a RequestChanges review with formatted conflict feedback
+/// 2. Updates task status back to InProgress for the agent to rework
 ///
 /// The review is updated in place rather than replaced: by the time a merge conflict is reported
 /// the approve flow has already written an `Approve` review, and replacing it would take the
@@ -1062,16 +1078,8 @@ pub(crate) async fn reject_merge_on_conflict(
 ) -> Result<(), String> {
     let conflict_feedback = format!("Merge conflict detected:\n{}", conflicts.join("\n"));
 
-    // Auto-reject to InProgress per CONTEXT.md decision
-    apply_transition_on_server(
-        app_state,
-        project_id,
-        task_id,
-        TaskTransition::MergeConflict,
-        TransitionGuard::Always,
-    )
-    .await?;
-
+    // The review first: a Rework task without its conflict list sends a coder in blind, while a
+    // saved list on a task the transition then failed to move is only read once it does move.
     query_project_store(
         app_state,
         project_id,
@@ -1087,7 +1095,17 @@ pub(crate) async fn reject_merge_on_conflict(
         reply!(ServerResponse::SaveTaskReviewOk(_) => ()),
     )
     .await
-    .map_err(|e| format!("Save feedback failed: {}", e))
+    .map_err(|e| format!("Save feedback failed: {}", e))?;
+
+    apply_transition_on_server(
+        app_state,
+        project_id,
+        task_id,
+        TaskTransition::MergeConflict,
+        TransitionGuard::Always,
+    )
+    .await?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1095,6 +1113,32 @@ mod tests {
     use super::*;
     use std::path::Path;
     use std::process::Command;
+
+    /// A settled pull request, CI saying what the task already holds, is no news: otherwise every
+    /// sweep would refetch the whole board for every open pull request.
+    #[test]
+    fn ci_the_task_already_holds_is_no_news() {
+        use crate::integration::pull_request::CiState;
+        for state in [
+            CiState::Passing,
+            CiState::Failing(vec!["build".to_string()]),
+            CiState::Pending,
+            CiState::Unknown,
+        ] {
+            let seen = cached_ci(&state);
+            let wire = serde_json::to_string(&seen.map(maestro_protocol::PullRequestCi::from))
+                .expect("serialize");
+            let stored: Option<maestro_protocol::PullRequestCi> =
+                serde_json::from_str(&wire).expect("deserialize");
+            let stored = stored.map(PullRequestCi::from);
+            assert!(!ci_is_news(stored, seen), "for {state:?}");
+        }
+        assert!(ci_is_news(
+            Some(PullRequestCi::Pending),
+            Some(PullRequestCi::Failing)
+        ));
+        assert!(ci_is_news(Some(PullRequestCi::Passing), None));
+    }
 
     fn git(repo: &Path, args: &[&str]) -> String {
         let output = Command::new("git")

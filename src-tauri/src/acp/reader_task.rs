@@ -58,6 +58,7 @@ pub(crate) fn spawn_reader_task(
         declared_complete,
         user_interrupted,
         closing_message,
+        permission_queue,
         task,
     } = ctx;
     tokio::spawn(async move {
@@ -115,13 +116,19 @@ pub(crate) fn spawn_reader_task(
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(perm_req)),
             ) = (task, &msg)
             {
-                spawn_task_permission_request(&app_state, task, &session_id, perm_req.clone());
+                spawn_task_permission_request(
+                    &app_state,
+                    task,
+                    &session_id,
+                    &permission_queue,
+                    perm_req.clone(),
+                );
                 continue;
             }
 
             if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
                 if let Some(task) = task {
-                    mark_task_blocked(&app_state, task);
+                    spawn_mark_task_blocked(&app_state, task);
                 }
             }
 
@@ -195,31 +202,56 @@ pub(crate) fn spawn_transition(
     guard: TransitionGuard,
 ) {
     let app_state = Arc::clone(app_state);
-    tokio::spawn(async move {
-        if let Err(e) = crate::task::ops::apply_transition_on_server(
-            &app_state,
-            task.project_id,
+    tokio::spawn(async move { transition_task(&app_state, task, event, guard).await });
+}
+
+/// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Only for
+/// callers off the shared reader, see [`spawn_transition`].
+pub(crate) async fn transition_task(
+    app_state: &Arc<crate::core::AppState>,
+    task: TaskKey,
+    event: TaskTransition,
+    guard: TransitionGuard,
+) {
+    if let Err(e) = crate::task::ops::apply_transition_on_server(
+        app_state,
+        task.project_id,
+        task.task_id,
+        event,
+        guard,
+    )
+    .await
+    {
+        log::warn!(
+            "[acp] could not apply {event:?} to task {} of project {}: {e}",
             task.task_id,
-            event,
-            guard,
-        )
-        .await
-        {
-            log::warn!(
-                "[acp] could not apply {event:?} to task {} of project {}: {e}",
-                task.task_id,
-                task.project_id
-            );
-        }
-    });
+            task.project_id
+        );
+    }
 }
 
 /// Record that the agent is stopped waiting on the user, so the card says so after a reload.
 ///
+/// Awaited, so a caller that marks, shows the question and then clears on the answer applies the
+/// two in that order: spawned separately, the clear could overtake the mark and leave the card
+/// blocked on a question already answered.
+///
 /// The `Changed` guard matters here rather than being a nicety: with auto-approve off a session
 /// raises permission requests constantly, and every write the daemon makes is pushed to every
 /// window as `TasksChanged`, which refetches the whole board.
-pub(crate) fn mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
+pub(crate) async fn mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
+    transition_task(
+        app_state,
+        task,
+        TaskTransition::AwaitingUserInput,
+        TransitionGuard::Changed,
+    )
+    .await;
+}
+
+/// [`mark_task_blocked`] for the reader path, which must not wait on the daemon. An elicitation's
+/// answer can in principle overtake it; the card then pulses until the next turn ends.
+fn spawn_mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
     spawn_transition(
         app_state,
         task,
@@ -563,11 +595,24 @@ fn spawn_task_permission_request(
     app_state: &Arc<crate::core::AppState>,
     task: TaskKey,
     session_id: &str,
+    permission_queue: &crate::acp::session_types::PermissionQueue,
     perm_req: crate::acp::transport::PermissionRequest,
 ) {
     let app_state = Arc::clone(app_state);
     let session_id = session_id.to_string();
-    tokio::spawn(async move {
+    // Each request makes its own round trips before it is shown, so two raised back to back could
+    // otherwise reach the UI in either order. Taken and replaced here, on the reader, which sees
+    // them in the order the agent raised them.
+    let mut queue = permission_queue
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let previous = queue.take();
+    *queue = Some(tokio::spawn(async move {
+        if let Some(previous) = previous {
+            if let Err(e) = previous.await {
+                log::warn!("[acp] an earlier permission request of {session_id} failed: {e}");
+            }
+        }
         if handle_permission_request(&app_state, task, &session_id, &perm_req).await {
             return;
         }
@@ -582,7 +627,7 @@ fn spawn_task_permission_request(
         ) {
             log::warn!("[acp] emit permission-request/{session_id} failed: {e}");
         }
-    });
+    }));
 }
 
 /// Decide what the board does with a permission request, and report whether it answered.
@@ -621,8 +666,9 @@ async fn handle_permission_request(
             task.task_id
         ),
     }
-    // Nobody answered for it: the agent is stopped until the user does.
-    mark_task_blocked(app_state, task);
+    // Nobody answered for it: the agent is stopped until the user does. Awaited before the prompt
+    // reaches the UI, so the user's answer, which clears the mark, cannot overtake it.
+    mark_task_blocked(app_state, task).await;
     false
 }
 
@@ -1266,23 +1312,11 @@ pub(crate) async fn take_unclaimed(
 }
 
 /// Which of this app's projects on `connection_key` a daemon's canonical path names.
-///
-/// Compared with separators and a trailing slash tidied, the part of the daemon's
-/// `canonical_project_path` this side can reproduce. A project opened through a symlink does not
-/// match, and its pushes carry no id.
 fn project_id_for_path(
     app_state: &crate::core::AppState,
     connection_key: crate::acp::ConnectionKey,
     canonical_path: &str,
 ) -> Option<i32> {
-    fn tidy(path: &str) -> String {
-        let path = path
-            .strip_prefix(r"\\?\")
-            .unwrap_or(path)
-            .replace('\\', "/");
-        path.trim_end_matches('/').to_string()
-    }
-    let wanted = tidy(canonical_path);
     let conn = app_state.db.lock().ok()?;
     let mut statement = conn
         .prepare(
@@ -1303,6 +1337,28 @@ fn project_id_for_path(
     // A local Windows path resolves to the case the directory has on disk, not the case it was
     // opened with.
     let ignore_case = cfg!(windows) && connection_key == crate::acp::ConnectionKey::Local;
+    match_project_path(rows, connection_key, canonical_path, ignore_case)
+}
+
+/// Compared with separators and a trailing slash tidied, the part of the daemon's
+/// `canonical_project_path` this side can reproduce.
+///
+/// A project opened through a symlink does not match, and its pushes carry no id. That is safe:
+/// a push naming no project is refetched by every window, which costs a request and loses nothing.
+fn match_project_path(
+    rows: Vec<(i32, String, crate::acp::ConnectionKey)>,
+    connection_key: crate::acp::ConnectionKey,
+    canonical_path: &str,
+    ignore_case: bool,
+) -> Option<i32> {
+    fn tidy(path: &str) -> String {
+        let path = path
+            .strip_prefix(r"\\?\")
+            .unwrap_or(path)
+            .replace('\\', "/");
+        path.trim_end_matches('/').to_string()
+    }
+    let wanted = tidy(canonical_path);
     rows.into_iter()
         .find(|(_, path, key)| {
             *key == connection_key
@@ -1376,6 +1432,7 @@ pub(crate) async fn handle_shared_server_message(
                     Arc::clone(&s.declared_complete),
                     Arc::clone(&s.user_interrupted),
                     Arc::clone(&s.closing_message),
+                    Arc::clone(&s.permission_queue),
                     s.agent_id_meta.clone(),
                     s.task_key(),
                 )
@@ -1393,6 +1450,7 @@ pub(crate) async fn handle_shared_server_message(
             declared_complete,
             user_interrupted,
             closing_message,
+            permission_queue,
             agent_id,
             task,
         )) = caches
@@ -1402,13 +1460,19 @@ pub(crate) async fn handle_shared_server_message(
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(perm_req)),
             ) = (task, &msg)
             {
-                spawn_task_permission_request(app_state, task, &session_id, perm_req.clone());
+                spawn_task_permission_request(
+                    app_state,
+                    task,
+                    &session_id,
+                    &permission_queue,
+                    perm_req.clone(),
+                );
                 return;
             }
 
             if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
                 if let Some(task) = task {
-                    mark_task_blocked(app_state, task);
+                    spawn_mark_task_blocked(app_state, task);
                 }
             }
 
@@ -2057,6 +2121,52 @@ fn is_gone_session_error(msg: &MaestroRpcMessage) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod project_paths {
+        use super::*;
+        use crate::acp::ConnectionKey;
+
+        fn rows() -> Vec<(i32, String, ConnectionKey)> {
+            vec![
+                (1, r"C:\Users\Dev\Shop\".to_string(), ConnectionKey::Local),
+                (2, "/srv/shop".to_string(), ConnectionKey::Ssh { id: 7 }),
+                (
+                    3,
+                    "/home/dev/shop/".to_string(),
+                    ConnectionKey::Wsl { id: 2 },
+                ),
+            ]
+        }
+
+        #[test]
+        fn a_local_windows_path_matches_whatever_its_case_and_prefix() {
+            let found = |path, ignore_case| {
+                match_project_path(rows(), ConnectionKey::Local, path, ignore_case)
+            };
+            assert_eq!(found(r"\\?\C:\users\dev\shop", true), Some(1));
+            assert_eq!(found("C:/Users/Dev/Shop", false), Some(1));
+            assert_eq!(found(r"C:\users\dev\shop", false), None);
+        }
+
+        #[test]
+        fn a_remote_path_matches_exactly_on_its_own_connection() {
+            let ssh = ConnectionKey::Ssh { id: 7 };
+            let wsl = ConnectionKey::Wsl { id: 2 };
+            assert_eq!(
+                match_project_path(rows(), ssh, "/srv/shop/", false),
+                Some(2)
+            );
+            assert_eq!(match_project_path(rows(), ssh, "/srv/Shop", false), None);
+            assert_eq!(
+                match_project_path(rows(), wsl, "/home/dev/shop", false),
+                Some(3)
+            );
+            assert_eq!(
+                match_project_path(rows(), ConnectionKey::Ssh { id: 8 }, "/srv/shop", false),
+                None
+            );
+        }
+    }
 
     mod fatal_session_errors {
         use super::*;

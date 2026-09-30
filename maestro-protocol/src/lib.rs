@@ -1606,6 +1606,9 @@ pub enum TransitionGuard {
     AgentRunning,
     /// `request_ci_fix`: the ball is `External` and fewer than this many fix rounds were spent.
     FixRoundsBelow(i32),
+    /// The ball is with this party, as the pull-request sweep asks before moving a task the forge
+    /// holds: a coder may have claimed it between the sweep's read and its write.
+    Ball(TaskBall),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

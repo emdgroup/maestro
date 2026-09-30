@@ -358,7 +358,7 @@ pub(super) async fn run_automation(
             .and_then(|session| session.task_key())
     };
     if let Some(task) = task {
-        crate::acp::reader_task::mark_task_blocked(app_state, task);
+        crate::acp::reader_task::mark_task_blocked(app_state, task).await;
     }
 
     let payload = json!({

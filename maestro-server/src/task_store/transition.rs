@@ -261,6 +261,7 @@ fn admit(
         ),
         // The rounds are not lifecycle state; `admitted` reads and checks them.
         TransitionGuard::FixRoundsBelow(_) => current.ball == TaskBall::External,
+        TransitionGuard::Ball(ball) => current.ball == *ball,
     };
     admitted.then_some(event)
 }
@@ -1220,6 +1221,59 @@ mod tests {
                 assert!(fail(&conn, task_id).is_none(), "for {terminal:?}");
                 assert_eq!(state(&conn, task_id), before);
             }
+        }
+
+        /// The sweep decides every three minutes for as long as a closed pull request sits there,
+        /// so only the first decision may write.
+        #[test]
+        fn a_closed_pull_request_is_closed_once() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            always(&conn, task_id, TaskTransition::PullRequestOpened);
+            let close = |conn: &Connection| {
+                guarded(
+                    conn,
+                    task_id,
+                    TaskTransition::PullRequestClosed,
+                    TransitionGuard::Changed,
+                )
+            };
+            assert!(close(&conn).is_some());
+            let closed = state(&conn, task_id);
+            assert!(close(&conn).is_none());
+            assert_eq!(state(&conn, task_id), closed);
+        }
+
+        /// A CI-fix coder that claimed the task between the sweep's read and its write keeps it.
+        #[test]
+        fn the_forge_does_not_move_a_task_a_coder_claimed() {
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            always(&conn, task_id, TaskTransition::PullRequestOpened);
+            always(&conn, task_id, TaskTransition::CiFixRequested);
+            let claimed = state(&conn, task_id);
+            assert_eq!(claimed.ball, TaskBall::Agent);
+            for (event, ball) in [
+                (TaskTransition::PullRequestConflicted, TaskBall::External),
+                (TaskTransition::PullRequestMergeable, TaskBall::User),
+            ] {
+                assert!(guarded(&conn, task_id, event, TransitionGuard::Ball(ball)).is_none());
+                assert_eq!(state(&conn, task_id), claimed, "for {event:?}");
+            }
+
+            let (conn, task_id) = db_with_task();
+            start_execution(&conn, task_id);
+            always(&conn, task_id, TaskTransition::PullRequestOpened);
+            let conflict = |conn: &Connection| {
+                guarded(
+                    conn,
+                    task_id,
+                    TaskTransition::PullRequestConflicted,
+                    TransitionGuard::Ball(TaskBall::External),
+                )
+            };
+            assert!(conflict(&conn).is_some());
+            assert_eq!(state(&conn, task_id).ball, TaskBall::User);
         }
     }
 }

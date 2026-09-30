@@ -686,12 +686,8 @@ pub async fn cleanup_zombie_worktrees(
 ) -> Result<i32, String> {
     // Skipped rather than read as "no rows" when the daemon cannot answer, for the same reason as
     // `live_session_cwds` below: a sweep with no idea what is claimed must not run.
-    let candidates = match zombie_candidates(&app_state, project_id).await {
-        Ok(candidates) => candidates,
-        Err(e) => {
-            log::warn!("[git] not sweeping worktrees this time: {e}");
-            return Ok(0);
-        }
+    let Some(candidates) = answer_or_skip(zombie_candidates(&app_state, project_id).await) else {
+        return Ok(0);
     };
 
     // A session worktree carries `task_id IS NULL`, so every one of them is a candidate here.
@@ -705,12 +701,8 @@ pub async fn cleanup_zombie_worktrees(
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let live_cwds = match live_session_cwds(&app_state, &project).await {
-        Ok(live_cwds) => live_cwds,
-        Err(e) => {
-            log::warn!("[git] not sweeping worktrees this time: {e}");
-            return Ok(0);
-        }
+    let Some(live_cwds) = answer_or_skip(live_session_cwds(&app_state, &project).await) else {
+        return Ok(0);
     };
 
     // Get on-disk worktree paths to confirm existence before deleting
@@ -796,21 +788,39 @@ async fn zombie_candidates(
         reply!(ServerResponse::ListTasksOk(list) => list.tasks),
     )
     .await?;
+    Ok(unused_worktrees(
+        worktrees,
+        tasks.into_iter().map(|task| (task.id, task.status)),
+    ))
+}
+
+/// The daemon's answer, or `None` to skip the sweep, which must not run on a guess.
+fn answer_or_skip<T>(answer: Result<T, String>) -> Option<T> {
+    answer
+        .map_err(|e| log::warn!("[git] not sweeping worktrees this time: {e}"))
+        .ok()
+}
+
+/// The rows of [`zombie_candidates`], given every task's status.
+fn unused_worktrees(
+    worktrees: Vec<maestro_protocol::Worktree>,
+    tasks: impl IntoIterator<Item = (i32, maestro_protocol::TaskStatus)>,
+) -> Vec<(i32, String, String)> {
     let finished: HashSet<i32> = tasks
         .into_iter()
-        .filter(|task| {
+        .filter(|(_, status)| {
             matches!(
-                task.status,
+                status,
                 maestro_protocol::TaskStatus::Done | maestro_protocol::TaskStatus::Cancelled
             )
         })
-        .map(|task| task.id)
+        .map(|(id, _)| id)
         .collect();
-    Ok(worktrees
+    worktrees
         .into_iter()
         .filter(|worktree| worktree.task_id.is_none_or(|id| finished.contains(&id)))
         .map(|worktree| (worktree.id, worktree.path, worktree.branch_name))
-        .collect())
+        .collect()
 }
 
 /// Throw away everything a task's run produced: its worktree, its branch, and the commits it
@@ -1160,6 +1170,55 @@ pub async fn prune_branches(
 
 #[cfg(test)]
 mod tests {
+    mod zombie_sweep {
+        use super::super::{answer_or_skip, unused_worktrees};
+        use maestro_protocol::TaskStatus;
+
+        fn row(id: i32, task_id: Option<i32>) -> maestro_protocol::Worktree {
+            maestro_protocol::Worktree {
+                id,
+                project_path: "/srv/shop".to_string(),
+                task_id,
+                branch_name: format!("maestro/branch-{id}"),
+                base_branch: None,
+                path: format!(".maestro/worktrees/branch-{id}"),
+                git_status: None,
+                created_at: String::new(),
+            }
+        }
+
+        #[test]
+        fn only_unowned_rows_and_finished_tasks_rows_are_candidates() {
+            let rows = vec![
+                row(1, None),
+                row(2, Some(10)),
+                row(3, Some(11)),
+                row(4, Some(12)),
+                row(5, Some(99)),
+            ];
+            let tasks = [
+                (10, TaskStatus::Done),
+                (11, TaskStatus::Cancelled),
+                (12, TaskStatus::InProgress),
+            ];
+            let ids: Vec<i32> = unused_worktrees(rows, tasks)
+                .into_iter()
+                .map(|(id, _, _)| id)
+                .collect();
+            // A row whose task the daemon does not list is kept: it may be a task this read missed.
+            assert_eq!(ids, [1, 2, 3]);
+        }
+
+        #[test]
+        fn a_daemon_that_cannot_answer_skips_the_sweep() {
+            assert_eq!(
+                answer_or_skip::<Vec<i32>>(Err("no server".to_string())),
+                None
+            );
+            assert_eq!(answer_or_skip(Ok(vec![1])), Some(vec![1]));
+        }
+    }
+
     use std::collections::HashSet;
 
     use super::{

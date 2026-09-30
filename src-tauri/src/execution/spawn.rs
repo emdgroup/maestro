@@ -150,7 +150,7 @@ pub async fn spawn_interactive_execution(
         )
         .await?;
         if claimed.is_some() {
-            apply_transition_on_server(
+            let started = apply_transition_on_server(
                 &app_state,
                 project_id,
                 tid,
@@ -159,7 +159,23 @@ pub async fn spawn_interactive_execution(
                 TaskTransition::SessionReady(AgentRole::Coder),
                 TransitionGuard::Spawning,
             )
-            .await?;
+            .await;
+            if let Err(e) = started {
+                // Nothing else would ever move the task on from `Spawning`: release the claim as
+                // a failed spawn, which the user can see and retry.
+                if let Err(release) = apply_transition_on_server(
+                    &app_state,
+                    project_id,
+                    tid,
+                    TaskTransition::PhaseFailed,
+                    TransitionGuard::Spawning,
+                )
+                .await
+                {
+                    log::warn!("Could not release the claim on task {tid}: {release}");
+                }
+                return Err(e);
+            }
         }
     }
 

@@ -698,8 +698,11 @@ pub fn import(conn: &mut Connection, request: &ImportTasksRequest) -> Result<Vec
 /// phase produced.
 ///
 /// Filed only when the transition applied, since a turn resolved against a task the user already
-/// moved has no claim on its record either. The app filed a delivered artifact before applying,
-/// but only after reading a live read-only phase; under one lock that phase means it applies.
+/// moved has no claim on its record either.
+///
+/// A delivered artifact is a plan-mode agent's, so it counts only while the task is still in a
+/// read-only phase. Anywhere else the task moved on under the request, and the plan it carries is
+/// no other phase's outcome: nothing is written and `None` is returned.
 pub fn end_turn(
     conn: &mut Connection,
     request: &EndTaskTurnRequest,
@@ -707,6 +710,14 @@ pub fn end_turn(
     let (project_path, task_id) = (request.project_path.as_str(), request.task_id);
     let tx = transaction(conn)?;
     let phase = transition::read_state(&tx, project_path, task_id)?.phase;
+    if matches!(request.ending, TurnEnding::ArtifactDelivered)
+        && !matches!(
+            phase,
+            Some(TaskPhase::Refining | TaskPhase::Drafting | TaskPhase::SelfReview)
+        )
+    {
+        return Ok(None);
+    }
     let delivered = matches!(
         request.ending,
         TurnEnding::Completed { .. } | TurnEnding::ArtifactDelivered
@@ -1516,5 +1527,35 @@ mod tests {
         let task = end(&mut conn, task_id, TurnEnding::ArtifactDelivered, false).expect("applied");
         assert_eq!(task.phase, Some(TaskPhase::PlanReview));
         assert_eq!(kinds(&conn, task_id), ["plan"]);
+    }
+
+    /// A plan-mode reviewer delivers its verdict through `ExitPlanMode`, not a finished turn.
+    #[test]
+    fn a_plan_mode_reviewer_rejecting_sends_the_task_to_rework() {
+        let (mut conn, task_id) = db_with_task();
+        in_phase(
+            &conn,
+            task_id,
+            TaskTransition::SessionReady(maestro_protocol::AgentRole::Reviewer),
+        );
+        let task = end(&mut conn, task_id, TurnEnding::ArtifactDelivered, false).expect("applied");
+        assert_eq!(task.phase, Some(TaskPhase::Rework));
+        assert_eq!(task.review_rounds, 1);
+        assert_eq!(kinds(&conn, task_id), ["verdict"]);
+    }
+
+    /// The coder that replaced the planner must not have the plan filed as its outcome.
+    #[test]
+    fn a_delivered_artifact_outside_a_read_only_phase_writes_nothing() {
+        let (mut conn, task_id) = db_with_task();
+        in_phase(
+            &conn,
+            task_id,
+            TaskTransition::SessionReady(maestro_protocol::AgentRole::Coder),
+        );
+        assert!(end(&mut conn, task_id, TurnEnding::ArtifactDelivered, false).is_none());
+        assert!(kinds(&conn, task_id).is_empty());
+        let state = transition::read_state(&conn, PROJECT, task_id).expect("read");
+        assert_eq!(state.phase, Some(TaskPhase::Implementing));
     }
 }

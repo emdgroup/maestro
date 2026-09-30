@@ -90,6 +90,18 @@ pub async fn request_changes(
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
+    // The transition first: saving replaces every per-file comment the previous review held, so a
+    // save followed by a failed transition would lose them with the task still in review. Both
+    // steps are safe to repeat, so a save that fails afterwards is healed by the user's retry, and
+    // the command's error keeps the rework from being started without its feedback.
+    crate::task::ops::apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::ReworkRequested,
+        TransitionGuard::Always,
+    )
+    .await?;
     let review_id = replace_review(
         &app_state,
         project_id,
@@ -97,14 +109,6 @@ pub async fn request_changes(
         "RequestChanges".to_string(),
         general_feedback,
         per_file_comments,
-    )
-    .await?;
-    crate::task::ops::apply_transition_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        TaskTransition::ReworkRequested,
-        TransitionGuard::Always,
     )
     .await?;
 

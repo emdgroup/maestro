@@ -309,7 +309,14 @@ pub struct AcpProcess {
     /// Set while a `RequestPermission` is outstanding on this session's shared Claude Code
     /// connection. Prevents new sessions from joining the same connection until resolved.
     pub has_pending_permission: Arc<AtomicBool>,
+    /// The last of this session's permission requests still being decided, see
+    /// `reader_task::spawn_task_permission_request`.
+    pub permission_queue: PermissionQueue,
 }
+
+/// The handling of a session's latest permission request, which the next one waits for so the
+/// prompts reach the UI in the order the agent raised them.
+pub type PermissionQueue = Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>;
 
 /// A session's task as the daemon keys it: task ids are per project, so the number alone does not
 /// name one.
@@ -420,6 +427,7 @@ pub struct ReaderTaskContext {
     pub declared_complete: Arc<AtomicBool>,
     pub user_interrupted: Arc<AtomicBool>,
     pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
+    pub permission_queue: PermissionQueue,
     pub task: Option<TaskKey>,
 }
 
@@ -453,6 +461,7 @@ impl AcpProcess {
         let closing_message = Arc::new(std::sync::Mutex::new(
             super::completion::ClosingMessage::default(),
         ));
+        let permission_queue = PermissionQueue::default();
         let ctx = ReaderTaskContext {
             session_id,
             app_handle,
@@ -468,6 +477,7 @@ impl AcpProcess {
             declared_complete: Arc::clone(&declared_complete),
             user_interrupted: Arc::clone(&user_interrupted),
             closing_message: Arc::clone(&closing_message),
+            permission_queue: Arc::clone(&permission_queue),
             task: TaskKey::of(params.project_id, params.task.task_id),
         };
         let process = Self {
@@ -500,6 +510,7 @@ impl AcpProcess {
             config_options: Vec::new(),
             prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
+            permission_queue,
         };
         (process, ctx)
     }
