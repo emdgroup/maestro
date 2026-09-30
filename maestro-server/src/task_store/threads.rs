@@ -314,12 +314,32 @@ pub fn delete_attachment(
     project_path: &str,
     attachment_id: i32,
 ) -> Result<(), String> {
-    conn.execute(
-        "DELETE FROM task_attachments WHERE project_path = ?1 AND id = ?2",
-        params![project_path, attachment_id],
-    )
-    .map_err(|e| e.to_string())?;
+    let file_path: Option<String> = conn
+        .query_row(
+            "DELETE FROM task_attachments WHERE project_path = ?1 AND id = ?2 RETURNING file_path",
+            params![project_path, attachment_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(copy) = file_path.as_deref().filter(|path| is_task_copy(path)) {
+        match std::fs::remove_file(Path::new(project_path).join(copy)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => crate::send_diag("warn", format!("could not delete attachment {copy}: {e}")),
+        }
+    }
     Ok(())
+}
+
+/// Whether an attachment's path is a copy the app made on attach, and so the task's to delete.
+/// Anything else is the user's own file, recorded before attachments were copied.
+fn is_task_copy(file_path: &str) -> bool {
+    let path = Path::new(file_path);
+    path.starts_with(".maestro/attachments/tasks")
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
 /// Every relationship the task is on either end of.
@@ -620,6 +640,29 @@ mod tests {
             add_attachment(&conn, &project_path, task.id, "a.txt", "a.txt").expect("attach");
         assert_eq!(attachment.file_size, 5);
         assert_eq!(attachment.file_path, "a.txt");
+    }
+
+    #[test]
+    fn deleting_an_attachment_deletes_its_copy_and_never_the_users_file() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let copy = ".maestro/attachments/tasks/1/a.txt";
+        std::fs::create_dir_all(directory.path().join(".maestro/attachments/tasks/1"))
+            .expect("mkdir");
+        std::fs::write(directory.path().join(copy), "12345").expect("write");
+        let own = directory.path().join("own.txt");
+        std::fs::write(&own, "mine").expect("write");
+        let project_path = directory.path().to_string_lossy().into_owned();
+        let mut conn = crate::project_store::open_in_memory();
+        let task = super::super::tests::new_task(&mut conn, &project_path, "a task");
+
+        let copied = add_attachment(&conn, &project_path, task.id, "a.txt", copy).expect("attach");
+        let picked =
+            add_attachment(&conn, &project_path, task.id, "own.txt", "own.txt").expect("attach");
+        delete_attachment(&conn, &project_path, copied.id).expect("delete");
+        delete_attachment(&conn, &project_path, picked.id).expect("delete");
+
+        assert!(!directory.path().join(copy).exists());
+        assert!(own.exists());
     }
 
     #[test]

@@ -9,17 +9,29 @@ import type { TaskAttachment } from "@/types/bindings";
 const listTaskAttachments = vi.fn();
 const addTaskAttachment = vi.fn();
 const deleteTaskAttachment = vi.fn();
-const openPathNative = vi.fn();
+const openFileWithConnection = vi.fn();
 const proxyImage = vi.fn();
 const toastInfo = vi.fn();
+let selectedProject: Record<string, unknown> | null = null;
 
 vi.mock("@/lib/tauri-utils", () => ({
   api: {
     listTaskAttachments: (...a: unknown[]) => listTaskAttachments(...a),
     addTaskAttachment: (...a: unknown[]) => addTaskAttachment(...a),
     deleteTaskAttachment: (...a: unknown[]) => deleteTaskAttachment(...a),
-    openPathNative: (...a: unknown[]) => openPathNative(...a),
   },
+}));
+
+vi.mock("@/lib/file-opener", () => ({
+  openFileWithConnection: (...a: unknown[]) => openFileWithConnection(...a),
+}));
+
+vi.mock("@/store/projectStore", () => ({
+  useSelectedProject: () => selectedProject,
+}));
+
+vi.mock("@/services/connection.service", () => ({
+  useWslConnections: () => ({ data: [] }),
 }));
 
 vi.mock("@/types/bindings", () => ({
@@ -57,6 +69,7 @@ function newClient() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  selectedProject = null;
 });
 
 describe("AttachmentSection", () => {
@@ -152,7 +165,7 @@ describe("AttachmentSection", () => {
   it("offers the file itself when the image cannot be proxied", async () => {
     listTaskAttachments.mockResolvedValue([SHOT]);
     proxyImage.mockResolvedValue({ status: "error", error: "no such file" });
-    openPathNative.mockResolvedValue(undefined);
+    openFileWithConnection.mockResolvedValue(undefined);
 
     render(
       <QueryClientProvider client={newClient()}>
@@ -168,12 +181,18 @@ describe("AttachmentSection", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Open shot.png" }));
 
-    await waitFor(() => expect(openPathNative).toHaveBeenCalledWith(SHOT.file_path));
+    await waitFor(() =>
+      expect(openFileWithConnection).toHaveBeenCalledWith(
+        { type: "local" },
+        SHOT.file_path,
+        expect.anything(),
+      ),
+    );
   });
 
   it("opens a non-image attachment with the OS", async () => {
     listTaskAttachments.mockResolvedValue([NOTES]);
-    openPathNative.mockResolvedValue(undefined);
+    openFileWithConnection.mockResolvedValue(undefined);
 
     render(
       <QueryClientProvider client={newClient()}>
@@ -189,14 +208,49 @@ describe("AttachmentSection", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "notes.txt" }));
 
-    await waitFor(() => expect(openPathNative).toHaveBeenCalledWith(NOTES.file_path));
+    await waitFor(() =>
+      expect(openFileWithConnection).toHaveBeenCalledWith(
+        { type: "local" },
+        NOTES.file_path,
+        expect.anything(),
+      ),
+    );
+  });
+
+  /** The copy lives on the project's machine, so an SSH project's opens through a host copy. */
+  it("opens the project's copy over the project's connection", async () => {
+    selectedProject = { connection_id: 4, wsl_connection_id: null, docker_connection_id: null };
+    listTaskAttachments.mockResolvedValue([NOTES]);
+    openFileWithConnection.mockResolvedValue(undefined);
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <AttachmentSection
+          taskId={1}
+          projectId={1}
+          isEditable
+          onPickFiles={() => {}}
+          isDragging={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "notes.txt" }));
+
+    await waitFor(() =>
+      expect(openFileWithConnection).toHaveBeenCalledWith({ type: "ssh", id: 4 }, NOTES.file_path, {
+        sshConnectionId: 4,
+        wslDistroName: undefined,
+      }),
+    );
   });
 });
 
 describe("useAddTaskAttachmentMutation", () => {
-  it("says so rather than recording a file the task already has", async () => {
+  it("says so when the backend answers with a row the task already has", async () => {
     const client = newClient();
     client.setQueryData(taskQueryKeys.attachments(1, 1), [NOTES]);
+    addTaskAttachment.mockResolvedValue(NOTES);
 
     function Harness() {
       const add = useAddTaskAttachmentMutation();
@@ -225,13 +279,12 @@ describe("useAddTaskAttachmentMutation", () => {
     await userEvent.click(screen.getByRole("button", { name: "attach" }));
 
     await waitFor(() => expect(toastInfo).toHaveBeenCalledWith("notes.txt is already attached"));
-    expect(addTaskAttachment).not.toHaveBeenCalled();
   });
 
   it("records a file the task does not have yet", async () => {
     const client = newClient();
     client.setQueryData(taskQueryKeys.attachments(1, 1), [NOTES]);
-    addTaskAttachment.mockResolvedValue({ ...NOTES, id: 8, file_path: "/tmp/other/notes.txt" });
+    addTaskAttachment.mockResolvedValue({ ...NOTES, id: 8 });
 
     function Harness() {
       const add = useAddTaskAttachmentMutation();
@@ -262,6 +315,7 @@ describe("useAddTaskAttachmentMutation", () => {
     await waitFor(() =>
       expect(addTaskAttachment).toHaveBeenCalledWith(1, 1, "notes.txt", "/tmp/other/notes.txt"),
     );
+    await waitFor(() => expect(client.isMutating()).toBe(0));
     expect(toastInfo).not.toHaveBeenCalled();
   });
 });

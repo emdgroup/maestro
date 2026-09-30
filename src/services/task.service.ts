@@ -570,11 +570,10 @@ export function useTaskAttachmentsQuery(projectId: number | null, taskId: number
 }
 
 /**
- * Mutation hook for adding an attachment record to a task
+ * Mutation hook for attaching a file to a task: the backend copies it into the project.
  *
  * Re-attaching a file the task already has is a no-op with a note, not a failure — the command
- * returns the existing row either way, this only saves the round trip and gives the user a signal
- * that something happened.
+ * returns the existing row, and the note gives the user a signal that something happened.
  */
 export function useAddTaskAttachmentMutation() {
   const queryClient = useQueryClient();
@@ -589,17 +588,14 @@ export function useAddTaskAttachmentMutation() {
       taskId: number;
       filename: string;
       filePath: string;
-    }) => {
-      const existing = queryClient
-        .getQueryData<TaskAttachment[]>(taskQueryKeys.attachments(projectId, taskId))
-        ?.find((a) => a.file_path === filePath);
-      if (existing) {
-        toast.info(`${filename} is already attached`);
-        return Promise.resolve(existing);
+    }) => api.addTaskAttachment(projectId, taskId, filename, filePath),
+    onSuccess: (attachment, variables) => {
+      const known = queryClient.getQueryData<TaskAttachment[]>(
+        taskQueryKeys.attachments(variables.projectId, variables.taskId),
+      );
+      if (known?.some((a) => a.id === attachment.id)) {
+        toast.info(`${variables.filename} is already attached`);
       }
-      return api.addTaskAttachment(projectId, taskId, filename, filePath);
-    },
-    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.attachments(variables.projectId, variables.taskId),
       });

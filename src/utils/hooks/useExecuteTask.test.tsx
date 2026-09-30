@@ -7,8 +7,7 @@ import type { ConnectionKey, Task, TaskAttachment } from "@/types/bindings";
 const api = vi.hoisted(() => ({
   resolveAgentProfile: vi.fn(),
   listTaskAttachments: vi.fn(),
-  validateAttachment: vi.fn(),
-  prepareExternalAttachments: vi.fn(),
+  prepareTaskAttachments: vi.fn(),
   listTaskComments: vi.fn(),
   getTaskReview: vi.fn(),
   sendAcpPromptStructured: vi.fn(),
@@ -97,6 +96,16 @@ function attachment(id: number, filename: string): TaskAttachment {
 const GONE = attachment(1, "gone.md");
 const PRESENT = attachment(2, "here.md");
 
+function link(path: string) {
+  return { type: "resource_link", name: path.split("/").pop(), uri: `file://${path}` };
+}
+
+/** The attachment blocks of the prompt the session was started with. */
+function sentLinks() {
+  const blocks = api.sendAcpPromptStructured.mock.calls[0][1] as { type: string }[];
+  return blocks.filter((block) => block.type === "resource_link");
+}
+
 function render() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderHook(
@@ -113,12 +122,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.resolveAgentProfile.mockResolvedValue(null);
   api.listTaskAttachments.mockResolvedValue([GONE, PRESENT]);
-  api.validateAttachment.mockImplementation((path: string) =>
-    path === GONE.file_path
-      ? Promise.reject(new Error(`Cannot read '${path}': No such file or directory`))
-      : Promise.resolve({ size_bytes: 10, rejection: null }),
+  api.prepareTaskAttachments.mockImplementation((_projectId: number, paths: string[]) =>
+    Promise.resolve(paths.map((path) => (path === GONE.file_path ? null : link(path)))),
   );
-  api.prepareExternalAttachments.mockResolvedValue([]);
   api.listTaskComments.mockResolvedValue([]);
   api.getTaskReview.mockResolvedValue(null);
   api.sendAcpPromptStructured.mockResolvedValue(undefined);
@@ -176,11 +182,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
       await started;
     });
 
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
+    expect(sentLinks()).toEqual([link(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).toHaveBeenCalledTimes(1);
     expect(mutations.deleteAttachment).toHaveBeenCalledWith({
       attachmentId: GONE.id,
@@ -202,51 +204,16 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(result.current.missingAttachments).toBeNull();
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
+    expect(sentLinks()).toEqual([link(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).not.toHaveBeenCalled();
     expect(toast.warning).toHaveBeenCalled();
     expect(mutations.markSessionReady).toHaveBeenCalled();
   });
 
-  /**
-   * A `rejection` means the file is on disk but too big to send. It breaks the start the same way,
-   * so it is offered here — but the row still points at a real file, so Continue must not delete it.
-   */
-  it("keeps the row of a file that exists but is too big", async () => {
-    api.validateAttachment.mockImplementation((path: string) =>
-      Promise.resolve({
-        size_bytes: 10,
-        rejection: path === GONE.file_path ? "Image is over 10 MB" : null,
-      }),
-    );
-    const { result } = render();
-
-    let started: Promise<void>;
-    act(() => {
-      started = result.current.execute(TASK);
-    });
-
-    await waitFor(() => expect(result.current.missingAttachments).not.toBeNull());
-
-    await act(async () => {
-      result.current.onAttachmentsContinue();
-      await started;
-    });
-
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [{ path: PRESENT.file_path, is_image: false }],
-      true,
-    );
-    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
-  });
-
   it("asks nothing when every file is readable", async () => {
-    api.validateAttachment.mockResolvedValue({ size_bytes: 10, rejection: null });
+    api.prepareTaskAttachments.mockImplementation((_projectId: number, paths: string[]) =>
+      Promise.resolve(paths.map(link)),
+    );
     const { result } = render();
 
     await act(async () => {
@@ -254,14 +221,22 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(result.current.missingAttachments).toBeNull();
-    expect(api.prepareExternalAttachments).toHaveBeenCalledWith(
-      "42",
-      [
-        { path: GONE.file_path, is_image: false },
-        { path: PRESENT.file_path, is_image: false },
-      ],
-      true,
-    );
+    expect(sentLinks()).toEqual([link(GONE.file_path), link(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).not.toHaveBeenCalled();
+  });
+
+  /** Not being able to ask is not an answer: no row is offered for deletion on the strength of it. */
+  it("starts without them, deleting nothing, when the project's machine cannot be asked", async () => {
+    api.prepareTaskAttachments.mockRejectedValue(new Error("connection lost"));
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.execute(TASK);
+    });
+
+    expect(result.current.missingAttachments).toBeNull();
+    expect(sentLinks()).toEqual([]);
+    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalled();
   });
 });

@@ -2777,7 +2777,7 @@ async listBitbucketProjects() : Promise<Result<BitbucketProjectOption[], string>
 }
 },
 /**
- * Get attachments for a task
+ * Get attachments for a task, each `file_path` absolute on the project's machine.
  */
 async listTaskAttachments(projectId: number, taskId: number) : Promise<Result<TaskAttachment[], string>> {
     try {
@@ -2788,8 +2788,11 @@ async listTaskAttachments(projectId: number, taskId: number) : Promise<Result<Ta
 }
 },
 /**
- * Record an attachment for a task. The server returns the existing row when that file is already
- * on it, since a second row would be a second copy of the file in every prompt the task sends.
+ * Copy a file the user picked on this machine into the project, on whichever machine the project
+ * lives, and record it for the task. Every machine and every agent then reads the same copy.
+ * 
+ * A file with the same name and size as one the task already has is taken to be that file, and
+ * its row is returned rather than a second copy, which would be sent in every prompt twice.
  */
 async addTaskAttachment(projectId: number, taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
     try {
@@ -2800,11 +2803,25 @@ async addTaskAttachment(projectId: number, taskId: number, filename: string, fil
 }
 },
 /**
- * Remove an attachment record by id
+ * Remove an attachment record by id. The daemon deletes the project's copy with it.
  */
 async deleteTaskAttachment(projectId: number, attachmentId: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { projectId, attachmentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The prompt block for each of a task's attachments, in order, or `None` for one whose file is
+ * not on the project's machine. A link to the project's copy rather than its contents: the file is
+ * already where the agent runs, whatever its working directory, and `resource_link` is the block
+ * every ACP agent has to accept.
+ */
+async prepareTaskAttachments(projectId: number, paths: string[]) : Promise<Result<(JsonValue | null)[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_task_attachments", { projectId, paths }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

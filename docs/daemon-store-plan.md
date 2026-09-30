@@ -246,7 +246,7 @@ Tasks:
         `task-comments-changed` carries `{ project_id, task_id }`
   - [x] T7b `merge`, `review`, `worktree_lifecycle`, `worktree_query` and the worktree and review
         commands, including `discard_task_workspace` and `push_ci_fix`
-- [ ] T8 Attachments copied on attach
+- [x] T8 Attachments copied on attach
 - [x] T9 Frontend: `projectId` on commands and query keys, bindings
 - [ ] T10 Remove the app's task SQL (the tables stay until phase 4), docs, review, an end-to-end
       test with two clients seeing `TasksChanged`

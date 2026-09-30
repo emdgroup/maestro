@@ -275,6 +275,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::list_task_attachments,
         crate::ipc::add_task_attachment,
         crate::ipc::delete_task_attachment,
+        crate::ipc::prepare_task_attachments,
         crate::ipc::proxy_image,
         crate::ipc::interrupt_task,
         crate::ipc::send_task_to_review,

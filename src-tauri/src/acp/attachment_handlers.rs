@@ -2,6 +2,7 @@
 
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
+use crate::models::GitConnection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
@@ -43,7 +44,7 @@ fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
-fn mime_for_extension(path: &str) -> Option<&'static str> {
+pub(crate) fn mime_for_extension(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -174,6 +175,65 @@ fn copy_script(dir: &str, source: &str, dest: &str) -> String {
     )
 }
 
+/// Copy a host file to `dest` on the machine `conn` points at, creating `dir` first. The one
+/// transfer path for prompt attachments and task attachments alike.
+pub(crate) async fn copy_to_machine(
+    app_state: &AppState,
+    conn: &GitConnection,
+    source: &std::path::Path,
+    dir: &str,
+    dest: &str,
+) -> Result<(), String> {
+    let name = source.file_name().and_then(|n| n.to_str()).unwrap_or(dest);
+    match conn {
+        GitConnection::Local { .. } => {
+            tokio::fs::create_dir_all(dir)
+                .await
+                .map_err(|e| format!("Failed to create {dir}: {e}"))?;
+            tokio::fs::copy(source, dest)
+                .await
+                .map_err(|e| format!("Failed to copy '{name}' to {dest}: {e}"))?;
+        }
+        GitConnection::Remote { ssh, .. } => {
+            crate::connectivity::files::create_dir_all(conn, dir).await?;
+            crate::connectivity::ssh::sftp::upload_file(
+                ssh,
+                source,
+                dest,
+                &format!("attach-{dest}"),
+                &app_state.app_handle,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        // The host's drives are already mounted inside the distro, so this copies without the
+        // bytes ever leaving the machine.
+        GitConnection::Wsl { distro, .. } => {
+            let source = source.to_str().ok_or("Source path is not valid UTF-8")?;
+            let source = crate::connectivity::wsl::to_wsl_path(distro, source).await?;
+            let output = crate::connectivity::exec_channel::run_on(
+                conn,
+                None,
+                "sh",
+                &["-c", &copy_script(dir, &source, dest)],
+            )
+            .await?;
+            if !output.success() {
+                return Err(format!(
+                    "Failed to copy '{name}' into {distro}: {}",
+                    output.stderr_string()
+                ));
+            }
+        }
+        GitConnection::Docker { container_name, .. } => {
+            crate::connectivity::files::create_dir_all(conn, dir).await?;
+            let cli = crate::connectivity::docker::ContainerCli::detect()?;
+            crate::connectivity::docker::copy_into(&cli, container_name, source, dest).await?;
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn prepare_external_attachments(
@@ -220,118 +280,18 @@ pub async fn prepare_external_attachments(
         } else {
             let mime = mime_for_extension(&file.path).map(str::to_string);
 
-            let uri = match &connection_key {
-                ConnectionKey::Ssh { id: conn_id } => {
-                    let conn_id = *conn_id;
-                    let session =
-                        app_state.ssh.get_session(conn_id).await.ok_or_else(|| {
-                            format!("No active SSH session for connection {conn_id}")
-                        })?;
-
-                    let attachments_dir = attachments_dir(&cwd, session_id);
-                    session
-                        .execute_command(&format!("mkdir -p '{attachments_dir}'"))
-                        .await
-                        .map_err(|e| format!("Failed to create attachments dir: {e}"))?;
-
-                    let remote_path = format!("{attachments_dir}/{display_name}");
-                    let transfer_id = format!("attach-{session_id}-{display_name}");
-                    crate::connectivity::ssh::sftp::upload_file(
-                        &session,
-                        local_path,
-                        &remote_path,
-                        &transfer_id,
-                        &app_state.app_handle,
-                    )
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                    format!("file://{remote_path}")
-                }
-                // The picker returns a host path, which an agent running anywhere but the host
-                // cannot open. Every non-local connection needs the file moved to a path that
-                // means something on its side.
-                ConnectionKey::Wsl { id: wsl_id } => {
-                    let distro = {
-                        let conn = app_state
-                            .db
-                            .lock()
-                            .map_err(|e| format!("Lock failed: {e}"))?;
-                        conn.query_row(
-                            "SELECT distro_name FROM wsl_connections WHERE id = ?",
-                            [*wsl_id],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .map_err(|e| format!("WSL connection {wsl_id} not found: {e}"))?
-                    };
-
-                    // The host's drives are already mounted inside the distro, so this copies
-                    // without the bytes ever leaving the machine.
-                    let source = crate::connectivity::wsl::to_wsl_path(&distro, &file.path).await?;
-                    let attachments_dir = attachments_dir(&cwd, session_id);
-                    let dest = format!("{attachments_dir}/{display_name}");
-                    let conn = crate::models::GitConnection::Wsl {
-                        distro: distro.clone(),
-                        path: cwd.clone(),
-                    };
-                    let output = crate::connectivity::exec_channel::run_on(
-                        &conn,
-                        None,
-                        "sh",
-                        &["-c", &copy_script(&attachments_dir, &source, &dest)],
-                    )
+            // The picker returns a host path, which an agent running anywhere but the host cannot
+            // open. Every non-local connection needs the file moved to a path that means
+            // something on its side.
+            let uri = if matches!(connection_key, ConnectionKey::Local) {
+                format!("file://{}", file.path)
+            } else {
+                let conn = crate::core::git_connection_for(&app_state, cwd.clone(), connection_key)
                     .await?;
-                    if !output.success() {
-                        return Err(format!(
-                            "Failed to copy '{display_name}' into {distro}: {}",
-                            output.stderr_string()
-                        ));
-                    }
-
-                    format!("file://{dest}")
-                }
-                ConnectionKey::Docker { id: docker_id } => {
-                    let container_name = {
-                        let conn = app_state
-                            .db
-                            .lock()
-                            .map_err(|e| format!("Lock failed: {e}"))?;
-                        conn.query_row(
-                            "SELECT container_name FROM docker_connections WHERE id = ?",
-                            [*docker_id],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .map_err(|e| format!("Docker connection {docker_id} not found: {e}"))?
-                    };
-                    let cli = crate::connectivity::docker::ContainerCli::detect()?;
-
-                    let attachments_dir = attachments_dir(&cwd, session_id);
-                    let mkdir = crate::connectivity::docker::run(
-                        &cli,
-                        &container_name,
-                        "mkdir",
-                        &["-p", &attachments_dir],
-                    )
-                    .await?;
-                    if !mkdir.success() {
-                        return Err(format!(
-                            "Failed to create attachments dir: {}",
-                            mkdir.stderr_string()
-                        ));
-                    }
-
-                    let dest = format!("{attachments_dir}/{display_name}");
-                    crate::connectivity::docker::copy_into(
-                        &cli,
-                        &container_name,
-                        local_path,
-                        &dest,
-                    )
-                    .await?;
-
-                    format!("file://{dest}")
-                }
-                ConnectionKey::Local => format!("file://{}", file.path),
+                let dir = attachments_dir(&cwd, session_id);
+                let dest = format!("{dir}/{display_name}");
+                copy_to_machine(&app_state, &conn, local_path, &dir, &dest).await?;
+                format!("file://{dest}")
             };
 
             if embedded_context && !is_pdf_extension(&file.path) {
