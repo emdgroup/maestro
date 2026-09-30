@@ -29,7 +29,9 @@ use serde::{de::DeserializeOwned, Serialize};
 
 /// Version 2 of `projects.db`: the task tables, mirroring the app's with `project_path` where
 /// `project_id` was. There is no foreign key to `worktrees` from `workspace_worktree_id`.
-pub const SCHEMA: &str = "
+///
+/// Frozen: a later change to these tables is a new entry in `project_store::MIGRATIONS`.
+pub const V2_TASKS: &str = "
 -- The highest task id a project has ever minted. Never lowered, so an id is never reused.
 CREATE TABLE IF NOT EXISTS project_counters (
     project_path  TEXT PRIMARY KEY,
@@ -336,6 +338,20 @@ pub fn update(
     task_id: i32,
     update: &TaskUpdate,
 ) -> Result<Task, String> {
+    let tx = transaction(conn)?;
+    write_update(&tx, project_path, task_id, update)?;
+    let task = read(&tx, project_path, task_id)?;
+    commit(tx)?;
+    Ok(task)
+}
+
+/// [`update`] inside a transaction the caller holds, for a composite step.
+fn write_update(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    update: &TaskUpdate,
+) -> Result<(), String> {
     let mut sets: Vec<(&str, Box<dyn rusqlite::ToSql>)> = Vec::new();
 
     if let Some(v) = &update.description {
@@ -421,7 +437,9 @@ pub fn update(
     if let Some(v) = update.pull_request_ci {
         sets.push(("pull_request_ci", Box::new(v.map(text))));
     }
-    let pipeline = sets.len() > edits || update.increment_fix_rounds;
+    let pipeline = sets.len() > edits
+        || update.increment_fix_rounds
+        || update.execution_start_sha_if_empty.is_some();
     // An update naming nothing still bumps it, as the app's always did.
     if edited || !pipeline {
         sets.push(("updated_at", Box::new(Utc::now().to_rfc3339())));
@@ -432,11 +450,15 @@ pub fn update(
         assignments.push("fix_rounds = fix_rounds + 1".to_string());
     }
     let mut values: Vec<Box<dyn rusqlite::ToSql>> = sets.into_iter().map(|(_, v)| v).collect();
+    if let Some(sha) = &update.execution_start_sha_if_empty {
+        assignments
+            .push("execution_start_sha = COALESCE(NULLIF(execution_start_sha, ''), ?)".to_string());
+        values.push(Box::new(sha.clone()));
+    }
     values.push(Box::new(project_path.to_string()));
     values.push(Box::new(task_id));
 
-    let tx = transaction(conn)?;
-    tx.execute(
+    conn.execute(
         &format!(
             "UPDATE tasks SET {} WHERE project_path = ? AND id = ?",
             assignments.join(", ")
@@ -451,24 +473,21 @@ pub fn update(
         // Sending a task back to a board column un-archives it, or a task restored from the
         // archive would sit in a column and in the archive list at once.
         if status != TaskStatus::Cancelled {
-            tx.execute(
+            conn.execute(
                 "UPDATE tasks SET archived_at = NULL WHERE project_path = ?1 AND id = ?2",
                 params![project_path, task_id],
             )
             .map_err(|e| e.to_string())?;
         }
         transition::apply(
-            &tx,
+            conn,
             project_path,
             task_id,
             TaskTransition::ManualMove(status),
             &TransitionGuard::Always,
         )?;
     }
-
-    let task = read(&tx, project_path, task_id)?;
-    commit(tx)?;
-    Ok(task)
+    Ok(())
 }
 
 pub fn archive(conn: &Connection, project_path: &str, task_id: i32) -> Result<Task, String> {
@@ -724,7 +743,7 @@ pub fn end_turn(
                 task_id,
                 phase.as_deref(),
                 &request.closing_message,
-            );
+            )?;
         } else {
             record_unfinished(
                 &tx,
@@ -732,7 +751,7 @@ pub fn end_turn(
                 task_id,
                 phase.as_deref(),
                 &request.closing_message,
-            );
+            )?;
         }
     }
     commit(tx)?;
@@ -1056,6 +1075,86 @@ mod tests {
         assert_eq!(task.pull_request_ci, None);
     }
 
+    /// A resumed session must keep the anchor its first run recorded, or it hides that run's work.
+    #[test]
+    fn the_start_sha_is_written_only_where_there_is_none() {
+        let mut conn = crate::project_store::open_in_memory();
+        let task_id = new_task(&mut conn, PROJECT, "a task").id;
+        let anchor = |conn: &mut Connection, sha: &str| {
+            let only_if_empty = TaskUpdate {
+                execution_start_sha_if_empty: Some(sha.to_string()),
+                ..TaskUpdate::default()
+            };
+            update(conn, PROJECT, task_id, &only_if_empty)
+                .expect("update")
+                .execution_start_sha
+        };
+        assert_eq!(anchor(&mut conn, "first").as_deref(), Some("first"));
+        assert_eq!(anchor(&mut conn, "second").as_deref(), Some("first"));
+
+        let emptied = TaskUpdate {
+            execution_start_sha: Some(Some(String::new())),
+            ..TaskUpdate::default()
+        };
+        update(&mut conn, PROJECT, task_id, &emptied).expect("empty it");
+        assert_eq!(anchor(&mut conn, "third").as_deref(), Some("third"));
+    }
+
+    fn request_ci_fix(conn: &mut Connection, task_id: i32) -> Option<Task> {
+        transition::apply_transition(
+            conn,
+            &maestro_protocol::ApplyTaskTransitionRequest {
+                project_path: PROJECT.to_string(),
+                task_id,
+                event: TaskTransition::CiFixRequested,
+                guard: TransitionGuard::FixRoundsBelow(2),
+                update: Some(TaskUpdate {
+                    increment_fix_rounds: true,
+                    ..TaskUpdate::default()
+                }),
+                comment: Some(maestro_protocol::NewTaskComment {
+                    kind: "ci".to_string(),
+                    author: "maestro".to_string(),
+                    body: Some("CI failed".to_string()),
+                    external_ref: None,
+                    phase: Some("AwaitingMerge".to_string()),
+                }),
+            },
+        )
+        .expect("request a CI fix")
+    }
+
+    /// The count, the report and the handoff are one step: a refused fix writes none of them.
+    #[test]
+    fn a_ci_fix_is_counted_and_reported_only_when_it_is_sent() {
+        let (mut conn, task_id) = db_with_task();
+        in_phase(&conn, task_id, TaskTransition::PullRequestOpened);
+
+        let sent = request_ci_fix(&mut conn, task_id).expect("sent");
+        assert_eq!(sent.fix_rounds, 1);
+        assert_eq!(sent.ball, TaskBall::Agent);
+        assert_eq!(kinds(&conn, task_id), ["ci"]);
+
+        let being_fixed = get(&conn, PROJECT, task_id).expect("get");
+        assert!(
+            request_ci_fix(&mut conn, task_id).is_none(),
+            "the ball is not External"
+        );
+        assert_eq!(get(&conn, PROJECT, task_id).expect("get"), being_fixed);
+        assert_eq!(kinds(&conn, task_id), ["ci"]);
+
+        in_phase(&conn, task_id, TaskTransition::CiFixPushed);
+        request_ci_fix(&mut conn, task_id).expect("the second round");
+        in_phase(&conn, task_id, TaskTransition::CiFixPushed);
+        let capped = get(&conn, PROJECT, task_id).expect("get");
+        assert!(
+            request_ci_fix(&mut conn, task_id).is_none(),
+            "the rounds are spent"
+        );
+        assert_eq!(get(&conn, PROJECT, task_id).expect("get"), capped);
+        assert_eq!(kinds(&conn, task_id), ["ci", "ci"]);
+    }
+
     #[test]
     fn cancelling_archives_and_parks_the_task() {
         let (mut conn, task_id) = db_with_task();
@@ -1067,7 +1166,8 @@ mod tests {
     #[test]
     fn accepting_a_proposal_replaces_the_description_and_leaves_the_thread() {
         let (mut conn, task_id) = db_with_task();
-        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "sharper wording");
+        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "sharper wording")
+            .expect("record");
         let accept = CloseRefinementRequest {
             project_path: PROJECT.to_string(),
             task_id,
@@ -1088,7 +1188,8 @@ mod tests {
     #[test]
     fn a_rejected_proposal_stays_in_the_thread() {
         let (mut conn, task_id) = db_with_task();
-        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "sharper wording");
+        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "sharper wording")
+            .expect("record");
         let reject = CloseRefinementRequest {
             project_path: PROJECT.to_string(),
             task_id,

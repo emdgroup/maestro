@@ -1,6 +1,6 @@
 //! A task's review: the decision a reviewer took, their feedback, and per-file comments.
 //!
-//! One per task. Its tables are in version 3, beside the worktrees (see `worktrees::SCHEMA`).
+//! One per task. Its tables are in version 3, beside the worktrees (see `worktrees::V3_WORKTREES_REVIEWS`).
 
 use chrono::Utc;
 use maestro_protocol::{ReviewComment, SaveTaskReviewRequest, TaskReview};

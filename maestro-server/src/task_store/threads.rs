@@ -27,6 +27,41 @@ pub fn append(
     external_ref: Option<&str>,
     phase: Option<&str>,
 ) -> Result<TaskComment, String> {
+    // A savepoint, so an insert that fails keeps the proposal or plan it was about to replace.
+    let savepoint = |sql: &str| {
+        conn.execute_batch(sql)
+            .map_err(|e| format!("Failed to append to task {task_id} thread: {e}"))
+    };
+    savepoint("SAVEPOINT append")?;
+    let written = write(
+        conn,
+        project_path,
+        task_id,
+        kind,
+        author,
+        body,
+        external_ref,
+        phase,
+    );
+    savepoint(if written.is_ok() {
+        "RELEASE append"
+    } else {
+        "ROLLBACK TO append; RELEASE append"
+    })?;
+    written
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    kind: &str,
+    author: &str,
+    body: Option<&str>,
+    external_ref: Option<&str>,
+    phase: Option<&str>,
+) -> Result<TaskComment, String> {
     if holds_a_single_value(kind) {
         conn.execute(
             "DELETE FROM task_comments WHERE project_path = ?1 AND task_id = ?2 AND kind = ?3",
@@ -110,14 +145,15 @@ pub fn latest_of_kind(
 }
 
 /// Record an agent's closing message as what its phase delivers, doing nothing when there is
-/// nothing worth keeping. Best-effort: failing to write a note must not stop the task moving.
+/// nothing worth keeping. A failure fails the caller's transaction, since a turn end that moved
+/// the task without its record leaves a gate with nothing to read.
 pub fn record_outcome(
     conn: &Connection,
     project_path: &str,
     task_id: i32,
     phase: Option<&str>,
     message: &str,
-) {
+) -> Result<(), String> {
     record_as(
         conn,
         project_path,
@@ -137,7 +173,7 @@ pub fn record_unfinished(
     task_id: i32,
     phase: Option<&str>,
     message: &str,
-) {
+) -> Result<(), String> {
     record_as(conn, project_path, task_id, "outcome", phase, message)
 }
 
@@ -148,12 +184,12 @@ fn record_as(
     kind: &str,
     phase: Option<&str>,
     message: &str,
-) {
+) -> Result<(), String> {
     let trimmed = message.trim();
     if trimmed.is_empty() {
-        return;
+        return Ok(());
     }
-    if let Err(e) = append(
+    append(
         conn,
         project_path,
         task_id,
@@ -162,12 +198,8 @@ fn record_as(
         Some(trimmed),
         None,
         phase,
-    ) {
-        crate::send_diag(
-            "warn",
-            format!("[task-store] could not record the outcome of task {task_id}: {e}"),
-        );
-    }
+    )
+    .map(|_| ())
 }
 
 /// A task's thread, oldest first. By `id`, since two entries of one transition can share a
@@ -454,7 +486,7 @@ mod tests {
     #[test]
     fn an_empty_outcome_is_not_recorded_and_whitespace_is_trimmed() {
         let (conn, task_id) = db_with_task();
-        record_outcome(&conn, PROJECT, task_id, Some("Implementing"), "   \n  ");
+        record_outcome(&conn, PROJECT, task_id, Some("Implementing"), "   \n  ").expect("record");
         assert!(kinds(&conn, task_id).is_empty());
 
         record_outcome(
@@ -463,7 +495,8 @@ mod tests {
             task_id,
             Some("Implementing"),
             "  finished  ",
-        );
+        )
+        .expect("record");
         let thread = list_comments(&conn, PROJECT, task_id).expect("list");
         assert_eq!(thread.len(), 1);
         assert_eq!(thread[0].kind, "outcome");
@@ -481,7 +514,8 @@ mod tests {
                 task_id,
                 Some(phase),
                 "You've hit your limit",
-            );
+            )
+            .expect("record");
             let thread = list_comments(&conn, PROJECT, task_id).expect("list");
             assert_eq!(thread[0].kind, "outcome", "{phase}");
             assert_eq!(thread[0].phase.as_deref(), Some(phase));
@@ -494,10 +528,11 @@ mod tests {
         let (conn, task_id) = db_with_task();
         note(&conn, task_id, "verdict", "first pass");
         note(&conn, task_id, "verdict", "second pass");
-        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "first attempt");
-        record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "first plan");
-        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "second attempt");
-        record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "second plan");
+        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "first attempt").expect("record");
+        record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "first plan").expect("record");
+        record_outcome(&conn, PROJECT, task_id, Some("Refining"), "second attempt")
+            .expect("record");
+        record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "second plan").expect("record");
 
         assert_eq!(
             kinds(&conn, task_id),
@@ -514,10 +549,25 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_replacement_keeps_the_entry_it_would_have_replaced() {
+        let (conn, task_id) = db_with_task();
+        record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "kept plan").expect("record");
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER refuse BEFORE INSERT ON task_comments WHEN new.body = 'refused'
+             BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+        .expect("trigger");
+
+        assert!(record_outcome(&conn, PROJECT, task_id, Some("Drafting"), "refused").is_err());
+        let plan = latest_of_kind(&conn, PROJECT, task_id, "plan").expect("read");
+        assert_eq!(plan.and_then(|c| c.body).as_deref(), Some("kept plan"));
+    }
+
+    #[test]
     fn a_phases_closing_message_is_typed_by_what_it_is() {
         let (conn, task_id) = db_with_task();
         for phase in ["Refining", "Drafting", "SelfReview", "Implementing"] {
-            record_outcome(&conn, PROJECT, task_id, Some(phase), "words");
+            record_outcome(&conn, PROJECT, task_id, Some(phase), "words").expect("record");
         }
         assert_eq!(
             kinds(&conn, task_id),

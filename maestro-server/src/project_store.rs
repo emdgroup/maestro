@@ -24,7 +24,7 @@ const CLOSED_RETENTION_DAYS: i64 = 90;
 pub const UNAVAILABLE: &str =
     "The project store could not be opened, so sessions are not recorded on this machine";
 
-const SCHEMA: &str = "
+const V1_SESSIONS: &str = "
 CREATE TABLE IF NOT EXISTS sessions (
     agent_id           TEXT NOT NULL,
     acp_session_id     TEXT NOT NULL,
@@ -52,14 +52,18 @@ CREATE INDEX IF NOT EXISTS sessions_by_live_id ON sessions(session_id);
 ";
 
 /// The schema, one step per version: entry `n` takes a database at `PRAGMA user_version` `n` to
-/// `n + 1`. A new step is appended, never edited in place, since a daemon may already have run it.
+/// `n + 1`.
+///
+/// Append only. Never edit an entry that has shipped, since a daemon may already have run it, and
+/// never point an entry at a literal something else treats as the current schema: each is its own
+/// frozen literal, named for the version it makes.
 ///
 /// Version 1 is the sessions table phase 1 created without a version, so its `IF NOT EXISTS` is
 /// what lets a database at version 0 that already holds sessions take it and keep its rows.
 const MIGRATIONS: &[&str] = &[
-    SCHEMA,
-    crate::task_store::SCHEMA,
-    crate::task_store::worktrees::SCHEMA,
+    V1_SESSIONS,
+    crate::task_store::V2_TASKS,
+    crate::task_store::worktrees::V3_WORKTREES_REVIEWS,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -449,7 +453,7 @@ mod tests {
         let directory = tempfile::tempdir().expect("tempdir");
         {
             let conn = Connection::open(directory.path().join("projects.db")).expect("open");
-            conn.execute_batch(SCHEMA).expect("phase 1 schema");
+            conn.execute_batch(V1_SESSIONS).expect("phase 1 schema");
             start(&conn, "a", "/p", &full_meta(), true, "live-1");
         }
 
@@ -482,6 +486,11 @@ mod tests {
                 [],
             )
             .expect("a task");
+            conn.execute(
+                "INSERT INTO project_counters (project_path, last_task_id) VALUES ('/p', 4)",
+                [],
+            )
+            .expect("its counter");
         }
 
         let conn = open(directory.path()).expect("migrate");
@@ -497,6 +506,14 @@ mod tests {
             row.get::<_, i64>(0)
         })
         .expect("the review tables exist");
+        let counters: (i32, i32) = conn
+            .query_row(
+                "SELECT last_task_id, last_worktree_id FROM project_counters WHERE project_path = '/p'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("the counter survived");
+        assert_eq!(counters, (4, 0));
     }
 
     fn full_meta() -> SessionMeta {

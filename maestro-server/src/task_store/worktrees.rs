@@ -3,9 +3,11 @@
 //! Only the rows live here. Making, diffing and removing a worktree is git, which the app still runs
 //! over its own connection, except for the ones an automation makes, which the daemon cuts itself.
 //!
-//! Worktree ids are global to the store, as they were in the app, because a session's worktree is
-//! named after its row id (`session-<id>`): an id that is never reused is what keeps two sessions'
-//! folders apart, whichever project they are in.
+//! A worktree is `(project_path, id)`, like a task, with ids minted per project from a counter
+//! that never goes back. A session's worktree is named after its id (`session-<id>`) inside the
+//! project, so an id only has to be unique there, and one that is never reused keeps a new
+//! session out of an old one's folder. Per project rather than global so that ids imported
+//! verbatim from several apps' databases cannot collide.
 
 use chrono::Utc;
 use maestro_protocol::{
@@ -15,26 +17,30 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{commit, transaction};
 
-/// Version 3 of `projects.db`: worktrees, and the reviews hanging off a task.
+/// Version 3 of `projects.db`: worktrees, and the reviews hanging off a task. Frozen: a later
+/// change to these tables is a new entry in `project_store::MIGRATIONS`.
 ///
 /// A task's deletion releases its worktree rather than taking it, as the app's `ON DELETE SET
 /// NULL` did. That cannot be a foreign key action here: SET NULL on the composite key would null
 /// `project_path` too. So the key only checks, and a trigger clears `task_id` first. Likewise
 /// `tasks.workspace_worktree_id`, which version 2 made without a foreign key and SQLite cannot add
 /// one to without rebuilding the table: a trigger drops the pin when its worktree goes.
-pub const SCHEMA: &str = "
+pub const V3_WORKTREES_REVIEWS: &str = "
+-- The highest worktree id a project has ever minted, beside its task counter.
+ALTER TABLE project_counters ADD COLUMN last_worktree_id INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS worktrees (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_path TEXT NOT NULL,
+    id INTEGER NOT NULL,
     task_id INTEGER,
     branch_name TEXT NOT NULL,
     base_branch TEXT,
     path TEXT NOT NULL,
     git_status TEXT,
     created_at TEXT NOT NULL,
+    PRIMARY KEY (project_path, id),
     FOREIGN KEY (project_path, task_id) REFERENCES tasks(project_path, id)
 );
-CREATE INDEX IF NOT EXISTS idx_worktrees_project_path ON worktrees(project_path);
 CREATE INDEX IF NOT EXISTS idx_worktrees_task_id ON worktrees(project_path, task_id);
 
 CREATE TRIGGER IF NOT EXISTS tasks_release_worktrees BEFORE DELETE ON tasks
@@ -128,23 +134,57 @@ pub fn get(conn: &Connection, project_path: &str, id: i32) -> Result<Option<Work
     .map_err(|e| format!("Failed to read worktree {id}: {e}"))
 }
 
-/// Record a worktree. An empty `path` reserves the id for a session worktree whose name is that
-/// id, and is filled in by [`update`] once git has made it.
-pub fn insert(conn: &Connection, request: &InsertWorktreeRequest) -> Result<Worktree, String> {
+/// The project's next worktree id, counted from what the project ever minted.
+fn mint_id(conn: &Connection, project_path: &str) -> Result<i32, String> {
+    conn.query_row(
+        "INSERT INTO project_counters (project_path, last_task_id, last_worktree_id)
+         VALUES (?1, 0, 1)
+         ON CONFLICT(project_path) DO UPDATE SET last_worktree_id = last_worktree_id + 1
+         RETURNING last_worktree_id",
+        params![project_path],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to mint a worktree id: {e}"))
+}
+
+fn insert_row(
+    conn: &Connection,
+    project_path: &str,
+    task_id: Option<i32>,
+    branch_name: &str,
+    base_branch: Option<&str>,
+    path: &str,
+) -> Result<i32, String> {
+    let id = mint_id(conn, project_path)?;
     conn.execute(
-        "INSERT INTO worktrees (project_path, task_id, branch_name, base_branch, path, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO worktrees (project_path, id, task_id, branch_name, base_branch, path,
+                                created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
-            request.project_path,
-            request.task_id,
-            request.branch_name,
-            request.base_branch,
-            request.path,
+            project_path,
+            id,
+            task_id,
+            branch_name,
+            base_branch,
+            path,
             Utc::now().to_rfc3339(),
         ],
     )
     .map_err(|e| format!("Failed to insert worktree: {e}"))?;
-    let id = conn.last_insert_rowid() as i32;
+    Ok(id)
+}
+
+/// Record a worktree. An empty `path` reserves the id for a session worktree whose name is that
+/// id, and is filled in by [`update`] once git has made it.
+pub fn insert(conn: &Connection, request: &InsertWorktreeRequest) -> Result<Worktree, String> {
+    let id = insert_row(
+        conn,
+        &request.project_path,
+        request.task_id,
+        &request.branch_name,
+        request.base_branch.as_deref(),
+        &request.path,
+    )?;
     get(conn, &request.project_path, id)?.ok_or_else(|| format!("Worktree {id} not found"))
 }
 
@@ -157,20 +197,27 @@ pub fn adopt(
     base_branch: Option<&str>,
     relative_path: &str,
 ) -> Result<bool, String> {
-    conn.execute(
-        "INSERT INTO worktrees (project_path, task_id, branch_name, base_branch, path, created_at)
-         SELECT ?1, NULL, ?2, ?3, ?4, ?5
-          WHERE NOT EXISTS (SELECT 1 FROM worktrees WHERE project_path = ?1 AND path = ?4)",
-        params![
+    let fail =
+        |e: String| format!("cannot adopt the worktree {relative_path} an automation made: {e}");
+    let known: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM worktrees WHERE project_path = ?1 AND path = ?2)",
+            params![project_path, relative_path],
+            |row| row.get(0),
+        )
+        .map_err(|e| fail(e.to_string()))?;
+    if !known {
+        insert_row(
+            conn,
             project_path,
+            None,
             branch_name,
             base_branch,
             relative_path,
-            Utc::now().to_rfc3339()
-        ],
-    )
-    .map(|inserted| inserted > 0)
-    .map_err(|e| format!("cannot adopt the worktree {relative_path} an automation made: {e}"))
+        )
+        .map_err(fail)?;
+    }
+    Ok(!known)
 }
 
 /// Write the branch and path a reservation ended up with. What the request leaves out is kept.
@@ -303,6 +350,20 @@ pub(super) mod tests {
         assert_eq!(made.branch_name, "maestro/session");
         assert_eq!(get(&conn, PROJECT, reserved.id).expect("get"), Some(made));
         assert_eq!(get(&conn, "/other", reserved.id).expect("get"), None);
+    }
+
+    /// `session-<id>` lives inside the project, so ids are the project's, and never handed out twice.
+    #[test]
+    fn worktree_ids_are_per_project_and_never_reused() {
+        let (mut conn, _) = db_with_task();
+        let first = worktree(&conn, PROJECT, None, "a");
+        let elsewhere = worktree(&conn, "/other", None, "a");
+        assert_eq!((first.id, elsewhere.id), (1, 1));
+
+        delete(&mut conn, PROJECT, &[first.id]).expect("delete");
+        assert_eq!(worktree(&conn, PROJECT, None, "b").id, 2);
+        assert!(adopt(&conn, "/other", "maestro/automation-x-1", None, "c").unwrap());
+        assert_eq!(list(&conn, "/other", None).expect("list")[1].id, 2);
     }
 
     #[test]

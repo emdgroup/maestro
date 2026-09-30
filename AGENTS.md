@@ -448,6 +448,13 @@ map, the `spawn_result_rx` arm of `main.rs`, and an automation's session gets on
 Nothing about open sessions is kept app-side: not in `.maestro/state.json`, and a session's name
 is `RenameSession` on the row rather than the app's `session_aliases` table.
 
+**`projects.db` migrates by `user_version`.** `MIGRATIONS` in `project_store.rs` is an append-only
+list, one frozen literal per version, and each step runs in its own transaction with the version it
+reaches. A daemon refuses a file at a version newer than it knows, as the app refuses a newer
+database. A remote daemon directory, `~/.maestro/daemon/`, is shared by every build on that host,
+dev and released alike, so a dev build that migrated it leaves an older daemon there without its
+store until that one is updated. That is accepted, as it is for the app database.
+
 **Opening a project is one question.** `session_ops::attach_project_sessions` sends
 `ListProjectSessions`, which answers with every row and, for the ones whose routing id the
 session map still holds, their live state. `row_action` then decides per row: a session mid-turn

@@ -259,8 +259,38 @@ fn admit(
             current.phase_status,
             Some(PhaseStatus::Running | PhaseStatus::Blocked)
         ),
+        // The rounds are not lifecycle state; `admitted` reads and checks them.
+        TransitionGuard::FixRoundsBelow(_) => current.ball == TaskBall::External,
     };
     admitted.then_some(event)
+}
+
+/// Read what `guard` needs and decide, returning the event to apply, or `None` when it refused.
+/// A missing task is an error whatever the guard.
+fn admitted(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    event: TaskTransition,
+    guard: &TransitionGuard,
+) -> Result<Option<TaskTransition>, String> {
+    let current = read_state(conn, project_path, task_id)?;
+    let Some(event) = admit(guard, event, current) else {
+        return Ok(None);
+    };
+    if let TransitionGuard::FixRoundsBelow(cap) = guard {
+        let rounds: i32 = conn
+            .query_row(
+                "SELECT fix_rounds FROM tasks WHERE project_path = ?1 AND id = ?2",
+                params![project_path, task_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to read task {task_id} fix rounds: {e}"))?;
+        if rounds >= *cap {
+            return Ok(None);
+        }
+    }
+    Ok(Some(event))
 }
 
 /// Apply a transition if `guard` holds, returning the updated task, or `None` when it refused.
@@ -274,11 +304,20 @@ pub(super) fn apply(
     event: TaskTransition,
     guard: &TransitionGuard,
 ) -> Result<Option<Task>, String> {
-    let current = read_state(conn, project_path, task_id)?;
-    let Some(event) = admit(guard, event, current) else {
+    let Some(event) = admitted(conn, project_path, task_id, event, guard)? else {
         return Ok(None);
     };
-    let next = resolve(event, current);
+    write(conn, project_path, task_id, event).map(Some)
+}
+
+/// Apply an admitted event to the task as it now stands.
+fn write(
+    conn: &Connection,
+    project_path: &str,
+    task_id: i32,
+    event: TaskTransition,
+) -> Result<Task, String> {
+    let next = resolve(event, read_state(conn, project_path, task_id)?);
 
     // A deferral is a promise to a task the scheduler has not picked up yet, so it only survives
     // while the task is still a candidate: parked in Queue. Being claimed clears it, and so does
@@ -304,24 +343,39 @@ pub(super) fn apply(
     )
     .map_err(|e| format!("Failed to apply transition to task {task_id}: {e}"))?;
 
-    read(conn, project_path, task_id).map(Some)
+    read(conn, project_path, task_id)
 }
 
-/// One guarded transition, the guard read in the same transaction as the write.
+/// One guarded transition, the guard read in the same transaction as the write, with the update
+/// the pipeline writes before it and the entry it files after it. A refusal writes none of them,
+/// so a step such as a CI fix is counted and reported only if it is also taken.
 pub fn apply_transition(
     conn: &mut Connection,
     request: &ApplyTaskTransitionRequest,
 ) -> Result<Option<Task>, String> {
+    let (project_path, task_id) = (request.project_path.as_str(), request.task_id);
     let tx = transaction(conn)?;
-    let task = apply(
-        &tx,
-        &request.project_path,
-        request.task_id,
-        request.event,
-        &request.guard,
-    )?;
+    let Some(event) = admitted(&tx, project_path, task_id, request.event, &request.guard)? else {
+        return Ok(None);
+    };
+    if let Some(update) = &request.update {
+        super::write_update(&tx, project_path, task_id, update)?;
+    }
+    let task = write(&tx, project_path, task_id, event)?;
+    if let Some(comment) = &request.comment {
+        super::append(
+            &tx,
+            project_path,
+            task_id,
+            &comment.kind,
+            &comment.author,
+            comment.body.as_deref(),
+            comment.external_ref.as_deref(),
+            comment.phase.as_deref(),
+        )?;
+    }
     commit(tx)?;
-    Ok(task)
+    Ok(Some(task))
 }
 
 #[cfg(test)]

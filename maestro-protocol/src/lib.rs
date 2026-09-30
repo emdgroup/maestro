@@ -1445,7 +1445,7 @@ pub struct UpdateTaskRequest {
 /// `null` clears the column.
 ///
 /// One struct for the user's edits, the task settings form, issue sync and the pipeline's own
-/// columns. The pipeline's (`execution_start_sha`, the pull request fields, `increment_fix_rounds`)
+/// columns. The pipeline's (`execution_start_sha*`, the pull request fields, `increment_fix_rounds`)
 /// leave `updated_at` alone, because a poll or a spawn is not an edit to the task; any other field
 /// bumps it.
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -1526,6 +1526,10 @@ pub struct TaskUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub execution_start_sha: Option<Option<String>>,
+    /// Writes `execution_start_sha` only where it is null or empty, so a resumed session keeps the
+    /// anchor its first run recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_start_sha_if_empty: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1600,6 +1604,8 @@ pub enum TransitionGuard {
     Blocked,
     /// `fail_if_agent_running`: the phase status is `Running` or `Blocked`.
     AgentRunning,
+    /// `request_ci_fix`: the ball is `External` and fewer than this many fix rounds were spent.
+    FixRoundsBelow(i32),
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1609,6 +1615,12 @@ pub struct ApplyTaskTransitionRequest {
     pub event: TaskTransition,
     #[serde(default)]
     pub guard: TransitionGuard,
+    /// Written before the transition, in its transaction, and only if the guard lets it apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<TaskUpdate>,
+    /// Appended after the transition, in its transaction, and only if the guard lets it apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<NewTaskComment>,
 }
 
 /// A task, or `None` where the guard refused or nothing was found.
@@ -1716,6 +1728,13 @@ pub struct ImportedIssue {
 pub struct AddTaskCommentRequest {
     pub project_path: String,
     pub task_id: i32,
+    #[serde(flatten)]
+    pub comment: NewTaskComment,
+}
+
+/// A thread entry to write. A `proposal` or `plan` replaces the task's previous one of that kind.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct NewTaskComment {
     pub kind: String,
     pub author: String,
     #[serde(default)]
@@ -2769,6 +2788,8 @@ mod tests {
                         reviewer_pending: false,
                     },
                     guard: TransitionGuard::Status(vec![TaskStatus::Planning, TaskStatus::Queue]),
+                    update: None,
+                    comment: None,
                 },
             )),
             MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
@@ -2777,6 +2798,49 @@ mod tests {
                     task_id: 3,
                     event: TaskTransition::SessionReady(AgentRole::Coder),
                     guard: TransitionGuard::Phase(TaskPhase::SelfReview),
+                    update: None,
+                    comment: None,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::CiFixRequested,
+                    guard: TransitionGuard::FixRoundsBelow(3),
+                    update: Some(TaskUpdate {
+                        increment_fix_rounds: true,
+                        execution_start_sha_if_empty: Some("abc123".to_string()),
+                        ..TaskUpdate::default()
+                    }),
+                    comment: Some(NewTaskComment {
+                        kind: "ci".to_string(),
+                        author: "maestro".to_string(),
+                        body: Some("CI failed".to_string()),
+                        external_ref: None,
+                        phase: Some("AwaitingMerge".to_string()),
+                    }),
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::AddTaskComment(AddTaskCommentRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                comment: NewTaskComment {
+                    kind: "plan".to_string(),
+                    author: "agent".to_string(),
+                    body: Some("Plan".to_string()),
+                    external_ref: None,
+                    phase: None,
+                },
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(
+                ApplyTaskTransitionRequest {
+                    project_path: "/srv/shop".to_string(),
+                    task_id: 3,
+                    event: TaskTransition::Stopped,
+                    guard: TransitionGuard::Always,
+                    update: None,
+                    comment: None,
                 },
             )),
             MaestroRpcMessage::Request(ServerRequest::EndTaskTurn(EndTaskTurnRequest {
