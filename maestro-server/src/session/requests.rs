@@ -97,6 +97,30 @@ pub(crate) async fn load(
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     stdout: &Stdout,
 ) -> bool {
+    // Both are failures no later attempt gets past, and neither reaches the agent, so they are
+    // reported here in the agent's place. Named for the session, or the host would go on holding
+    // an entry for a load that was never going to answer.
+    let gone = if !std::path::Path::new(&req.cwd).is_dir() {
+        Some(format!("the folder {} no longer exists", req.cwd))
+    } else if !agents_with_spawn
+        .iter()
+        .any(|agent| agent.id == req.agent_id)
+    {
+        Some(format!("the agent {} is not known here", req.agent_id))
+    } else {
+        None
+    };
+    if let Some(reason) = gone {
+        return send_response(
+            stdout,
+            &MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
+                message: format!("{}: {reason}", maestro_protocol::SESSION_GONE_ERROR),
+                session_id: Some(req.session_id),
+            })),
+        )
+        .await
+        .is_ok();
+    }
     // Resolved before offloading: `agents_with_spawn` is borrowed from the dispatch loop and
     // cannot be moved into the task.
     let Some((cmd, args, env)) =
@@ -148,7 +172,6 @@ pub(crate) async fn load(
                 session.agent_id = req.agent_id;
                 session.cwd = req.cwd;
                 session.additional_directories = req.additional_directories;
-                session.host_meta = req.host_meta;
                 session.project = req.project_path.map(|project_path| ProjectBinding {
                     project_path,
                     meta: req.meta,

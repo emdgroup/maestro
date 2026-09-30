@@ -218,15 +218,12 @@ pub struct ActiveSession {
     pub cwd: String,
     /// Extra workspace roots this session was started with, replayed when the agent restarts.
     pub additional_directories: Vec<String>,
-    /// Opaque blob the host attached at spawn, handed back by `ListLiveSessions`.
-    /// Never read here. See `maestro_protocol::ListLiveSession::host_meta`.
-    pub host_meta: Option<serde_json::Value>,
     /// What the project store records about this session. `None` for one started with no project,
     /// which the store then never hears of.
     pub project: Option<ProjectBinding>,
     /// Whether a `session/prompt` is outstanding right now. Shared with the command loop.
     ///
-    /// Reported by `ListLiveSessions` because it decides what an attaching client may do: a
+    /// Reported by `ListProjectSessions` because it decides what an attaching client may do: a
     /// session between turns can be closed and reloaded to recover its transcript, one mid-turn
     /// cannot without throwing the turn away.
     pub turn_active: Arc<AtomicBool>,

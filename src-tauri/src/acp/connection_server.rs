@@ -323,6 +323,25 @@ pub async fn query_rename_session_via_server(
     .await
 }
 
+/// Close a conversation the daemon is not running, by its key. Sent when its load failed for
+/// good, see `reader_task::is_gone_session_error`.
+pub async fn query_close_project_session_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::CloseProjectSessionRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(request)),
+        reply!(ServerResponse::CloseProjectSessionOk => ()),
+        15,
+        "CloseProjectSession via connection server timed out after 15s",
+    )
+    .await
+}
+
 /// Wherever the server keeps this project's automations, ask it for them.
 ///
 /// The path goes as the client knows it and comes back canonicalized: the server is the process on

@@ -1478,6 +1478,7 @@ pub(crate) async fn handle_shared_server_message(
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_))
             );
             let is_session_load_error = is_fatal_session_error(&msg);
+            let is_gone = is_gone_session_error(&msg);
             handle_server_message(
                 msg,
                 &session_id,
@@ -1508,6 +1509,28 @@ pub(crate) async fn handle_shared_server_message(
                 fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
+                }
+                let acp_session_id = acp_sid.lock().ok().and_then(|id| id.clone());
+                if let (true, Some(acp_session_id)) = (is_gone, acp_session_id) {
+                    // Off this task: the reply comes back through the reader this runs on.
+                    tokio::spawn({
+                        let app_state = Arc::clone(app_state);
+                        async move {
+                            if let Err(e) =
+                                crate::acp::connection_server::query_close_project_session_via_server(
+                                    connection_key,
+                                    maestro_protocol::CloseProjectSessionRequest {
+                                        agent_id,
+                                        acp_session_id,
+                                    },
+                                    &app_state,
+                                )
+                                .await
+                            {
+                                log::warn!("[acp] could not close a session that is gone: {e}");
+                            }
+                        }
+                    });
                 }
             }
         } else {
@@ -1959,6 +1982,23 @@ fn is_fatal_session_error(msg: &MaestroRpcMessage) -> bool {
     )
 }
 
+/// Whether a load failed for a reason no later attempt gets past, so the daemon's row for the
+/// conversation should be closed.
+///
+/// An open row is loaded again every time the project is opened, which is right for an agent that
+/// crashed or wants signing in to again and wrong for a conversation that no longer exists. The
+/// daemon tells the two apart, because it holds the agent's error code and this side is sent only
+/// the agent's wording. A load that could not be sent at all, a connection that is down, never
+/// produces this message, so an unreachable host keeps its sessions.
+fn is_gone_session_error(msg: &MaestroRpcMessage) -> bool {
+    matches!(
+        msg,
+        MaestroRpcMessage::Response(ServerResponse::Error(e))
+            if e.session_id.is_some()
+                && e.message.starts_with(maestro_protocol::SESSION_GONE_ERROR)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1973,6 +2013,31 @@ mod tests {
                 message: message.to_string(),
                 session_id: session_id.map(str::to_string),
             }))
+        }
+
+        /// Every gone session is a failed load, so the entry is torn down either way. Only the one
+        /// the daemon calls gone costs the conversation its row.
+        #[test]
+        fn only_a_session_the_daemon_calls_gone_closes_its_row() {
+            let gone = error(
+                "ACP session/load failed: the session is gone: Resource not found: 558e4705",
+                Some("session-3"),
+            );
+            assert!(is_fatal_session_error(&gone));
+            assert!(is_gone_session_error(&gone));
+
+            for retryable in [
+                "ACP session/load failed: Authentication required",
+                "ACP session/load failed: Internal error",
+            ] {
+                let message = error(retryable, Some("session-3"));
+                assert!(is_fatal_session_error(&message));
+                assert!(!is_gone_session_error(&message));
+            }
+            assert!(!is_gone_session_error(&error(
+                "ACP session/load failed: the session is gone",
+                None,
+            )));
         }
 
         #[test]

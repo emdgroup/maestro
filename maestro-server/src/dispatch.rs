@@ -123,33 +123,6 @@ pub(crate) async fn dispatch_message(
             );
         }
 
-        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(_req)) => {
-            let mut live = Vec::with_capacity(sessions.len());
-            for (session_id, session) in sessions.iter() {
-                let pending_requests = pending_requests(session).await;
-                live.push(maestro_protocol::ListLiveSession {
-                    session_id: session_id.clone(),
-                    agent_id: session.agent_id.clone(),
-                    cwd: session.cwd.clone(),
-                    acp_session_id: session.cleanup.as_ref().map(|c| c.acp_session_id.clone()),
-                    turn_active: session
-                        .turn_active
-                        .load(std::sync::atomic::Ordering::SeqCst),
-                    host_meta: session.host_meta.clone(),
-                    pending_requests,
-                });
-            }
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(
-                        maestro_protocol::ListLiveSessionsResponse { sessions: live },
-                    )),
-                )
-                .await
-            );
-        }
-
         MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(req)) => {
             let Some(store) = project_store else {
                 send_or_return!(
@@ -222,6 +195,49 @@ pub(crate) async fn dispatch_message(
                     send_response(
                         stdout,
                         &MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::CloseProjectSession(req)) => {
+            let Some(store) = project_store else {
+                send_or_return!(
+                    send_response(
+                        stdout,
+                        &error_response(crate::project_store::UNAVAILABLE.to_string())
+                    )
+                    .await
+                );
+                return true;
+            };
+            // A session running under this key was loaded by somebody after the failure that
+            // prompted this. Closing its row would hide a running session from every client
+            // opening the project, and `Cancel` is how a running one is closed.
+            let running = sessions.values().any(|session| {
+                session.agent_id == req.agent_id
+                    && session
+                        .cleanup
+                        .as_ref()
+                        .is_some_and(|cleanup| cleanup.acp_session_id == req.acp_session_id)
+            });
+            let closed = if running {
+                Ok(())
+            } else {
+                crate::project_store::close_dormant(
+                    &*store.lock().await,
+                    &req.agent_id,
+                    &req.acp_session_id,
+                    chrono::Utc::now(),
+                )
+            };
+            match closed {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::CloseProjectSessionOk),
                     )
                     .await
                 ),
@@ -712,7 +728,6 @@ pub(crate) async fn dispatch_message(
                 result.session.agent_id = req.agent_id;
                 result.session.cwd = req.cwd;
                 result.session.additional_directories = req.additional_directories;
-                result.session.host_meta = req.host_meta;
                 result.session.project =
                     req.project_path
                         .map(|project_path| crate::sessions::ProjectBinding {

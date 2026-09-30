@@ -126,7 +126,6 @@ fn test_spawn_unknown_agent_returns_error() {
             session_id: "session-1".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
             project_path: None,
             meta: Default::default(),
         })),
@@ -174,7 +173,6 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
             session_id: "session-99".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
             project_path: None,
             meta: Default::default(),
         })),
@@ -330,7 +328,6 @@ fn test_protocol_framing_large_prompt_payload() {
             session_id: "session-large".to_string(),
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
-            host_meta: None,
             project_path: None,
             meta: Default::default(),
         })),
@@ -500,14 +497,14 @@ fn test_sessionless_reply_echoes_request_id() {
     let stdout = child.stdout.as_mut().unwrap();
     do_handshake(stdin, stdout);
 
-    let list = || ServerRequest::ListLiveSessions(maestro_protocol::ListLiveSessionsRequest {});
+    let list = || ServerRequest::ListAgents(maestro_protocol::ListAgentsRequest {});
     write_msg_with_id(stdin, Some(41), list());
     write_msg_with_id(stdin, Some(7), list());
     for expected in [41, 7] {
         let (id, response) = read_msg_with_id(stdout);
         assert!(
-            matches!(response, ServerResponse::ListLiveSessionsOk(_)),
-            "expected ListLiveSessionsOk, got: {response:?}"
+            matches!(response, ServerResponse::ListAgentsOk(_)),
+            "expected ListAgentsOk, got: {response:?}"
         );
         assert_eq!(id, Some(expected));
     }
@@ -515,8 +512,8 @@ fn test_sessionless_reply_echoes_request_id() {
     write_msg_with_id(stdin, None, list());
     let (id, response) = read_msg_with_id(stdout);
     assert!(
-        matches!(response, ServerResponse::ListLiveSessionsOk(_)),
-        "expected ListLiveSessionsOk, got: {response:?}"
+        matches!(response, ServerResponse::ListAgentsOk(_)),
+        "expected ListAgentsOk, got: {response:?}"
     );
     assert_eq!(id, None, "a request without an id is answered without one");
 
@@ -534,6 +531,48 @@ fn test_sessionless_reply_echoes_request_id() {
         "expected Error, got: {response:?}"
     );
     assert_eq!(id, Some(99), "a failure still names its request");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// A load that no later attempt could get past says so, and names its session: that is what lets
+/// the host drop its entry for it and close the conversation's row instead of retrying forever.
+#[test]
+fn test_load_in_a_missing_folder_reports_the_session_gone() {
+    let mut child = spawn_server();
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
+
+    let gone = tempfile::tempdir().expect("tempdir");
+    let cwd = gone.path().join("deleted").to_string_lossy().into_owned();
+    write_msg_with_id(
+        stdin,
+        None,
+        ServerRequest::SessionLoad(maestro_protocol::SessionLoadRequest {
+            agent_id: "claude-acp".to_string(),
+            session_id: "routing-1".to_string(),
+            resume_session_id: "conversation-1".to_string(),
+            cwd,
+            additional_directories: Vec::new(),
+            project_path: None,
+            meta: maestro_protocol::SessionMeta::default(),
+        }),
+    );
+    match read_msg_with_id(stdout).1 {
+        ServerResponse::Error(error) => {
+            assert_eq!(error.session_id.as_deref(), Some("routing-1"));
+            assert!(
+                error
+                    .message
+                    .starts_with(maestro_protocol::SESSION_GONE_ERROR),
+                "got: {}",
+                error.message
+            );
+        }
+        other => panic!("expected Error, got: {other:?}"),
+    }
 
     let _ = child.kill();
     let _ = child.wait();
@@ -616,6 +655,25 @@ fn test_project_sessions_list_and_rename() {
             assert!(session.live.is_none());
         }
         other => panic!("expected ListProjectSessionsOk, got: {other:?}"),
+    }
+
+    // Closing by key answers for a row that is closed already and for one that was never there:
+    // the host sends it after a failed load and has nothing to do with a refusal.
+    for (request_id, acp_session_id) in [(15, "before-the-table"), (16, "never-recorded")] {
+        write_msg_with_id(
+            stdin,
+            Some(request_id),
+            ServerRequest::CloseProjectSession(maestro_protocol::CloseProjectSessionRequest {
+                agent_id: "claude".to_string(),
+                acp_session_id: acp_session_id.to_string(),
+            }),
+        );
+        let (id, response) = read_msg_with_id(stdout);
+        assert_eq!(id, Some(request_id));
+        assert!(
+            matches!(response, ServerResponse::CloseProjectSessionOk),
+            "expected CloseProjectSessionOk, got: {response:?}"
+        );
     }
 
     let _ = child.kill();

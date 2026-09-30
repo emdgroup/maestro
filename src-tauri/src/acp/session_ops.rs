@@ -69,7 +69,6 @@ pub async fn try_spawn_via_connection_server(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: None,
         project_path: req
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
@@ -337,8 +336,10 @@ pub async fn attach_project_sessions(
             .await
             {
                 Ok(_) => attached += 1,
-                // Agent uninstalled, worktree deleted, auth expired, host unreachable: the task
-                // would otherwise go on claiming an agent behind a session that will never exist.
+                // The load could not even be sent, so nothing is known about the conversation and
+                // its row stays open for the next attempt. A load the agent refuses is answered
+                // later, to the reader, which is also where a row is closed for good. The task
+                // is failed either way, or it would go on claiming an agent is at work.
                 Err(e) => {
                     log::warn!("[acp] could not restore a session of {project_path}: {e}");
                     crate::acp::reader_task::fail_task_if_still_running(app_state, task_id);
@@ -569,7 +570,6 @@ pub async fn spawn_acp_session_cold(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: None,
         project_path: req
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
@@ -592,7 +592,6 @@ pub async fn load_acp_session_cold(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: None,
         project_path: req
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),
@@ -700,7 +699,6 @@ pub async fn try_session_load_via_connection_server(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: None,
         project_path: req
             .project_id
             .and_then(|project_id| project_path(&req.app_state, project_id)),

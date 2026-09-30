@@ -175,6 +175,10 @@ and expect to delete `.maestro/dev-data/` on any machine that ran the intermedia
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, `prompt_favorites`
 
+`session_aliases` is no longer read or written: a session's name is on the daemon's row for it
+(see "The resident maestro-server"). The table is left where it is, holding the names earlier
+builds wrote.
+
 ### IPC Communication
 
 All IPC uses TanStack Query — components never call `invoke()` directly. The pattern is:
@@ -420,21 +424,47 @@ session's owner (the window that last sent a request naming it), and anything un
 unprompted goes to every window. A window receiving a session it does not hold parks it, and
 answers a `HostToolCall` only for a session it holds, so two windows never both answer one call.
 
-**Sessions are re-adopted, not reloaded.** `SpawnRequest` and `SessionLoadRequest` carry
-`host_meta`, an opaque blob the server stores and never reads, holding what the host knows and the
-server does not (project, task, session name, connection). `ListLiveSessions` hands it back, and
-`session_ops::adopt_live_sessions` rebuilds a host-side entry for each session belonging to the
-project being opened. It runs in `prime_project_server` _before_ the snapshot restore, so
-`restore_acp_session`'s existing "already live" guard returns the adopted session rather than
-loading a second copy of the same conversation.
+**A project's sessions are rows in the daemon.** `maestro-server/src/project_store.rs` keeps a
+`sessions` table in `projects.db`, beside `automations.db`: one row per conversation a project has
+opened, keyed by `agent_id` and the agent's own session id, because the routing id is minted again
+on every reload and cannot name a conversation across them. `SpawnRequest` and `SessionLoadRequest`
+carry the project path and a typed `SessionMeta` (name, task, branch, role, start sha), each field
+its own column, so a second machine opening the project can read them and a reload that sends
+fewer keeps what the row already holds. The row is written where the session enters the daemon's
+map, the `spawn_result_rx` arm of `main.rs`, and an automation's session gets one like any other.
+Nothing about open sessions is kept app-side: not in `.maestro/state.json`, and a session's name
+is `RenameSession` on the row rather than the app's `session_aliases` table.
 
-**A session between turns is closed and reloaded instead**, which is the only way to recover the
+**Opening a project is one question.** `session_ops::attach_project_sessions` sends
+`ListProjectSessions`, which answers with every row and, for the ones whose routing id the
+session map still holds, their live state. `row_action` then decides per row: a session mid-turn
+is adopted as it stands under the id the daemon files it under, one between turns is closed and
+loaded back, and a dormant one is loaded. It runs from `prime_project_server`, from the SSH
+reconnect and from task recovery alike, so none of them can load a conversation the daemon is
+already running. A row this window already holds is skipped.
+
+**A session between turns is closed and reloaded**, which is the only way to recover the
 transcript it produced while nobody was attached: the agent keeps its own history, and
-`session/load` is what replays it. `ListLiveSession.turn_active` is what decides — closing a
+`session/load` is what replays it. `LiveSessionState.turn_active` is what decides, since closing a
 session mid-turn throws the turn away, so those are adopted as they are and their transcript
 begins at the reconnect. Do **not** issue `session/load` against a live session without closing it
 first: `maestro-server` would replace its own map entry while the displaced command loop kept
 running, leaving an agent nothing routes to and nothing stops.
+
+**Only a close closes a row.** `Cancel` sets `closed_at`, whether a user or the pipeline sent it.
+The idle sweep, a dead agent, a stopped daemon and an update only clear the routing id, so the
+session is dormant and loads again the next time the project is opened. The exception is an agent
+without `session/load`: its session can never come back, so going dormant closes it. Closed rows
+stay for 90 days, because Session History needs their name and folder.
+
+**A load that can never succeed closes its row too.** A dormant row has no routing id for `Cancel`
+to find, so left alone it would be loaded again on every open. The daemon marks a load failure as
+final with `SESSION_GONE_ERROR`, a longer spelling of `SESSION_LOAD_FAILED_ERROR`, when the agent
+answers that it has no such conversation, the folder is gone or the agent is unknown on that
+machine. It decides because it holds the agent's error code, where the host is sent only the
+agent's wording. The host answers with `CloseProjectSession`, which names the row by its key.
+Every other failure, a crashed agent, a lapsed sign-in or a connection that is down, leaves the
+row open to be tried again.
 
 **A session nobody is watching does not live forever.** `main::reap_idle_sessions` sweeps every
 `IDLE_SWEEP` (60 seconds) on its own interval, and it is mark-and-close rather than a deadline: a
@@ -445,14 +475,14 @@ session working through a prompt finishes it whether or not anyone is there, and
 once it is done. The close goes through the session's own command loop rather than aborting its
 task, because `session/close` is what leaves the agent holding a transcript `session/load` can
 replay — an agent without `session/load` loses that transcript, which is the accepted price of not
-keeping an unbounded number of agent processes alive. A reopen before the second sweep re-adopts
+keeping an unbounded number of agent processes alive. A reopen before the second sweep adopts
 the session as it stands; a later one pays a `session/load`.
 
 **An unanswered prompt survives the client it was shown to.** A session blocked on a permission or
 elicitation request is mid-turn by definition, so the reaper never takes it. The request itself is
 stored beside its `oneshot` sender (`PendingPermissions` / `PendingElicitations` in `sessions.rs`)
-and handed back in `ListLiveSession.pending_requests`, because the message that asked went to a
-client that is gone. `adopt_live_sessions` replays each one through
+and handed back in `LiveSessionState.pending_requests`, because the message that asked went to a
+client that is gone. `attach_project_sessions` replays each one through
 `reader_task::handle_shared_server_message` **after** inserting the host-side session, never
 before: that routing drops anything addressed to a session this side does not hold yet.
 
@@ -506,8 +536,9 @@ project the database that would hold it is not even on the machine the agent run
   a machine asleep for a day does not wake up and work through twenty-four hourly runs.
 - **A `runs` row opens before anything is spawned**, so a run that fails to start is still a run
   that happened, and it carries the session id. That row is the only link between an automation and
-  its session: the daemon writes no `host_meta`, having nothing of the host's to write, so
-  `adopt_live_sessions` asks for the project's running runs and adopts the sessions they name.
+  its session. A window already attached learns of the session from `AutomationRunChanged`, which
+  is sent with a session id only once the session has its row in the project store and its entry
+  in the session map, so `adopt_automation_session` always finds it.
 - **The run ends on `TurnEnded`**, routed through `helpers::TURN_TX` because turns end deep inside
   a session's command loop, which holds none of the state that reacts. The session is then left
   idle for the sweep above.

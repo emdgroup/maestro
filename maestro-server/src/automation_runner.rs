@@ -3,10 +3,9 @@
 //! This is the half of automations that needs no window. The store next door says what should run
 //! and when; this decides that the time has come, spawns the agent, and records what happened.
 //!
-//! A run is an ordinary session. It appears in `ListLiveSessions` like any other, its permission
+//! A run is an ordinary session. It has a row in the project store like any other, its permission
 //! prompts reach whoever is attached, and phase 2's sweep closes it once the agent is done and
-//! nobody is watching. What makes it an automation is the `runs` row pointing at it, which is also
-//! how a client that attaches later finds a session nothing of its own started.
+//! nobody is watching. What makes it an automation is the `runs` row pointing at it.
 
 use std::sync::Arc;
 
@@ -471,8 +470,6 @@ pub async fn start(
             },
             can_reload: result.supports_session_load,
         });
-        // No `host_meta`: the host did not start this and has nothing to attach. The `runs` row is
-        // what a client uses to find the session, which is why it is written above.
         if spawn_result_tx
             .send((session_id, result.session))
             .await

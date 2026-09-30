@@ -551,9 +551,10 @@ async fn run_server(
                         ));
                     }
                     sessions.insert(session_id.clone(), session);
-                    // Only now can a client adopt it: `ListLiveSessions` answers from this map. An
-                    // automation's run is announced again here, carrying the session, so a window
-                    // already attached picks up a session it did not start.
+                    // Only now can a client adopt it: `ListProjectSessions` reports a row as live
+                    // when this map holds its routing id. An automation's run is announced again
+                    // here and nowhere earlier, after the row and the entry, so a window already
+                    // attached finds the session the moment it is told the run has one.
                     if let Some(store) = automation_store.as_ref() {
                         automation_runner::announce_session(store, &stdout, &session_id).await;
                     }

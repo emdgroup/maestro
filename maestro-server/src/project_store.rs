@@ -161,6 +161,24 @@ pub fn close(
     .map(|_| ())
 }
 
+/// The project is done with a conversation nothing is running, named by its key because a dormant
+/// one has no routing id for [`close`] to find it by.
+pub fn close_dormant(
+    conn: &Connection,
+    agent_id: &str,
+    acp_session_id: &str,
+    now: DateTime<Utc>,
+) -> Result<(), String> {
+    run(
+        conn,
+        "close a dormant session",
+        "UPDATE sessions SET closed_at = COALESCE(closed_at, ?1), session_id = NULL
+         WHERE agent_id = ?2 AND acp_session_id = ?3",
+        params![now.to_rfc3339(), agent_id, acp_session_id],
+    )
+    .map(|_| ())
+}
+
 /// The session stopped running without anybody closing it: reaped, its agent died, its command
 /// loop ended. It stays open for the project, unless its agent cannot reload it, in which case it
 /// can never come back and listing it as open would promise otherwise.
@@ -420,6 +438,37 @@ mod tests {
 
         close(&conn, "live-1", Some(("claude", "a")), Utc::now()).expect("close");
         assert!(only(&conn).0.closed);
+    }
+
+    #[test]
+    fn a_dormant_session_is_closed_by_key_and_a_later_load_reopens_it() {
+        let conn = store();
+        start(&conn, "a", "/p", &full_meta(), true, "live-1");
+        start(&conn, "b", "/p", &full_meta(), true, "live-2");
+        go_dormant(&conn, "live-1", Utc::now()).expect("dormant");
+        assert_eq!(list(&conn, "/p", false).expect("list").len(), 2);
+
+        let first = Utc::now() - Duration::days(1);
+        close_dormant(&conn, "claude", "a", first).expect("close");
+        let open = list(&conn, "/p", false).expect("list");
+        assert_eq!(open.len(), 1, "only the row named is closed");
+        assert_eq!(open[0].0.acp_session_id, "b");
+
+        // Closing twice keeps the first time, which is what retention counts from.
+        close_dormant(&conn, "claude", "a", Utc::now()).expect("close");
+        let closed_at: String = conn
+            .query_row(
+                "SELECT closed_at FROM sessions WHERE acp_session_id = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("closed_at");
+        assert_eq!(closed_at, first.to_rfc3339());
+
+        close_dormant(&conn, "claude", "never-recorded", Utc::now()).expect("close");
+
+        start(&conn, "a", "/p", &SessionMeta::default(), true, "live-3");
+        assert_eq!(list(&conn, "/p", false).expect("list").len(), 2);
     }
 
     #[test]
