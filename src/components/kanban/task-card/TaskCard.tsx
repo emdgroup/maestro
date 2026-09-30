@@ -375,7 +375,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
   // than force silently: an empty review is the state the pipeline exists to avoid.
   const handleSendToReview = () =>
     sendToReview.mutate(
-      { taskId: task.id },
+      { projectId: task.project_id, taskId: task.id },
       { onSuccess: (moved) => moved === null && setDialog("emptyReview") },
     );
 
@@ -527,12 +527,14 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
                   executionMode: activeSession.execution_mode,
                 });
               }
-              endSelfReview.mutate(task.id);
+              endSelfReview.mutate({ projectId: task.project_id, taskId: task.id });
             },
             // Every other completion is finished business. `LocalOnly` is the one that leaves
             // something behind, so archiving it silently would put unmerged work out of sight.
             onArchive: () =>
-              task.completion === "LocalOnly" ? setDialog("archive") : archiveTask.mutate(task.id),
+              task.completion === "LocalOnly"
+                ? setDialog("archive")
+                : archiveTask.mutate({ projectId: task.project_id, taskId: task.id }),
             onLogin: () => setDialog("auth"),
             onRecover: () => recoverSession.mutate({ taskId: task.id, projectId }),
             onSendToReview: handleSendToReview,
@@ -566,8 +568,8 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
         taskWorktree={taskWorktree}
         projectId={projectId}
         actions={{
-          onAbandon: () => interruptTask.mutate(task.id),
-          onArchive: () => archiveTask.mutate(task.id),
+          onAbandon: () => interruptTask.mutate({ projectId: task.project_id, taskId: task.id }),
+          onArchive: () => archiveTask.mutate({ projectId: task.project_id, taskId: task.id }),
           onArchiveAndRemoveWorktree: (worktree) =>
             deleteWorktree.mutate(
               {
@@ -577,9 +579,13 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
                 worktreeId: worktree.id,
                 deleteBranch: false,
               },
-              { onSuccess: () => archiveTask.mutate(task.id) },
+              {
+                onSuccess: () =>
+                  archiveTask.mutate({ projectId: task.project_id, taskId: task.id }),
+              },
             ),
-          onForceReview: () => sendToReview.mutate({ taskId: task.id, force: true }),
+          onForceReview: () =>
+            sendToReview.mutate({ projectId: task.project_id, taskId: task.id, force: true }),
           onSendToReview: handleSendToReview,
           onAuthSuccess: () => {
             // Clearing the store unmounts the modal on its own, but the card's own dialog value

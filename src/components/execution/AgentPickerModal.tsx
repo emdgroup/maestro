@@ -37,7 +37,11 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
 
   function handleApply() {
     if (!selected) return;
-    updateTask.mutate({ taskId: task.id, updates: { agent_id: selected } });
+    updateTask.mutate({
+      projectId: task.project_id,
+      taskId: task.id,
+      updates: { agent_id: selected },
+    });
     if (saveAsDefault && projectId) {
       updateSettings.mutate({
         projectId,

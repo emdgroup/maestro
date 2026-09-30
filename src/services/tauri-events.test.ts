@@ -7,12 +7,12 @@ import { renderHook } from "@testing-library/react";
  * each registering the same event looked identical to one component registering it once.
  */
 const registrations = vi.hoisted(
-  () => [] as Array<{ event: string; handler: () => void; unlisten: () => void }>,
+  () => [] as Array<{ event: string; handler: (e: unknown) => void; unlisten: () => void }>,
 );
 const unlistened = vi.hoisted(() => [] as string[]);
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (event: string, handler: () => void) => {
+  listen: (event: string, handler: (e: unknown) => void) => {
     const unlisten = () => unlistened.push(event);
     registrations.push({ event, handler, unlisten });
     return Promise.resolve(unlisten);
@@ -38,9 +38,9 @@ async function flush() {
 
 const eventsRegistered = () => registrations.map((r) => r.event);
 
-function fire(event: string) {
+function fire(event: string, payload: unknown = { project_id: null }) {
   for (const registration of registrations) {
-    if (registration.event === event) registration.handler();
+    if (registration.event === event) registration.handler({ payload });
   }
 }
 
@@ -84,6 +84,18 @@ describe("useServerEventSync", () => {
 
     fire("tasks-changed");
 
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
+  });
+
+  it("ignores another project's tasks-changed and worktrees-changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: 8 });
+    fire("worktrees-changed", { project_id: 8 });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    fire("tasks-changed", { project_id: 7 });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
   });
 

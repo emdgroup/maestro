@@ -80,7 +80,7 @@ describe("AttachmentSection", () => {
     expect(row).toBeTruthy();
     await userEvent.click(within(row!).getByRole("button", { name: "Remove notes.txt" }));
 
-    await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(NOTES.id));
+    await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(1, NOTES.id));
   });
 
   it("opens an image attachment in the lightbox, and deleting one does not", async () => {
@@ -103,7 +103,7 @@ describe("AttachmentSection", () => {
     const trigger = await screen.findByRole("button", { name: "Open shot.png in lightbox" });
 
     await userEvent.click(screen.getByRole("button", { name: "Remove shot.png" }));
-    await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(SHOT.id));
+    await waitFor(() => expect(deleteTaskAttachment).toHaveBeenCalledWith(1, SHOT.id));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await userEvent.click(trigger);
@@ -196,14 +196,19 @@ describe("AttachmentSection", () => {
 describe("useAddTaskAttachmentMutation", () => {
   it("says so rather than recording a file the task already has", async () => {
     const client = newClient();
-    client.setQueryData(taskQueryKeys.attachments(1), [NOTES]);
+    client.setQueryData(taskQueryKeys.attachments(1, 1), [NOTES]);
 
     function Harness() {
       const add = useAddTaskAttachmentMutation();
       return (
         <button
           onClick={() =>
-            add.mutate({ taskId: 1, filename: NOTES.filename, filePath: NOTES.file_path })
+            add.mutate({
+              projectId: 1,
+              taskId: 1,
+              filename: NOTES.filename,
+              filePath: NOTES.file_path,
+            })
           }
         >
           attach
@@ -225,7 +230,7 @@ describe("useAddTaskAttachmentMutation", () => {
 
   it("records a file the task does not have yet", async () => {
     const client = newClient();
-    client.setQueryData(taskQueryKeys.attachments(1), [NOTES]);
+    client.setQueryData(taskQueryKeys.attachments(1, 1), [NOTES]);
     addTaskAttachment.mockResolvedValue({ ...NOTES, id: 8, file_path: "/tmp/other/notes.txt" });
 
     function Harness() {
@@ -233,7 +238,12 @@ describe("useAddTaskAttachmentMutation", () => {
       return (
         <button
           onClick={() =>
-            add.mutate({ taskId: 1, filename: "notes.txt", filePath: "/tmp/other/notes.txt" })
+            add.mutate({
+              projectId: 1,
+              taskId: 1,
+              filename: "notes.txt",
+              filePath: "/tmp/other/notes.txt",
+            })
           }
         >
           attach
@@ -250,7 +260,7 @@ describe("useAddTaskAttachmentMutation", () => {
     await userEvent.click(screen.getByRole("button", { name: "attach" }));
 
     await waitFor(() =>
-      expect(addTaskAttachment).toHaveBeenCalledWith(1, "notes.txt", "/tmp/other/notes.txt"),
+      expect(addTaskAttachment).toHaveBeenCalledWith(1, 1, "notes.txt", "/tmp/other/notes.txt"),
     );
     expect(toastInfo).not.toHaveBeenCalled();
   });

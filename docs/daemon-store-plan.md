@@ -241,7 +241,7 @@ Tasks:
 - [ ] T7 `src-tauri` pipeline, worktree and review sites: `reader_task`, `merge`, `review`, `queue`,
       `spawn`, the session and prompt handlers, `worktree_lifecycle`, `worktree_query`
 - [ ] T8 Attachments copied on attach
-- [ ] T9 Frontend: `projectId` on commands and query keys, bindings
+- [x] T9 Frontend: `projectId` on commands and query keys, bindings
 - [ ] T10 Remove the app's task SQL (the tables stay until phase 4), docs, review, an end-to-end
       test with two clients seeing `TasksChanged`
 

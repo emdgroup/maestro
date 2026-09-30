@@ -314,7 +314,7 @@ describe("TaskCard abandon", () => {
       );
     await userEvent.click(confirm!);
 
-    expect(interrupt.mutate).toHaveBeenCalledWith(42);
+    expect(interrupt.mutate).toHaveBeenCalledWith({ projectId: 1, taskId: 42 });
   });
 
   /**
@@ -522,7 +522,7 @@ describe("TaskCard while a review agent is reading the diff", () => {
     await user.click(screen.getByRole("button", { name: "Stop review" }));
 
     expect(cancelSession).toHaveBeenCalledWith({ sessionId: "42", executionMode: "acp" });
-    expect(endSelfReview).toHaveBeenCalledWith(7);
+    expect(endSelfReview).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
   });
 
   it("hands the review back once the reviewer has failed", () => {
@@ -552,7 +552,7 @@ describe("TaskCard empty-review confirmation", () => {
     await openAbandonDialog();
     await user.click(screen.getByRole("button", { name: SEND_ON }));
 
-    expect(sendToReview.mutate).toHaveBeenCalledWith({ taskId: 7 });
+    expect(sendToReview.mutate).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
     expect(await screen.findByText("Nothing to review")).toBeInTheDocument();
   });
 
@@ -564,7 +564,7 @@ describe("TaskCard empty-review confirmation", () => {
     await user.click(screen.getByRole("button", { name: SEND_ON }));
     await user.click(await screen.findByText("Review anyway"));
 
-    expect(sendToReview.mutate).toHaveBeenLastCalledWith({ taskId: 7, force: true });
+    expect(sendToReview.mutate).toHaveBeenLastCalledWith({ projectId: 1, taskId: 7, force: true });
   });
 
   it("does not ask when the task actually moved", async () => {
@@ -884,7 +884,7 @@ describe("TaskCard archiving unmerged work", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
 
-    expect(archive).toHaveBeenCalledWith(7);
+    expect(archive).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
   });
 
   it("warns before archiving unmerged changes", async () => {
@@ -916,7 +916,7 @@ describe("TaskCard archiving unmerged work", () => {
     await userEvent.click(screen.getByRole("button", { name: /archive/i }));
     await userEvent.click(screen.getByRole("button", { name: /keep everything/i }));
 
-    expect(archive).toHaveBeenCalledWith(7);
+    expect(archive).toHaveBeenCalledWith({ projectId: 1, taskId: 7 });
     expect(deleteWorktree).not.toHaveBeenCalled();
   });
 
@@ -1072,11 +1072,17 @@ describe("TaskCard refinement", () => {
     await userEvent.click(screen.getByRole("button", { name: /read proposal/i }));
 
     await userEvent.click(screen.getByRole("button", { name: /use this description/i }));
-    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: true }, expect.anything());
+    expect(closeRefinement).toHaveBeenCalledWith(
+      { projectId: 1, taskId: 7, accept: true },
+      expect.anything(),
+    );
 
     closeRefinement.mockClear();
     await userEvent.click(screen.getByRole("button", { name: /discard/i }));
-    expect(closeRefinement).toHaveBeenCalledWith({ taskId: 7, accept: false }, expect.anything());
+    expect(closeRefinement).toHaveBeenCalledWith(
+      { projectId: 1, taskId: 7, accept: false },
+      expect.anything(),
+    );
   });
 
   /**

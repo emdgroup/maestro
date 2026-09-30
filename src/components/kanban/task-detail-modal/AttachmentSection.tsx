@@ -105,7 +105,7 @@ export function AttachmentSection({
   onPickFiles,
   isDragging,
 }: AttachmentSectionProps) {
-  const { data: attachments = [] } = useTaskAttachmentsQuery(taskId);
+  const { data: attachments = [] } = useTaskAttachmentsQuery(projectId, taskId);
   const removeAttachment = useDeleteTaskAttachmentMutation();
 
   const imageAtts = attachments.filter((a: TaskAttachment) => isImage(a.filename));
@@ -136,7 +136,11 @@ export function AttachmentSection({
                       aria-label={`Remove ${att.filename}`}
                       className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() =>
-                        removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                        removeAttachment.mutate({
+                          projectId,
+                          attachmentId: att.id,
+                          taskId: att.task_id,
+                        })
                       }
                       disabled={removeAttachment.isPending}
                     >
@@ -170,7 +174,11 @@ export function AttachmentSection({
                       aria-label={`Remove ${att.filename}`}
                       className="h-6 w-6 shrink-0"
                       onClick={() =>
-                        removeAttachment.mutate({ attachmentId: att.id, taskId: att.task_id })
+                        removeAttachment.mutate({
+                          projectId,
+                          attachmentId: att.id,
+                          taskId: att.task_id,
+                        })
                       }
                       disabled={removeAttachment.isPending}
                     >

@@ -258,6 +258,7 @@ export function CreateTaskModal({
         onSuccess: (newTask: Task) => {
           for (const f of filesToAttach) {
             addAttachmentRef.current.mutate({
+              projectId: newTask.project_id,
               taskId: newTask.id,
               filename: f.filename,
               filePath: f.filePath,

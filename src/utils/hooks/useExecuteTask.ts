@@ -274,7 +274,7 @@ export function useExecuteTask(
     // Checked here rather than at the point of use: metadata for a handful of files is cheap, and
     // asking before the claim means parking is a plain return — no session to cancel and no claim
     // to hand back, the same shape as the pinned-workspace check above.
-    const attachments = await api.listTaskAttachments(task.id).catch((err) => {
+    const attachments = await api.listTaskAttachments(task.project_id, task.id).catch((err) => {
       console.warn("Failed to list attachments, starting without them:", err);
       toast.warning(`Starting "${task.title}" without its attachments`, {
         description: "The attachment list could not be read.",
@@ -334,7 +334,11 @@ export function useExecuteTask(
           // disk and stays attached — dropping it would destroy a reference the user can still use.
           for (const attachment of unusable.filter((entry) => entry.missing)) {
             await deleteAttachment
-              .mutateAsync({ attachmentId: attachment.id, taskId: task.id })
+              .mutateAsync({
+                projectId: task.project_id,
+                attachmentId: attachment.id,
+                taskId: task.id,
+              })
               .catch((err) => console.warn("Failed to remove a dead attachment row:", err));
           }
         }
@@ -417,7 +421,10 @@ export function useExecuteTask(
     //
     // Null means the task is not startable — already being spawned, or moved since the button was
     // rendered. Nothing has been created yet, so there is nothing to tear down.
-    const claimed = await markExecutionStarted.mutateAsync(task.id);
+    const claimed = await markExecutionStarted.mutateAsync({
+      projectId: task.project_id,
+      taskId: task.id,
+    });
     if (!claimed) {
       toast.info(`"${task.title}" is no longer waiting to start`);
       return;
@@ -683,7 +690,7 @@ export function useExecuteTask(
       // showing the planner its last attempt is the surest way to get that attempt again.
       if (role === "Planner" && feedback.trim()) {
         const previous = await api
-          .listTaskComments(task.id)
+          .listTaskComments(task.project_id, task.id)
           .then((all) => [...all].reverse().find((c) => c.kind === "plan")?.body ?? null)
           .catch(() => null);
 
@@ -703,7 +710,7 @@ export function useExecuteTask(
       // planner's session, so this is the only way the plan reaches it.
       if (role === "Coder") {
         const entries = await api
-          .listTaskComments(task.id)
+          .listTaskComments(task.project_id, task.id)
           .then((all) => [...all].reverse())
           .catch(() => []);
 
@@ -790,7 +797,11 @@ export function useExecuteTask(
       // The session is up and prompted, so the task moves to wherever this role works. Null means
       // it stopped being the task we claimed — the user dragged or stopped it while the spawn was
       // in flight. Their action wins, so the session we just built gets torn down instead.
-      const started = await markSessionReady.mutateAsync({ taskId: task.id, role });
+      const started = await markSessionReady.mutateAsync({
+        projectId: task.project_id,
+        taskId: task.id,
+        role,
+      });
       if (!started) {
         api.cancelAcpSession(sessionId).catch((err) => {
           console.error("Failed to cancel the session of a task that moved mid-spawn:", err);
@@ -830,7 +841,7 @@ export function useExecuteTask(
       // Only a failure leaves the card red: cancelling at a prompt is not something to report.
       if (!claimHandedOver) {
         releaseClaim
-          .mutateAsync({ taskId: task.id, failed: spawnFailed })
+          .mutateAsync({ projectId: task.project_id, taskId: task.id, failed: spawnFailed })
           .catch((err) => console.error("Failed to release the execution claim:", err));
       }
       // Only if this task is still the one showing as starting. The queue drain runs `execute`

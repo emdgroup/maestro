@@ -29,19 +29,37 @@ export const taskQueryKeys = {
   lists: () => [...taskQueryKeys.base, "list"] as const,
   list: (projectId: number) => [...taskQueryKeys.lists(), { projectId }] as const,
   details: () => [...taskQueryKeys.base, "detail"] as const,
-  detail: (taskId: number) => [...taskQueryKeys.details(), taskId] as const,
+  detail: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.details(), projectId, taskId] as const,
   logs: () => [...taskQueryKeys.base, "logs"] as const,
   logsByTask: (taskId: number) => [...taskQueryKeys.logs(), { taskId }] as const,
   settings: () => [...taskQueryKeys.base, "settings"] as const,
   settingsByTask: (taskId: number) => [...taskQueryKeys.settings(), taskId] as const,
-  relationships: (taskId: number) => [...taskQueryKeys.base, "relationships", taskId] as const,
-  instructions: (taskId: number) => [...taskQueryKeys.base, "instructions", taskId] as const,
-  comments: (taskId: number) => [...taskQueryKeys.base, "comments", taskId] as const,
-  attachments: (taskId: number) => [...taskQueryKeys.base, "attachments", taskId] as const,
+  // Task ids are per project, so every key naming a task names its project too.
+  relationships: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.base, "relationships", projectId, taskId] as const,
+  instructions: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.base, "instructions", projectId, taskId] as const,
+  comments: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.base, "comments", projectId, taskId] as const,
+  attachments: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.base, "attachments", projectId, taskId] as const,
   commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
   proxyImage: (projectId: number, filePath: string) =>
     [...taskQueryKeys.base, "proxyImage", projectId, filePath] as const,
 };
+
+/**
+ * Whether a change event carrying `{ project_id }` is about `projectId`. A null or missing id means
+ * the sender could not tell, and so does no project open here: both answer yes, since a spare
+ * refetch is harmless and a missed one leaves stale data on screen.
+ */
+export function concernsProject(
+  payload: { project_id?: number | null } | null | undefined,
+  projectId: number | null | undefined,
+): boolean {
+  return payload?.project_id == null || projectId == null || payload.project_id === projectId;
+}
 
 /**
  * Task service providing type-safe operations for task management.
@@ -85,7 +103,15 @@ export function useUpdateTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, updates }: { taskId: number; updates: Partial<Task> }) => {
+    mutationFn: ({
+      projectId,
+      taskId,
+      updates,
+    }: {
+      projectId: number;
+      taskId: number;
+      updates: Partial<Task>;
+    }) => {
       const request: UpdateTaskRequest = {
         status: updates.status ?? null,
         description: updates.description ?? null,
@@ -101,10 +127,12 @@ export function useUpdateTask() {
         workspace_branch_mode: updates.workspace_branch_mode ?? null,
         workspace_branch: updates.workspace_branch ?? null,
       };
-      return api.updateTask(taskId, request);
+      return api.updateTask(projectId, taskId, request);
     },
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.detail(data.id) });
+      void queryClient.invalidateQueries({
+        queryKey: taskQueryKeys.detail(data.project_id, data.id),
+      });
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
     onError: createErrorToastHandler("Failed to update task"),
@@ -125,8 +153,15 @@ export function useSetTaskProfileOverridesMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, overrides }: { taskId: number; overrides: ProfileOverrides }) =>
-      api.setTaskProfileOverrides(taskId, overrides),
+    mutationFn: ({
+      projectId,
+      taskId,
+      overrides,
+    }: {
+      projectId: number;
+      taskId: number;
+      overrides: ProfileOverrides;
+    }) => api.setTaskProfileOverrides(projectId, taskId, overrides),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -138,8 +173,15 @@ export function useUpdateTaskSettingsMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, config }: { taskId: number; config: TaskConfigRequest }) =>
-      api.updateTaskSettings(taskId, config),
+    mutationFn: ({
+      projectId,
+      taskId,
+      config,
+    }: {
+      projectId: number;
+      taskId: number;
+      config: TaskConfigRequest;
+    }) => api.updateTaskSettings(projectId, taskId, config),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: taskQueryKeys.settingsByTask(variables.taskId),
@@ -269,7 +311,8 @@ export function useRequestChangesMutation() {
 export function useArchiveTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.archiveTask(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.archiveTask(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
       toast.success("Task archived");
@@ -285,7 +328,8 @@ export function useDeleteTaskMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: number) => api.deleteTask(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.deleteTask(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -296,11 +340,11 @@ export function useDeleteTaskMutation() {
 /**
  * Query hook for fetching task relationships
  */
-export function useTaskRelationshipsQuery(taskId: number | null) {
+export function useTaskRelationshipsQuery(projectId: number | null, taskId: number | null) {
   return useQuery<TaskRelationship[]>({
-    queryKey: taskQueryKeys.relationships(taskId!),
-    queryFn: () => api.listTaskRelationships(taskId!),
-    enabled: taskId !== null,
+    queryKey: taskQueryKeys.relationships(projectId!, taskId!),
+    queryFn: () => api.listTaskRelationships(projectId!, taskId!),
+    enabled: projectId !== null && taskId !== null,
   });
 }
 
@@ -312,17 +356,19 @@ export function useAddTaskRelationshipMutation() {
 
   return useMutation({
     mutationFn: ({
+      projectId,
       fromTaskId,
       toTaskId,
       relationshipType,
     }: {
+      projectId: number;
       fromTaskId: number;
       toTaskId: number;
       relationshipType: string;
-    }) => api.addTaskRelationship(fromTaskId, toTaskId, relationshipType),
+    }) => api.addTaskRelationship(projectId, fromTaskId, toTaskId, relationshipType),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.relationships(variables.fromTaskId),
+        queryKey: taskQueryKeys.relationships(variables.projectId, variables.fromTaskId),
       });
     },
     onError: createErrorToastHandler("Failed to add relationship"),
@@ -336,11 +382,17 @@ export function useDeleteTaskRelationshipMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ relationshipId }: { relationshipId: number; taskId: number }) =>
-      api.deleteTaskRelationship(relationshipId),
+    mutationFn: ({
+      projectId,
+      relationshipId,
+    }: {
+      projectId: number;
+      relationshipId: number;
+      taskId: number;
+    }) => api.deleteTaskRelationship(projectId, relationshipId),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.relationships(variables.taskId),
+        queryKey: taskQueryKeys.relationships(variables.projectId, variables.taskId),
       });
     },
     onError: createErrorToastHandler("Failed to remove relationship"),
@@ -350,11 +402,11 @@ export function useDeleteTaskRelationshipMutation() {
 /**
  * Query hook for fetching task instructions log
  */
-export function useTaskInstructionsQuery(taskId: number | null) {
+export function useTaskInstructionsQuery(projectId: number | null, taskId: number | null) {
   return useQuery<TaskInstruction[]>({
-    queryKey: taskQueryKeys.instructions(taskId!),
-    queryFn: () => api.listTaskInstructions(taskId!),
-    enabled: taskId !== null,
+    queryKey: taskQueryKeys.instructions(projectId!, taskId!),
+    queryFn: () => api.listTaskInstructions(projectId!, taskId!),
+    enabled: projectId !== null && taskId !== null,
   });
 }
 
@@ -379,17 +431,19 @@ export function useAddTaskInstructionMutation() {
 
   return useMutation({
     mutationFn: ({
+      projectId,
       taskId,
       content,
       source,
     }: {
+      projectId: number;
       taskId: number;
       content: string;
       source: string;
-    }) => api.addTaskInstruction(taskId, content, source),
+    }) => api.addTaskInstruction(projectId, taskId, content, source),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.instructions(variables.taskId),
+        queryKey: taskQueryKeys.instructions(variables.projectId, variables.taskId),
       });
     },
     onError: createErrorToastHandler("Failed to add instruction"),
@@ -449,8 +503,15 @@ export function useUpdateTaskFromRemoteMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, issue }: { taskId: number; issue: RemoteIssue }) =>
-      api.updateTaskFromRemote(taskId, issue),
+    mutationFn: ({
+      projectId,
+      taskId,
+      issue,
+    }: {
+      projectId: number;
+      taskId: number;
+      issue: RemoteIssue;
+    }) => api.updateTaskFromRemote(projectId, taskId, issue),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -466,8 +527,15 @@ export function useDismissTaskChangeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, remoteUpdatedAt }: { taskId: number; remoteUpdatedAt: string }) =>
-      api.dismissTaskChange(taskId, remoteUpdatedAt),
+    mutationFn: ({
+      projectId,
+      taskId,
+      remoteUpdatedAt,
+    }: {
+      projectId: number;
+      taskId: number;
+      remoteUpdatedAt: string;
+    }) => api.dismissTaskChange(projectId, taskId, remoteUpdatedAt),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -478,11 +546,11 @@ export function useDismissTaskChangeMutation() {
 /**
  * Query hook for fetching attachments for a task
  */
-export function useTaskAttachmentsQuery(taskId: number | null) {
+export function useTaskAttachmentsQuery(projectId: number | null, taskId: number | null) {
   return useQuery<TaskAttachment[]>({
-    queryKey: taskQueryKeys.attachments(taskId!),
-    queryFn: () => api.listTaskAttachments(taskId!),
-    enabled: taskId !== null,
+    queryKey: taskQueryKeys.attachments(projectId!, taskId!),
+    queryFn: () => api.listTaskAttachments(projectId!, taskId!),
+    enabled: projectId !== null && taskId !== null,
   });
 }
 
@@ -497,26 +565,28 @@ export function useAddTaskAttachmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
+      projectId,
       taskId,
       filename,
       filePath,
     }: {
+      projectId: number;
       taskId: number;
       filename: string;
       filePath: string;
     }) => {
       const existing = queryClient
-        .getQueryData<TaskAttachment[]>(taskQueryKeys.attachments(taskId))
+        .getQueryData<TaskAttachment[]>(taskQueryKeys.attachments(projectId, taskId))
         ?.find((a) => a.file_path === filePath);
       if (existing) {
         toast.info(`${filename} is already attached`);
         return Promise.resolve(existing);
       }
-      return api.addTaskAttachment(taskId, filename, filePath);
+      return api.addTaskAttachment(projectId, taskId, filename, filePath);
     },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.attachments(variables.taskId),
+        queryKey: taskQueryKeys.attachments(variables.projectId, variables.taskId),
       });
     },
     onError: createErrorToastHandler("Failed to add attachment"),
@@ -529,11 +599,17 @@ export function useAddTaskAttachmentMutation() {
 export function useDeleteTaskAttachmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ attachmentId }: { attachmentId: number; taskId: number }) =>
-      api.deleteTaskAttachment(attachmentId),
+    mutationFn: ({
+      projectId,
+      attachmentId,
+    }: {
+      projectId: number;
+      attachmentId: number;
+      taskId: number;
+    }) => api.deleteTaskAttachment(projectId, attachmentId),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: taskQueryKeys.attachments(variables.taskId),
+        queryKey: taskQueryKeys.attachments(variables.projectId, variables.taskId),
       });
     },
     onError: createErrorToastHandler("Failed to remove attachment"),
@@ -546,7 +622,8 @@ export function useDeleteTaskAttachmentMutation() {
 export function useInterruptTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.interruptTask(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.interruptTask(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -566,8 +643,15 @@ export function useInterruptTaskMutation() {
 export function useSendTaskToReviewMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, force = false }: { taskId: number; force?: boolean }) =>
-      api.sendTaskToReview(taskId, force),
+    mutationFn: ({
+      projectId,
+      taskId,
+      force = false,
+    }: {
+      projectId: number;
+      taskId: number;
+      force?: boolean;
+    }) => api.sendTaskToReview(projectId, taskId, force),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -583,7 +667,8 @@ export function useSendTaskToReviewMutation() {
 export function useEndSelfReviewMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.endSelfReview(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.endSelfReview(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -597,25 +682,30 @@ export function useEndSelfReviewMutation() {
  * Refetches on `task-comments-changed`, which the backend emits when a phase records its closing
  * message — otherwise a thread left open while an agent finishes would stay blank.
  */
-export function useTaskCommentsQuery(taskId: number | undefined) {
+export function useTaskCommentsQuery(projectId: number | null, taskId: number | undefined) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (taskId === undefined) return;
-    const unlisten = listen<number>("task-comments-changed", (event) => {
-      if (event.payload === taskId) {
-        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
-      }
-    });
+    if (projectId === null || taskId === undefined) return;
+    const unlisten = listen<{ project_id: number | null; task_id: number }>(
+      "task-comments-changed",
+      (event) => {
+        if (event.payload.task_id === taskId && concernsProject(event.payload, projectId)) {
+          void queryClient.invalidateQueries({
+            queryKey: taskQueryKeys.comments(projectId, taskId),
+          });
+        }
+      },
+    );
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [taskId, queryClient]);
+  }, [projectId, taskId, queryClient]);
 
   return useQuery({
-    queryKey: taskQueryKeys.comments(taskId ?? -1),
-    queryFn: () => api.listTaskComments(taskId!),
-    enabled: taskId !== undefined,
+    queryKey: taskQueryKeys.comments(projectId ?? -1, taskId ?? -1),
+    queryFn: () => api.listTaskComments(projectId!, taskId!),
+    enabled: projectId !== null && taskId !== undefined,
   });
 }
 
@@ -628,10 +718,17 @@ export function useTaskCommentsQuery(taskId: number | undefined) {
 export function useAddTaskNoteMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, body }: { taskId: number; body: string }) =>
-      api.addTaskNote(taskId, body),
-    onSuccess: (_data, { taskId }) => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(taskId) });
+    mutationFn: ({
+      projectId,
+      taskId,
+      body,
+    }: {
+      projectId: number;
+      taskId: number;
+      body: string;
+    }) => api.addTaskNote(projectId, taskId, body),
+    onSuccess: (_data, { projectId, taskId }) => {
+      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.comments(projectId, taskId) });
     },
     onError: createErrorToastHandler("Failed to add the note"),
   });
@@ -649,7 +746,8 @@ export function useAddTaskNoteMutation() {
 export function useMarkTaskExecutionStartedMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.markTaskExecutionStarted(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.markTaskExecutionStarted(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -665,8 +763,15 @@ export function useMarkTaskExecutionStartedMutation() {
 export function useMarkTaskSessionReadyMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, role }: { taskId: number; role: AgentRole }) =>
-      api.markTaskSessionReady(taskId, role),
+    mutationFn: ({
+      projectId,
+      taskId,
+      role,
+    }: {
+      projectId: number;
+      taskId: number;
+      role: AgentRole;
+    }) => api.markTaskSessionReady(projectId, taskId, role),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -683,8 +788,15 @@ export function useMarkTaskSessionReadyMutation() {
 export function useReleaseTaskExecutionClaimMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, failed }: { taskId: number; failed: boolean }) =>
-      api.releaseTaskExecutionClaim(taskId, failed),
+    mutationFn: ({
+      projectId,
+      taskId,
+      failed,
+    }: {
+      projectId: number;
+      taskId: number;
+      failed: boolean;
+    }) => api.releaseTaskExecutionClaim(projectId, taskId, failed),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -701,8 +813,15 @@ export function useReleaseTaskExecutionClaimMutation() {
 export function useCloseRefinementMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, accept }: { taskId: number; accept: boolean }) =>
-      api.closeRefinement(taskId, accept),
+    mutationFn: ({
+      projectId,
+      taskId,
+      accept,
+    }: {
+      projectId: number;
+      taskId: number;
+      accept: boolean;
+    }) => api.closeRefinement(projectId, taskId, accept),
     onSuccess: (_task, { accept }) => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
       toast.success(accept ? "Description updated" : "Proposal discarded");
@@ -717,7 +836,8 @@ export function useCloseRefinementMutation() {
 export function useCancelTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: number) => api.cancelTask(taskId),
+    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
+      api.cancelTask(projectId, taskId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
       toast.success("Task cancelled");

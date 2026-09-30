@@ -118,7 +118,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   addAttachmentRef.current = addAttachment;
 
   // Same query key `OutcomeThread` uses, so the count on the tab costs no extra call.
-  const { data: comments = [] } = useTaskCommentsQuery(taskId ?? undefined);
+  const { data: comments = [] } = useTaskCommentsQuery(projectId, taskId ?? undefined);
 
   const [tab, setTab] = useState<Tab>("details");
 
@@ -183,7 +183,12 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
   const { pickFiles, isDragging } = useDraggableFileInput(
     isEditable ?? false,
     (filename, filePath) =>
-      addAttachmentRef.current.mutate({ taskId: task!.id, filename, filePath }),
+      addAttachmentRef.current.mutate({
+        projectId: task!.project_id,
+        taskId: task!.id,
+        filename,
+        filePath,
+      }),
   );
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -221,13 +226,18 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
     // No agent check here any more. Which agent runs is decided per role by the project's profiles
     // at spawn time, so a task carries none to check — and a guard reading `task.agent_id` would
     // now refuse every move to Queue rather than the ones it was written for.
-    updateTask.mutate({ taskId: task.id, updates: { status: newStatus as TaskStatus } });
+    updateTask.mutate({
+      projectId: task.project_id,
+      taskId: task.id,
+      updates: { status: newStatus as TaskStatus },
+    });
   }
 
   function handleSave() {
     if (!task || draft.title.trim().length < 3) return;
     updateTask.mutate(
       {
+        projectId: task.project_id,
         taskId: task.id,
         updates: {
           title: draft.title.trim(),
@@ -434,7 +444,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
               {/* The only record a Done or archived task has: once the session closes, its
                   transcript is gone and this is what remains. */}
               <TabsContent value="outcome" keepMounted className="flex flex-col min-h-0">
-                <OutcomeThread taskId={task.id} />
+                <OutcomeThread projectId={task.project_id} taskId={task.id} />
               </TabsContent>
             </Tabs>
 
@@ -466,9 +476,12 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                           variant="destructive"
                           onClick={() => {
                             setDeleteOpen(false);
-                            deleteTask.mutate(task.id, {
-                              onSuccess: () => setActiveTaskId(null),
-                            });
+                            deleteTask.mutate(
+                              { projectId: task.project_id, taskId: task.id },
+                              {
+                                onSuccess: () => setActiveTaskId(null),
+                              },
+                            );
                           }}
                         >
                           Delete Task
@@ -509,9 +522,12 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
                         <AlertDialogAction
                           onClick={() => {
                             setCancelOpen(false);
-                            cancelTask.mutate(task.id, {
-                              onSuccess: () => setActiveTaskId(null),
-                            });
+                            cancelTask.mutate(
+                              { projectId: task.project_id, taskId: task.id },
+                              {
+                                onSuccess: () => setActiveTaskId(null),
+                              },
+                            );
                           }}
                         >
                           Cancel task

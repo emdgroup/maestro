@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { taskQueryKeys } from "@/services/task.service";
+import { concernsProject, taskQueryKeys } from "@/services/task.service";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { executionQueryKeys } from "@/services/execution.service";
 import { automationQueryKeys } from "@/services/automation.service";
@@ -28,20 +28,34 @@ export function useServerEventSync(projectId: number | undefined) {
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
 
-    const subscribe = (event: string, invalidate: () => void) => {
-      void listen(event, invalidate).then((unlisten) => {
+    // `tasks-changed` and `worktrees-changed` name the project they concern; another project's
+    // change is not this window's to refetch.
+    const subscribe = (event: string, invalidate: () => void, projectScoped = false) => {
+      const handler = ({ payload }: { payload: unknown }) => {
+        if (!projectScoped || concernsProject(payload as { project_id?: number | null }, projectId))
+          invalidate();
+      };
+      void listen(event, handler).then((unlisten) => {
         if (cancelled) unlisten();
         else unlisteners.push(unlisten);
       });
     };
 
-    subscribe("tasks-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    });
+    subscribe(
+      "tasks-changed",
+      () => {
+        void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+      },
+      true,
+    );
 
-    subscribe("worktrees-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
-    });
+    subscribe(
+      "worktrees-changed",
+      () => {
+        void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
+      },
+      true,
+    );
 
     // An agent changed them through Maestro's MCP tools, with no mutation here to invalidate.
     subscribe("automations-changed", () => {

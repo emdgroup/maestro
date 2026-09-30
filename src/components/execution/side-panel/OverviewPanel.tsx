@@ -156,7 +156,7 @@ export function OverviewPanel({
 }: OverviewPanelProps) {
   const [errorPaths, setErrorPaths] = useState<Set<string>>(new Set());
   const [pullRequestDialogOpen, setPullRequestDialogOpen] = useState(false);
-  const { data: attachments } = useTaskAttachmentsQuery(taskId);
+  const { data: attachments } = useTaskAttachmentsQuery(ship.projectId, taskId);
 
   function handleRowOpen(path: string) {
     void openFileWithConnection(connection, path, {
