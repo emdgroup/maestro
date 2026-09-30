@@ -56,7 +56,11 @@ CREATE INDEX IF NOT EXISTS sessions_by_live_id ON sessions(session_id);
 ///
 /// Version 1 is the sessions table phase 1 created without a version, so its `IF NOT EXISTS` is
 /// what lets a database at version 0 that already holds sessions take it and keep its rows.
-const MIGRATIONS: &[&str] = &[SCHEMA, crate::task_store::SCHEMA];
+const MIGRATIONS: &[&str] = &[
+    SCHEMA,
+    crate::task_store::SCHEMA,
+    crate::task_store::worktrees::SCHEMA,
+];
 
 /// Open, or create, the daemon's project database.
 pub fn open(dir: &Path) -> Result<Connection, String> {
@@ -460,6 +464,39 @@ mod tests {
         drop(conn);
 
         open(directory.path()).expect("a migrated database opens again");
+    }
+
+    /// Version 3 adds the worktree and review tables to a database already holding tasks.
+    #[test]
+    fn a_version_two_database_migrates_and_keeps_its_tasks() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = Connection::open(directory.path().join("projects.db")).expect("open");
+            conn.execute_batch(&MIGRATIONS[..2].concat())
+                .expect("version 2 schema");
+            conn.pragma_update(None, "user_version", 2)
+                .expect("version");
+            conn.execute(
+                "INSERT INTO tasks (project_path, id, title, base_branch, created_at, updated_at)
+                 VALUES ('/p', 4, 'kept task', 'main', 'now', 'now')",
+                [],
+            )
+            .expect("a task");
+        }
+
+        let conn = open(directory.path()).expect("migrate");
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("version");
+        assert_eq!(version, 3);
+        let title: String = conn
+            .query_row("SELECT title FROM tasks WHERE id = 4", [], |row| row.get(0))
+            .expect("the task survived");
+        assert_eq!(title, "kept task");
+        conn.query_row("SELECT COUNT(*) FROM review_comments", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("the review tables exist");
     }
 
     fn full_meta() -> SessionMeta {

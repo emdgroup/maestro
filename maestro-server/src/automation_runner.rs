@@ -72,6 +72,12 @@ async fn resolve_cwd(
                 i64::from(ordinal),
             )
             .await?;
+            // TODO(phase 2 T4): write the project's worktree row here with
+            // `task_store::worktrees::adopt` (relative path `worktree::relative_path(&slug, ordinal)`)
+            // and broadcast `WorktreesChanged`, which retires the app's `adopt_automation_worktrees`.
+            // The project store is not reachable from here yet: it has to come in through
+            // `Spawner`. Removal needs no row write, since the app prunes a row whose directory is
+            // gone, as it does for the rows it adopts today.
             {
                 let conn = store.lock().await;
                 automations::attach_worktree(

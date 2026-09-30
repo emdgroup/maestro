@@ -11,8 +11,10 @@
 // wired by dispatch in phase 2 T4
 #![allow(dead_code)]
 
+pub mod reviews;
 mod threads;
 pub mod transition;
+pub mod worktrees;
 
 pub use threads::*;
 

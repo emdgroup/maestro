@@ -230,7 +230,7 @@ Tasks:
       pushes; `PROTOCOL_VERSION` 9
 - [x] T2 `maestro-server` store for tasks and threads: schema, migration, per-project counter,
       `transition` rules and guards moved with their tests
-- [ ] T3 `maestro-server` store for worktrees and reviews
+- [x] T3 `maestro-server` store for worktrees and reviews
 - [ ] T4 `maestro-server` dispatch: the arms, the composite steps, the broadcasts
 - [ ] T5 `maestro-server` MCP task tools answered by the gateway
 - [ ] T6 `src-tauri` task commands as round trips, with `project_id`; pushes become events
