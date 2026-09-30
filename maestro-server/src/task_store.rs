@@ -8,9 +8,7 @@
 //! Every function that reads and then writes runs in one transaction. The app got that atomicity
 //! from its one `Mutex<Connection>`; here the guard travels with the request instead.
 
-// wired by dispatch in phase 2 T4
-#![allow(dead_code)]
-
+pub mod requests;
 pub mod reviews;
 mod threads;
 pub mod transition;

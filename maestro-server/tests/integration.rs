@@ -743,3 +743,168 @@ fn test_fast_request_is_answered_while_a_slow_one_is_outstanding() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// A daemon started by `attach` in a directory of its own, shut down when dropped, even by a
+/// failing assertion, so no test leaves a resident server behind.
+struct Daemon {
+    dir: tempfile::TempDir,
+}
+
+impl Daemon {
+    fn new() -> Self {
+        Self {
+            dir: tempfile::tempdir().expect("tempdir"),
+        }
+    }
+
+    /// One window: an `attach` relay, handshaken.
+    fn attach(&self) -> std::process::Child {
+        let mut child = Command::new(server_binary())
+            .arg("attach")
+            .env(maestro_protocol::DAEMON_DIR_ENV, self.dir.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn maestro-server attach");
+        do_handshake(
+            child.stdin.as_mut().unwrap(),
+            child.stdout.as_mut().unwrap(),
+        );
+        child
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        let Ok(body) = std::fs::read(self.dir.path().join("runtime.json")) else {
+            return;
+        };
+        let runtime: serde_json::Value = serde_json::from_slice(&body).expect("runtime.json");
+        let port = runtime["port"].as_u64().expect("port") as u16;
+        let token = runtime["token"].as_str().expect("token");
+        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            let _ = stream.write_all(format!("{token}\nSHUTDOWN\n").as_bytes());
+        }
+        // The lock is released on exit, which is what lets the directory go.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+/// Two windows on one daemon: what one writes, the other is told of, under the path the daemon
+/// resolved, and each project numbers its tasks from 1.
+#[test]
+fn test_task_changes_reach_every_window() {
+    use maestro_protocol::{
+        ApplyTaskTransitionRequest, BranchMode, CreateTaskRequest, ProjectRef, TaskStatus,
+        TaskTransition, WorkspaceMode,
+    };
+
+    let daemon = Daemon::new();
+    let mut a = daemon.attach();
+    let mut b = daemon.attach();
+    let projects = [
+        tempfile::tempdir().expect("tempdir"),
+        tempfile::tempdir().expect("tempdir"),
+    ];
+    let canonical = |dir: &tempfile::TempDir| {
+        let path = std::fs::canonicalize(dir.path()).unwrap();
+        let path = path.to_string_lossy().replace('\\', "/");
+        path.strip_prefix("//?/").unwrap_or(&path).to_string()
+    };
+    let create = |dir: &tempfile::TempDir| {
+        ServerRequest::CreateTask(CreateTaskRequest {
+            // A trailing separator, so the rows only line up if the daemon canonicalizes.
+            project_path: format!("{}/", dir.path().to_string_lossy()),
+            title: "Fix login".to_string(),
+            description: None,
+            skills: vec![],
+            labels: vec![],
+            base_branch: "main".to_string(),
+            agent_id: None,
+            priority: None,
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::RepositoryDirectory,
+            workspace_worktree_id: None,
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            model_override: None,
+        })
+    };
+    let changed = |dir| {
+        ServerResponse::TasksChanged(ProjectRef {
+            project_path: canonical(dir),
+        })
+    };
+
+    let (a_in, a_out) = (a.stdin.as_mut().unwrap(), a.stdout.as_mut().unwrap());
+    let b_out = b.stdout.as_mut().unwrap();
+
+    write_msg_with_id(a_in, Some(21), create(&projects[0]));
+    let (id, response) = read_msg_with_id(a_out);
+    assert_eq!(id, Some(21));
+    let ServerResponse::CreateTaskOk(task) = response else {
+        panic!("expected CreateTaskOk, got: {response:?}");
+    };
+    assert_eq!(task.id, 1);
+    assert_eq!(task.project_path, canonical(&projects[0]));
+    // The writer hears of its own change too, after its reply.
+    assert_eq!(read_msg_with_id(a_out), (None, changed(&projects[0])));
+    assert_eq!(read_msg_with_id(b_out), (None, changed(&projects[0])));
+
+    write_msg_with_id(
+        a_in,
+        Some(22),
+        ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
+            project_path: projects[0].path().to_string_lossy().into_owned(),
+            task_id: 1,
+            event: TaskTransition::ManualMove(TaskStatus::Queue),
+            guard: Default::default(),
+            update: None,
+            comment: None,
+        }),
+    );
+    let (id, response) = read_msg_with_id(a_out);
+    assert_eq!(id, Some(22));
+    match response {
+        ServerResponse::ApplyTaskTransitionOk(applied) => {
+            assert_eq!(applied.task.expect("applied").status, TaskStatus::Queue)
+        }
+        other => panic!("expected ApplyTaskTransitionOk, got: {other:?}"),
+    }
+    assert_eq!(read_msg_with_id(a_out), (None, changed(&projects[0])));
+    assert_eq!(read_msg_with_id(b_out), (None, changed(&projects[0])));
+
+    let b_in = b.stdin.as_mut().unwrap();
+    write_msg_with_id(
+        b_in,
+        Some(31),
+        ServerRequest::ListTasks(ProjectRef {
+            project_path: canonical(&projects[0]),
+        }),
+    );
+    let (id, response) = read_msg_with_id(b_out);
+    assert_eq!(id, Some(31));
+    match response {
+        ServerResponse::ListTasksOk(listed) => {
+            assert_eq!(listed.tasks.len(), 1);
+            assert_eq!(listed.tasks[0].id, 1);
+            assert_eq!(listed.tasks[0].status, TaskStatus::Queue);
+        }
+        other => panic!("expected ListTasksOk, got: {other:?}"),
+    }
+
+    write_msg_with_id(b_in, Some(32), create(&projects[1]));
+    let (id, response) = read_msg_with_id(b_out);
+    assert_eq!(id, Some(32));
+    match response {
+        ServerResponse::CreateTaskOk(task) => assert_eq!(task.id, 1, "ids are per project"),
+        other => panic!("expected CreateTaskOk, got: {other:?}"),
+    }
+    assert_eq!(read_msg_with_id(a_out), (None, changed(&projects[1])));
+
+    for mut child in [a, b] {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}

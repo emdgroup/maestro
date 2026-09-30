@@ -47,6 +47,7 @@ pub struct Spawner<'a> {
 /// for an isolated workspace must never end up editing the user's checkout unattended.
 async fn resolve_cwd(
     store: &Store,
+    stdout: &crate::ClientOut,
     automation: &maestro_protocol::Automation,
     run_id: &str,
     ordinal: u32,
@@ -72,12 +73,31 @@ async fn resolve_cwd(
                 i64::from(ordinal),
             )
             .await?;
-            // TODO(phase 2 T4): write the project's worktree row here with
-            // `task_store::worktrees::adopt` (relative path `worktree::relative_path(&slug, ordinal)`)
-            // and broadcast `WorktreesChanged`, which retires the app's `adopt_automation_worktrees`.
-            // The project store is not reachable from here yet: it has to come in through
-            // `Spawner`. Removal needs no row write, since the app prunes a row whose directory is
-            // gone, as it does for the rows it adopts today.
+            // The project's own row, so the worktree is on the Workspaces screen like any other.
+            // Removal writes none: the app prunes a row whose directory is gone.
+            if let Some(projects) = crate::project_store::SHARED.get() {
+                let adopted = crate::task_store::worktrees::adopt(
+                    &*projects.lock().await,
+                    &automation.project_path,
+                    &provisioned.branch,
+                    Some(&provisioned.base),
+                    &crate::worktree::relative_path(&slug, i64::from(ordinal)),
+                );
+                match adopted {
+                    Ok(true) => {
+                        let project_path = automation.project_path.clone();
+                        crate::helpers::broadcast(
+                            stdout,
+                            ServerResponse::WorktreesChanged(maestro_protocol::ProjectRef {
+                                project_path,
+                            }),
+                        )
+                        .await;
+                    }
+                    Ok(false) => {}
+                    Err(e) => send_diag("warn", format!("[automation] {e}")),
+                }
+            }
             {
                 let conn = store.lock().await;
                 automations::attach_worktree(
@@ -359,7 +379,15 @@ pub async fn start(
     };
     announce(spawner.stdout, &run).await;
 
-    let cwd = match resolve_cwd(store, &automation, &run.id, run.ordinal.unwrap_or(1)).await {
+    let cwd = match resolve_cwd(
+        store,
+        spawner.stdout,
+        &automation,
+        &run.id,
+        run.ordinal.unwrap_or(1),
+    )
+    .await
+    {
         Ok(cwd) => cwd,
         Err(e) => {
             fail(store, spawner.stdout, &run.id, e.clone()).await;
@@ -730,8 +758,10 @@ mod tests {
     #[tokio::test]
     async fn a_missing_workspace_stops_the_run_rather_than_moving_it() {
         let store = empty_store();
+        let stdout = crate::client_sink::ClientSink::detached();
         let error = resolve_cwd(
             &store,
+            &stdout,
             &automation(AutomationWorkspace::Path {
                 path: "/nowhere/at/all".to_string(),
             }),
@@ -745,6 +775,7 @@ mod tests {
         assert_eq!(
             resolve_cwd(
                 &store,
+                &stdout,
                 &automation(AutomationWorkspace::Repository),
                 "run-1",
                 1

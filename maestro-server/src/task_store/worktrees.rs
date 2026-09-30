@@ -290,27 +290,11 @@ pub fn claim_for_task(
     Ok(worktree)
 }
 
-/// The rows the zombie sweep considers: owned by no task, or by one that is finished. Whether one
-/// really is a zombie is for the sweep to decide, from the disk and the sessions running in it.
-pub fn zombie_candidates(conn: &Connection, project_path: &str) -> Result<Vec<Worktree>, String> {
-    query(
-        conn,
-        "SELECT w.id, w.project_path, w.task_id, w.branch_name, w.base_branch, w.path,
-                w.git_status, w.created_at
-         FROM worktrees w
-         LEFT JOIN tasks t ON t.project_path = w.project_path AND t.id = w.task_id
-         WHERE w.project_path = ?1
-           AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))
-         ORDER BY w.id",
-        params![project_path],
-    )
-}
-
 #[cfg(test)]
 pub(super) mod tests {
-    use super::super::tests::{db_with_task, new_task, PROJECT};
+    use super::super::tests::{db_with_task, PROJECT};
     use super::*;
-    use maestro_protocol::{TaskStatus, TaskUpdate, WorkspaceMode};
+    use maestro_protocol::{TaskUpdate, WorkspaceMode};
 
     pub(in crate::task_store) fn worktree(
         conn: &Connection,
@@ -431,33 +415,6 @@ pub(super) mod tests {
             .expect("get")
             .unwrap();
         assert_eq!(task.workspace_worktree_id, None);
-    }
-
-    #[test]
-    fn zombie_candidates_are_unowned_or_finished() {
-        let (mut conn, running) = db_with_task();
-        let done = new_task(&mut conn, PROJECT, "finished task").id;
-        super::super::update(
-            &mut conn,
-            PROJECT,
-            done,
-            &TaskUpdate {
-                status: Some(TaskStatus::Done),
-                ..TaskUpdate::default()
-            },
-        )
-        .expect("finish");
-        worktree(&conn, PROJECT, Some(running), "running");
-        let finished = worktree(&conn, PROJECT, Some(done), "finished");
-        let session = worktree(&conn, PROJECT, None, "session");
-        worktree(&conn, "/other", None, "elsewhere");
-
-        let paths: Vec<String> = zombie_candidates(&conn, PROJECT)
-            .expect("candidates")
-            .into_iter()
-            .map(|w| w.path)
-            .collect();
-        assert_eq!(paths, vec![finished.path, session.path]);
     }
 
     #[test]

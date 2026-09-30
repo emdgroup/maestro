@@ -160,6 +160,21 @@ impl ClientSink {
         }
     }
 
+    /// The same clients, speaking to every one of them: a change the window that asked for it
+    /// has to hear about too, like any other. Stdio has one client, so it is returned as is.
+    pub async fn everyone(this: &ClientOut) -> ClientOut {
+        match &this.lock().await.route {
+            Route::Stdio(_) => Arc::clone(this),
+            Route::Daemon { clients, .. } => Arc::new(Mutex::new(Self {
+                route: Route::Daemon {
+                    clients: Arc::clone(clients),
+                    reply_to: None,
+                },
+                reply_id: None,
+            })),
+        }
+    }
+
     /// The same route, for one request: replies written through it, or through any clone of it
     /// a spawned task holds, carry `reply_id`. A request without an id needs nothing of its own.
     pub async fn for_request(this: &ClientOut, reply_id: Option<RequestId>) -> ClientOut {

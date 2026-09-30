@@ -205,6 +205,17 @@ pub(crate) async fn send_response(
     Ok(())
 }
 
+/// Push `response` to every attached client, the one `stdout` replies to included.
+pub(crate) async fn broadcast(stdout: &crate::ClientOut, response: ServerResponse) {
+    let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
+    if let Err(e) = send_response(&everyone, &MaestroRpcMessage::Response(response)).await {
+        send_diag(
+            "warn",
+            format!("[server] could not broadcast a change: {e}"),
+        );
+    }
+}
+
 /// Forward a command to an active session. Returns `Err` only if stdout write fails.
 /// Sends an error response to stdout if the session is not found or its channel is closed.
 pub(crate) async fn forward_to_session(

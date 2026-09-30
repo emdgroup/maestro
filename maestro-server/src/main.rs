@@ -486,6 +486,9 @@ async fn run_server(
         })
         .map_err(|e| send_diag("warn", format!("[project-store] store unavailable: {e}")))
         .ok();
+    if let Some(store) = &project_store {
+        let _ = project_store::SHARED.set(Arc::clone(store));
+    }
 
     // After the runs above are closed out, so a workspace left by a server that died mid-run is
     // evaluated rather than sitting there for ever.

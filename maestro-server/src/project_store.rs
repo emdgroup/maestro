@@ -18,11 +18,15 @@ use rusqlite::{params, Connection, OptionalExtension};
 /// timers both write it. Never held across a request to an agent.
 pub type Store = Arc<tokio::sync::Mutex<Connection>>;
 
+/// The daemon's store, set once when it opens, for the automation runner: it writes the worktree
+/// row of a run it provisions and is handed the store by none of the loop's callers.
+pub static SHARED: std::sync::OnceLock<Store> = std::sync::OnceLock::new();
+
 /// How long a closed conversation stays listed, counted from when it was closed.
 const CLOSED_RETENTION_DAYS: i64 = 90;
 
 pub const UNAVAILABLE: &str =
-    "The project store could not be opened, so sessions are not recorded on this machine";
+    "The project store could not be opened, so sessions and tasks are not recorded on this machine";
 
 const V1_SESSIONS: &str = "
 CREATE TABLE IF NOT EXISTS sessions (

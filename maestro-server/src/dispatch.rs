@@ -1482,10 +1482,10 @@ pub(crate) async fn dispatch_message(
         // a diagnostic, put every ping on the IPC channel.
         MaestroRpcMessage::Request(ServerRequest::Pong { seq: _ }) => {}
 
-        // Wire types only for now: the task, worktree and review store lands in phase 2 T2-T4,
-        // which replaces this arm.
+        // Fast SQLite, so answered on the loop like the session rows. The reply goes first, then
+        // the pushes to everybody, the requester included: its own refetch rides on them too.
         MaestroRpcMessage::Request(
-            ServerRequest::ListTasks(_)
+            request @ (ServerRequest::ListTasks(_)
             | ServerRequest::GetTask(_)
             | ServerRequest::CreateTask(_)
             | ServerRequest::UpdateTask(_)
@@ -1517,18 +1517,30 @@ pub(crate) async fn dispatch_message(
             | ServerRequest::ClaimWorktreeForTask(_)
             | ServerRequest::GetTaskReview(_)
             | ServerRequest::SaveTaskReview(_)
-            | ServerRequest::ClearTaskReview(_),
+            | ServerRequest::ClearTaskReview(_)),
         ) => {
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                        message: "This server does not store tasks yet".to_string(),
-                        session_id: None,
-                    })),
-                )
-                .await
-            );
+            let Some(store) = project_store else {
+                send_or_return!(
+                    send_response(
+                        stdout,
+                        &error_response(crate::project_store::UNAVAILABLE.to_string())
+                    )
+                    .await
+                );
+                return true;
+            };
+            let answered = crate::task_store::requests::answer(&mut *store.lock().await, request);
+            match answered {
+                Ok((reply, pushes)) => {
+                    send_or_return!(
+                        send_response(stdout, &MaestroRpcMessage::Response(reply)).await
+                    );
+                    for push in pushes {
+                        crate::helpers::broadcast(stdout, push).await;
+                    }
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
         }
 
         MaestroRpcMessage::Response(_) => {}
