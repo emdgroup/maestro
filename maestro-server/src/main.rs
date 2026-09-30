@@ -660,6 +660,7 @@ async fn run_server(
                         call,
                         reply_tx,
                         &sessions,
+                        project_store.as_ref(),
                         &mut pending_host_tools,
                         &stdout,
                     )

@@ -17,7 +17,7 @@ use crate::command_ext::NoConsoleWindow;
 const WORKTREE_DIR: &str = ".maestro/worktrees";
 
 /// Run one git command in `dir`, returning its stdout.
-async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
     let output = tokio::process::Command::new("git")
         .current_dir(dir)
         .args(args)

@@ -232,7 +232,8 @@ Tasks:
       `transition` rules and guards moved with their tests
 - [x] T3 `maestro-server` store for worktrees and reviews
 - [x] T4 `maestro-server` dispatch: the arms, the composite steps, the broadcasts
-- [ ] T5 `maestro-server` MCP task tools answered by the gateway
+- [x] T5 `maestro-server` MCP task tools answered by the gateway, from the session map's project
+      binding, off the main loop
 - [ ] T6 `src-tauri` task commands as round trips, with `project_id`; pushes become events
 - [ ] T7 `src-tauri` pipeline, worktree and review sites: `reader_task`, `merge`, `review`, `queue`,
       `spawn`, the session and prompt handlers, `worktree_lifecycle`, `worktree_query`
