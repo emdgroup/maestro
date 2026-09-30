@@ -228,7 +228,7 @@ Tasks:
       install (`f30ebea7`). `RunAutomation` still runs `git worktree add` inline
 - [x] T1 `maestro-protocol`: row types, the transition event and its guard, the requests, the
       pushes; `PROTOCOL_VERSION` 9
-- [ ] T2 `maestro-server` store for tasks and threads: schema, migration, per-project counter,
+- [x] T2 `maestro-server` store for tasks and threads: schema, migration, per-project counter,
       `transition` rules and guards moved with their tests
 - [ ] T3 `maestro-server` store for worktrees and reviews
 - [ ] T4 `maestro-server` dispatch: the arms, the composite steps, the broadcasts

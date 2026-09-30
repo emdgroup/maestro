@@ -33,6 +33,7 @@ mod project_store;
 mod session;
 mod sessions;
 mod skills;
+mod task_store;
 mod terminal;
 mod tool_check;
 mod tool_config;

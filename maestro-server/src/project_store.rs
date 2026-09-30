@@ -51,19 +51,64 @@ CREATE INDEX IF NOT EXISTS sessions_by_project ON sessions(project_path, created
 CREATE INDEX IF NOT EXISTS sessions_by_live_id ON sessions(session_id);
 ";
 
+/// The schema, one step per version: entry `n` takes a database at `PRAGMA user_version` `n` to
+/// `n + 1`. A new step is appended, never edited in place, since a daemon may already have run it.
+///
+/// Version 1 is the sessions table phase 1 created without a version, so its `IF NOT EXISTS` is
+/// what lets a database at version 0 that already holds sessions take it and keep its rows.
+const MIGRATIONS: &[&str] = &[SCHEMA, crate::task_store::SCHEMA];
+
 /// Open, or create, the daemon's project database.
 pub fn open(dir: &Path) -> Result<Connection, String> {
     let path = dir.join("projects.db");
-    let conn = Connection::open(&path).map_err(|e| format!("cannot open {path:?}: {e}"))?;
+    let mut conn = Connection::open(&path).map_err(|e| format!("cannot open {path:?}: {e}"))?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(|e| format!("cannot set WAL on {path:?}: {e}"))?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| format!("cannot set busy_timeout on {path:?}: {e}"))?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(|e| format!("cannot enable foreign keys on {path:?}: {e}"))?;
-    conn.execute_batch(SCHEMA)
-        .map_err(|e| format!("cannot create the project schema: {e}"))?;
+    migrate(&mut conn)?;
     Ok(conn)
+}
+
+/// Bring the schema up to date, each step in a transaction of its own with the version it reaches.
+fn migrate(conn: &mut Connection) -> Result<(), String> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| format!("cannot read the project schema version: {e}"))?;
+    if version > MIGRATIONS.len() as i64 {
+        return Err(format!(
+            "projects.db is at schema version {version}, newer than this maestro-server knows \
+             ({}); update Maestro",
+            MIGRATIONS.len()
+        ));
+    }
+    for (index, step) in MIGRATIONS.iter().enumerate().skip(version as usize) {
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("cannot migrate the project schema: {e}"))?;
+        tx.execute_batch(step)
+            .and_then(|()| tx.pragma_update(None, "user_version", index as i64 + 1))
+            .and_then(|()| tx.commit())
+            .map_err(|e| {
+                format!(
+                    "cannot migrate the project schema to version {}: {e}",
+                    index + 1
+                )
+            })?;
+    }
+    Ok(())
+}
+
+/// A migrated in-memory store, for the tests of every module keeping rows in it.
+#[cfg(test)]
+pub fn open_in_memory() -> Connection {
+    let mut conn = Connection::open_in_memory().expect("in-memory database");
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .expect("foreign keys");
+    migrate(&mut conn).expect("schema");
+    conn
 }
 
 /// A store write nobody is waiting on. The session it describes carries on either way, so the
@@ -390,9 +435,31 @@ mod tests {
     use super::*;
 
     fn store() -> Connection {
-        let conn = Connection::open_in_memory().expect("in-memory database");
-        conn.execute_batch(SCHEMA).expect("schema");
-        conn
+        open_in_memory()
+    }
+
+    /// Phase 1 created the sessions table and never set a version. Such a database has to take
+    /// every step and come out with its sessions intact.
+    #[test]
+    fn a_phase_one_database_migrates_and_keeps_its_sessions() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = Connection::open(directory.path().join("projects.db")).expect("open");
+            conn.execute_batch(SCHEMA).expect("phase 1 schema");
+            start(&conn, "a", "/p", &full_meta(), true, "live-1");
+        }
+
+        let conn = open(directory.path()).expect("migrate");
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("version");
+        assert_eq!(version, MIGRATIONS.len() as i64);
+        assert_eq!(only(&conn).0.meta, full_meta());
+        conn.query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+            .expect("the task tables exist");
+        drop(conn);
+
+        open(directory.path()).expect("a migrated database opens again");
     }
 
     fn full_meta() -> SessionMeta {
