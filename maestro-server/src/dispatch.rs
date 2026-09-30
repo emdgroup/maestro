@@ -182,6 +182,104 @@ pub(crate) async fn close_session(
     }
 }
 
+/// The loop's share of a request answered off it: what the slow part found, and the sink the
+/// answer goes out on. Only what touches state the loop owns comes back here.
+pub(crate) enum Settle {
+    Detected(
+        maestro_protocol::DetectInstalledAgentsResponse,
+        crate::ClientOut,
+    ),
+    Ended {
+        kind: session::requests::EndKind,
+        agent_id: String,
+        session_id: String,
+        stdout: crate::ClientOut,
+    },
+}
+
+pub(crate) type SettleTx = tokio::sync::mpsc::UnboundedSender<Settle>;
+
+/// Finish a request whose slow part ran off the loop, and answer it.
+pub(crate) async fn settle(
+    settle: Settle,
+    sessions: &mut SessionMap,
+    agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
+    project_store: Option<&crate::project_store::Store>,
+) {
+    let (stdout, response) = match settle {
+        Settle::Detected(mut response, stdout) => {
+            // The detection table only knows the bundled agents, and the host drops anything it
+            // does not report. A custom agent is one the user declared themselves, so take their
+            // word for it and let a wrong command fail loudly at spawn rather than vanish here.
+            agent::registry::apply_custom_agents(agents_with_spawn);
+            for agent in agents_with_spawn.iter().filter(|agent| agent.custom) {
+                response.agents.push(maestro_protocol::DetectedAgentInfo {
+                    agent_id: agent.id.clone(),
+                    tool_name: agent.name.clone(),
+                    binary_found: false,
+                    binary_path: None,
+                    config_dir_found: false,
+                });
+                response.all_checked_ids.push(agent.id.clone());
+            }
+
+            // Override spawn_cmd with the path found by detection (handles platform quirks
+            // where the registry cmd uses a relative archive path like ./opencode.exe).
+            // Only applies to binary distributions — npx/uvx agents use binary_path as a
+            // detection signal only, not as the spawn command.
+            for info in &response.agents {
+                if let Some(ref path) = info.binary_path {
+                    if let Some(agent) =
+                        agents_with_spawn.iter_mut().find(|a| a.id == info.agent_id)
+                    {
+                        if agent.spawn_deps.is_empty() {
+                            agent.spawn_cmd = path.clone();
+                        }
+                    }
+                }
+            }
+            (
+                stdout,
+                MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(response)),
+            )
+        }
+        Settle::Ended {
+            kind,
+            agent_id,
+            session_id,
+            stdout,
+        } => {
+            let response = session::requests::forget_ended(
+                kind,
+                &agent_id,
+                &session_id,
+                sessions,
+                project_store,
+            )
+            .await;
+            (stdout, response)
+        }
+    };
+    if let Err(e) = send_response(&stdout, &response).await {
+        send_diag("warn", format!("[server] could not answer a request: {e}"));
+    }
+}
+
+/// Answer `response` from a task of its own. For work that is slow and touches nothing the loop
+/// owns: a process to spawn or probe, a filesystem to walk, an agent to wait on.
+fn answer_off_loop(
+    stdout: &crate::ClientOut,
+    response: impl std::future::Future<Output = MaestroRpcMessage> + Send + 'static,
+) {
+    let stdout = Arc::clone(stdout);
+    tokio::spawn(async move {
+        let response = response.await;
+        if let Err(e) = send_response(&stdout, &response).await {
+            send_diag("warn", format!("[server] could not answer a request: {e}"));
+        }
+    });
+}
+
 /// Handle one message from stdin.
 ///
 /// Returns `true`  → the main loop should continue.
@@ -196,6 +294,7 @@ pub(crate) async fn dispatch_message(
     agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
     stdout: &crate::ClientOut,
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
+    settle_tx: &SettleTx,
     auth_terminals: &AuthTerminals,
     pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
     automation_store: Option<&crate::automation_runner::Store>,
@@ -1006,10 +1105,10 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::FileSearch(req)) => {
-            let result = tokio::task::spawn_blocking(move || handle_file_search(req))
-                .await
-                .unwrap_or_else(|e| Err(format!("spawn_blocking: {}", e)));
-            let response =
+            answer_off_loop(stdout, async move {
+                let result = tokio::task::spawn_blocking(move || handle_file_search(req))
+                    .await
+                    .unwrap_or_else(|e| Err(format!("spawn_blocking: {}", e)));
                 match result {
                     Ok(files) => MaestroRpcMessage::Response(ServerResponse::FileSearchOk(
                         FileSearchResponse { files },
@@ -1018,24 +1117,24 @@ pub(crate) async fn dispatch_message(
                         message: msg,
                         session_id: None,
                     })),
-                };
-            send_or_return!(send_response(stdout, &response).await);
+                }
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::FileRead(req)) => {
-            let result = handle_file_read(&req).await;
-            let response = match result {
-                Ok(content) => {
-                    MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
-                        content,
-                    }))
+            answer_off_loop(stdout, async move {
+                match handle_file_read(&req).await {
+                    Ok(content) => {
+                        MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse {
+                            content,
+                        }))
+                    }
+                    Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                        message: msg,
+                        session_id: None,
+                    })),
                 }
-                Err(msg) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message: msg,
-                    session_id: None,
-                })),
-            };
-            send_or_return!(send_response(stdout, &response).await);
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionList(req)) => {
@@ -1067,9 +1166,8 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Close,
                 req.agent_id,
                 req.session_id,
-                sessions,
                 agent_connections,
-                project_store,
+                settle_tx,
                 stdout,
             )
             .await;
@@ -1080,9 +1178,8 @@ pub(crate) async fn dispatch_message(
                 session::requests::EndKind::Delete,
                 req.agent_id,
                 req.session_id,
-                sessions,
                 agent_connections,
-                project_store,
+                settle_tx,
                 stdout,
             )
             .await;
@@ -1111,40 +1208,40 @@ pub(crate) async fn dispatch_message(
             // process and inserting it: the entry holds the shutdown sender, so replacing it killed
             // the agent the live sessions were talking to. A client attaching to a daemon probes
             // capabilities, which is exactly when there are sessions to lose.
-            match ensure_and_get_connection(
-                &req.agent_id,
-                agent_connections,
-                &spawn_cmd,
-                &spawn_args_owned,
-                &spawn_env,
-                &req.cwd,
-                stdout,
-            )
-            .await
-            {
-                Some(handle) => {
-                    let response = PreInitializeResponse {
-                        agent_id: req.agent_id.clone(),
-                        prompt_capabilities: handle.capabilities.prompt_capabilities.clone(),
-                        supports_session_list: handle.capabilities.supports_session_list,
-                        supports_session_load: handle.capabilities.supports_session_load,
-                        supports_session_close: handle.capabilities.supports_session_close,
-                        supports_session_delete: handle.capabilities.supports_session_delete,
-                        auth_methods: handle.capabilities.auth_methods.clone(),
-                        supports_auth_logout: handle.capabilities.supports_auth_logout,
-                    };
-                    send_or_return!(
-                        send_response(
-                            stdout,
-                            &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(response)),
-                        )
-                        .await
-                    );
-                }
-                None => {
-                    // Error already sent by pre_initialize_agent
-                }
-            }
+            // Offloaded like a spawn: starting the agent process takes seconds.
+            let agent_connections = Arc::clone(agent_connections);
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                // `None`: the error was already sent by pre_initialize_agent.
+                let Some(handle) = ensure_and_get_connection(
+                    &req.agent_id,
+                    &agent_connections,
+                    &spawn_cmd,
+                    &spawn_args_owned,
+                    &spawn_env,
+                    &req.cwd,
+                    &stdout,
+                )
+                .await
+                else {
+                    return;
+                };
+                let response = PreInitializeResponse {
+                    agent_id: req.agent_id.clone(),
+                    prompt_capabilities: handle.capabilities.prompt_capabilities.clone(),
+                    supports_session_list: handle.capabilities.supports_session_list,
+                    supports_session_load: handle.capabilities.supports_session_load,
+                    supports_session_close: handle.capabilities.supports_session_close,
+                    supports_session_delete: handle.capabilities.supports_session_delete,
+                    auth_methods: handle.capabilities.auth_methods.clone(),
+                    supports_auth_logout: handle.capabilities.supports_auth_logout,
+                };
+                let _ = send_response(
+                    &stdout,
+                    &MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(response)),
+                )
+                .await;
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::Authenticate(req)) => {
@@ -1174,30 +1271,30 @@ pub(crate) async fn dispatch_message(
             return auth::logout(req, agent_connections, stdout).await;
         }
 
+        // Probing a tool runs it, and installing skills runs the skills CLI.
         MaestroRpcMessage::Request(ServerRequest::CheckTools(req)) => {
-            let results = check_tools(req.tools).await;
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(
-                        CheckToolsResponse { results }
-                    )),
-                )
-                .await
-            );
+            answer_off_loop(stdout, async move {
+                let results = check_tools(req.tools).await;
+                MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(CheckToolsResponse {
+                    results,
+                }))
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::InstallSkills(req)) => {
-            let response = match crate::skills::install(req.skills).await {
-                Ok(installed) => MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(
-                    InstallSkillsResponse { installed },
-                )),
-                Err(message) => MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
-                    message,
-                    session_id: None,
-                })),
-            };
-            send_or_return!(send_response(stdout, &response).await);
+            answer_off_loop(stdout, async move {
+                match crate::skills::install(req.skills).await {
+                    Ok(installed) => MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(
+                        InstallSkillsResponse { installed },
+                    )),
+                    Err(message) => {
+                        MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                            message,
+                            session_id: None,
+                        }))
+                    }
+                }
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::ListMcpServers(req)) => {
@@ -1280,96 +1377,53 @@ pub(crate) async fn dispatch_message(
             });
         }
 
+        // `tools.json` is written under a file lock, so two of these at once cannot lose a write.
         MaestroRpcMessage::Request(ServerRequest::SetToolPath(req)) => {
-            let result = if let Some(path) = req.path {
-                let tested =
-                    crate::tool_check::test_tool_path(req.tool.clone(), path.clone()).await;
-                if tested.available {
-                    match crate::tool_config::set(&req.tool, Some(path)) {
+            answer_off_loop(stdout, async move {
+                let result = if let Some(path) = req.path {
+                    let tested =
+                        crate::tool_check::test_tool_path(req.tool.clone(), path.clone()).await;
+                    if tested.available {
+                        match crate::tool_config::set(&req.tool, Some(path)) {
+                            Ok(()) => crate::tool_check::check_tool(req.tool).await,
+                            Err(error) => tool_config_error(req.tool, error),
+                        }
+                    } else {
+                        tested
+                    }
+                } else {
+                    match crate::tool_config::set(&req.tool, None) {
                         Ok(()) => crate::tool_check::check_tool(req.tool).await,
                         Err(error) => tool_config_error(req.tool, error),
                     }
-                } else {
-                    tested
-                }
-            } else {
-                match crate::tool_config::set(&req.tool, None) {
-                    Ok(()) => crate::tool_check::check_tool(req.tool).await,
-                    Err(error) => tool_config_error(req.tool, error),
-                }
-            };
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::SetToolPathOk(result))
-                )
-                .await
-            );
+                };
+                MaestroRpcMessage::Response(ServerResponse::SetToolPathOk(result))
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::TestToolPath(req)) => {
-            let result = crate::tool_check::test_tool_path(req.tool, req.path).await;
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(result))
-                )
-                .await
-            );
+            answer_off_loop(stdout, async move {
+                let result = crate::tool_check::test_tool_path(req.tool, req.path).await;
+                MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(result))
+            });
         }
 
+        // The probe scans PATH for every bundled agent, which is slow on Windows. What it finds
+        // is applied to the agent list back on the loop, which owns it.
         MaestroRpcMessage::Request(ServerRequest::DetectInstalledAgents(_req)) => {
-            let mut response = agent::detection::detect_installed_agents().await;
-
-            // The detection table only knows the bundled agents, and the host drops anything it
-            // does not report. A custom agent is one the user declared themselves, so take their
-            // word for it and let a wrong command fail loudly at spawn rather than vanish here.
-            agent::registry::apply_custom_agents(agents_with_spawn);
-            for agent in agents_with_spawn.iter().filter(|agent| agent.custom) {
-                response.agents.push(maestro_protocol::DetectedAgentInfo {
-                    agent_id: agent.id.clone(),
-                    tool_name: agent.name.clone(),
-                    binary_found: false,
-                    binary_path: None,
-                    config_dir_found: false,
-                });
-                response.all_checked_ids.push(agent.id.clone());
-            }
-
-            // Override spawn_cmd with the path found by detection (handles platform quirks
-            // where the registry cmd uses a relative archive path like ./opencode.exe).
-            // Only applies to binary distributions — npx/uvx agents use binary_path as a
-            // detection signal only, not as the spawn command.
-            for info in &response.agents {
-                if let Some(ref path) = info.binary_path {
-                    if let Some(agent) =
-                        agents_with_spawn.iter_mut().find(|a| a.id == info.agent_id)
-                    {
-                        if agent.spawn_deps.is_empty() {
-                            agent.spawn_cmd = path.clone();
-                        }
-                    }
-                }
-            }
-
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(response)),
-                )
-                .await
-            );
+            let settle_tx = settle_tx.clone();
+            let stdout = Arc::clone(stdout);
+            tokio::spawn(async move {
+                let response = agent::detection::detect_installed_agents().await;
+                let _ = settle_tx.send(Settle::Detected(response, stdout));
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::DetectProjectAgents(req)) => {
-            let response = agent::detection::detect_project_agents(&req.cwd).await;
-            send_or_return!(
-                send_response(
-                    stdout,
-                    &MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(response)),
-                )
-                .await
-            );
+            answer_off_loop(stdout, async move {
+                let response = agent::detection::detect_project_agents(&req.cwd).await;
+                MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(response))
+            });
         }
 
         MaestroRpcMessage::Request(ServerRequest::AcquireProjectLock(req)) => {

@@ -446,6 +446,8 @@ async fn run_server(
     // can insert sessions without holding any lock across the async ACP operations.
     let (spawn_result_tx, mut spawn_result_rx) =
         tokio::sync::mpsc::channel::<(String, ActiveSession)>(8);
+    // Requests answered off the loop hand back what touches state only the loop owns.
+    let (settle_tx, mut settle_rx) = tokio::sync::mpsc::unbounded_channel::<dispatch::Settle>();
 
     let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);
@@ -629,6 +631,19 @@ async fn run_server(
                 continue;
             }
 
+            settled = settle_rx.recv() => {
+                if let Some(settled) = settled {
+                    dispatch::settle(
+                        settled,
+                        &mut sessions,
+                        &mut agents_with_spawn,
+                        project_store.as_ref(),
+                    )
+                    .await;
+                }
+                continue;
+            }
+
             call = async {
                 match gateway_rx.as_mut() {
                     Some(rx) => rx.recv().await,
@@ -773,6 +788,7 @@ async fn run_server(
             &mut agents_with_spawn,
             &reply_sink,
             &spawn_result_tx,
+            &settle_tx,
             &auth_terminals,
             &mut pending_host_tools,
             automation_store.as_ref(),

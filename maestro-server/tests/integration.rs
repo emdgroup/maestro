@@ -679,3 +679,67 @@ fn test_project_sessions_list_and_rename() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// A slow request is answered off the main loop, so a fast one sent after it is not queued behind
+/// it. The slow one is a pre-initialize of an agent that starts and never answers `initialize`.
+#[test]
+fn test_fast_request_is_answered_while_a_slow_one_is_outstanding() {
+    #[cfg(windows)]
+    let (cmd, args) = (
+        "powershell",
+        r#"["-NoProfile", "-Command", "Start-Sleep 30"]"#,
+    );
+    #[cfg(not(windows))]
+    let (cmd, args) = ("sleep", r#"["30"]"#);
+    let platforms = [
+        "darwin-aarch64",
+        "darwin-x86_64",
+        "linux-aarch64",
+        "linux-x86_64",
+        "windows-x86_64",
+        "windows-aarch64",
+    ]
+    .map(|platform| format!(r#""{platform}": {{ "cmd": "{cmd}", "args": {args} }}"#))
+    .join(", ");
+
+    let home = tempfile::tempdir().expect("temp home");
+    let config_dir = home.path().join(".maestro");
+    std::fs::create_dir_all(&config_dir).expect("create .maestro");
+    std::fs::write(
+        config_dir.join("custom-agents.json"),
+        format!(
+            r#"{{ "agents": [ {{ "id": "never-answers", "name": "Never answers",
+                "distribution": {{ "binary": {{ {platforms} }} }} }} ] }}"#
+        ),
+    )
+    .expect("write custom-agents.json");
+
+    let mut child = spawn_server_with_home(Some(home.path()));
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
+
+    write_msg_with_id(
+        stdin,
+        Some(21),
+        ServerRequest::PreInitialize(maestro_protocol::PreInitializeRequest {
+            agent_id: "never-answers".to_string(),
+            cwd: home.path().to_string_lossy().into_owned(),
+        }),
+    );
+    write_msg_with_id(
+        stdin,
+        Some(22),
+        ServerRequest::ListAgents(ListAgentsRequest {}),
+    );
+
+    let (id, response) = read_msg_with_id(stdout);
+    assert_eq!(id, Some(22), "got {response:?} first");
+    assert!(
+        matches!(response, ServerResponse::ListAgentsOk(_)),
+        "expected ListAgentsOk, got: {response:?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

@@ -243,13 +243,17 @@ pub(crate) enum EndKind {
     Delete,
 }
 
+/// Ask the agent to end a session, off the loop: the agent answers in its own time, and every
+/// other window's requests would wait behind it. The session map is the loop's, so a success is
+/// handed back as [`crate::dispatch::Settle::Ended`] and answered from there by [`forget_ended`].
+///
+/// Returns `false` only when stdout is broken, which is the caller's signal to stop.
 pub(crate) async fn end(
     kind: EndKind,
     agent_id: String,
     session_id: String,
-    sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
-    project_store: Option<&crate::project_store::Store>,
+    settle_tx: &crate::dispatch::SettleTx,
     stdout: &Stdout,
 ) -> bool {
     let conn_handle = agent_connections
@@ -257,66 +261,88 @@ pub(crate) async fn end(
         .await
         .get(&agent_id)
         .map(AgentConnectionHandle::from);
-
-    let result = match (&conn_handle, kind) {
-        (Some(handle), EndKind::Close) => {
-            session_close_on_connection(handle, session_id.clone()).await
-        }
-        (Some(handle), EndKind::Delete) => {
-            session_delete_on_connection(handle, session_id.clone()).await
-        }
-        (None, _) => Err(format!(
-            "no connection found for agent {} with session {}",
-            agent_id, session_id
-        )),
+    let Some(handle) = conn_handle else {
+        return send_response(
+            stdout,
+            &error_response(format!(
+                "no connection found for agent {} with session {}",
+                agent_id, session_id
+            )),
+        )
+        .await
+        .is_ok();
     };
 
-    let response = match result {
-        Ok(()) => {
-            // `session_id` here is the agent's own id, and the session the agent just closed may
-            // also be one this server is running. Left in the map it would be a routing key whose
-            // command loop talks to a session that no longer exists on the other end — and since
-            // the daemon outlives the app, it would stay there and be offered for re-adoption.
-            let live: Vec<String> = sessions
-                .iter()
-                .filter(|(_, session)| {
-                    session
-                        .cleanup
-                        .as_ref()
-                        .is_some_and(|c| c.acp_session_id == session_id)
-                })
-                .map(|(id, _)| id.clone())
-                .collect();
-            for id in live {
-                if let Some(session) = sessions.remove(&id) {
-                    session.task.abort();
-                    if let Some(cleanup) = session.cleanup {
-                        cleanup.router.unregister(&cleanup.acp_session_id).await;
-                    }
-                }
-            }
-            if let Some(store) = project_store {
-                let conn = store.lock().await;
-                crate::project_store::report(match kind {
-                    // The host closes a session to load it again for its transcript, so the
-                    // project still has it open.
-                    EndKind::Close => crate::project_store::detach(&conn, &agent_id, &session_id),
-                    EndKind::Delete => crate::project_store::delete(&conn, &agent_id, &session_id),
+    let agent_connections = Arc::clone(agent_connections);
+    let settle_tx = settle_tx.clone();
+    let stdout = Arc::clone(stdout);
+    tokio::spawn(async move {
+        let result = match kind {
+            EndKind::Close => session_close_on_connection(&handle, session_id.clone()).await,
+            EndKind::Delete => session_delete_on_connection(&handle, session_id.clone()).await,
+        };
+        match result {
+            Ok(()) => {
+                let _ = settle_tx.send(crate::dispatch::Settle::Ended {
+                    kind,
+                    agent_id,
+                    session_id,
+                    stdout,
                 });
             }
-            MaestroRpcMessage::Response(match kind {
-                EndKind::Close => ServerResponse::SessionCloseOk,
-                EndKind::Delete => ServerResponse::SessionDeleteOk,
-            })
-        }
-        Err(e) => {
-            if let Some(handle) = &conn_handle {
-                evict_if_same_connection(agent_connections, &agent_id, &handle.router).await;
+            Err(e) => {
+                evict_if_same_connection(&agent_connections, &agent_id, &handle.router).await;
+                send_response(&stdout, &error_response(e)).await.ok();
             }
-            error_response(e)
         }
-    };
-    send_response(stdout, &response).await.is_ok()
+    });
+    true
+}
+
+/// The loop's half of a successful [`end`]: drop what the map and the store still hold for the
+/// session, and say so.
+pub(crate) async fn forget_ended(
+    kind: EndKind,
+    agent_id: &str,
+    session_id: &str,
+    sessions: &mut SessionMap,
+    project_store: Option<&crate::project_store::Store>,
+) -> MaestroRpcMessage {
+    // `session_id` here is the agent's own id, and the session the agent just closed may
+    // also be one this server is running. Left in the map it would be a routing key whose
+    // command loop talks to a session that no longer exists on the other end — and since
+    // the daemon outlives the app, it would stay there and be offered for re-adoption.
+    let live: Vec<String> = sessions
+        .iter()
+        .filter(|(_, session)| {
+            session
+                .cleanup
+                .as_ref()
+                .is_some_and(|c| c.acp_session_id == session_id)
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in live {
+        if let Some(session) = sessions.remove(&id) {
+            session.task.abort();
+            if let Some(cleanup) = session.cleanup {
+                cleanup.router.unregister(&cleanup.acp_session_id).await;
+            }
+        }
+    }
+    if let Some(store) = project_store {
+        let conn = store.lock().await;
+        crate::project_store::report(match kind {
+            // The host closes a session to load it again for its transcript, so the
+            // project still has it open.
+            EndKind::Close => crate::project_store::detach(&conn, agent_id, session_id),
+            EndKind::Delete => crate::project_store::delete(&conn, agent_id, session_id),
+        });
+    }
+    MaestroRpcMessage::Response(match kind {
+        EndKind::Close => ServerResponse::SessionCloseOk,
+        EndKind::Delete => ServerResponse::SessionDeleteOk,
+    })
 }
 
 #[cfg(test)]
