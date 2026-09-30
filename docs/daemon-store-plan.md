@@ -62,7 +62,7 @@ belongs to a project.
 | Phase | What                                               | State                  |
 | ----- | -------------------------------------------------- | ---------------------- |
 | 0     | Request ids on the wire                            | Done, not yet run live |
-| 1     | Sessions: the daemon knows what a project has open | Not started            |
+| 1     | Sessions: the daemon knows what a project has open | Done, not yet run live |
 | 2     | Tasks and their threads                            | Not started            |
 | 3     | Worktrees, reviews and project prompts             | Not started            |
 | 4     | Import what apps already hold, then drop it        | Not started            |
