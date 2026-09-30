@@ -371,7 +371,7 @@ pub async fn attach_project_sessions(
         }
 
         let Some(live) = live else {
-            let task_id = task.task_id;
+            let task_key = crate::acp::TaskKey::of(Some(project_id), task.task_id);
             match crate::acp::session_handlers::restore_acp_session(
                 app_state,
                 row.agent_id,
@@ -391,7 +391,7 @@ pub async fn attach_project_sessions(
                 // is failed either way, or it would go on claiming an agent is at work.
                 Err(e) => {
                     log::warn!("[acp] could not restore a session of {project_path}: {e}");
-                    crate::acp::reader_task::fail_task_if_still_running(app_state, task_id);
+                    crate::acp::reader_task::fail_task_if_still_running(app_state, task_key);
                 }
             }
             continue;

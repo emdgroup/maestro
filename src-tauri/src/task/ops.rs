@@ -103,21 +103,26 @@ pub async fn interrupt_task(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
-    // Search ACP sessions by task_id — release lock immediately in scoped block.
+    // Search ACP sessions by task — release lock immediately in scoped block. Task ids are per
+    // project, so the project has to match too.
+    let task = crate::acp::TaskKey {
+        project_id,
+        task_id,
+    };
     let acp_session_id: Option<String> = {
         let sessions = app_state.acp.sessions.lock().await;
         sessions
             .iter()
-            .find(|(_, proc)| proc.task_id == Some(task_id))
+            .find(|(_, proc)| proc.task_key() == Some(task))
             .map(|(session_id, _)| session_id.clone())
     };
 
-    // Search PTY session metadata by task_id — release lock immediately in scoped block.
+    // Search PTY session metadata by task — release lock immediately in scoped block.
     let pty_session_key: Option<String> = {
         let session_meta = app_state.pty.session_meta.lock().await;
         session_meta
             .iter()
-            .find(|(_, m)| m.task_id == Some(task_id))
+            .find(|(_, m)| m.task_id == Some(task_id) && m.project_id == Some(project_id))
             .map(|(session_id, _)| session_id.clone())
     };
 
@@ -179,10 +184,13 @@ pub async fn send_task_to_review(
     task_id: i32,
     force: bool,
 ) -> Result<Option<Task>, String> {
-    let is_git_repo = crate::acp::reader_task::is_task_project_git_repo(&app_state, task_id).await;
+    let task = crate::task::crud::get_task_on_server(&app_state, project_id, task_id)
+        .await?
+        .ok_or_else(|| format!("Task {task_id} not found"))?;
+    let is_git_repo = crate::acp::reader_task::is_project_git_repo(&app_state, project_id).await;
 
     let has_changes = if is_git_repo {
-        crate::acp::reader_task::task_has_changes(&app_state, task_id).await
+        crate::acp::reader_task::task_has_changes(&app_state, &task).await
     } else {
         None
     };
@@ -200,7 +208,7 @@ pub async fn send_task_to_review(
     // Sending work to review by hand is still asking for it to be reviewed, so a project with a
     // review agent gets one here too. Doing otherwise would make the button a way of skipping the
     // reviewer, which nothing on it says it is.
-    let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, task_id).await;
+    let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, &task).await;
 
     apply_transition_on_server(
         &app_state,

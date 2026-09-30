@@ -238,8 +238,14 @@ Tasks:
       `tasks-changed` and `worktrees-changed` carry `{ project_id }` (null for a project this app
       does not have); `task-comments-changed` still carries the bare task id. The task tools left
       `host_tools`
-- [ ] T7 `src-tauri` pipeline, worktree and review sites: `reader_task`, `merge`, `review`, `queue`,
-      `spawn`, the session and prompt handlers, `worktree_lifecycle`, `worktree_query`
+- T7 `src-tauri` pipeline, worktree and review sites, split in two:
+  - [x] T7a the session and turn pipeline: `reader_task` (turn end as one `EndTaskTurn`, the plan
+        interception, blocked and failed marks), `queue`, `spawn`, the session and prompt handlers.
+        A session's task is a `TaskKey` (its `project_id` and task id). Daemon queries from a
+        reader run off it, since the reply comes back through that reader.
+        `task-comments-changed` carries `{ project_id, task_id }`
+  - [ ] T7b `merge`, `review`, `worktree_lifecycle`, `worktree_query` and the worktree and review
+        commands, including `discard_task_workspace` and `push_ci_fix`
 - [ ] T8 Attachments copied on attach
 - [x] T9 Frontend: `projectId` on commands and query keys, bindings
 - [ ] T10 Remove the app's task SQL (the tables stay until phase 4), docs, review, an end-to-end

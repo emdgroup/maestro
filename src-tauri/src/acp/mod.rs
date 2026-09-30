@@ -132,5 +132,6 @@ pub use session_ops::{
 };
 pub use session_types::{
     AcpProcess, AcpProcessParams, AcpTransportWriter, ConnectionServer, PendingRequests,
-    RestorableSession, SessionCapabilitiesInfo, SessionRequest, TaskMetadata, TransportTarget,
+    RestorableSession, SessionCapabilitiesInfo, SessionRequest, TaskKey, TaskMetadata,
+    TransportTarget,
 };

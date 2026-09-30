@@ -45,6 +45,27 @@ pub(crate) async fn update_task_on_server(
     Ok(Task::from_wire(task, project_id))
 }
 
+/// One task, `None` when the project has no task by that number.
+pub(crate) async fn get_task_on_server(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Option<Task>, String> {
+    let found = query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::GetTask(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::GetTaskOk(found) => found),
+    )
+    .await?;
+    Ok(found.task.map(|task| Task::from_wire(task, project_id)))
+}
+
 /// Get list of all tasks for a project
 #[tauri::command]
 #[specta::specta]

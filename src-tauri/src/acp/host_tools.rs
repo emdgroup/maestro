@@ -195,12 +195,14 @@ async fn canvas_await(
         .await
         .insert(key.clone(), tx);
 
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(session_id).and_then(|session| session.task_id)
+        sessions
+            .get(session_id)
+            .and_then(|session| session.task_key())
     };
-    if let Some(task_id) = task_id {
-        crate::acp::reader_task::mark_task_blocked(app_state, task_id);
+    if let Some(task) = task {
+        crate::acp::reader_task::mark_task_blocked(app_state, task);
     }
 
     // `surface_id` is null for a wait that takes any surface; the panel reads it that way.
@@ -227,7 +229,7 @@ async fn canvas_await(
     ) {
         log::warn!("[acp] emit canvas-await-ended/{session_id} failed: {e}");
     }
-    crate::acp::prompt_handlers::clear_task_blocked(app_state, task_id);
+    crate::acp::prompt_handlers::clear_task_blocked(app_state, task);
 
     Ok(outcome)
 }

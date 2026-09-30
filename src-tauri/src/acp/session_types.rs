@@ -311,6 +311,23 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
+/// A session's task as the daemon keys it: task ids are per project, so the number alone does not
+/// name one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskKey {
+    pub project_id: i32,
+    pub task_id: i32,
+}
+
+impl TaskKey {
+    pub fn of(project_id: Option<i32>, task_id: Option<i32>) -> Option<Self> {
+        Some(Self {
+            project_id: project_id?,
+            task_id: task_id?,
+        })
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
@@ -403,10 +420,14 @@ pub struct ReaderTaskContext {
     pub declared_complete: Arc<AtomicBool>,
     pub user_interrupted: Arc<AtomicBool>,
     pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
-    pub task_id: Option<i32>,
+    pub task: Option<TaskKey>,
 }
 
 impl AcpProcess {
+    pub fn task_key(&self) -> Option<TaskKey> {
+        TaskKey::of(self.project_id, self.task_id)
+    }
+
     pub fn create(
         params: AcpProcessParams,
         session_id: String,
@@ -447,7 +468,7 @@ impl AcpProcess {
             declared_complete: Arc::clone(&declared_complete),
             user_interrupted: Arc::clone(&user_interrupted),
             closing_message: Arc::clone(&closing_message),
-            task_id: params.task.task_id,
+            task: TaskKey::of(params.project_id, params.task.task_id),
         };
         let process = Self {
             writer: params.writer,

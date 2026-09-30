@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::acp::transport::{
     ElicitationResponse, MaestroRpcMessage, PermissionResponse, PromptRequest, ServerRequest,
@@ -25,7 +25,7 @@ async fn send_prompt_impl(
     // Any reply puts the agent back to work, including a plain message answering a question the
     // agent asked by ending its turn. Without this only permission and elicitation responses
     // would clear the block, and an ordinary reply would leave the card pulsing.
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions.get(session_id);
         if let Some(session) = session {
@@ -35,9 +35,9 @@ async fn send_prompt_impl(
                 .user_interrupted
                 .store(false, std::sync::atomic::Ordering::Release);
         }
-        session.and_then(|s| s.task_id)
+        session.and_then(|s| s.task_key())
     };
-    clear_task_blocked(app_state, task_id);
+    clear_task_blocked(app_state, task);
 
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id.to_string(),
@@ -74,7 +74,7 @@ pub async fn respond_acp_permission(
     request_id: String,
     option_id: Option<String>,
 ) -> Result<(), String> {
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
         let session = sessions.get(session_id);
         if let Some(session) = session {
@@ -82,9 +82,9 @@ pub async fn respond_acp_permission(
                 .has_pending_permission
                 .store(false, std::sync::atomic::Ordering::Release);
         }
-        session.and_then(|s| s.task_id)
+        session.and_then(|s| s.task_key())
     };
-    clear_task_blocked(&app_state, task_id);
+    clear_task_blocked(&app_state, task);
 
     // A question Maestro asked itself, such as `run_automation`'s, is answered here: the server
     // never saw it and has nothing waiting on it.
@@ -112,24 +112,14 @@ pub async fn respond_acp_permission(
 /// Paired with `mark_task_blocked` in `reader_task`. Missing this leaves the card pulsing for an
 /// answer that has already been given — the cost of persisting the blocked state rather than
 /// deriving it from live session events, which used to self-heal on reload.
-pub(crate) fn clear_task_blocked(app_state: &Arc<AppState>, task_id: Option<i32>) {
-    let Some(task_id) = task_id else {
-        return;
-    };
-    let changed = {
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        match crate::task::transition::clear_blocked(&conn, task_id) {
-            Ok(result) => result.is_some(),
-            Err(e) => {
-                log::warn!("[acp] could not clear blocked state for task {task_id}: {e}");
-                false
-            }
-        }
-    };
-    if changed {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
+pub(crate) fn clear_task_blocked(app_state: &Arc<AppState>, task: Option<crate::acp::TaskKey>) {
+    if let Some(task) = task {
+        crate::acp::reader_task::spawn_transition(
+            app_state,
+            task,
+            maestro_protocol::TaskTransition::Unblocked,
+            maestro_protocol::TransitionGuard::Blocked,
+        );
     }
 }
 
@@ -141,11 +131,11 @@ pub async fn respond_acp_elicitation(
     request_id: String,
     response: serde_json::Value,
 ) -> Result<(), String> {
-    let task_id = {
+    let task = {
         let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(session_id).and_then(|s| s.task_id)
+        sessions.get(session_id).and_then(|s| s.task_key())
     };
-    clear_task_blocked(&app_state, task_id);
+    clear_task_blocked(&app_state, task);
 
     let msg = MaestroRpcMessage::Request(ServerRequest::ElicitationResponse(ElicitationResponse {
         session_id: session_id.to_string(),

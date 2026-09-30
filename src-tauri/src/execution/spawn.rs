@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use tauri::{Emitter, State};
 
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 
 /// Find the best available shell on Windows.
@@ -87,19 +89,22 @@ pub async fn spawn_interactive_execution(
     };
 
     let worktree_abs_path: String = if let Some(wt_id) = worktree_id {
-        // DB lookup path — skip git worktree list entirely when caller already knows the worktree ID
-        let relative_path: String = {
-            let conn = app_state
-                .db
-                .lock()
-                .map_err(|e| format!("Lock failed: {}", e))?;
-            conn.query_row(
-                "SELECT path FROM worktrees WHERE id = ?",
-                rusqlite::params![wt_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("Worktree id={} not found: {}", wt_id, e))?
-        };
+        // Row lookup path — skip git worktree list entirely when caller already knows the worktree ID
+        let relative_path = query_project_store(
+            &app_state,
+            project_id,
+            |project_path| {
+                ServerRequest::GetWorktree(maestro_protocol::WorktreeRef {
+                    project_path,
+                    worktree_id: wt_id,
+                })
+            },
+            reply!(ServerResponse::GetWorktreeOk(found) => found),
+        )
+        .await?
+        .worktree
+        .ok_or_else(|| format!("Worktree id={} not found", wt_id))?
+        .path;
         format!("{}/{}", repo_path, relative_path)
     } else if let Some(ref branch) = branch_name {
         // Use git worktree list rather than DB state: git is the source of truth, the DB may
@@ -126,32 +131,35 @@ pub async fn spawn_interactive_execution(
     let session_id = crate::core::new_session_id();
 
     if let Some(tid) = task_id {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+        use crate::task::ops::apply_transition_on_server;
+        use maestro_protocol::{AgentRole, TaskStatus, TaskTransition, TransitionGuard};
+
         // Only claim a task that is still queued — the user may have moved it since.
         //
         // A PTY has no separate readiness signal the way ACP does: by the time the process is
-        // spawned below there is nothing further to wait for. So the claim and the start are
-        // applied together rather than leaving the task parked at `Spawning` with no event
-        // that would ever move it on.
-        let claimed = crate::task::transition::claim_for_execution(
-            &conn,
+        // spawned below there is nothing further to wait for. So the start follows the claim
+        // straight away rather than leaving the task parked at `Spawning` with no event that
+        // would ever move it on. Two requests, each guarded on its own: the start applies only to
+        // a task still `Spawning`, as the ACP path's does.
+        let claimed = apply_transition_on_server(
+            &app_state,
+            project_id,
             tid,
-            &[crate::models::TaskStatus::Queue],
-        )?;
+            TaskTransition::ExecutionStarted,
+            TransitionGuard::Claim(vec![TaskStatus::Queue]),
+        )
+        .await?;
         if claimed.is_some() {
-            crate::task::transition::apply_if_spawning(
-                &conn,
+            apply_transition_on_server(
+                &app_state,
+                project_id,
                 tid,
                 // A PTY session is a terminal the user drives, which is the coder's seat whoever
                 // is sitting in it — there is no role to pick from.
-                crate::task::transition::TaskTransition::SessionReady(
-                    crate::project::profiles::AgentRole::Coder,
-                ),
-            )?;
-            app_state.app_handle.emit("tasks-changed", ()).ok();
+                TaskTransition::SessionReady(AgentRole::Coder),
+                TransitionGuard::Spawning,
+            )
+            .await?;
         }
     }
 
