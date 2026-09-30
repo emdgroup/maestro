@@ -59,14 +59,14 @@ belongs to a project.
 
 ## Phases
 
-| Phase | What                                               | State                  |
-| ----- | -------------------------------------------------- | ---------------------- |
-| 0     | Request ids on the wire                            | Done, not yet run live |
-| 1     | Sessions: the daemon knows what a project has open | Done, not yet run live |
-| 2     | Tasks, their threads, worktrees and reviews        | In progress            |
-| 3     | Project prompts                                    | Not started            |
-| 4     | Import what apps already hold, then drop it        | Not started            |
-| 5     | The pipeline runs with no window                   | Not started            |
+| Phase | What                                               | State       |
+| ----- | -------------------------------------------------- | ----------- |
+| 0     | Request ids on the wire                            | Done        |
+| 1     | Sessions: the daemon knows what a project has open | Done        |
+| 2     | Tasks, their threads, worktrees and reviews        | In progress |
+| 3     | Project prompts                                    | Not started |
+| 4     | Import what apps already hold, then drop it        | Not started |
+| 5     | The pipeline runs with no window                   | Not started |
 
 ### Phase 0: request ids on the wire
 
