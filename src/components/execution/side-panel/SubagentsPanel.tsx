@@ -18,8 +18,6 @@ export function SubagentsPanel({ items, toolCallMap }: SubagentsPanelProps) {
   }
 
   return (
-    // Not `absolute inset-0`: base-ui's Root sets an inline `position: relative`, which overrides
-    // the class and leaves the root content-sized, so it clips instead of scrolling.
     <ScrollArea className="h-full">
       <div className="p-3 flex flex-col gap-2">
         {items.map((item) => (
