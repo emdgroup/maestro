@@ -131,6 +131,6 @@ pub use session_ops::{
     try_session_load_via_connection_server, try_spawn_via_connection_server, write_to_acp_session,
 };
 pub use session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, ConnectionServer, PendingChannels,
+    AcpProcess, AcpProcessParams, AcpTransportWriter, ConnectionServer, PendingRequests,
     RestorableSession, SessionCapabilitiesInfo, SessionRequest, TaskMetadata, TransportTarget,
 };

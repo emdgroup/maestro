@@ -3,7 +3,10 @@ use std::time::Duration;
 use tauri::State;
 use tokio::sync::oneshot;
 
-use crate::acp::transport::{FileReadRequest, FileSearchRequest, MaestroRpcMessage, ServerRequest};
+use crate::acp::connection_server::{reply, request_via_server, UNEXPECTED_REPLY};
+use crate::acp::transport::{
+    FileReadRequest, FileSearchRequest, MaestroRpcMessage, ServerRequest, ServerResponse,
+};
 use crate::acp::ConnectionKey;
 use crate::connectivity::files::BINARY_LIMIT;
 use crate::core::AppState;
@@ -16,14 +19,35 @@ async fn session_file_rpc<T>(
         &crate::acp::AcpProcess,
     ) -> &Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>,
     build_request: impl FnOnce(&str) -> MaestroRpcMessage,
+    extract: impl FnOnce(ServerResponse) -> Option<T>,
 ) -> Result<T, String> {
-    let (cwd, pending) = {
+    let (cwd, pending, shared_connection) = {
         let sessions = app_state.acp.sessions.lock().await;
         let s = sessions
             .get(session_id)
             .ok_or_else(|| format!("No ACP session for session_id {session_id}"))?;
-        (s.cwd.clone(), Arc::clone(pending_field(s)))
+        let shared = matches!(s.writer, crate::acp::AcpTransportWriter::SharedServer(_));
+        (
+            s.cwd.clone(),
+            Arc::clone(pending_field(s)),
+            shared.then_some(s.connection_key),
+        )
     };
+    // The reply names no session, so on a server several sessions share it is matched by id. A
+    // session with a server to itself has nothing to confuse it with and keeps its own slot.
+    if let Some(connection_key) = shared_connection {
+        let response = request_via_server(
+            connection_key,
+            app_state,
+            &format!("No connection server for connection {:?}", connection_key),
+            Some(session_id),
+            build_request(&cwd),
+            15,
+            "File operation timed out",
+        )
+        .await?;
+        return extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string());
+    }
     let (tx, rx) = oneshot::channel();
     {
         *pending
@@ -56,6 +80,7 @@ pub async fn search_session_files(
                 limit,
             }))
         },
+        reply!(ServerResponse::FileSearchOk(response) => response.files),
     )
     .await
 }
@@ -77,6 +102,7 @@ pub async fn read_session_file(
                 relative_path,
             }))
         },
+        reply!(ServerResponse::FileReadOk(response) => response.content),
     )
     .await
 }

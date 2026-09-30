@@ -465,3 +465,70 @@ fn test_list_agents_includes_user_defined_custom_agents() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+fn write_msg_with_id(writer: &mut impl Write, id: Option<u64>, request: ServerRequest) {
+    let frame =
+        maestro_protocol::encode_message(id, &MaestroRpcMessage::Request(request)).expect("encode");
+    writer.write_all(&frame).expect("write frame");
+    writer.flush().expect("flush");
+}
+
+/// `read_msg`, keeping the id the frame carried.
+fn read_msg_with_id(reader: &mut impl Read) -> (Option<u64>, ServerResponse) {
+    loop {
+        match maestro_protocol::read_message_with_id_sync(reader).expect("read frame") {
+            (_, MaestroRpcMessage::Response(ServerResponse::Diagnostic(_))) => continue,
+            (_, MaestroRpcMessage::Response(ServerResponse::Ping { .. })) => continue,
+            (id, MaestroRpcMessage::Response(response)) => return (id, response),
+            (_, other) => panic!("expected a response, got: {other:?}"),
+        }
+    }
+}
+
+/// A sessionless reply names the request it answers. Two requests of one type are the case the
+/// host cannot tell apart by reply type alone, so both are written before either is read.
+#[test]
+fn test_sessionless_reply_echoes_request_id() {
+    let mut child = spawn_server();
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
+
+    let list = || ServerRequest::ListLiveSessions(maestro_protocol::ListLiveSessionsRequest {});
+    write_msg_with_id(stdin, Some(41), list());
+    write_msg_with_id(stdin, Some(7), list());
+    for expected in [41, 7] {
+        let (id, response) = read_msg_with_id(stdout);
+        assert!(
+            matches!(response, ServerResponse::ListLiveSessionsOk(_)),
+            "expected ListLiveSessionsOk, got: {response:?}"
+        );
+        assert_eq!(id, Some(expected));
+    }
+
+    write_msg_with_id(stdin, None, list());
+    let (id, response) = read_msg_with_id(stdout);
+    assert!(
+        matches!(response, ServerResponse::ListLiveSessionsOk(_)),
+        "expected ListLiveSessionsOk, got: {response:?}"
+    );
+    assert_eq!(id, None, "a request without an id is answered without one");
+
+    write_msg_with_id(
+        stdin,
+        Some(99),
+        ServerRequest::PreviewSchedule(maestro_protocol::PreviewScheduleRequest {
+            cron: "not a cron expression".to_string(),
+            timezone: "UTC".to_string(),
+        }),
+    );
+    let (id, response) = read_msg_with_id(stdout);
+    assert!(
+        matches!(response, ServerResponse::Error(_)),
+        "expected Error, got: {response:?}"
+    );
+    assert_eq!(id, Some(99), "a failure still names its request");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

@@ -1,14 +1,9 @@
 //! Core ACP session and transport data types.
 
-use crate::acp::transport::{
-    CheckToolsResponse, PreInitializeResponse, PromptCapabilitiesInfo, SessionListOkResponse,
-    ToolCheckResult,
-};
-use maestro_protocol::{
-    DetectInstalledAgentsResponse, DetectProjectAgentsResponse, InstallSkillsResponse,
-};
+use crate::acp::transport::{PromptCapabilitiesInfo, ServerResponse};
+use maestro_protocol::RequestId;
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
@@ -17,10 +12,6 @@ use tokio::sync::oneshot;
 /// Reply slot for a request that can only be in flight one at a time.
 /// `None` means no request is outstanding.
 pub type PendingReply<T> = Arc<std::sync::Mutex<Option<oneshot::Sender<Result<T, String>>>>>;
-
-/// Reply slots for requests that can be in flight concurrently, keyed by request id.
-pub type PendingReplyMap<T> =
-    Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<Result<T, String>>>>>;
 
 /// Session-update payloads held until the frontend listener registers and drains them.
 ///
@@ -76,91 +67,125 @@ pub enum AcpTransportWriter {
     SharedServer(tokio::sync::mpsc::Sender<Vec<u8>>),
 }
 
-/// Pending oneshot channels for a shared `ConnectionServer`.
-/// Arc-wrapped so the reader task can hold clones without borrowing the server.
-#[derive(Clone)]
-pub struct PendingChannels {
-    pub pre_init: PendingReplyMap<PreInitializeResponse>,
-    pub list_agents: PendingReply<Vec<crate::acp::registry::DiscoveredAgent>>,
-    pub live_sessions: PendingReply<maestro_protocol::ListLiveSessionsResponse>,
-    pub automations: PendingReply<maestro_protocol::ListAutomationsResponse>,
-    pub save_automation: PendingReply<maestro_protocol::Automation>,
-    pub delete_automation: PendingReply<()>,
-    pub automation_runs: PendingReply<maestro_protocol::ListAutomationRunsResponse>,
-    pub delete_automation_run: PendingReply<()>,
-    pub set_run_retention: PendingReply<()>,
-    pub webhook_settings: PendingReply<maestro_protocol::WebhookStatus>,
-    pub server_status: PendingReply<maestro_protocol::ServerStatus>,
-    pub roll_webhook_secret: PendingReply<maestro_protocol::Automation>,
-    pub webhook_deliveries: PendingReply<maestro_protocol::ListWebhookDeliveriesResponse>,
-    pub preview_schedule: PendingReply<maestro_protocol::PreviewScheduleResponse>,
-    pub session_list: PendingReply<SessionListOkResponse>,
-    pub session_close: PendingReply<()>,
-    pub session_delete: PendingReply<()>,
-    pub check_tools: PendingReply<CheckToolsResponse>,
-    pub set_tool_path: PendingReply<ToolCheckResult>,
-    pub test_tool_path: PendingReply<ToolCheckResult>,
-    pub install_skills: PendingReply<InstallSkillsResponse>,
-    pub list_mcp_servers: PendingReply<maestro_protocol::McpServerList>,
-    pub save_mcp_servers: PendingReply<()>,
-    pub set_mcp_secrets: PendingReply<()>,
-    pub test_mcp_server: PendingReply<maestro_protocol::McpTestResult>,
-    pub list_skills: PendingReply<maestro_protocol::SkillList>,
-    pub apply_skill: PendingReply<()>,
-    pub delete_skill: PendingReply<()>,
-    pub detect_installed: PendingReply<DetectInstalledAgentsResponse>,
-    pub detect_project: PendingReply<DetectProjectAgentsResponse>,
-    pub authenticate: PendingReply<()>,
-    pub logout: PendingReply<()>,
-    pub acquire_project_lock: PendingReply<maestro_protocol::AcquireProjectLockResponse>,
-    pub project_locks: PendingReply<maestro_protocol::ListProjectLocksResponse>,
-    pub takeover: PendingReply<bool>,
+/// A request waiting for the reply that carries its id.
+struct Waiter {
+    /// Set for a request made on a session's behalf, so an error scoped to that session can fail it.
+    session_id: Option<String>,
+    sender: oneshot::Sender<Result<ServerResponse, String>>,
 }
 
-impl Default for PendingChannels {
-    fn default() -> Self {
-        Self::new()
+/// The requests one `ConnectionServer` has sent and not yet heard back on, keyed by the id the
+/// server echoes on its reply. Clones share the same state, so the reader task holds one.
+#[derive(Clone, Default)]
+pub struct PendingRequests {
+    next_id: Arc<AtomicU64>,
+    waiting: Arc<std::sync::Mutex<HashMap<RequestId, Waiter>>>,
+    /// The one request answered by type rather than by id: `TakeoverResultOk` is written by a
+    /// timer or by another client's answer, neither of which knows the id that asked.
+    takeover: Arc<std::sync::Mutex<Option<RequestId>>>,
+    /// Why nothing registered from now on can be answered, set once the reader has ended. A
+    /// caller that cloned this just before would otherwise register after `fail_all` had swept,
+    /// and wait out its whole timeout on a connection that is gone.
+    closed: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+/// A poisoned lock here still guards a usable map, and refusing it would strand every waiter.
+fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+impl PendingRequests {
+    pub fn register(
+        &self,
+        session_id: Option<&str>,
+    ) -> (RequestId, oneshot::Receiver<Result<ServerResponse, String>>) {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let (sender, receiver) = oneshot::channel();
+        // Held across the insert so `fail_all` cannot sweep between the check and it.
+        let closed = lock(&self.closed);
+        if let Some(reason) = closed.as_ref() {
+            if sender.send(Err(reason.clone())).is_err() {
+                log::debug!("[acp] request {id} was dropped before it could be refused");
+            }
+            return (id, receiver);
+        }
+        lock(&self.waiting).insert(
+            id,
+            Waiter {
+                session_id: session_id.map(str::to_owned),
+                sender,
+            },
+        );
+        (id, receiver)
     }
-}
 
-impl PendingChannels {
-    pub fn new() -> Self {
-        Self {
-            pre_init: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            list_agents: Arc::new(std::sync::Mutex::new(None)),
-            live_sessions: Arc::new(std::sync::Mutex::new(None)),
-            automations: Arc::new(std::sync::Mutex::new(None)),
-            save_automation: Arc::new(std::sync::Mutex::new(None)),
-            delete_automation: Arc::new(std::sync::Mutex::new(None)),
-            automation_runs: Arc::new(std::sync::Mutex::new(None)),
-            delete_automation_run: Arc::new(std::sync::Mutex::new(None)),
-            set_run_retention: Arc::new(std::sync::Mutex::new(None)),
-            webhook_settings: Arc::new(std::sync::Mutex::new(None)),
-            server_status: Arc::new(std::sync::Mutex::new(None)),
-            roll_webhook_secret: Arc::new(std::sync::Mutex::new(None)),
-            webhook_deliveries: Arc::new(std::sync::Mutex::new(None)),
-            preview_schedule: Arc::new(std::sync::Mutex::new(None)),
-            session_list: Arc::new(std::sync::Mutex::new(None)),
-            session_close: Arc::new(std::sync::Mutex::new(None)),
-            session_delete: Arc::new(std::sync::Mutex::new(None)),
-            check_tools: Arc::new(std::sync::Mutex::new(None)),
-            set_tool_path: Arc::new(std::sync::Mutex::new(None)),
-            test_tool_path: Arc::new(std::sync::Mutex::new(None)),
-            install_skills: Arc::new(std::sync::Mutex::new(None)),
-            list_mcp_servers: Arc::new(std::sync::Mutex::new(None)),
-            save_mcp_servers: Arc::new(std::sync::Mutex::new(None)),
-            set_mcp_secrets: Arc::new(std::sync::Mutex::new(None)),
-            test_mcp_server: Arc::new(std::sync::Mutex::new(None)),
-            list_skills: Arc::new(std::sync::Mutex::new(None)),
-            apply_skill: Arc::new(std::sync::Mutex::new(None)),
-            delete_skill: Arc::new(std::sync::Mutex::new(None)),
-            detect_installed: Arc::new(std::sync::Mutex::new(None)),
-            detect_project: Arc::new(std::sync::Mutex::new(None)),
-            authenticate: Arc::new(std::sync::Mutex::new(None)),
-            logout: Arc::new(std::sync::Mutex::new(None)),
-            acquire_project_lock: Arc::new(std::sync::Mutex::new(None)),
-            project_locks: Arc::new(std::sync::Mutex::new(None)),
-            takeover: Arc::new(std::sync::Mutex::new(None)),
+    /// Stop waiting on `id`, so a reply that still arrives is dropped instead of kept for nobody.
+    pub fn forget(&self, id: RequestId) {
+        lock(&self.waiting).remove(&id);
+    }
+
+    /// Hand `response` to the request it answers, an `Error` as that request's failure. Returns
+    /// whether anything was still waiting on `id`.
+    pub fn deliver(&self, id: RequestId, response: ServerResponse) -> bool {
+        let Some(waiter) = lock(&self.waiting).remove(&id) else {
+            return false;
+        };
+        let outcome = match response {
+            ServerResponse::Error(error) => Err(error.message),
+            other => Ok(other),
+        };
+        if waiter.sender.send(outcome).is_err() {
+            log::debug!("[acp] request {id} gave up as its reply arrived");
+        }
+        true
+    }
+
+    /// Make `id` the request the next id-less `TakeoverResultOk` answers. Refused while an
+    /// earlier takeover is still waiting, since the two replies could not be told apart.
+    pub fn claim_takeover(&self, id: RequestId) -> bool {
+        let mut takeover = lock(&self.takeover);
+        if takeover.is_some_and(|held| lock(&self.waiting).contains_key(&held)) {
+            return false;
+        }
+        *takeover = Some(id);
+        true
+    }
+
+    pub fn deliver_takeover(&self, response: ServerResponse) {
+        let claimed = lock(&self.takeover).take();
+        if let Some(id) = claimed {
+            self.deliver(id, response);
+        }
+    }
+
+    pub fn fail_session(&self, session_id: &str, message: &str) {
+        self.fail_where(message, |waiter| {
+            waiter.session_id.as_deref() == Some(session_id)
+        });
+    }
+
+    /// Fail everything waiting, and everything that registers afterwards.
+    pub fn fail_all(&self, message: &str) {
+        let mut closed = lock(&self.closed);
+        *closed = Some(message.to_string());
+        self.fail_where(message, |_| true);
+    }
+
+    fn fail_where(&self, message: &str, matches: impl Fn(&Waiter) -> bool) {
+        let mut waiting = lock(&self.waiting);
+        let ids: Vec<RequestId> = waiting
+            .iter()
+            .filter(|(_, waiter)| matches(waiter))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            if let Some(waiter) = waiting.remove(&id) {
+                if waiter.sender.send(Err(message.to_string())).is_err() {
+                    log::debug!("[acp] request {id} gave up before it could be failed");
+                }
+            }
         }
     }
 }
@@ -177,7 +202,7 @@ pub struct ConnectionServer {
     /// Channel to the writer task (framed bytes → child stdin / SSH channel).
     /// Cloned into each session's `AcpTransportWriter::SharedServer`.
     pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
-    pub pending: PendingChannels,
+    pub pending: PendingRequests,
     /// Unix timestamp (seconds) of the last `Ping` received from maestro-server.
     /// Zero until the first ping arrives. Checked by the heartbeat watchdog.
     pub last_ping_at: Arc<std::sync::atomic::AtomicU64>,
@@ -451,5 +476,115 @@ impl AcpProcess {
             has_pending_permission: Arc::new(AtomicBool::new(false)),
         };
         (process, ctx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::transport::ErrorResponse;
+
+    fn error(message: &str) -> ServerResponse {
+        ServerResponse::Error(ErrorResponse {
+            message: message.to_string(),
+            session_id: None,
+        })
+    }
+
+    /// What the typed slots could not do: the second request of a type used to wait for the
+    /// slot the first held, and an answer went to whichever of them happened to be in it.
+    #[test]
+    fn two_requests_of_one_type_are_answered_by_id() {
+        let pending = PendingRequests::default();
+        let (first, mut first_reply) = pending.register(None);
+        let (second, mut second_reply) = pending.register(None);
+
+        assert!(pending.deliver(second, ServerResponse::SessionCloseOk));
+        assert!(
+            first_reply.try_recv().is_err(),
+            "the first is still waiting"
+        );
+        assert_eq!(
+            second_reply.try_recv(),
+            Ok(Ok(ServerResponse::SessionCloseOk))
+        );
+
+        assert!(pending.deliver(first, ServerResponse::SessionDeleteOk));
+        assert_eq!(
+            first_reply.try_recv(),
+            Ok(Ok(ServerResponse::SessionDeleteOk))
+        );
+    }
+
+    #[test]
+    fn an_error_fails_only_the_request_it_names() {
+        let pending = PendingRequests::default();
+        let (refused, mut refused_reply) = pending.register(None);
+        let (_other, mut other_reply) = pending.register(None);
+
+        assert!(pending.deliver(refused, error("a run still going cannot be deleted")));
+
+        assert_eq!(
+            refused_reply.try_recv(),
+            Ok(Err("a run still going cannot be deleted".to_string()))
+        );
+        assert!(other_reply.try_recv().is_err(), "the other is untouched");
+    }
+
+    #[test]
+    fn a_reply_after_its_request_timed_out_is_dropped() {
+        let pending = PendingRequests::default();
+        let (id, _reply) = pending.register(None);
+        pending.forget(id);
+
+        assert!(!pending.deliver(id, ServerResponse::SessionCloseOk));
+    }
+
+    #[test]
+    fn the_reader_ending_fails_everything_waiting() {
+        let pending = PendingRequests::default();
+        let (_first, mut first_reply) = pending.register(None);
+        let (_second, mut second_reply) = pending.register(Some("session-1"));
+
+        pending.fail_all("gone");
+
+        assert_eq!(first_reply.try_recv(), Ok(Err("gone".to_string())));
+        assert_eq!(second_reply.try_recv(), Ok(Err("gone".to_string())));
+
+        let (_late, mut late_reply) = pending.register(None);
+        assert_eq!(late_reply.try_recv(), Ok(Err("gone".to_string())));
+    }
+
+    #[test]
+    fn a_session_error_fails_that_session_and_no_other() {
+        let pending = PendingRequests::default();
+        let (_mine, mut mine) = pending.register(Some("session-1"));
+        let (_theirs, mut theirs) = pending.register(Some("session-2"));
+        let (_unscoped, mut unscoped) = pending.register(None);
+
+        pending.fail_session("session-1", "agent died");
+
+        assert_eq!(mine.try_recv(), Ok(Err("agent died".to_string())));
+        assert!(theirs.try_recv().is_err());
+        assert!(unscoped.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_takeover_is_answered_without_an_id_and_only_one_waits_at_a_time() {
+        let pending = PendingRequests::default();
+        let (first, mut first_reply) = pending.register(None);
+        let (second, _second_reply) = pending.register(None);
+        let granted =
+            || ServerResponse::TakeoverResultOk(maestro_protocol::TakeoverResult { granted: true });
+
+        assert!(pending.claim_takeover(first));
+        assert!(
+            !pending.claim_takeover(second),
+            "the first is still waiting"
+        );
+
+        pending.deliver_takeover(granted());
+        assert_eq!(first_reply.try_recv(), Ok(Ok(granted())));
+        assert!(pending.claim_takeover(second), "and then the next may ask");
     }
 }

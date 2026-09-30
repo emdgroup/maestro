@@ -198,9 +198,10 @@ pub(crate) async fn send_response(
     stdout: &crate::ClientOut,
     msg: &MaestroRpcMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf: Vec<u8> = Vec::new();
-    maestro_protocol::write_message(&mut buf, msg).await?;
-    stdout.lock().await.write(msg.session_id(), &buf).await?;
+    let mut sink = stdout.lock().await;
+    let buf =
+        maestro_protocol::encode_message(sink.reply_id_for(msg), msg).map_err(|e| e.to_string())?;
+    sink.write(msg.session_id(), &buf).await?;
     Ok(())
 }
 

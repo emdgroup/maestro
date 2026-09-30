@@ -267,9 +267,11 @@ async fn serve_attached(
     loop {
         // Converted before the match so nothing from the protocol's boxed error, which is not
         // `Send`, is alive across the send below — this whole loop runs in a spawned task.
-        let read = read_framed(&mut reader).await;
+        let read = maestro_protocol::read_message_with_id(&mut reader)
+            .await
+            .map_err(|e| e.to_string());
         match read {
-            Ok(msg) => {
+            Ok((request_id, msg)) => {
                 // Anything at all, `Pong` included, is proof of life for the project lock.
                 sink.lock().await.touch(id).await;
                 // Before it is handled, so the session's answer already knows where to go. This
@@ -277,7 +279,11 @@ async fn serve_attached(
                 if let Some(session_id) = msg.session_id() {
                     sink.lock().await.claim(id, session_id).await;
                 }
-                if msg_tx.send(Ok((msg, Some(route.clone())))).await.is_err() {
+                if msg_tx
+                    .send(Ok((msg, Some(route.clone()), request_id)))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }

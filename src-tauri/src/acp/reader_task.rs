@@ -4,7 +4,7 @@
 use crate::acp::manager::log_server_diagnostic;
 use crate::acp::replay::{emit_or_buffer_payload, push_config_init_to_buffer};
 use crate::acp::session_types::{
-    PendingChannels, PendingReply, ReaderTaskContext, RestorableSession,
+    PendingReply, PendingRequests, ReaderTaskContext, RestorableSession,
 };
 use crate::acp::transport::{
     FileReadResponse, FileSearchResponse, MaestroRpcMessage, PromptCapabilitiesInfo, ServerRequest,
@@ -1322,22 +1322,6 @@ fn extract_session_id(msg: &MaestroRpcMessage) -> Option<String> {
     }
 }
 
-/// Hand an error to a request waiting in `slot`, if one is. Returns whether one was.
-fn fail_pending<T>(slot: &crate::acp::session_types::PendingReply<T>, message: &str) -> bool {
-    let Ok(mut guard) = slot.lock() else {
-        return false;
-    };
-    match guard.take() {
-        Some(tx) => {
-            if tx.send(Err(message.to_string())).is_err() {
-                log::debug!("an automation request gave up before its error arrived");
-            }
-            true
-        }
-        None => false,
-    }
-}
-
 /// How much is kept for one session nobody here holds yet, and for how many such sessions.
 ///
 /// Most of what lands unclaimed is for a session that is already gone, or belongs to a project
@@ -1378,18 +1362,24 @@ pub(crate) async fn take_unclaimed(
         .unwrap_or_default()
 }
 
-/// Route a shared-reader message to the correct per-session handler or to
-/// connection-level pending channels (PreInitialize, SessionList, SessionClose, etc.).
+/// Route a shared-reader message that carries no request id: to its session's handler when it
+/// names one, and otherwise as the unprompted event it is. Replies that do carry an id never
+/// reach here, see `deliver_reply`.
 pub(crate) async fn handle_shared_server_message(
     msg: MaestroRpcMessage,
     connection_key: crate::acp::ConnectionKey,
     app_handle: &tauri::AppHandle,
     app_state: &Arc<crate::core::AppState>,
-    pending: &PendingChannels,
+    pending: &PendingRequests,
 ) {
     // Session-bearing messages: extract session_id, borrow caches from AcpProcess,
     // then call the existing single-session handler.
     if let Some(session_id) = extract_session_id(&msg) {
+        // A request made for this session whose reply names none, a file search or read, cannot
+        // be answered once the session has failed.
+        if let MaestroRpcMessage::Response(ServerResponse::Error(error)) = &msg {
+            pending.fail_session(&session_id, &error.message);
+        }
         update_session_from_response(&session_id, &msg, app_state).await;
 
         // Before the cache borrow below: this needs none of it, and the shared reader serves
@@ -1618,137 +1608,13 @@ pub(crate) async fn handle_shared_server_message(
 
     // Sessionless messages.
     match msg {
-        MaestroRpcMessage::Response(ServerResponse::ListAgentsOk(resp)) => {
-            let agents: Vec<crate::acp::registry::DiscoveredAgent> = resp
-                .agents
-                .into_iter()
-                .map(|a| crate::acp::registry::DiscoveredAgent {
-                    id: a.id,
-                    name: a.name,
-                    icon: a.icon,
-                    spawn_deps: a.spawn_deps,
-                })
-                .collect();
-            log::debug!(
-                "[registry] ListAgentsOk: {} agents: {:?}",
-                agents.len(),
-                agents.iter().map(|a| &a.id).collect::<Vec<_>>()
-            );
-            if let Ok(mut guard) = pending.list_agents.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(agents));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListLiveSessionsOk(resp)) => {
-            if let Ok(mut guard) = pending.live_sessions.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListAutomationsOk(resp)) => {
-            if let Ok(mut guard) = pending.automations.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(resp)) => {
-            if let Ok(mut guard) = pending.save_automation.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteAutomationOk) => {
-            if let Ok(mut guard) = pending.delete_automation.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListAutomationRunsOk(resp)) => {
-            if let Ok(mut guard) = pending.automation_runs.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteAutomationRunOk) => {
-            if let Ok(mut guard) = pending.delete_automation_run.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetRunRetentionOk) => {
-            if let Ok(mut guard) = pending.set_run_retention.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::WebhookSettingsOk(resp)) => {
-            if let Ok(mut guard) = pending.webhook_settings.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ServerStatusOk(resp)) => {
-            if let Ok(mut guard) = pending.server_status.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::RollWebhookSecretOk(resp)) => {
-            if let Ok(mut guard) = pending.roll_webhook_secret.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListWebhookDeliveriesOk(resp)) => {
-            if let Ok(mut guard) = pending.webhook_deliveries.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::PreviewScheduleOk(resp)) => {
-            if let Ok(mut guard) = pending.preview_schedule.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
         // Unsolicited: the clock started this, not the window. Named by project rather than sent
         // to a particular view, because the run belongs to a project whether or not it is open.
         MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
             crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
         }
-        MaestroRpcMessage::Response(ServerResponse::AcquireProjectLockOk(resp)) => {
-            if let Ok(mut guard) = pending.acquire_project_lock.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ProjectLocksOk(resp)) => {
-            if let Ok(mut guard) = pending.project_locks.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::TakeoverResultOk(resp)) => {
-            if let Ok(mut guard) = pending.takeover.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp.granted));
-                }
-            }
+        MaestroRpcMessage::Response(response @ ServerResponse::TakeoverResultOk(_)) => {
+            pending.deliver_takeover(response);
         }
         // Unsolicited, like a run changing: some window somewhere opened or left a project.
         MaestroRpcMessage::Response(ServerResponse::ProjectLocksChanged) => {
@@ -1780,182 +1646,6 @@ pub(crate) async fn handle_shared_server_message(
                     "reason": kicked.reason,
                 }),
             );
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionListOk(resp)) => {
-            if let Ok(mut guard) = pending.session_list.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionCloseOk) => {
-            if let Ok(mut guard) = pending.session_close.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SessionDeleteOk) => {
-            if let Ok(mut guard) = pending.session_delete.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::CheckToolsOk(resp)) => {
-            if let Ok(mut guard) = pending.check_tools.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetToolPathOk(resp)) => {
-            if let Ok(mut guard) = pending.set_tool_path.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::TestToolPathOk(resp)) => {
-            if let Ok(mut guard) = pending.test_tool_path.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::InstallSkillsOk(resp)) => {
-            if let Ok(mut guard) = pending.install_skills.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListMcpServersOk(resp)) => {
-            if let Ok(mut guard) = pending.list_mcp_servers.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SaveMcpServersOk) => {
-            if let Ok(mut guard) = pending.save_mcp_servers.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::SetMcpSecretsOk) => {
-            if let Ok(mut guard) = pending.set_mcp_secrets.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::TestMcpServerOk(resp)) => {
-            if let Ok(mut guard) = pending.test_mcp_server.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ListSkillsOk(resp)) => {
-            if let Ok(mut guard) = pending.list_skills.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::ApplySkillOk) => {
-            if let Ok(mut guard) = pending.apply_skill.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DeleteSkillOk) => {
-            if let Ok(mut guard) = pending.delete_skill.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DetectInstalledAgentsOk(resp)) => {
-            log::debug!(
-                "[registry] DetectInstalledAgentsOk: {:?}",
-                resp.agents.iter().map(|a| &a.agent_id).collect::<Vec<_>>()
-            );
-            if let Ok(mut guard) = pending.detect_installed.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::DetectProjectAgentsOk(resp)) => {
-            if let Ok(mut guard) = pending.detect_project.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(resp));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::PreInitializeOk(resp)) => {
-            let agent_id = resp.agent_id.clone();
-            let supports = (
-                resp.supports_session_list,
-                resp.supports_session_load,
-                resp.supports_session_close,
-                resp.supports_session_delete,
-            );
-            // Store auth info before sending the response to avoid a race.
-            // Preserve authenticated=true if the agent was already authenticated this session
-            // (e.g., after terminal auth, the retry spawns a new session and re-sends PreInitializeOk).
-            let mut auth_map = app_state.acp.agent_auth_info.lock().await;
-            let prev_authenticated = auth_map
-                .get(&(connection_key, agent_id.clone()))
-                .map(|info| info.authenticated)
-                .unwrap_or(false);
-            let auth_info = crate::acp::session_types::AgentAuthInfo {
-                auth_methods: resp
-                    .auth_methods
-                    .iter()
-                    .map(|m| crate::acp::session_types::AuthMethodDto {
-                        id: m.id.clone(),
-                        name: m.name.clone(),
-                        description: m.description.clone(),
-                        method_type: m.method_type.clone(),
-                        args: m.args.clone(),
-                    })
-                    .collect(),
-                supports_logout: resp.supports_auth_logout,
-                authenticated: prev_authenticated,
-            };
-            auth_map.insert((connection_key, agent_id.clone()), auth_info);
-            drop(auth_map);
-            let tx = pending
-                .pre_init
-                .lock()
-                .ok()
-                .and_then(|mut map| map.remove(&resp.agent_id));
-            if let Some(tx) = tx {
-                let _ = tx.send(Ok(resp));
-            }
-            log::debug!(
-                "[acp] pre-initialize-ok agent_id={agent_id} session_list={} session_load={} session_close={} session_delete={}",
-                supports.0, supports.1, supports.2, supports.3
-            );
-        }
-        MaestroRpcMessage::Response(ServerResponse::AuthenticateOk) => {
-            if let Ok(mut guard) = pending.authenticate.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::LogoutOk) => {
-            if let Ok(mut guard) = pending.logout.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Ok(()));
-                }
-            }
         }
         MaestroRpcMessage::Response(ServerResponse::AuthTerminalExit(exit)) => {
             let conn_key_id = match connection_key {
@@ -2007,39 +1697,6 @@ pub(crate) async fn handle_shared_server_message(
             );
             app_state.app_handle.emit("sessions-changed", ()).ok();
         }
-        MaestroRpcMessage::Response(ServerResponse::FileSearchOk(FileSearchResponse { files })) => {
-            // Deliver to the first connection session that has a pending file search.
-            let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions
-                .iter()
-                .filter(|(_, s)| s.connection_key == connection_key)
-            {
-                if let Ok(mut guard) = session.pending_file_search.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Ok(files));
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        MaestroRpcMessage::Response(ServerResponse::FileReadOk(FileReadResponse { content })) => {
-            let sessions = app_state.acp.sessions.lock().await;
-            for (_, session) in sessions
-                .iter()
-                .filter(|(_, s)| s.connection_key == connection_key)
-            {
-                if let Ok(mut guard) = session.pending_file_read.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Ok(content));
-                        }
-                        break;
-                    }
-                }
-            }
-        }
         MaestroRpcMessage::Response(ServerResponse::Diagnostic(diag)) => {
             log_server_diagnostic(&diag.level, &diag.message);
             // Best-effort: emit to any session on this connection for frontend visibility.
@@ -2064,192 +1721,73 @@ pub(crate) async fn handle_shared_server_message(
                 .ok();
         }
         MaestroRpcMessage::Response(ServerResponse::Error(err)) => {
-            // Try pending automation requests first, then session ops, then file ops, then
-            // PreInitialize, then emit globally. An automation request refused with a reason the
-            // user should read (a run still going cannot be deleted) must not end in a timeout.
-            let mut resolved = fail_pending(&pending.automations, &err.message)
-                || fail_pending(&pending.save_automation, &err.message)
-                || fail_pending(&pending.delete_automation, &err.message)
-                || fail_pending(&pending.automation_runs, &err.message)
-                || fail_pending(&pending.preview_schedule, &err.message)
-                || fail_pending(&pending.delete_automation_run, &err.message)
-                || fail_pending(&pending.set_run_retention, &err.message)
-                || fail_pending(&pending.webhook_settings, &err.message)
-                || fail_pending(&pending.server_status, &err.message)
-                || fail_pending(&pending.roll_webhook_secret, &err.message)
-                || fail_pending(&pending.webhook_deliveries, &err.message)
-                || fail_pending(&pending.list_mcp_servers, &err.message)
-                || fail_pending(&pending.save_mcp_servers, &err.message)
-                || fail_pending(&pending.list_skills, &err.message)
-                || fail_pending(&pending.apply_skill, &err.message)
-                || fail_pending(&pending.delete_skill, &err.message);
-
-            // Pending SessionList / SessionClose / CheckTools
-            if !resolved {
-                if let Ok(mut guard) = pending.session_list.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.session_close.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.check_tools.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.set_tool_path.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.install_skills.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.test_tool_path.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.detect_installed.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.detect_project.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-
-            if !resolved {
+            // No id and no session: nothing says which request this answers, so every session
+            // on the connection is told.
+            let session_ids: Vec<String> = {
                 let sessions = app_state.acp.sessions.lock().await;
-                'outer: for (_, session) in sessions
+                sessions
                     .iter()
                     .filter(|(_, s)| s.connection_key == connection_key)
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            };
+            for session_id in session_ids {
+                if let Err(e) =
+                    app_handle.emit(&format!("acp://session-error/{}", session_id), &err.message)
                 {
-                    if let Ok(mut guard) = session.pending_file_search.lock() {
-                        if guard.is_some() {
-                            if let Some(tx) = guard.take() {
-                                let _ = tx.send(Err(err.message.clone()));
-                            }
-                            resolved = true;
-                            break 'outer;
-                        }
-                    }
-                    if let Ok(mut guard) = session.pending_file_read.lock() {
-                        if guard.is_some() {
-                            if let Some(tx) = guard.take() {
-                                let _ = tx.send(Err(err.message.clone()));
-                            }
-                            resolved = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-            if !resolved {
-                // Try pending ListAgents.
-                if let Ok(mut guard) = pending.list_agents.lock() {
-                    if let Some(tx) = guard.take() {
-                        let _ = tx.send(Err(err.message.clone()));
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.authenticate.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                if let Ok(mut guard) = pending.logout.lock() {
-                    if guard.is_some() {
-                        if let Some(tx) = guard.take() {
-                            let _ = tx.send(Err(err.message.clone()));
-                        }
-                        resolved = true;
-                    }
-                }
-            }
-            if !resolved {
-                // Try pending PreInitialize.
-                let pre_init_tx = pending.pre_init.lock().ok().and_then(|mut map| {
-                    let key = map.keys().next().cloned()?;
-                    map.remove(&key)
-                });
-                if let Some(tx) = pre_init_tx {
-                    let _ = tx.send(Err(err.message));
-                } else {
-                    // Emit as session-error for all connection sessions.
-                    let session_ids: Vec<String> = {
-                        let sessions = app_state.acp.sessions.lock().await;
-                        sessions
-                            .iter()
-                            .filter(|(_, s)| s.connection_key == connection_key)
-                            .map(|(id, _)| id.clone())
-                            .collect()
-                    };
-                    for session_id in session_ids {
-                        if let Err(e) = app_handle
-                            .emit(&format!("acp://session-error/{}", session_id), &err.message)
-                        {
-                            log::error!("[acp] emit session-error/{session_id} failed: {e}");
-                        }
-                    }
+                    log::error!("[acp] emit session-error/{session_id} failed: {e}");
                 }
             }
         }
         _ => {}
+    }
+}
+
+/// Hand a reply to the request whose id it carries.
+async fn deliver_reply(
+    id: maestro_protocol::RequestId,
+    response: ServerResponse,
+    connection_key: crate::acp::ConnectionKey,
+    app_state: &Arc<crate::core::AppState>,
+    pending: &PendingRequests,
+) {
+    if let ServerResponse::PreInitializeOk(resp) = &response {
+        // Store auth info before sending the response to avoid a race.
+        // Preserve authenticated=true if the agent was already authenticated this session
+        // (e.g., after terminal auth, the retry spawns a new session and re-sends PreInitializeOk).
+        let mut auth_map = app_state.acp.agent_auth_info.lock().await;
+        let key = (connection_key, resp.agent_id.clone());
+        let prev_authenticated = auth_map
+            .get(&key)
+            .map(|info| info.authenticated)
+            .unwrap_or(false);
+        let auth_info = crate::acp::session_types::AgentAuthInfo {
+            auth_methods: resp
+                .auth_methods
+                .iter()
+                .map(|m| crate::acp::session_types::AuthMethodDto {
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    description: m.description.clone(),
+                    method_type: m.method_type.clone(),
+                    args: m.args.clone(),
+                })
+                .collect(),
+            supports_logout: resp.supports_auth_logout,
+            authenticated: prev_authenticated,
+        };
+        auth_map.insert(key, auth_info);
+        log::debug!(
+            "[acp] pre-initialize-ok agent_id={} session_list={} session_load={} session_close={} session_delete={}",
+            resp.agent_id,
+            resp.supports_session_list,
+            resp.supports_session_load,
+            resp.supports_session_close,
+            resp.supports_session_delete
+        );
+    }
+    if !pending.deliver(id, response) {
+        log::debug!("[acp] dropped the reply to request {id}: nothing is waiting on it any more");
     }
 }
 
@@ -2262,7 +1800,7 @@ pub(crate) fn spawn_shared_reader_task(
     writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     app_handle: tauri::AppHandle,
     app_state: Arc<crate::core::AppState>,
-    pending: PendingChannels,
+    pending: PendingRequests,
     ended: Arc<tokio::sync::Notify>,
 ) {
     tokio::spawn(async move {
@@ -2320,13 +1858,13 @@ pub(crate) fn spawn_shared_reader_task(
             }
         });
 
-        while let Some(msg) = source.next_message().await {
+        while let Some((id, msg)) = source.next_message_with_id().await {
             match &msg {
                 MaestroRpcMessage::Response(ServerResponse::Ping { .. })
                 | MaestroRpcMessage::Response(ServerResponse::TerminalOutput(_)) => {}
                 _ => {
                     if let Ok(json) = serde_json::to_string(&msg) {
-                        log::trace!("[acp] << {connection_key:?} {json}");
+                        log::trace!("[acp] << {connection_key:?} id={id:?} {json}");
                     }
                 }
             }
@@ -2351,11 +1889,22 @@ pub(crate) fn spawn_shared_reader_task(
                 }
                 continue;
             }
+            // A reply to a session-scoped request never carries an id, so one that names a
+            // session is left to the routing every session message takes.
+            if let (Some(id), None) = (id, extract_session_id(&msg)) {
+                if let MaestroRpcMessage::Response(response) = msg {
+                    deliver_reply(id, response, connection_key, &app_state, &pending).await;
+                }
+                continue;
+            }
             handle_shared_server_message(msg, connection_key, &app_handle, &app_state, &pending)
                 .await;
         }
 
         watchdog_alive.store(false, Ordering::Relaxed);
+        // Nothing will answer them now, and leaving them to their timeouts holds the caller for
+        // as long as five minutes.
+        pending.fail_all("The connection to the server closed before it answered");
         ended.notify_one();
 
         // Server process died — clean up all shared sessions for this connection.

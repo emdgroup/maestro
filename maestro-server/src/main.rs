@@ -122,8 +122,16 @@ fn main() {
 /// Channel the server loop receives client requests on, whatever carried them.
 type MsgRx = tokio::sync::mpsc::Receiver<Inbound>;
 
-/// A client request, with the route its replies take: `None` for the stdio client, the only one.
-pub(crate) type Inbound = Result<(MaestroRpcMessage, Option<ClientOut>), String>;
+/// A client request, with the route its replies take (`None` for the stdio client, the only one)
+/// and the id it came with, which its reply echoes.
+pub(crate) type Inbound = Result<
+    (
+        MaestroRpcMessage,
+        Option<ClientOut>,
+        Option<maestro_protocol::RequestId>,
+    ),
+    String,
+>;
 
 /// Stdio mode: one client, this process's parent, for the life of the process.
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
@@ -142,9 +150,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         let stdin = std::io::stdin();
         let mut locked = stdin.lock();
         loop {
-            match maestro_protocol::read_message_sync(&mut locked) {
-                Ok(msg) => {
-                    if stdin_msg_tx.blocking_send(Ok((msg, None))).is_err() {
+            match maestro_protocol::read_message_with_id_sync(&mut locked) {
+                Ok((request_id, msg)) => {
+                    if stdin_msg_tx
+                        .blocking_send(Ok((msg, None, request_id)))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -166,7 +177,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate the protocol version handshake before entering the main dispatch loop.
     let first_msg = match stdin_msg_rx.recv().await {
-        Some(Ok((msg, _))) => msg,
+        Some(Ok((msg, _, _))) => msg,
         _ => return Ok(()),
     };
     match first_msg {
@@ -464,7 +475,7 @@ async fn run_server(
     automations_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        let (msg, route) = tokio::select! {
+        let (msg, route, request_id) = tokio::select! {
             biased;
 
             msg_result = stdin_msg_rx.recv() => {
@@ -623,12 +634,15 @@ async fn run_server(
             }
         };
 
+        let reply_sink =
+            client_sink::ClientSink::for_request(route.as_ref().unwrap_or(&stdout), request_id)
+                .await;
         if !dispatch_message(
             msg,
             &mut sessions,
             &agent_connections,
             &mut agents_with_spawn,
-            route.as_ref().unwrap_or(&stdout),
+            &reply_sink,
             &spawn_result_tx,
             &auth_terminals,
             &mut pending_host_tools,

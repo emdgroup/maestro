@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -1091,6 +1091,76 @@ pub enum ServerResponse {
     Diagnostic(DiagnosticPayload),
 }
 
+impl ServerResponse {
+    /// Whether this answers a request, as opposed to being pushed or streamed unasked.
+    ///
+    /// No wildcard arm on purpose: a new variant has to be classified before the crate compiles,
+    /// because a reply mistaken for a push never resolves the request waiting on it.
+    pub fn is_reply(&self) -> bool {
+        match self {
+            Self::SessionUpdate(_)
+            | Self::PermissionRequest(_)
+            | Self::ElicitationRequest(_)
+            | Self::TerminalOutput(_)
+            | Self::AutomationRunChanged(_)
+            | Self::ConfigOptionUpdated(_)
+            | Self::TurnEnded(_)
+            | Self::AuthTerminalExit(_)
+            | Self::AgentConnectionLost(_)
+            | Self::HostToolCall(_)
+            | Self::ProjectLocksChanged
+            | Self::TakeoverRequested(_)
+            | Self::ProjectKicked(_)
+            | Self::Ping { .. }
+            | Self::Diagnostic(_) => false,
+            Self::HandshakeOk(_)
+            | Self::SpawnOk(_)
+            | Self::Error(_)
+            | Self::ListAgentsOk(_)
+            | Self::ListLiveSessionsOk(_)
+            | Self::ListAutomationsOk(_)
+            | Self::SaveAutomationOk(_)
+            | Self::DeleteAutomationOk
+            | Self::ListAutomationRunsOk(_)
+            | Self::DeleteAutomationRunOk
+            | Self::SetRunRetentionOk
+            | Self::WebhookSettingsOk(_)
+            | Self::RollWebhookSecretOk(_)
+            | Self::ListWebhookDeliveriesOk(_)
+            | Self::ServerStatusOk(_)
+            | Self::PreviewScheduleOk(_)
+            | Self::SetModelOk(_)
+            | Self::SetModeOk(_)
+            | Self::SetConfigOptionOk(_)
+            | Self::FileSearchOk(_)
+            | Self::FileReadOk(_)
+            | Self::SessionListOk(_)
+            | Self::SessionLoadOk(_)
+            | Self::SessionCloseOk
+            | Self::SessionDeleteOk
+            | Self::PreInitializeOk(_)
+            | Self::AuthenticateOk
+            | Self::LogoutOk
+            | Self::CheckToolsOk(_)
+            | Self::SetToolPathOk(_)
+            | Self::TestToolPathOk(_)
+            | Self::InstallSkillsOk(_)
+            | Self::ListMcpServersOk(_)
+            | Self::SaveMcpServersOk
+            | Self::SetMcpSecretsOk
+            | Self::TestMcpServerOk(_)
+            | Self::ListSkillsOk(_)
+            | Self::ApplySkillOk
+            | Self::DeleteSkillOk
+            | Self::DetectInstalledAgentsOk(_)
+            | Self::DetectProjectAgentsOk(_)
+            | Self::AcquireProjectLockOk(_)
+            | Self::ProjectLocksOk(_)
+            | Self::TakeoverResultOk(_) => true,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct TurnEnded {
     pub session_id: String,
@@ -1451,6 +1521,12 @@ pub async fn read_message<R: AsyncRead + Unpin>(
 pub fn read_message_sync<R: std::io::Read>(
     stream: &mut R,
 ) -> Result<MaestroRpcMessage, Box<dyn std::error::Error + Send + Sync>> {
+    read_message_sync_as(stream)
+}
+
+fn read_message_sync_as<R: std::io::Read, T: serde::de::DeserializeOwned>(
+    stream: &mut R,
+) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -1464,6 +1540,76 @@ pub fn read_message_sync<R: std::io::Read>(
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
     Ok(serde_json::from_slice(&body)?)
+}
+
+/// Pairs a reply with the request it answers. Rides as a top-level `rpc_id` key beside
+/// `direction` and `type`, and is absent on anything unprompted.
+///
+/// Not `id` and not `request_id`: the message is flattened into the same object, and payloads
+/// already own both (`Automation.id`, `PermissionRequest.request_id`). A shared key fails to decode.
+pub type RequestId = u64;
+
+#[derive(Serialize)]
+struct OutgoingFrame<'a> {
+    #[serde(rename = "rpc_id", skip_serializing_if = "Option::is_none")]
+    id: Option<RequestId>,
+    #[serde(flatten)]
+    message: &'a MaestroRpcMessage,
+}
+
+#[derive(Deserialize)]
+struct IncomingFrame {
+    #[serde(rename = "rpc_id", default)]
+    id: Option<RequestId>,
+    #[serde(flatten)]
+    message: MaestroRpcMessage,
+}
+
+/// A whole frame, length prefix included, ready to be written as it stands.
+///
+/// Synchronous and `Send` in its error so both the host's `serialize_message` and the server's
+/// spawned tasks can call it directly.
+pub fn encode_message(
+    id: Option<RequestId>,
+    message: &MaestroRpcMessage,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let body = serde_json::to_vec(&OutgoingFrame { id, message })?;
+    if body.len() > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Message too large to send: {} bytes (max {})",
+            body.len(),
+            MAX_MESSAGE_SIZE
+        )
+        .into());
+    }
+    let mut frame = Vec::with_capacity(MSG_LEN_SIZE + body.len());
+    frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&body);
+    Ok(frame)
+}
+
+/// The inverse of [`encode_message`] for a frame's body, the length prefix already stripped.
+pub fn decode_message(
+    body: &[u8],
+) -> Result<(Option<RequestId>, MaestroRpcMessage), serde_json::Error> {
+    let frame: IncomingFrame = serde_json::from_slice(body)?;
+    Ok((frame.id, frame.message))
+}
+
+/// [`read_message`], keeping the request id the frame carried.
+pub async fn read_message_with_id<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error>> {
+    let frame: IncomingFrame = read_frame(stream).await?;
+    Ok((frame.id, frame.message))
+}
+
+/// [`read_message_sync`], keeping the request id the frame carried.
+pub fn read_message_with_id_sync<R: std::io::Read>(
+    stream: &mut R,
+) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error + Send + Sync>> {
+    let frame: IncomingFrame = read_message_sync_as(stream)?;
+    Ok((frame.id, frame.message))
 }
 
 // --- CDN registry types — used by maestro-server for agent discovery ---
@@ -1536,6 +1682,122 @@ pub struct UvxDistribution {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn id_samples() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Response(ServerResponse::TerminalOutput(TerminalOutput {
+                session_id: "session".to_string(),
+                terminal_id: "terminal".to_string(),
+                bytes: vec![0, 27, 91, 255],
+            })),
+            MaestroRpcMessage::Request(ServerRequest::Shutdown),
+            MaestroRpcMessage::Response(ServerResponse::SessionCloseOk),
+            MaestroRpcMessage::Response(ServerResponse::Ping { seq: u64::MAX }),
+            MaestroRpcMessage::Response(ServerResponse::Error(ErrorResponse {
+                message: "no".to_string(),
+                session_id: None,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "session".to_string(),
+                cwd: "/tmp".to_string(),
+                additional_directories: vec!["~/other".to_string()],
+                host_meta: Some(serde_json::json!({
+                    "project": 3,
+                    "nested": {"id": 9, "type": "inner", "list": [1, null, 2.5]},
+                })),
+            })),
+            // Payloads with a top-level `id` and `request_id` of their own, which the frame's key
+            // must not collide with.
+            MaestroRpcMessage::Response(ServerResponse::SaveAutomationOk(Automation {
+                id: "automation-1".to_string(),
+                project_path: "/srv/shop".to_string(),
+                name: "Nightly".to_string(),
+                prompt: "Run the checks".to_string(),
+                agent_id: "claude-acp".to_string(),
+                cron: None,
+                timezone: "UTC".to_string(),
+                enabled: false,
+                model: None,
+                permission_mode: None,
+                effort: None,
+                workspace: AutomationWorkspace::NewWorktree {
+                    base_branch: "main".to_string(),
+                },
+                webhook_enabled: false,
+                webhook_overlap: WebhookOverlap::default(),
+                webhook_secret: None,
+                next_due_at: None,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::TakeoverRequested(TakeoverRequested {
+                request_id: "takeover-1".to_string(),
+                project_path: "/srv/shop".to_string(),
+                requester_label: "laptop".to_string(),
+            })),
+        ]
+    }
+
+    #[tokio::test]
+    async fn request_id_round_trips_with_and_without_id() {
+        for id in [None, Some(0), Some(u64::MAX)] {
+            for message in id_samples() {
+                let frame = encode_message(id, &message).unwrap();
+                let body = &frame[MSG_LEN_SIZE..];
+                assert_eq!(
+                    body.len(),
+                    u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize
+                );
+                let json: serde_json::Value = serde_json::from_slice(body).unwrap();
+                assert_eq!(json.get("rpc_id").and_then(|value| value.as_u64()), id);
+
+                assert_eq!(decode_message(body).unwrap(), (id, message));
+                let (read_id, read) = read_message_with_id(&mut frame.as_slice()).await.unwrap();
+                let (sync_id, sync) = read_message_with_id_sync(&mut frame.as_slice()).unwrap();
+                assert_eq!((read_id, sync_id), (id, id));
+                assert_eq!(read, sync);
+
+                // The id-unaware readers must keep working against a peer that sends ids.
+                let plain = read_message(&mut frame.as_slice()).await.unwrap();
+                assert_eq!(plain, read);
+                assert_eq!(read_message_sync(&mut frame.as_slice()).unwrap(), read);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn frame_without_id_key_decodes_to_none_and_matches_the_old_encoding() {
+        for message in id_samples() {
+            let mut old = Vec::new();
+            write_message(&mut old, &message).await.unwrap();
+            assert_eq!(old, encode_message(None, &message).unwrap());
+            assert_eq!(
+                read_message_with_id(&mut old.as_slice()).await.unwrap(),
+                (None, message)
+            );
+        }
+    }
+
+    #[test]
+    fn is_reply_separates_answers_from_pushes() {
+        assert!(ServerResponse::SessionCloseOk.is_reply());
+        assert!(ServerResponse::Error(ErrorResponse {
+            message: "no".to_string(),
+            session_id: None,
+        })
+        .is_reply());
+        assert!(ServerResponse::HandshakeOk(HandshakeResponse {
+            protocol_version: PROTOCOL_VERSION,
+        })
+        .is_reply());
+        assert!(!ServerResponse::Ping { seq: 1 }.is_reply());
+        assert!(!ServerResponse::ProjectLocksChanged.is_reply());
+        assert!(!ServerResponse::TerminalOutput(TerminalOutput {
+            session_id: "session".to_string(),
+            terminal_id: "terminal".to_string(),
+            bytes: vec![1],
+        })
+        .is_reply());
+    }
 
     #[test]
     fn roundtrip_handshake() {
