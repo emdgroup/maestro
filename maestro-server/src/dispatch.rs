@@ -140,6 +140,18 @@ pub(crate) async fn dispatch_message(
             );
         }
 
+        MaestroRpcMessage::Request(
+            ServerRequest::ListProjectSessions(_) | ServerRequest::RenameSession(_),
+        ) => {
+            send_or_return!(
+                send_response(
+                    stdout,
+                    &error_response("project sessions are not implemented yet".to_string()),
+                )
+                .await
+            );
+        }
+
         MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
             send_diag("info", "[server] shutdown requested by the host");
             return false;

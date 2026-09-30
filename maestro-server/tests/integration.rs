@@ -127,6 +127,8 @@ fn test_spawn_unknown_agent_returns_error() {
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: Default::default(),
         })),
     );
 
@@ -173,6 +175,8 @@ fn test_prompt_after_failed_spawn_returns_unknown_session_error() {
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: Default::default(),
         })),
     );
     let spawn_resp = read_msg(stdout);
@@ -327,6 +331,8 @@ fn test_protocol_framing_large_prompt_payload() {
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: Default::default(),
         })),
     );
     let _ = read_msg(stdout);

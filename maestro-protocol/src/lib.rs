@@ -114,6 +114,11 @@ pub enum ServerRequest {
     ListAgents(ListAgentsRequest),
     /// What is this server running right now. Asked by a client that has just attached.
     ListLiveSessions(ListLiveSessionsRequest),
+    /// Every conversation a project holds, with the live state of the ones running. Asked by a
+    /// client opening the project or reconnecting to it.
+    ListProjectSessions(ListProjectSessionsRequest),
+    /// Change the user's name for a conversation, running or not.
+    RenameSession(RenameSessionRequest),
     /// Wind down: end every session and exit.
     ///
     /// Asked for before an update installs, because a resident server holds its own binary open
@@ -309,6 +314,37 @@ pub struct SpawnRequest {
     /// See [`host_meta`](ListLiveSession::host_meta).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_meta: Option<serde_json::Value>,
+    /// The project this session belongs to, which is what files it in the server's store.
+    /// `None` is a session that belongs to no project, which gets no row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    /// See [`SessionMeta`].
+    #[serde(default)]
+    pub meta: SessionMeta,
+}
+
+/// What a session is, beyond where it runs. Every field optional.
+///
+/// Typed rather than an opaque blob because the server stores each field in its own column: a
+/// second machine opening the project has to read them, and a reload that sends fewer of them
+/// must not lose the ones the row already holds.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SessionMeta {
+    /// The user's name for the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_start_sha: Option<String>,
+    /// The pipeline stage that started the session, as the host serializes its own enum. Opaque
+    /// here, so a new stage never touches the protocol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -360,6 +396,75 @@ pub struct ListLiveSession {
     /// again, because the message that carried it went to a client that is gone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_requests: Vec<PendingSessionRequest>,
+}
+
+/// Ask the server for every conversation one project holds.
+///
+/// Distinct from [`SessionListRequest`], which asks an *agent* what it has on disk for a folder.
+/// This asks the *server* what the project has opened, which is the one answer a client needs to
+/// adopt the running sessions and reload the dormant ones.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListProjectSessionsRequest {
+    /// Canonicalized by the server, which runs on the machine the path exists on.
+    pub project_path: String,
+    /// Closed sessions are only wanted by Session History, which needs their name and folder.
+    #[serde(default)]
+    pub include_closed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ListProjectSessionsResponse {
+    pub sessions: Vec<ProjectSession>,
+}
+
+/// One conversation a project holds, running or not.
+///
+/// Keyed by `agent_id` and `acp_session_id`, not by the routing id: that one is minted again on
+/// every reload, so it cannot name a conversation across them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectSession {
+    pub agent_id: String,
+    pub acp_session_id: String,
+    /// What `session/load` needs, and what Session History reopens in.
+    pub cwd: String,
+    #[serde(default)]
+    pub meta: SessionMeta,
+    /// Recorded at spawn, because whether an agent answers `session/load` cannot be asked once
+    /// its session is gone.
+    #[serde(default)]
+    pub can_reload: bool,
+    /// The project no longer has it open. Kept so Session History can still name it.
+    #[serde(default)]
+    pub closed: bool,
+    /// Present while the server is running it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live: Option<LiveSessionState>,
+}
+
+/// The part of a [`ProjectSession`] that only exists while the server is running it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LiveSessionState {
+    /// The routing id, under which every later request finds this session.
+    pub session_id: String,
+    /// See [`ListLiveSession::turn_active`].
+    #[serde(default)]
+    pub turn_active: bool,
+    /// See [`ListLiveSession::pending_requests`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_requests: Vec<PendingSessionRequest>,
+}
+
+/// Rename a conversation in the server's store, where every client opening the project reads it.
+///
+/// Names the conversation by its key rather than by a routing id, deliberately: a dormant session
+/// has none, and the request must not be routed as though it belonged to a live one.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct RenameSessionRequest {
+    pub project_path: String,
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub cwd: String,
+    pub name: String,
 }
 
 /// A request the server sent a client and is still waiting on, replayed to the next client.
@@ -1026,6 +1131,8 @@ pub enum ServerResponse {
     TerminalOutput(TerminalOutput),
     ListAgentsOk(ListAgentsResponse),
     ListLiveSessionsOk(ListLiveSessionsResponse),
+    ListProjectSessionsOk(ListProjectSessionsResponse),
+    RenameSessionOk,
     ListAutomationsOk(ListAutomationsResponse),
     SaveAutomationOk(Automation),
     DeleteAutomationOk,
@@ -1118,6 +1225,8 @@ impl ServerResponse {
             | Self::Error(_)
             | Self::ListAgentsOk(_)
             | Self::ListLiveSessionsOk(_)
+            | Self::ListProjectSessionsOk(_)
+            | Self::RenameSessionOk
             | Self::ListAutomationsOk(_)
             | Self::SaveAutomationOk(_)
             | Self::DeleteAutomationOk
@@ -1297,6 +1406,13 @@ pub struct SessionLoadRequest {
     /// See [`host_meta`](ListLiveSession::host_meta).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_meta: Option<serde_json::Value>,
+    /// The project this session belongs to, which is what files it in the server's store.
+    /// `None` is a session that belongs to no project, which gets no row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    /// See [`SessionMeta`].
+    #[serde(default)]
+    pub meta: SessionMeta,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -1706,6 +1822,8 @@ mod tests {
                     "project": 3,
                     "nested": {"id": 9, "type": "inner", "list": [1, null, 2.5]},
                 })),
+                project_path: None,
+                meta: SessionMeta::default(),
             })),
             // Payloads with a top-level `id` and `request_id` of their own, which the frame's key
             // must not collide with.
@@ -1799,6 +1917,116 @@ mod tests {
         .is_reply());
     }
 
+    fn sample_meta() -> SessionMeta {
+        SessionMeta {
+            session_name: Some("Fix login".to_string()),
+            task_id: Some(7),
+            task_name: Some("Login".to_string()),
+            branch_name: Some("maestro/login".to_string()),
+            session_start_sha: Some("abc123".to_string()),
+            role: Some("Coder".to_string()),
+        }
+    }
+
+    fn project_session_messages() -> Vec<MaestroRpcMessage> {
+        let live = ProjectSession {
+            agent_id: "claude-acp".to_string(),
+            acp_session_id: "conversation-1".to_string(),
+            cwd: "/srv/shop".to_string(),
+            meta: sample_meta(),
+            can_reload: true,
+            closed: false,
+            live: Some(LiveSessionState {
+                session_id: "routing-1".to_string(),
+                turn_active: true,
+                pending_requests: Vec::new(),
+            }),
+        };
+        let dormant = ProjectSession {
+            meta: SessionMeta::default(),
+            closed: true,
+            live: None,
+            ..live.clone()
+        };
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "routing-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                additional_directories: Vec::new(),
+                host_meta: None,
+                project_path: Some("/srv/shop".to_string()),
+                meta: sample_meta(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
+                agent_id: "claude-acp".to_string(),
+                session_id: "routing-1".to_string(),
+                resume_session_id: "conversation-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                additional_directories: Vec::new(),
+                host_meta: None,
+                project_path: Some("/srv/shop".to_string()),
+                meta: sample_meta(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(
+                ListProjectSessionsRequest {
+                    project_path: "/srv/shop".to_string(),
+                    include_closed: true,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::RenameSession(RenameSessionRequest {
+                project_path: "/srv/shop".to_string(),
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "conversation-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                name: "Fix login".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ListProjectSessionsOk(
+                ListProjectSessionsResponse {
+                    sessions: vec![live, dormant],
+                },
+            )),
+            MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
+        ]
+    }
+
+    #[test]
+    fn roundtrip_project_session_messages() {
+        for message in project_session_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+        }
+    }
+
+    #[test]
+    fn spawn_request_without_project_keys_still_deserializes() {
+        let json = r#"{"direction":"request","type":"spawn","agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}"#;
+        let MaestroRpcMessage::Request(ServerRequest::Spawn(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("expected a spawn request");
+        };
+        assert_eq!(request.project_path, None);
+        assert_eq!(request.meta, SessionMeta::default());
+    }
+
+    #[test]
+    fn project_session_requests_are_not_session_routed_and_responses_are_replies() {
+        for message in project_session_messages() {
+            match &message {
+                MaestroRpcMessage::Request(
+                    ServerRequest::ListProjectSessions(_) | ServerRequest::RenameSession(_),
+                ) => assert_eq!(message.session_id(), None),
+                MaestroRpcMessage::Response(response) => {
+                    assert!(response.is_reply());
+                    assert_eq!(message.session_id(), None);
+                }
+                MaestroRpcMessage::Request(_) => {}
+            }
+        }
+    }
+
     #[test]
     fn roundtrip_handshake() {
         let req = MaestroRpcMessage::Request(ServerRequest::Handshake(HandshakeRequest {
@@ -1824,6 +2052,8 @@ mod tests {
             cwd: "/home/user/project".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
         let json = serde_json::to_string(&msg).unwrap();
         let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
@@ -2006,6 +2236,8 @@ mod tests {
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
 
         let mut buf: Vec<u8> = Vec::new();
@@ -2178,6 +2410,8 @@ mod tests {
             cwd: "/tmp".to_string(),
             additional_directories: Vec::new(),
             host_meta: None,
+            project_path: None,
+            meta: SessionMeta::default(),
         }));
         let resp = MaestroRpcMessage::Response(ServerResponse::SpawnOk(SpawnResponse {
             session_id: "sess-1".to_string(),

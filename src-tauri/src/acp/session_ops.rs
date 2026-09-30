@@ -97,6 +97,8 @@ pub async fn try_spawn_via_connection_server(
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
         host_meta: host_meta_for(req, &task),
+        project_path: None,
+        meta: Default::default(),
     }));
     let bytes = serialize_message(&spawn_req)?;
     let (acp_process, _ctx) = AcpProcess::create(
@@ -634,6 +636,8 @@ pub async fn spawn_acp_session_cold(
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
         host_meta: host_meta_for(req, &task),
+        project_path: None,
+        meta: Default::default(),
     }));
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
@@ -658,6 +662,8 @@ pub async fn load_acp_session_cold(
                 ..TaskMetadata::default()
             },
         ),
+        project_path: None,
+        meta: Default::default(),
     }));
     launch_cold_session(
         target,
@@ -767,6 +773,8 @@ pub async fn try_session_load_via_connection_server(
                 ..TaskMetadata::default()
             },
         ),
+        project_path: None,
+        meta: Default::default(),
     }));
     let bytes = serialize_message(&load_msg)?;
 

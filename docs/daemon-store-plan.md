@@ -122,34 +122,60 @@ own look before phase 2.
 
 ### Phase 1: sessions
 
-A `sessions` table in a new `projects.db` beside `automations.db`.
+A `sessions` table in a new `projects.db` beside `automations.db`, one row per conversation a
+project has ever held, open or closed.
 
-| Column                                             | Note                                                  |
-| -------------------------------------------------- | ----------------------------------------------------- |
-| `project_path`                                     | Canonical, the key B asks by                          |
-| `agent_id`, `acp_session_id`, `cwd`                | What `session/load` needs                             |
-| `session_name`, `branch_name`, `role`, `start_sha` | Were in `SessionHostMeta`, now columns                |
-| `task_id`                                          | The app's id until phase 2, the daemon's after        |
-| `task_name`                                        | So a session whose task is unknown still has a name   |
-| `can_reload`                                       | Recorded at spawn, as `runs.can_reload` is            |
-| `session_id`                                       | The live routing id, null once the session is dormant |
+| Column                                                             | Note                                                             |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `agent_id`, `acp_session_id`                                       | The key. The routing id changes on every reload, so it cannot be |
+| `project_path`                                                     | Canonical, what B asks by                                        |
+| `cwd`                                                              | What `session/load` needs, and what Session History reopens in   |
+| `session_name`                                                     | The user's name for it. Replaces `session_aliases`               |
+| `task_id`, `task_name`, `branch_name`, `role`, `session_start_sha` | Were in `SessionHostMeta`, now columns                           |
+| `can_reload`                                                       | Recorded at spawn, as `runs.can_reload` is                       |
+| `session_id`                                                       | The live routing id, null while the session is dormant           |
+| `created_at`, `closed_at`                                          | `closed_at` null means the project still has it open             |
 
-- A row is written on spawn and on load, and deleted only when the user closes the session. The idle
-  sweep clears `session_id` and leaves the row, so a reaped session is still open and comes back
-  through `session/load`.
-- `ListLiveSessions` becomes a project query that returns live and dormant rows. The app adopts the
-  live ones and loads the dormant ones, which is what `adopt_live_sessions` and
-  `spawn_session_restores` do today from two different sources.
-- `SpawnRequest` and `SessionLoadRequest` carry the project path and the fields above in place of
-  `host_meta`. `project_id` and `connection_key` are dropped: B works out both from the connection
-  it asked on and its own `projects` row for that path.
-- `restorable_sessions`, `save_current_sessions_for_project` and `read_and_clear_restorable_sessions`
-  are deleted. `session_folders` moves into the table as the `cwd` column.
-- An automation's session gets a row like any other, which removes the special case in
-  `adopt_live_sessions` that invents metadata from the `runs` table.
+Decisions:
 
-After this phase the acceptance test passes for sessions. Their tasks are still missing on B, so a
-recovered session shows under its `task_name` with no card behind it.
+| Topic                           | Decision                                                                                                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dormant sessions                | Stay open until somebody closes them. No expiry                                                                                                                |
+| What closes a row               | A user close and a pipeline close (superseded coder, finished planner) alike: `Cancel`                                                                         |
+| What does not                   | The idle sweep, the agent dying, the daemon stopping, an update, a window going away                                                                           |
+| An agent without `session/load` | Its session is closed when it is reaped or its agent dies, since it can never come back                                                                        |
+| Takeover                        | B adopts A's sessions, mid-turn ones included. A is already sent to the picker                                                                                 |
+| Stop server, update             | Rows stay, so the sessions reload afterwards                                                                                                                   |
+| Closed rows                     | Kept, because Session History needs the name and folder of a closed session. Dropped 90 days after `closed_at`, and when the agent deletes the session         |
+| Task ids                        | Stored as the host sends them. They are the app's until phase 2 and the daemon's after. Nothing is built to bridge the gap, since nothing ships between phases |
+| Metadata on reload              | The daemon keeps what the row already holds, so a reload that sends less does not lose role, start sha or task name, which every reload path loses today       |
+| The idle sweep                  | Still global: any window attached keeps every session alive. Left as it is                                                                                     |
+
+What it replaces:
+
+- `SessionHostMeta` and `host_meta`. `SpawnRequest` and `SessionLoadRequest` carry the project path
+  and a typed `SessionMeta`. `project_id` and `connection_key` are gone from the wire: B works out
+  both from the connection it asked on and its own `projects` row for that path.
+- `ListLiveSessions`, by `ListProjectSessions { project_path }`, which returns every row with the
+  live state of the ones that are running. The app adopts the live ones and loads the dormant ones,
+  which is what `adopt_live_sessions` and `spawn_session_restores` do today from two sources.
+- `restorable_sessions` and `session_folders` in `.maestro/state.json`, with
+  `save_current_sessions_for_project` and its seven call sites.
+- `session_aliases` in the app's database. A rename is `RenameSession`, written to the row.
+- The special case in `adopt_live_sessions` that invents metadata for an automation's session from
+  the `runs` table: an automation's session gets a row like any other.
+- `restore_acp_sessions` on SSH reconnect, which sends `session/load` under new ids against a
+  daemon that may still hold those sessions. Reconnect becomes the same query as opening.
+
+Rows the apps already hold (`state.json`, `session_aliases`) are imported in phase 4.
+
+Tasks:
+
+- [x] T1 `maestro-protocol`: `SessionMeta`, `ProjectSession`, `ListProjectSessions`, `RenameSession`,
+      added beside what they replace so the tree keeps compiling
+- [ ] T2 `maestro-server`: `projects.db`, the row's lifecycle, the two new requests
+- [ ] T3 `src-tauri` and the frontend: open, reconnect, history, rename and recovery read the daemon
+- [ ] T4 Remove `host_meta`, `ListLiveSessions` and the state-file code; docs; review; end-to-end test
 
 Not in this phase: a transcript for the part of a turn nobody watched. A session adopted mid-turn
 still starts its transcript at the reconnect. A daemon-side replay buffer fixes that and is its own
