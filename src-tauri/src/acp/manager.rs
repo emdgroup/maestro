@@ -16,4 +16,3 @@ pub(crate) fn log_server_diagnostic(level: &str, message: &str) {
 pub use crate::acp::connection_server::{
     query_detect_installed_via_server, query_detect_project_agents_via_server,
 };
-pub use crate::acp::session_ops::upsert_session_alias;

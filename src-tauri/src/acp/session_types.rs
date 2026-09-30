@@ -42,17 +42,16 @@ pub struct AgentAuthInfo {
     pub authenticated: bool,
 }
 
-/// Metadata captured for sessions that were active when the connection server died.
-/// Used to reload them after SSH reconnects via the session/load mechanism.
+/// A session that was active when an SSH connection's server was lost, parked until the
+/// connection comes back or gives up.
+///
+/// Only what it takes to tell the frontend how it ended: the daemon's own rows are what brings the
+/// conversation back.
 pub struct RestorableSession {
     pub session_id: String,
-    pub agent_id: String,
-    /// None when the session hadn't received SpawnOk yet — cannot be restored.
+    /// None when the session hadn't received SpawnOk yet, so the daemon has no row for it.
     pub acp_session_id: Option<String>,
-    pub cwd: String,
-    pub session_name: Option<String>,
     pub project_id: Option<i32>,
-    pub task_id: Option<i32>,
 }
 
 /// Write transport for a live ACP session.
@@ -312,7 +311,7 @@ pub struct AcpProcess {
     pub has_pending_permission: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct TaskMetadata {
     pub task_id: Option<i32>,
     pub task_name: Option<String>,
@@ -326,23 +325,36 @@ pub struct TaskMetadata {
     pub role: Option<crate::project::profiles::SessionRole>,
 }
 
-/// What the host knows about a session that `maestro-server` does not.
-///
-/// Handed over at spawn as an opaque blob the server stores and never reads, and handed back by
-/// `ListLiveSessions`. It exists because a session now outlives the app run that started it: on
-/// re-adopting one, the host has only what the server can tell it — an id, an agent, a working
-/// directory — and none of what makes that session belong to a project, a task or a name in the
-/// sidebar.
-///
-/// Deliberately not a protocol type. Adding a field here is a change to two functions in this
-/// crate rather than a `PROTOCOL_VERSION` bump and a redeploy on every connection.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionHostMeta {
-    pub project_id: Option<i32>,
-    pub session_name: Option<String>,
-    pub connection_key: crate::acp::ConnectionKey,
-    #[serde(default)]
-    pub task: TaskMetadata,
+impl TaskMetadata {
+    /// What the daemon stores against the conversation. A `None` here keeps what its row already
+    /// holds, so a reload that knows less than the spawn did loses nothing.
+    pub fn to_session_meta(&self, session_name: Option<String>) -> maestro_protocol::SessionMeta {
+        maestro_protocol::SessionMeta {
+            session_name,
+            task_id: self.task_id,
+            task_name: self.task_name.clone(),
+            branch_name: self.branch_name.clone(),
+            session_start_sha: self.session_start_sha.clone(),
+            // The protocol carries the role as text so a new stage never touches it.
+            role: self
+                .role
+                .as_ref()
+                .and_then(|role| serde_json::to_string(role).ok()),
+        }
+    }
+
+    pub fn from_session_meta(meta: &maestro_protocol::SessionMeta) -> Self {
+        TaskMetadata {
+            task_id: meta.task_id,
+            task_name: meta.task_name.clone(),
+            branch_name: meta.branch_name.clone(),
+            session_start_sha: meta.session_start_sha.clone(),
+            role: meta
+                .role
+                .as_deref()
+                .and_then(|role| serde_json::from_str(role).ok()),
+        }
+    }
 }
 
 /// Parameters for constructing an `AcpProcess`. Separates the plain data fields
@@ -373,7 +385,6 @@ pub struct SessionRequest {
     pub session_id: String,
     pub session_name: Option<String>,
     pub project_id: Option<i32>,
-    pub task_id: Option<i32>,
     pub app_state: Arc<crate::core::AppState>,
 }
 
@@ -392,9 +403,6 @@ pub struct ReaderTaskContext {
     pub declared_complete: Arc<AtomicBool>,
     pub user_interrupted: Arc<AtomicBool>,
     pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
-    pub session_name: Option<String>,
-    pub agent_id: String,
-    pub project_id: Option<i32>,
     pub task_id: Option<i32>,
 }
 
@@ -439,9 +447,6 @@ impl AcpProcess {
             declared_complete: Arc::clone(&declared_complete),
             user_interrupted: Arc::clone(&user_interrupted),
             closing_message: Arc::clone(&closing_message),
-            session_name: params.session_name.clone(),
-            agent_id: params.agent_id.clone(),
-            project_id: params.project_id,
             task_id: params.task.task_id,
         };
         let process = Self {
@@ -586,5 +591,23 @@ mod tests {
         pending.deliver_takeover(granted());
         assert_eq!(first_reply.try_recv(), Ok(Ok(granted())));
         assert!(pending.claim_takeover(second), "and then the next may ask");
+    }
+
+    /// The role crosses the protocol as text, and has to come back as the type it left as.
+    #[test]
+    fn task_metadata_survives_the_daemon_s_row() {
+        let task = TaskMetadata {
+            task_id: Some(7),
+            task_name: Some("Fix the crash".to_string()),
+            branch_name: Some("maestro/task-7".to_string()),
+            session_start_sha: Some("abc123".to_string()),
+            role: Some(crate::project::profiles::SessionRole {
+                role: crate::project::profiles::AgentRole::Reviewer,
+                profile_id: Some("strict".to_string()),
+            }),
+        };
+        let meta = task.to_session_meta(Some("Review".to_string()));
+        assert_eq!(meta.session_name.as_deref(), Some("Review"));
+        assert_eq!(TaskMetadata::from_session_meta(&meta), task);
     }
 }

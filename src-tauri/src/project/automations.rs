@@ -510,7 +510,7 @@ pub async fn adopt_automation_session(
     session_id: String,
 ) -> Result<bool, String> {
     let (connection_key, _) = target(&app_state, project_id).await?;
-    let adopted = crate::acp::session_ops::adopt_live_sessions(
+    let adopted = crate::acp::session_ops::attach_project_sessions(
         connection_key,
         project_id,
         Some(&session_id),

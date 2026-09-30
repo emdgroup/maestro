@@ -146,7 +146,7 @@ pub struct SessionListEntryDto {
     pub session_id: String,
     pub title: Option<String>,
     pub updated_at: Option<String>,
-    /// Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+    /// Directory the session ran in, relative to the project root, from the daemon's row for it.
     /// `Some("")` is the project root itself; `None` means no folder was ever recorded.
     pub folder: Option<String>,
 }

@@ -12,6 +12,7 @@ pub(crate) async fn handle_agent_restart(
     agent_connections: &SharedAgentConnections,
     sessions: &mut SessionMap,
     agents_with_spawn: &[agent::registry::DiscoveredAgentWithSpawn],
+    project_store: Option<&crate::project_store::Store>,
     stdout: &crate::ClientOut,
 ) {
     send_diag("warn", format!("[agent] {dead_agent_id:?} connection dead"));
@@ -42,9 +43,20 @@ pub(crate) async fn handle_agent_restart(
         })
         .collect();
 
+    let mut carried = std::collections::HashMap::new();
     for (maestro_sid, _, _, _) in &to_restore {
-        if let Some(session) = sessions.remove(maestro_sid) {
+        if let Some(mut session) = sessions.remove(maestro_sid) {
             session.task.abort();
+            carried.insert(maestro_sid.clone(), session.project.take());
+            // Dormant until the reload below succeeds, so a session that does not make it back is
+            // not left looking live.
+            if let Some(store) = project_store {
+                crate::project_store::report(crate::project_store::go_dormant(
+                    &*store.lock().await,
+                    maestro_sid,
+                    chrono::Utc::now(),
+                ));
+            }
             let _ = send_response(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -110,6 +122,15 @@ pub(crate) async fn handle_agent_restart(
                 session.agent_id = dead_agent_id.clone();
                 session.cwd = session_cwd.clone();
                 session.additional_directories = session_roots.clone();
+                session.project = carried.remove(maestro_sid).flatten();
+                if let Some(store) = project_store {
+                    crate::project_store::report(crate::project_store::revive(
+                        &*store.lock().await,
+                        &dead_agent_id,
+                        acp_session_id,
+                        maestro_sid,
+                    ));
+                }
                 sessions.insert(maestro_sid.clone(), session);
                 let _ = send_response(
                     stdout,

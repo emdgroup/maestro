@@ -164,9 +164,6 @@ pub struct AppState {
     /// Mutex-guarded token storage for ticketing provider tokens.
     /// Per-project locks prevent concurrent refresh races (AUTH-06).
     pub token_manager: crate::integration::TokenManager,
-    /// Set to true at the start of the close sequence so that session cancel events
-    /// triggered during shutdown don't overwrite state.json with an empty session list.
-    pub is_closing: std::sync::atomic::AtomicBool,
     /// Tasks the user is currently dragging or editing, which the scheduler must leave alone.
     /// In memory on purpose — a hold that survived a crash would be a task nothing could start.
     pub task_holds: crate::task::holds::TaskHolds,
@@ -211,7 +208,6 @@ impl AppState {
             app_data_dir,
             active_project_lock: Mutex::new(None),
             token_manager: crate::integration::TokenManager::new(),
-            is_closing: std::sync::atomic::AtomicBool::new(false),
             task_holds: crate::task::holds::TaskHolds::default(),
             project_remotes: Mutex::new(HashMap::new()),
             last_remote_fetch: Mutex::new(HashMap::new()),

@@ -546,10 +546,8 @@ pub async fn cleanup_worktree_if_clean(
     Ok(None)
 }
 
-/// Directories of sessions running now. Separate from [`live_session_cwds`] because the
-/// `.maestro/state.json` snapshots that one adds describe the sessions of the *last* run until
-/// this one restores them — that is the point of the file, and it deliberately survives a quit
-/// (`save_current_sessions_for_project` short-circuits once `is_closing` is set).
+/// Directories of sessions running now. Separate from [`live_session_cwds`] because the daemon's
+/// open rows that one adds include conversations nothing is running.
 pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
     let mut cwds: Vec<String> = Vec::new();
     {
@@ -563,8 +561,8 @@ pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
     cwds
 }
 
-/// Directories that are in use: running ACP sessions, running PTY shells, and sessions that
-/// `prime_project_server` may still be restoring from `.maestro/state.json`.
+/// Directories that are in use: running ACP sessions, running PTY shells, and every conversation
+/// the daemon still holds open for the project, which the next open loads back into its folder.
 pub async fn live_session_cwds(
     app_state: &Arc<AppState>,
     project: &crate::models::Project,
@@ -575,16 +573,17 @@ pub async fn live_session_cwds(
         project.wsl_connection_id,
         project.docker_connection_id,
     );
-    live_cwds.extend(
-        crate::project::session_state::read_session_snapshots(
-            app_state,
-            &project.path,
-            connection_key,
-        )
-        .await
-        .into_iter()
-        .map(|snapshot| snapshot.cwd),
-    );
+    match crate::acp::connection_server::query_project_sessions_via_server(
+        connection_key,
+        project.path.clone(),
+        false,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => live_cwds.extend(response.sessions.into_iter().map(|row| row.cwd)),
+        Err(e) => log::debug!("cannot list the open sessions of {}: {e}", project.path),
+    }
     live_cwds
 }
 

@@ -3,8 +3,7 @@
 use crate::acp::connection_server::spawn_connection_server;
 use crate::acp::reader_task::spawn_reader_task;
 use crate::acp::session_types::{
-    AcpProcess, AcpProcessParams, AcpTransportWriter, RestorableSession, SessionHostMeta,
-    SessionRequest, TaskMetadata, TransportTarget,
+    AcpProcess, AcpProcessParams, AcpTransportWriter, SessionRequest, TaskMetadata, TransportTarget,
 };
 use crate::acp::transport::{MaestroRpcMessage, ServerRequest, SessionLoadRequest, SpawnRequest};
 #[cfg(windows)]
@@ -16,21 +15,6 @@ use tauri::Emitter;
 use tokio::io::BufWriter;
 use tokio::process::ChildStdin;
 use tokio::sync::oneshot;
-
-pub fn upsert_session_alias(
-    conn: &rusqlite::Connection,
-    project_id: i32,
-    agent_id: &str,
-    acp_session_id: &str,
-    display_name: &str,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO session_aliases (project_id, agent_id, acp_session_id, display_name) \
-         VALUES (?1, ?2, ?3, ?4) \
-         ON CONFLICT(project_id, agent_id, acp_session_id) DO UPDATE SET display_name = excluded.display_name",
-        rusqlite::params![project_id, agent_id, acp_session_id, display_name],
-    ).map(|_| ())
-}
 
 /// Extra workspace roots for this session, read from the project's `.maestro/settings.json`.
 ///
@@ -51,28 +35,17 @@ async fn additional_directories_for(req: &SessionRequest) -> Vec<String> {
     }
 }
 
-/// The blob `maestro-server` stores against a session and hands back when a later app run
-/// re-adopts it. See [`SessionHostMeta`].
-///
-/// Serialization cannot fail for this shape, so a failure is reported and the session still
-/// starts: losing the ability to re-adopt it later is not a reason to refuse to run it now.
-fn host_meta_for(req: &SessionRequest, task: &TaskMetadata) -> Option<serde_json::Value> {
-    let meta = SessionHostMeta {
-        project_id: req.project_id,
-        session_name: req.session_name.clone(),
-        connection_key: req.connection_key,
-        task: task.clone(),
-    };
-    match serde_json::to_value(&meta) {
-        Ok(value) => Some(value),
-        Err(e) => {
-            log::warn!(
-                "could not record session metadata for {}: {e}",
-                req.session_id
-            );
-            None
-        }
-    }
+/// The project's path as this app's own row has it, which is what the daemon files a session
+/// under. `None` for a project that is gone, which leaves the session without a row there.
+fn project_path(app_state: &crate::core::AppState, project_id: i32) -> Option<String> {
+    let conn = app_state.db.lock().ok()?;
+    conn.query_row(
+        "SELECT path FROM projects WHERE id = ?",
+        [project_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| log::warn!("cannot read the path of project {project_id}: {e}"))
+    .ok()
 }
 
 /// Fast path: route a new session through a running `ConnectionServer`.
@@ -96,9 +69,11 @@ pub async fn try_spawn_via_connection_server(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: host_meta_for(req, &task),
-        project_path: None,
-        meta: Default::default(),
+        host_meta: None,
+        project_path: req
+            .project_id
+            .and_then(|project_id| project_path(&req.app_state, project_id)),
+        meta: task.to_session_meta(req.session_name.clone()),
     }));
     let bytes = serialize_message(&spawn_req)?;
     let (acp_process, _ctx) = AcpProcess::create(
@@ -139,63 +114,32 @@ pub async fn try_spawn_via_connection_server(
     Ok(true)
 }
 
-/// Close an idle live session on the agent and load it back, so its transcript comes with it.
-///
-/// The close is what makes the load safe. Without it the agent would hold the same conversation
-/// open twice, and the server would replace its own entry for the first while its command loop
-/// kept running — an agent nothing routes to, still consuming tokens. `SessionClose` also drops
-/// the server's live entry, so what follows genuinely is a fresh load.
-///
-/// Returns whether the session ended up loaded. `false` means the caller should adopt it plainly,
-/// which is always still possible: a failed close leaves the session exactly as it was.
-async fn reload_for_history(
-    session: &maestro_protocol::ListLiveSession,
-    acp_session_id: &str,
-    meta: &SessionHostMeta,
-    connection_key: crate::acp::ConnectionKey,
-    app_state: &Arc<crate::core::AppState>,
-) -> bool {
-    let close = crate::acp::connection_server::query_session_close_via_server(
-        connection_key,
-        crate::acp::transport::SessionCloseRequest {
-            agent_id: session.agent_id.clone(),
-            session_id: acp_session_id.to_string(),
-            cwd: session.cwd.clone(),
-        },
-        app_state,
-    )
-    .await;
-    if let Err(e) = close {
-        log::warn!(
-            "could not close session {} to recover its history, adopting it as-is: {e}",
-            session.session_id
-        );
-        return false;
-    }
+/// What opening a project does with one of its open conversations.
+#[derive(Debug, PartialEq)]
+enum RowAction {
+    /// Take the running session over as it stands.
+    Adopt,
+    /// Close the running session on the agent and load it back, for its transcript.
+    Reload,
+    /// Load a conversation nothing is running.
+    Load,
+    Skip,
+}
 
-    // A new routing key: the server forgot the old one when it closed the session, and reusing it
-    // would name a session that no longer exists on either side.
-    let req = SessionRequest {
-        connection_key,
-        agent_id: session.agent_id.clone(),
-        cwd: session.cwd.clone(),
-        session_id: crate::core::new_session_id(),
-        session_name: meta.session_name.clone(),
-        project_id: meta.project_id,
-        task_id: meta.task.task_id,
-        app_state: Arc::clone(app_state),
-    };
-    match try_session_load_via_connection_server(acp_session_id, &req).await {
-        Ok(true) => true,
-        // The session is gone from the server either way now, so there is nothing left to adopt
-        // and the user has to reopen it from the session history.
-        Ok(false) | Err(_) => {
-            log::warn!(
-                "closed session {} but could not load it back",
-                session.session_id
-            );
-            true
-        }
+/// `turn_active` is `None` for a conversation the daemon is not running.
+///
+/// Closing is what makes the reload safe: without it the agent would hold the same conversation
+/// open twice, and the server would replace its own entry for the first while its command loop
+/// kept running. It also discards a turn in progress, so a session mid-turn is adopted instead and
+/// its transcript begins at the reconnect. One the agent cannot load back is never closed, and
+/// neither is the single session an automation just started: it has no history yet, and closing it
+/// would throw away the prompt it was started with.
+fn row_action(turn_active: Option<bool>, can_reload: bool, single: bool) -> RowAction {
+    match turn_active {
+        Some(false) if can_reload && !single => RowAction::Reload,
+        Some(_) => RowAction::Adopt,
+        None if can_reload => RowAction::Load,
+        None => RowAction::Skip,
     }
 }
 
@@ -254,86 +198,43 @@ async fn adopt_automation_worktrees(
     }
 }
 
-/// This project's automation runs, as the server's own records have them.
+/// Bring this project's open conversations into this window, from the daemon's own rows.
 ///
-/// Best effort: a server too old to know about automations, or one whose store would not open,
-/// leaves this empty and costs nothing but an unadopted automation session.
-async fn automation_runs(
-    project_id: i32,
-    app_state: &Arc<crate::core::AppState>,
-) -> (String, Vec<maestro_protocol::AutomationRun>) {
-    let (connection_key, project_path) =
-        match crate::core::get_project_with_git_conn(app_state, project_id).await {
-            Ok((project, _)) => (
-                crate::acp::ConnectionKey::from_all_ids(
-                    project.connection_id,
-                    project.wsl_connection_id,
-                    project.docker_connection_id,
-                ),
-                project.path,
-            ),
-            Err(e) => {
-                log::warn!("cannot read project {project_id} to find its automation runs: {e}");
-                return (String::new(), Vec::new());
-            }
-        };
-
-    match crate::acp::connection_server::query_automation_runs_via_server(
-        connection_key,
-        project_path.clone(),
-        None,
-        app_state,
-    )
-    .await
-    {
-        Ok(response) => (project_path, response.runs),
-        Err(e) => {
-            log::warn!("cannot list automation runs on {connection_key:?}: {e}");
-            (project_path, Vec::new())
-        }
-    }
-}
-
-/// Take ownership of sessions the connection's server is already running.
+/// The daemon outlives the app and keeps one row per conversation, so a freshly opened project, a
+/// second window taking it over and an SSH connection coming back all ask the same question and get
+/// the same answer. Each open row this side does not hold already is handled as [`row_action`]
+/// says: a running session is adopted under the id the daemon files it under, so every later
+/// prompt, cancel and event routes as it did in the run that started it, and a dormant one is
+/// loaded.
 ///
-/// The server outlives the app now, so a freshly started app finds sessions it has no record of:
-/// its own map is empty while the server's is not. This rebuilds a host-side entry for each of
-/// them, keyed by the same id the server files it under, so every later prompt, cancel and event
-/// routes exactly as it did in the run that started the session.
+/// Best effort throughout: a server that cannot answer or an agent that refuses the close must not
+/// stop a project from opening. A failed close degrades to plain adoption, and a load that cannot
+/// start fails the task that was waiting on it rather than leaving it claiming an agent is at work.
 ///
-/// Scoped to one project because the app is: a machine's server holds sessions for every project
-/// opened against it, and the ones belonging to other projects are adopted when those are opened.
+/// `only` narrows this to one running session: an automation's, announced while the window was
+/// already attached.
 ///
-/// A session that is **not** mid-turn is closed on the agent and loaded straight back instead,
-/// which is the only way to recover the transcript it produced while nobody was attached: the
-/// agent persists its own history and `session/load` is what replays it. That cannot be done to a
-/// session mid-turn — closing discards the turn in progress — so those are adopted as they are and
-/// their transcript begins where the app reconnected.
-///
-/// Best effort throughout — a server too old to answer, a session whose metadata cannot be read,
-/// an agent that refuses the reload — must not stop a project from opening. Each failure degrades
-/// to plain adoption rather than to a lost session.
-///
-/// `only` narrows this to one session: an automation's, announced while the window was already
-/// attached. That one is never closed and reloaded, since it has no history yet and closing it
-/// would throw away the prompt it was started with.
-///
-/// Returns how many were taken over, reloaded or not.
-pub async fn adopt_live_sessions(
+/// Returns how many were brought in.
+pub async fn attach_project_sessions(
     connection_key: crate::acp::ConnectionKey,
     project_id: i32,
     only: Option<&str>,
     app_state: &Arc<crate::core::AppState>,
 ) -> usize {
-    let live = match crate::acp::connection_server::query_live_sessions_via_server(
+    let Some(project_path) = project_path(app_state, project_id) else {
+        return 0;
+    };
+    let rows = match crate::acp::connection_server::query_project_sessions_via_server(
         connection_key,
+        project_path.clone(),
+        false,
         app_state,
     )
     .await
     {
         Ok(response) => response.sessions,
         Err(e) => {
-            log::warn!("could not list live sessions on {connection_key:?}: {e}");
+            log::warn!("could not list the sessions of {project_path} on {connection_key:?}: {e}");
             return 0;
         }
     };
@@ -346,89 +247,123 @@ pub async fn adopt_live_sessions(
         }
     };
 
-    // Sessions an automation started carry nothing of ours: the server spawned them with no
-    // `host_meta` because it had none to attach. The run rows pointing at them are what says they
-    // belong to this project, so they are adopted on that evidence instead — and the same rows are
-    // where the worktrees those runs provisioned are found.
-    let (project_path, runs) = automation_runs(project_id, app_state).await;
-    adopt_automation_worktrees(project_id, &project_path, &runs, app_state).await;
-    let automation_sessions: std::collections::HashMap<String, String> = runs
-        .into_iter()
-        .filter(|run| matches!(run.status, maestro_protocol::AutomationRunStatus::Running))
-        .filter_map(|run| Some((run.session_id?, run.automation_name)))
-        .collect();
+    // A server too old to know about automations, or one whose store would not open, costs
+    // nothing but an unadopted worktree.
+    match crate::acp::connection_server::query_automation_runs_via_server(
+        connection_key,
+        project_path.clone(),
+        None,
+        app_state,
+    )
+    .await
+    {
+        Ok(response) => {
+            adopt_automation_worktrees(project_id, &project_path, &response.runs, app_state).await
+        }
+        Err(e) => log::warn!("cannot list automation runs on {connection_key:?}: {e}"),
+    }
 
-    let mut adopted = 0;
-    for session in live {
-        if only.is_some_and(|wanted| wanted != session.session_id) {
+    let mut attached = 0;
+    for row in rows {
+        if row.closed {
             continue;
         }
-        let automation_name = automation_sessions.get(&session.session_id);
-        let meta = session
-            .host_meta
-            .as_ref()
-            .and_then(|value| {
-                serde_json::from_value::<SessionHostMeta>(value.clone())
-                    .map_err(|e| {
-                        log::warn!(
-                            "session {} has unreadable metadata: {e}",
-                            session.session_id
-                        )
-                    })
-                    .ok()
-            })
-            // An automation's session has none, so one is made up from what is known: the project
-            // it belongs to, and the connection it is already running on.
-            .or_else(|| {
-                automation_name.map(|name| SessionHostMeta {
-                    project_id: Some(project_id),
-                    session_name: Some(name.clone()),
-                    connection_key,
-                    task: TaskMetadata::default(),
-                })
-            });
-        let Some(meta) = meta else { continue };
-        if meta.project_id != Some(project_id) {
+        let live_session_id = row.live.as_ref().map(|live| live.session_id.as_str());
+        if only.is_some_and(|wanted| live_session_id != Some(wanted)) {
             continue;
         }
-        if app_state
+        let held = app_state
             .acp
             .sessions
             .lock()
             .await
-            .contains_key(&session.session_id)
-        {
+            .iter()
+            .any(|(session_id, proc)| {
+                live_session_id == Some(session_id.as_str())
+                    || (proc.agent_id_meta == row.agent_id
+                        && proc
+                            .acp_session_id
+                            .lock()
+                            .is_ok_and(|held| held.as_deref() == Some(row.acp_session_id.as_str())))
+            });
+        if held {
             continue;
         }
 
-        if let Some(acp_session_id) = session.acp_session_id.as_deref() {
-            if only.is_none()
-                && !session.turn_active
-                && reload_for_history(&session, acp_session_id, &meta, connection_key, app_state)
-                    .await
+        let task = TaskMetadata::from_session_meta(&row.meta);
+        let action = row_action(
+            row.live.as_ref().map(|live| live.turn_active),
+            row.can_reload,
+            only.is_some(),
+        );
+        if action == RowAction::Skip {
+            continue;
+        }
+        let mut live = row.live;
+        if action == RowAction::Reload {
+            // `SessionClose` drops the server's live entry and leaves the row open, so what
+            // follows genuinely is a fresh load. A failed close leaves the session as it was.
+            match crate::acp::connection_server::query_session_close_via_server(
+                connection_key,
+                crate::acp::transport::SessionCloseRequest {
+                    agent_id: row.agent_id.clone(),
+                    session_id: row.acp_session_id.clone(),
+                    cwd: row.cwd.clone(),
+                },
+                app_state,
+            )
+            .await
             {
-                adopted += 1;
-                continue;
+                Ok(()) => live = None,
+                Err(e) => log::warn!(
+                    "could not close session {} to recover its history, adopting it as-is: {e}",
+                    row.acp_session_id
+                ),
             }
         }
+
+        let Some(live) = live else {
+            let task_id = task.task_id;
+            match crate::acp::session_handlers::restore_acp_session(
+                app_state,
+                row.agent_id,
+                row.acp_session_id,
+                row.cwd,
+                connection_key,
+                row.meta.session_name,
+                Some(project_id),
+                task,
+            )
+            .await
+            {
+                Ok(_) => attached += 1,
+                // Agent uninstalled, worktree deleted, auth expired, host unreachable: the task
+                // would otherwise go on claiming an agent behind a session that will never exist.
+                Err(e) => {
+                    log::warn!("[acp] could not restore a session of {project_path}: {e}");
+                    crate::acp::reader_task::fail_task_if_still_running(app_state, task_id);
+                }
+            }
+            continue;
+        };
 
         let (acp_process, _ctx) = AcpProcess::create(
             AcpProcessParams {
                 writer: AcpTransportWriter::SharedServer(writer_tx.clone()),
                 child: None,
                 cancel_tx: None,
-                cwd: session.cwd.clone(),
-                session_name: meta.session_name.clone(),
-                agent_id: session.agent_id.clone(),
-                project_id: meta.project_id,
+                cwd: row.cwd,
+                session_name: row.meta.session_name,
+                agent_id: row.agent_id,
+                project_id: Some(project_id),
                 connection_key,
-                task: meta.task.clone(),
-                initial_acp_session_id: session.acp_session_id.clone(),
+                task,
+                initial_acp_session_id: Some(row.acp_session_id),
                 // Nothing has subscribed to this session yet, so its updates have to be held
                 // until the frontend opens it, exactly as for a session being loaded.
                 enable_replay_buffer: true,
             },
-            session.session_id.clone(),
+            live.session_id.clone(),
             app_state.app_handle.clone(),
             Arc::clone(app_state),
         );
@@ -437,27 +372,26 @@ pub async fn adopt_live_sessions(
         // drain never announced `replay-drained` and the view sat on its loading skeleton forever.
         match acp_process.initialized.lock() {
             Ok(mut initialized) => *initialized = true,
-            Err(e) => log::warn!("session {} lock poisoned: {e}", session.session_id),
+            Err(e) => log::warn!("session {} lock poisoned: {e}", live.session_id),
         }
         app_state
             .acp
             .sessions
             .lock()
             .await
-            .insert(session.session_id.clone(), acp_process);
+            .insert(live.session_id.clone(), acp_process);
 
         // After the insert, never before: these go through the same routing every live message
         // takes, and that routing drops anything addressed to a session this side does not hold
         // yet. Replaying them is what makes a prompt the previous client was shown answerable
-        // again — the agent is still blocked on it, and the message that asked went to a client
+        // again: the agent is still blocked on it, and the message that asked went to a client
         // that is gone.
         //
         // What this window was sent before it held the session goes first, in the order it came:
         // a session the server started on its own talks from its first second, and a canvas
         // asking the user something is exactly what arrives then. A request among them is not
         // replayed a second time from the server's list.
-        let unclaimed =
-            crate::acp::reader_task::take_unclaimed(app_state, &session.session_id).await;
+        let unclaimed = crate::acp::reader_task::take_unclaimed(app_state, &live.session_id).await;
         let mut replayed: std::collections::HashSet<String> = std::collections::HashSet::new();
         for msg in unclaimed {
             match &msg {
@@ -482,7 +416,7 @@ pub async fn adopt_live_sessions(
             )
             .await;
         }
-        for request in session.pending_requests {
+        for request in live.pending_requests {
             let request_id = match &request {
                 maestro_protocol::PendingSessionRequest::Permission(request) => &request.request_id,
                 maestro_protocol::PendingSessionRequest::Elicitation(request) => {
@@ -513,16 +447,16 @@ pub async fn adopt_live_sessions(
             )
             .await;
         }
-        adopted += 1;
+        attached += 1;
     }
 
-    if adopted > 0 {
-        log::info!("adopted {adopted} running session(s) on {connection_key:?}");
+    if attached > 0 {
+        log::info!("attached {attached} session(s) of {project_path} on {connection_key:?}");
         if let Err(e) = app_state.app_handle.emit("sessions-changed", ()) {
-            log::warn!("could not announce adopted sessions: {e}");
+            log::warn!("could not announce attached sessions: {e}");
         }
     }
-    adopted
+    attached
 }
 
 /// Open a transport channel, write the initial message, register the ACP process, and
@@ -635,9 +569,11 @@ pub async fn spawn_acp_session_cold(
         session_id: session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: host_meta_for(req, &task),
-        project_path: None,
-        meta: Default::default(),
+        host_meta: None,
+        project_path: req
+            .project_id
+            .and_then(|project_id| project_path(&req.app_state, project_id)),
+        meta: task.to_session_meta(req.session_name.clone()),
     }));
     launch_cold_session(target, &initial_msg, "SpawnRequest", task, None, false, req).await
 }
@@ -647,6 +583,7 @@ pub async fn spawn_acp_session_cold(
 pub async fn load_acp_session_cold(
     target: TransportTarget<'_>,
     acp_session_id: &str,
+    task: TaskMetadata,
     req: &SessionRequest,
 ) -> Result<(), String> {
     let initial_msg = MaestroRpcMessage::Request(ServerRequest::SessionLoad(SessionLoadRequest {
@@ -655,21 +592,17 @@ pub async fn load_acp_session_cold(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: host_meta_for(
-            req,
-            &TaskMetadata {
-                task_id: req.task_id,
-                ..TaskMetadata::default()
-            },
-        ),
-        project_path: None,
-        meta: Default::default(),
+        host_meta: None,
+        project_path: req
+            .project_id
+            .and_then(|project_id| project_path(&req.app_state, project_id)),
+        meta: task.to_session_meta(req.session_name.clone()),
     }));
     launch_cold_session(
         target,
         &initial_msg,
         "SessionLoad",
-        TaskMetadata::default(),
+        task,
         Some(acp_session_id.to_string()),
         true,
         req,
@@ -751,6 +684,7 @@ pub async fn resolve_remote_context(
 /// Returns `Ok(false)` if no connection server exists for this connection.
 pub async fn try_session_load_via_connection_server(
     acp_session_id: &str,
+    task: TaskMetadata,
     req: &SessionRequest,
 ) -> Result<bool, String> {
     let writer_tx = {
@@ -766,15 +700,11 @@ pub async fn try_session_load_via_connection_server(
         resume_session_id: acp_session_id.to_string(),
         cwd: req.cwd.clone(),
         additional_directories: additional_directories_for(req).await,
-        host_meta: host_meta_for(
-            req,
-            &TaskMetadata {
-                task_id: req.task_id,
-                ..TaskMetadata::default()
-            },
-        ),
-        project_path: None,
-        meta: Default::default(),
+        host_meta: None,
+        project_path: req
+            .project_id
+            .and_then(|project_id| project_path(&req.app_state, project_id)),
+        meta: task.to_session_meta(req.session_name.clone()),
     }));
     let bytes = serialize_message(&load_msg)?;
 
@@ -790,10 +720,7 @@ pub async fn try_session_load_via_connection_server(
             agent_id: req.agent_id.clone(),
             project_id: req.project_id,
             connection_key: req.connection_key,
-            task: TaskMetadata {
-                task_id: req.task_id,
-                ..TaskMetadata::default()
-            },
+            task,
             initial_acp_session_id: Some(acp_session_id.to_string()),
             enable_replay_buffer: true,
         },
@@ -820,17 +747,21 @@ pub async fn try_session_load_via_connection_server(
     Ok(true)
 }
 
-/// Re-spawn the shared maestro-server for a connection and reload sessions that were
-/// active when it died. Called after SSH successfully reconnects.
-/// Emits `acp://session-ended/{session_id}` for any session that cannot be restored.
+/// Re-spawn the shared maestro-server for a connection and bring back the sessions that were
+/// active when it was lost. Called after SSH successfully reconnects.
+///
+/// The daemon on the far side may well have kept running them, so this asks it exactly as opening
+/// the project does rather than loading each one a second time under a new id.
+/// Emits `acp://session-ended/{session_id}` for any session that did not come back.
 pub async fn restore_acp_sessions(
     connection_id: i32,
     app_state: &Arc<crate::core::AppState>,
 ) -> Result<(), String> {
+    let connection_key = crate::acp::ConnectionKey::Ssh { id: connection_id };
     let (ssh, server_path) = resolve_remote_context(app_state, connection_id).await?;
 
     spawn_connection_server(
-        crate::acp::ConnectionKey::Ssh { id: connection_id },
+        connection_key,
         TransportTarget::Remote {
             ssh: &ssh,
             server_path: &server_path,
@@ -839,7 +770,7 @@ pub async fn restore_acp_sessions(
     )
     .await?;
 
-    let sessions: Vec<RestorableSession> = app_state
+    let parked = app_state
         .acp
         .restorable_sessions
         .lock()
@@ -847,36 +778,63 @@ pub async fn restore_acp_sessions(
         .remove(&connection_id)
         .unwrap_or_default();
 
-    for s in &sessions {
-        let Some(acp_session_id) = &s.acp_session_id else {
-            let _ = app_state
-                .app_handle
-                .emit(&format!("acp://session-ended/{}", s.session_id), ());
+    let project_ids: std::collections::BTreeSet<i32> = parked
+        .iter()
+        .filter_map(|session| session.project_id)
+        .collect();
+    for project_id in project_ids {
+        attach_project_sessions(connection_key, project_id, None, app_state).await;
+    }
+
+    let held: std::collections::HashSet<String> = app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .values()
+        .filter_map(|proc| proc.acp_session_id.lock().ok().and_then(|id| id.clone()))
+        .collect();
+    for session in parked {
+        if session
+            .acp_session_id
+            .is_some_and(|acp_session_id| held.contains(&acp_session_id))
+        {
             continue;
-        };
-
-        let reloaded_session_id = crate::core::new_session_id();
-
-        let req = SessionRequest {
-            connection_key: crate::acp::ConnectionKey::Ssh { id: connection_id },
-            agent_id: s.agent_id.clone(),
-            cwd: s.cwd.clone(),
-            session_id: reloaded_session_id,
-            session_name: s.session_name.clone(),
-            project_id: s.project_id,
-            task_id: s.task_id,
-            app_state: Arc::clone(app_state),
-        };
-        match try_session_load_via_connection_server(acp_session_id, &req).await {
-            Ok(true) => {}
-            _ => {
-                let _ = app_state
-                    .app_handle
-                    .emit(&format!("acp://session-ended/{}", s.session_id), ());
-            }
+        }
+        if let Err(e) = app_state
+            .app_handle
+            .emit(&format!("acp://session-ended/{}", session.session_id), ())
+        {
+            log::warn!(
+                "[acp] emit session-ended/{} failed: {e}",
+                session.session_id
+            );
         }
     }
 
-    app_state.app_handle.emit("sessions-changed", ()).ok();
+    if let Err(e) = app_state.app_handle.emit("sessions-changed", ()) {
+        log::warn!("[acp] emit sessions-changed failed: {e}");
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{row_action, RowAction};
+
+    #[test]
+    fn a_row_is_adopted_reloaded_loaded_or_skipped() {
+        assert_eq!(row_action(Some(true), true, false), RowAction::Adopt);
+        assert_eq!(row_action(Some(false), true, false), RowAction::Reload);
+        assert_eq!(row_action(None, true, false), RowAction::Load);
+        assert_eq!(row_action(None, false, false), RowAction::Skip);
+    }
+
+    /// Closing either of these would lose it: one cannot be loaded back, and the other is an
+    /// automation's session holding nothing but the prompt it was started with.
+    #[test]
+    fn a_session_that_closing_would_lose_is_adopted_between_turns() {
+        assert_eq!(row_action(Some(false), false, false), RowAction::Adopt);
+        assert_eq!(row_action(Some(false), true, true), RowAction::Adopt);
+    }
 }

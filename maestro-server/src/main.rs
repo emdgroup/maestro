@@ -29,6 +29,7 @@ mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
 mod project_locks;
+mod project_store;
 mod session;
 mod sessions;
 mod skills;
@@ -299,6 +300,7 @@ async fn reap_idle_sessions(
     sessions: &mut SessionMap,
     stdout: &crate::ClientOut,
     automation_store: Option<&automation_runner::Store>,
+    project_store: Option<&project_store::Store>,
 ) {
     let attached = stdout.lock().await.is_attached();
     let mut reap: Vec<String> = Vec::new();
@@ -338,6 +340,13 @@ async fn reap_idle_sessions(
             "info",
             format!("[reap] closed idle session={session_id} with no client attached"),
         );
+        if let Some(store) = project_store {
+            project_store::report(project_store::go_dormant(
+                &*store.lock().await,
+                &session_id,
+                chrono::Utc::now(),
+            ));
+        }
         // Only now: the agent held files open under its workspace for as long as the session
         // lived, and on Windows a removal while it does simply fails.
         if let Some(store) = automation_store {
@@ -388,6 +397,16 @@ async fn run_server(
             Arc::new(tokio::sync::Mutex::new(conn))
         })
         .map_err(|e| send_diag("warn", format!("[automation] store unavailable: {e}")))
+        .ok();
+
+    // `None` when it cannot be opened, as above: sessions run, and are simply not recorded.
+    let project_store: Option<project_store::Store> = daemon::dir()
+        .and_then(|dir| project_store::open(&dir))
+        .and_then(|conn| {
+            project_store::reset_on_start(&conn, chrono::Utc::now())?;
+            Ok(Arc::new(tokio::sync::Mutex::new(conn)))
+        })
+        .map_err(|e| send_diag("warn", format!("[project-store] store unavailable: {e}")))
         .ok();
 
     // After the runs above are closed out, so a workspace left by a server that died mid-run is
@@ -510,6 +529,27 @@ async fn run_server(
 
             result = spawn_result_rx.recv() => {
                 if let Some((session_id, session)) = result {
+                    if let (Some(store), Some(project), Some(cleanup)) = (
+                        project_store.as_ref(),
+                        session.project.as_ref(),
+                        session.cleanup.as_ref(),
+                    ) {
+                        project_store::report(project_store::upsert(
+                            &*store.lock().await,
+                            &project_store::Started {
+                                agent_id: &session.agent_id,
+                                acp_session_id: &cleanup.acp_session_id,
+                                project_path: &automations::canonical_project_path(
+                                    &project.project_path,
+                                ),
+                                cwd: &session.cwd,
+                                meta: &project.meta,
+                                can_reload: project.can_reload,
+                                session_id: &session_id,
+                            },
+                            chrono::Utc::now(),
+                        ));
+                    }
                     sessions.insert(session_id.clone(), session);
                     // Only now can a client adopt it: `ListLiveSessions` answers from this map. An
                     // automation's run is announced again here, carrying the session, so a window
@@ -555,15 +595,36 @@ async fn run_server(
                         &agent_connections,
                         &mut sessions,
                         &agents_with_spawn,
+                        project_store.as_ref(),
                         &stdout,
                     )
                     .await;
+                }
+                // A command loop that ended on a transport error leaves its entry in the map for
+                // the host to cancel, and ends deep inside the session where the store is out of
+                // reach. Its finished task is what shows here. Repeating it is a no-op.
+                if let Some(store) = project_store.as_ref() {
+                    for (session_id, session) in sessions.iter() {
+                        if session.task.is_finished() {
+                            project_store::report(project_store::go_dormant(
+                                &*store.lock().await,
+                                session_id,
+                                chrono::Utc::now(),
+                            ));
+                        }
+                    }
                 }
                 continue;
             }
 
             _ = reap_interval.tick() => {
-                reap_idle_sessions(&mut sessions, &stdout, automation_store.as_ref()).await;
+                reap_idle_sessions(
+                    &mut sessions,
+                    &stdout,
+                    automation_store.as_ref(),
+                    project_store.as_ref(),
+                )
+                .await;
                 continue;
             }
 
@@ -647,11 +708,20 @@ async fn run_server(
             &auth_terminals,
             &mut pending_host_tools,
             automation_store.as_ref(),
+            project_store.as_ref(),
         )
         .await
         {
             break;
         }
+    }
+
+    // Nothing is live past this point. The rows stay open, so the sessions reload afterwards.
+    if let Some(store) = project_store.as_ref() {
+        project_store::report(project_store::all_dormant(
+            &*store.lock().await,
+            chrono::Utc::now(),
+        ));
     }
 
     // Abort all active session tasks so agent child processes are killed promptly.

@@ -55,9 +55,6 @@ pub(crate) fn spawn_reader_task(
         declared_complete,
         user_interrupted,
         closing_message,
-        session_name,
-        agent_id,
-        project_id,
         task_id,
     } = ctx;
     tokio::spawn(async move {
@@ -152,7 +149,7 @@ pub(crate) fn spawn_reader_task(
                 }
             }
 
-            if let Some(native_id) = handle_server_message(
+            handle_server_message(
                 msg,
                 &session_id,
                 &app_handle,
@@ -166,31 +163,10 @@ pub(crate) fn spawn_reader_task(
                 &completion_filter,
                 &declared_complete,
                 &closing_message,
-            ) {
-                if let (Some(pid), Some(ref name)) = (project_id, &session_name) {
-                    if let Ok(conn) = app_state.db.lock() {
-                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
-                            &conn, pid, &agent_id, &native_id, name,
-                        ) {
-                            log::warn!(
-                                "Could not record the session alias for {}: {}",
-                                native_id,
-                                e
-                            );
-                        }
-                    }
-                }
-                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
-                if let Some(pid) = project_id {
-                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                        Arc::clone(&app_state),
-                        pid,
-                    ));
-                }
-            }
+            );
         }
 
-        remove_session_and_persist(&app_state, &session_id).await;
+        app_state.acp.sessions.lock().await.remove(&session_id);
         fail_task_if_still_running(&app_state, task_id);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
@@ -226,34 +202,13 @@ pub(crate) fn mark_task_blocked(app_state: &crate::core::AppState, task_id: i32)
     }
 }
 
-/// Drop a session the agent side ended, and rewrite `.maestro/state.json` so the next
-/// `prime_project_server` does not restore it.
-///
-/// Every removal here is an ending nothing else observes — no IPC command ran, so none of the
-/// `save_current_sessions_for_project` calls on the user-driven paths fire. Without this the
-/// snapshot keeps listing a session whose agent is gone, and opening the project brings back a
-/// ghost of it. Returns the removed entry, which is the last place its task id is available.
-async fn remove_session_and_persist(
-    app_state: &Arc<crate::core::AppState>,
-    session_id: &str,
-) -> Option<crate::acp::AcpProcess> {
-    let removed = app_state.acp.sessions.lock().await.remove(session_id);
-    if let Some(project_id) = removed.as_ref().and_then(|session| session.project_id) {
-        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-            Arc::clone(app_state),
-            project_id,
-        ));
-    }
-    removed
-}
-
 /// A session's reader has ended. If the pipeline still believes an agent is working the task,
 /// record the failure.
 ///
 /// Without this a session that dies mid-phase leaves the card looking healthy, and a session that
 /// dies while blocked leaves it pulsing for an answer nothing will ever consume. Tasks that moved
 /// on under their own power — merged, stopped, parked at a review gate — are left untouched.
-fn fail_task_if_still_running(app_state: &crate::core::AppState, task_id: Option<i32>) {
+pub(crate) fn fail_task_if_still_running(app_state: &crate::core::AppState, task_id: Option<i32>) {
     let Some(task_id) = task_id else {
         return;
     };
@@ -1423,9 +1378,7 @@ pub(crate) async fn handle_shared_server_message(
                     Arc::clone(&s.declared_complete),
                     Arc::clone(&s.user_interrupted),
                     Arc::clone(&s.closing_message),
-                    s.session_name.clone(),
                     s.agent_id_meta.clone(),
-                    s.project_id,
                     s.task_id,
                 )
             })
@@ -1442,9 +1395,7 @@ pub(crate) async fn handle_shared_server_message(
             declared_complete,
             user_interrupted,
             closing_message,
-            session_name,
             agent_id,
-            pid,
             task_id,
         )) = caches
         {
@@ -1527,7 +1478,7 @@ pub(crate) async fn handle_shared_server_message(
                 MaestroRpcMessage::Response(ServerResponse::PermissionRequest(_))
             );
             let is_session_load_error = is_fatal_session_error(&msg);
-            let native_id = handle_server_message(
+            handle_server_message(
                 msg,
                 &session_id,
                 app_handle,
@@ -1550,36 +1501,10 @@ pub(crate) async fn handle_shared_server_message(
                         .store(true, Ordering::Release);
                 }
             }
-            if let Some(native_id) = native_id {
-                if let (Some(project_id_val), Some(ref name)) = (pid, &session_name) {
-                    if let Ok(conn) = app_state.db.lock() {
-                        if let Err(e) = crate::acp::session_ops::upsert_session_alias(
-                            &conn,
-                            project_id_val,
-                            &agent_id,
-                            &native_id,
-                            name,
-                        ) {
-                            log::warn!(
-                                "Could not record the session alias for {}: {}",
-                                native_id,
-                                e
-                            );
-                        }
-                    }
-                }
-                // SpawnOk received — acp_session_id is now set; persist so sessions survive restart.
-                if let Some(project_id_val) = pid {
-                    tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                        Arc::clone(app_state),
-                        project_id_val,
-                    ));
-                }
-            }
             if is_session_load_error {
                 // Session load failed (agent no longer has this session). Remove from the in-memory
                 // map so getActiveSessions no longer lists it, then notify the frontend.
-                remove_session_and_persist(app_state, &session_id).await;
+                app_state.acp.sessions.lock().await.remove(&session_id);
                 fail_task_if_still_running(app_state, task_id);
                 if let Err(e) = app_handle.emit("sessions-changed", ()) {
                     log::warn!("[acp] emit sessions-changed failed: {e}");
@@ -1680,7 +1605,7 @@ pub(crate) async fn handle_shared_server_message(
                 {
                     let session_id = session_id_str.clone();
                     // The removed entry is the only place the task id is still available.
-                    let removed = remove_session_and_persist(app_state, &session_id).await;
+                    let removed = app_state.acp.sessions.lock().await.remove(&session_id);
                     fail_task_if_still_running(app_state, removed.and_then(|s| s.task_id));
                     if let Err(e) =
                         app_handle.emit(&format!("acp://session-ended/{}", session_id), ())
@@ -1951,12 +1876,8 @@ pub(crate) fn spawn_shared_reader_task(
                 if acp_session_id.is_some() && is_ssh {
                     restorable.push(RestorableSession {
                         session_id: session_id.clone(),
-                        agent_id: s.agent_id_meta.clone(),
                         acp_session_id,
-                        cwd: s.cwd.clone(),
-                        session_name: s.session_name.clone(),
                         project_id: s.project_id,
-                        task_id: s.task_id,
                     });
                 } else {
                     unrestorable.push(session_id.clone());

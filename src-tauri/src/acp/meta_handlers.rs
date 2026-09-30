@@ -201,108 +201,58 @@ pub async fn list_acp_sessions(
     )
     .await?;
     let supports_session_delete = resp.supports_session_delete;
-    let (mut entries, next_cursor): (Vec<SessionListEntryDto>, Option<String>) = (
-        resp.sessions
-            .into_iter()
-            .map(|e| SessionListEntryDto {
-                session_id: e.session_id,
-                title: e.title,
-                updated_at: e.updated_at,
-                folder: None,
-            })
-            .collect(),
-        resp.next_cursor,
-    );
+    let mut entries: Vec<SessionListEntryDto> = resp
+        .sessions
+        .into_iter()
+        .map(|e| SessionListEntryDto {
+            session_id: e.session_id,
+            title: e.title,
+            updated_at: e.updated_at,
+            folder: None,
+        })
+        .collect();
 
     // Folded in here rather than exposed as its own command: this handler already knows the
-    // project, so the folder rides along on the reply the history modal is already waiting for.
-    let project_location = {
+    // project, so the name and folder ride along on the reply the history modal is waiting for.
+    // Closed rows are asked for too, because history lists conversations the project let go of.
+    // Best effort: without them the list still shows, under the agent's own titles.
+    let project_path: Option<String> = {
         let conn = app_state
             .db
             .lock()
             .map_err(|e| format!("DB lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+            "SELECT path FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
-            )),
-        ).ok()
+            |row| row.get(0),
+        )
+        .ok()
     };
-    if let Some((project_path, project_connection)) = project_location {
-        let folders = crate::project::session_state::read_project_state(
+    if let Some(project_path) = project_path {
+        match crate::acp::connection_server::query_project_sessions_via_server(
+            connection,
+            project_path.clone(),
+            true,
             &app_state,
-            &project_path,
-            project_connection,
         )
         .await
-        .session_folders;
-        for entry in &mut entries {
-            entry.folder = folders
-                .iter()
-                .find(|f| f.agent_id == agent_id && f.acp_session_id == entry.session_id)
-                .map(|f| f.relative_path.clone());
-        }
-    }
-
-    let aliases = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        let mut stmt = conn.prepare(
-            "SELECT acp_session_id, display_name FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2"
-        ).map_err(|e| format!("DB prepare failed: {}", e))?;
-        let map: std::collections::HashMap<String, String> = stmt
-            .query_map(rusqlite::params![project_id, agent_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|e| format!("DB query failed: {}", e))?
-            .filter_map(|r| r.ok())
-            .collect();
-        map
-    };
-
-    for entry in &mut entries {
-        if let Some(alias) = aliases.get(&entry.session_id) {
-            entry.title = Some(alias.clone());
-        }
-    }
-
-    if next_cursor.is_none() && !aliases.is_empty() {
-        let known_ids: Vec<String> = entries.iter().map(|e| e.session_id.clone()).collect();
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("DB lock failed: {}", e))?;
-        if !known_ids.is_empty() {
-            let placeholders = (0..known_ids.len())
-                .map(|i| format!("?{}", i + 3))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sql = format!(
-                "DELETE FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2 AND acp_session_id NOT IN ({})",
-                placeholders
-            );
-            let mut params: Vec<rusqlite::types::Value> = vec![
-                rusqlite::types::Value::Integer(project_id as i64),
-                rusqlite::types::Value::Text(agent_id.clone()),
-            ];
-            for id in &known_ids {
-                params.push(rusqlite::types::Value::Text(id.clone()));
+        {
+            Ok(response) => {
+                for entry in &mut entries {
+                    let Some(row) = response.sessions.iter().find(|row| {
+                        row.agent_id == agent_id && row.acp_session_id == entry.session_id
+                    }) else {
+                        continue;
+                    };
+                    entry.folder = relative_to_project(&project_path, &row.cwd);
+                    if let Some(name) = &row.meta.session_name {
+                        entry.title = Some(name.clone());
+                    }
+                }
             }
-            conn.execute(&sql, rusqlite::params_from_iter(params))
-                .map_err(|e| format!("Prune aliases failed: {}", e))?;
-        } else {
-            conn.execute(
-                "DELETE FROM session_aliases WHERE project_id = ?1 AND agent_id = ?2",
-                rusqlite::params![project_id, agent_id],
-            )
-            .map_err(|e| format!("Prune aliases failed: {}", e))?;
+            Err(e) => log::warn!("cannot read the session rows of {project_path}: {e}"),
         }
     }
-
     Ok(SessionListResult {
         sessions: entries,
         supports_session_delete,
@@ -339,21 +289,25 @@ pub async fn rename_acp_session(
     acp_session_id: String,
     display_name: String,
 ) -> Result<(), String> {
-    {
+    let (project_path, connection_key) = {
         let conn = app_state
             .db
             .lock()
             .map_err(|e| format!("DB lock failed: {}", e))?;
-        crate::acp::manager::upsert_session_alias(
-            &conn,
-            project_id,
-            &agent_id,
-            &acp_session_id,
-            &display_name,
-        )
-        .map_err(|e| format!("Upsert alias failed: {}", e))?;
-    }
+        conn.query_row(
+            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+            [project_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?),
+            )),
+        ).map_err(|e| format!("Project not found: {}", e))?
+    };
 
+    // The daemon only needs a folder for a conversation it has no row for yet. A live session
+    // knows its own; one known only to the agent is filed under the project root, which is where
+    // Session History opens a session with no folder anyway.
+    let mut cwd = project_path.clone();
     {
         let mut sessions = app_state.acp.sessions.lock().await;
         for proc in sessions.values_mut() {
@@ -364,13 +318,40 @@ pub async fn rename_acp_session(
                 .unwrap_or(false);
             if matches {
                 proc.session_name = Some(display_name.clone());
+                cwd = proc.cwd.clone();
                 break;
             }
         }
     }
 
+    crate::acp::connection_server::query_rename_session_via_server(
+        connection_key,
+        maestro_protocol::RenameSessionRequest {
+            project_path,
+            agent_id,
+            acp_session_id,
+            cwd,
+            name: display_name,
+        },
+        &app_state,
+    )
+    .await?;
+
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
+}
+
+/// Express a session's working directory relative to the project root, which is the form the
+/// history modal resolves against the project it has open. `Some("")` is the project root itself;
+/// `None` means the directory lies outside the project.
+fn relative_to_project(project_path: &str, cwd: &str) -> Option<String> {
+    let normalize = |path: &str| path.replace('\\', "/").trim_end_matches('/').to_string();
+    let root = normalize(project_path);
+    let dir = normalize(cwd);
+    if dir == root {
+        return Some(String::new());
+    }
+    dir.strip_prefix(&format!("{root}/")).map(str::to_string)
 }
 
 /// Re-emit model/mode state from session fields during replay drain.
@@ -507,7 +488,7 @@ pub async fn drain_acp_replay(
 
 #[cfg(test)]
 mod tests {
-    use super::branch_for_cwd;
+    use super::{branch_for_cwd, relative_to_project};
     use crate::git::ParsedWorktree;
 
     fn worktree(path: &str, branch: &str) -> ParsedWorktree {
@@ -531,5 +512,34 @@ mod tests {
         );
         assert_eq!(branch_for_cwd(&worktrees, "/repo").as_deref(), Some("main"));
         assert_eq!(branch_for_cwd(&worktrees, "/elsewhere"), None);
+    }
+
+    /// A directory outside the project has no relative form, and a sibling sharing the project's
+    /// name as a prefix is outside it.
+    #[test]
+    fn session_folders_are_relative_to_the_project() {
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/proj"),
+            Some(String::new())
+        );
+        assert_eq!(
+            relative_to_project("/home/me/proj/", "/home/me/proj/.maestro/worktrees/task-7"),
+            Some(".maestro/worktrees/task-7".to_string())
+        );
+        assert_eq!(
+            relative_to_project(
+                "C:\\dev\\proj",
+                "C:\\dev\\proj\\.maestro\\worktrees\\task-7"
+            ),
+            Some(".maestro/worktrees/task-7".to_string())
+        );
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/elsewhere"),
+            None
+        );
+        assert_eq!(
+            relative_to_project("/home/me/proj", "/home/me/proj-two"),
+            None
+        );
     }
 }

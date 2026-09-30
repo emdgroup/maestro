@@ -122,7 +122,6 @@ pub async fn spawn_acp_session(
         session_id: session_id.clone(),
         session_name: session_name.clone(),
         project_id: Some(project_id),
-        task_id: None,
         app_state: Arc::clone(&*app_state),
     };
     // Ensure the shared Local maestro-server is running before the fast path so that all
@@ -313,11 +312,8 @@ pub async fn cancel_acp_session(
 /// one other place that tears a session down by hand, `interrupt_task`, has already drifted from
 /// this, and a third copy would drift too.
 ///
-/// Returns the session's project and task ids, which the caller needs for its own bookkeeping.
-pub(crate) async fn tear_down_session(
-    app_state: &Arc<AppState>,
-    session_id: &str,
-) -> (Option<i32>, Option<i32>) {
+/// Returns the session's task id, which `end_acp_session` needs to fail the task.
+pub(crate) async fn tear_down_session(app_state: &Arc<AppState>, session_id: &str) -> Option<i32> {
     use crate::acp::transport::{CancelRequest, MaestroRpcMessage, ServerRequest};
 
     let cancel_msg = MaestroRpcMessage::Request(ServerRequest::Cancel(CancelRequest {
@@ -333,14 +329,13 @@ pub(crate) async fn tear_down_session(
     // session, and closing the last session used to drop it, which killed the transport and
     // surfaced as a lost connection. It is torn down when the project or the app closes.
     let mut sessions = app_state.acp.sessions.lock().await;
-    let project_id = sessions.get(session_id).and_then(|p| p.project_id);
     let task_id = sessions.get(session_id).and_then(|p| p.task_id);
     if let Some(mut session) = sessions.remove(session_id) {
         if let Some(cancel_tx) = session.reader_cancel_tx.take() {
             let _ = cancel_tx.send(());
         }
     }
-    (project_id, task_id)
+    task_id
 }
 
 /// Which live sessions this task no longer needs.
@@ -369,7 +364,7 @@ fn superseded_session_ids(
 ///
 /// Nothing the pipeline needs is lost. The reviewer reads the diff, not the coder's transcript, and
 /// the plan interception already establishes that a role's session has no part in the next role's
-/// work. `session_aliases` keeps the history entry either way.
+/// work. The daemon's row keeps the history entry either way.
 pub(crate) async fn close_superseded_sessions_for_task(
     app_state: &Arc<AppState>,
     task_id: i32,
@@ -414,7 +409,7 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str)
     // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
     // stale-connection case it exists for. What the guard was protecting is handled below instead:
     // the task is failed here rather than being refused.
-    let (project_id_for_save, task_id) = tear_down_session(app_state, session_id).await;
+    let task_id = tear_down_session(app_state, session_id).await;
 
     // Recorded here, not left to `reader_task`. Only a *direct* session has a reader loop that a
     // cancel breaks; a session on a shared connection server — the ordinary local path — has no
@@ -440,12 +435,6 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str)
     }
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    if let Some(pid) = project_id_for_save {
-        let state = Arc::clone(app_state);
-        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-            state, pid,
-        ));
-    }
 }
 
 /// Interrupt the current ACP turn without killing the session.
@@ -486,14 +475,11 @@ pub async fn restore_acp_session(
     connection: crate::acp::ConnectionKey,
     session_name: Option<String>,
     project_id: Option<i32>,
-    worktree_branch: Option<String>,
-    task_id: Option<i32>,
+    task: TaskMetadata,
 ) -> Result<String, String> {
     // A webview reload, and leaving a project for the picker, both leave the backend's session map
-    // untouched — while `.maestro/state.json` still lists those live sessions, so `prime_project_server`
-    // restores them a second time. The user then sees the same session twice: the original, whose
-    // transcript the reloaded UI never received, and a freshly loaded copy carrying the history.
-    // Hand back the live one rather than loading it again.
+    // untouched, and Session History lists a conversation whether or not it is open. Loading one
+    // this side already holds would show the same session twice, so hand back the live one.
     let live = app_state
         .acp
         .sessions
@@ -520,23 +506,13 @@ pub async fn restore_acp_session(
         session_id: session_id.clone(),
         session_name: session_name.clone(),
         project_id,
-        task_id,
         app_state: Arc::clone(app_state),
     };
 
-    if crate::acp::try_session_load_via_connection_server(&acp_session_id, &req).await? {
-        if let Some(ref branch) = worktree_branch {
-            if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&session_id) {
-                proc.branch_name = Some(branch.clone());
-            }
-        }
+    if crate::acp::try_session_load_via_connection_server(&acp_session_id, task.clone(), &req)
+        .await?
+    {
         app_state.app_handle.emit("sessions-changed", ()).ok();
-        if let Some(pid) = project_id {
-            let state = Arc::clone(app_state);
-            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                state, pid,
-            ));
-        }
         return Ok(session_id);
     }
 
@@ -551,6 +527,7 @@ pub async fn restore_acp_session(
                     server_path: &maestro_path,
                 },
                 &acp_session_id,
+                task.clone(),
                 &req,
             )
             .await?;
@@ -596,6 +573,7 @@ pub async fn restore_acp_session(
                         server_path: &maestro_path,
                     },
                     &acp_session_id,
+                    task.clone(),
                     &req,
                 )
                 .await?;
@@ -610,6 +588,7 @@ pub async fn restore_acp_session(
             crate::acp::load_acp_session_cold(
                 crate::acp::TransportTarget::Local,
                 &acp_session_id,
+                task.clone(),
                 &req,
             )
             .await?;
@@ -660,26 +639,14 @@ pub async fn restore_acp_session(
                     server_path: &maestro_path,
                 },
                 &acp_session_id,
+                task.clone(),
                 &req,
             )
             .await?;
         }
     }
 
-    if let Some(ref branch) = worktree_branch {
-        if let Some(proc) = app_state.acp.sessions.lock().await.get_mut(&session_id) {
-            proc.branch_name = Some(branch.clone());
-        }
-    }
-
     app_state.app_handle.emit("sessions-changed", ()).ok();
-    // Session in map with acp_session_id set; persist so it survives restart.
-    if let Some(pid) = project_id {
-        let state = Arc::clone(app_state);
-        tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-            state, pid,
-        ));
-    }
     Ok(session_id)
 }
 
@@ -707,14 +674,19 @@ pub async fn load_acp_session(
         connection,
         session_name,
         project_id,
-        worktree_branch,
-        None,
+        TaskMetadata {
+            branch_name: worktree_branch,
+            ..TaskMetadata::default()
+        },
     )
     .await
 }
 
-/// Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
+/// Recover a lost task session from the daemon's row for it.
 /// Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
+///
+/// Goes through the same attach a project open does, because the daemon may still be running the
+/// session: loading it a second time would leave an agent nothing routes to.
 #[tauri::command]
 #[specta::specta]
 pub async fn recover_task_session(
@@ -722,45 +694,30 @@ pub async fn recover_task_session(
     task_id: i32,
     project_id: i32,
 ) -> Result<String, String> {
-    let (project_path, connection_key) = {
+    let connection_key = {
         let conn = app_state
             .db
             .lock()
             .map_err(|e| format!("DB lock failed: {}", e))?;
         conn.query_row(
-            "SELECT path, connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
+            "SELECT connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
             [project_id],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                crate::acp::ConnectionKey::from_all_ids(row.get(1)?, row.get(2)?, row.get(3)?)
-            )),
+            |row| Ok(crate::acp::ConnectionKey::from_all_ids(row.get(0)?, row.get(1)?, row.get(2)?)),
         ).map_err(|e| format!("Project not found: {}", e))?
     };
 
-    let snapshots = crate::project::session_state::read_session_snapshots(
-        &app_state,
-        &project_path,
-        connection_key,
-    )
-    .await;
+    crate::acp::session_ops::attach_project_sessions(connection_key, project_id, None, &app_state)
+        .await;
 
-    let snapshot = snapshots
-        .into_iter()
-        .find(|s| s.task_id == Some(task_id))
-        .ok_or_else(|| format!("No recoverable session for task {}", task_id))?;
-
-    restore_acp_session(
-        &app_state,
-        snapshot.agent_id,
-        snapshot.acp_session_id,
-        snapshot.cwd,
-        snapshot.connection_key,
-        snapshot.session_name,
-        Some(project_id),
-        snapshot.branch_name,
-        Some(task_id),
-    )
-    .await
+    app_state
+        .acp
+        .sessions
+        .lock()
+        .await
+        .iter()
+        .find(|(_, process)| process.task_id == Some(task_id))
+        .map(|(session_id, _)| session_id.clone())
+        .ok_or_else(|| format!("No recoverable session for task {}", task_id))
 }
 
 /// Close an ACP session stored on the agent server (not a live Tauri session).

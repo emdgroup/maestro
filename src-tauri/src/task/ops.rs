@@ -87,20 +87,10 @@ pub async fn interrupt_task(
     };
 
     // Shared with `end_acp_session` rather than copied: this is the copy its doc comment warns
-    // about, and the divergence was real — the session id was built by hand and `state.json` was
-    // never rewritten, leaving the interrupted session listed as live against a worktree that the
-    // `discard_task_workspace` below had already deleted.
+    // about. Its `Cancel` is also what closes the daemon's row, so the interrupted session is not
+    // brought back against a worktree the `discard_task_workspace` below has already deleted.
     if let Some(session_id) = acp_session_id {
-        let (project_id, _) =
-            crate::acp::session_handlers::tear_down_session(&app_state, &session_id).await;
-        // Before the fallible work below, not after: the entry is stale the moment the session is
-        // torn down, so an early return must not be what decides whether it gets rewritten.
-        if let Some(project_id) = project_id {
-            tokio::spawn(crate::project::handlers::save_current_sessions_for_project(
-                Arc::clone(&app_state),
-                project_id,
-            ));
-        }
+        crate::acp::session_handlers::tear_down_session(&app_state, &session_id).await;
     }
 
     // Tear down PTY session if found — replicates close_pty_session logic.

@@ -463,6 +463,14 @@ pub async fn start(
 
         result.session.agent_id = automation.agent_id.clone();
         result.session.cwd = cwd;
+        result.session.project = Some(crate::sessions::ProjectBinding {
+            project_path: automation.project_path.clone(),
+            meta: maestro_protocol::SessionMeta {
+                session_name: Some(automation.name.clone()),
+                ..Default::default()
+            },
+            can_reload: result.supports_session_load,
+        });
         // No `host_meta`: the host did not start this and has nothing to attach. The `runs` row is
         // what a client uses to find the session, which is why it is written above.
         if spawn_result_tx

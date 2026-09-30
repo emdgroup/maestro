@@ -276,34 +276,6 @@ pub struct WorktreeSnapshot {
     pub created_at: String,
 }
 
-/// Minimal session metadata persisted on app close for reopen-on-startup.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct SessionSnapshot {
-    pub agent_id: String,
-    pub acp_session_id: String,
-    pub cwd: String,
-    pub session_name: Option<String>,
-    pub connection_key: crate::acp::ConnectionKey,
-    pub branch_name: Option<String>,
-    #[serde(default)]
-    pub task_id: Option<i32>,
-}
-
-/// Which directory a session ran in, so reopening it from Session History lands there again.
-///
-/// Keyed by agent as well as session, because session ids are only unique within one agent.
-/// The path is relative to the project root: this file travels with the project, so a user on
-/// another machine — or on a remote host — resolves it against a different absolute root.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct SessionFolder {
-    pub agent_id: String,
-    pub acp_session_id: String,
-    /// Relative to the project root; empty means the project root itself.
-    pub relative_path: String,
-}
-
 /// Project-level state stored in .maestro/state.json
 /// Contains snapshots of all tasks and worktrees for this project
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
@@ -315,9 +287,6 @@ pub struct ProjectState {
     pub updated_at: String,
     /// Schema version for future migrations; defaults to 1 for backward compatibility
     pub schema_version: u32,
-    pub restorable_sessions: Vec<SessionSnapshot>,
-    /// Never cleared on restore, unlike `restorable_sessions`: this is history, not a hand-off.
-    pub session_folders: Vec<SessionFolder>,
 }
 
 impl ProjectState {
@@ -328,8 +297,6 @@ impl ProjectState {
             worktrees: vec![],
             updated_at: Utc::now().to_rfc3339(),
             schema_version: 1,
-            restorable_sessions: vec![],
-            session_folders: vec![],
         }
     }
 }
@@ -457,5 +424,17 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    /// Files written before sessions moved to the daemon still carry their session lists.
+    #[test]
+    fn a_state_file_with_the_old_session_fields_still_parses() {
+        let state: ProjectState = serde_json::from_str(
+            r#"{"tasks":[],"worktrees":[],"updated_at":"","schema_version":1,
+                "restorable_sessions":[{"agent_id":"a","acp_session_id":"s","cwd":"/p"}],
+                "session_folders":[{"agent_id":"a","acp_session_id":"s","relative_path":""}]}"#,
+        )
+        .expect("an old state file parses");
+        assert_eq!(state.schema_version, 1);
     }
 }

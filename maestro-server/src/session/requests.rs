@@ -19,7 +19,9 @@ use crate::session::{
     load_session_on_connection, session_close_on_connection, session_delete_on_connection,
     session_list_on_connection,
 };
-use crate::sessions::{ActiveSession, AgentConnectionHandle, SessionMap, SharedAgentConnections};
+use crate::sessions::{
+    ActiveSession, AgentConnectionHandle, ProjectBinding, SessionMap, SharedAgentConnections,
+};
 
 use crate::ClientOut as Stdout;
 
@@ -147,6 +149,11 @@ pub(crate) async fn load(
                 session.cwd = req.cwd;
                 session.additional_directories = req.additional_directories;
                 session.host_meta = req.host_meta;
+                session.project = req.project_path.map(|project_path| ProjectBinding {
+                    project_path,
+                    meta: req.meta,
+                    can_reload: conn_handle.capabilities.supports_session_load,
+                });
                 let session_id = req.session_id.clone();
                 // Handed to the dispatch loop only once the host has been told the session
                 // exists, so a registered session is always one the host knows about.
@@ -190,6 +197,7 @@ pub(crate) async fn end(
     session_id: String,
     sessions: &mut SessionMap,
     agent_connections: &SharedAgentConnections,
+    project_store: Option<&crate::project_store::Store>,
     stdout: &Stdout,
 ) -> bool {
     let conn_handle = agent_connections
@@ -234,6 +242,15 @@ pub(crate) async fn end(
                         cleanup.router.unregister(&cleanup.acp_session_id).await;
                     }
                 }
+            }
+            if let Some(store) = project_store {
+                let conn = store.lock().await;
+                crate::project_store::report(match kind {
+                    // The host closes a session to load it again for its transcript, so the
+                    // project still has it open.
+                    EndKind::Close => crate::project_store::detach(&conn, &agent_id, &session_id),
+                    EndKind::Delete => crate::project_store::delete(&conn, &agent_id, &session_id),
+                });
             }
             MaestroRpcMessage::Response(match kind {
                 EndKind::Close => ServerResponse::SessionCloseOk,

@@ -23,7 +23,7 @@ pub use crate::integration::{
 pub use crate::project::models as project;
 pub use crate::project::{
     now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, ProjectStatus,
-    SessionSnapshot, TaskSnapshot, WorktreeSnapshot,
+    TaskSnapshot, WorktreeSnapshot,
 };
 pub use crate::settings::models as settings;
 pub use crate::task::models as task;

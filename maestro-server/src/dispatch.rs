@@ -50,6 +50,28 @@ fn tool_config_error(tool: String, error: String) -> maestro_protocol::ToolCheck
     }
 }
 
+/// The requests a session sent a client and is still waiting on.
+async fn pending_requests(session: &ActiveSession) -> Vec<maestro_protocol::PendingSessionRequest> {
+    let mut pending: Vec<maestro_protocol::PendingSessionRequest> = session
+        .pending_permissions
+        .lock()
+        .await
+        .values()
+        .map(|(request, _tx)| maestro_protocol::PendingSessionRequest::Permission(request.clone()))
+        .collect();
+    pending.extend(
+        session
+            .pending_elicitations
+            .lock()
+            .await
+            .values()
+            .map(|(request, _tx)| {
+                maestro_protocol::PendingSessionRequest::Elicitation(request.clone())
+            }),
+    );
+    pending
+}
+
 /// Handle one message from stdin.
 ///
 /// Returns `true`  → the main loop should continue.
@@ -67,6 +89,7 @@ pub(crate) async fn dispatch_message(
     auth_terminals: &AuthTerminals,
     pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
     automation_store: Option<&crate::automation_runner::Store>,
+    project_store: Option<&crate::project_store::Store>,
 ) -> bool {
     // If stdout is broken we return false so the main loop breaks.
     macro_rules! send_or_return {
@@ -103,20 +126,7 @@ pub(crate) async fn dispatch_message(
         MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(_req)) => {
             let mut live = Vec::with_capacity(sessions.len());
             for (session_id, session) in sessions.iter() {
-                let mut pending_requests: Vec<maestro_protocol::PendingSessionRequest> = session
-                    .pending_permissions
-                    .lock()
-                    .await
-                    .values()
-                    .map(|(request, _tx)| {
-                        maestro_protocol::PendingSessionRequest::Permission(request.clone())
-                    })
-                    .collect();
-                pending_requests.extend(session.pending_elicitations.lock().await.values().map(
-                    |(request, _tx)| {
-                        maestro_protocol::PendingSessionRequest::Elicitation(request.clone())
-                    },
-                ));
+                let pending_requests = pending_requests(session).await;
                 live.push(maestro_protocol::ListLiveSession {
                     session_id: session_id.clone(),
                     agent_id: session.agent_id.clone(),
@@ -140,16 +150,83 @@ pub(crate) async fn dispatch_message(
             );
         }
 
-        MaestroRpcMessage::Request(
-            ServerRequest::ListProjectSessions(_) | ServerRequest::RenameSession(_),
-        ) => {
+        MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(req)) => {
+            let Some(store) = project_store else {
+                send_or_return!(
+                    send_response(
+                        stdout,
+                        &error_response(crate::project_store::UNAVAILABLE.to_string())
+                    )
+                    .await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let listed = {
+                let conn = store.lock().await;
+                crate::project_store::list(&conn, &project_path, req.include_closed)
+            };
+            let rows = match listed {
+                Ok(rows) => rows,
+                Err(e) => {
+                    send_or_return!(send_response(stdout, &error_response(e)).await);
+                    return true;
+                }
+            };
+            let mut listed = Vec::with_capacity(rows.len());
+            for (mut row, session_id) in rows {
+                // The map decides, not the row: a routing id the row still holds for a session
+                // that is gone must not be offered for adoption.
+                if let Some((session_id, session)) =
+                    session_id.and_then(|id| sessions.get(&id).map(|session| (id, session)))
+                {
+                    row.live = Some(maestro_protocol::LiveSessionState {
+                        session_id,
+                        turn_active: session
+                            .turn_active
+                            .load(std::sync::atomic::Ordering::SeqCst),
+                        pending_requests: pending_requests(session).await,
+                    });
+                }
+                listed.push(row);
+            }
             send_or_return!(
                 send_response(
                     stdout,
-                    &error_response("project sessions are not implemented yet".to_string()),
+                    &MaestroRpcMessage::Response(ServerResponse::ListProjectSessionsOk(
+                        maestro_protocol::ListProjectSessionsResponse { sessions: listed },
+                    )),
                 )
                 .await
             );
+        }
+
+        MaestroRpcMessage::Request(ServerRequest::RenameSession(req)) => {
+            let Some(store) = project_store else {
+                send_or_return!(
+                    send_response(
+                        stdout,
+                        &error_response(crate::project_store::UNAVAILABLE.to_string())
+                    )
+                    .await
+                );
+                return true;
+            };
+            let project_path = crate::automations::canonical_project_path(&req.project_path);
+            let renamed = {
+                let conn = store.lock().await;
+                crate::project_store::rename(&conn, &req, &project_path, chrono::Utc::now())
+            };
+            match renamed {
+                Ok(()) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::RenameSessionOk),
+                    )
+                    .await
+                ),
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
         }
 
         MaestroRpcMessage::Request(ServerRequest::Shutdown) => {
@@ -636,6 +713,13 @@ pub(crate) async fn dispatch_message(
                 result.session.cwd = req.cwd;
                 result.session.additional_directories = req.additional_directories;
                 result.session.host_meta = req.host_meta;
+                result.session.project =
+                    req.project_path
+                        .map(|project_path| crate::sessions::ProjectBinding {
+                            project_path,
+                            meta: req.meta,
+                            can_reload: result.supports_session_load,
+                        });
                 if send_response(
                     &stdout_task,
                     &MaestroRpcMessage::Response(ServerResponse::SpawnOk(response)),
@@ -708,7 +792,24 @@ pub(crate) async fn dispatch_message(
 
         MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
             crate::mcp_gateway::cancel_session(pending_host_tools, &req.session_id);
-            if let Some(session) = sessions.remove(&req.session_id) {
+            let session = sessions.remove(&req.session_id);
+            // Whether or not the session is still in the map: this is how the project lets go of
+            // a session, and one whose entry is already gone is no less let go of.
+            if let Some(store) = project_store {
+                let key = session.as_ref().and_then(|session| {
+                    session
+                        .cleanup
+                        .as_ref()
+                        .map(|cleanup| (session.agent_id.as_str(), cleanup.acp_session_id.as_str()))
+                });
+                crate::project_store::report(crate::project_store::close(
+                    &*store.lock().await,
+                    &req.session_id,
+                    key,
+                    chrono::Utc::now(),
+                ));
+            }
+            if let Some(session) = session {
                 let session_agent_id = session.agent_id.clone();
                 // A run's workspace is settled once its session is closed, whoever closed it. The
                 // sweep only closes sessions nobody is attached to, so with a window open this is
@@ -904,6 +1005,7 @@ pub(crate) async fn dispatch_message(
                 req.session_id,
                 sessions,
                 agent_connections,
+                project_store,
                 stdout,
             )
             .await;
@@ -916,6 +1018,7 @@ pub(crate) async fn dispatch_message(
                 req.session_id,
                 sessions,
                 agent_connections,
+                project_store,
                 stdout,
             )
             .await;

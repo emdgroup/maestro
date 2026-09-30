@@ -281,25 +281,44 @@ pub async fn stop_resident_servers(
     Ok(stopped)
 }
 
-/// Ask the connection's server which sessions it is running right now.
-///
-/// Not `SessionList`, which asks an *agent* what conversations it has stored on disk. This asks
-/// the server what is alive in its own process, which is what a freshly started app needs to know
-/// about a server that outlived the previous run.
-pub async fn query_live_sessions_via_server(
+/// Every conversation the daemon holds for this project, with the live state of the ones it is
+/// running. The path goes as the app knows it; the daemon canonicalizes it.
+pub async fn query_project_sessions_via_server(
     connection_key: crate::acp::ConnectionKey,
+    project_path: String,
+    include_closed: bool,
     app_state: &Arc<crate::core::AppState>,
-) -> Result<maestro_protocol::ListLiveSessionsResponse, String> {
+) -> Result<maestro_protocol::ListProjectSessionsResponse, String> {
     query_via_server(
         connection_key,
         app_state,
         &format!("No connection server for connection {:?}", connection_key),
-        MaestroRpcMessage::Request(ServerRequest::ListLiveSessions(
-            maestro_protocol::ListLiveSessionsRequest {},
+        MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(
+            maestro_protocol::ListProjectSessionsRequest {
+                project_path,
+                include_closed,
+            },
         )),
-        reply!(ServerResponse::ListLiveSessionsOk(response) => response),
+        reply!(ServerResponse::ListProjectSessionsOk(response) => response),
         15,
-        "ListLiveSessions via connection server timed out after 15s",
+        "ListProjectSessions via connection server timed out after 15s",
+    )
+    .await
+}
+
+pub async fn query_rename_session_via_server(
+    connection_key: crate::acp::ConnectionKey,
+    request: maestro_protocol::RenameSessionRequest,
+    app_state: &Arc<crate::core::AppState>,
+) -> Result<(), String> {
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(ServerRequest::RenameSession(request)),
+        reply!(ServerResponse::RenameSessionOk => ()),
+        15,
+        "RenameSession via connection server timed out after 15s",
     )
     .await
 }

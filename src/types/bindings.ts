@@ -2176,8 +2176,11 @@ async closeAcpSession(agentId: string, sessionId: string, cwd: string, connectio
 }
 },
 /**
- * Recover a lost task session by reloading it from the stored snapshot in `.maestro/state.json`.
+ * Recover a lost task session from the daemon's row for it.
  * Used when the task is InProgress in the DB but has no live session (process died, connection dropped).
+ * 
+ * Goes through the same attach a project open does, because the daemon may still be running the
+ * session: loading it a second time would leave an agent nothing routes to.
  */
 async recoverTaskSession(taskId: number, projectId: number) : Promise<Result<string, string>> {
     try {
@@ -4085,7 +4088,7 @@ export type RunTrigger = "schedule" | "manual" | "webhook"
  */
 export type SessionListEntryDto = { session_id: string; title: string | null; updated_at: string | null; 
 /**
- * Directory the session ran in, relative to the project root, from `.maestro/state.json`.
+ * Directory the session ran in, relative to the project root, from the daemon's row for it.
  * `Some("")` is the project root itself; `None` means no folder was ever recorded.
  */
 folder: string | null }

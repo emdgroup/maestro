@@ -538,3 +538,86 @@ fn test_sessionless_reply_echoes_request_id() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// The project store answers with no agent involved: an empty project lists nothing, and a
+/// conversation renamed before it ever had a row comes back closed, under the new name.
+#[test]
+fn test_project_sessions_list_and_rename() {
+    // Its own daemon directory, so the store this writes is not the one of whoever runs the suite.
+    let daemon_dir = tempfile::tempdir().expect("tempdir");
+    let project = tempfile::tempdir().expect("tempdir");
+    let project_path = project.path().to_string_lossy().into_owned();
+    let mut child = Command::new(server_binary())
+        .env(maestro_protocol::DAEMON_DIR_ENV, daemon_dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn maestro-server");
+    let stdin = child.stdin.as_mut().unwrap();
+    let stdout = child.stdout.as_mut().unwrap();
+    do_handshake(stdin, stdout);
+
+    let list = |include_closed| {
+        ServerRequest::ListProjectSessions(maestro_protocol::ListProjectSessionsRequest {
+            project_path: project_path.clone(),
+            include_closed,
+        })
+    };
+
+    write_msg_with_id(stdin, Some(11), list(true));
+    let (id, response) = read_msg_with_id(stdout);
+    assert_eq!(id, Some(11));
+    match response {
+        ServerResponse::ListProjectSessionsOk(listed) => assert!(listed.sessions.is_empty()),
+        other => panic!("expected ListProjectSessionsOk, got: {other:?}"),
+    }
+
+    write_msg_with_id(
+        stdin,
+        Some(12),
+        ServerRequest::RenameSession(maestro_protocol::RenameSessionRequest {
+            // A trailing separator, so the row is only found if both requests are canonicalized.
+            project_path: format!("{project_path}/"),
+            agent_id: "claude".to_string(),
+            acp_session_id: "before-the-table".to_string(),
+            cwd: project_path.clone(),
+            name: "Renamed".to_string(),
+        }),
+    );
+    let (id, response) = read_msg_with_id(stdout);
+    assert_eq!(id, Some(12));
+    assert!(
+        matches!(response, ServerResponse::RenameSessionOk),
+        "expected RenameSessionOk, got: {response:?}"
+    );
+
+    write_msg_with_id(stdin, Some(13), list(false));
+    let (_, response) = read_msg_with_id(stdout);
+    match response {
+        ServerResponse::ListProjectSessionsOk(listed) => assert!(
+            listed.sessions.is_empty(),
+            "a closed row is not listed unless asked for"
+        ),
+        other => panic!("expected ListProjectSessionsOk, got: {other:?}"),
+    }
+
+    write_msg_with_id(stdin, Some(14), list(true));
+    let (id, response) = read_msg_with_id(stdout);
+    assert_eq!(id, Some(14));
+    match response {
+        ServerResponse::ListProjectSessionsOk(listed) => {
+            assert_eq!(listed.sessions.len(), 1);
+            let session = &listed.sessions[0];
+            assert_eq!(session.acp_session_id, "before-the-table");
+            assert_eq!(session.meta.session_name.as_deref(), Some("Renamed"));
+            assert_eq!(session.cwd, project_path);
+            assert!(session.closed);
+            assert!(session.live.is_none());
+        }
+        other => panic!("expected ListProjectSessionsOk, got: {other:?}"),
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

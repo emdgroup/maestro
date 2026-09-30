@@ -22,9 +22,9 @@ pub use models::{
     worktree_path_for_task, ActiveSessionInfo, AppSettings, CredentialSource, GitConnection,
     IntegrationStatus, IssueTrackingConfig, Project, ProjectConfig, ProjectConfigRequest,
     ProjectConfigResponse, ProjectState, ProjectStatus, RemoteIssue, ReviewComment, ReviewDecision,
-    ReviewFeedback, SessionListEntryDto, SessionSnapshot, Task, TaskAttachment, TaskConfigRequest,
-    TaskInstruction, TaskPriority, TaskRelationship, TaskSnapshot, TaskStatus, Worktree,
-    WorktreeSnapshot, WorktreeWithStatus, WORKTREE_DIR, WORKTREE_PATH_PREFIX,
+    ReviewFeedback, SessionListEntryDto, Task, TaskAttachment, TaskConfigRequest, TaskInstruction,
+    TaskPriority, TaskRelationship, TaskSnapshot, TaskStatus, Worktree, WorktreeSnapshot,
+    WorktreeWithStatus, WORKTREE_DIR, WORKTREE_PATH_PREFIX,
 };
 
 use tauri_specta::{collect_commands, Builder};

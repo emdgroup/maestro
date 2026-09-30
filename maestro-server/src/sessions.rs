@@ -196,6 +196,14 @@ pub struct SessionCleanup {
     pub router: Arc<SessionRouter>,
 }
 
+/// The project a session belongs to, and what the project knows it by.
+pub struct ProjectBinding {
+    pub project_path: String,
+    pub meta: maestro_protocol::SessionMeta,
+    /// Whether the agent answers `session/load`, as it said when this session was made.
+    pub can_reload: bool,
+}
+
 pub struct ActiveSession {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub pending_permissions: PendingPermissions,
@@ -213,6 +221,9 @@ pub struct ActiveSession {
     /// Opaque blob the host attached at spawn, handed back by `ListLiveSessions`.
     /// Never read here. See `maestro_protocol::ListLiveSession::host_meta`.
     pub host_meta: Option<serde_json::Value>,
+    /// What the project store records about this session. `None` for one started with no project,
+    /// which the store then never hears of.
+    pub project: Option<ProjectBinding>,
     /// Whether a `session/prompt` is outstanding right now. Shared with the command loop.
     ///
     /// Reported by `ListLiveSessions` because it decides what an attaching client may do: a
