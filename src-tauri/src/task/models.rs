@@ -658,6 +658,184 @@ impl TaskStatus {
     }
 }
 
+/// `From` both ways between an app enum and its `maestro_protocol` twin, which carries no specta
+/// `Type` so the binary deployed to every remote host does not compile specta in.
+macro_rules! wire_enum {
+    ($app:ty, $wire:ty, [$($variant:ident),* $(,)?]) => {
+        impl From<$wire> for $app {
+            fn from(value: $wire) -> Self {
+                type Wire = $wire;
+                match value {
+                    $(Wire::$variant => Self::$variant,)*
+                }
+            }
+        }
+        impl From<$app> for $wire {
+            fn from(value: $app) -> Self {
+                type App = $app;
+                match value {
+                    $(App::$variant => Self::$variant,)*
+                }
+            }
+        }
+    };
+}
+
+use maestro_protocol as wire;
+
+wire_enum!(
+    TaskStatus,
+    wire::TaskStatus,
+    [Planning, Queue, InProgress, Review, Done, Cancelled]
+);
+wire_enum!(
+    TaskPriority,
+    wire::TaskPriority,
+    [Urgent, High, Medium, Low, None]
+);
+wire_enum!(
+    WorkspaceMode,
+    wire::WorkspaceMode,
+    [NewWorktree, RepositoryDirectory, ReuseWorkspace]
+);
+wire_enum!(BranchMode, wire::BranchMode, [Create, Checkout]);
+wire_enum!(
+    TaskPhase,
+    wire::TaskPhase,
+    [
+        Spawning,
+        Refining,
+        Drafting,
+        PlanReview,
+        Implementing,
+        Rework,
+        SelfReview,
+        Approval,
+        AwaitingMerge
+    ]
+);
+wire_enum!(
+    PhaseStatus,
+    wire::PhaseStatus,
+    [Running, Blocked, Waiting, Failed]
+);
+wire_enum!(TaskBall, wire::TaskBall, [Agent, User, External, None]);
+wire_enum!(
+    TaskCompletion,
+    wire::TaskCompletion,
+    [Merged, MergedViaPR, LocalOnly, NoChanges]
+);
+wire_enum!(
+    PullRequestCi,
+    wire::PullRequestCi,
+    [Passing, Failing, Pending]
+);
+wire_enum!(
+    crate::project::profiles::AgentRole,
+    wire::AgentRole,
+    [Refiner, Planner, Coder, Reviewer]
+);
+
+impl Task {
+    /// The daemon's row, filed under the project the request named: it keys tasks by path, and
+    /// this app by `projects.id`.
+    pub fn from_wire(task: wire::Task, project_id: i32) -> Self {
+        Task {
+            id: task.id,
+            project_id,
+            title: task.title,
+            description: task.description,
+            status: task.status.into(),
+            priority: task.priority.into(),
+            base_branch: task.base_branch,
+            archived_at: task.archived_at,
+            external_id: task.external_id,
+            is_imported: task.is_imported,
+            import_source: task.import_source,
+            skills: task.skills,
+            model_override: task.model_override,
+            mcp_allowlist: task.mcp_allowlist,
+            skills_override: task.skills_override,
+            labels: task.labels,
+            external_url: task.external_url,
+            external_updated_at: task.external_updated_at,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            auto_approve: task.auto_approve,
+            workspace_mode: task.workspace_mode.into(),
+            workspace_worktree_id: task.workspace_worktree_id,
+            workspace_branch_mode: task.workspace_branch_mode.into(),
+            workspace_branch: task.workspace_branch,
+            agent_id: task.agent_id,
+            permission_mode_override: task.permission_mode_override,
+            execution_start_sha: task.execution_start_sha,
+            phase: task.phase.map(Into::into),
+            phase_status: task.phase_status.map(Into::into),
+            ball: task.ball.into(),
+            completion: task.completion.map(Into::into),
+            execute_requested_at: task.execute_requested_at,
+            pull_request_url: task.pull_request_url,
+            pull_request_number: task.pull_request_number,
+            review_rounds: task.review_rounds,
+            fix_rounds: task.fix_rounds,
+            pull_request_ci: task.pull_request_ci.map(Into::into),
+            profile_overrides: task.profile_overrides,
+        }
+    }
+}
+
+impl From<wire::TaskRelationship> for TaskRelationship {
+    fn from(row: wire::TaskRelationship) -> Self {
+        TaskRelationship {
+            id: row.id,
+            from_task_id: row.from_task_id,
+            to_task_id: row.to_task_id,
+            relationship_type: row.relationship_type,
+            created_at: row.created_at,
+        }
+    }
+}
+
+impl From<wire::TaskInstruction> for TaskInstruction {
+    fn from(row: wire::TaskInstruction) -> Self {
+        TaskInstruction {
+            id: row.id,
+            task_id: row.task_id,
+            content: row.content,
+            source: row.source,
+            created_at: row.created_at,
+        }
+    }
+}
+
+impl From<wire::TaskComment> for TaskComment {
+    fn from(row: wire::TaskComment) -> Self {
+        TaskComment {
+            id: row.id,
+            task_id: row.task_id,
+            kind: row.kind,
+            author: row.author,
+            body: row.body,
+            external_ref: row.external_ref,
+            phase: row.phase,
+            created_at: row.created_at,
+        }
+    }
+}
+
+impl From<wire::TaskAttachment> for TaskAttachment {
+    fn from(row: wire::TaskAttachment) -> Self {
+        TaskAttachment {
+            id: row.id,
+            task_id: row.task_id,
+            filename: row.filename,
+            file_path: row.file_path,
+            file_size: row.file_size,
+            created_at: row.created_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[specta(export)]
 pub struct ProjectConfigResponse {

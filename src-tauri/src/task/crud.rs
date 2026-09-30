@@ -1,120 +1,69 @@
+//! Task commands. Every one is a round trip to the daemon of the project's connection, which holds
+//! the rows and broadcasts `TasksChanged` after every write; that push, not these commands, is what
+//! refetches the board.
+
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
-use crate::models::{BranchMode, Task, TaskStatus, WorkspaceMode, TASK_SELECT};
-use crate::task::transition::{self, TaskTransition};
-use chrono::Utc;
+use crate::models::{BranchMode, Task, WorkspaceMode};
+use maestro_protocol::{ProjectRef, TaskRef, TaskUpdate};
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
+
+/// A name the wire enum knows, or an error naming what it was meant to be.
+///
+/// Refused rather than defaulted: the app's `FromStr` impls fall back to a variant, so a typo
+/// arriving over IPC would quietly move or re-prioritise a task instead of being rejected.
+pub(crate) fn parse_wire<T: serde::de::DeserializeOwned>(
+    what: &str,
+    name: &str,
+) -> Result<T, String> {
+    serde_json::from_value(serde_json::Value::String(name.to_string()))
+        .map_err(|_| format!("Unknown task {what} '{name}'"))
+}
+
+/// Write `update` to one task and return it as stored.
+pub(crate) async fn update_task_on_server(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+    update: TaskUpdate,
+) -> Result<Task, String> {
+    let task = query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::UpdateTask(maestro_protocol::UpdateTaskRequest {
+                project_path,
+                task_id,
+                update,
+            })
+        },
+        reply!(ServerResponse::UpdateTaskOk(task) => task),
+    )
+    .await?;
+    Ok(Task::from_wire(task, project_id))
+}
 
 /// Get list of all tasks for a project
 #[tauri::command]
 #[specta::specta]
-pub fn get_tasks(app_state: State<Arc<AppState>>, project_id: i32) -> Result<Vec<Task>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    list_tasks_impl(&conn, project_id)
-}
-
-/// Every task of a project, newest first. Shared with the agent-facing `list_tasks` MCP tool.
-pub(crate) fn list_tasks_impl(
-    conn: &rusqlite::Connection,
+pub async fn get_tasks(
+    app_state: State<'_, Arc<AppState>>,
     project_id: i32,
 ) -> Result<Vec<Task>, String> {
-    let query = format!(
-        "{} WHERE project_id = ? ORDER BY created_at DESC",
-        TASK_SELECT
-    );
-    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-
-    let tasks = stmt
-        .query_map([project_id], Task::from_row)
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(tasks)
-}
-
-// Arguments map one-to-one onto the inserted task columns.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn create_task_impl(
-    conn: &rusqlite::Connection,
-    project_id: i32,
-    title: String,
-    description: Option<String>,
-    skills: Vec<String>,
-    labels: Vec<String>,
-    base_branch: String,
-    agent_id: Option<String>,
-    priority: Option<String>,
-    auto_approve: bool,
-    workspace_mode: WorkspaceMode,
-    workspace_worktree_id: Option<i32>,
-    workspace_branch_mode: BranchMode,
-    workspace_branch: Option<String>,
-    model_override: Option<String>,
-) -> Result<Task, String> {
-    let trimmed_title = title.trim();
-    if trimmed_title.is_empty() || trimmed_title.len() < 3 || trimmed_title.len() > 255 {
-        return Err("Title must be 3-255 characters".to_string());
-    }
-
-    let description = description.and_then(|d| {
-        let trimmed = d.trim().to_string();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-
-    let now = Utc::now().to_rfc3339();
-    let skills_json =
-        serde_json::to_string(&skills).map_err(|e| format!("JSON serialization failed: {}", e))?;
-    let labels_json =
-        serde_json::to_string(&labels).map_err(|e| format!("JSON serialization failed: {}", e))?;
-
-    conn.execute(
-        "INSERT INTO tasks (project_id, title, description, skills, status, base_branch, \
-         agent_id, priority, auto_approve, workspace_mode, workspace_worktree_id, \
-         workspace_branch_mode, workspace_branch, model_override, labels, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        rusqlite::params![
-            project_id,
-            &title,
-            &description,
-            &skills_json,
-            "Planning",
-            &base_branch,
-            &agent_id,
-            priority.as_deref().unwrap_or("Medium"),
-            auto_approve,
-            workspace_mode.as_str(),
-            // A pin only means something for the mode that has one.
-            match workspace_mode {
-                WorkspaceMode::ReuseWorkspace => workspace_worktree_id,
-                _ => None,
-            },
-            workspace_branch_mode.as_str(),
-            // Likewise a branch name: only the mode that creates a worktree picks a branch, and
-            // only `Create` names one.
-            match (workspace_mode, workspace_branch_mode) {
-                (WorkspaceMode::NewWorktree, BranchMode::Create) => workspace_branch.as_deref(),
-                _ => None,
-            },
-            &model_override,
-            &labels_json,
-            &now,
-            &now
-        ],
+    let list = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| ServerRequest::ListTasks(ProjectRef { project_path }),
+        reply!(ServerResponse::ListTasksOk(list) => list),
     )
-    .map_err(|e| e.to_string())?;
-
-    let task_id = conn.last_insert_rowid();
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    conn.query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())
+    .await?;
+    Ok(list
+        .tasks
+        .into_iter()
+        .map(|task| Task::from_wire(task, project_id))
+        .collect())
 }
 
 #[derive(serde::Deserialize, specta::Type)]
@@ -139,37 +88,45 @@ pub struct CreateTaskRequest {
 /// Create a new task with validation
 #[tauri::command]
 #[specta::specta]
-pub fn create_task(
-    app_state: State<Arc<AppState>>,
+pub async fn create_task(
+    app_state: State<'_, Arc<AppState>>,
     request: CreateTaskRequest,
 ) -> Result<Task, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let task = create_task_impl(
-        &conn,
-        request.project_id,
-        request.title,
-        request.description,
-        request.skills,
-        request.labels,
-        request.base_branch,
-        request.agent_id,
-        request.priority,
-        request.auto_approve,
-        request.workspace_mode,
-        request.workspace_worktree_id,
-        request.workspace_branch_mode,
-        request.workspace_branch,
-        request.model_override,
-    )?;
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    let priority = request
+        .priority
+        .as_deref()
+        .map(|name| parse_wire("priority", name))
+        .transpose()?;
+    let project_id = request.project_id;
+    let task = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::CreateTask(maestro_protocol::CreateTaskRequest {
+                project_path,
+                title: request.title,
+                description: request.description,
+                skills: request.skills,
+                labels: request.labels,
+                base_branch: request.base_branch,
+                agent_id: request.agent_id,
+                priority,
+                auto_approve: request.auto_approve,
+                workspace_mode: request.workspace_mode.into(),
+                workspace_worktree_id: request.workspace_worktree_id,
+                workspace_branch_mode: request.workspace_branch_mode.into(),
+                workspace_branch: request.workspace_branch,
+                model_override: request.model_override,
+            })
+        },
+        reply!(ServerResponse::CreateTaskOk(task) => task),
+    )
+    .await?;
+    Ok(Task::from_wire(task, project_id))
 }
 
 /// Fields that can be updated on a task. All fields are optional — only non-None fields
-/// are included in the SQL UPDATE. Grouped into a struct to work around the specta
+/// are written. Grouped into a struct to work around the specta
 /// 10-argument limit on #[tauri::command] functions.
 #[derive(Default, serde::Deserialize, specta::Type)]
 pub struct UpdateTaskRequest {
@@ -192,199 +149,109 @@ pub struct UpdateTaskRequest {
     pub workspace_branch: Option<String>,
 }
 
-/// Update a task's status or other fields
+/// Update a task's status or other fields. A status is a manual move, which un-archives the task
+/// unless it is sent to `Cancelled`.
 #[tauri::command]
 #[specta::specta]
-pub fn update_task(
-    app_state: State<Arc<AppState>>,
+pub async fn update_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     updates: UpdateTaskRequest,
 ) -> Result<Task, String> {
-    let task = {
-        let mut conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        update_task_impl(&mut conn, task_id, updates)?
+    let update = TaskUpdate {
+        status: updates
+            .status
+            .as_deref()
+            .map(|name| parse_wire("status", name))
+            .transpose()?,
+        priority: updates
+            .priority
+            .as_deref()
+            .map(|name| parse_wire("priority", name))
+            .transpose()?,
+        description: updates.description.map(Some),
+        title: updates.title,
+        base_branch: updates.base_branch,
+        skills: updates.skills,
+        agent_id: updates.agent_id,
+        labels: updates.labels,
+        auto_approve: updates.auto_approve,
+        workspace_mode: updates.workspace_mode.map(Into::into),
+        workspace_worktree_id: updates.workspace_worktree_id,
+        workspace_branch_mode: updates.workspace_branch_mode.map(Into::into),
+        workspace_branch: updates.workspace_branch,
+        ..TaskUpdate::default()
     };
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    update_task_on_server(&app_state, project_id, task_id, update).await
 }
 
-pub(crate) fn update_task_impl(
-    conn: &mut rusqlite::Connection,
-    task_id: i32,
-    updates: UpdateTaskRequest,
-) -> Result<Task, String> {
-    let now = Utc::now().to_rfc3339();
-
-    // Build SET clause dynamically from non-None fields, wrapped in a transaction
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("Transaction failed: {}", e))?;
-
-    let mut set_parts: Vec<String> = Vec::new();
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(ref v) = updates.description {
-        set_parts.push("description = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = updates.title {
-        set_parts.push("title = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = updates.priority {
-        set_parts.push("priority = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = updates.base_branch {
-        set_parts.push("base_branch = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref new_skills) = updates.skills {
-        let skills_json = serde_json::to_string(new_skills)
-            .map_err(|e| format!("JSON serialization failed: {}", e))?;
-        set_parts.push("skills = ?".to_string());
-        params.push(Box::new(skills_json));
-    }
-    if let Some(ref v) = updates.agent_id {
-        set_parts.push("agent_id = ?".to_string());
-        params.push(Box::new(v.clone()));
-    }
-    if let Some(ref new_labels) = updates.labels {
-        let labels_json = serde_json::to_string(new_labels)
-            .map_err(|e| format!("JSON serialization failed: {}", e))?;
-        set_parts.push("labels = ?".to_string());
-        params.push(Box::new(labels_json));
-    }
-    if let Some(v) = updates.auto_approve {
-        set_parts.push("auto_approve = ?".to_string());
-        params.push(Box::new(v));
-    }
-    if let Some(mode) = updates.workspace_mode {
-        set_parts.push("workspace_mode = ?".to_string());
-        params.push(Box::new(mode.as_str()));
-        set_parts.push("workspace_worktree_id = ?".to_string());
-        params.push(Box::new(match mode {
-            WorkspaceMode::ReuseWorkspace => updates.workspace_worktree_id,
-            _ => None,
-        }));
-    }
-    if let Some(branch_mode) = updates.workspace_branch_mode {
-        set_parts.push("workspace_branch_mode = ?".to_string());
-        params.push(Box::new(branch_mode.as_str()));
-        set_parts.push("workspace_branch = ?".to_string());
-        params.push(Box::new(match branch_mode {
-            BranchMode::Create => updates.workspace_branch.clone(),
-            BranchMode::Checkout => None,
-        }));
-    }
-
-    // Always update updated_at
-    set_parts.push("updated_at = ?".to_string());
-    params.push(Box::new(now));
-
-    // Add task_id as final param for WHERE clause
-    params.push(Box::new(task_id));
-
-    let sql = format!("UPDATE tasks SET {} WHERE id = ?", set_parts.join(", "));
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    tx.execute(&sql, param_refs.as_slice())
-        .map_err(|e| e.to_string())?;
-
-    // Status is deliberately not part of the dynamic SET above: moving a task also resets its
-    // pipeline activity, and that correlation belongs in one place.
-    if let Some(ref status) = updates.status {
-        // `TaskStatus::from_str` falls back to Planning rather than failing, so a typo arriving
-        // over IPC would quietly move the task instead of being rejected. Round-trip to catch it.
-        let parsed = status.parse::<TaskStatus>().unwrap_or(TaskStatus::Planning);
-        if parsed.as_str() != status {
-            return Err(format!("Unknown task status '{}'", status));
-        }
-        // Sending a task back to a board column un-archives it. Otherwise a task restored from the
-        // archive would sit in a column and in the archive list at once, and — for Done, the only
-        // column filtered on `archived_at` — would be invisible in the place it was just moved to.
-        if !matches!(parsed, TaskStatus::Cancelled) {
-            tx.execute(
-                "UPDATE tasks SET archived_at = NULL WHERE id = ?",
-                [task_id],
-            )
-            .map_err(|e| e.to_string())?;
-        }
-
-        transition::apply(&tx, task_id, TaskTransition::ManualMove(parsed))?;
-    }
-
-    // Read back inside the same transaction before committing — avoids re-locking the mutex
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = tx
-        .query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())?;
-
-    tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
-
-    Ok(task)
-}
-
-/// Cancel a task: sets status=Cancelled and archived_at in one statement
+/// Cancel a task: archives it and applies `Cancelled`.
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<Task, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-
-    // Archive first so the transition's read-back returns the finished row.
-    conn.execute(
-        "UPDATE tasks SET archived_at = ? WHERE id = ?",
-        rusqlite::params![&now, task_id],
+pub async fn cancel_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Task, String> {
+    let task = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::CancelTask(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::CancelTaskOk(task) => task),
     )
-    .map_err(|e| e.to_string())?;
-
-    let task = transition::apply(&conn, task_id, TaskTransition::Cancelled)?;
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    .await?;
+    Ok(Task::from_wire(task, project_id))
 }
 
 /// Archive a task by setting its archived_at timestamp
 #[tauri::command]
 #[specta::specta]
-pub fn archive_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<Task, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-
-    conn.execute(
-        "UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&now, &now, task_id],
+pub async fn archive_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Task, String> {
+    let task = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ArchiveTask(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ArchiveTaskOk(task) => task),
     )
-    .map_err(|e| e.to_string())?;
-
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn
-        .query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| e.to_string())?;
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    .await?;
+    Ok(Task::from_wire(task, project_id))
 }
 
 /// Delete a task by id
 #[tauri::command]
 #[specta::specta]
-pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute("DELETE FROM tasks WHERE id = ?", [task_id])
-        .map_err(|e| e.to_string())?;
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(())
+pub async fn delete_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::DeleteTask(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::DeleteTaskOk => ()),
+    )
+    .await
 }
 
 /// Choose which agent profile this task uses for each role.
@@ -403,357 +270,87 @@ pub fn delete_task(app_state: State<Arc<AppState>>, task_id: i32) -> Result<(), 
 /// want anyway, and validating here would only move the same outcome earlier.
 #[tauri::command]
 #[specta::specta]
-pub fn set_task_profile_overrides(
-    app_state: State<Arc<AppState>>,
+pub async fn set_task_profile_overrides(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     overrides: std::collections::HashMap<String, Option<String>>,
 ) -> Result<(), String> {
-    {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        store_profile_overrides(&conn, task_id, &overrides)?;
-    }
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(())
-}
-
-/// The write, split from the command so it can be tested without an `AppState`.
-fn store_profile_overrides(
-    conn: &rusqlite::Connection,
-    task_id: i32,
-    overrides: &std::collections::HashMap<String, Option<String>>,
-) -> Result<(), String> {
-    let stored = if overrides.is_empty() {
-        None
-    } else {
-        Some(
-            serde_json::to_string(overrides)
-                .map_err(|e| format!("Failed to serialize profile overrides: {}", e))?,
-        )
+    let update = TaskUpdate {
+        profile_overrides: Some(profile_overrides_column(&overrides)?),
+        ..TaskUpdate::default()
     };
-
-    conn.execute(
-        "UPDATE tasks SET profile_overrides = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&stored, &Utc::now().to_rfc3339(), task_id],
-    )
-    .map_err(|e| format!("Failed to update task profile overrides: {}", e))?;
+    update_task_on_server(&app_state, project_id, task_id, update).await?;
     Ok(())
 }
 
-/// Update task-level configuration overrides
+/// The stored form of a task's overrides, split out so it can be tested without a server.
+fn profile_overrides_column(
+    overrides: &std::collections::HashMap<String, Option<String>>,
+) -> Result<Option<String>, String> {
+    if overrides.is_empty() {
+        return Ok(None);
+    }
+    serde_json::to_string(overrides)
+        .map(Some)
+        .map_err(|e| format!("Failed to serialize profile overrides: {}", e))
+}
+
+/// Update task-level configuration overrides. Every field is written, so an absent one clears its
+/// column.
 #[tauri::command]
 #[specta::specta]
-pub fn update_task_settings(
-    app_state: State<Arc<AppState>>,
+pub async fn update_task_settings(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     settings: crate::models::TaskConfigRequest,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-
-    let mcp_allowlist_value = settings
-        .mcp_allowlist
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()
-        .map_err(|e| format!("Failed to serialize mcp_allowlist: {}", e))?;
-
-    let skills_override_value = settings
-        .skills_override
-        .as_ref()
-        .map(serde_json::to_string)
-        .transpose()
-        .map_err(|e| format!("Failed to serialize skills_override: {}", e))?;
-
-    conn.execute(
-        "UPDATE tasks SET model_override = ?, mcp_allowlist = ?, skills_override = ?, permission_mode_override = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![&settings.model_override, &mcp_allowlist_value, &skills_override_value, &settings.permission_mode_override, &now, task_id],
-    )
-    .map_err(|e| format!("Failed to update task settings: {}", e))?;
-
+    let update = TaskUpdate {
+        model_override: Some(settings.model_override),
+        mcp_allowlist: Some(settings.mcp_allowlist),
+        skills_override: Some(settings.skills_override),
+        permission_mode_override: Some(settings.permission_mode_override),
+        ..TaskUpdate::default()
+    };
+    update_task_on_server(&app_state, project_id, task_id, update).await?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::schema::initialize_schema;
-    use rusqlite::Connection;
+    use std::collections::HashMap;
 
-    fn test_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize_schema(&conn).unwrap();
-        conn
-    }
-
-    fn insert_project(conn: &Connection) -> i32 {
-        conn.execute(
-            "INSERT INTO projects (name, path, created_at, updated_at) \
-             VALUES ('Test Project', '/tmp/test-project', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
-            [],
-        )
-        .unwrap();
-        conn.last_insert_rowid() as i32
-    }
-
-    /// Read back through `TASK_SELECT`/`from_row` rather than by querying the column directly,
-    /// because the positional index is the part that can be wrong: `from_row` reads by number, and
-    /// a column appended to the SELECT without a matching index reads its neighbour instead.
+    /// A named profile and a skipped stage together, because the two are stored in one map and the
+    /// null is the half that only exists on the way through JSON; and clearing the last override
+    /// has to be NULL rather than "{}", or two values would mean the same thing.
     #[test]
-    fn profile_overrides_round_trip_through_the_task_row() {
-        use std::collections::HashMap;
-
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let task = create_task_impl(
-            &conn,
-            project_id,
-            "Valid Task Name".to_string(),
-            None,
-            vec![],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(
-            task.profile_overrides.is_none(),
-            "a new task defers to the project"
-        );
-
-        // A named profile and a skipped stage together, because the two are stored in one map and
-        // the null is the half that only exists on the way through JSON.
+    fn profile_overrides_are_stored_as_json_or_null() {
         let overrides = HashMap::from([
             ("Reviewer".to_string(), Some("strict-reviewer".to_string())),
             ("Planner".to_string(), None),
         ]);
-        store_profile_overrides(&conn, task.id, &overrides).unwrap();
-
-        let query = format!("{} WHERE id = ?", crate::models::TASK_SELECT);
-        let stored: crate::models::Task = conn
-            .query_row(&query, [task.id], crate::models::Task::from_row)
-            .unwrap();
+        let stored = profile_overrides_column(&overrides).unwrap();
         let parsed: HashMap<String, Option<String>> =
-            serde_json::from_str(stored.profile_overrides.as_deref().unwrap()).unwrap();
+            serde_json::from_str(stored.as_deref().unwrap()).unwrap();
         assert_eq!(parsed, overrides);
         assert!(crate::project::profiles::role_is_skipped(
-            stored.profile_overrides.as_deref(),
+            stored.as_deref(),
             crate::project::profiles::AgentRole::Planner
         ));
 
-        // Clearing the last override returns the task to "the project decides", which has to be
-        // NULL rather than "{}" or two values would mean the same thing.
-        store_profile_overrides(&conn, task.id, &HashMap::new()).unwrap();
-        let cleared: crate::models::Task = conn
-            .query_row(&query, [task.id], crate::models::Task::from_row)
-            .unwrap();
-        assert_eq!(cleared.profile_overrides, None);
+        assert_eq!(profile_overrides_column(&HashMap::new()).unwrap(), None);
     }
 
     #[test]
-    fn create_task_rejects_short_name() {
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let err = create_task_impl(
-            &conn,
-            project_id,
-            "ab".to_string(),
-            Some("valid description here".to_string()),
-            vec![],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap_err();
-        assert!(err.contains("Title must be 3-255 characters"), "got: {err}");
-    }
-
-    #[test]
-    fn create_task_succeeds_without_description() {
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let task = create_task_impl(
-            &conn,
-            project_id,
-            "Valid Task Name".to_string(),
-            None,
-            vec![],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(task.title, "Valid Task Name");
-        assert!(task.description.is_none());
-    }
-
-    #[test]
-    fn create_task_succeeds_with_valid_inputs() {
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let task = create_task_impl(
-            &conn,
-            project_id,
-            "Valid Task Name".to_string(),
-            Some("This is a valid description.".to_string()),
-            vec!["rust".to_string()],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(task.title, "Valid Task Name");
-        assert_eq!(task.project_id, project_id);
-        assert!(matches!(task.status, crate::models::TaskStatus::Planning));
-    }
-
-    #[test]
-    fn delete_task_removes_task() {
-        let conn = test_db();
-        let project_id = insert_project(&conn);
-        let task = create_task_impl(
-            &conn,
-            project_id,
-            "Task to Delete".to_string(),
-            Some("This task will be deleted.".to_string()),
-            vec![],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap();
-
-        conn.execute("DELETE FROM tasks WHERE id = ?", [task.id])
-            .unwrap();
-
-        let count: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM tasks WHERE id = ?",
-                [task.id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 0);
-    }
-
-    fn archived_task(conn: &Connection) -> i32 {
-        let project_id = insert_project(conn);
-        let task = create_task_impl(
-            conn,
-            project_id,
-            "Archived task".to_string(),
-            None,
-            vec![],
-            vec![],
-            "main".to_string(),
-            None,
-            None,
-            false,
-            WorkspaceMode::NewWorktree,
-            None,
-            BranchMode::Create,
-            None,
-            None,
-        )
-        .unwrap();
-        conn.execute(
-            "UPDATE tasks SET status = 'Done', archived_at = '2024-01-02T00:00:00Z' WHERE id = ?",
-            [task.id],
-        )
-        .unwrap();
-        task.id
-    }
-
-    fn archived_at(conn: &Connection, task_id: i32) -> Option<String> {
-        conn.query_row(
-            "SELECT archived_at FROM tasks WHERE id = ?",
-            [task_id],
-            |row| row.get(0),
-        )
-        .unwrap()
-    }
-
-    fn move_to(status: &str) -> UpdateTaskRequest {
-        UpdateTaskRequest {
-            status: Some(status.to_string()),
-            ..Default::default()
-        }
-    }
-
-    /// Done is the only column filtered on `archived_at`, so an archived task moved back onto the
-    /// board would otherwise be listed in the archive and invisible in the column it was sent to.
-    #[test]
-    fn moving_a_task_back_onto_the_board_un_archives_it() {
-        let mut conn = test_db();
-        let task_id = archived_task(&conn);
-
-        update_task_impl(&mut conn, task_id, move_to("Planning")).unwrap();
-
-        assert_eq!(archived_at(&conn, task_id), None);
-    }
-
-    /// Only a status change may un-archive: editing an archived task's title must leave it filed.
-    #[test]
-    fn editing_an_archived_task_leaves_it_archived() {
-        let mut conn = test_db();
-        let task_id = archived_task(&conn);
-
-        let updates = UpdateTaskRequest {
-            title: Some("Renamed while archived".to_string()),
-            ..Default::default()
-        };
-        update_task_impl(&mut conn, task_id, updates).unwrap();
-
-        assert!(archived_at(&conn, task_id).is_some());
-    }
-
-    #[test]
-    fn update_task_rejects_an_unknown_status() {
-        let mut conn = test_db();
-        let task_id = archived_task(&conn);
-
-        let err = update_task_impl(&mut conn, task_id, move_to("Backlog")).unwrap_err();
-
+    fn a_status_or_priority_is_accepted_only_by_its_exact_name() {
+        assert_eq!(
+            parse_wire::<maestro_protocol::TaskStatus>("status", "InProgress").unwrap(),
+            maestro_protocol::TaskStatus::InProgress
+        );
+        let err = parse_wire::<maestro_protocol::TaskStatus>("status", "Backlog").unwrap_err();
         assert!(err.contains("Unknown task status 'Backlog'"), "got: {err}");
+        assert!(parse_wire::<maestro_protocol::TaskPriority>("priority", "urgent").is_err());
     }
 }

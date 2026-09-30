@@ -1,6 +1,8 @@
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
+use crate::acp::connection_server::reply;
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::acp::ConnectionKey;
 use crate::core::AppState;
 
@@ -143,9 +145,6 @@ pub async fn request_task_execution(
     project_id: i32,
     task_id: i32,
 ) -> Result<ExecuteDecision, String> {
-    use crate::models::TaskStatus;
-    use crate::task::transition::{apply_if_status, TaskTransition};
-
     let (connection, capacity) = capacity_for_project(&app_state, project_id).await?;
 
     let used = occupied_slots(&app_state, connection).await;
@@ -164,43 +163,29 @@ pub async fn request_task_execution(
         });
     }
 
-    let stamped = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+    // Moves a Planning task to Queue and stamps `execute_requested_at` there, keeping an earlier
+    // stamp so pressing Execute again reports the same deferral rather than losing its place.
+    // `false` means the task moved between the button and here, so the caller is told to go
+    // ahead and let the claim refuse it, which produces the right message.
+    let deferred = crate::acp::connection_server::query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::RequestTaskExecution(maestro_protocol::RequestTaskExecutionRequest {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::RequestTaskExecutionOk(response) => response.deferred),
+    )
+    .await?;
 
-        apply_if_status(
-            &conn,
-            task_id,
-            Some(&[TaskStatus::Planning]),
-            TaskTransition::ManualMove(TaskStatus::Queue),
-        )?;
-
-        // The status and phase conditions keep the marker's invariant true from the one place that
-        // writes it outside `task::transition`: it exists only on a task the scheduler can still
-        // pick up. A row count of zero means the task moved between the button and here, so the
-        // caller is told to go ahead and let the claim refuse it — which produces the right message.
-        //
-        // `COALESCE` so that pressing Execute again on an already-deferred task reports the same
-        // deferral rather than losing its place in the queue of promises — or, worse, reporting
-        // nothing was written and being told to start over the limit.
-        conn.execute(
-            "UPDATE tasks SET execute_requested_at = COALESCE(execute_requested_at, ?) \
-             WHERE id = ? AND status = 'Queue' AND phase IS NULL",
-            rusqlite::params![chrono::Utc::now().to_rfc3339(), task_id],
-        )
-        .map_err(|e| format!("Failed to record the deferred execution: {}", e))?
-    };
-
-    if stamped == 0 {
+    if !deferred {
         return Ok(ExecuteDecision {
             verdict: ExecuteVerdict::Start,
             reason: capacity.reason,
         });
     }
-
-    app_state.app_handle.emit("tasks-changed", ()).ok();
 
     Ok(ExecuteDecision {
         verdict: ExecuteVerdict::Deferred,

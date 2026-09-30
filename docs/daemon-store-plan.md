@@ -234,7 +234,10 @@ Tasks:
 - [x] T4 `maestro-server` dispatch: the arms, the composite steps, the broadcasts
 - [x] T5 `maestro-server` MCP task tools answered by the gateway, from the session map's project
       binding, off the main loop
-- [ ] T6 `src-tauri` task commands as round trips, with `project_id`; pushes become events
+- [x] T6 `src-tauri` task commands as round trips, with `project_id`; pushes become events.
+      `tasks-changed` and `worktrees-changed` carry `{ project_id }` (null for a project this app
+      does not have); `task-comments-changed` still carries the bare task id. The task tools left
+      `host_tools`
 - [ ] T7 `src-tauri` pipeline, worktree and review sites: `reader_task`, `merge`, `review`, `queue`,
       `spawn`, the session and prompt handlers, `worktree_lifecycle`, `worktree_query`
 - [ ] T8 Attachments copied on attach

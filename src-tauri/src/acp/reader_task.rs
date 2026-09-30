@@ -1317,6 +1317,56 @@ pub(crate) async fn take_unclaimed(
         .unwrap_or_default()
 }
 
+/// Which of this app's projects on `connection_key` a daemon's canonical path names.
+///
+/// Compared with separators and a trailing slash tidied, the part of the daemon's
+/// `canonical_project_path` this side can reproduce. A project opened through a symlink does not
+/// match, and its pushes carry no id.
+fn project_id_for_path(
+    app_state: &crate::core::AppState,
+    connection_key: crate::acp::ConnectionKey,
+    canonical_path: &str,
+) -> Option<i32> {
+    fn tidy(path: &str) -> String {
+        let path = path
+            .strip_prefix(r"\\?\")
+            .unwrap_or(path)
+            .replace('\\', "/");
+        path.trim_end_matches('/').to_string()
+    }
+    let wanted = tidy(canonical_path);
+    let conn = app_state.db.lock().ok()?;
+    let mut statement = conn
+        .prepare(
+            "SELECT id, path, connection_id, wsl_connection_id, docker_connection_id FROM projects",
+        )
+        .ok()?;
+    let rows: Vec<(i32, String, crate::acp::ConnectionKey)> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                crate::acp::ConnectionKey::from_all_ids(row.get(2)?, row.get(3)?, row.get(4)?),
+            ))
+        })
+        .ok()?
+        .filter_map(Result::ok)
+        .collect();
+    // A local Windows path resolves to the case the directory has on disk, not the case it was
+    // opened with.
+    let ignore_case = cfg!(windows) && connection_key == crate::acp::ConnectionKey::Local;
+    rows.into_iter()
+        .find(|(_, path, key)| {
+            *key == connection_key
+                && if ignore_case {
+                    tidy(path).eq_ignore_ascii_case(&wanted)
+                } else {
+                    tidy(path) == wanted
+                }
+        })
+        .map(|(id, _, _)| id)
+}
+
 /// Route a shared-reader message that carries no request id: to its session's handler when it
 /// names one, and otherwise as the unprompted event it is. Replies that do carry an id never
 /// reach here, see `deliver_reply`.
@@ -1560,6 +1610,29 @@ pub(crate) async fn handle_shared_server_message(
         // to a particular view, because the run belongs to a project whether or not it is open.
         MaestroRpcMessage::Response(ServerResponse::AutomationRunChanged(run)) => {
             crate::core::emit_or_log(app_handle, "automation-run-changed", &run);
+        }
+        // Pushed to every window on the daemon after any write, this one's included, for every
+        // project there: `project_id` is which of this app's projects it is, `null` for one it
+        // does not have.
+        MaestroRpcMessage::Response(ServerResponse::TasksChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "tasks-changed",
+                &serde_json::json!({ "project_id": project_id }),
+            );
+        }
+        MaestroRpcMessage::Response(ServerResponse::WorktreesChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "worktrees-changed",
+                &serde_json::json!({ "project_id": project_id }),
+            );
+        }
+        // The task id alone, as the thread's listener compares it.
+        MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(task)) => {
+            crate::core::emit_or_log(app_handle, "task-comments-changed", &task.task_id);
         }
         MaestroRpcMessage::Response(response @ ServerResponse::TakeoverResultOk(_)) => {
             pending.deliver_takeover(response);

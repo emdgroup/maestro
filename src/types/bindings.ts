@@ -189,11 +189,12 @@ async createTask(request: CreateTaskRequest) : Promise<Result<Task, string>> {
 }
 },
 /**
- * Update a task's status or other fields
+ * Update a task's status or other fields. A status is a manual move, which un-archives the task
+ * unless it is sent to `Cancelled`.
  */
-async updateTask(taskId: number, updates: UpdateTaskRequest) : Promise<Result<Task, string>> {
+async updateTask(projectId: number, taskId: number, updates: UpdateTaskRequest) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task", { taskId, updates }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task", { projectId, taskId, updates }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -202,9 +203,9 @@ async updateTask(taskId: number, updates: UpdateTaskRequest) : Promise<Result<Ta
 /**
  * Archive a task by setting its archived_at timestamp
  */
-async archiveTask(taskId: number) : Promise<Result<Task, string>> {
+async archiveTask(projectId: number, taskId: number) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("archive_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("archive_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -213,31 +214,31 @@ async archiveTask(taskId: number) : Promise<Result<Task, string>> {
 /**
  * Delete a task by id
  */
-async deleteTask(taskId: number) : Promise<Result<null, string>> {
+async deleteTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Get relationships for a task
+ * Get every relationship the task is on either end of
  */
-async listTaskRelationships(taskId: number) : Promise<Result<TaskRelationship[], string>> {
+async listTaskRelationships(projectId: number, taskId: number) : Promise<Result<TaskRelationship[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_relationships", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Add a relationship between two tasks
+ * Add a relationship between two tasks of one project
  */
-async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
+async addTaskRelationship(projectId: number, fromTaskId: number, toTaskId: number, relationshipType: string) : Promise<Result<TaskRelationship, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { fromTaskId, toTaskId, relationshipType }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_relationship", { projectId, fromTaskId, toTaskId, relationshipType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -246,9 +247,9 @@ async addTaskRelationship(fromTaskId: number, toTaskId: number, relationshipType
 /**
  * Remove a task relationship
  */
-async deleteTaskRelationship(relationshipId: number) : Promise<Result<null, string>> {
+async deleteTaskRelationship(projectId: number, relationshipId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { relationshipId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_relationship", { projectId, relationshipId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -257,9 +258,9 @@ async deleteTaskRelationship(relationshipId: number) : Promise<Result<null, stri
 /**
  * Get instructions log for a task
  */
-async listTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], string>> {
+async listTaskInstructions(projectId: number, taskId: number) : Promise<Result<TaskInstruction[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_instructions", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -268,9 +269,9 @@ async listTaskInstructions(taskId: number) : Promise<Result<TaskInstruction[], s
 /**
  * Add an instruction entry to a task's log
  */
-async addTaskInstruction(taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
+async addTaskInstruction(projectId: number, taskId: number, content: string, source: string) : Promise<Result<TaskInstruction, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { taskId, content, source }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_instruction", { projectId, taskId, content, source }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -278,14 +279,10 @@ async addTaskInstruction(taskId: number, content: string, source: string) : Prom
 },
 /**
  * Read a task's thread, oldest first.
- * 
- * Ordered by `id` rather than `created_at`: two entries written in the same phase transition can
- * share a timestamp to the second, and a thread that reorders itself on reload is worse than one
- * that is merely approximate about when things happened.
  */
-async listTaskComments(taskId: number) : Promise<Result<TaskComment[], string>> {
+async listTaskComments(projectId: number, taskId: number) : Promise<Result<TaskComment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_comments", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_comments", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -298,9 +295,9 @@ async listTaskComments(taskId: number) : Promise<Result<TaskComment[], string>> 
  * the record of what an agent concluded — letting a user post one by hand would make "the plan
  * the gate approved" something anybody could forge after the fact.
  */
-async addTaskNote(taskId: number, body: string) : Promise<Result<TaskComment, string>> {
+async addTaskNote(projectId: number, taskId: number, body: string) : Promise<Result<TaskComment, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_note", { taskId, body }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_note", { projectId, taskId, body }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1461,11 +1458,12 @@ async stopResidentServers() : Promise<Result<number, string>> {
 }
 },
 /**
- * Update task-level configuration overrides
+ * Update task-level configuration overrides. Every field is written, so an absent one clears its
+ * column.
  */
-async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
+async updateTaskSettings(projectId: number, taskId: number, settings: TaskConfigRequest) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { taskId, settings }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task_settings", { projectId, taskId, settings }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1487,9 +1485,9 @@ async updateTaskSettings(taskId: number, settings: TaskConfigRequest) : Promise<
  * falls back to the project default in `ProfilesDocument::resolve`, which is the behaviour we
  * want anyway, and validating here would only move the same outcome earlier.
  */
-async setTaskProfileOverrides(taskId: number, overrides: Partial<{ [key in string]: string | null }>) : Promise<Result<null, string>> {
+async setTaskProfileOverrides(projectId: number, taskId: number, overrides: Partial<{ [key in string]: string | null }>) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { taskId, overrides }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_task_profile_overrides", { projectId, taskId, overrides }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2618,7 +2616,7 @@ async getProjectCodeHostingStatus(projectId: number) : Promise<Result<CodeHostin
 },
 /**
  * Batch-import remote issues as Backlog tasks for a project, skipping any that have already
- * been imported (by external_id + project_id). Returns the list of newly-created tasks.
+ * been imported (by external_id within the project). Returns the list of newly-created tasks.
  */
 async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) : Promise<Result<Task[], string>> {
     try {
@@ -2632,9 +2630,9 @@ async importTasks(projectId: number, issues: RemoteIssue[], baseBranch: string) 
  * Update a task's title, description, labels, and external_updated_at from a remote issue.
  * This is the "Update task" action in the Changed tab — performs a non-destructive content overwrite.
  */
-async updateTaskFromRemote(taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
+async updateTaskFromRemote(projectId: number, taskId: number, issue: RemoteIssue) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { taskId, issue }) };
+    return { status: "ok", data: await TAURI_INVOKE("update_task_from_remote", { projectId, taskId, issue }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2644,9 +2642,9 @@ async updateTaskFromRemote(taskId: number, issue: RemoteIssue) : Promise<Result<
  * Advance a task's external_updated_at to the remote value, clearing the "changed" flag
  * without modifying title, description, or labels.
  */
-async dismissTaskChange(taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
+async dismissTaskChange(projectId: number, taskId: number, remoteUpdatedAt: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { taskId, remoteUpdatedAt }) };
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_task_change", { projectId, taskId, remoteUpdatedAt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2781,20 +2779,21 @@ async listBitbucketProjects() : Promise<Result<BitbucketProjectOption[], string>
 /**
  * Get attachments for a task
  */
-async listTaskAttachments(taskId: number) : Promise<Result<TaskAttachment[], string>> {
+async listTaskAttachments(projectId: number, taskId: number) : Promise<Result<TaskAttachment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_task_attachments", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_task_attachments", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Add an attachment record for a task
+ * Record an attachment for a task. The server returns the existing row when that file is already
+ * on it, since a second row would be a second copy of the file in every prompt the task sends.
  */
-async addTaskAttachment(taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
+async addTaskAttachment(projectId: number, taskId: number, filename: string, filePath: string) : Promise<Result<TaskAttachment, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { taskId, filename, filePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("add_task_attachment", { projectId, taskId, filename, filePath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2803,9 +2802,9 @@ async addTaskAttachment(taskId: number, filename: string, filePath: string) : Pr
 /**
  * Remove an attachment record by id
  */
-async deleteTaskAttachment(attachmentId: number) : Promise<Result<null, string>> {
+async deleteTaskAttachment(projectId: number, attachmentId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { attachmentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_task_attachment", { projectId, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2831,12 +2830,11 @@ async proxyImage(projectId: number, imageUrl: string) : Promise<Result<string, s
  * An ACP session is torn down through `tear_down_session`, the same helper `end_acp_session` uses;
  * a PTY session replicates the `close_pty_session` logic. A task with no live session is not an
  * error: its session may have died on its own, and the worktree it left behind is exactly what
- * still needs discarding. After all async work is done, updates the task status via the sync DB
- * mutex (never held across an await point).
+ * still needs discarding.
  */
-async interruptTask(taskId: number) : Promise<Result<null, string>> {
+async interruptTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("interrupt_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2859,9 +2857,9 @@ async interruptTask(taskId: number) : Promise<Result<null, string>> {
  * Only a definite `Some(false)` blocks. `None` means the question could not be answered — a
  * non-git project, a missing worktree — and is treated as no evidence, matching `classify_turn`.
  */
-async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | null, string>> {
+async sendTaskToReview(projectId: number, taskId: number, force: boolean) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_task_to_review", { taskId, force }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_task_to_review", { projectId, taskId, force }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2878,9 +2876,9 @@ async sendTaskToReview(taskId: number, force: boolean) : Promise<Result<Task | n
  * Returns `None` when the task has already left `SelfReview` — the verdict landed while the user
  * was pressing the button, and it must not be dragged back to a gate it has passed.
  */
-async endSelfReview(taskId: number) : Promise<Result<Task | null, string>> {
+async endSelfReview(projectId: number, taskId: number) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("end_self_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("end_self_review", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2898,9 +2896,9 @@ async endSelfReview(taskId: number) : Promise<Result<Task | null, string>> {
  * being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
  * from building two sessions for one task.
  */
-async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, string>> {
+async markTaskExecutionStarted(projectId: number, taskId: number) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2918,9 +2916,9 @@ async markTaskExecutionStarted(taskId: number) : Promise<Result<Task | null, str
  * afterwards. `None` tells the caller its session no longer belongs to anything and should be
  * torn down.
  */
-async markTaskSessionReady(taskId: number, role: AgentRole) : Promise<Result<Task | null, string>> {
+async markTaskSessionReady(projectId: number, taskId: number, role: AgentRole) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { taskId, role }) };
+    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { projectId, taskId, role }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2937,9 +2935,9 @@ async markTaskSessionReady(taskId: number, role: AgentRole) : Promise<Result<Tas
  * The proposal stays in the thread either way. The thread is append-only and is the record of what
  * was suggested; a rejected proposal is part of that history, not a mistake to erase.
  */
-async closeRefinement(taskId: number, accept: boolean) : Promise<Result<Task, string>> {
+async closeRefinement(projectId: number, taskId: number, accept: boolean) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("close_refinement", { taskId, accept }) };
+    return { status: "ok", data: await TAURI_INVOKE("close_refinement", { projectId, taskId, accept }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2952,9 +2950,9 @@ async closeRefinement(taskId: number, accept: boolean) : Promise<Result<Task, st
  * `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
  * simply parks the task again, because nothing went wrong.
  */
-async releaseTaskExecutionClaim(taskId: number, failed: boolean) : Promise<Result<Task | null, string>> {
+async releaseTaskExecutionClaim(projectId: number, taskId: number, failed: boolean) : Promise<Result<Task | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("release_task_execution_claim", { taskId, failed }) };
+    return { status: "ok", data: await TAURI_INVOKE("release_task_execution_claim", { projectId, taskId, failed }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2994,11 +2992,11 @@ async releaseTaskHold(taskId: number) : Promise<Result<null, string>> {
 }
 },
 /**
- * Cancel a task: sets status=Cancelled and archived_at in one statement
+ * Cancel a task: archives it and applies `Cancelled`.
  */
-async cancelTask(taskId: number) : Promise<Result<Task, string>> {
+async cancelTask(projectId: number, taskId: number) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -4295,7 +4293,7 @@ export type TerminalColorMode = "follow_theme" | "default"
 export type ToolCheckEntry = { tool: string; available: boolean; version: string | null; required_by: string[]; mandatory: boolean; configured_path: string | null; resolved_path: string | null; source: string; error: string | null }
 /**
  * Fields that can be updated on a task. All fields are optional — only non-None fields
- * are included in the SQL UPDATE. Grouped into a struct to work around the specta
+ * are written. Grouped into a struct to work around the specta
  * 10-argument limit on #[tauri::command] functions.
  */
 export type UpdateTaskRequest = { status: string | null; description: string | null; title: string | null; priority: string | null; base_branch: string | null; skills: string[] | null; agent_id: string | null; labels: string[] | null; auto_approve: boolean | null; 

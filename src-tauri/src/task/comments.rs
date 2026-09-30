@@ -19,9 +19,12 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use maestro_protocol::{AddTaskCommentRequest, NewTaskComment, TaskRef};
 use rusqlite::Connection;
-use tauri::{Emitter, State};
+use tauri::State;
 
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskComment;
 
@@ -90,25 +93,6 @@ pub fn kind_for_phase(phase: Option<&str>) -> &'static str {
     }
 }
 
-/// The latest entry of a kind, or `None` when the task has none.
-pub fn latest_of_kind(
-    conn: &Connection,
-    task_id: i32,
-    kind: &str,
-) -> Result<Option<TaskComment>, String> {
-    conn.query_row(
-        "SELECT id, task_id, kind, author, body, external_ref, phase, created_at \
-         FROM task_comments WHERE task_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
-        rusqlite::params![task_id, kind],
-        from_row,
-    )
-    .map(Some)
-    .or_else(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-        other => Err(format!("Failed to read task {} thread: {}", task_id, other)),
-    })
-}
-
 /// Record an agent's closing message, doing nothing when there is nothing worth keeping.
 ///
 /// Best-effort by design: this runs from the turn-ended handler, where failing to write a note
@@ -142,53 +126,27 @@ fn record_as(conn: &Connection, task_id: i32, kind: &str, phase: Option<&str>, m
     }
 }
 
-fn from_row(row: &rusqlite::Row) -> rusqlite::Result<TaskComment> {
-    Ok(TaskComment {
-        id: row.get(0)?,
-        task_id: row.get(1)?,
-        kind: row.get(2)?,
-        author: row.get(3)?,
-        body: row.get(4)?,
-        external_ref: row.get(5)?,
-        phase: row.get(6)?,
-        created_at: row.get(7)?,
-    })
-}
-
 /// Read a task's thread, oldest first.
-///
-/// Ordered by `id` rather than `created_at`: two entries written in the same phase transition can
-/// share a timestamp to the second, and a thread that reorders itself on reload is worse than one
-/// that is merely approximate about when things happened.
 #[tauri::command]
 #[specta::specta]
-pub fn list_task_comments(
+pub async fn list_task_comments(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<Vec<TaskComment>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    list_for_task(&conn, task_id)
-}
-
-/// The same thread, for a caller that already holds the connection.
-pub(crate) fn list_for_task(conn: &Connection, task_id: i32) -> Result<Vec<TaskComment>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, task_id, kind, author, body, external_ref, phase, created_at \
-             FROM task_comments WHERE task_id = ? ORDER BY id ASC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([task_id], from_row)
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(rows)
+    let list = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListTaskComments(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListTaskCommentsOk(list) => list),
+    )
+    .await?;
+    Ok(list.comments.into_iter().map(Into::into).collect())
 }
 
 /// Add a note of the user's own to a task's thread.
@@ -198,36 +156,36 @@ pub(crate) fn list_for_task(conn: &Connection, task_id: i32) -> Result<Vec<TaskC
 /// the gate approved" something anybody could forge after the fact.
 #[tauri::command]
 #[specta::specta]
-pub fn add_task_note(
+pub async fn add_task_note(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     body: String,
 ) -> Result<TaskComment, String> {
-    if body.trim().is_empty() {
+    let body = body.trim();
+    if body.is_empty() {
         return Err("A note cannot be empty".to_string());
     }
-
-    let comment = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        append(
-            &conn,
-            task_id,
-            "note",
-            "user",
-            Some(body.trim()),
-            None,
-            None,
-        )?
-    };
-
-    app_state
-        .app_handle
-        .emit("task-comments-changed", task_id)
-        .ok();
-    Ok(comment)
+    let comment = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::AddTaskComment(AddTaskCommentRequest {
+                project_path,
+                task_id,
+                comment: NewTaskComment {
+                    kind: "note".to_string(),
+                    author: "user".to_string(),
+                    body: Some(body.to_string()),
+                    external_ref: None,
+                    phase: None,
+                },
+            })
+        },
+        reply!(ServerResponse::AddTaskCommentOk(comment) => comment),
+    )
+    .await?;
+    Ok(comment.into())
 }
 
 #[cfg(test)]
@@ -391,22 +349,14 @@ mod tests {
         record_outcome(&conn, task_id, Some("Drafting"), "second plan");
 
         assert_eq!(kinds(&conn, task_id), vec!["proposal", "plan"]);
-        assert_eq!(
-            latest_of_kind(&conn, task_id, "proposal")
-                .unwrap()
-                .unwrap()
-                .body
-                .unwrap(),
-            "second attempt"
-        );
-        assert_eq!(
-            latest_of_kind(&conn, task_id, "plan")
-                .unwrap()
-                .unwrap()
-                .body
-                .unwrap(),
-            "second plan"
-        );
+        let bodies: Vec<String> = conn
+            .prepare("SELECT body FROM task_comments WHERE task_id = ? ORDER BY id ASC")
+            .unwrap()
+            .query_map([task_id], |row| row.get(0))
+            .unwrap()
+            .filter_map(|row| row.ok())
+            .collect();
+        assert_eq!(bodies, vec!["second attempt", "second plan"]);
     }
 
     /// A gate has to find the thing it gates on. Typing the entry by the phase that produced it is
@@ -424,37 +374,5 @@ mod tests {
             kinds(&conn, task_id),
             vec!["proposal", "plan", "verdict", "outcome"]
         );
-    }
-
-    /// A gate reads its entry by kind, so entries of other kinds landing in between — a user note,
-    /// a verdict — must not become what it finds. Superseding makes the proposal case unambiguous
-    /// on its own, but the lookup is what the other kinds still rely on.
-    #[test]
-    fn the_latest_entry_of_a_kind_wins() {
-        let (conn, task_id) = db_with_task();
-
-        record_outcome(&conn, task_id, Some("Refining"), "first attempt");
-        append(
-            &conn,
-            task_id,
-            "note",
-            "user",
-            Some("not quite"),
-            None,
-            None,
-        )
-        .unwrap();
-        record_outcome(&conn, task_id, Some("Refining"), "second attempt");
-
-        let latest = latest_of_kind(&conn, task_id, "proposal").unwrap().unwrap();
-        assert_eq!(latest.body.as_deref(), Some("second attempt"));
-    }
-
-    #[test]
-    fn a_task_with_no_entry_of_that_kind_reports_none() {
-        let (conn, task_id) = db_with_task();
-        assert!(latest_of_kind(&conn, task_id, "proposal")
-            .unwrap()
-            .is_none());
     }
 }

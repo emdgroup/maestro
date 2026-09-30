@@ -1,6 +1,41 @@
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
+use crate::models::Task;
+use maestro_protocol::{
+    AgentRole, ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskStatus,
+    TaskTransition, TransitionGuard,
+};
 use std::sync::Arc;
 use tauri::{Emitter, State};
+
+/// Apply one transition in the daemon, its guard read under the same lock as the write. `None`
+/// when the guard refused it.
+pub(crate) async fn apply_transition_on_server(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+    event: TaskTransition,
+    guard: TransitionGuard,
+) -> Result<Option<Task>, String> {
+    let reply = query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ApplyTaskTransition(ApplyTaskTransitionRequest {
+                project_path,
+                task_id,
+                event,
+                guard,
+                update: None,
+                comment: None,
+            })
+        },
+        reply!(ServerResponse::ApplyTaskTransitionOk(reply) => reply),
+    )
+    .await?;
+    Ok(reply.task.map(|task| Task::from_wire(task, project_id)))
+}
 
 /// List git branches and the current branch for a project
 ///
@@ -60,12 +95,12 @@ pub async fn list_project_branches(
 /// An ACP session is torn down through `tear_down_session`, the same helper `end_acp_session` uses;
 /// a PTY session replicates the `close_pty_session` logic. A task with no live session is not an
 /// error: its session may have died on its own, and the worktree it left behind is exactly what
-/// still needs discarding. After all async work is done, updates the task status via the sync DB
-/// mutex (never held across an await point).
+/// still needs discarding.
 #[tauri::command]
 #[specta::specta]
 pub async fn interrupt_task(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
     // Search ACP sessions by task_id — release lock immediately in scoped block.
@@ -106,22 +141,17 @@ pub async fn interrupt_task(
         app_state.pty.session_meta.lock().await.remove(&session_id);
     }
 
-    // Session teardown is done — acquire sync DB mutex now to update task status.
-    {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::Stopped,
-        )?;
-    }
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::Stopped,
+        TransitionGuard::Always,
+    )
+    .await?;
 
     crate::git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
 
-    app_state.app_handle.emit("tasks-changed", ()).ok();
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
 }
@@ -145,9 +175,10 @@ pub async fn interrupt_task(
 #[specta::specta]
 pub async fn send_task_to_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     force: bool,
-) -> Result<Option<crate::models::Task>, String> {
+) -> Result<Option<Task>, String> {
     let is_git_repo = crate::acp::reader_task::is_task_project_git_repo(&app_state, task_id).await;
 
     let has_changes = if is_git_repo {
@@ -171,24 +202,18 @@ pub async fn send_task_to_review(
     // reviewer, which nothing on it says it is.
     let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, task_id).await;
 
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::TurnCompleted {
-                is_git_repo,
-                has_changes,
-                reviewer_pending,
-            },
-        )?
-    };
-
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(Some(task))
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::TurnCompleted {
+            is_git_repo,
+            has_changes,
+            reviewer_pending,
+        },
+        TransitionGuard::Always,
+    )
+    .await
 }
 
 /// End the review agent's pass and hand the task to the human gate.
@@ -202,35 +227,19 @@ pub async fn send_task_to_review(
 /// was pressing the button, and it must not be dragged back to a gate it has passed.
 #[tauri::command]
 #[specta::specta]
-pub fn end_self_review(
+pub async fn end_self_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
-) -> Result<Option<crate::models::Task>, String> {
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-
-        let phase: Option<String> = conn
-            .query_row("SELECT phase FROM tasks WHERE id = ?", [task_id], |row| {
-                row.get(0)
-            })
-            .map_err(|e| format!("Failed to read task {} phase: {}", task_id, e))?;
-
-        if phase.as_deref() != Some("SelfReview") {
-            return Ok(None);
-        }
-
-        crate::task::transition::apply(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::ReviewFinished,
-        )?
-    };
-
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(Some(task))
+) -> Result<Option<Task>, String> {
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::ReviewFinished,
+        TransitionGuard::Phase(TaskPhase::SelfReview),
+    )
+    .await
 }
 
 /// Claims a task for execution, before anything is spawned.
@@ -245,34 +254,25 @@ pub fn end_self_review(
 /// from building two sessions for one task.
 #[tauri::command]
 #[specta::specta]
-pub fn mark_task_execution_started(
+pub async fn mark_task_execution_started(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
-) -> Result<Option<crate::models::Task>, String> {
-    use crate::models::TaskStatus;
-
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        // InProgress is here only for the plan gate: `claim_for_execution` refuses any phase but
-        // the gate's, so this cannot start a task an agent is already working on.
-        crate::task::transition::claim_for_execution(
-            &conn,
-            task_id,
-            &[
-                TaskStatus::Planning,
-                TaskStatus::Queue,
-                TaskStatus::InProgress,
-            ],
-        )?
-    };
-
-    if task.is_some() {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-    }
-    Ok(task)
+) -> Result<Option<Task>, String> {
+    // InProgress is here only for the plan gate: the claim refuses any phase but the gate's, so
+    // this cannot start a task an agent is already working on.
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::ExecutionStarted,
+        TransitionGuard::Claim(vec![
+            TaskStatus::Planning,
+            TaskStatus::Queue,
+            TaskStatus::InProgress,
+        ]),
+    )
+    .await
 }
 
 /// Records that the session is up and the agent is working.
@@ -287,27 +287,20 @@ pub fn mark_task_execution_started(
 /// torn down.
 #[tauri::command]
 #[specta::specta]
-pub fn mark_task_session_ready(
+pub async fn mark_task_session_ready(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     role: crate::project::profiles::AgentRole,
-) -> Result<Option<crate::models::Task>, String> {
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply_if_spawning(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::SessionReady(role),
-        )?
-    };
-
-    if task.is_some() {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-    }
-    Ok(task)
+) -> Result<Option<Task>, String> {
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::SessionReady(AgentRole::from(role)),
+        TransitionGuard::Spawning,
+    )
+    .await
 }
 
 /// Releases a claim whose spawn never completed.
@@ -317,31 +310,25 @@ pub fn mark_task_session_ready(
 /// simply parks the task again, because nothing went wrong.
 #[tauri::command]
 #[specta::specta]
-pub fn release_task_execution_claim(
+pub async fn release_task_execution_claim(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     failed: bool,
-) -> Result<Option<crate::models::Task>, String> {
-    use crate::task::transition::TaskTransition;
-
+) -> Result<Option<Task>, String> {
     let event = if failed {
         TaskTransition::PhaseFailed
     } else {
         TaskTransition::SpawnAborted
     };
-
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::task::transition::apply_if_spawning(&conn, task_id, event)?
-    };
-
-    if task.is_some() {
-        app_state.app_handle.emit("tasks-changed", ()).ok();
-    }
-    Ok(task)
+    apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        event,
+        TransitionGuard::Spawning,
+    )
+    .await
 }
 
 /// Take or renew a hold on a task the user is interacting with.
@@ -388,46 +375,24 @@ pub fn release_task_hold(app_state: State<'_, Arc<AppState>>, task_id: i32) -> R
 /// was suggested; a rejected proposal is part of that history, not a mistake to erase.
 #[tauri::command]
 #[specta::specta]
-pub fn close_refinement(
+pub async fn close_refinement(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     accept: bool,
-) -> Result<crate::models::Task, String> {
-    let task = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-
-        if accept {
-            let proposal = crate::task::comments::latest_of_kind(&conn, task_id, "proposal")?
-                .ok_or("This task has no proposal to accept")?;
-            let body = proposal
-                .body
-                .clone()
-                .ok_or("This task has no proposal to accept")?;
-
-            conn.execute(
-                "UPDATE tasks SET description = ? WHERE id = ?",
-                rusqlite::params![body, task_id],
-            )
-            .map_err(|e| format!("Failed to apply the proposal to task {}: {}", task_id, e))?;
-
-            // An accepted proposal *is* the description now, and the thread sat directly beneath it
-            // showing the same text twice. The thread is otherwise append-only, and a rejected
-            // proposal still stays: that one exists nowhere else, and what was suggested and turned
-            // down is the part of the history worth keeping.
-            conn.execute("DELETE FROM task_comments WHERE id = ?", [proposal.id])
-                .map_err(|e| format!("Failed to tidy task {}'s thread: {}", task_id, e))?;
-        }
-
-        crate::task::transition::apply(
-            &conn,
-            task_id,
-            crate::task::transition::TaskTransition::RefinementClosed,
-        )?
-    };
-
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+) -> Result<Task, String> {
+    let task = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::CloseRefinement(CloseRefinementRequest {
+                project_path,
+                task_id,
+                accept,
+            })
+        },
+        reply!(ServerResponse::CloseRefinementOk(task) => task),
+    )
+    .await?;
+    Ok(Task::from_wire(task, project_id))
 }

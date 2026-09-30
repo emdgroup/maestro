@@ -126,6 +126,30 @@ pub(crate) async fn query_via_server<T>(
     extract(response).ok_or_else(|| UNEXPECTED_REPLY.to_string())
 }
 
+/// Ask the daemon of the project's connection about its tasks, worktrees or reviews.
+///
+/// `request` is handed the project's path as this app knows it; the daemon canonicalizes it, and
+/// keys every row by that path, so replies carry the canonical one rather than `project_id`.
+pub(crate) async fn query_project_store<T>(
+    app_state: &Arc<crate::core::AppState>,
+    project_id: i32,
+    request: impl FnOnce(String) -> ServerRequest,
+    extract: impl FnOnce(ServerResponse) -> Option<T>,
+) -> Result<T, String> {
+    let (connection_key, project_path) =
+        crate::project::automations::target(app_state, project_id).await?;
+    query_via_server(
+        connection_key,
+        app_state,
+        &format!("No connection server for connection {:?}", connection_key),
+        MaestroRpcMessage::Request(request(project_path)),
+        extract,
+        15,
+        "The project's server did not answer within 15s",
+    )
+    .await
+}
+
 /// Send `ListAgents` through the running connection server and return the result.
 /// Much faster than `one_shot_rpc` — reuses the existing process and registry cache.
 pub async fn query_list_agents_via_connection_server(
