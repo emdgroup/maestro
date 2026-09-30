@@ -363,6 +363,73 @@ async fn reap_idle_sessions(
     }
 }
 
+/// Record a session that has just come up and take it into the map.
+///
+/// Unless its row was closed while it was coming up: nothing would own it and no list would show
+/// it, and the idle sweep never closes it while a window is attached. The client was already sent
+/// its `SpawnOk` or `SessionLoadOk`, and needs nothing more: every host path that closes a row
+/// has dropped its own entry first, so it holds nothing waiting on this session.
+async fn register_started_session(
+    session_id: String,
+    session: ActiveSession,
+    sessions: &mut SessionMap,
+    agent_connections: &SharedAgentConnections,
+    project_store: Option<&project_store::Store>,
+    automation_store: Option<&automation_runner::Store>,
+    stdout: &crate::ClientOut,
+) {
+    let recorded = match (
+        project_store,
+        session.project.as_ref(),
+        session.cleanup.as_ref(),
+    ) {
+        (Some(store), Some(project), Some(cleanup)) => project_store::upsert(
+            &*store.lock().await,
+            &project_store::Started {
+                agent_id: &session.agent_id,
+                acp_session_id: &cleanup.acp_session_id,
+                project_path: &automations::canonical_project_path(&project.project_path),
+                cwd: &session.cwd,
+                meta: &project.meta,
+                can_reload: project.can_reload,
+                session_id: &session_id,
+                requested_at: project.requested_at,
+            },
+            chrono::Utc::now(),
+        ),
+        _ => Ok(true),
+    };
+    match recorded {
+        Ok(true) => {}
+        Ok(false) => {
+            send_diag(
+                "info",
+                format!(
+                    "[session] closing session={session_id}, its row was closed while it came up"
+                ),
+            );
+            dispatch::close_session(
+                &session_id,
+                session,
+                agent_connections,
+                automation_store,
+                stdout,
+            )
+            .await;
+            return;
+        }
+        Err(e) => project_store::report(Err(e)),
+    }
+    sessions.insert(session_id.clone(), session);
+    // Only now can a client adopt it: `ListProjectSessions` reports a row as live when this map
+    // holds its routing id. An automation's run is announced again here and nowhere earlier, after
+    // the row and the entry, so a window already attached finds the session the moment it is told
+    // the run has one.
+    if let Some(store) = automation_store {
+        automation_runner::announce_session(store, stdout, &session_id).await;
+    }
+}
+
 /// The server proper: dispatch requests until the client channel closes.
 /// When this process began serving, for the status the app shows beside Stop.
 pub(crate) static STARTED_AT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -548,36 +615,16 @@ async fn run_server(
 
             result = spawn_result_rx.recv() => {
                 if let Some((session_id, session)) = result {
-                    if let (Some(store), Some(project), Some(cleanup)) = (
+                    register_started_session(
+                        session_id,
+                        session,
+                        &mut sessions,
+                        &agent_connections,
                         project_store.as_ref(),
-                        session.project.as_ref(),
-                        session.cleanup.as_ref(),
-                    ) {
-                        project_store::report(project_store::upsert(
-                            &*store.lock().await,
-                            &project_store::Started {
-                                agent_id: &session.agent_id,
-                                acp_session_id: &cleanup.acp_session_id,
-                                project_path: &automations::canonical_project_path(
-                                    &project.project_path,
-                                ),
-                                cwd: &session.cwd,
-                                meta: &project.meta,
-                                can_reload: project.can_reload,
-                                session_id: &session_id,
-                                requested_at: project.requested_at,
-                            },
-                            chrono::Utc::now(),
-                        ));
-                    }
-                    sessions.insert(session_id.clone(), session);
-                    // Only now can a client adopt it: `ListProjectSessions` reports a row as live
-                    // when this map holds its routing id. An automation's run is announced again
-                    // here and nowhere earlier, after the row and the entry, so a window already
-                    // attached finds the session the moment it is told the run has one.
-                    if let Some(store) = automation_store.as_ref() {
-                        automation_runner::announce_session(store, &stdout, &session_id).await;
-                    }
+                        automation_store.as_ref(),
+                        &stdout,
+                    )
+                    .await;
                 }
                 continue;
             }

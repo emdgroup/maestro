@@ -105,7 +105,10 @@ pub struct Started<'a> {
 /// out keeps what the row holds rather than costing it the role, start sha and task name. A closed
 /// row reopened is a new use of the conversation, from Session History, and takes the meta it is
 /// reopened with whole: keeping the old task would bind it to that task again.
-pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Result<(), String> {
+///
+/// `Ok(false)` when the row was closed while the session was coming up, and is left closed: the
+/// session is one nobody wants any more.
+pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Result<bool, String> {
     let closed_at: Option<Option<String>> = conn
         .query_row(
             "SELECT closed_at FROM sessions WHERE agent_id = ?1 AND acp_session_id = ?2",
@@ -119,7 +122,7 @@ pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Resul
             let closed_at = DateTime::parse_from_rfc3339(&closed_at)
                 .map_err(|e| format!("cannot read a session's closed_at {closed_at:?}: {e}"))?;
             if closed_at >= started.requested_at {
-                return Ok(());
+                return Ok(false);
             }
             true
         }
@@ -178,7 +181,7 @@ pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Resul
             now.to_rfc3339(),
         ],
     )
-    .map(|_| ())
+    .map(|_| true)
 }
 
 /// The project is done with this session: a user closed it, or the pipeline did.
@@ -411,7 +414,7 @@ mod tests {
         can_reload: bool,
         session_id: &str,
     ) {
-        upsert(
+        let recorded = upsert(
             conn,
             &Started {
                 agent_id: "claude",
@@ -426,6 +429,7 @@ mod tests {
             Utc::now(),
         )
         .expect("upsert");
+        assert!(recorded, "a session requested now is recorded");
     }
 
     fn only(conn: &Connection) -> (ProjectSession, Option<String>) {
@@ -497,7 +501,7 @@ mod tests {
 
         let requested_at = Utc::now() - Duration::seconds(1);
         close_dormant(&conn, "claude", "a", Utc::now()).expect("close");
-        upsert(
+        let recorded = upsert(
             &conn,
             &Started {
                 agent_id: "claude",
@@ -512,6 +516,7 @@ mod tests {
             Utc::now(),
         )
         .expect("upsert");
+        assert!(!recorded, "the caller is told the session is unwanted");
 
         let (session, session_id) = only(&conn);
         assert!(session.closed);

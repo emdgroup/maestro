@@ -175,7 +175,7 @@ Tasks:
       added beside what they replace so the tree keeps compiling
 - [x] T2 `maestro-server`: `projects.db`, the row's lifecycle, the two new requests
 - [x] T3 `src-tauri` and the frontend: open, reconnect, history, rename and recovery read the daemon
-- [ ] T4 Remove `host_meta`, `ListLiveSessions` and the state-file code; docs; review; end-to-end test
+- [x] T4 Remove `host_meta`, `ListLiveSessions` and the state-file code; docs; review; end-to-end test
 
 Not in this phase: a transcript for the part of a turn nobody watched. A session adopted mid-turn
 still starts its transcript at the reconnect. A daemon-side replay buffer fixes that and is its own

@@ -112,6 +112,76 @@ pub(crate) fn runs_under_key(sessions: &SessionMap, agent_id: &str, acp_session_
     })
 }
 
+/// Close a session already taken out of the map: through its command loop, so the agent keeps a
+/// transcript `session/load` can replay, and by aborting it when the loop cannot take the command.
+pub(crate) async fn close_session(
+    session_id: &str,
+    session: ActiveSession,
+    agent_connections: &SharedAgentConnections,
+    automation_store: Option<&crate::automation_runner::Store>,
+    stdout: &crate::ClientOut,
+) {
+    let session_agent_id = session.agent_id.clone();
+    // A run's workspace is settled once its session is closed, whoever closed it. The sweep only
+    // closes sessions nobody is attached to, so with a window open this is the only close there is.
+    let settle = automation_store.map(|store| {
+        let store = Arc::clone(store);
+        let stdout = Arc::clone(stdout);
+        let session_id = session_id.to_string();
+        async move {
+            crate::automation_runner::settle_worktree_for_session(&store, &stdout, &session_id)
+                .await;
+        }
+    });
+    if session
+        .cmd_tx
+        .try_send(SessionCommand::CloseSession)
+        .is_ok()
+    {
+        // Graceful close: command loop sends CloseSessionRequest to agent.
+        // Watchdog force-aborts after 5s if the loop stalls.
+        let abort_handle = session.task.abort_handle();
+        let cleanup = session.cleanup;
+        let agent_connections_cancel = Arc::clone(agent_connections);
+        tokio::spawn(async move {
+            let timed_out = tokio::time::timeout(std::time::Duration::from_secs(5), session.task)
+                .await
+                .is_err();
+            if timed_out {
+                abort_handle.abort();
+            }
+            if let Some(c) = cleanup {
+                if timed_out {
+                    c.router.unregister(&c.acp_session_id).await;
+                }
+                if c.router.is_empty().await {
+                    agent_connections_cancel
+                        .lock()
+                        .await
+                        .remove(&session_agent_id);
+                }
+            }
+            // After the close has run, never alongside it: the agent holds files open under the
+            // workspace until then.
+            if let Some(settle) = settle {
+                settle.await;
+            }
+        });
+    } else {
+        // Channel full or closed: force abort and clean up manually.
+        session.task.abort();
+        if let Some(c) = session.cleanup {
+            c.router.unregister(&c.acp_session_id).await;
+            if c.router.is_empty().await {
+                agent_connections.lock().await.remove(&session_agent_id);
+            }
+        }
+        if let Some(settle) = settle {
+            tokio::spawn(settle);
+        }
+    }
+}
+
 /// Handle one message from stdin.
 ///
 /// Returns `true`  → the main loop should continue.
@@ -853,71 +923,14 @@ pub(crate) async fn dispatch_message(
                 ));
             }
             if let Some(session) = session {
-                let session_agent_id = session.agent_id.clone();
-                // A run's workspace is settled once its session is closed, whoever closed it. The
-                // sweep only closes sessions nobody is attached to, so with a window open this is
-                // the only close there is.
-                let settle = automation_store.map(|store| {
-                    let store = Arc::clone(store);
-                    let stdout = Arc::clone(stdout);
-                    let session_id = req.session_id.clone();
-                    async move {
-                        crate::automation_runner::settle_worktree_for_session(
-                            &store,
-                            &stdout,
-                            &session_id,
-                        )
-                        .await;
-                    }
-                });
-                if session
-                    .cmd_tx
-                    .try_send(SessionCommand::CloseSession)
-                    .is_ok()
-                {
-                    // Graceful close: command loop sends CloseSessionRequest to agent.
-                    // Watchdog force-aborts after 5s if the loop stalls.
-                    let abort_handle = session.task.abort_handle();
-                    let cleanup = session.cleanup;
-                    let agent_connections_cancel = Arc::clone(agent_connections);
-                    tokio::spawn(async move {
-                        let timed_out =
-                            tokio::time::timeout(std::time::Duration::from_secs(5), session.task)
-                                .await
-                                .is_err();
-                        if timed_out {
-                            abort_handle.abort();
-                        }
-                        if let Some(c) = cleanup {
-                            if timed_out {
-                                c.router.unregister(&c.acp_session_id).await;
-                            }
-                            if c.router.is_empty().await {
-                                agent_connections_cancel
-                                    .lock()
-                                    .await
-                                    .remove(&session_agent_id);
-                            }
-                        }
-                        // After the close has run, never alongside it: the agent holds files open
-                        // under the workspace until then.
-                        if let Some(settle) = settle {
-                            settle.await;
-                        }
-                    });
-                } else {
-                    // Channel full or closed — force abort and clean up manually.
-                    session.task.abort();
-                    if let Some(c) = session.cleanup {
-                        c.router.unregister(&c.acp_session_id).await;
-                        if c.router.is_empty().await {
-                            agent_connections.lock().await.remove(&session_agent_id);
-                        }
-                    }
-                    if let Some(settle) = settle {
-                        tokio::spawn(settle);
-                    }
-                }
+                close_session(
+                    &req.session_id,
+                    session,
+                    agent_connections,
+                    automation_store,
+                    stdout,
+                )
+                .await;
             }
         }
 

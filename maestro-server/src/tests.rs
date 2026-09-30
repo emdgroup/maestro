@@ -383,3 +383,72 @@ async fn test_close_guard_ignores_a_finished_command_loop() {
     assert!(!crate::dispatch::runs_under_key(&sessions, "claude", "b"));
     assert!(!crate::dispatch::runs_under_key(&sessions, "other", "a"));
 }
+
+/// A session whose row was closed while it came up is closed, not kept where nobody owns it.
+#[tokio::test]
+async fn test_a_session_closed_while_it_came_up_is_closed_not_kept() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store: crate::project_store::Store = std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::project_store::open(dir.path()).expect("store"),
+    ));
+    let agent_connections: crate::sessions::SharedAgentConnections = std::sync::Arc::new(
+        tokio::sync::Mutex::new(crate::sessions::AgentConnectionMap::new()),
+    );
+    let stdout = crate::client_sink::ClientSink::detached();
+    let mut sessions: crate::sessions::SessionMap = HashMap::new();
+
+    let started = |acp_session_id: &str| {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(4);
+        let mut session = project_session(
+            "claude",
+            acp_session_id,
+            "/p",
+            tokio::spawn(std::future::pending::<()>()),
+        );
+        session.cmd_tx = cmd_tx;
+        if let Some(project) = session.project.as_mut() {
+            project.requested_at = chrono::Utc::now() - chrono::Duration::seconds(5);
+        }
+        (session, cmd_rx)
+    };
+
+    // Positive control: an open row keeps its session.
+    let (open, _open_rx) = started("a");
+    crate::register_started_session(
+        "live-1".to_string(),
+        open,
+        &mut sessions,
+        &agent_connections,
+        Some(&store),
+        None,
+        &stdout,
+    )
+    .await;
+    assert!(sessions.contains_key("live-1"));
+
+    // It goes dormant, is loaded again, and the user closes it while that load is in flight.
+    sessions.remove("live-1");
+    crate::project_store::go_dormant(&*store.lock().await, "live-1", chrono::Utc::now())
+        .expect("dormant");
+    crate::project_store::close_dormant(&*store.lock().await, "claude", "a", chrono::Utc::now())
+        .expect("close");
+    let (gone, mut gone_rx) = started("a");
+    crate::register_started_session(
+        "live-2".to_string(),
+        gone,
+        &mut sessions,
+        &agent_connections,
+        Some(&store),
+        None,
+        &stdout,
+    )
+    .await;
+    assert!(sessions.is_empty(), "nobody would own it");
+    assert!(
+        matches!(
+            gone_rx.recv().await,
+            Some(crate::SessionCommand::CloseSession)
+        ),
+        "the agent is asked to close it"
+    );
+}
