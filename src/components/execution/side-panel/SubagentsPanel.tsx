@@ -18,7 +18,7 @@ export function SubagentsPanel({ items, toolCallMap }: SubagentsPanelProps) {
   }
 
   return (
-    <ScrollArea className="absolute inset-0">
+    <ScrollArea className="h-full">
       <div className="p-3 flex flex-col gap-2">
         {items.map((item) => (
           <SubagentCard key={item.toolCallId} item={item} toolCallMap={toolCallMap} />
