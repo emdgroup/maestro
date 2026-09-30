@@ -9,6 +9,7 @@
 //! would leave a task the scheduler refuses forever, with nothing in the UI to explain it; the
 //! `expires_at` stamp does the same job for a window that goes away without releasing.
 
+use crate::acp::TaskKey;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -21,29 +22,32 @@ pub const HOLD_TTL: Duration = Duration::from_secs(10);
 
 #[derive(Default)]
 pub struct TaskHolds {
-    held: Mutex<HashMap<i32, Instant>>,
+    held: Mutex<HashMap<TaskKey, Instant>>,
 }
 
 impl TaskHolds {
     /// Take or renew a hold, expiring `ttl` from now.
-    pub fn hold(&self, task_id: i32, ttl: Duration) {
+    pub fn hold(&self, task: TaskKey, ttl: Duration) {
         match self.held.lock() {
             Ok(mut held) => {
-                held.insert(task_id, Instant::now() + ttl);
+                held.insert(task, Instant::now() + ttl);
             }
             Err(_) => log::warn!(
                 "[holds] hold map poisoned; task {} will not be held",
-                task_id
+                task.task_id
             ),
         }
     }
 
-    pub fn release(&self, task_id: i32) {
+    pub fn release(&self, task: TaskKey) {
         match self.held.lock() {
             Ok(mut held) => {
-                held.remove(&task_id);
+                held.remove(&task);
             }
-            Err(_) => log::warn!("[holds] hold map poisoned; task {} stays held", task_id),
+            Err(_) => log::warn!(
+                "[holds] hold map poisoned; task {} stays held",
+                task.task_id
+            ),
         }
     }
 
@@ -52,7 +56,7 @@ impl TaskHolds {
     /// A poisoned map answers "nothing is held". That is the right direction to fail: the worst
     /// case is an agent starting on a card mid-drag, where the claim still wins and the user sees
     /// one surprising start. Failing the other way would stop the queue with nothing to explain it.
-    pub fn retain_unheld(&self, ids: Vec<i32>) -> Vec<i32> {
+    pub fn retain_unheld(&self, project_id: i32, ids: Vec<i32>) -> Vec<i32> {
         let mut held = match self.held.lock() {
             Ok(held) => held,
             Err(_) => {
@@ -67,7 +71,12 @@ impl TaskHolds {
         held.retain(|_, expires_at| *expires_at > now);
 
         ids.into_iter()
-            .filter(|id| !held.contains_key(id))
+            .filter(|&task_id| {
+                !held.contains_key(&TaskKey {
+                    project_id,
+                    task_id,
+                })
+            })
             .collect()
     }
 }
@@ -76,12 +85,19 @@ impl TaskHolds {
 mod tests {
     use super::*;
 
+    fn task(task_id: i32) -> TaskKey {
+        TaskKey {
+            project_id: 1,
+            task_id,
+        }
+    }
+
     #[test]
     fn a_held_task_is_not_offered_to_the_scheduler() {
         let holds = TaskHolds::default();
-        holds.hold(2, HOLD_TTL);
+        holds.hold(task(2), HOLD_TTL);
 
-        assert_eq!(holds.retain_unheld(vec![1, 2, 3]), vec![1, 3]);
+        assert_eq!(holds.retain_unheld(1, vec![1, 2, 3]), vec![1, 3]);
     }
 
     /// Skipping keeps the rest of the queue moving. Stalling the whole drain on one card being
@@ -89,18 +105,27 @@ mod tests {
     #[test]
     fn the_rest_of_the_queue_keeps_its_order() {
         let holds = TaskHolds::default();
-        holds.hold(1, HOLD_TTL);
+        holds.hold(task(1), HOLD_TTL);
 
-        assert_eq!(holds.retain_unheld(vec![1, 4, 2]), vec![4, 2]);
+        assert_eq!(holds.retain_unheld(1, vec![1, 4, 2]), vec![4, 2]);
+    }
+
+    /// Task ids are per project, so another project's task 2 is not the one being dragged.
+    #[test]
+    fn a_hold_names_its_project() {
+        let holds = TaskHolds::default();
+        holds.hold(task(2), HOLD_TTL);
+
+        assert_eq!(holds.retain_unheld(2, vec![2]), vec![2]);
     }
 
     #[test]
     fn releasing_gives_the_task_back() {
         let holds = TaskHolds::default();
-        holds.hold(1, HOLD_TTL);
-        holds.release(1);
+        holds.hold(task(1), HOLD_TTL);
+        holds.release(task(1));
 
-        assert_eq!(holds.retain_unheld(vec![1]), vec![1]);
+        assert_eq!(holds.retain_unheld(1, vec![1]), vec![1]);
     }
 
     /// The case the TTL exists for: a window that went away without releasing. Without expiry the
@@ -108,17 +133,17 @@ mod tests {
     #[test]
     fn a_hold_nobody_renewed_expires() {
         let holds = TaskHolds::default();
-        holds.hold(1, Duration::ZERO);
+        holds.hold(task(1), Duration::ZERO);
 
-        assert_eq!(holds.retain_unheld(vec![1]), vec![1]);
+        assert_eq!(holds.retain_unheld(1, vec![1]), vec![1]);
     }
 
     #[test]
     fn renewing_extends_an_expiring_hold() {
         let holds = TaskHolds::default();
-        holds.hold(1, Duration::ZERO);
-        holds.hold(1, HOLD_TTL);
+        holds.hold(task(1), Duration::ZERO);
+        holds.hold(task(1), HOLD_TTL);
 
-        assert!(holds.retain_unheld(vec![1]).is_empty());
+        assert!(holds.retain_unheld(1, vec![1]).is_empty());
     }
 }

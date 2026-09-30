@@ -445,7 +445,11 @@ export function useExecuteTask(
           ? { cwd: projectPath, branchName: null }
           : workspaceMode === "ReuseWorkspace"
             ? await claimWorktree
-                .mutateAsync({ taskId: task.id, worktreeId: pinnedWorkspace!.id! })
+                .mutateAsync({
+                  projectId: task.project_id,
+                  taskId: task.id,
+                  worktreeId: pinnedWorkspace!.id!,
+                })
                 .then(() => ({
                   cwd: pinnedWorkspace!.path,
                   branchName: pinnedWorkspace!.branch_name,
@@ -758,7 +762,7 @@ export function useExecuteTask(
       // acts on it — handing a refiner the last review's per-file comments would have it rewrite
       // the description around code it is not being asked about.
       try {
-        const review = role === "Coder" ? await api.getTaskReview(task.id) : null;
+        const review = role === "Coder" ? await api.getTaskReview(task.project_id, task.id) : null;
         if (review && review.decision === "RequestChanges") {
           let feedbackText = "";
 
@@ -792,7 +796,7 @@ export function useExecuteTask(
       await api.sendAcpPromptStructured(sessionId, contentBlocks);
 
       // Clear review from DB after successful injection to prevent re-injection on next cold start
-      if (role === "Coder") api.clearTaskReview(task.id).catch(() => {});
+      if (role === "Coder") api.clearTaskReview(task.project_id, task.id).catch(() => {});
 
       // The session is up and prompted, so the task moves to wherever this role works. Null means
       // it stopped being the task we claimed — the user dragged or stopped it while the spawn was

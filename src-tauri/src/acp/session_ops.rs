@@ -182,61 +182,6 @@ pub(crate) async fn forget_sessions(
     }
 }
 
-/// Give this project's `worktrees` table a row for each worktree its automations have provisioned.
-///
-/// The server made these and the server will remove them, but while one is on disk it is a
-/// workspace like any other and belongs on the Workspaces screen. A run clears `worktree_path` once
-/// its directory is gone, so this only ever adopts something that exists; a row whose worktree is
-/// removed later is pruned by `list_worktrees_with_status` on its own.
-///
-/// Local projects only. The path a remote server reports is a path on that machine, which is what
-/// the rest of the worktree code already assumes, so nothing here has to special-case it — the
-/// insert is relative to the project path either way.
-async fn adopt_automation_worktrees(
-    project_id: i32,
-    project_path: &str,
-    runs: &[maestro_protocol::AutomationRun],
-    app_state: &Arc<crate::core::AppState>,
-) {
-    let now = chrono::Utc::now().to_rfc3339();
-    for run in runs {
-        let (Some(path), Some(branch)) =
-            (run.worktree_path.as_deref(), run.worktree_branch.as_deref())
-        else {
-            continue;
-        };
-        // The table stores a path relative to the repository root; the server reports an absolute
-        // one. A worktree outside the project has no relative form and is left alone.
-        let Some(relative) = path
-            .replace('\\', "/")
-            .strip_prefix(&format!("{}/", project_path.replace('\\', "/")))
-            .map(str::to_string)
-        else {
-            continue;
-        };
-
-        let Ok(conn) = app_state.db.lock() else {
-            return;
-        };
-        if let Err(e) = conn.execute(
-            "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at)
-             SELECT ?, NULL, ?, ?, ?, ?
-              WHERE NOT EXISTS (SELECT 1 FROM worktrees WHERE project_id = ? AND path = ?)",
-            rusqlite::params![
-                project_id,
-                branch,
-                run.worktree_base,
-                &relative,
-                &now,
-                project_id,
-                &relative
-            ],
-        ) {
-            log::warn!("cannot adopt the worktree {relative} an automation made: {e}");
-        }
-    }
-}
-
 /// Bring this project's open conversations into this window, from the daemon's own rows.
 ///
 /// The daemon outlives the app and keeps one row per conversation, so a freshly opened project, a
@@ -285,22 +230,6 @@ pub async fn attach_project_sessions(
             None => return 0,
         }
     };
-
-    // A server too old to know about automations, or one whose store would not open, costs
-    // nothing but an unadopted worktree.
-    match crate::acp::connection_server::query_automation_runs_via_server(
-        connection_key,
-        project_path.clone(),
-        None,
-        app_state,
-    )
-    .await
-    {
-        Ok(response) => {
-            adopt_automation_worktrees(project_id, &project_path, &response.runs, app_state).await
-        }
-        Err(e) => log::warn!("cannot list automation runs on {connection_key:?}: {e}"),
-    }
 
     let mut attached = 0;
     for row in rows {

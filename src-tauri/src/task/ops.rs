@@ -18,6 +18,20 @@ pub(crate) async fn apply_transition_on_server(
     event: TaskTransition,
     guard: TransitionGuard,
 ) -> Result<Option<Task>, String> {
+    apply_transition_writing(app_state, project_id, task_id, event, guard, None, None).await
+}
+
+/// [`apply_transition_on_server`] with an update written before the transition and a thread
+/// entry after it, in its transaction and only when the guard admits it.
+pub(crate) async fn apply_transition_writing(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+    event: TaskTransition,
+    guard: TransitionGuard,
+    update: Option<maestro_protocol::TaskUpdate>,
+    comment: Option<maestro_protocol::NewTaskComment>,
+) -> Result<Option<Task>, String> {
     let reply = query_project_store(
         app_state,
         project_id,
@@ -27,8 +41,8 @@ pub(crate) async fn apply_transition_on_server(
                 task_id,
                 event,
                 guard,
-                update: None,
-                comment: None,
+                update,
+                comment,
             })
         },
         reply!(ServerResponse::ApplyTaskTransitionOk(reply) => reply),
@@ -155,7 +169,7 @@ pub async fn interrupt_task(
     )
     .await?;
 
-    crate::git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
+    crate::git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
     Ok(())
@@ -347,10 +361,18 @@ pub async fn release_task_execution_claim(
 /// started a moment early.
 #[tauri::command]
 #[specta::specta]
-pub fn hold_task(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    app_state
-        .task_holds
-        .hold(task_id, crate::task::holds::HOLD_TTL);
+pub fn hold_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    app_state.task_holds.hold(
+        crate::acp::TaskKey {
+            project_id,
+            task_id,
+        },
+        crate::task::holds::HOLD_TTL,
+    );
     Ok(())
 }
 
@@ -363,11 +385,21 @@ pub fn hold_task(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<()
 /// would be a cost paid on every drag.
 #[tauri::command]
 #[specta::specta]
-pub fn release_task_hold(app_state: State<'_, Arc<AppState>>, task_id: i32) -> Result<(), String> {
-    app_state.task_holds.release(task_id);
+pub fn release_task_hold(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    app_state.task_holds.release(crate::acp::TaskKey {
+        project_id,
+        task_id,
+    });
     app_state
         .app_handle
-        .emit("task-hold-released", task_id)
+        .emit(
+            "task-hold-released",
+            serde_json::json!({ "project_id": project_id, "task_id": task_id }),
+        )
         .ok();
     Ok(())
 }

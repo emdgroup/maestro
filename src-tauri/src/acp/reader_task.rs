@@ -353,7 +353,9 @@ async fn resolve_turn_end(
     // "push what you changed", not "advance the task". Nothing else moves: the PR stays open and
     // the branch stays its head, which is the point of fixing rather than re-approving.
     if phase == Some(TaskPhase::AwaitingMerge) && outcome == TurnOutcome::Complete {
-        if let Err(e) = crate::git::merge::push_ci_fix(app_state, task.task_id).await {
+        if let Err(e) =
+            crate::git::merge::push_ci_fix(app_state, task.project_id, task.task_id).await
+        {
             log::error!("Could not push the CI fix for task {}: {}", task.task_id, e);
             // The push already failed and was reported above. Failing to record that leaves the
             // task showing as running with nothing behind it, which the user cannot act on and no

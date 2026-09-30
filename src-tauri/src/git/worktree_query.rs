@@ -233,7 +233,6 @@ pub async fn list_worktrees_with_status(
 
     struct DbWorktreeRow {
         id: i32,
-        project_id: i32,
         task_id: Option<i32>,
         branch_name: String,
         path: String,
@@ -242,37 +241,44 @@ pub async fn list_worktrees_with_status(
         task_name: Option<String>,
     }
 
-    let db_rows: Vec<DbWorktreeRow> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        let mut stmt = conn.prepare(
-            "SELECT w.id, w.project_id, w.task_id, w.branch_name, w.path, w.created_at, w.base_branch,
-                    t.title AS task_name
-             FROM worktrees w
-             LEFT JOIN tasks t ON t.id = w.task_id
-             WHERE w.project_id = ?"
-        ).map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-        let rows: Vec<DbWorktreeRow> = stmt
-            .query_map(rusqlite::params![project_id], |row| {
-                Ok(DbWorktreeRow {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    task_id: row.get(2)?,
-                    branch_name: row.get(3)?,
-                    path: row.get(4)?,
-                    created_at: row.get(5)?,
-                    base_branch: row.get(6)?,
-                    task_name: row.get(7)?,
+    // Two reads joined here, where the app's own tables once joined in SQL: the rows and the
+    // tasks they name live in the daemon.
+    let worktrees =
+        crate::git::worktree_lifecycle::list_worktree_rows(&app_state, project_id, None).await?;
+    let task_titles: HashMap<i32, String> = if worktrees.iter().any(|row| row.task_id.is_some()) {
+        crate::acp::connection_server::query_project_store(
+            &app_state,
+            project_id,
+            |project_path| {
+                crate::acp::transport::ServerRequest::ListTasks(maestro_protocol::ProjectRef {
+                    project_path,
                 })
-            })
-            .map_err(|e| format!("Failed to query worktrees: {}", e))?
-            .filter_map(|r| r.ok())
-            .collect();
-        rows
+            },
+            crate::acp::connection_server::reply!(
+                crate::acp::transport::ServerResponse::ListTasksOk(list) => list.tasks
+            ),
+        )
+        .await?
+        .into_iter()
+        .map(|task| (task.id, task.title))
+        .collect()
+    } else {
+        HashMap::new()
     };
+    let db_rows: Vec<DbWorktreeRow> = worktrees
+        .into_iter()
+        .map(|row| DbWorktreeRow {
+            id: row.id,
+            task_name: row
+                .task_id
+                .and_then(|task_id| task_titles.get(&task_id).cloned()),
+            task_id: row.task_id,
+            branch_name: row.branch_name,
+            path: row.path,
+            created_at: row.created_at,
+            base_branch: row.base_branch,
+        })
+        .collect();
 
     // Keyed by absolute path because that is what git reports; the rows store a path relative to
     // the repo root, so it is the row that has to be rewritten to match, not the other way round.
@@ -356,7 +362,7 @@ pub async fn list_worktrees_with_status(
                 db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path) && !in_use;
             result.push(WorktreeWithStatus {
                 id: Some(db_row.id),
-                project_id: Some(db_row.project_id),
+                project_id: Some(project_id),
                 task_id: db_row.task_id,
                 // Read from git, not the DB: a checkout inside the worktree moves it off the
                 // branch recorded at creation. Detached HEAD keeps the recorded name.
@@ -416,19 +422,17 @@ pub async fn list_worktrees_with_status(
         .map(|row| row.id)
         .collect();
 
-    if !unmatched_db_ids.is_empty() {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        for id in &unmatched_db_ids {
-            // Not fatal: this poll's answer is already built and a row that survives is simply
-            // offered for reaping again in ten seconds. Logged because a row that never goes
-            // means the reap is failing every time, which is otherwise invisible.
-            if let Err(e) = conn.execute("DELETE FROM worktrees WHERE id = ?", [id]) {
-                log::warn!("Could not reap worktree row {}: {}", id, e);
-            }
-        }
+    // Not fatal: this poll's answer is already built and a row that survives is simply offered for
+    // reaping again in ten seconds. Logged because a row that never goes means the reap is failing
+    // every time, which is otherwise invisible.
+    if let Err(e) = crate::git::worktree_lifecycle::delete_worktree_rows(
+        &app_state,
+        project_id,
+        unmatched_db_ids.clone(),
+    )
+    .await
+    {
+        log::warn!("Could not reap worktree rows {:?}: {}", unmatched_db_ids, e);
     }
 
     // Sort by created_at descending (None goes last)

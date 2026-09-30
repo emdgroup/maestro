@@ -113,7 +113,11 @@ export function TaskReviewPanel({
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [discardModalOpen, setDiscardModalOpen] = useState(false);
 
-  const commitMessageQuery = useResolveCommitMessageQuery(task.id, approveModalOpen);
+  const commitMessageQuery = useResolveCommitMessageQuery(
+    task.project_id,
+    task.id,
+    approveModalOpen,
+  );
 
   // Mutations
   const { mutate: saveReview, isPending: isSaving } = useSaveTaskReviewMutation();
@@ -299,6 +303,7 @@ export function TaskReviewPanel({
       ]);
       requestChanges(
         {
+          projectId: task.project_id,
           taskId: task.id,
           generalFeedback: data.generalFeedback || null,
           perFileComments: perFileComments.length > 0 ? perFileComments : null,
@@ -312,7 +317,7 @@ export function TaskReviewPanel({
             } else {
               execute(task);
             }
-            api.clearTaskReview(task.id).catch(() => {});
+            api.clearTaskReview(task.project_id, task.id).catch(() => {});
             reviewStore.clearTask(task.id);
             onClose();
           },
@@ -325,12 +330,19 @@ export function TaskReviewPanel({
   const handleApproveConfirm = useCallback(
     (data: { mergeStrategy: string; includeUntracked: boolean; commitMessage: string }) => {
       saveReview(
-        { taskId: task.id, decision: "Approve", generalFeedback: null, perFileComments: null },
+        {
+          projectId: task.project_id,
+          taskId: task.id,
+          decision: "Approve",
+          generalFeedback: null,
+          perFileComments: null,
+        },
         {
           onSuccess: () => {
             const strategy = MERGE_STRATEGIES[data.mergeStrategy] ?? "CommitAndMerge";
             approveAndMerge(
               {
+                projectId: task.project_id,
                 taskId: task.id,
                 mergeStrategy: strategy,
                 includeUntracked: data.includeUntracked,
@@ -363,13 +375,23 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task.id, saveReview, approveAndMerge, onClose, reviewStore, activeSession, cancelSession],
+    [
+      task.project_id,
+      task.id,
+      saveReview,
+      approveAndMerge,
+      onClose,
+      reviewStore,
+      activeSession,
+      cancelSession,
+    ],
   );
 
   const handleDiscardConfirm = useCallback(
     (action: "backlog" | "cancel") => {
       rejectReview(
         {
+          projectId: task.project_id,
           taskId: task.id,
           action: action === "backlog" ? "SendToBacklog" : "CancelTask",
         },
@@ -382,7 +404,7 @@ export function TaskReviewPanel({
         },
       );
     },
-    [task.id, rejectReview, onClose, reviewStore],
+    [task.project_id, task.id, rejectReview, onClose, reviewStore],
   );
 
   // Detect worktree state for ApproveModal

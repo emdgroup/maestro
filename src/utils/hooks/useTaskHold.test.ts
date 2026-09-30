@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-const holdTask = vi.hoisted(() => vi.fn<(taskId: number) => Promise<null>>());
-const releaseTaskHold = vi.hoisted(() => vi.fn<(taskId: number) => Promise<null>>());
+const holdTask = vi.hoisted(() => vi.fn<(projectId: number, taskId: number) => Promise<null>>());
+const releaseTaskHold = vi.hoisted(() =>
+  vi.fn<(projectId: number, taskId: number) => Promise<null>>(),
+);
 
 vi.mock("@/lib/tauri-utils", () => ({
   api: {
-    holdTask: (taskId: number) => holdTask(taskId),
-    releaseTaskHold: (taskId: number) => releaseTaskHold(taskId),
+    holdTask: (projectId: number, taskId: number) => holdTask(projectId, taskId),
+    releaseTaskHold: (projectId: number, taskId: number) => releaseTaskHold(projectId, taskId),
   },
 }));
 
@@ -25,9 +27,9 @@ afterEach(() => {
 
 describe("useTaskHold", () => {
   it("holds the task as soon as the interaction starts", () => {
-    renderHook(() => useTaskHold(4, true));
+    renderHook(() => useTaskHold(1, 4, true));
 
-    expect(holdTask).toHaveBeenCalledWith(4);
+    expect(holdTask).toHaveBeenCalledWith(1, 4);
   });
 
   /**
@@ -35,7 +37,7 @@ describe("useTaskHold", () => {
    * A client that held once and stopped would have the task taken back mid-drag.
    */
   it("keeps renewing while the interaction lasts", async () => {
-    renderHook(() => useTaskHold(4, true));
+    renderHook(() => useTaskHold(1, 4, true));
     holdTask.mockClear();
 
     await vi.advanceTimersByTimeAsync(11_000);
@@ -44,21 +46,21 @@ describe("useTaskHold", () => {
   });
 
   it("releases when the interaction ends", () => {
-    const { rerender } = renderHook(({ active }) => useTaskHold(4, active), {
+    const { rerender } = renderHook(({ active }) => useTaskHold(1, 4, active), {
       initialProps: { active: true },
     });
 
     rerender({ active: false });
 
-    expect(releaseTaskHold).toHaveBeenCalledWith(4);
+    expect(releaseTaskHold).toHaveBeenCalledWith(1, 4);
   });
 
   it("releases on unmount", () => {
-    const { unmount } = renderHook(() => useTaskHold(4, true));
+    const { unmount } = renderHook(() => useTaskHold(1, 4, true));
 
     unmount();
 
-    expect(releaseTaskHold).toHaveBeenCalledWith(4);
+    expect(releaseTaskHold).toHaveBeenCalledWith(1, 4);
   });
 
   /**
@@ -66,7 +68,7 @@ describe("useTaskHold", () => {
    * hand the whole queue to the scheduler's skip list.
    */
   it("does nothing while inactive", async () => {
-    renderHook(() => useTaskHold(4, false));
+    renderHook(() => useTaskHold(1, 4, false));
 
     await vi.advanceTimersByTimeAsync(11_000);
 
@@ -75,7 +77,7 @@ describe("useTaskHold", () => {
   });
 
   it("does nothing without a task", () => {
-    renderHook(() => useTaskHold(null, true));
+    renderHook(() => useTaskHold(1, null, true));
 
     expect(holdTask).not.toHaveBeenCalled();
   });

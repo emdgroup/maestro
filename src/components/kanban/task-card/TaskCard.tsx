@@ -407,7 +407,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
 
   // A card dropped somewhere it can be started is a card the scheduler could claim mid-gesture,
   // which would yank it out from under the pointer.
-  useTaskHold(task.id, isDragging);
+  useTaskHold(task.project_id, task.id, isDragging);
 
   const dragOccurredRef = useRef(false);
   useEffect(() => {

@@ -1,10 +1,70 @@
-use chrono::Utc;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::{Worktree, WORKTREE_DIR};
+use maestro_protocol::{
+    ClaimWorktreeForTaskRequest, DeleteWorktreesRequest, InsertWorktreeRequest,
+    ListWorktreesRequest, ProjectRef, UpdateWorktreeRequest,
+};
+
+/// The project's worktree rows, or only the one a task owns: the daemon keeps a task to one.
+pub(crate) async fn list_worktree_rows(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: Option<i32>,
+) -> Result<Vec<maestro_protocol::Worktree>, String> {
+    query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ListWorktrees(ListWorktreesRequest {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ListWorktreesOk(list) => list.worktrees),
+    )
+    .await
+}
+
+/// The worktree a task works in, if it has one.
+pub(crate) async fn task_worktree(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<Option<maestro_protocol::Worktree>, String> {
+    Ok(list_worktree_rows(app_state, project_id, Some(task_id))
+        .await?
+        .into_iter()
+        .next())
+}
+
+/// Forget worktree rows of the project. Ids it does not have are skipped.
+pub(crate) async fn delete_worktree_rows(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    worktree_ids: Vec<i32>,
+) -> Result<(), String> {
+    if worktree_ids.is_empty() {
+        return Ok(());
+    }
+    query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::DeleteWorktrees(DeleteWorktreesRequest {
+                project_path,
+                worktree_ids,
+            })
+        },
+        reply!(ServerResponse::DeleteWorktreesOk => ()),
+    )
+    .await
+}
 
 /// Canonicalize a local repository path, resolving symlinks and relative segments.
 ///
@@ -174,9 +234,7 @@ pub async fn create_worktree(
         None => None,
     };
 
-    let now = Utc::now().to_rfc3339();
-
-    let (worktree_id, branch_name, relative_path) = match task_id {
+    let worktree = match task_id {
         Some(tid) => {
             let relative_path = crate::models::worktree_path_for_task(tid);
             // The name comes back from git rather than being guessed from `base_branch`: checking
@@ -195,19 +253,21 @@ pub async fn create_worktree(
                 }
             };
 
-            let worktree_id = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![project_id, task_id, &branch_name, &base_branch, &relative_path, &now],
-                )
-                .map_err(|e| format!("Failed to insert worktree: {}", e))?;
-                conn.last_insert_rowid() as i32
-            };
-            (worktree_id, branch_name, relative_path)
+            query_project_store(
+                &app_state,
+                project_id,
+                |project_path| {
+                    ServerRequest::InsertWorktree(InsertWorktreeRequest {
+                        project_path,
+                        task_id: Some(tid),
+                        branch_name,
+                        base_branch: Some(base_branch.clone()),
+                        path: relative_path,
+                    })
+                },
+                reply!(ServerResponse::InsertWorktreeOk(worktree) => worktree),
+            )
+            .await?
         }
         // Sessions have no stable id of their own, so the row id is the name: session names are
         // random adjective-noun pairs with no collision check, and a rename would otherwise
@@ -220,18 +280,21 @@ pub async fn create_worktree(
         // A crash between the INSERT and the UPDATE leaks a path-less row that nothing
         // reaps. Reap empty-path rows older than a few minutes on project open if that shows up.
         None => {
-            let worktree_id = {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "INSERT INTO worktrees (project_id, task_id, branch_name, base_branch, path, created_at) VALUES (?, NULL, ?, ?, '', ?)",
-                    rusqlite::params![project_id, &base_branch, &base_branch, &now],
-                )
-                .map_err(|e| format!("Failed to insert worktree: {}", e))?;
-                conn.last_insert_rowid() as i32
-            };
+            let worktree_id = query_project_store(
+                &app_state,
+                project_id,
+                |project_path| {
+                    ServerRequest::InsertWorktree(InsertWorktreeRequest {
+                        project_path,
+                        task_id: None,
+                        branch_name: base_branch.clone(),
+                        base_branch: Some(base_branch.clone()),
+                        path: String::new(),
+                    })
+                },
+                reply!(ServerResponse::InsertWorktreeOk(worktree) => worktree.id),
+            )
+            .await?;
 
             let relative_path = crate::models::worktree_path_for_session(worktree_id);
             // Suffix rather than probing for an existing branch: a check-then-create pair races
@@ -261,45 +324,31 @@ pub async fn create_worktree(
             let branch_name = match created {
                 Ok(name) => name,
                 Err(e) => {
-                    let conn = app_state
-                        .db
-                        .lock()
-                        .map_err(|e| format!("Lock failed: {}", e))?;
-                    conn.execute(
-                        "DELETE FROM worktrees WHERE id = ?",
-                        rusqlite::params![worktree_id],
-                    )
-                    .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
+                    delete_worktree_rows(&app_state, project_id, vec![worktree_id])
+                        .await
+                        .map_err(|e| format!("Failed to roll back worktree row: {}", e))?;
                     return Err(e);
                 }
             };
 
-            {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                conn.execute(
-                    "UPDATE worktrees SET branch_name = ?, path = ? WHERE id = ?",
-                    rusqlite::params![&branch_name, &relative_path, worktree_id],
-                )
-                .map_err(|e| format!("Failed to update worktree: {}", e))?;
-            }
-            (worktree_id, branch_name, relative_path)
+            query_project_store(
+                &app_state,
+                project_id,
+                |project_path| {
+                    ServerRequest::UpdateWorktree(UpdateWorktreeRequest {
+                        project_path,
+                        worktree_id,
+                        branch_name: Some(branch_name),
+                        path: Some(relative_path),
+                    })
+                },
+                reply!(ServerResponse::UpdateWorktreeOk(worktree) => worktree),
+            )
+            .await?
         }
     };
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
-    Ok(Worktree {
-        id: worktree_id,
-        project_id,
-        task_id,
-        branch_name,
-        base_branch: Some(base_branch),
-        path: relative_path,
-        git_status: None,
-        created_at: now,
-    })
+    Ok(Worktree::from_wire(worktree, project_id))
 }
 
 /// Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
@@ -315,56 +364,24 @@ pub async fn create_worktree(
 #[specta::specta]
 pub async fn claim_worktree_for_task(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     worktree_id: i32,
 ) -> Result<Worktree, String> {
-    let worktree = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-
-        conn.execute(
-            "UPDATE worktrees SET task_id = NULL WHERE task_id = ? AND id != ?",
-            rusqlite::params![task_id, worktree_id],
-        )
-        .map_err(|e| format!("Failed to release the previous worktree: {}", e))?;
-
-        let updated = conn
-            .execute(
-                "UPDATE worktrees SET task_id = ? WHERE id = ?",
-                rusqlite::params![task_id, worktree_id],
-            )
-            .map_err(|e| format!("Failed to claim worktree: {}", e))?;
-        if updated == 0 {
-            return Err(
-                "The workspace this task was pinned to no longer exists. Pick another one."
-                    .to_string(),
-            );
-        }
-
-        conn.query_row(
-            "SELECT id, project_id, task_id, branch_name, base_branch, path, git_status, created_at \
-             FROM worktrees WHERE id = ?",
-            rusqlite::params![worktree_id],
-            |row| {
-                Ok(Worktree {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    task_id: row.get(2)?,
-                    branch_name: row.get(3)?,
-                    base_branch: row.get(4)?,
-                    path: row.get(5)?,
-                    git_status: row.get(6)?,
-                    created_at: row.get(7)?,
-                })
-            },
-        )
-        .map_err(|e| format!("Failed to read the claimed worktree: {}", e))?
-    };
-
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
-    Ok(worktree)
+    let worktree = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ClaimWorktreeForTask(ClaimWorktreeForTaskRequest {
+                project_path,
+                task_id,
+                worktree_id,
+            })
+        },
+        reply!(ServerResponse::ClaimWorktreeForTaskOk(worktree) => worktree),
+    )
+    .await?;
+    Ok(Worktree::from_wire(worktree, project_id))
 }
 
 // ============================================================================
@@ -414,19 +431,14 @@ pub async fn delete_worktree(
 
     // Delete DB row if id provided (orphans have no DB row)
     if let Some(id) = worktree_id {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
         // Not fatal: the git worktree is already gone, so failing here leaves a row pointing at
         // nothing rather than losing anything. `list_worktrees_with_status` reaps it on the next
         // poll — but silently, so this is the only place the failure is visible.
-        if let Err(e) = conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id]) {
+        if let Err(e) = delete_worktree_rows(&app_state, project_id, vec![id]).await {
             log::warn!("Could not delete worktree row {}: {}", id, e);
         }
     }
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(())
 }
 
@@ -534,15 +546,11 @@ pub async fn cleanup_worktree_if_clean(
     crate::git::run_git_in_dir(&git_conn, git_conn.path(), &["branch", "-d", &branch_name]).await?;
 
     if let Some(id) = worktree_id {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.execute("DELETE FROM worktrees WHERE id = ?", rusqlite::params![id])
+        delete_worktree_rows(&app_state, project_id, vec![id])
+            .await
             .map_err(|e| format!("Failed to delete worktree row: {}", e))?;
     }
 
-    app_state.app_handle.emit("worktrees-changed", ()).ok();
     Ok(None)
 }
 
@@ -676,35 +684,15 @@ pub async fn cleanup_zombie_worktrees(
     project_id: i32,
     repo_path: String,
 ) -> Result<i32, String> {
-    // Query DB for zombie candidates — lock is released after this block
-    let candidates: Vec<(i32, String, String)> = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT w.id, w.path, w.branch_name
-             FROM worktrees w
-             LEFT JOIN tasks t ON t.id = w.task_id
-             WHERE w.project_id = ?1
-               AND (w.task_id IS NULL OR t.status IN ('Done', 'Cancelled'))",
-            )
-            .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-        let rows: Vec<(i32, String, String)> = stmt
-            .query_map(rusqlite::params![project_id], |row| {
-                Ok((
-                    row.get::<_, i32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|e| format!("Failed to query zombie candidates: {}", e))?
-            .filter_map(|r| r.ok())
-            .collect();
-        rows
-    }; // Mutex lock released here
+    // Skipped rather than read as "no rows" when the daemon cannot answer, for the same reason as
+    // `live_session_cwds` below: a sweep with no idea what is claimed must not run.
+    let candidates = match zombie_candidates(&app_state, project_id).await {
+        Ok(candidates) => candidates,
+        Err(e) => {
+            log::warn!("[git] not sweeping worktrees this time: {e}");
+            return Ok(0);
+        }
+    };
 
     // A session worktree carries `task_id IS NULL`, so every one of them is a candidate here.
     // What separates a zombie from a live session is whether anything is using the directory,
@@ -783,25 +771,46 @@ pub async fn cleanup_zombie_worktrees(
         crate::git::prune_remote_refs(&git_conn, &remote).await;
     }
 
-    // Batch-delete DB rows under a single lock
-    let deleted = if !to_delete.is_empty() {
-        let ids: Vec<i32> = to_delete.iter().map(|(id, _, _)| *id).collect();
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        let sql = format!("DELETE FROM worktrees WHERE id IN ({})", placeholders);
-        let params = rusqlite::params_from_iter(ids.iter());
-        conn.execute(&sql, params).unwrap_or(0) as i32
-    } else {
-        0
-    };
-
-    if deleted > 0 {
-        app_state.app_handle.emit("worktrees-changed", ()).ok();
+    let ids: Vec<i32> = to_delete.iter().map(|(id, _, _)| *id).collect();
+    let count = ids.len() as i32;
+    match delete_worktree_rows(&app_state, project_id, ids).await {
+        Ok(()) => Ok(count),
+        Err(e) => {
+            log::warn!("[git] could not forget the swept worktree rows: {e}");
+            Ok(0)
+        }
     }
-    Ok(deleted)
+}
+
+/// Worktree rows no task is using: a session's, or one whose task is Done or Cancelled, as
+/// `(id, path, branch_name)`.
+async fn zombie_candidates(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+) -> Result<Vec<(i32, String, String)>, String> {
+    let worktrees = list_worktree_rows(app_state, project_id, None).await?;
+    let tasks = query_project_store(
+        app_state,
+        project_id,
+        |project_path| ServerRequest::ListTasks(ProjectRef { project_path }),
+        reply!(ServerResponse::ListTasksOk(list) => list.tasks),
+    )
+    .await?;
+    let finished: HashSet<i32> = tasks
+        .into_iter()
+        .filter(|task| {
+            matches!(
+                task.status,
+                maestro_protocol::TaskStatus::Done | maestro_protocol::TaskStatus::Cancelled
+            )
+        })
+        .map(|task| task.id)
+        .collect();
+    Ok(worktrees
+        .into_iter()
+        .filter(|worktree| worktree.task_id.is_none_or(|id| finished.contains(&id)))
+        .map(|worktree| (worktree.id, worktree.path, worktree.branch_name))
+        .collect())
 }
 
 /// Throw away everything a task's run produced: its worktree, its branch, and the commits it
@@ -814,45 +823,25 @@ pub async fn cleanup_zombie_worktrees(
 ///
 /// The branch is deleted with `-D`, not `-d`: the whole point is to discard unmerged work, so a
 /// safe delete would refuse in exactly the case this is called for.
-pub async fn discard_task_workspace(app_state: &Arc<AppState>, task_id: i32) -> Result<(), String> {
-    // Gather worktree and task info while holding the lock briefly
-    let (worktree_info, execution_start_sha, project_id) = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
+pub async fn discard_task_workspace(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+) -> Result<(), String> {
+    let worktree = task_worktree(app_state, project_id, task_id).await?;
+    let task = crate::task::crud::get_task_on_server(app_state, project_id, task_id)
+        .await?
+        .ok_or_else(|| format!("Failed to read task: task {task_id} not found"))?;
 
-        // Query associated worktree
-        let wt: Option<(i32, String, String)> = conn
-            .query_row(
-                "SELECT id, path, branch_name FROM worktrees WHERE task_id = ?",
-                rusqlite::params![task_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .ok();
-
-        // Get execution_start_sha and project_id from task
-        let (sha, pid): (Option<String>, i32) = conn
-            .query_row(
-                "SELECT execution_start_sha, project_id FROM tasks WHERE id = ?",
-                rusqlite::params![task_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(|e| format!("Failed to read task: {}", e))?;
-
-        (wt, sha, pid)
-    };
-
-    // Perform async git cleanup outside the DB lock
-    if let Some((worktree_id, worktree_path, branch_name)) = worktree_info {
+    if let Some(worktree) = worktree {
         let (_project, git_conn) =
             crate::core::get_project_with_git_conn(app_state, project_id).await?;
 
         // Best effort: already gone from disk is the outcome this asks for.
-        if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree_path).await {
+        if let Err(e) = crate::git::delete_worktree(&git_conn, &worktree.path).await {
             log::warn!(
                 "Could not remove the git worktree at {}: {}",
-                worktree_path,
+                worktree.path,
                 e
             );
         }
@@ -861,25 +850,14 @@ pub async fn discard_task_workspace(app_state: &Arc<AppState>, task_id: i32) -> 
         let _ = crate::git::run_git_in_dir_lossy(
             &git_conn,
             git_conn.path(),
-            &["branch", "-D", &branch_name],
+            &["branch", "-D", &worktree.branch_name],
         )
         .await;
 
-        // Delete worktree DB row
-        {
-            let conn = app_state
-                .db
-                .lock()
-                .map_err(|e| format!("Lock failed: {}", e))?;
-            conn.execute(
-                "DELETE FROM worktrees WHERE id = ?",
-                rusqlite::params![worktree_id],
-            )
+        delete_worktree_rows(app_state, project_id, vec![worktree.id])
+            .await
             .map_err(|e| format!("Failed to delete worktree: {}", e))?;
-        }
-
-        app_state.app_handle.emit("worktrees-changed", ()).ok();
-    } else if execution_start_sha.is_some() {
+    } else if task.execution_start_sha.is_some() {
         // A task with no worktree row used to be rolled back in place here: `reset --hard` to its
         // start sha, then `checkout -- .` and `clean -fd` on the *project* path.
         //
@@ -895,17 +873,18 @@ pub async fn discard_task_workspace(app_state: &Arc<AppState>, task_id: i32) -> 
         );
     }
 
-    // Clear execution_start_sha now that cleanup is done
+    if let Err(e) = crate::task::crud::update_task_on_server(
+        app_state,
+        project_id,
+        task_id,
+        maestro_protocol::TaskUpdate {
+            execution_start_sha: Some(None),
+            ..Default::default()
+        },
+    )
+    .await
     {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        conn.execute(
-            "UPDATE tasks SET execution_start_sha = NULL WHERE id = ?",
-            rusqlite::params![task_id],
-        )
-        .ok();
+        log::warn!("[git] could not clear the start sha of task {task_id}: {e}");
     }
 
     Ok(())

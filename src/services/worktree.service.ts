@@ -405,8 +405,15 @@ export function useCreateWorktreeMutation() {
 export function useClaimWorktreeForTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, worktreeId }: { taskId: number; worktreeId: number }) =>
-      api.claimWorktreeForTask(taskId, worktreeId),
+    mutationFn: ({
+      projectId,
+      taskId,
+      worktreeId,
+    }: {
+      projectId: number;
+      taskId: number;
+      worktreeId: number;
+    }) => api.claimWorktreeForTask(projectId, taskId, worktreeId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreeQueryKeys.base });
     },

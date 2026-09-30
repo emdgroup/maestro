@@ -454,9 +454,9 @@ async createWorktree(projectId: number, taskId: number | null, baseBranch: strin
  * Any worktree the task owned before is released rather than left behind, so the one-worktree-
  * per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
  */
-async claimWorktreeForTask(taskId: number, worktreeId: number) : Promise<Result<Worktree, string>> {
+async claimWorktreeForTask(projectId: number, taskId: number, worktreeId: number) : Promise<Result<Worktree, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("claim_worktree_for_task", { taskId, worktreeId }) };
+    return { status: "ok", data: await TAURI_INVOKE("claim_worktree_for_task", { projectId, taskId, worktreeId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -717,9 +717,9 @@ async closePtySession(sessionId: string) : Promise<Result<null, string>> {
  * 
  * Returns a typed ReviewResult with success flag and review_id.
  */
-async saveTaskReview(taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
+async saveTaskReview(projectId: number, taskId: number, decision: string, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_task_review", { taskId, decision, generalFeedback, perFileComments }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_task_review", { projectId, taskId, decision, generalFeedback, perFileComments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -733,9 +733,9 @@ async saveTaskReview(taskId: number, decision: string, generalFeedback: string |
  * 
  * Returns a typed ReviewResult with success flag, review_id, and updated task_status.
  */
-async requestChanges(taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
+async requestChanges(projectId: number, taskId: number, generalFeedback: string | null, perFileComments: ([string, string])[] | null) : Promise<Result<ReviewResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("request_changes", { taskId, generalFeedback, perFileComments }) };
+    return { status: "ok", data: await TAURI_INVOKE("request_changes", { projectId, taskId, generalFeedback, perFileComments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -744,9 +744,9 @@ async requestChanges(taskId: number, generalFeedback: string | null, perFileComm
 /**
  * Get the current review (with comments) for a task
  */
-async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | null, string>> {
+async getTaskReview(projectId: number, taskId: number) : Promise<Result<TaskReviewWithComments | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_task_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_task_review", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -756,9 +756,9 @@ async getTaskReview(taskId: number) : Promise<Result<TaskReviewWithComments | nu
  * Clear the review and its comments for a task after feedback has been injected into the agent.
  * Prevents stale comments from appearing in subsequent review cycles or being re-injected on cold starts.
  */
-async clearTaskReview(taskId: number) : Promise<Result<null, string>> {
+async clearTaskReview(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clear_task_review", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("clear_task_review", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -769,9 +769,9 @@ async clearTaskReview(taskId: number) : Promise<Result<null, string>> {
  * Reads .maestro/commit-template.txt from the project path; falls back to the default template.
  * Returns the resolved string with all variables substituted.
  */
-async resolveCommitMessage(taskId: number) : Promise<Result<string, string>> {
+async resolveCommitMessage(projectId: number, taskId: number) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resolve_commit_message", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("resolve_commit_message", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -788,9 +788,9 @@ async resolveCommitMessage(taskId: number) : Promise<Result<string, string>> {
  * 
  * Returns a typed MergeResult with success flag, task_status, and conflicts.
  */
-async approveTaskAndMerge(taskId: number, mergeStrategy: string, includeUntracked: boolean, commitMessage: string) : Promise<Result<MergeResult, string>> {
+async approveTaskAndMerge(projectId: number, taskId: number, mergeStrategy: string, includeUntracked: boolean, commitMessage: string) : Promise<Result<MergeResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { taskId, mergeStrategy, includeUntracked, commitMessage }) };
+    return { status: "ok", data: await TAURI_INVOKE("approve_task_and_merge", { projectId, taskId, mergeStrategy, includeUntracked, commitMessage }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -909,9 +909,9 @@ async openPullRequestForBranch(projectId: number, branch: string, base: string, 
  * 
  * Returns the updated Task.
  */
-async rejectReview(taskId: number, action: string) : Promise<Result<Task, string>> {
+async rejectReview(projectId: number, taskId: number, action: string) : Promise<Result<Task, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("reject_review", { taskId, action }) };
+    return { status: "ok", data: await TAURI_INVOKE("reject_review", { projectId, taskId, action }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2966,9 +2966,9 @@ async releaseTaskExecutionClaim(projectId: number, taskId: number, failed: boole
  * window or a killed renderer never sends one, and a task nothing can start is worse than one
  * started a moment early.
  */
-async holdTask(taskId: number) : Promise<Result<null, string>> {
+async holdTask(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("hold_task", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("hold_task", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2983,9 +2983,9 @@ async holdTask(taskId: number) : Promise<Result<null, string>> {
  * It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
  * would be a cost paid on every drag.
  */
-async releaseTaskHold(taskId: number) : Promise<Result<null, string>> {
+async releaseTaskHold(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("release_task_hold", { taskId }) };
+    return { status: "ok", data: await TAURI_INVOKE("release_task_hold", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

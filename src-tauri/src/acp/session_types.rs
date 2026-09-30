@@ -313,7 +313,7 @@ pub struct AcpProcess {
 
 /// A session's task as the daemon keys it: task ids are per project, so the number alone does not
 /// name one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskKey {
     pub project_id: i32,
     pub task_id: i32,

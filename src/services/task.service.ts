@@ -44,7 +44,8 @@ export const taskQueryKeys = {
     [...taskQueryKeys.base, "comments", projectId, taskId] as const,
   attachments: (projectId: number, taskId: number) =>
     [...taskQueryKeys.base, "attachments", projectId, taskId] as const,
-  commitMessage: (taskId: number) => [...taskQueryKeys.base, "commitMessage", taskId] as const,
+  commitMessage: (projectId: number, taskId: number) =>
+    [...taskQueryKeys.base, "commitMessage", projectId, taskId] as const,
   proxyImage: (projectId: number, filePath: string) =>
     [...taskQueryKeys.base, "proxyImage", projectId, filePath] as const,
 };
@@ -200,16 +201,18 @@ export function useUpdateTaskSettingsMutation() {
 export function useSaveTaskReviewMutation() {
   return useMutation({
     mutationFn: ({
+      projectId,
       taskId,
       decision,
       generalFeedback,
       perFileComments,
     }: {
+      projectId: number;
       taskId: number;
       decision: string;
       generalFeedback: string | null;
       perFileComments: Array<[string, string]> | null;
-    }) => api.saveTaskReview(taskId, decision, generalFeedback, perFileComments),
+    }) => api.saveTaskReview(projectId, taskId, decision, generalFeedback, perFileComments),
     onError: createErrorToastHandler("Failed to save review"),
   });
 }
@@ -217,10 +220,10 @@ export function useSaveTaskReviewMutation() {
 /**
  * Mutation hook for approving task and performing synchronous merge
  */
-export function useResolveCommitMessageQuery(taskId: number, enabled: boolean) {
+export function useResolveCommitMessageQuery(projectId: number, taskId: number, enabled: boolean) {
   return useQuery({
-    queryKey: taskQueryKeys.commitMessage(taskId),
-    queryFn: () => api.resolveCommitMessage(taskId),
+    queryKey: taskQueryKeys.commitMessage(projectId, taskId),
+    queryFn: () => api.resolveCommitMessage(projectId, taskId),
     enabled,
     staleTime: 0,
   });
@@ -231,16 +234,19 @@ export function useApproveTaskAndMergeMutation() {
 
   return useMutation({
     mutationFn: ({
+      projectId,
       taskId,
       mergeStrategy,
       includeUntracked,
       commitMessage,
     }: {
+      projectId: number;
       taskId: number;
       mergeStrategy: string;
       includeUntracked: boolean;
       commitMessage: string;
-    }) => api.approveTaskAndMerge(taskId, mergeStrategy, includeUntracked, commitMessage),
+    }) =>
+      api.approveTaskAndMerge(projectId, taskId, mergeStrategy, includeUntracked, commitMessage),
     onSuccess: (result: unknown) => {
       const data = result as MergeResult;
       if (data.success) {
@@ -272,8 +278,15 @@ export function useRejectReviewMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, action }: { taskId: number; action: string }) =>
-      api.rejectReview(taskId, action),
+    mutationFn: ({
+      projectId,
+      taskId,
+      action,
+    }: {
+      projectId: number;
+      taskId: number;
+      action: string;
+    }) => api.rejectReview(projectId, taskId, action),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
     },
@@ -289,14 +302,16 @@ export function useRequestChangesMutation() {
 
   return useMutation({
     mutationFn: ({
+      projectId,
       taskId,
       generalFeedback,
       perFileComments,
     }: {
+      projectId: number;
       taskId: number;
       generalFeedback: string | null;
       perFileComments: Array<[string, string]> | null;
-    }) => api.requestChanges(taskId, generalFeedback, perFileComments),
+    }) => api.requestChanges(projectId, taskId, generalFeedback, perFileComments),
     onSuccess: () => {
       toast.info("Changes requested. Task returned to In Progress.");
       void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });

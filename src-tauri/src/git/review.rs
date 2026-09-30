@@ -1,41 +1,44 @@
-use chrono::Utc;
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::State;
 
+use crate::acp::connection_server::{query_project_store, reply};
+use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::git;
-use crate::models::{ReviewCommentEntry, ReviewResult, Task, TaskReviewWithComments, TASK_SELECT};
-use crate::task::transition::{self, TaskTransition};
+use crate::models::{ReviewCommentEntry, ReviewResult, Task, TaskReviewWithComments};
+use maestro_protocol::{
+    ReviewCommentInput, SaveTaskReviewRequest, TaskRef, TaskTransition, TransitionGuard,
+};
 
-/// Insert (or replace) a review record with optional per-file comments.
-/// Uses INSERT OR REPLACE to handle the UNIQUE(task_id) constraint —
-/// old review_comments are CASCADE-deleted when the review row is replaced.
-/// Returns the review_id of the newly inserted record.
-fn insert_review_with_comments(
-    conn: &rusqlite::Connection,
+/// Replace a task's review, and every per-file comment it had, with this one.
+async fn replace_review(
+    app_state: &Arc<AppState>,
+    project_id: i32,
     task_id: i32,
-    decision: &str,
-    general_feedback: Option<&str>,
-    per_file_comments: Option<&[(String, String)]>,
-    now: &str,
+    decision: String,
+    general_feedback: Option<String>,
+    per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<i32, String> {
-    conn.execute(
-        "INSERT OR REPLACE INTO task_reviews (task_id, decision, general_feedback, reviewed_at, created_at) VALUES (?, ?, ?, ?, ?)",
-        rusqlite::params![task_id, decision, general_feedback, now, now],
-    ).map_err(|e| format!("Insert review failed: {}", e))?;
-
-    let review_id = conn.last_insert_rowid() as i32;
-
-    if let Some(comments) = per_file_comments {
-        for (file_path, comment) in comments {
-            conn.execute(
-                "INSERT INTO review_comments (review_id, file_path, comment, created_at) VALUES (?, ?, ?, ?)",
-                rusqlite::params![review_id, file_path, comment, now],
-            ).map_err(|e| format!("Insert comment failed: {}", e))?;
-        }
-    }
-
-    Ok(review_id)
+    let comments = per_file_comments
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(file_path, comment)| ReviewCommentInput { file_path, comment })
+        .collect();
+    query_project_store(
+        app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::SaveTaskReview(SaveTaskReviewRequest {
+                project_path,
+                task_id,
+                decision,
+                general_feedback,
+                comments: Some(comments),
+            })
+        },
+        reply!(ServerResponse::SaveTaskReviewOk(saved) => saved.review_id),
+    )
+    .await
 }
 
 /// Save task review with feedback and per-file comments
@@ -49,25 +52,21 @@ fn insert_review_with_comments(
 #[specta::specta]
 pub async fn save_task_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     decision: String,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-    let comments_ref = per_file_comments.as_deref();
-    let review_id = insert_review_with_comments(
-        &conn,
+    let review_id = replace_review(
+        &app_state,
+        project_id,
         task_id,
-        &decision,
-        general_feedback.as_deref(),
-        comments_ref,
-        &now,
-    )?;
+        decision,
+        general_feedback,
+        per_file_comments,
+    )
+    .await?;
 
     Ok(ReviewResult {
         success: true,
@@ -86,27 +85,29 @@ pub async fn save_task_review(
 #[specta::specta]
 pub async fn request_changes(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     general_feedback: Option<String>,
     per_file_comments: Option<Vec<(String, String)>>,
 ) -> Result<ReviewResult, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let now = Utc::now().to_rfc3339();
-    let comments_ref = per_file_comments.as_deref();
-    let review_id = insert_review_with_comments(
-        &conn,
+    let review_id = replace_review(
+        &app_state,
+        project_id,
         task_id,
-        "RequestChanges",
-        general_feedback.as_deref(),
-        comments_ref,
-        &now,
-    )?;
-    transition::apply(&conn, task_id, TaskTransition::ReworkRequested)?;
+        "RequestChanges".to_string(),
+        general_feedback,
+        per_file_comments,
+    )
+    .await?;
+    crate::task::ops::apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        TaskTransition::ReworkRequested,
+        TransitionGuard::Always,
+    )
+    .await?;
 
-    app_state.app_handle.emit("tasks-changed", ()).ok();
     Ok(ReviewResult {
         success: true,
         review_id,
@@ -119,52 +120,34 @@ pub async fn request_changes(
 #[specta::specta]
 pub async fn get_task_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<Option<TaskReviewWithComments>, String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-
-    let review = conn
-        .query_row(
-            "SELECT id, decision, general_feedback, created_at FROM task_reviews WHERE task_id = ?",
-            [task_id],
-            |row| {
-                Ok((
-                    row.get::<_, i32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            },
-        )
-        .ok();
-
-    let Some((review_id, decision, general_feedback, created_at)) = review else {
-        return Ok(None);
-    };
-
-    let mut stmt = conn
-        .prepare("SELECT file_path, comment FROM review_comments WHERE review_id = ?")
-        .map_err(|e| format!("Prepare failed: {}", e))?;
-
-    let comments: Vec<ReviewCommentEntry> = stmt
-        .query_map([review_id], |row| {
-            Ok(ReviewCommentEntry {
-                file_path: row.get(0)?,
-                comment: row.get(1)?,
+    let found = query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::GetTaskReview(TaskRef {
+                project_path,
+                task_id,
             })
-        })
-        .map_err(|e| format!("Query failed: {}", e))?
-        .filter_map(|r| r.ok())
-        .collect();
+        },
+        reply!(ServerResponse::GetTaskReviewOk(found) => found.review),
+    )
+    .await?;
 
-    Ok(Some(TaskReviewWithComments {
-        decision,
-        general_feedback,
-        comments,
-        created_at,
+    Ok(found.map(|review| TaskReviewWithComments {
+        decision: review.decision,
+        general_feedback: review.general_feedback,
+        comments: review
+            .comments
+            .into_iter()
+            .map(|comment| ReviewCommentEntry {
+                file_path: comment.file_path,
+                comment: comment.comment,
+            })
+            .collect(),
+        created_at: review.created_at,
     }))
 }
 
@@ -174,18 +157,21 @@ pub async fn get_task_review(
 #[specta::specta]
 pub async fn clear_task_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    conn.execute(
-        "DELETE FROM task_reviews WHERE task_id = ?",
-        rusqlite::params![task_id],
+    query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ClearTaskReview(TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ClearTaskReviewOk => ()),
     )
-    .map_err(|e| format!("Delete review failed: {}", e))?;
-    Ok(())
+    .await
 }
 
 /// Reject a task in review, discarding its work either way
@@ -199,47 +185,36 @@ pub async fn clear_task_review(
 #[specta::specta]
 pub async fn reject_review(
     app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
     task_id: i32,
     action: String,
 ) -> Result<Task, String> {
-    match action.as_str() {
-        "SendToBacklog" | "CancelTask" => {
-            // "SendToBacklog" is a legacy name: there is no Backlog column, and this used to
-            // write the literal status 'Backlog', which v24 had already retired. Discarding
-            // returns the task to Planning.
-            let event = if action == "SendToBacklog" {
-                TaskTransition::Discarded
-            } else {
-                TaskTransition::Cancelled
-            };
-
-            {
-                let conn = app_state
-                    .db
-                    .lock()
-                    .map_err(|e| format!("Lock failed: {}", e))?;
-                transition::apply(&conn, task_id, event)?;
-            }
-
-            git::worktree_lifecycle::discard_task_workspace(&app_state, task_id).await?;
-        }
+    // "SendToBacklog" is a legacy name: there is no Backlog column, and this used to write the
+    // literal status 'Backlog', which v24 had already retired. Discarding returns the task to
+    // Planning.
+    let event = match action.as_str() {
+        "SendToBacklog" => TaskTransition::Discarded,
+        "CancelTask" => TaskTransition::Cancelled,
         _ => {
             return Err(format!(
                 "Unknown reject action '{}'. Expected SendToBacklog or CancelTask",
                 action
             ));
         }
-    }
+    };
 
-    // Read back the updated task
-    let conn = app_state
-        .db
-        .lock()
-        .map_err(|e| format!("Lock failed: {}", e))?;
-    let query = format!("{} WHERE id = ?", TASK_SELECT);
-    let task = conn
-        .query_row(&query, [task_id], Task::from_row)
-        .map_err(|e| format!("Failed to read updated task: {}", e))?;
-    app_state.app_handle.emit("tasks-changed", ()).ok();
-    Ok(task)
+    crate::task::ops::apply_transition_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        event,
+        TransitionGuard::Always,
+    )
+    .await?;
+
+    git::worktree_lifecycle::discard_task_workspace(&app_state, project_id, task_id).await?;
+
+    crate::task::crud::get_task_on_server(&app_state, project_id, task_id)
+        .await?
+        .ok_or_else(|| format!("Failed to read updated task: task {task_id} not found"))
 }

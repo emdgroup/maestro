@@ -244,7 +244,7 @@ Tasks:
         A session's task is a `TaskKey` (its `project_id` and task id). Daemon queries from a
         reader run off it, since the reply comes back through that reader.
         `task-comments-changed` carries `{ project_id, task_id }`
-  - [ ] T7b `merge`, `review`, `worktree_lifecycle`, `worktree_query` and the worktree and review
+  - [x] T7b `merge`, `review`, `worktree_lifecycle`, `worktree_query` and the worktree and review
         commands, including `discard_task_workspace` and `push_ci_fix`
 - [ ] T8 Attachments copied on attach
 - [x] T9 Frontend: `projectId` on commands and query keys, bindings

@@ -133,7 +133,7 @@ export const TaskDetailModal = ({ taskId }: TaskDetailModalProps) => {
 
   // Held while the modal is open, so auto-mode cannot start the task the user is halfway through
   // rewriting — the agent would be given a prompt the user had already moved on from.
-  useTaskHold(taskId, taskId !== null);
+  useTaskHold(projectId, taskId, taskId !== null);
 
   const [draft, setDraft] = useState<TaskDraft>({
     title: "",
