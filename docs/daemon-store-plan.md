@@ -45,7 +45,7 @@ belongs to a project.
 | Table                                              | Goes to | Why                                                           |
 | -------------------------------------------------- | ------- | ------------------------------------------------------------- |
 | `tasks`, `task_relationships`, `task_instructions` | daemon  | Project data                                                  |
-| `task_comments`, `task_attachments`                | daemon  | Project data; attachment files are already in the repo        |
+| `task_comments`, `task_attachments`                | daemon  | Project data; the file is copied into the project on attach   |
 | `task_reviews`, `review_comments`                  | daemon  | Project data                                                  |
 | `worktrees`                                        | daemon  | Rows describe directories on the daemon's machine             |
 | `session_aliases`                                  | daemon  | A renamed session must keep its name on B                     |
@@ -63,8 +63,8 @@ belongs to a project.
 | ----- | -------------------------------------------------- | ---------------------- |
 | 0     | Request ids on the wire                            | Done, not yet run live |
 | 1     | Sessions: the daemon knows what a project has open | Done, not yet run live |
-| 2     | Tasks and their threads                            | Not started            |
-| 3     | Worktrees, reviews and project prompts             | Not started            |
+| 2     | Tasks, their threads, worktrees and reviews        | In progress            |
+| 3     | Project prompts                                    | Not started            |
 | 4     | Import what apps already hold, then drop it        | Not started            |
 | 5     | The pipeline runs with no window                   | Not started            |
 
@@ -181,31 +181,67 @@ Not in this phase: a transcript for the part of a turn nobody watched. A session
 still starts its transcript at the reconnect. A daemon-side replay buffer fixes that and is its own
 piece of work.
 
-### Phase 2: tasks and their threads
+### Phase 2: tasks, their threads, worktrees and reviews
 
-`tasks`, `task_relationships`, `task_instructions`, `task_comments` and `task_attachments` move to
-`projects.db`, with `project_path` where `project_id` was.
+`tasks`, `task_relationships`, `task_instructions`, `task_comments`, `task_attachments`,
+`worktrees`, `task_reviews` and `review_comments` move to `projects.db`, with `project_path` where
+`project_id` was. Worktrees and reviews were phase 3, and moved here because every one of them has
+a foreign key or a JOIN into `tasks` (merge, review, the zombie sweep, the worktree list): moving
+tasks alone meant writing cross-store glue for phase 3 to delete.
 
-- The SQL moves with them. `task/crud.rs`, `task/ops.rs`, `task/transition.rs` and their siblings
-  become daemon modules, and the app's task commands become one round trip each, the shape
-  `project/automations.rs` already has. The rules in `task::transition` run where the rows are, so a
-  transition stays one transaction.
-- Every change is broadcast as `TasksChanged { project_path }`, which is what refetches the board in
-  a second window and replaces the app's own `tasks-changed` emit.
+- The SQL moves with them. `task/crud.rs`, `task/transition.rs`, `task/comments.rs` and their
+  siblings become daemon modules, and the app's commands become one round trip each, the shape
+  `project/automations.rs` already has.
+- **A guarded step is one request.** Every `transition::apply_if_*` reads, then writes, and is
+  atomic today only because every command shares the app's one `Mutex<Connection>`. In the daemon
+  each is a single request run under the store's lock: the guard travels with the transition. The
+  same goes for the composite steps the pipeline runs under one lock today: the turn end (phase
+  read, review round count, transition, `record_outcome`), `close_refinement` and
+  `request_task_execution`.
+- Every change is broadcast as `TasksChanged { project_path }`, and a thread change as
+  `TaskCommentsChanged`, which is what refetches a second window and replaces the app's own 32
+  `tasks-changed` emits. A worktree or review change is broadcast the same way.
 - The task tools of the MCP server (`create_task`, `list_tasks`, `get_task`, `update_task`,
-  `comment_task`) are answered by the gateway itself. They stop needing a window.
-- Task ids stay integers, now minted by the daemon and unique per machine rather than per app.
-- Issue sync and pull request polling stay in the app, because the tokens are in its keychain. They
-  write through the same commands as everything else.
-
-### Phase 3: worktrees, reviews and project prompts
-
-`worktrees`, `task_reviews` and `review_comments` move. `tasks.workspace_worktree_id` becomes a real
-foreign key again once both tables are in one file.
-
+  `comment_task`) are answered by the gateway itself, from the session's `project_path` and
+  `task_id`. They stop needing a window. `create_task` reads `.maestro/settings.json` and the
+  current branch locally, since the daemon is on the project's machine.
 - Diff, merge, staging and remote stay in the app, tunnelled as they are. Only the rows move.
 - `adopt_automation_worktrees` goes away: the daemon writes the row when it makes the worktree.
-- `execution/queue.rs` keeps running in the app against the daemon's rows until phase 5.
+- Issue sync, pull request polling, `execution/queue.rs` and the in-memory task holds stay in the
+  app until phase 5. They write through the same requests as everything else.
+
+Decisions:
+
+| Topic                       | Decision                                                                                                                                                                                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task ids                    | Per project: the key is `(project_path, id)`. Each project has a counter that never goes back, so a deleted task's number is never reused while its `task-<id>` folder or `maestro/<id>-` branch may linger. Phase 4 imports ids as they are, so existing folders and branches still match their task |
+| Ids on the app side         | Every command naming a task carries `project_id` too, and every task query key in the frontend carries the project, since two projects both have a task 3                                                                                                                                             |
+| Attachments                 | Copied on attach into `<project>/.maestro/attachments/tasks/<task_id>/` on the daemon's machine, through the copy path prompts already use. The row holds a project-relative path, so every machine and every agent sees the file. The app stops reading sizes off its own disk                       |
+| Daemon unreachable          | The board shows the connection error and a retry. No cache, no queued writes                                                                                                                                                                                                                          |
+| Two windows editing a field | Last write wins. There is no position column, and the daemon's lock settles transition races                                                                                                                                                                                                          |
+| Agent writes with no window | Allowed. The broadcast reaches nobody, and a window refetches when it opens the project                                                                                                                                                                                                               |
+| Schema                      | `projects.db` gets `PRAGMA user_version` and a migration step, which phase 1 did without                                                                                                                                                                                                              |
+
+Tasks:
+
+- [x] T0 Slow daemon arms answer off the main loop, so a board query does not wait behind a skills
+      install (`f30ebea7`). `RunAutomation` still runs `git worktree add` inline
+- [ ] T1 `maestro-protocol`: row types, the transition event and its guard, the requests, the
+      pushes; `PROTOCOL_VERSION` 9
+- [ ] T2 `maestro-server` store for tasks and threads: schema, migration, per-project counter,
+      `transition` rules and guards moved with their tests
+- [ ] T3 `maestro-server` store for worktrees and reviews
+- [ ] T4 `maestro-server` dispatch: the arms, the composite steps, the broadcasts
+- [ ] T5 `maestro-server` MCP task tools answered by the gateway
+- [ ] T6 `src-tauri` task commands as round trips, with `project_id`; pushes become events
+- [ ] T7 `src-tauri` pipeline, worktree and review sites: `reader_task`, `merge`, `review`, `queue`,
+      `spawn`, the session and prompt handlers, `worktree_lifecycle`, `worktree_query`
+- [ ] T8 Attachments copied on attach
+- [ ] T9 Frontend: `projectId` on commands and query keys, bindings
+- [ ] T10 Remove the app's task SQL (the tables stay until phase 4), docs, review, an end-to-end
+      test with two clients seeing `TasksChanged`
+
+### Phase 3: project prompts
 
 **Prompts are two collections, and nothing syncs.** A project's collection is in its daemon, so
 every app opening the project sees it. The shared collection is in the app's database, as today, so
@@ -243,12 +279,13 @@ it is there in every project that app opens. The two are separate stores with se
 ### Phase 4: import, then drop
 
 On opening a project, an app that still holds rows for it sends them to the daemon once, in one
-transaction, and marks the project imported. Ids are remapped on the way in: tasks first, then
-everything that points at a task.
+transaction, and marks the project imported. Task ids are kept as they are, since they are per
+project and the daemon holds none for it yet, and the project's counter starts above the highest.
+A task id is embedded in things that outlive the row: the `task-<id>` worktree folder, the
+`maestro/<id>-` branch and a commit message template. Keeping ids keeps those matching.
 
 - The app's tables stay, unread, for one release, then a schema migration drops them.
-- To verify before starting: whether a task id is embedded anywhere that outlives the row, such as
-  a generated branch name or an attachment path.
+- Attachment rows whose file is on this app's disk are copied into the project on the way in.
 
 ### Phase 5: the pipeline runs with no window
 
