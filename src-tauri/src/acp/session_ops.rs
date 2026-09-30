@@ -142,6 +142,46 @@ fn row_action(turn_active: Option<bool>, can_reload: bool, single: bool) -> RowA
     }
 }
 
+/// Whether an entry this window holds for a row's conversation is that row's session.
+///
+/// A running row is held only under the routing id the daemon runs it under. After another window
+/// took the project over and reloaded the session, this window's entry names an id the daemon no
+/// longer routes, and every prompt sent to it would go nowhere. A dormant row is held only by a load
+/// still in flight from here; an entry that had come up is one whose session has since stopped.
+fn holds_row(entry_session_id: &str, initialized: bool, live_session_id: Option<&str>) -> bool {
+    match live_session_id {
+        Some(live_session_id) => entry_session_id == live_session_id,
+        None => !initialized,
+    }
+}
+
+/// Drop entries whose sessions the daemon no longer runs under these ids, without asking it to
+/// close anything: the conversation itself belongs to whoever runs it now.
+pub(crate) async fn forget_sessions(
+    app_state: &Arc<crate::core::AppState>,
+    session_ids: &[String],
+) {
+    if session_ids.is_empty() {
+        return;
+    }
+    {
+        let mut sessions = app_state.acp.sessions.lock().await;
+        for session_id in session_ids {
+            if let Some(mut session) = sessions.remove(session_id) {
+                if let Some(cancel_tx) = session.reader_cancel_tx.take() {
+                    if cancel_tx.send(()).is_err() {
+                        log::debug!("[acp] reader for session_id={session_id} already stopped");
+                    }
+                }
+            }
+        }
+    }
+    log::debug!("[acp] forgot sessions no longer running here: {session_ids:?}");
+    if let Err(e) = app_state.app_handle.emit("sessions-changed", ()) {
+        log::warn!("[acp] emit sessions-changed failed: {e}");
+    }
+}
+
 /// Give this project's `worktrees` table a row for each worktree its automations have provisioned.
 ///
 /// The server made these and the server will remove them, but while one is on disk it is a
@@ -271,23 +311,32 @@ pub async fn attach_project_sessions(
         if only.is_some_and(|wanted| live_session_id != Some(wanted)) {
             continue;
         }
-        let held = app_state
-            .acp
-            .sessions
-            .lock()
-            .await
-            .iter()
-            .any(|(session_id, proc)| {
-                live_session_id == Some(session_id.as_str())
-                    || (proc.agent_id_meta == row.agent_id
-                        && proc
-                            .acp_session_id
-                            .lock()
-                            .is_ok_and(|held| held.as_deref() == Some(row.acp_session_id.as_str())))
-            });
+        let (held, stale) = {
+            let sessions = app_state.acp.sessions.lock().await;
+            let mut held = false;
+            let mut stale = Vec::new();
+            for (session_id, proc) in sessions.iter() {
+                let same_key = proc.agent_id_meta == row.agent_id
+                    && proc
+                        .acp_session_id
+                        .lock()
+                        .is_ok_and(|held| held.as_deref() == Some(row.acp_session_id.as_str()));
+                if live_session_id != Some(session_id.as_str()) && !same_key {
+                    continue;
+                }
+                let initialized = proc.initialized.lock().is_ok_and(|done| *done);
+                if holds_row(session_id, initialized, live_session_id) {
+                    held = true;
+                } else {
+                    stale.push(session_id.clone());
+                }
+            }
+            (held, stale)
+        };
         if held {
             continue;
         }
+        forget_sessions(app_state, &stale).await;
 
         let task = TaskMetadata::from_session_meta(&row.meta);
         let action = row_action(
@@ -818,7 +867,20 @@ pub async fn restore_acp_sessions(
 
 #[cfg(test)]
 mod tests {
-    use super::{row_action, RowAction};
+    use super::{holds_row, row_action, RowAction};
+
+    #[test]
+    fn a_running_row_is_held_only_under_its_live_routing_id() {
+        assert!(holds_row("live", true, Some("live")));
+        // Another window reloaded it under a new id while this one kept the old.
+        assert!(!holds_row("old", true, Some("live")));
+    }
+
+    #[test]
+    fn a_dormant_row_is_held_only_by_a_load_in_flight() {
+        assert!(holds_row("loading", false, None));
+        assert!(!holds_row("stopped", true, None));
+    }
 
     #[test]
     fn a_row_is_adopted_reloaded_loaded_or_skipped() {

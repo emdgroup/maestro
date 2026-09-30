@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use maestro_protocol::{ProjectSession, SessionMeta};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 /// Shared like the automation store, and for the same reason: request handlers and the loop's own
 /// timers both write it. Never held across a request to an agent.
@@ -94,17 +94,58 @@ pub struct Started<'a> {
     pub meta: &'a SessionMeta,
     pub can_reload: bool,
     pub session_id: &'a str,
+    /// When the host asked for the session. A row closed after this was closed while the load was
+    /// in flight, by a user who no longer wants it.
+    pub requested_at: DateTime<Utc>,
 }
 
 /// Record a live session, reopening its row when it has one.
 ///
-/// A meta field the caller leaves out keeps what the row holds: a reload knows the conversation's
-/// id and little else, and must not cost it the role, start sha and task name it was started with.
+/// A reload of an open row knows the conversation's id and little else, so a meta field it leaves
+/// out keeps what the row holds rather than costing it the role, start sha and task name. A closed
+/// row reopened is a new use of the conversation, from Session History, and takes the meta it is
+/// reopened with whole: keeping the old task would bind it to that task again.
 pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Result<(), String> {
+    let closed_at: Option<Option<String>> = conn
+        .query_row(
+            "SELECT closed_at FROM sessions WHERE agent_id = ?1 AND acp_session_id = ?2",
+            params![started.agent_id, started.acp_session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("cannot read a session: {e}"))?;
+    let reopening = match closed_at {
+        Some(Some(closed_at)) => {
+            let closed_at = DateTime::parse_from_rfc3339(&closed_at)
+                .map_err(|e| format!("cannot read a session's closed_at {closed_at:?}: {e}"))?;
+            if closed_at >= started.requested_at {
+                return Ok(());
+            }
+            true
+        }
+        _ => false,
+    };
     let meta = started.meta;
-    run(
-        conn,
-        "record a session",
+    let meta_columns = [
+        "session_name",
+        "task_id",
+        "task_name",
+        "branch_name",
+        "role",
+        "session_start_sha",
+    ]
+    .map(|column| {
+        if reopening {
+            format!("{column} = excluded.{column}")
+        } else {
+            format!("{column} = COALESCE(excluded.{column}, {column})")
+        }
+    })
+    .join(
+        ",
+             ",
+    );
+    let sql = format!(
         "INSERT INTO sessions (agent_id, acp_session_id, project_path, cwd, session_name, task_id,
                                task_name, branch_name, role, session_start_sha, can_reload,
                                session_id, created_at, closed_at)
@@ -112,15 +153,15 @@ pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Resul
          ON CONFLICT(agent_id, acp_session_id) DO UPDATE SET
              project_path      = excluded.project_path,
              cwd               = excluded.cwd,
-             session_name      = COALESCE(excluded.session_name, session_name),
-             task_id           = COALESCE(excluded.task_id, task_id),
-             task_name         = COALESCE(excluded.task_name, task_name),
-             branch_name       = COALESCE(excluded.branch_name, branch_name),
-             role              = COALESCE(excluded.role, role),
-             session_start_sha = COALESCE(excluded.session_start_sha, session_start_sha),
+             {meta_columns},
              can_reload        = excluded.can_reload,
              session_id        = excluded.session_id,
-             closed_at         = NULL",
+             closed_at         = NULL"
+    );
+    run(
+        conn,
+        "record a session",
+        &sql,
         params![
             started.agent_id,
             started.acp_session_id,
@@ -380,6 +421,7 @@ mod tests {
                 meta,
                 can_reload,
                 session_id,
+                requested_at: Utc::now(),
             },
             Utc::now(),
         )
@@ -418,7 +460,7 @@ mod tests {
         let conn = store();
         start(&conn, "a", "/p", &full_meta(), true, "live-1");
 
-        close(&conn, "live-1", None, Utc::now()).expect("close");
+        close(&conn, "live-1", None, Utc::now() - Duration::seconds(1)).expect("close");
         let (session, session_id) = only(&conn);
         assert!(session.closed);
         assert_eq!(session_id, None);
@@ -428,6 +470,53 @@ mod tests {
         let (session, session_id) = only(&conn);
         assert!(!session.closed);
         assert_eq!(session_id.as_deref(), Some("live-2"));
+    }
+
+    #[test]
+    fn a_closed_row_reopened_takes_the_meta_it_is_reopened_with() {
+        let conn = store();
+        start(&conn, "a", "/p", &full_meta(), true, "live-1");
+        close(&conn, "live-1", None, Utc::now() - Duration::seconds(1)).expect("close");
+
+        let from_history = SessionMeta {
+            session_name: Some("Coder".to_string()),
+            branch_name: Some("maestro/other".to_string()),
+            ..SessionMeta::default()
+        };
+        start(&conn, "a", "/p", &from_history, true, "live-2");
+        let (session, _) = only(&conn);
+        assert!(!session.closed);
+        assert_eq!(session.meta, from_history);
+    }
+
+    #[test]
+    fn a_close_that_raced_the_load_is_not_undone_by_it() {
+        let conn = store();
+        start(&conn, "a", "/p", &full_meta(), true, "live-1");
+        go_dormant(&conn, "live-1", Utc::now()).expect("dormant");
+
+        let requested_at = Utc::now() - Duration::seconds(1);
+        close_dormant(&conn, "claude", "a", Utc::now()).expect("close");
+        upsert(
+            &conn,
+            &Started {
+                agent_id: "claude",
+                acp_session_id: "a",
+                project_path: "/p",
+                cwd: "/p/work",
+                meta: &SessionMeta::default(),
+                can_reload: true,
+                session_id: "live-2",
+                requested_at,
+            },
+            Utc::now(),
+        )
+        .expect("upsert");
+
+        let (session, session_id) = only(&conn);
+        assert!(session.closed);
+        assert_eq!(session_id, None);
+        assert_eq!(session.meta, full_meta());
     }
 
     #[test]

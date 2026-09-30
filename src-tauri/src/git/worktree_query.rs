@@ -323,7 +323,11 @@ pub async fn list_worktrees_with_status(
 
     // A session worktree carries no task, so the row alone cannot tell a leftover from one a
     // running session is sitting in.
-    let live_cwds = crate::git::worktree_lifecycle::live_session_cwds(&app_state, &project).await;
+    // `None` when the daemon cannot say, which marks every worktree in use rather than none.
+    let live_cwds = crate::git::worktree_lifecycle::live_session_cwds(&app_state, &project)
+        .await
+        .map_err(|e| log::warn!("[git] {e}"))
+        .ok();
 
     for wt in &disk_worktrees {
         let WorktreeGitInfo {
@@ -343,9 +347,11 @@ pub async fn list_worktrees_with_status(
             .then(|| wt.head.chars().take(7).collect::<String>());
         if let Some(db_row) = db_map.get(&wt.path) {
             matched_db_ids.insert(db_row.id);
-            let in_use = live_cwds
-                .iter()
-                .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path));
+            let in_use = live_cwds.as_ref().is_none_or(|live_cwds| {
+                live_cwds
+                    .iter()
+                    .any(|cwd| crate::git::worktree_lifecycle::path_is_within(cwd, &wt.path))
+            });
             let is_zombie =
                 db_row.task_id.is_none() && is_maestro_created_worktree(&db_row.path) && !in_use;
             result.push(WorktreeWithStatus {

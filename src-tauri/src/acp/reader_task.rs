@@ -1581,10 +1581,33 @@ pub(crate) async fn handle_shared_server_message(
             );
         }
         MaestroRpcMessage::Response(ServerResponse::ProjectKicked(kicked)) => {
-            if let Ok(mut held) = app_state.active_project_lock.lock() {
-                if held.is_some_and(|(_, key)| key == connection_key) {
-                    *held = None;
-                }
+            let released = match app_state.active_project_lock.lock() {
+                Ok(mut held) => match *held {
+                    Some((project_id, key)) if key == connection_key => {
+                        *held = None;
+                        Some(project_id)
+                    }
+                    _ => None,
+                },
+                Err(_) => None,
+            };
+            // The daemon keeps running these for whoever holds the project now, and may reload
+            // them under new ids. Kept here, they would be taken for that window's sessions the
+            // next time this one opens the project, and prompt ids nothing routes.
+            if let Some(project_id) = released {
+                let entries: Vec<String> = app_state
+                    .acp
+                    .sessions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|(_, process)| {
+                        process.project_id == Some(project_id)
+                            && process.connection_key == connection_key
+                    })
+                    .map(|(session_id, _)| session_id.clone())
+                    .collect();
+                crate::acp::session_ops::forget_sessions(app_state, &entries).await;
             }
             crate::core::emit_or_log(
                 app_handle,

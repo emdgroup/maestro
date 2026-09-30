@@ -138,18 +138,18 @@ project has ever held, open or closed.
 
 Decisions:
 
-| Topic                           | Decision                                                                                                                                                       |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dormant sessions                | Stay open until somebody closes them. No expiry                                                                                                                |
-| What closes a row               | A user close and a pipeline close (superseded coder, finished planner) alike: `Cancel`                                                                         |
-| What does not                   | The idle sweep, the agent dying, the daemon stopping, an update, a window going away                                                                           |
-| An agent without `session/load` | Its session is closed when it is reaped or its agent dies, since it can never come back                                                                        |
-| Takeover                        | B adopts A's sessions, mid-turn ones included. A is already sent to the picker                                                                                 |
-| Stop server, update             | Rows stay, so the sessions reload afterwards                                                                                                                   |
-| Closed rows                     | Kept, because Session History needs the name and folder of a closed session. Dropped 90 days after `closed_at`, and when the agent deletes the session         |
-| Task ids                        | Stored as the host sends them. They are the app's until phase 2 and the daemon's after. Nothing is built to bridge the gap, since nothing ships between phases |
-| Metadata on reload              | The daemon keeps what the row already holds, so a reload that sends less does not lose role, start sha or task name, which every reload path loses today       |
-| The idle sweep                  | Still global: any window attached keeps every session alive. Left as it is                                                                                     |
+| Topic                           | Decision                                                                                                                                                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dormant sessions                | Stay open until somebody closes them. No expiry                                                                                                                                                                                                           |
+| What closes a row               | A user close and a pipeline close (superseded coder, finished planner) alike: `Cancel`                                                                                                                                                                    |
+| What does not                   | The idle sweep, the agent dying, the daemon stopping, an update, a window going away                                                                                                                                                                      |
+| An agent without `session/load` | Its session is closed when it is reaped or its agent dies, since it can never come back                                                                                                                                                                   |
+| Takeover                        | B adopts A's sessions, mid-turn ones included. A is already sent to the picker                                                                                                                                                                            |
+| Stop server, update             | Rows stay, so the sessions reload afterwards                                                                                                                                                                                                              |
+| Closed rows                     | Kept, because Session History needs the name and folder of a closed session. Dropped 90 days after `closed_at`, and when the agent deletes the session                                                                                                    |
+| Task ids                        | Stored as the host sends them. They are the app's until phase 2 and the daemon's after. Nothing is built to bridge the gap, since nothing ships between phases. Until then a second machine's pipeline acts on the first machine's task ids as they stand |
+| Metadata on reload              | The daemon keeps what the row already holds, so a reload that sends less does not lose role, start sha or task name, which every reload path loses today                                                                                                  |
+| The idle sweep                  | Still global: any window attached keeps every session alive. Left as it is                                                                                                                                                                                |
 
 What it replaces:
 

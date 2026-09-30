@@ -295,3 +295,91 @@ async fn test_reap_mark_is_cleared_by_activity() {
     crate::reap_idle_sessions(&mut sessions, &detached, None, None).await;
     assert!(sessions.is_empty());
 }
+
+fn project_session(
+    agent_id: &str,
+    acp_session_id: &str,
+    project_path: &str,
+    task: tokio::task::JoinHandle<()>,
+) -> crate::sessions::ActiveSession {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+    crate::sessions::ActiveSession {
+        cmd_tx,
+        pending_permissions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        pending_elicitations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        task,
+        cleanup: Some(crate::sessions::SessionCleanup {
+            acp_session_id: acp_session_id.to_string(),
+            router: Arc::new(crate::sessions::SessionRouter::default()),
+        }),
+        agent_id: agent_id.to_string(),
+        cwd: format!("{project_path}/work"),
+        additional_directories: Vec::new(),
+        project: Some(crate::sessions::ProjectBinding {
+            project_path: project_path.to_string(),
+            meta: maestro_protocol::SessionMeta {
+                task_id: Some(3),
+                ..Default::default()
+            },
+            can_reload: true,
+            requested_at: chrono::Utc::now(),
+        }),
+        turn_active: Arc::new(AtomicBool::new(false)),
+        idle_marked: false,
+    }
+}
+
+/// With no store, a project's running sessions are still listed, from the map, and nothing else.
+#[tokio::test]
+async fn test_running_project_sessions_lists_only_that_projects_live_sessions() {
+    let mut sessions: crate::sessions::SessionMap = HashMap::new();
+    let pending = || tokio::spawn(std::future::pending::<()>());
+    sessions.insert(
+        "mine".to_string(),
+        project_session("claude", "a", "/p", pending()),
+    );
+    sessions.insert(
+        "theirs".to_string(),
+        project_session("claude", "b", "/q", pending()),
+    );
+    let mut unbound = project_session("claude", "c", "/p", pending());
+    unbound.project = None;
+    sessions.insert("unbound".to_string(), unbound);
+
+    let rows = crate::dispatch::running_project_sessions(&sessions, "/p");
+    assert_eq!(rows.len(), 1);
+    let (row, session_id) = &rows[0];
+    assert_eq!(row.acp_session_id, "a");
+    assert_eq!(row.meta.task_id, Some(3));
+    assert!(!row.closed);
+    assert_eq!(session_id.as_deref(), Some("mine"));
+}
+
+/// A map entry whose command loop has ended does not keep a conversation's row open.
+#[tokio::test]
+async fn test_close_guard_ignores_a_finished_command_loop() {
+    let mut sessions: crate::sessions::SessionMap = HashMap::new();
+    sessions.insert(
+        "running".to_string(),
+        project_session(
+            "claude",
+            "a",
+            "/p",
+            tokio::spawn(std::future::pending::<()>()),
+        ),
+    );
+    let finished = tokio::spawn(async {});
+    while !finished.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    sessions.insert(
+        "finished".to_string(),
+        project_session("claude", "b", "/p", finished),
+    );
+
+    assert!(crate::dispatch::runs_under_key(&sessions, "claude", "a"));
+    assert!(!crate::dispatch::runs_under_key(&sessions, "claude", "b"));
+    assert!(!crate::dispatch::runs_under_key(&sessions, "other", "a"));
+}

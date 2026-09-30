@@ -72,6 +72,46 @@ async fn pending_requests(session: &ActiveSession) -> Vec<maestro_protocol::Pend
     pending
 }
 
+/// A project's sessions as the session map knows them, for a daemon whose store could not be
+/// opened. Nothing dormant is known without the store, but what is running is, and a window that
+/// adopts nothing leaves those sessions to run unwatched.
+pub(crate) fn running_project_sessions(
+    sessions: &SessionMap,
+    project_path: &str,
+) -> Vec<(maestro_protocol::ProjectSession, Option<String>)> {
+    sessions
+        .iter()
+        .filter_map(|(session_id, session)| {
+            let project = session.project.as_ref()?;
+            let cleanup = session.cleanup.as_ref()?;
+            let row = maestro_protocol::ProjectSession {
+                agent_id: session.agent_id.clone(),
+                acp_session_id: cleanup.acp_session_id.clone(),
+                cwd: session.cwd.clone(),
+                meta: project.meta.clone(),
+                can_reload: project.can_reload,
+                closed: false,
+                live: None,
+            };
+            (crate::automations::canonical_project_path(&project.project_path) == project_path)
+                .then(|| (row, Some(session_id.clone())))
+        })
+        .collect()
+}
+
+/// Whether a session is running under this conversation's key. An entry whose command loop has
+/// ended is running nothing and only waits for the host to cancel it.
+pub(crate) fn runs_under_key(sessions: &SessionMap, agent_id: &str, acp_session_id: &str) -> bool {
+    sessions.values().any(|session| {
+        !session.task.is_finished()
+            && session.agent_id == agent_id
+            && session
+                .cleanup
+                .as_ref()
+                .is_some_and(|cleanup| cleanup.acp_session_id == acp_session_id)
+    })
+}
+
 /// Handle one message from stdin.
 ///
 /// Returns `true`  → the main loop should continue.
@@ -124,20 +164,13 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::ListProjectSessions(req)) => {
-            let Some(store) = project_store else {
-                send_or_return!(
-                    send_response(
-                        stdout,
-                        &error_response(crate::project_store::UNAVAILABLE.to_string())
-                    )
-                    .await
-                );
-                return true;
-            };
             let project_path = crate::automations::canonical_project_path(&req.project_path);
-            let listed = {
-                let conn = store.lock().await;
-                crate::project_store::list(&conn, &project_path, req.include_closed)
+            let listed = match project_store {
+                Some(store) => {
+                    let conn = store.lock().await;
+                    crate::project_store::list(&conn, &project_path, req.include_closed)
+                }
+                None => Ok(running_project_sessions(sessions, &project_path)),
             };
             let rows = match listed {
                 Ok(rows) => rows,
@@ -216,14 +249,7 @@ pub(crate) async fn dispatch_message(
             // A session running under this key was loaded by somebody after the failure that
             // prompted this. Closing its row would hide a running session from every client
             // opening the project, and `Cancel` is how a running one is closed.
-            let running = sessions.values().any(|session| {
-                session.agent_id == req.agent_id
-                    && session
-                        .cleanup
-                        .as_ref()
-                        .is_some_and(|cleanup| cleanup.acp_session_id == req.acp_session_id)
-            });
-            let closed = if running {
+            let closed = if runs_under_key(sessions, &req.agent_id, &req.acp_session_id) {
                 Ok(())
             } else {
                 crate::project_store::close_dormant(
@@ -668,6 +694,7 @@ pub(crate) async fn dispatch_message(
             else {
                 return true;
             };
+            let requested_at = chrono::Utc::now();
             let stdout_task = Arc::clone(stdout);
             let agent_connections_task = Arc::clone(agent_connections);
             let spawn_result_tx = spawn_result_tx.clone();
@@ -734,6 +761,7 @@ pub(crate) async fn dispatch_message(
                             project_path,
                             meta: req.meta,
                             can_reload: result.supports_session_load,
+                            requested_at,
                         });
                 if send_response(
                     &stdout_task,
@@ -1003,6 +1031,14 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::SessionLoad(req)) => {
+            // An unknown agent makes the load final, so a custom agent added or first read since
+            // the last listing must be in the list before that is decided.
+            if !agents_with_spawn
+                .iter()
+                .any(|agent| agent.id == req.agent_id)
+            {
+                agent::registry::apply_custom_agents(agents_with_spawn);
+            }
             return session::requests::load(
                 req,
                 agent_connections,

@@ -202,6 +202,8 @@ pub struct ProjectBinding {
     pub meta: maestro_protocol::SessionMeta,
     /// Whether the agent answers `session/load`, as it said when this session was made.
     pub can_reload: bool,
+    /// When the host asked for the session, so a close that raced the load is not undone by it.
+    pub requested_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct ActiveSession {

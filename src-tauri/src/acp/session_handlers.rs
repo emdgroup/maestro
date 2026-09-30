@@ -334,6 +334,33 @@ pub(crate) async fn tear_down_session(app_state: &Arc<AppState>, session_id: &st
         if let Some(cancel_tx) = session.reader_cancel_tx.take() {
             let _ = cancel_tx.send(());
         }
+        // `Cancel` closes the row only through a session the daemon still runs under this id, and
+        // one whose load never came up, failed, or was cleared by the sweep is not. Without this
+        // the user's close does nothing and the conversation comes back on every open. The daemon
+        // refuses it while a session runs under the key, so after a `Cancel` that did close the row
+        // it is a no-op. Off this task, because the caller may be the reader the reply comes back
+        // through, and sent after `Cancel` on the same writer, so it arrives second.
+        let acp_session_id = session.acp_session_id.lock().ok().and_then(|id| id.clone());
+        if let Some(acp_session_id) = acp_session_id {
+            let request = maestro_protocol::CloseProjectSessionRequest {
+                agent_id: session.agent_id_meta.clone(),
+                acp_session_id,
+            };
+            let connection_key = session.connection_key;
+            let app_state = Arc::clone(app_state);
+            tokio::spawn(async move {
+                if let Err(e) =
+                    crate::acp::connection_server::query_close_project_session_via_server(
+                        connection_key,
+                        request,
+                        &app_state,
+                    )
+                    .await
+                {
+                    log::warn!("[acp] could not close the row of a closed session: {e}");
+                }
+            });
+        }
     }
     task_id
 }

@@ -418,11 +418,21 @@ dozen signatures: every response leaves through `helpers::send_response`, so swa
 destination is one indirection. A write with no client attached succeeds and drops the bytes —
 nobody watching is the normal state of a daemon between app runs, not an error.
 
-**Every window attaches at once.** The host matches replies by type, not by request id, so the
-sink routes: a reply goes to the window that asked, a message naming a session goes to that
-session's owner (the window that last sent a request naming it), and anything unowned or
-unprompted goes to every window. A window receiving a session it does not hold parks it, and
-answers a `HostToolCall` only for a session it holds, so two windows never both answer one call.
+**Every window attaches at once.** Each window numbers its own requests from 1, so an id says
+which request a reply answers and nothing about which window sent it. The sink routes: a reply
+goes to the window that asked, a message naming a session goes to that session's owner (the
+window that last sent a request naming it), and anything unowned or unprompted goes to every
+window. A window receiving a session it does not hold parks it, and answers a `HostToolCall` only
+for a session it holds, so two windows never both answer one call.
+
+**A reply is matched by id, a session message by its session.** A frame may carry an `rpc_id`
+beside `direction` and `type`. The host stamps one on every sessionless request and keeps a map
+from id to waiter per connection (`PendingRequests`); the server echoes it on a reply that is
+sessionless and answers a request (`ServerResponse::is_reply`), and on nothing else. So an
+`Error` fails exactly the request it answers, and two requests of one type can be outstanding at
+once. The key is `rpc_id` because the message is flattened into the same object and payloads
+already own `id` and `request_id`. `TakeoverResultOk` is the one reply still matched by type: a
+timer or another window's answer writes it, and neither knows the id that asked.
 
 **A project's sessions are rows in the daemon.** `maestro-server/src/project_store.rs` keeps a
 `sessions` table in `projects.db`, beside `automations.db`: one row per conversation a project has
@@ -430,7 +440,10 @@ opened, keyed by `agent_id` and the agent's own session id, because the routing 
 on every reload and cannot name a conversation across them. `SpawnRequest` and `SessionLoadRequest`
 carry the project path and a typed `SessionMeta` (name, task, branch, role, start sha), each field
 its own column, so a second machine opening the project can read them and a reload that sends
-fewer keeps what the row already holds. The row is written where the session enters the daemon's
+fewer keeps what the row already holds. A closed row reopened from Session History is a new use of
+the conversation and takes the meta it is reopened with whole, so it does not come back bound to
+its old task. A close that lands while a load is in flight stays closed: the load's own write
+leaves a row closed after it was asked for. The row is written where the session enters the daemon's
 map, the `spawn_result_rx` arm of `main.rs`, and an automation's session gets one like any other.
 Nothing about open sessions is kept app-side: not in `.maestro/state.json`, and a session's name
 is `RenameSession` on the row rather than the app's `session_aliases` table.
@@ -441,7 +454,14 @@ session map still holds, their live state. `row_action` then decides per row: a 
 is adopted as it stands under the id the daemon files it under, one between turns is closed and
 loaded back, and a dormant one is loaded. It runs from `prime_project_server`, from the SSH
 reconnect and from task recovery alike, so none of them can load a conversation the daemon is
-already running. A row this window already holds is skipped.
+already running. A row this window already holds is skipped, and holding it means an entry under
+the routing id the row is live under, or a load of a dormant row still in flight from here. An
+entry under any other id is stale, left by a window that lost the project to another which then
+reloaded the session, and is dropped before the row is adopted or loaded. `ProjectKicked` drops the
+kicked project's entries too, without closing anything, because the sessions are the new holder's.
+
+With no store, `ListProjectSessions` answers from the session map: the project's running sessions,
+open, and nothing dormant, which the daemon cannot know of without it.
 
 **A session between turns is closed and reloaded**, which is the only way to recover the
 transcript it produced while nobody was attached: the agent keeps its own history, and
@@ -451,20 +471,32 @@ begins at the reconnect. Do **not** issue `session/load` against a live session 
 first: `maestro-server` would replace its own map entry while the displaced command loop kept
 running, leaving an agent nothing routes to and nothing stops.
 
-**Only a close closes a row.** `Cancel` sets `closed_at`, whether a user or the pipeline sent it.
-The idle sweep, a dead agent, a stopped daemon and an update only clear the routing id, so the
-session is dormant and loads again the next time the project is opened. The exception is an agent
-without `session/load`: its session can never come back, so going dormant closes it. Closed rows
+**Only a close closes a row.** `Cancel` sets `closed_at`, whether a user or the pipeline sent it,
+and `tear_down_session` follows it with `CloseProjectSession` by key, because `Cancel` finds the row
+only through a session the daemon still runs under that id: not one whose load never came up, nor
+one the sweep already made dormant. The daemon refuses that close while a live command loop runs
+under the key, so after a `Cancel` that did close the row it changes nothing. The idle sweep, a
+dead agent, a stopped daemon and an update only clear the routing id, so the session is dormant and
+loads again the next time the project is opened. Two exceptions close on going dormant: an agent
+without `session/load`, whose session can never come back, and the session of a finished
+automation run, which is read from its run card and reopened from there. That second one is closed
+when the sweep reaps it, when it is closed in the app, and at daemon startup for every finished run,
+so a joined run's session follows the same rule and a run in progress is never touched. Closed rows
 stay for 90 days, because Session History needs their name and folder.
 
 **A load that can never succeed closes its row too.** A dormant row has no routing id for `Cancel`
 to find, so left alone it would be loaded again on every open. The daemon marks a load failure as
 final with `SESSION_GONE_ERROR`, a longer spelling of `SESSION_LOAD_FAILED_ERROR`, when the agent
-answers that it has no such conversation, the folder is gone or the agent is unknown on that
-machine. It decides because it holds the agent's error code, where the host is sent only the
-agent's wording. The host answers with `CloseProjectSession`, which names the row by its key.
-Every other failure, a crashed agent, a lapsed sign-in or a connection that is down, leaves the
-row open to be tried again.
+answers that it has no such conversation, the folder is gone while the project folder is still
+there, or the agent is unknown on that machine. A missing project folder is a drive or mount that
+is absent for now, so that failure is not final. Custom agents are merged at startup and again
+before a load names an agent the list lacks, so a `custom-agents.json` agent is never "unknown" for
+want of a listing. The daemon decides because it holds the agent's error code, where the host is
+sent only the agent's wording. The host answers with `CloseProjectSession`, which names the row by
+its key. Every other failure, a crashed agent, a lapsed sign-in or a connection that is down,
+leaves the row open to be tried again. The app's zombie worktree sweep asks for the open rows'
+folders first, and skips the pass when the daemon cannot answer, rather than deleting the folder a
+dormant session loads into.
 
 **A session nobody is watching does not live forever.** `main::reap_idle_sessions` sweeps every
 `IDLE_SWEEP` (60 seconds) on its own interval, and it is mark-and-close rather than a deadline: a

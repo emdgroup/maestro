@@ -563,10 +563,13 @@ pub async fn running_session_cwds(app_state: &Arc<AppState>) -> Vec<String> {
 
 /// Directories that are in use: running ACP sessions, running PTY shells, and every conversation
 /// the daemon still holds open for the project, which the next open loads back into its folder.
+///
+/// An error when the daemon cannot say which conversations are open: a caller treating that as
+/// "none" would delete the folder a dormant session loads into, and that session with it.
 pub async fn live_session_cwds(
     app_state: &Arc<AppState>,
     project: &crate::models::Project,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let mut live_cwds = running_session_cwds(app_state).await;
     let connection_key = crate::acp::ConnectionKey::from_all_ids(
         project.connection_id,
@@ -582,9 +585,14 @@ pub async fn live_session_cwds(
     .await
     {
         Ok(response) => live_cwds.extend(response.sessions.into_iter().map(|row| row.cwd)),
-        Err(e) => log::debug!("cannot list the open sessions of {}: {e}", project.path),
+        Err(e) => {
+            return Err(format!(
+                "cannot list the open sessions of {}: {e}",
+                project.path
+            ))
+        }
     }
-    live_cwds
+    Ok(live_cwds)
 }
 
 /// Delete directories under `.maestro/worktrees/` that git no longer lists and that hold no
@@ -709,7 +717,13 @@ pub async fn cleanup_zombie_worktrees(
     let (project, git_conn) =
         crate::core::get_project_with_git_conn(&app_state, project_id).await?;
 
-    let live_cwds = live_session_cwds(&app_state, &project).await;
+    let live_cwds = match live_session_cwds(&app_state, &project).await {
+        Ok(live_cwds) => live_cwds,
+        Err(e) => {
+            log::warn!("[git] not sweeping worktrees this time: {e}");
+            return Ok(0);
+        }
+    };
 
     // Get on-disk worktree paths to confirm existence before deleting
     let disk_worktrees = crate::git::list_worktrees(&git_conn).await?;

@@ -97,24 +97,21 @@ pub(crate) async fn load(
     spawn_result_tx: &tokio::sync::mpsc::Sender<(String, ActiveSession)>,
     stdout: &Stdout,
 ) -> bool {
-    // Both are failures no later attempt gets past, and neither reaches the agent, so they are
-    // reported here in the agent's place. Named for the session, or the host would go on holding
-    // an entry for a load that was never going to answer.
-    let gone = if !std::path::Path::new(&req.cwd).is_dir() {
-        Some(format!("the folder {} no longer exists", req.cwd))
-    } else if !agents_with_spawn
+    // Reported here in the agent's place, since neither reaches the agent. Named for the session,
+    // or the host would go on holding an entry for a load that was never going to answer.
+    let agent_known = agents_with_spawn
         .iter()
-        .any(|agent| agent.id == req.agent_id)
-    {
-        Some(format!("the agent {} is not known here", req.agent_id))
-    } else {
-        None
-    };
-    if let Some(reason) = gone {
+        .any(|agent| agent.id == req.agent_id);
+    if let Err(message) = check_load(
+        &req.cwd,
+        req.project_path.as_deref(),
+        &req.agent_id,
+        agent_known,
+    ) {
         return send_response(
             stdout,
             &MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
-                message: format!("{}: {reason}", maestro_protocol::SESSION_GONE_ERROR),
+                message,
                 session_id: Some(req.session_id),
             })),
         )
@@ -128,6 +125,7 @@ pub(crate) async fn load(
     else {
         return true;
     };
+    let requested_at = chrono::Utc::now();
     let stdout_task = Arc::clone(stdout);
     let agent_connections_task = Arc::clone(agent_connections);
     let spawn_result_tx = spawn_result_tx.clone();
@@ -176,6 +174,7 @@ pub(crate) async fn load(
                     project_path,
                     meta: req.meta,
                     can_reload: conn_handle.capabilities.supports_session_load,
+                    requested_at,
                 });
                 let session_id = req.session_id.clone();
                 // Handed to the dispatch loop only once the host has been told the session
@@ -201,6 +200,36 @@ pub(crate) async fn load(
         }
     });
     true
+}
+
+/// Why a load cannot be attempted, worded as the error the host is sent.
+///
+/// A missing folder is final only when the project folder is still there: then the worktree was
+/// removed and the conversation cannot come back. A missing project folder is a drive or mount
+/// that is not there right now, and closing the row for that would lose a session that loads
+/// fine once it is back.
+fn check_load(
+    cwd: &str,
+    project_path: Option<&str>,
+    agent_id: &str,
+    agent_known: bool,
+) -> Result<(), String> {
+    use maestro_protocol::{SESSION_GONE_ERROR, SESSION_LOAD_FAILED_ERROR};
+    if !std::path::Path::new(cwd).is_dir() {
+        let project_present =
+            project_path.is_none_or(|project_path| std::path::Path::new(project_path).is_dir());
+        return Err(if project_present {
+            format!("{SESSION_GONE_ERROR}: the folder {cwd} no longer exists")
+        } else {
+            format!("{SESSION_LOAD_FAILED_ERROR}: the folder {cwd} cannot be reached")
+        });
+    }
+    if !agent_known {
+        return Err(format!(
+            "{SESSION_GONE_ERROR}: the agent {agent_id} is not known here"
+        ));
+    }
+    Ok(())
 }
 
 /// Which way a session is being ended.
@@ -288,4 +317,41 @@ pub(crate) async fn end(
         }
     };
     send_response(stdout, &response).await.is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_load;
+    use maestro_protocol::{SESSION_GONE_ERROR, SESSION_LOAD_FAILED_ERROR};
+
+    #[test]
+    fn a_missing_folder_is_final_only_while_the_project_is_there() {
+        let project = tempfile::tempdir().expect("tempdir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let removed_worktree = project.path().join("gone").to_string_lossy().into_owned();
+
+        assert_eq!(
+            check_load(&project_path, Some(&project_path), "claude", true),
+            Ok(())
+        );
+
+        let error =
+            check_load(&removed_worktree, Some(&project_path), "claude", true).expect_err("gone");
+        assert!(error.starts_with(SESSION_GONE_ERROR));
+
+        let unmounted = project.path().join("drive").to_string_lossy().into_owned();
+        let worktree = format!("{unmounted}/work");
+        let error = check_load(&worktree, Some(&unmounted), "claude", true).expect_err("absent");
+        assert!(error.starts_with(SESSION_LOAD_FAILED_ERROR));
+        assert!(!error.starts_with(SESSION_GONE_ERROR));
+    }
+
+    #[test]
+    fn an_unknown_agent_is_final() {
+        let project = tempfile::tempdir().expect("tempdir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let error =
+            check_load(&project_path, Some(&project_path), "claude", false).expect_err("unknown");
+        assert!(error.starts_with(SESSION_GONE_ERROR));
+    }
 }

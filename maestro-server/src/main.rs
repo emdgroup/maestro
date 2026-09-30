@@ -333,7 +333,7 @@ async fn reap_idle_sessions(
         {
             session.task.abort();
         }
-        if let Some(cleanup) = session.cleanup {
+        if let Some(cleanup) = &session.cleanup {
             cleanup.router.unregister(&cleanup.acp_session_id).await;
         }
         send_diag(
@@ -346,6 +346,14 @@ async fn reap_idle_sessions(
                 &session_id,
                 chrono::Utc::now(),
             ));
+            if let (Some(automation_store), Some(cleanup)) = (automation_store, &session.cleanup) {
+                automation_runner::close_finished_run_rows(
+                    automation_store,
+                    store,
+                    Some((&session.agent_id, &cleanup.acp_session_id)),
+                )
+                .await;
+            }
         }
         // Only now: the agent held files open under its workspace for as long as the session
         // lived, and on Windows a removal while it does simply fails.
@@ -416,6 +424,14 @@ async fn run_server(
         automation_runner::apply_all_retention(store).await;
         webhook::restart(store).await;
     }
+    // Every run is over by now, `fail_interrupted_runs` having ended the ones this daemon's
+    // predecessor died in, so none of their sessions is running and none is left for a project
+    // open to reload.
+    if let (Some(automation_store), Some(project_store)) =
+        (automation_store.as_ref(), project_store.as_ref())
+    {
+        automation_runner::close_finished_run_rows(automation_store, project_store, None).await;
+    }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
     // time out waiting on slow PATH scans on Windows.
@@ -430,6 +446,9 @@ async fn run_server(
 
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
         agent::discover_agents(&registry);
+    // Before the first request, because a project opening on this connection loads its sessions
+    // before it lists any agents, and a custom agent missing here would make those loads final.
+    agent::registry::apply_custom_agents(&mut agents_with_spawn);
     let auth_terminals: Arc<
         tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>,
     > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -546,6 +565,7 @@ async fn run_server(
                                 meta: &project.meta,
                                 can_reload: project.can_reload,
                                 session_id: &session_id,
+                                requested_at: project.requested_at,
                             },
                             chrono::Utc::now(),
                         ));

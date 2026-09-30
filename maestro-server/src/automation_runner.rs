@@ -161,6 +161,37 @@ async fn settle(store: &Store, stdout: &crate::ClientOut, run: &AutomationRun) {
     }
 }
 
+/// Close the project's row for the conversation a finished run happened in: every such row, or
+/// only the one named.
+///
+/// A finished run is read from its run card and reopened from there, since the run keeps what a
+/// reload needs. Left open, its row would be reloaded by every project open, one session per
+/// retained run, each in that run's worktree. A running run is not touched.
+pub async fn close_finished_run_rows(
+    store: &Store,
+    project_store: &crate::project_store::Store,
+    key: Option<(&str, &str)>,
+) {
+    let keys = {
+        let conn = store.lock().await;
+        automations::finished_run_sessions(&conn, key)
+    };
+    match keys {
+        Ok(keys) => {
+            let conn = project_store.lock().await;
+            for (agent_id, acp_session_id) in keys {
+                crate::project_store::report(crate::project_store::close_dormant(
+                    &conn,
+                    &agent_id,
+                    &acp_session_id,
+                    chrono::Utc::now(),
+                ));
+            }
+        }
+        Err(e) => send_diag("warn", format!("[automation] {e}")),
+    }
+}
+
 /// Deal with worktrees whose runs ended when the server did.
 ///
 /// Called once at startup, after `fail_interrupted_runs` has closed those runs out. Without it a
@@ -469,6 +500,7 @@ pub async fn start(
                 ..Default::default()
             },
             can_reload: result.supports_session_load,
+            requested_at: chrono::Utc::now(),
         });
         if spawn_result_tx
             .send((session_id, result.session))
