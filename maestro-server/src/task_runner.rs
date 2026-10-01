@@ -627,6 +627,7 @@ pub(crate) async fn adopt(
         reply,
     } = started;
     let everyone = crate::client_sink::ClientSink::everyone(&reply).await;
+    let acp_session_id = push.acp_session_id.clone();
     let registered = crate::register_started_session(
         session_id.clone(),
         session,
@@ -637,6 +638,8 @@ pub(crate) async fn adopt(
         &everyone,
     )
     .await;
+    // In the map now, or closed: either way a window's load of it is no longer refused.
+    crate::task_restart::reloaded(&acp_session_id);
     if !registered {
         reply_error(
             &reply,

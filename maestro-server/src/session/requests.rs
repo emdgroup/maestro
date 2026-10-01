@@ -102,12 +102,21 @@ pub(crate) async fn load(
     let agent_known = agents_with_spawn
         .iter()
         .any(|agent| agent.id == req.agent_id);
-    if let Err(message) = check_load(
-        &req.cwd,
-        req.project_path.as_deref(),
-        &req.agent_id,
-        agent_known,
-    ) {
+    let checked = if crate::task_restart::reloading(&req.resume_session_id) {
+        // Not final: the daemon's own reload is announced with `TaskSessionStarted` once it is up.
+        Err(format!(
+            "{}: the server is reloading this session itself",
+            maestro_protocol::SESSION_LOAD_FAILED_ERROR
+        ))
+    } else {
+        check_load(
+            &req.cwd,
+            req.project_path.as_deref(),
+            &req.agent_id,
+            agent_known,
+        )
+    };
+    if let Err(message) = checked {
         return send_response(
             stdout,
             &MaestroRpcMessage::Response(ServerResponse::Error(maestro_protocol::ErrorResponse {
@@ -208,7 +217,7 @@ pub(crate) async fn load(
 /// removed and the conversation cannot come back. A missing project folder is a drive or mount
 /// that is not there right now, and closing the row for that would lose a session that loads
 /// fine once it is back.
-fn check_load(
+pub(crate) fn check_load(
     cwd: &str,
     project_path: Option<&str>,
     agent_id: &str,

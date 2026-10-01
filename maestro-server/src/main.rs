@@ -38,6 +38,7 @@ mod session;
 mod sessions;
 mod skills;
 mod task_prompt;
+mod task_restart;
 mod task_runner;
 mod task_store;
 mod task_turn;
@@ -542,6 +543,21 @@ async fn run_server(
         })),
         _ => None,
     };
+    // Once, with the map empty: the tasks the last daemon left in flight are picked up off the loop,
+    // their reloaded sessions arriving through `settle_rx` like any task session.
+    if let (true, Some(store)) = (task_turn::DAEMON_DRIVES_TASKS, project_store.as_ref()) {
+        let planned = task_restart::plan(&*store.lock().await);
+        task_restart::spawn(
+            task_turn::Driver {
+                store: Arc::clone(store),
+                agent_connections: Arc::clone(&agent_connections),
+                settle_tx: settle_tx.clone(),
+                stdout: Arc::clone(&stdout),
+                agents: agents_with_spawn.clone(),
+            },
+            planned,
+        );
+    }
     let mut task_slots = 0;
     let auth_terminals: Arc<
         tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>,
