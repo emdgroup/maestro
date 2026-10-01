@@ -88,6 +88,8 @@ pub(crate) struct Started {
     pub push: TaskSessionStarted,
     /// The requester's sink, for the one reply.
     pub reply: crate::ClientOut,
+    /// The attachments the prompt went without.
+    pub skipped_attachments: Vec<String>,
 }
 
 /// What the app's Settings calls each stage.
@@ -222,7 +224,11 @@ pub(crate) fn begin(
         }
     }
 
-    let agent = profiles::agent_for(&project_path, &task, role);
+    // A one-shot pick from the window wins over the profile's, and is not written anywhere.
+    let agent = request
+        .agent_id
+        .clone()
+        .or_else(|| profiles::agent_for(&project_path, &task, role));
     let spawn = agent.as_deref().and_then(|id| spawn_params(agents, id));
     let (Some(agent_id), Some(spawn)) = (agent.clone(), spawn) else {
         let reason = match agent {
@@ -364,13 +370,13 @@ pub(crate) async fn launch(launcher: Launcher, claimed: Box<Claimed>) {
                 "The {} stage could not start: '{agent_id}' needs you to sign in. Sign in from Maestro, then run the task again.",
                 stage(role)
             ))),
-            AUTH_REQUIRED_ERROR.to_string(),
+            maestro_protocol::auth_required_for(&agent_id),
         ),
         // A sign-in is a prompt the window answers, not a failure to show.
         Failure::AuthRequired => (
             TaskTransition::SpawnAborted,
             None,
-            AUTH_REQUIRED_ERROR.to_string(),
+            maestro_protocol::auth_required_for(&agent_id),
         ),
         Failure::Moved => (
             TaskTransition::SpawnAborted,
@@ -429,7 +435,7 @@ async fn run(
         agent_id,
         spawn: (command, args, env),
         feedback,
-        unattended,
+        unattended: _,
     } = claimed;
 
     let workspace = crate::worktree::prepare_task_workspace(&launcher.store, &task, role).await?;
@@ -500,11 +506,10 @@ async fn run(
         result.config_options.as_ref(),
         &result.session,
         feedback.as_deref(),
-        unattended,
     )
     .await;
-    let profile_id = match prepared {
-        Ok(profile_id) => profile_id,
+    let (profile_id, skipped_attachments) = match prepared {
+        Ok(prepared) => prepared,
         Err(failure) => {
             forget_turn_ends(&session_id);
             // Not in the map yet, so closed here rather than through `Cancel`.
@@ -549,6 +554,7 @@ async fn run(
         session_id,
         session: result.session,
         reply: Arc::clone(&launcher.reply),
+        skipped_attachments,
     })
 }
 
@@ -605,7 +611,7 @@ pub(crate) fn settings_commands(
 }
 
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
-/// Returns the profile the stage ran on.
+/// Returns the profile the stage ran on and the attachments the prompt went without.
 #[allow(clippy::too_many_arguments)]
 async fn prepare(
     launcher: &Launcher,
@@ -618,8 +624,7 @@ async fn prepare(
     config_options: Option<&Vec<serde_json::Value>>,
     session: &ActiveSession,
     feedback: Option<&str>,
-    unattended: bool,
-) -> Result<Option<String>, Failure> {
+) -> Result<(Option<String>, Vec<String>), Failure> {
     // A profile set to fail rather than degrade fails the start.
     let settings = profiles::resolve_stage(project_path, task, role, capabilities)?;
     for warning in &settings.warnings {
@@ -640,7 +645,8 @@ async fn prepare(
     let composed = tokio::task::spawn_blocking(move || draft.embed())
         .await
         .map_err(|e| format!("Could not read the task's attachments: {e}"))?;
-    if unattended && !composed.skipped_attachments.is_empty() {
+    // Attended too: the reply lists them, but the thread is what stays.
+    if !composed.skipped_attachments.is_empty() {
         let count = composed.skipped_attachments.len();
         add_note(
             &mut *launcher.store.lock().await,
@@ -691,7 +697,7 @@ async fn prepare(
         broadcast(everyone, push).await;
     }
     match ready? {
-        Some(_) => Ok(settings.profile_id),
+        Some(_) => Ok((settings.profile_id, composed.skipped_attachments)),
         None => Err(Failure::Moved),
     }
 }
@@ -713,6 +719,7 @@ pub(crate) async fn adopt(
         session,
         push,
         reply,
+        skipped_attachments,
     } = started;
     let everyone = crate::client_sink::ClientSink::everyone(&reply).await;
     let acp_session_id = push.acp_session_id.clone();
@@ -795,6 +802,7 @@ pub(crate) async fn adopt(
     broadcast(&everyone, ServerResponse::TaskSessionStarted(push)).await;
     let ok = MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
         session_id: Some(session_id),
+        skipped_attachments,
     }));
     if let Err(e) = send_response(&reply, &ok).await {
         send_diag("warn", format!("[task] could not answer a start: {e}"));
@@ -863,6 +871,7 @@ mod tests {
             feedback: None,
             unattended: true,
             respect_capacity: false,
+            agent_id: None,
         }
     }
 
@@ -933,6 +942,26 @@ mod tests {
             .unwrap()
             .to_string()
             .contains("no longer waiting to start"));
+    }
+
+    /// The window's pick runs this stage, whatever the profile says, and is not kept.
+    #[test]
+    fn an_agent_override_runs_the_stage_and_is_not_written() {
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let mut start = request(&project, &task);
+        start.agent_id = Some("other".to_string());
+        let mut pushes = Vec::new();
+        let Ok(Begun::Claimed(claimed)) = begin(
+            &mut conn,
+            &start,
+            0,
+            &[agent("fake"), agent("other")],
+            &mut pushes,
+        ) else {
+            panic!("expected a claim");
+        };
+        assert_eq!(claimed.agent_id, "other");
+        assert_eq!(claimed.task.agent_id, None);
     }
 
     #[test]

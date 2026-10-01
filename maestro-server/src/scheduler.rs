@@ -343,6 +343,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 unattended: true,
                 // Counted above, against every slot on the machine.
                 respect_capacity: false,
+                agent_id: None,
             };
             match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
                 Ok(crate::task_runner::Begun::Claimed(task)) => {

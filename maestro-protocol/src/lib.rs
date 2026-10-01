@@ -9,7 +9,21 @@ pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversi
 pub const PROTOCOL_VERSION: u32 = 10;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
+///
+/// A refused `StartTask` names the agent too, as `auth_required:<agent_id>`, since the window
+/// cannot know which agent the daemon picked for the stage. See [`auth_required_for`].
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
+
+/// The error a `StartTask` answers with when `agent_id` needs a sign-in.
+pub fn auth_required_for(agent_id: &str) -> String {
+    format!("{AUTH_REQUIRED_ERROR}:{agent_id}")
+}
+
+/// A window's `session/load` refused because the daemon's startup pass is reloading that session
+/// itself. Not a load failure: the session arrives as `TaskSessionStarted` once it is up, so the
+/// window drops its pending entry and waits. Deliberately not prefixed with
+/// [`SESSION_LOAD_FAILED_ERROR`], which would make the host tear the session down.
+pub const SESSION_RELOADING_ERROR: &str = "session_reloading";
 /// Prefix of the error returned when `session/load` fails.
 ///
 /// `ErrorResponse::session_id` marks an error as *scoped to* a session; this prefix is what marks
@@ -1774,12 +1788,19 @@ pub struct StartTaskRequest {
     /// Defer the task to the queue rather than start it when the machine has no free slot.
     #[serde(default)]
     pub respect_capacity: bool,
+    /// Run this stage on this agent instead of the one its profile picks. Used once, never
+    /// written to the task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StartTaskResponse {
     /// The routing id of the session started, `None` when the task was deferred to the queue.
     pub session_id: Option<String>,
+    /// The attachments the prompt went without, each as `<file>: <why>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_attachments: Vec<String>,
 }
 
 /// The daemon started a session for a task. Pushed to every window, which adopts it the way it
@@ -3483,9 +3504,11 @@ mod tests {
                 feedback: Some("Split the migration out".to_string()),
                 unattended: false,
                 respect_capacity: true,
+                agent_id: Some("codex-acp".to_string()),
             })),
             MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
                 session_id: Some("session-9".to_string()),
+                skipped_attachments: vec!["spec.pdf: not found".to_string()],
             })),
             MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(
                 PipelineSettingsChanged { project_path: None },
@@ -3513,6 +3536,16 @@ mod tests {
     }
 
     #[test]
+    fn auth_required_for_names_the_agent() {
+        let message = auth_required_for("claude-acp");
+        assert_eq!(message, "auth_required:claude-acp");
+        assert_eq!(
+            message.strip_prefix(&format!("{AUTH_REQUIRED_ERROR}:")),
+            Some("claude-acp")
+        );
+    }
+
+    #[test]
     fn start_task_defaults_what_the_button_leaves_out() {
         let json = r#"{"direction":"request","type":"start_task","project_path":"/srv/shop","task_id":3,"role":"Coder"}"#;
         let MaestroRpcMessage::Request(ServerRequest::StartTask(request)) =
@@ -3522,6 +3555,7 @@ mod tests {
         };
         assert_eq!(request.feedback, None);
         assert!(!request.unattended && !request.respect_capacity);
+        assert_eq!(request.agent_id, None);
     }
 
     #[test]
@@ -3541,7 +3575,11 @@ mod tests {
             })
             .is_reply()
         );
-        assert!(ServerResponse::StartTaskOk(StartTaskResponse { session_id: None }).is_reply());
+        assert!(ServerResponse::StartTaskOk(StartTaskResponse {
+            session_id: None,
+            skipped_attachments: vec![],
+        })
+        .is_reply());
         assert!(ServerResponse::HoldTaskOk.is_reply());
     }
 

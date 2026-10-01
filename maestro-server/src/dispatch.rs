@@ -1729,7 +1729,10 @@ pub(crate) async fn dispatch_message(
                     send_response(
                         stdout,
                         &MaestroRpcMessage::Response(ServerResponse::StartTaskOk(
-                            maestro_protocol::StartTaskResponse { session_id: None },
+                            maestro_protocol::StartTaskResponse {
+                                session_id: None,
+                                skipped_attachments: vec![],
+                            },
                         )),
                     )
                     .await

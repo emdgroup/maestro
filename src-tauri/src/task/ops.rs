@@ -429,6 +429,7 @@ async fn start_task_on_server(
                 feedback,
                 unattended,
                 respect_capacity,
+                agent_id: None,
             },
         )),
         reply!(ServerResponse::StartTaskOk(response) => response.session_id),

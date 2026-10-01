@@ -168,8 +168,9 @@ export function useExecuteTask(
       toast.success(`Session started for "${task.title}"`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message === "auth_required") {
-        const agentId = await agentFor(task, role, id);
+      if (message === "auth_required" || message.startsWith("auth_required:")) {
+        // The daemon names the agent as `auth_required:<agent_id>`.
+        const agentId = message.split(":")[1] || (await agentFor(task, role, id));
         if (agentId) {
           useBoardStore.getState().setAuthRequired(String(task.id), agentId, connection, null);
           return;

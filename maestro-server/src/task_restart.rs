@@ -363,6 +363,7 @@ async fn resume(
         session,
         // Nobody asked, so the one reply goes to a client that does not exist.
         reply: crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await,
+        skipped_attachments: vec![],
     };
     if let Err(e) = driver
         .settle_tx
@@ -378,6 +379,18 @@ async fn resume(
 mod tests {
     use super::*;
     use maestro_protocol::SessionMeta;
+
+    /// A window's load of a session the pass is reloading is told to wait, not that it failed.
+    #[test]
+    fn a_load_during_the_reload_is_refused_as_reloading() {
+        assert_eq!(crate::session::requests::reloading_refusal("conv-r"), None);
+        RELOADING.lock().unwrap().insert("conv-r".to_string());
+        let refusal = crate::session::requests::reloading_refusal("conv-r").unwrap();
+        assert!(refusal.starts_with(maestro_protocol::SESSION_RELOADING_ERROR));
+        assert!(!refusal.starts_with(maestro_protocol::SESSION_LOAD_FAILED_ERROR));
+        reloaded("conv-r");
+        assert_eq!(crate::session::requests::reloading_refusal("conv-r"), None);
+    }
 
     fn row(task_id: i32, can_reload: bool, closed: bool) -> ProjectSession {
         ProjectSession {

@@ -336,6 +336,7 @@ pub(crate) async fn start_next(
         unattended: true,
         // The session handing over is superseded by this one, so the slot is the same.
         respect_capacity: false,
+        agent_id: None,
     };
     let mut pushes = Vec::new();
     let begun = crate::task_runner::begin(

@@ -89,6 +89,17 @@ pub(crate) async fn list(
     true
 }
 
+/// Why a window may not load a conversation the startup pass is reloading itself. Not a failure:
+/// the daemon's own reload is announced with `TaskSessionStarted` once it is up.
+pub(crate) fn reloading_refusal(acp_session_id: &str) -> Option<String> {
+    crate::task_restart::reloading(acp_session_id).then(|| {
+        format!(
+            "{}: the server is reloading this session itself",
+            maestro_protocol::SESSION_RELOADING_ERROR
+        )
+    })
+}
+
 /// Resume a session the agent already has, and register it with the dispatch loop.
 pub(crate) async fn load(
     req: maestro_protocol::SessionLoadRequest,
@@ -102,12 +113,8 @@ pub(crate) async fn load(
     let agent_known = agents_with_spawn
         .iter()
         .any(|agent| agent.id == req.agent_id);
-    let checked = if crate::task_restart::reloading(&req.resume_session_id) {
-        // Not final: the daemon's own reload is announced with `TaskSessionStarted` once it is up.
-        Err(format!(
-            "{}: the server is reloading this session itself",
-            maestro_protocol::SESSION_LOAD_FAILED_ERROR
-        ))
+    let checked = if let Some(refusal) = reloading_refusal(&req.resume_session_id) {
+        Err(refusal)
     } else {
         check_load(
             &req.cwd,
