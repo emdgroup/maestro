@@ -446,7 +446,7 @@ Tasks:
       push
 - [x] D12 Daemon permission and elicitation handling for task sessions: auto-approve, plan, blocked
 - [x] D13 Daemon startup pass
-- [ ] D14 Remove the app's drivers; Execute and the gates ask the daemon
+- [x] D14 Remove the app's drivers; Execute and the gates ask the daemon
 - [ ] D15 Docs, review, a live run with every window closed
 
 ## Decisions taken during planning

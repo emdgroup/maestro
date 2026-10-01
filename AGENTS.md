@@ -595,7 +595,13 @@ the canonical path from the app's `project_id`.
   row still names.
 
 With no window attached the daemon still answers the MCP task tools, so an agent can read and write
-its board. The pipeline that moves a task from stage to stage is still driven from the app.
+its board. The daemon also drives the pipeline that moves a task from stage to stage: it drains the
+queue, starts each stage (`StartTask`, which Execute and the gates call too), resolves a turn's end,
+answers or gates a task session's permission requests, and pushes a CI fix. Forge work stays in the
+window: opening a pull request, polling its CI, asking for a CI fix, merging and approving, so a
+task waiting on its pull request waits for a window. A handoff a window writes itself, a manual
+send to review or a requested CI fix, is started by that window through `start_task`, since the
+daemon starts the next stage only after a turn of its own ends.
 
 A board from before this move reaches the daemon once, from `project/import.rs`, while the project
 opens and before its sessions are attached. The rows go in chunks of about 4 MB that the daemon
