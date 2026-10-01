@@ -258,15 +258,21 @@ impl ConnectionHandlers {
             serde_json::to_value(&request).map_err(|e| acp::Error::new(-32603, e.to_string()))?;
 
         // A task session's request is settled here when it can be, and never reaches a window.
-        let task = super::task_gate::task_of(&state, &maestro_sid).await;
-        if let Some(task) = &task {
-            if let Some(answer) =
-                super::task_gate::settle_permission(task, &maestro_sid, &payload, &self.stdout)
-                    .await
+        let bound = super::task_gate::task_of(&state, &maestro_sid).await;
+        if let Some((task, role)) = &bound {
+            if let Some(answer) = super::task_gate::settle_permission(
+                task,
+                *role,
+                &maestro_sid,
+                &payload,
+                &self.stdout,
+            )
+            .await
             {
                 return responder.respond(RequestPermissionResponse::new(outcome(answer)));
             }
         }
+        let task = bound.map(|(task, _)| task);
 
         // Kept as well as sent: the client shown this may be gone before it answers, and the
         // request is what the next one has to be shown to be able to.
@@ -389,7 +395,9 @@ impl ConnectionHandlers {
 
         let payload = request.params().clone();
         // A question to a task's agent stops the task until a user answers it.
-        let task = super::task_gate::task_of(&state, &maestro_sid).await;
+        let task = super::task_gate::task_of(&state, &maestro_sid)
+            .await
+            .map(|(task, _)| task);
         if let Some(task) = &task {
             super::task_gate::transition(
                 task,

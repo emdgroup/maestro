@@ -71,9 +71,9 @@ pub type PendingElicitations =
 pub struct SharedSessionState {
     pub pending_permissions: PendingPermissions,
     pub pending_elicitations: PendingElicitations,
-    /// The task this session works, `(canonical project path, task id)`, when it is known before
-    /// the session's row is. See `session::task_gate`.
-    pub task: std::sync::OnceLock<(String, i32)>,
+    /// The task this session works, `(canonical project path, task id, role)`, when it is known
+    /// before the session's row is. See `session::task_gate`.
+    pub task: std::sync::OnceLock<(String, i32, maestro_protocol::AgentRole)>,
 }
 
 /// Routes ACP session IDs → maestro session IDs → per-session state.

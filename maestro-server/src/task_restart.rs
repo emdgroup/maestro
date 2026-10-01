@@ -318,7 +318,8 @@ async fn resume(
         }
     };
 
-    crate::session::task_gate::bind(&connection.router, &row.acp_session_id, path, task_id).await;
+    crate::session::task_gate::bind(&connection.router, &row.acp_session_id, path, task_id, role)
+        .await;
     if unblock {
         crate::session::task_gate::unblock(&Some((path.to_string(), task_id)), everyone).await;
     }

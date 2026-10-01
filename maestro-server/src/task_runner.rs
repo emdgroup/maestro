@@ -179,7 +179,7 @@ pub(crate) fn begin(
     used_slots: usize,
     agents: &[DiscoveredAgentWithSpawn],
     pushes: &mut Vec<ServerResponse>,
-) -> Result<Begun, String> {
+) -> Result<Begun, NotBegun> {
     let project_path = crate::automations::canonical_project_path(&request.project_path);
     let task = crate::task_store::get(conn, &project_path, request.task_id)?
         .ok_or_else(|| format!("No task {} in this project", request.task_id))?;
@@ -240,7 +240,7 @@ pub(crate) fn begin(
         if request.unattended {
             add_note(conn, &project_path, task.id, reason.clone(), pushes);
         }
-        return Err(reason);
+        return Err(NotBegun::NoAgent(reason));
     };
 
     let prior_phase = task.phase;
@@ -259,7 +259,7 @@ pub(crate) fn begin(
         pushes,
     )?;
     let Some(task) = claimed else {
-        return Err(format!("\"{}\" is no longer waiting to start", task.title));
+        return Err(format!("\"{}\" is no longer waiting to start", task.title).into());
     };
 
     Ok(Begun::Claimed(Box::new(Claimed {
@@ -272,6 +272,29 @@ pub(crate) fn begin(
         feedback: request.feedback.clone(),
         unattended: request.unattended,
     })))
+}
+
+/// Why `begin` claimed nothing.
+#[derive(Debug)]
+pub(crate) enum NotBegun {
+    /// The task has no agent for the stage, or one unknown on this machine: nothing short of a
+    /// change to the task or its profiles starts it.
+    NoAgent(String),
+    Other(String),
+}
+
+impl From<String> for NotBegun {
+    fn from(message: String) -> Self {
+        NotBegun::Other(message)
+    }
+}
+
+impl std::fmt::Display for NotBegun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotBegun::NoAgent(message) | NotBegun::Other(message) => f.write_str(message),
+        }
+    }
 }
 
 /// Why a claimed start did not finish.
@@ -462,6 +485,7 @@ async fn run(
         &result.acp_session_id,
         &project_path,
         task.id,
+        role,
     )
     .await;
     expect_turn_ends(&session_id);
@@ -854,7 +878,8 @@ mod tests {
         let mut pushes = Vec::new();
         let err = begin(&mut conn, &request(&project, &task), 0, &[], &mut pushes)
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(err.contains("No agent to run the Implementation stage"));
         assert_eq!(comments(&conn, &project, &task), 1);
         let after = crate::task_store::get(&conn, &project, task.id)
@@ -869,7 +894,8 @@ mod tests {
         let mut pushes = Vec::new();
         let err = begin(&mut conn, &request(&project, &task), 0, &[], &mut pushes)
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(err.contains("'ghost' is unknown"));
         let after = crate::task_store::get(&conn, &project, task.id)
             .unwrap()
@@ -902,7 +928,11 @@ mod tests {
             &agents,
             &mut pushes,
         );
-        assert!(second.err().unwrap().contains("no longer waiting to start"));
+        assert!(second
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("no longer waiting to start"));
     }
 
     #[test]

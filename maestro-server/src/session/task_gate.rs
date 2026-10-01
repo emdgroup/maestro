@@ -1,14 +1,14 @@
 //! A task session's permission requests and questions, as the app's reader settles them.
 //!
 //! A port of `handle_permission_request` in the app's `reader_task.rs`, so a task with no window
-//! is not stopped by its first prompt. A stage that may write has its requests approved here and
-//! never shown. A read-only stage that delivers a plan by asking to leave plan mode has the plan
+//! is not stopped by its first prompt. A coder's session in a phase that may write has its requests
+//! approved here and never shown; no other role's ever is. A read-only stage that delivers a plan by asking to leave plan mode has the plan
 //! taken as its artifact, the mode change refused and the session closed. Anything else marks the
 //! task blocked and waits for a user, and the mark is cleared when one answers.
 
 use maestro_protocol::{
-    ApplyTaskTransitionRequest, EndTaskTurnRequest, ServerRequest, ServerResponse, Task, TaskPhase,
-    TaskTransition, TransitionGuard, TurnEnding,
+    AgentRole, ApplyTaskTransitionRequest, EndTaskTurnRequest, ServerRequest, ServerResponse, Task,
+    TaskPhase, TaskTransition, TransitionGuard, TurnEnding,
 };
 use serde_json::Value;
 
@@ -70,12 +70,25 @@ fn plan(payload: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Phase `None` is not read-only, as in the app: a task outside the pipeline is approved.
-pub(crate) fn decide(phase: Option<TaskPhase>, payload: &Value) -> Decision {
-    if !read_only(phase) {
-        return allow_option(payload).map_or(Decision::Ask, Decision::Allow);
+/// Only a session bound as the coder is approved, and only outside a read-only phase.
+pub(crate) fn decide(
+    role: Option<AgentRole>,
+    phase: Option<TaskPhase>,
+    payload: &Value,
+) -> Decision {
+    if read_only(phase) {
+        return plan(payload).map_or(Decision::Ask, Decision::Plan);
     }
-    plan(payload).map_or(Decision::Ask, Decision::Plan)
+    if role != Some(AgentRole::Coder) {
+        return Decision::Ask;
+    }
+    allow_option(payload).map_or(Decision::Ask, Decision::Allow)
+}
+
+/// The role in a session row's `role` meta, `{"role": "Coder", ...}`.
+fn parse_role(meta: Option<String>) -> Option<AgentRole> {
+    let value: Value = serde_json::from_str(&meta?).ok()?;
+    serde_json::from_value(value.get("role")?.clone()).ok()
 }
 
 /// Record the task a session works before its row is written, for a session the daemon prompts
@@ -85,30 +98,46 @@ pub(crate) async fn bind(
     acp_session_id: &str,
     project_path: &str,
     task_id: i32,
+    role: AgentRole,
 ) {
     if let Some((_, state)) = router.get_session(acp_session_id).await {
-        let _ = state.task.set((project_path.to_string(), task_id));
+        let _ = state.task.set((project_path.to_string(), task_id, role));
     }
 }
 
-/// The task a session works, `None` when it works none or the daemon does not drive tasks.
-pub(crate) async fn task_of(state: &SharedSessionState, session_id: &str) -> Option<(String, i32)> {
+/// The task a session works and the role it was bound with, `None` when it works none or the
+/// daemon does not drive tasks.
+pub(crate) async fn task_of(
+    state: &SharedSessionState,
+    session_id: &str,
+) -> Option<((String, i32), Option<AgentRole>)> {
     if !crate::task_turn::DAEMON_DRIVES_TASKS {
         return None;
     }
-    if let Some(task) = state.task.get() {
-        return Some(task.clone());
+    if let Some((path, id, role)) = state.task.get() {
+        return Some(((path.clone(), *id), Some(*role)));
     }
     let store = crate::project_store::SHARED.get()?;
     let conn = store.lock().await;
     conn.query_row(
-        "SELECT project_path, task_id FROM sessions
+        "SELECT project_path, task_id, role FROM sessions
          WHERE session_id = ?1 AND task_id IS NOT NULL",
         [session_id],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)),
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        },
     )
     .ok()
-    .map(|(path, id)| (crate::automations::canonical_project_path(&path), id))
+    .map(|(path, id, role)| {
+        (
+            (crate::automations::canonical_project_path(&path), id),
+            parse_role(role),
+        )
+    })
 }
 
 /// Write `request` to the store and push what it changed. The reply, `None` if it failed.
@@ -172,6 +201,7 @@ pub(crate) async fn unblock(task: &Option<(String, i32)>, stdout: &crate::Client
 /// already marked blocked.
 pub(crate) async fn settle_permission(
     task: &(String, i32),
+    role: Option<AgentRole>,
     session_id: &str,
     payload: &Value,
     stdout: &crate::ClientOut,
@@ -182,7 +212,7 @@ pub(crate) async fn settle_permission(
         None => Ok(None),
     };
     let decision = match phase {
-        Ok(Some(stored)) => decide(stored.phase, payload),
+        Ok(Some(stored)) => decide(role, stored.phase, payload),
         Ok(None) => Decision::Ask,
         Err(e) => {
             send_diag("warn", format!("[task] cannot read task {task_id}: {e}"));
@@ -261,27 +291,62 @@ mod tests {
         let phase = Some(TaskPhase::Implementing);
         let both = request(&["reject_once", "allow_once", "allow_always"], None);
         assert_eq!(
-            decide(phase, &both),
+            decide(Some(AgentRole::Coder), phase, &both),
             Decision::Allow("allow_always-id".into())
         );
         let once = request(&["reject_once", "allow_once"], None);
         assert_eq!(
-            decide(phase, &once),
+            decide(Some(AgentRole::Coder), phase, &once),
             Decision::Allow("allow_once-id".into())
         );
         let other = request(&["reject_once", "allow_for_session"], None);
         assert_eq!(
-            decide(phase, &other),
+            decide(Some(AgentRole::Coder), phase, &other),
             Decision::Allow("allow_for_session-id".into())
         );
         assert_eq!(
-            decide(phase, &request(&["reject_once"], None)),
+            decide(
+                Some(AgentRole::Coder),
+                phase,
+                &request(&["reject_once"], None)
+            ),
             Decision::Ask
         );
         assert_eq!(
-            decide(None, &once),
+            decide(Some(AgentRole::Coder), None, &once),
             Decision::Allow("allow_once-id".into()),
-            "a task outside the pipeline is approved, as the app does"
+            "a coder outside the pipeline is approved, as the app does"
+        );
+    }
+
+    #[test]
+    fn only_a_coder_is_approved_whatever_the_phase() {
+        let asking = request(&["allow_always", "reject_once"], None);
+        for role in [
+            None,
+            Some(AgentRole::Planner),
+            Some(AgentRole::Reviewer),
+            Some(AgentRole::Refiner),
+        ] {
+            for phase in [
+                None,
+                Some(TaskPhase::Spawning),
+                Some(TaskPhase::Implementing),
+            ] {
+                assert_eq!(
+                    decide(role, phase, &asking),
+                    Decision::Ask,
+                    "{role:?} in {phase:?}"
+                );
+            }
+        }
+        assert_eq!(
+            decide(Some(AgentRole::Coder), Some(TaskPhase::Spawning), &asking),
+            Decision::Allow("allow_always-id".into())
+        );
+        assert_eq!(
+            parse_role(Some(r#"{"role":"Reviewer","profile_id":null}"#.into())),
+            Some(AgentRole::Reviewer)
         );
     }
 
@@ -293,12 +358,18 @@ mod tests {
             TaskPhase::SelfReview,
         ] {
             let asking = request(&["allow_always", "reject_once"], None);
-            assert_eq!(decide(Some(phase), &asking), Decision::Ask);
+            assert_eq!(
+                decide(Some(AgentRole::Planner), Some(phase), &asking),
+                Decision::Ask
+            );
             let blank = request(&["allow_always"], Some("   "));
-            assert_eq!(decide(Some(phase), &blank), Decision::Ask);
+            assert_eq!(
+                decide(Some(AgentRole::Planner), Some(phase), &blank),
+                Decision::Ask
+            );
             let planned = request(&["allow_always", "reject_once"], Some("  the plan \n"));
             assert_eq!(
-                decide(Some(phase), &planned),
+                decide(Some(AgentRole::Planner), Some(phase), &planned),
                 Decision::Plan("the plan".into())
             );
         }
@@ -312,9 +383,7 @@ mod tests {
     /// The mark and its clearing, as the store applies them: each only where it belongs.
     #[test]
     fn a_request_blocks_a_running_task_and_an_answer_unblocks_it() {
-        use maestro_protocol::{
-            AgentRole, BranchMode, CreateTaskRequest, PhaseStatus, WorkspaceMode,
-        };
+        use maestro_protocol::{BranchMode, CreateTaskRequest, PhaseStatus, WorkspaceMode};
 
         let mut conn = crate::project_store::open_in_memory();
         let project = "/p".to_string();
@@ -372,12 +441,20 @@ mod tests {
     fn a_plan_in_a_writing_phase_is_an_ordinary_request() {
         let planned = request(&["allow_once"], Some("plan"));
         assert_eq!(
-            decide(Some(TaskPhase::Implementing), &planned),
+            decide(
+                Some(AgentRole::Coder),
+                Some(TaskPhase::Implementing),
+                &planned
+            ),
             Decision::Allow("allow_once-id".into())
         );
         let unanswerable = request(&["reject_once"], Some("plan"));
         assert_eq!(
-            decide(Some(TaskPhase::Implementing), &unanswerable),
+            decide(
+                Some(AgentRole::Coder),
+                Some(TaskPhase::Implementing),
+                &unanswerable
+            ),
             Decision::Ask
         );
     }

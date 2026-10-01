@@ -10,13 +10,13 @@
 //! loop for it (`Snapshot`). Starts this scheduler launched that are not in the map yet are counted
 //! in `IN_FLIGHT`, so a drain cannot overshoot while its own spawns are still coming up.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use maestro_protocol::{
-    AgentRole, ListQueueCandidatesRequest, ServerRequest, ServerResponse, StartTaskRequest,
+    AgentRole, ListQueueCandidatesRequest, ServerRequest, ServerResponse, StartTaskRequest, Task,
 };
 use rusqlite::Connection;
 use tokio::sync::{mpsc, oneshot};
@@ -57,12 +57,12 @@ static TX: OnceLock<mpsc::UnboundedSender<Msg>> = OnceLock::new();
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 /// Taken while a drain counts and claims slots.
 static RESERVE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-// ponytail: a task refused before its claim (no agent, unknown agent) is skipped until a user
-// releases a hold on it or the daemon restarts, so the tick does not file the same note every
-// minute. Execute still starts it directly.
-static REFUSED: LazyLock<Mutex<HashSet<(String, i32)>>> = LazyLock::new(Default::default);
+/// Tasks refused for want of an agent (none, or one unknown here), as they stood when refused, so
+/// the tick does not file the same note every minute. One is tried again once it is written or
+/// leaves the queue, or a user releases a hold on it. Execute still starts it directly.
+static REFUSED: LazyLock<Mutex<HashMap<(String, i32), Task>>> = LazyLock::new(Default::default);
 
-fn refused() -> std::sync::MutexGuard<'static, HashSet<(String, i32)>> {
+fn refused() -> std::sync::MutexGuard<'static, HashMap<(String, i32), Task>> {
     REFUSED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -270,12 +270,22 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
         project_path: project_path.to_string(),
         include_undeferred: crate::pipeline_settings::auto_mode(conn, project_path)?,
     };
-    let refused = refused();
-    Ok(crate::task_store::queue_candidates(conn, &request)?
+    let queued = crate::task_store::queue_candidates(conn, &request)?;
+    let mut refused = refused();
+    refused.retain(|(path, id), seen| {
+        path != project_path
+            || (queued.contains(id)
+                && crate::task_store::get(conn, path, *id)
+                    .ok()
+                    .flatten()
+                    .as_ref()
+                    == Some(seen))
+    });
+    Ok(queued
         .into_iter()
         .filter(|&id| {
             !crate::pipeline_settings::is_held(project_path, id)
-                && !refused.contains(&(project_path.to_string(), id))
+                && !refused.contains_key(&(project_path.to_string(), id))
         })
         .collect())
 }
@@ -342,7 +352,11 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 }
                 Ok(crate::task_runner::Begun::Deferred) => {}
                 Err(e) => {
-                    refused().insert((path.to_string(), task_id));
+                    if let crate::task_runner::NotBegun::NoAgent(_) = e {
+                        if let Ok(Some(task)) = crate::task_store::get(&conn, path, task_id) {
+                            refused().insert((path.to_string(), task_id), task);
+                        }
+                    }
                     send_diag("info", format!("[queue] task {task_id} not started: {e}"));
                 }
             }
@@ -436,8 +450,19 @@ mod tests {
         .unwrap();
         assert_eq!(candidates(&conn, &project).unwrap(), vec![deferred, plain]);
 
-        refused().insert((project.clone(), deferred));
+        let seen = crate::task_store::get(&conn, &project, deferred)
+            .unwrap()
+            .unwrap();
+        refused().insert((project.clone(), deferred), seen);
         assert_eq!(candidates(&conn, &project).unwrap(), vec![plain]);
+        // A write to the task tries it again.
+        conn.execute(
+            "UPDATE tasks SET agent_id = 'other' WHERE project_path = ?1 AND id = ?2",
+            rusqlite::params![project, deferred],
+        )
+        .unwrap();
+        assert_eq!(candidates(&conn, &project).unwrap(), vec![deferred, plain]);
+        assert!(!refused().contains_key(&(project.clone(), deferred)));
         assert_eq!(
             projects_with_candidates(&conn).unwrap(),
             vec![project.clone()]

@@ -1746,7 +1746,9 @@ pub(crate) async fn dispatch_message(
                         claimed,
                     )));
                 }
-                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+                Err(e) => {
+                    send_or_return!(send_response(stdout, &error_response(e.to_string())).await)
+                }
             }
         }
 
