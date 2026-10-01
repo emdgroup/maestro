@@ -69,6 +69,7 @@ const MIGRATIONS: &[&str] = &[
     crate::task_store::V2_TASKS,
     crate::task_store::worktrees::V3_WORKTREES_REVIEWS,
     crate::prompt_store::V4_PROMPTS,
+    crate::task_store::project_import::V5_PROJECT_IMPORTS,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -549,7 +550,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("version");
-        assert_eq!(version, 4);
+        assert_eq!(version, MIGRATIONS.len() as i64);
         let title: String = conn
             .query_row("SELECT title FROM tasks WHERE id = 4", [], |row| row.get(0))
             .expect("the task survived");

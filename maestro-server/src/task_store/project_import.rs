@@ -1,13 +1,18 @@
 //! A project's rows as an app held them before the daemon kept them, taken in once.
 //!
 //! All or nothing, in one transaction: a row that does not fit, such as a comment on a task the
-//! import does not carry, fails the foreign key and nothing is kept. Holding any task, worktree or
-//! prompt for the project is the marker that it was imported, by this app or another, so such an
-//! import is refused before anything is written.
+//! import does not carry, fails the foreign key and nothing is kept. A project imported once, by
+//! this app or another, has a row in `project_imports`, and a second import is refused before
+//! anything is written. An empty import sets it too.
+//!
+//! Without the marker the import merges. Rows the daemon wrote for the project before it (an
+//! automation's adopted worktree, a task or prompt an agent created) are moved above every id the
+//! import carries and above its floors, and every reference to them moves along, so the imported
+//! rows keep their ids and the folders and branches named after them still match.
 
 use chrono::Utc;
 use maestro_protocol::{ImportProjectRequest, ImportProjectResponse, ProjectRef, ServerResponse};
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::{commit, json, text, transaction};
 use crate::automations::canonical_project_path;
@@ -34,24 +39,124 @@ pub fn answer(
     Ok((reply, pushes))
 }
 
+/// Version 5: which projects have been imported. Frozen, see `project_store::MIGRATIONS`.
+pub const V5_PROJECT_IMPORTS: &str = "
+CREATE TABLE IF NOT EXISTS project_imports (
+    project_path TEXT PRIMARY KEY,
+    imported_at  TEXT NOT NULL,
+    -- 'rows' when the import carried any, 'empty' when it carried none.
+    source       TEXT NOT NULL
+);
+";
+
 /// `Ok(false)` when refused. `request.project_path` is already canonical.
 fn import(conn: &mut Connection, request: &ImportProjectRequest) -> Result<bool, String> {
     let tx = transaction(conn)?;
-    let held: bool = tx
+    let imported: bool = tx
         .query_row(
-            "SELECT EXISTS (SELECT 1 FROM tasks WHERE project_path = ?1)
-                 OR EXISTS (SELECT 1 FROM worktrees WHERE project_path = ?1)
-                 OR EXISTS (SELECT 1 FROM prompts WHERE project_path = ?1)",
+            "SELECT EXISTS (SELECT 1 FROM project_imports WHERE project_path = ?1)",
             params![request.project_path],
             |row| row.get(0),
         )
-        .map_err(|e| format!("Failed to read the project's rows: {e}"))?;
-    if held {
+        .map_err(|e| format!("Failed to read the project's import marker: {e}"))?;
+    if imported {
         return Ok(false);
     }
-    write(&tx, request).map_err(|e| format!("Import failed, nothing was kept: {e}"))?;
-    commit(tx)?;
+    let failed = |e: String| format!("Import failed, nothing was kept: {e}");
+    // Moving a task's id moves its children in separate statements, so keys are checked at commit.
+    // SQLite resets this when the transaction ends.
+    tx.pragma_update(None, "defer_foreign_keys", "ON")
+        .map_err(|e| failed(e.to_string()))?;
+    make_room(&tx, request).map_err(failed)?;
+    write(&tx, request).map_err(failed)?;
+    commit(tx).map_err(failed)?;
     Ok(true)
+}
+
+/// Move the rows the daemon already holds for the project above everything the import brings.
+///
+/// Each kind shifts by one offset: its counter or the highest id imported, whichever is higher.
+/// The counter is at least every id the daemon minted, so each moved id lands above every id held
+/// or imported, and no update collides with a row not yet moved.
+fn make_room(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String> {
+    let project = request.project_path.as_str();
+    let (tasks, worktrees, prompts): (i32, i32, i32) = tx
+        .query_row(
+            "SELECT last_task_id, last_worktree_id, last_prompt_id FROM project_counters
+             WHERE project_path = ?1",
+            params![project],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let task_offset = request.tasks.iter().map(|t| t.id).fold(tasks, i32::max);
+    let worktree_offset = request
+        .worktrees
+        .iter()
+        .map(|w| w.id)
+        .fold(worktrees, i32::max);
+    let prompt_offset = request.prompts.iter().map(|p| p.id).fold(prompts, i32::max);
+
+    // Sessions first, while `tasks` still has the old ids: a session row naming a task the daemon
+    // does not hold names one of the app's, which keeps its id.
+    let shifts = [
+        (
+            "UPDATE sessions SET task_id = task_id + ?2
+             WHERE project_path = ?1
+               AND task_id IN (SELECT id FROM tasks WHERE project_path = ?1)",
+            task_offset,
+        ),
+        (
+            "UPDATE task_relationships
+             SET from_task_id = from_task_id + ?2, to_task_id = to_task_id + ?2
+             WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE task_instructions SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE task_comments SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE task_attachments SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE task_reviews SET task_id = task_id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE worktrees SET task_id = task_id + ?2
+             WHERE project_path = ?1 AND task_id IS NOT NULL",
+            task_offset,
+        ),
+        (
+            "UPDATE tasks SET id = id + ?2 WHERE project_path = ?1",
+            task_offset,
+        ),
+        (
+            "UPDATE tasks SET workspace_worktree_id = workspace_worktree_id + ?2
+             WHERE project_path = ?1 AND workspace_worktree_id IS NOT NULL",
+            worktree_offset,
+        ),
+        (
+            "UPDATE worktrees SET id = id + ?2 WHERE project_path = ?1",
+            worktree_offset,
+        ),
+        (
+            "UPDATE prompts SET id = id + ?2 WHERE project_path = ?1",
+            prompt_offset,
+        ),
+    ];
+    for (sql, offset) in shifts {
+        tx.execute(sql, params![project, offset])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String> {
@@ -253,22 +358,20 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
         .map_err(|e| format!("prompt {}: {e}", prompt.id))?;
     }
 
-    // Never lowered: a counter already past the imported ids stays where it is.
-    let highest = |ids: &mut dyn Iterator<Item = i32>| ids.max().unwrap_or(0);
+    // Never lowered: each counter ends at the highest id the project now holds, imported or moved,
+    // or stays where it was if that is higher.
     tx.execute(
         "INSERT INTO project_counters (project_path, last_task_id, last_worktree_id,
                                        last_prompt_id)
-         VALUES (?1, ?2, ?3, ?4)
+         VALUES (?1,
+                 (SELECT COALESCE(MAX(id), 0) FROM tasks WHERE project_path = ?1),
+                 (SELECT COALESCE(MAX(id), 0) FROM worktrees WHERE project_path = ?1),
+                 (SELECT COALESCE(MAX(id), 0) FROM prompts WHERE project_path = ?1))
          ON CONFLICT(project_path) DO UPDATE SET
              last_task_id = MAX(last_task_id, excluded.last_task_id),
              last_worktree_id = MAX(last_worktree_id, excluded.last_worktree_id),
              last_prompt_id = MAX(last_prompt_id, excluded.last_prompt_id)",
-        params![
-            project,
-            highest(&mut request.tasks.iter().map(|task| task.id)),
-            highest(&mut request.worktrees.iter().map(|worktree| worktree.id)),
-            highest(&mut request.prompts.iter().map(|prompt| prompt.id)),
-        ],
+        params![project],
     )
     .map_err(sql)?;
 
@@ -300,6 +403,16 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
         )
         .map_err(sql)?;
     }
+
+    let empty = request.tasks.is_empty()
+        && request.worktrees.is_empty()
+        && request.prompts.is_empty()
+        && request.sessions.is_empty();
+    tx.execute(
+        "INSERT INTO project_imports (project_path, imported_at, source) VALUES (?1, ?2, ?3)",
+        params![project, now, if empty { "empty" } else { "rows" }],
+    )
+    .map_err(sql)?;
     Ok(())
 }
 
@@ -540,8 +653,174 @@ mod tests {
         assert_eq!(next_prompt.id, 5);
     }
 
+    fn create_request(title: &str) -> CreateTaskRequest {
+        CreateTaskRequest {
+            project_path: PROJECT.to_string(),
+            title: title.to_string(),
+            description: None,
+            skills: vec![],
+            labels: vec![],
+            base_branch: "main".to_string(),
+            agent_id: None,
+            priority: None,
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::NewWorktree,
+            workspace_worktree_id: None,
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            model_override: None,
+        }
+    }
+
     #[test]
-    fn a_project_with_tasks_refuses_the_import_and_writes_nothing() {
+    fn rows_the_daemon_wrote_first_move_above_the_import() {
+        let mut conn = crate::project_store::open_in_memory();
+        // An agent's task 1 with a comment, a worktree claimed for it, an automation's worktree,
+        // an agent's prompt, and a session row bound to the task.
+        let agents_task =
+            super::super::create(&mut conn, &create_request("Agent's")).expect("task");
+        assert_eq!(agents_task.id, 1);
+        conn.execute(
+            "INSERT INTO task_comments (project_path, task_id, kind, author, body, created_at)
+             VALUES (?1, 1, 'comment', 'agent', 'note', ?2)",
+            params![PROJECT, AT],
+        )
+        .expect("comment");
+        let claimed = super::super::worktrees::insert(
+            &conn,
+            &InsertWorktreeRequest {
+                project_path: PROJECT.to_string(),
+                task_id: Some(1),
+                branch_name: "maestro/1-agents".to_string(),
+                base_branch: None,
+                path: ".maestro/worktrees/task-1".to_string(),
+            },
+        )
+        .expect("worktree");
+        assert_eq!(claimed.id, 1);
+        conn.execute(
+            "UPDATE tasks SET workspace_worktree_id = 1 WHERE project_path = ?1 AND id = 1",
+            params![PROJECT],
+        )
+        .expect("pin");
+        assert!(super::super::worktrees::adopt(
+            &conn,
+            PROJECT,
+            "maestro/automation-nightly-1",
+            None,
+            ".maestro/worktrees/automation-nightly-1",
+        )
+        .expect("adopt"));
+        let agents_prompt = crate::prompt_store::create(
+            &conn,
+            &CreatePromptRequest {
+                project_path: PROJECT.to_string(),
+                title: "Agent's".to_string(),
+                body: "text".to_string(),
+                tags: vec![],
+                favorite: false,
+            },
+        )
+        .expect("prompt");
+        assert_eq!(agents_prompt.id, 1);
+        crate::project_store::rename(
+            &conn,
+            &maestro_protocol::RenameSessionRequest {
+                project_path: PROJECT.to_string(),
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "daemon-session".to_string(),
+                cwd: PROJECT.to_string(),
+                name: "on the agent's task".to_string(),
+            },
+            PROJECT,
+            Utc::now(),
+        )
+        .expect("session row");
+        conn.execute(
+            "UPDATE sessions SET task_id = 1 WHERE acp_session_id = 'daemon-session'",
+            [],
+        )
+        .expect("bind");
+
+        let (reply, _) = answer(&mut conn, full_request()).expect("import");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
+        );
+
+        // Tasks shift by 7 (the highest imported), worktrees by 9, prompts by 4.
+        let moved = super::super::get(&conn, PROJECT, 8)
+            .expect("read")
+            .expect("the agent's task, moved");
+        assert_eq!(moved.title, "Agent's");
+        assert_eq!(moved.workspace_worktree_id, Some(10));
+        let thread = super::super::list_comments(&conn, PROJECT, 8).expect("thread");
+        assert_eq!(thread.len(), 1);
+        assert_eq!(
+            super::super::get(&conn, PROJECT, 7)
+                .expect("read")
+                .map(|t| t.title),
+            Some("Task 7".to_string())
+        );
+        let worktree = |id| super::super::worktrees::get(&conn, PROJECT, id).expect("worktree");
+        assert_eq!(worktree(9).and_then(|w| w.task_id), Some(7));
+        assert_eq!(worktree(10).and_then(|w| w.task_id), Some(8));
+        assert_eq!(
+            worktree(11).map(|w| w.path),
+            Some(".maestro/worktrees/automation-nightly-1".to_string())
+        );
+        assert_eq!(
+            crate::prompt_store::get(&conn, PROJECT, 5)
+                .expect("prompt")
+                .map(|p| p.title),
+            Some("Agent's".to_string())
+        );
+        let bound: Vec<(String, Option<i32>)> = crate::project_store::list(&conn, PROJECT, true)
+            .expect("sessions")
+            .into_iter()
+            .map(|(row, _)| (row.acp_session_id, row.meta.task_id))
+            .collect();
+        assert!(bound.contains(&("daemon-session".to_string(), Some(8))));
+        assert!(bound.contains(&("acp-1".to_string(), Some(7))));
+
+        assert_eq!(
+            super::super::create(&mut conn, &create_request("Next"))
+                .expect("create")
+                .id,
+            9
+        );
+    }
+
+    #[test]
+    fn an_empty_import_marks_the_project() {
+        let mut conn = crate::project_store::open_in_memory();
+        let empty = ImportProjectRequest {
+            project_path: PROJECT.to_string(),
+            tasks: vec![],
+            relationships: vec![],
+            instructions: vec![],
+            comments: vec![],
+            attachments: vec![],
+            worktrees: vec![],
+            reviews: vec![],
+            prompts: vec![],
+            sessions: vec![],
+        };
+        let (reply, _) = answer(&mut conn, empty).expect("empty import");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
+        );
+        let (reply, _) = answer(&mut conn, full_request()).expect("second import");
+        assert_eq!(
+            reply,
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
+        );
+        assert_eq!(count(&conn, "tasks"), 0);
+    }
+
+    #[test]
+    fn an_imported_project_refuses_the_import_and_writes_nothing() {
         let mut conn = crate::project_store::open_in_memory();
         let mut first = full_request();
         first.sessions.clear();
