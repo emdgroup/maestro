@@ -27,15 +27,13 @@ describe("filterPrompts", () => {
   it("filters by kind", () => {
     expect(ids(filterPrompts(prompts, "all", null, ""))).toEqual([1, 2, 3]);
     expect(ids(filterPrompts(prompts, "favorites", null, ""))).toEqual([1]);
-    expect(ids(filterPrompts(prompts, "shared", null, ""))).toEqual([1, 3]);
-    expect(ids(filterPrompts(prompts, "project", null, ""))).toEqual([2]);
   });
 
   it("combines tag and query, matching title, text or tag", () => {
     expect(ids(filterPrompts(prompts, "all", "review", ""))).toEqual([1, 2]);
     expect(ids(filterPrompts(prompts, "all", "review", "tests"))).toEqual([2]);
     expect(ids(filterPrompts(prompts, "all", null, "  EXPLAIN "))).toEqual([3]);
-    expect(ids(filterPrompts(prompts, "shared", "tests", ""))).toEqual([]);
+    expect(ids(filterPrompts(prompts, "favorites", "tests", ""))).toEqual([]);
   });
 });
 

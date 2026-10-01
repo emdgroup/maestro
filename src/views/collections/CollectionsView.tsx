@@ -82,6 +82,7 @@ export function CollectionsView({
 
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [newPromptShared, setNewPromptShared] = useState(false);
 
   const [skillEditorOpen, setSkillEditorOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<SkillInfo | null>(null);
@@ -92,8 +93,10 @@ export function CollectionsView({
     setSkillEditorOpen(true);
   }
 
-  function openPromptEditor(prompt: Prompt | null) {
+  // A new prompt goes to the collection it was started from: the bar's button means this project.
+  function openPromptEditor(prompt: Prompt | null, shared = false) {
     setEditingPrompt(prompt);
+    setNewPromptShared(shared);
     setPromptEditorOpen(true);
   }
 
@@ -237,8 +240,9 @@ export function CollectionsView({
               editorOpen={promptEditorOpen}
               onEditorOpenChange={setPromptEditorOpen}
               editing={editingPrompt}
+              newShared={newPromptShared}
               onEdit={openPromptEditor}
-              onNew={() => openPromptEditor(null)}
+              onNew={(shared) => openPromptEditor(null, shared)}
             />
           ) : (
             <AutomationsPanel

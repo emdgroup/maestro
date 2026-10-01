@@ -18,6 +18,7 @@ export function PromptEditorDialog({
   onOpenChange,
   projectId,
   editing,
+  newShared,
   knownTags,
 }: {
   open: boolean;
@@ -25,6 +26,8 @@ export function PromptEditorDialog({
   projectId: number;
   /** The prompt to edit, or `null` for a new one. */
   editing: Prompt | null;
+  /** The collection a new prompt goes to unless the user picks the other. */
+  newShared: boolean;
   knownTags: string[];
 }) {
   const save = useSavePromptMutation();
@@ -38,7 +41,7 @@ export function PromptEditorDialog({
   // Reset whenever the dialog opens, during render rather than from an effect, which would paint
   // one frame of whatever was there before.
   const [shownFor, setShownFor] = useState<string | null>(null);
-  const current = open ? (editing ? `${editing.shared}-${editing.id}` : "new") : null;
+  const current = open ? (editing ? `${editing.shared}-${editing.id}` : `new-${newShared}`) : null;
   if (shownFor !== current) {
     setShownFor(current);
     if (open) {
@@ -46,7 +49,7 @@ export function PromptEditorDialog({
       setBody(editing?.body ?? "");
       setTags(editing?.tags ?? []);
       setTagDraft("");
-      setShared(editing?.shared ?? false);
+      setShared(editing?.shared ?? newShared);
       setFavorite(editing?.favorite ?? false);
     }
   }
@@ -92,16 +95,17 @@ export function PromptEditorDialog({
                 favorite ? "border-amber-500/60 bg-amber-500/15 text-foreground" : undefined
               }
             />
-            <Toggle
-              pressed={shared}
-              onPressedChange={setShared}
-              // Saving never moves a prompt between collections; copying from its card does.
-              disabled={editing !== null}
-              label="Shared"
-              hint="Shared with all projects"
-              icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
-              className={shared ? "border-accent/60 bg-accent/15 text-foreground" : undefined}
-            />
+            {/* Which collection a new prompt goes to. Saving never moves one; copying does. */}
+            {!editing && (
+              <Toggle
+                pressed={shared}
+                onPressedChange={setShared}
+                label="Shared"
+                hint="Shared with all projects"
+                icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
+                className={shared ? "border-accent/60 bg-accent/15 text-foreground" : undefined}
+              />
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -207,10 +211,8 @@ function Toggle({
   hint,
   icon,
   className,
-  disabled,
 }: {
   pressed: boolean;
-  disabled?: boolean;
   onPressedChange: (pressed: boolean) => void;
   label: string;
   hint: string;
@@ -225,8 +227,7 @@ function Toggle({
             variant="outline"
             size="sm"
             aria-pressed={pressed}
-            disabled={disabled}
-            onClick={() => !disabled && onPressedChange(!pressed)}
+            onClick={() => onPressedChange(!pressed)}
             className={cn("h-7 gap-1.5 text-xs", !pressed && "text-muted-foreground", className)}
           />
         }

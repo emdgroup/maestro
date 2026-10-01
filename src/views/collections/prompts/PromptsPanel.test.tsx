@@ -15,6 +15,29 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/tauri-utils", () => ({ api }));
 
+// Drags cannot be driven in happy-dom, so the provider's handlers and the droppables are captured
+// and called directly.
+const dnd = vi.hoisted(() => ({
+  droppables: [] as Array<{ id: string; accept: unknown }>,
+  onDragEnd: null as null | ((event: unknown) => void),
+}));
+vi.mock("@dnd-kit/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dnd-kit/react")>();
+  return {
+    ...actual,
+    // A real draggable measures layout on pointer events, which happy-dom does not have.
+    useDraggable: () => ({ ref: () => {}, handleRef: () => {}, isDragging: false }),
+    useDroppable: (input: Parameters<typeof actual.useDroppable>[0]) => {
+      dnd.droppables.push(input as { id: string; accept: unknown });
+      return actual.useDroppable(input);
+    },
+    DragDropProvider: (props: Parameters<typeof actual.DragDropProvider>[0]) => {
+      dnd.onDragEnd = props.onDragEnd as (event: unknown) => void;
+      return <actual.DragDropProvider {...props} />;
+    },
+  };
+});
+
 function prompt(id: number, fields: Partial<Prompt>): Prompt {
   return {
     id,
@@ -32,6 +55,7 @@ function prompt(id: number, fields: Partial<Prompt>): Prompt {
 function Harness() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Prompt | null>(null);
+  const [newShared, setNewShared] = useState(false);
   return (
     <>
       <button type="button" onClick={() => (setEditing(null), setOpen(true))}>
@@ -42,8 +66,9 @@ function Harness() {
         editorOpen={open}
         onEditorOpenChange={setOpen}
         editing={editing}
+        newShared={newShared}
         onEdit={(p) => (setEditing(p), setOpen(true))}
-        onNew={() => setOpen(true)}
+        onNew={(shared) => (setEditing(null), setNewShared(shared), setOpen(true))}
       />
     </>
   );
@@ -60,6 +85,8 @@ function renderPanel() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dnd.droppables.length = 0;
+  dnd.onDragEnd = null;
   api.listPrompts.mockImplementation(async (_projectId: number, shared: boolean) =>
     shared
       ? [prompt(1, { title: "Review changes", tags: ["review"], shared: true, favorite: true })]
@@ -71,20 +98,61 @@ beforeEach(() => {
 });
 
 describe("PromptsPanel", () => {
-  it("lists favorites first and filters to shared ones", async () => {
+  it("shows each collection in its own column and filters to favorites", async () => {
     const user = userEvent.setup();
     renderPanel();
-    const favorites = (await screen.findByRole("heading", { name: /Favorites/ })).closest(
-      "section",
-    )!;
-    expect(within(favorites).getByText("Review changes")).toBeInTheDocument();
-    expect(screen.getByText("Local only")).toBeInTheDocument();
+    const project = await screen.findByRole("region", { name: "This project" });
+    const shared = screen.getByRole("region", { name: "Shared" });
+    expect(await within(project).findByText("Local only")).toBeInTheDocument();
+    expect(within(shared).getByText("Review changes")).toBeInTheDocument();
+    expect(within(shared).getByText(/Stored in this app/)).toBeInTheDocument();
     expect(api.listPrompts).toHaveBeenCalledWith(7, false);
     expect(api.listPrompts).toHaveBeenCalledWith(7, true);
 
-    await user.click(screen.getByRole("button", { name: "Shared" }));
+    await user.click(screen.getByRole("button", { name: "Favorites" }));
     expect(screen.queryByText("Local only")).not.toBeInTheDocument();
     expect(screen.getByText("Review changes")).toBeInTheDocument();
+    expect(within(project).getByText("No prompt matches.")).toBeInTheDocument();
+  });
+
+  it("keeps one column when the other fails, and retries it", async () => {
+    const user = userEvent.setup();
+    api.listPrompts.mockImplementation(async (_projectId: number, shared: boolean) => {
+      if (!shared) throw "daemon unreachable";
+      return [prompt(1, { title: "Review changes", shared: true })];
+    });
+    renderPanel();
+    const project = await screen.findByRole("region", { name: "This project" });
+    expect(await within(project).findByText("daemon unreachable")).toBeInTheDocument();
+    expect(screen.getByText("Review changes")).toBeInTheDocument();
+
+    api.listPrompts.mockResolvedValueOnce([prompt(2, { title: "Local only" })]);
+    await user.click(within(project).getByRole("button", { name: "Retry" }));
+    expect(await within(project).findByText("Local only")).toBeInTheDocument();
+  });
+
+  it("draws an empty collection as a drop target for the other's cards", async () => {
+    api.listPrompts.mockImplementation(async (_projectId: number, shared: boolean) =>
+      shared ? [] : [prompt(2, { title: "Local only" })],
+    );
+    api.copyPrompt.mockResolvedValue(prompt(1, { shared: true }));
+    renderPanel();
+    const shared = await screen.findByRole("region", { name: "Shared" });
+    expect(await within(shared).findByText("No shared prompts yet.")).toBeInTheDocument();
+    expect(within(shared).getByTestId("prompts-shared")).toBeInTheDocument();
+    expect(dnd.droppables).toContainEqual(
+      expect.objectContaining({ id: "shared", accept: "project" }),
+    );
+    expect(dnd.droppables).toContainEqual(
+      expect.objectContaining({ id: "project", accept: "shared" }),
+    );
+
+    const source = { data: prompt(2, { title: "Local only" }) };
+    dnd.onDragEnd!({ canceled: true, operation: { source, target: { id: "shared" } } });
+    dnd.onDragEnd!({ canceled: false, operation: { source, target: null } });
+    expect(api.copyPrompt).not.toHaveBeenCalled();
+    dnd.onDragEnd!({ canceled: false, operation: { source, target: { id: "shared" } } });
+    await waitFor(() => expect(api.copyPrompt).toHaveBeenCalledWith(7, 2, false));
   });
 
   it("copies the prompt text when the card is clicked", async () => {
@@ -106,28 +174,38 @@ describe("PromptsPanel", () => {
     expect(api.savePrompt).not.toHaveBeenCalled();
   });
 
-  it("copies into the other collection from the card", async () => {
+  it("copies into the other collection from the first menu item", async () => {
     const user = userEvent.setup();
     api.copyPrompt.mockResolvedValue(prompt(3, { shared: true }));
     renderPanel();
-    await screen.findByText("Local only");
-    expect(screen.getByRole("button", { name: "Copy to this project" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Copy to shared" }));
+    await screen.findByText("Review changes");
+    await user.click(screen.getByRole("button", { name: "More actions for Review changes" }));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("Copy to this project");
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: "More actions for Local only" }));
+    const first = (await screen.findAllByRole("menuitem"))[0]!;
+    expect(first).toHaveTextContent("Copy to shared");
+    await user.click(first);
     expect(api.copyPrompt).toHaveBeenCalledWith(7, 2, false);
     expect(api.savePrompt).not.toHaveBeenCalled();
   });
 
-  it("creates a shared prompt with its tags", async () => {
+  it("creates a prompt in the column it was started from", async () => {
     const user = userEvent.setup();
     renderPanel();
     await screen.findByText("Local only");
-    await user.click(screen.getByRole("button", { name: "New prompt" }));
+    await user.click(screen.getByRole("button", { name: "New prompt in shared" }));
     const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Shared" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await user.type(within(dialog).getByLabelText("Title"), "Explain module");
     await user.click(within(dialog).getByText("Write the prompt…"));
     await user.keyboard("Explain how it works");
     await user.type(within(dialog).getByLabelText("Tags"), "Onboarding{Enter}docs,");
-    await user.click(within(dialog).getByRole("button", { name: "Shared" }));
     await user.click(within(dialog).getByRole("button", { name: "Create prompt" }));
 
     await waitFor(() =>

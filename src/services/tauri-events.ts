@@ -30,10 +30,15 @@ export function useServerEventSync(projectId: number | undefined) {
 
     // `tasks-changed` and `worktrees-changed` name the project they concern; another project's
     // change is not this window's to refetch.
-    const subscribe = (event: string, invalidate: () => void, projectScoped = false) => {
+    type Payload = { project_id?: number | null };
+    const subscribe = (
+      event: string,
+      invalidate: (payload: Payload) => void,
+      projectScoped = false,
+    ) => {
       const handler = ({ payload }: { payload: unknown }) => {
-        if (!projectScoped || concernsProject(payload as { project_id?: number | null }, projectId))
-          invalidate();
+        if (!projectScoped || concernsProject(payload as Payload, projectId))
+          invalidate((payload ?? {}) as Payload);
       };
       void listen(event, handler).then((unlisten) => {
         if (cancelled) unlisten();
@@ -66,8 +71,12 @@ export function useServerEventSync(projectId: number | undefined) {
       void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
     });
 
-    subscribe("prompts-changed", () => {
-      void queryClient.invalidateQueries({ queryKey: promptQueryKeys.base });
+    // `project_id: null` is the app's shared collection; a number is that project's own.
+    subscribe("prompts-changed", (payload) => {
+      const id = payload.project_id ?? null;
+      void queryClient.invalidateQueries({
+        queryKey: id === null ? promptQueryKeys.shared : promptQueryKeys.project(id),
+      });
     });
 
     // Keyed on the project, so there is nothing to listen for until one is open.

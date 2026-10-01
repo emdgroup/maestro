@@ -321,7 +321,7 @@ Tasks:
 - [x] P3 `src-tauri`: the app's `prompts` table holds the shared collection only, with its own
       favorite column; `prompt_favorites` dropped; project prompt commands ask the daemon; copy both
       ways; the host's prompt tools answer for the shared collection
-- [ ] P4 Frontend: two columns, drag to copy, the menu item, favorites first, filter All and
+- [x] P4 Frontend: two columns, drag to copy, the menu item, favorites first, filter All and
       Favorites
 - [ ] P5 Review, docs, a live run
 

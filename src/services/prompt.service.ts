@@ -5,24 +5,22 @@ import type { PromptInput } from "@/types/bindings";
 
 export const promptQueryKeys = {
   base: ["prompts"] as const,
-  list: (projectId: number) => ["prompts", projectId] as const,
+  shared: ["prompts", "shared"] as const,
+  project: (projectId: number) => ["prompts", "project", projectId] as const,
 };
 
-/** The project's collection, from its daemon, then the app's shared one; favorites first in each. */
-export function usePromptsQuery(projectId: number) {
+/**
+ * One collection, favorites first then newest, in the backend's order: the project's from its
+ * daemon, or the app's shared one. Apart, so a daemon that is down blanks only its own column.
+ */
+export function usePromptsQuery(projectId: number, shared: boolean) {
   return useQuery({
-    queryKey: promptQueryKeys.list(projectId),
-    queryFn: async () => {
-      const [own, shared] = await Promise.all([
-        api.listPrompts(projectId, false),
-        api.listPrompts(projectId, true),
-      ]);
-      return [...own, ...shared];
-    },
+    queryKey: shared ? promptQueryKeys.shared : promptQueryKeys.project(projectId),
+    queryFn: () => api.listPrompts(projectId, shared),
   });
 }
 
-// Every project's list holds the shared prompts, so a change invalidates them all.
+// A copy writes to the other collection, so a mutation invalidates both.
 function useInvalidatePrompts() {
   const queryClient = useQueryClient();
   return () => void queryClient.invalidateQueries({ queryKey: promptQueryKeys.base });

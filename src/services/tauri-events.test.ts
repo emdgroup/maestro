@@ -29,6 +29,7 @@ import { useServerEventSync } from "./tauri-events";
 import { taskQueryKeys } from "./task.service";
 import { worktreeQueryKeys } from "./worktree.service";
 import { executionQueryKeys } from "./execution.service";
+import { promptQueryKeys } from "./prompt.service";
 
 /** `listen` resolves on a microtask, so nothing is registered until the queue drains. */
 async function flush() {
@@ -117,6 +118,18 @@ describe("useServerEventSync", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: executionQueryKeys.activeSessions(7),
     });
+  });
+
+  it("refetches only the prompt collection that changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("prompts-changed", { project_id: null });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.shared });
+
+    fire("prompts-changed", { project_id: 7 });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.project(7) });
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
   });
 
   /**
