@@ -149,8 +149,10 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Domain notes live beside the code
 
-Each part of the tree carries its own `AGENTS.md` (with a `CLAUDE.md` that imports it), loaded
-when an agent works in that directory. Read the one for the area you are about to change:
+Each part of the tree carries its own `AGENTS.md`, loaded when an agent works in that directory.
+Read the one for the area you are about to change. Do not add a `CLAUDE.md` anywhere in the tree:
+Claude Code (v2.1.277+) reads `AGENTS.md` itself, and only while no `CLAUDE.md` or
+`CLAUDE.local.md` sits on the path, so one stray file silently drops every note below.
 
 | File                       | Covers                                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
