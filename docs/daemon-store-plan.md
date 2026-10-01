@@ -59,14 +59,14 @@ belongs to a project.
 
 ## Phases
 
-| Phase | What                                               | State       |
-| ----- | -------------------------------------------------- | ----------- |
-| 0     | Request ids on the wire                            | Done        |
-| 1     | Sessions: the daemon knows what a project has open | Done        |
-| 2     | Tasks, their threads, worktrees and reviews        | In progress |
-| 3     | Project prompts                                    | Not started |
-| 4     | Import what apps already hold, then drop it        | Not started |
-| 5     | The pipeline runs with no window                   | Not started |
+| Phase | What                                               | State                  |
+| ----- | -------------------------------------------------- | ---------------------- |
+| 0     | Request ids on the wire                            | Done                   |
+| 1     | Sessions: the daemon knows what a project has open | Done                   |
+| 2     | Tasks, their threads, worktrees and reviews        | Done, not yet run live |
+| 3     | Project prompts                                    | Not started            |
+| 4     | Import what apps already hold, then drop it        | Not started            |
+| 5     | The pipeline runs with no window                   | Not started            |
 
 ### Phase 0: request ids on the wire
 
@@ -248,8 +248,29 @@ Tasks:
         commands, including `discard_task_workspace` and `push_ci_fix`
 - [x] T8 Attachments copied on attach
 - [x] T9 Frontend: `projectId` on commands and query keys, bindings
-- [ ] T10 Remove the app's task SQL (the tables stay until phase 4), docs, review, an end-to-end
-      test with two clients seeing `TasksChanged`
+- T10 Cleanup, split in two:
+  - [x] T10a Ordering of the pipeline's requests, and tests for the behavior that moved
+        (`1636b440`)
+  - [x] T10b Attachments embedded from the project copy again, the app's task SQL removed (the
+        tables stay until phase 4), docs
+- [ ] A run of the app against a live daemon, with two windows seeing `TasksChanged`
+
+Notes from phase 2:
+
+- Some steps are still two requests, each guarded on its own. A PTY start claims the task, then
+  marks it started under `Spawning`, and releases the claim as a failed spawn if the second fails.
+  A merge conflict saves its review before the transition, and a change request transitions before
+  replacing the review; both orders leave a state the user can retry from, and both writes are safe
+  to repeat. The pull-request sweep reads its candidates, asks the forge, then moves a task only
+  under a `Ball` or `Changed` guard, so a task that moved meanwhile is left alone.
+- An elicitation's blocked mark is still spawned from the reader rather than awaited, since the
+  reader must not wait on the daemon. Its answer can overtake it, and the card then pulses until the
+  next turn ends.
+- A project the app opened through a symlinked path does not match the canonical path the daemon
+  pushes, so its pushes carry a null `project_id` and every window refetches.
+- `RunAutomation` still runs `git worktree add` on the daemon's main loop (see T0).
+- The phase-2 commits between `94bf323a` and `1636b440` do not each build on their own: the app and
+  the daemon were cut over in steps. Bisect across the range, not into it.
 
 ### Phase 3: project prompts
 

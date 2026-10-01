@@ -126,8 +126,8 @@ and logic, so a feature touches one directory rather than three.
 
 - `core/` — cross-cutting foundations: `schema.rs` (SQLite schema + migration), `settings.rs`, `connection.rs` (incl. `get_project_with_git_conn()`), `project_storage.rs`, `AppState`
 - `project/` — project CRUD, handlers, models, `git_ops.rs`, `lock.rs` (asks the connection's daemon for the project lock, and for takeovers), `session_state.rs`, `prime.rs`
-- `task/` — task CRUD, handlers, models, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
-- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`
+- `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon"), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
+- `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
 - `execution/` — PTY/process spawning (local + remote), `queue.rs`, `streaming.rs`, handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
@@ -175,9 +175,13 @@ and expect to delete `.maestro/dev-data/` on any machine that ran the intermedia
 
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, `prompt_favorites`
 
-`session_aliases` is no longer read or written: a session's name is on the daemon's row for it
-(see "The resident maestro-server"). The table is left where it is, holding the names earlier
-builds wrote.
+The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
+`connection_settings`, `templates`, `prompts` and `prompt_favorites`. The rest are no longer read or
+written: tasks and everything hanging off them are the daemon's (see "Tasks live in the daemon"),
+and a session's name is on the daemon's row for it (see "The resident maestro-server"). Those tables
+stay where they are, holding what earlier builds wrote, until phase 4 of `docs/daemon-store-plan.md`
+imports their rows into the daemon and drops them. Outside `core/schema.rs` no app code touches
+them, and nothing new should.
 
 ### IPC Communication
 
@@ -548,6 +552,51 @@ machine's hostname. Every change is broadcast as `ProjectLocksChanged`, which is
 picker's lock badges. The app side is `src-tauri/src/project/lock.rs`; `spawn_connection_server`
 re-acquires the held project whenever a relay is replaced, since the daemon sees a new client.
 
+### Tasks live in the daemon
+
+A project's tasks, their relationships, instructions, threads and attachments, its worktrees and
+its reviews are tables in the daemon's `projects.db`, beside the sessions, in
+`maestro-server/src/task_store/`. Every row carries `project_path` where the app's had `project_id`,
+so a second machine opening the project over the same connection finds the same board. The app's
+commands are one round trip each through `query_project_store`, which resolves the connection and
+the canonical path from the app's `project_id`.
+
+- **Ids are per project.** A task is keyed by `(project_path, id)`, minted from a counter in
+  `project_counters` that never goes back. A deleted task's `task-<id>` folder or `maestro/<id>-`
+  branch can outlive it, and a reused number would hand them to a stranger. Worktrees are keyed the
+  same way from their own counter, because a session's folder is `session-<id>` inside its project
+  and a global id would collide across the projects on one daemon. Since two projects both have a
+  task 3, every command naming a task or worktree carries `project_id` too, and so does every task
+  query key in the frontend.
+- **A guarded step is one request.** A transition travels with its guard (`TransitionGuard`) and runs
+  under the store's lock, as do the composite steps: the turn end (`EndTaskTurn`), closing a
+  refinement and requesting execution. A step the guard refuses writes nothing and pushes nothing.
+- **Nothing on the shared reader awaits a daemon reply.** The reply to a daemon request comes back
+  through the same reader that would be waiting for it, so `reader_task` spawns such requests onto
+  a task of their own. A permission request of a task session is settled that way, its blocked
+  mark awaited there before the prompt reaches the UI.
+- **Every write is pushed.** `TasksChanged`, `TaskCommentsChanged` and `WorktreesChanged` go to
+  every attached window, the requester included, and become the `tasks-changed`,
+  `task-comments-changed` and `worktrees-changed` events. They carry the app's `project_id`, matched
+  from the canonical path, and a listener ignores another project's. A path this app has no project
+  for gives a null id, which every listener treats as its own. The app emits none of these itself.
+- **Triggers stand in for `ON DELETE SET NULL`.** A deleted task releases its worktree rather than
+  taking it, but `SET NULL` on a composite key would null `project_path` too, so
+  `tasks_release_worktrees` clears `task_id` first. A deleted worktree drops any task's pin on it
+  through `worktrees_drop_workspace_pins`, since SQLite cannot add that foreign key without
+  rebuilding `tasks`.
+- **Attachments are copied into the project.** Attaching copies the file to
+  `.maestro/attachments/tasks/<task_id>/` on the project's machine, through the transfer path prompt
+  attachments use, and the row holds the project-relative path. Starting a task reads each copy
+  there (`prepare_task_attachments`) and embeds it as before: an image inline, text pasted in, a PDF
+  linked. A missing copy is offered for removal; one too big to send is offered and kept.
+- **The zombie worktree sweep asks the daemon.** Its candidates come from `ListWorktrees` and
+  `ListTasks`, and a pass is skipped when the daemon cannot answer, rather than deleting a folder a
+  row still names.
+
+With no window attached the daemon still answers the MCP task tools, so an agent can read and write
+its board. The pipeline that moves a task from stage to stage is still driven from the app.
+
 ### Automations live in the daemon
 
 An automation is a prompt, an agent and a workspace, run on a schedule or on demand. **None of it
@@ -730,8 +779,11 @@ Three files:
 - `maestro-server/src/mcp_gateway.rs` — the loopback listener in the running server. Draws canvas
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
-- `src-tauri/src/acp/host_tools.rs` — the host end: the task tools and `canvas_await`, with the
-  automation and template tools in `acp/automation_tools.rs` and the prompt tools in `prompts.rs`.
+- `src-tauri/src/acp/host_tools.rs` — the host end: `canvas_await`, with the automation and
+  template tools in `acp/automation_tools.rs` and the prompt tools in `prompts.rs`.
+
+The task tools are the exception: the gateway answers them itself from `projects.db`, through the
+same `task_store::requests::answer` a window's request goes through, so they are never parked.
 
 Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
 so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
@@ -744,11 +796,14 @@ without canvas and task tools.
 | ------------------------------------------------- | ---------------------------------------------- | ----------------------------- |
 | `canvas_create` / `canvas_update` / `canvas_data` | drawn by the gateway, acknowledged by the host | `{ok}`, plus frame `{errors}` |
 | `canvas_await`                                    | the host, after the user acts on the surface   | `{event}` or `{timeout}`      |
-| `create_task` / `list_tasks`                      | the host, against the database                 | the task, or the list         |
-| `get_task` / `update_task` / `comment_task`       | the host, scoped to the session's project      | the task, or the new entry    |
+| `create_task` / `list_tasks`                      | the gateway, scoped to the session's project   | the task, or the list         |
+| `get_task` / `update_task` / `comment_task`       | the gateway, scoped to the session's project   | the task, or the new entry    |
 | automation and run tools (`*_automation*`)        | the host, scoped to the session's project      | the automation, or the run    |
 | template tools (`*_template*`)                    | the host, app-wide; built-ins are read-only    | the template                  |
 | prompt tools (`*_prompt*`)                        | the host, the project's own and shared ones    | the prompt, or the list       |
+
+A task tool works with no window attached: the session's project and task come from its binding
+in the daemon's session map, and the write is pushed to whatever windows there are, or to none.
 
 **`run_automation` asks the user first**, as an ordinary permission prompt: it emits
 `acp://permission-request/<session>` itself and parks the answer in `pending_host_tools`, and
@@ -763,7 +818,7 @@ sees its own surface, so this is the only way a blocked asset or a thrown except
 They arrive on the **next** call by necessity — the frame has not rendered this one yet.
 
 **Adding a tool** is two edits: an entry in `assets/mcp-tools.json` and an arm in
-`host_tools::handle`. The entry's `description` is the _only_ documentation the agent gets — it
+`host_tools::handle`, or in `mcp_gateway.rs` for a task tool. The entry's `description` is the _only_ documentation the agent gets — it
 carries what the skill prose used to — so it is prose, not a label, and belongs in that asset
 rather than in Rust for the same reason `registry.json` does. `build_tools` loads it and does
 nothing else.
@@ -884,9 +939,9 @@ and mirrored in `docs/custom-agents.md`; keep both in step with `resolve_spawn`.
 Each project has a `.maestro/` folder in its root with:
 
 - `settings.json` — `ProjectConfig` (non-sensitive project settings)
-- `state.json` — `ProjectState` (runtime/cached state)
 - `bin/` — bundled `maestro-server` binary for that project
-- `attachments/` — agent file attachments
+- `attachments/` — agent file attachments, and under `attachments/tasks/<task_id>/` the copies of
+  a task's attachments
 
 Read/write via `project_storage.rs`. Follow this pattern when adding new project-scoped config (e.g., ticketing config goes in `.maestro/ticketing.json`).
 
