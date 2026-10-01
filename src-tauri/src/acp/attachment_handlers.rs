@@ -44,7 +44,7 @@ fn prepare_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
-pub(crate) fn mime_for_extension(path: &str) -> Option<&'static str> {
+fn mime_for_extension(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -232,6 +232,81 @@ pub(crate) async fn copy_to_machine(
         }
     }
     Ok(())
+}
+
+/// The prompt block for a task attachment at `path` on the project's machine, in the shape
+/// [`prepare_external_attachments`] gives a file picked in the compose bar: an image inline, text
+/// pasted in, a PDF linked. The bytes are read where the project lives, since that is where the
+/// copy is. `Err` is the reason the file cannot be sent, phrased for the user.
+pub(crate) async fn task_attachment_block(
+    conn: &GitConnection,
+    path: &str,
+    size_bytes: i64,
+) -> Result<serde_json::Value, String> {
+    use base64::Engine;
+    let uri = format!("file://{path}");
+
+    if is_image_extension(path) {
+        let size = u64::try_from(size_bytes).unwrap_or(0);
+        if size > MAX_IMAGE_BYTES {
+            return Err(format!(
+                "Image too large ({} MB, max {} MB)",
+                size / 1_048_576,
+                MAX_IMAGE_BYTES / 1_048_576
+            ));
+        }
+        let prepared = prepare_image_bytes(read_bytes(conn, path).await?)?;
+        let mime = mime_for_extension(path).unwrap_or("image/png");
+        return Ok(serde_json::json!({
+            "type": "image",
+            "data": base64::engine::general_purpose::STANDARD.encode(&prepared),
+            "mimeType": mime,
+            "uri": uri,
+        }));
+    }
+
+    let mime = mime_for_extension(path);
+    if is_pdf_extension(path) {
+        let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+        let mut block = serde_json::json!({
+            "type": "resource_link",
+            "name": name,
+            "uri": uri,
+        });
+        if let Some(m) = mime {
+            block["mimeType"] = m.into();
+        }
+        if size_bytes >= 0 {
+            block["size"] = size_bytes.into();
+        }
+        return Ok(block);
+    }
+
+    let text = String::from_utf8(read_bytes(conn, path).await?)
+        .map_err(|e| format!("Cannot read '{path}': {e}"))?;
+    let mut resource = serde_json::json!({
+        "uri": uri,
+        "text": text,
+    });
+    if let Some(m) = mime {
+        resource["mimeType"] = m.into();
+    }
+    Ok(serde_json::json!({
+        "type": "resource",
+        "resource": resource,
+    }))
+}
+
+/// A file's bytes on the connection's machine: read in place locally, through the connection's
+/// shell otherwise, capped at [`crate::connectivity::files::BINARY_LIMIT`].
+async fn read_bytes(conn: &GitConnection, path: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let encoded = crate::connectivity::files::read_binary(conn, path)
+        .await
+        .map_err(|e| format!("Cannot read '{path}': {e}"))?;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|e| format!("Cannot read '{path}': {e}"))
 }
 
 #[tauri::command]

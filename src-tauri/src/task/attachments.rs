@@ -3,6 +3,8 @@ use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::TaskAttachment;
 use maestro_protocol::{AddTaskAttachmentRequest, DeleteTaskAttachmentRequest, TaskRef};
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -174,38 +176,55 @@ pub async fn delete_task_attachment(
     .await
 }
 
-/// The prompt block for each of a task's attachments, in order, or `None` for one whose file is
-/// not on the project's machine. A link to the project's copy rather than its contents: the file is
-/// already where the agent runs, whatever its working directory, and `resource_link` is the block
-/// every ACP agent has to accept.
+/// One task attachment made ready for a prompt. `content_block` is set when it can be sent;
+/// otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
+/// that is not on the project's machine at all.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[specta(export)]
+pub struct PreparedTaskAttachment {
+    pub content_block: Option<serde_json::Value>,
+    pub rejection: Option<String>,
+}
+
+/// The prompt block for each of a task's attachments, in order, read from the project's copy on
+/// the project's machine.
 #[tauri::command]
 #[specta::specta]
 pub async fn prepare_task_attachments(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
-    paths: Vec<String>,
-) -> Result<Vec<Option<serde_json::Value>>, String> {
+    attachments: Vec<TaskAttachment>,
+) -> Result<Vec<PreparedTaskAttachment>, String> {
     let (_, conn) = crate::core::get_project_with_git_conn(&app_state, project_id).await?;
-    let mut blocks = Vec::with_capacity(paths.len());
-    for path in paths {
+    let mut prepared = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
         // An unreachable machine is an error, not a missing file: the caller offers to delete the
         // rows of missing ones.
-        if !crate::connectivity::files::try_exists(&conn, &path).await? {
-            blocks.push(None);
+        if !crate::connectivity::files::try_exists(&conn, &attachment.file_path).await? {
+            prepared.push(PreparedTaskAttachment {
+                content_block: None,
+                rejection: None,
+            });
             continue;
         }
-        let name = path.rsplit(['/', '\\']).next().unwrap_or(&path);
-        let mut block = serde_json::json!({
-            "type": "resource_link",
-            "name": name,
-            "uri": format!("file://{path}"),
+        let block = crate::acp::attachment_handlers::task_attachment_block(
+            &conn,
+            &attachment.file_path,
+            attachment.file_size,
+        )
+        .await;
+        prepared.push(match block {
+            Ok(block) => PreparedTaskAttachment {
+                content_block: Some(block),
+                rejection: None,
+            },
+            Err(reason) => PreparedTaskAttachment {
+                content_block: None,
+                rejection: Some(reason),
+            },
         });
-        if let Some(mime) = crate::acp::attachment_handlers::mime_for_extension(&path) {
-            block["mimeType"] = mime.into();
-        }
-        blocks.push(Some(block));
     }
-    Ok(blocks)
+    Ok(prepared)
 }
 
 #[cfg(test)]

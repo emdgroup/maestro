@@ -96,14 +96,23 @@ function attachment(id: number, filename: string): TaskAttachment {
 const GONE = attachment(1, "gone.md");
 const PRESENT = attachment(2, "here.md");
 
-function link(path: string) {
-  return { type: "resource_link", name: path.split("/").pop(), uri: `file://${path}` };
+function embedded(path: string) {
+  return { type: "resource", resource: { uri: `file://${path}`, text: "notes" } };
+}
+
+/** What `prepare_task_attachments` answers for each row: missing for `GONE`, readable otherwise. */
+function prepared(attachments: TaskAttachment[]) {
+  return attachments.map((a) =>
+    a.file_path === GONE.file_path
+      ? { content_block: null, rejection: null }
+      : { content_block: embedded(a.file_path), rejection: null },
+  );
 }
 
 /** The attachment blocks of the prompt the session was started with. */
-function sentLinks() {
+function sentAttachments() {
   const blocks = api.sendAcpPromptStructured.mock.calls[0][1] as { type: string }[];
-  return blocks.filter((block) => block.type === "resource_link");
+  return blocks.filter((block) => block.type === "resource");
 }
 
 function render() {
@@ -122,8 +131,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.resolveAgentProfile.mockResolvedValue(null);
   api.listTaskAttachments.mockResolvedValue([GONE, PRESENT]);
-  api.prepareTaskAttachments.mockImplementation((_projectId: number, paths: string[]) =>
-    Promise.resolve(paths.map((path) => (path === GONE.file_path ? null : link(path)))),
+  api.prepareTaskAttachments.mockImplementation((_projectId: number, rows: TaskAttachment[]) =>
+    Promise.resolve(prepared(rows)),
   );
   api.listTaskComments.mockResolvedValue([]);
   api.getTaskReview.mockResolvedValue(null);
@@ -182,7 +191,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
       await started;
     });
 
-    expect(sentLinks()).toEqual([link(PRESENT.file_path)]);
+    expect(sentAttachments()).toEqual([embedded(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).toHaveBeenCalledTimes(1);
     expect(mutations.deleteAttachment).toHaveBeenCalledWith({
       attachmentId: GONE.id,
@@ -204,15 +213,47 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(result.current.missingAttachments).toBeNull();
-    expect(sentLinks()).toEqual([link(PRESENT.file_path)]);
+    expect(sentAttachments()).toEqual([embedded(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).not.toHaveBeenCalled();
     expect(toast.warning).toHaveBeenCalled();
     expect(mutations.markSessionReady).toHaveBeenCalled();
   });
 
+  /**
+   * A `rejection` means the file is there but too big to send. It breaks the start the same way, so
+   * it is offered here, but the row still points at a real file, so Continue must not delete it.
+   */
+  it("keeps the row of a file that exists but is too big", async () => {
+    api.prepareTaskAttachments.mockImplementation((_projectId: number, rows: TaskAttachment[]) =>
+      Promise.resolve(
+        rows.map((a) =>
+          a.file_path === GONE.file_path
+            ? { content_block: null, rejection: "Image too large (12 MB, max 10 MB)" }
+            : { content_block: embedded(a.file_path), rejection: null },
+        ),
+      ),
+    );
+    const { result } = render();
+
+    let started: Promise<void>;
+    act(() => {
+      started = result.current.execute(TASK);
+    });
+
+    await waitFor(() => expect(result.current.missingAttachments).not.toBeNull());
+
+    await act(async () => {
+      result.current.onAttachmentsContinue();
+      await started;
+    });
+
+    expect(sentAttachments()).toEqual([embedded(PRESENT.file_path)]);
+    expect(mutations.deleteAttachment).not.toHaveBeenCalled();
+  });
+
   it("asks nothing when every file is readable", async () => {
-    api.prepareTaskAttachments.mockImplementation((_projectId: number, paths: string[]) =>
-      Promise.resolve(paths.map(link)),
+    api.prepareTaskAttachments.mockImplementation((_projectId: number, rows: TaskAttachment[]) =>
+      Promise.resolve(rows.map((a) => ({ content_block: embedded(a.file_path), rejection: null }))),
     );
     const { result } = render();
 
@@ -221,7 +262,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(result.current.missingAttachments).toBeNull();
-    expect(sentLinks()).toEqual([link(GONE.file_path), link(PRESENT.file_path)]);
+    expect(sentAttachments()).toEqual([embedded(GONE.file_path), embedded(PRESENT.file_path)]);
     expect(mutations.deleteAttachment).not.toHaveBeenCalled();
   });
 
@@ -235,7 +276,7 @@ describe("useExecuteTask with an attachment whose file is gone", () => {
     });
 
     expect(result.current.missingAttachments).toBeNull();
-    expect(sentLinks()).toEqual([]);
+    expect(sentAttachments()).toEqual([]);
     expect(mutations.deleteAttachment).not.toHaveBeenCalled();
     expect(toast.warning).toHaveBeenCalled();
   });

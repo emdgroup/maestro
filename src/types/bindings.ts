@@ -2814,14 +2814,12 @@ async deleteTaskAttachment(projectId: number, attachmentId: number) : Promise<Re
 }
 },
 /**
- * The prompt block for each of a task's attachments, in order, or `None` for one whose file is
- * not on the project's machine. A link to the project's copy rather than its contents: the file is
- * already where the agent runs, whatever its working directory, and `resource_link` is the block
- * every ACP agent has to accept.
+ * The prompt block for each of a task's attachments, in order, read from the project's copy on
+ * the project's machine.
  */
-async prepareTaskAttachments(projectId: number, paths: string[]) : Promise<Result<(JsonValue | null)[], string>> {
+async prepareTaskAttachments(projectId: number, attachments: TaskAttachment[]) : Promise<Result<PreparedTaskAttachment[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("prepare_task_attachments", { projectId, paths }) };
+    return { status: "ok", data: await TAURI_INVOKE("prepare_task_attachments", { projectId, attachments }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3871,6 +3869,12 @@ export type PhaseStatus = "Running" | "Blocked" | "Waiting" | "Failed"
  */
 export type PreflightResult = { agents: DiscoveredAgent[]; tool_checks: ToolCheckEntry[] }
 export type PreparedAttachment = { display_name: string; local_path: string; content_block: JsonValue }
+/**
+ * One task attachment made ready for a prompt. `content_block` is set when it can be sent;
+ * otherwise `rejection` says why a file that is there cannot be, and neither is set for a file
+ * that is not on the project's machine at all.
+ */
+export type PreparedTaskAttachment = { content_block: JsonValue | null; rejection: string | null }
 /**
  * The project's profiles, plus which one each role uses by default.
  */

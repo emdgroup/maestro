@@ -15,6 +15,7 @@ import type {
   AgentRole,
   WorkspaceMode,
   WorktreeWithStatus,
+  PreparedTaskAttachment,
 } from "@/types/bindings";
 import { useResolveWorktree } from "@/hooks/useResolveWorktree";
 import { useClaimWorktreeForTaskMutation, worktreeQueryKeys } from "@/services/worktree.service";
@@ -266,9 +267,12 @@ export function useExecuteTask(
       }
     }
 
-    // An attachment is a copy in the project, on the project's machine, and the prompt links to it
-    // there. A row whose copy is gone — or one from before attachments were copied, holding a path
-    // on some other machine — is asked about here rather than at the point of use, so parking is a
+    // An attachment is a copy in the project, on the project's machine, and its content is read
+    // from there. A row whose copy is gone, or one from before attachments were copied that holds
+    // a path on some other machine, used to abort the whole start: the read failed after the spawn
+    // and the rejection unwound into tearing the session down and leaving the card red.
+    //
+    // Read here rather than at the point of use, so asking before the claim means parking is a
     // plain return: no session to cancel and no claim to hand back, the same shape as the
     // pinned-workspace check above.
     const attachments = await api.listTaskAttachments(task.project_id, task.id).catch((err) => {
@@ -279,30 +283,31 @@ export function useExecuteTask(
       return [];
     });
 
-    // Aligned with `attachments`; null for a file that is not in the project.
-    let attachmentBlocks: (JsonValue | null)[] = [];
+    // Aligned with `attachments`.
+    let prepared: PreparedTaskAttachment[] = [];
     if (attachments.length > 0) {
-      attachmentBlocks = await api
-        .prepareTaskAttachments(
-          task.project_id,
-          attachments.map((a) => a.file_path),
-        )
-        .catch((err) => {
-          // Could not ask, which is not the same as missing: no row is offered for deletion.
-          console.warn("Failed to check attachments, starting without them:", err);
-          toast.warning(`Starting "${task.title}" without its attachments`, {
-            description: String(err),
-          });
-          return [];
+      prepared = await api.prepareTaskAttachments(task.project_id, attachments).catch((err) => {
+        // Could not ask, which is not the same as missing: no row is offered for deletion.
+        console.warn("Failed to read attachments, starting without them:", err);
+        toast.warning(`Starting "${task.title}" without its attachments`, {
+          description: String(err),
         });
+        return [];
+      });
 
-      const unusable = attachments
-        .filter((_, i) => attachmentBlocks.length > 0 && attachmentBlocks[i] === null)
-        .map((attachment) => ({
-          ...attachment,
-          problem: "Not found in the project",
-          missing: true,
-        }));
+      // `rejection` covers a file that exists but cannot be sent, an image over the size limit
+      // say. Both that and a missing file are "cannot be attached", so both are offered here, but
+      // only the missing ones are dead rows, so `missing` keeps them apart for the delete below. A
+      // file that is merely too big is still in the project and still the user's to keep.
+      const unusable = attachments.flatMap((attachment, i) => {
+        const entry = prepared[i];
+        if (!entry || entry.content_block !== null) return [];
+        return [
+          entry.rejection === null
+            ? { ...attachment, problem: "Not found in the project", missing: true }
+            : { ...attachment, problem: entry.rejection, missing: false },
+        ];
+      });
 
       if (unusable.length > 0) {
         if (unattended) {
@@ -324,9 +329,10 @@ export function useExecuteTask(
           missingResolveRef.current = null;
           if (choice === "park") return;
 
-          // Those rows point at nothing, so removing them is what stops the next run asking the
-          // same question again.
-          for (const attachment of unusable) {
+          // Only the rows whose file is gone: those point at nothing, so removing them is what
+          // stops the next run asking the same question again. An oversized image is still in the
+          // project and stays attached; dropping it would destroy a reference the user can still use.
+          for (const attachment of unusable.filter((entry) => entry.missing)) {
             await deleteAttachment
               .mutateAsync({
                 projectId: task.project_id,
@@ -742,8 +748,8 @@ export function useExecuteTask(
         }
       }
 
-      for (const block of attachmentBlocks) {
-        if (block !== null) contentBlocks.push(block);
+      for (const entry of prepared) {
+        if (entry.content_block !== null) contentBlocks.push(entry.content_block as JsonValue);
       }
 
       // Fetch review feedback for rework (if task was sent back with comments). Only the coder
