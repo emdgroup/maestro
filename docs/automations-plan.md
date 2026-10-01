@@ -89,7 +89,7 @@ Two defects were surfaced rather than silently fixed:
 
 ## Phase 1: resident mode (done)
 
-See the `### The resident maestro-server` section of `AGENTS.md` for how it works. This records
+See the `### The resident maestro-server` section of `maestro-server/AGENTS.md` for how it works. This records
 what was decided and why, which that section does not.
 
 | Topic               | Decision                                                                                       |
