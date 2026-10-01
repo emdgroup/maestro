@@ -20,36 +20,48 @@ use maestro_protocol::{
 use rusqlite::types::{FromSql, Value, ValueRef};
 use rusqlite::{params, Connection, Row, RowIndex};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 use tauri::Emitter;
 
 /// A large board with its threads can take the daemon a while to write in one transaction.
 const IMPORT_TIMEOUT_SECS: u64 = 300;
 
-#[derive(Clone, Serialize)]
-struct ImportFailed {
-    project_id: i32,
-    error: String,
-}
+/// `importFailure` in `src/utils/helpers/error-utils.ts` matches this prefix, so the picker can
+/// tell a failed import, which keeps the project closed, from a prime failure it shrugs off.
+pub const IMPORT_FAILED_PREFIX: &str = "IMPORT_FAILED:";
 
-/// Send this app's rows for the project to its daemon unless that was done before. Never fails the
-/// open: an error is logged and shown, the project is left unstamped, and the next open tries again.
+/// One per project, so a second open of a project waits for the first one's import and then finds
+/// the stamp rather than sending the same rows again.
+static IMPORT_LOCKS: LazyLock<Mutex<HashMap<i32, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(Default::default);
+
+/// Send this app's rows for the project to its daemon unless that was done before. A failure
+/// leaves the project unstamped and fails the open, since a board shown without its rows would
+/// look empty.
 pub(crate) async fn import_once(
     app_state: &Arc<AppState>,
     project_id: i32,
     project_path: &str,
     connection_key: ConnectionKey,
-) {
-    if let Err(error) = import(app_state, project_id, project_path, connection_key).await {
-        log::error!("[import] project {project_id} was not moved to its server: {error}");
-        let event = ImportFailed { project_id, error };
-        if let Err(e) = app_state.app_handle.emit("project-import-failed", event) {
-            log::warn!("[import] emitting project-import-failed failed: {e}");
-        }
-    }
+) -> Result<(), String> {
+    let lock = IMPORT_LOCKS
+        .lock()
+        .map_err(|e| format!("Lock failed: {e}"))?
+        .entry(project_id)
+        .or_default()
+        .clone();
+    let _guard = lock.lock().await;
+    import(app_state, project_id, project_path, connection_key)
+        .await
+        .map_err(|error| {
+            log::error!("[import] project {project_id} was not moved to its server: {error}");
+            format!(
+                "{IMPORT_FAILED_PREFIX}The board could not be moved to the project's server: {error}"
+            )
+        })
 }
 
 async fn import(

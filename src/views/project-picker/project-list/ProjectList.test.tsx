@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProjectList } from "./ProjectList";
 import { ConnectionContext } from "@/contexts/ConnectionContext";
@@ -20,13 +20,22 @@ const requestTakeover = vi.hoisted(() => vi.fn());
 const openProject = vi.hoisted(() => vi.fn());
 const setSelectedProject = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const primeProjectServer = vi.hoisted(() => vi.fn());
+const eventHandlers = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 
 vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+    eventHandlers.set(name, handler);
+    return Promise.resolve(() => {});
+  },
+}));
 
 vi.mock("@/lib/tauri-utils", () => ({
   api: {
     openProject,
-    primeProjectServer: () => Promise.resolve(),
+    primeProjectServer,
   },
 }));
 
@@ -134,6 +143,58 @@ describe("ProjectList", () => {
     callOrder.length = 0;
     recentProjects.length = 0;
     vi.clearAllMocks();
+    primeProjectServer.mockResolvedValue(undefined);
+  });
+
+  describe("a project whose board could not be moved to its server", () => {
+    beforeEach(() => {
+      recentProjects.push({ id: 7, path: "/work/maestro" });
+      openProject.mockResolvedValue({ id: 7, path: "/work/maestro" });
+    });
+
+    it("stays closed and offers a retry that reruns the open", async () => {
+      primeProjectServer.mockRejectedValueOnce(
+        "IMPORT_FAILED:The board could not be moved: disk full",
+      );
+      renderList();
+      fireEvent.click(screen.getByText("/work/maestro"));
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+      const [message, options] = toastError.mock.calls[0];
+      expect(message).toBe("The board could not be moved: disk full");
+      expect(setSelectedProject).not.toHaveBeenCalled();
+
+      expect(options.action.label).toBe("Retry");
+      options.action.onClick();
+      await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
+      expect(primeProjectServer).toHaveBeenCalledTimes(2);
+    });
+
+    it("still opens when priming fails for another reason", async () => {
+      primeProjectServer.mockRejectedValueOnce("agent failed to start");
+      renderList();
+      fireEvent.click(screen.getByText("/work/maestro"));
+      await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
+      expect(toastError).not.toHaveBeenCalled();
+    });
+
+    it("says it is moving the board only for the project it is opening", async () => {
+      let finishPrime = () => {};
+      primeProjectServer.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          finishPrime = resolve;
+        }),
+      );
+      renderList();
+      fireEvent.click(screen.getByText("/work/maestro"));
+      await screen.findByText("Warming up…");
+
+      act(() => eventHandlers.get("project-importing")?.({ payload: 8 }));
+      expect(screen.getByText("Warming up…")).toBeTruthy();
+
+      act(() => eventHandlers.get("project-importing")?.({ payload: 7 }));
+      expect(screen.getByText("Moving this project's board to its server…")).toBeTruthy();
+      act(() => finishPrime());
+    });
   });
 
   it("imports useGitInitProject from project.service and renders without error", () => {
