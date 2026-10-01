@@ -65,7 +65,7 @@ belongs to a project.
 | 1     | Sessions: the daemon knows what a project has open | Done        |
 | 2     | Tasks, their threads, worktrees and reviews        | Done        |
 | 3     | Project prompts                                    | Done        |
-| 4     | Import what apps already hold, then drop it        | In progress |
+| 4     | Import what apps already hold, then drop it        | Done        |
 | 5     | The pipeline runs with no window                   | Not started |
 
 ### Phase 0: request ids on the wire
@@ -365,7 +365,7 @@ Tasks:
 - [x] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
       project, send the import before attaching sessions, stamp the project
 - [x] I3 Review and docs
-- [ ] I3 A live run against a copy of a released app's database
+- [x] I3 A live run against a copy of a released app's database
 
 ### Phase 5: the pipeline runs with no window
 
