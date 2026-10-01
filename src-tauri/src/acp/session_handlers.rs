@@ -460,12 +460,7 @@ pub(crate) async fn close_superseded_sessions_for_task(
     app_state.app_handle.emit("sessions-changed", ()).ok();
 }
 
-/// The body of `cancel_acp_session`, reachable from inside the backend.
-///
-/// The command form takes Tauri's `State`, which nothing running in a reader loop has. Split out
-/// because the plan interception ends the planner's session itself: a plan and its implementation
-/// can be different agents entirely, so the session that produced the plan has no part in carrying
-/// it out and is closed at the moment the plan is taken.
+/// The body of `cancel_acp_session`.
 pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str) {
     // This used to refuse outright when the owning task was InProgress or Review, telling the user
     // to press a Stop button that does not exist on a Review card — and, because the callers
@@ -474,12 +469,8 @@ pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str)
     // the task is failed here rather than being refused.
     let task = tear_down_session(app_state, session_id).await;
 
-    // Recorded here, not left to `reader_task`. Only a *direct* session has a reader loop that a
-    // cancel breaks; a session on a shared connection server — the ordinary local path — has no
-    // per-session loop, so nothing there would ever observe this and the task would go on claiming
-    // an agent was working on it. Doing it here also covers the direct case, harmlessly:
-    // `fail_if_agent_running` is a no-op once the phase is no longer Running or Blocked, so the
-    // reader firing afterwards changes nothing. A task parked at a review gate is left alone.
+    // The daemon fails a task whose agent died, not one whose session was ended on purpose, so a
+    // task an agent was still working on is failed here. A task parked at a gate is left alone.
     crate::acp::reader_task::fail_task_if_still_running(app_state, task);
 
     app_state.app_handle.emit("sessions-changed", ()).ok();
@@ -493,18 +484,6 @@ pub async fn interrupt_acp_turn(
     session_id: &str,
 ) -> Result<(), String> {
     use crate::acp::transport::{InterruptTurnRequest, MaestroRpcMessage, ServerRequest};
-
-    // Recorded before the request goes out, so the flag is already set whenever the turn ending it
-    // provokes comes back. `resolve_turn_end` reads it to keep a stopped phase from advancing —
-    // see the field's own comment for why the stop reason cannot be trusted to say so.
-    {
-        let sessions = app_state.acp.sessions.lock().await;
-        if let Some(session) = sessions.get(session_id) {
-            session
-                .user_interrupted
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
-    }
 
     let msg = MaestroRpcMessage::Request(ServerRequest::InterruptTurn(InterruptTurnRequest {
         session_id: session_id.to_string(),

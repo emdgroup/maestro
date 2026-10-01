@@ -310,10 +310,11 @@ export function TaskReviewPanel({
             if (activeSession) {
               const blocks = buildReviewFeedbackBlocks(data);
               await api.sendAcpPromptStructured(activeSession.session_id, blocks);
+              api.clearTaskReview(task.project_id, task.id).catch(() => {});
             } else {
-              execute(task);
+              // The daemon puts the review in the coder's prompt and clears it then.
+              void execute(task);
             }
-            api.clearTaskReview(task.project_id, task.id).catch(() => {});
             reviewStore.clearTask(task.id);
             onClose();
           },

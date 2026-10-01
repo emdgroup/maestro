@@ -860,8 +860,8 @@ async fn request_ci_fix(
     number: i64,
     checks: &[String],
 ) -> Result<bool, String> {
-    // The failing checks go in the outcome thread rather than into a prompt from here, because the
-    // agent is started by the frontend and this is the same route the reviewer's findings take.
+    // The failing checks go in the outcome thread rather than into a prompt from here: the daemon
+    // composes the coder's prompt from the thread, the same route the reviewer's findings take.
     let report = format!(
         "CI failed on pull request #{}. Failing checks:\n\n{}",
         number,
@@ -903,57 +903,8 @@ async fn request_ci_fix(
         task.fix_rounds,
         FIX_ROUND_CAP
     );
+    crate::task::ops::start_handoff(app_state, &task);
     Ok(true)
-}
-
-/// Push the fixing agent's work to the pull request it belongs to and hand the task back to the
-/// forge.
-///
-/// Called when a turn ends at `AwaitingMerge`. A push that fails leaves the task where it is with
-/// the ball still on the agent, which the next sweep will not re-trigger — the user has to look,
-/// which is right, because a fix that cannot be pushed is not a fix.
-pub(crate) async fn push_ci_fix(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-    task_id: i32,
-) -> Result<(), String> {
-    let worktree = task_worktree(app_state, project_id, task_id)
-        .await?
-        .ok_or_else(|| format!("No worktree for task {}", task_id))?;
-
-    let (project, git_conn) = get_project_with_git_conn(app_state, project_id).await?;
-    let status =
-        crate::integration::code_hosting_handlers::code_hosting_status(app_state, project_id)
-            .await?;
-    let remote = status
-        .remote
-        .ok_or_else(|| "The project has no remote to push to".to_string())?;
-
-    crate::git::push_branch(
-        &git_conn,
-        &format!("{}/{}", project.path, worktree.path),
-        &remote,
-        &worktree.branch_name,
-    )
-    .await?;
-
-    // The verdict that triggered the fix must not outlive the fix: the card would keep reading
-    // `Failing` for a build that is re-running, and the poll would see nothing unreported and stay
-    // at its steady rate instead of sweeping for the new run.
-    apply_transition_writing(
-        app_state,
-        project_id,
-        task_id,
-        TaskTransition::CiFixPushed,
-        TransitionGuard::Always,
-        Some(TaskUpdate {
-            pull_request_ci: Some(None),
-            ..Default::default()
-        }),
-        None,
-    )
-    .await
-    .map(|_| ())
 }
 
 /// Land a task whose pull request merged: Done with the `MergedViaPR` qualifier, worktree and

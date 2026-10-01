@@ -13,7 +13,7 @@ use crate::acp::transport::{
 };
 use crate::acp::transport_types::{serialize_message, AcpReadSource};
 use crate::acp::TaskKey;
-use maestro_protocol::{TaskTransition, TransitionGuard, TurnEnding};
+use maestro_protocol::{TaskTransition, TransitionGuard};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,11 +55,6 @@ pub(crate) fn spawn_reader_task(
         replay_buffer,
         initialized,
         completion_filter,
-        declared_complete,
-        user_interrupted,
-        closing_message,
-        permission_queue,
-        task,
     } = ctx;
     tokio::spawn(async move {
         let mut source = source;
@@ -99,9 +94,8 @@ pub(crate) fn spawn_reader_task(
 
             update_session_from_response(&session_id, &msg, &app_state).await;
 
-            // Off the reader loop for the same reason `resolve_turn_end` is: a `canvas_await`
-            // blocks until the user acts, and nothing else on this session could arrive
-            // meanwhile — including the answer itself.
+            // Off the reader loop: a `canvas_await` blocks until the user acts, and nothing else
+            // on this session could arrive meanwhile, including the answer itself.
             if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
                 let state = Arc::clone(&app_state);
                 let owned_session_id = session_id.clone();
@@ -109,60 +103,6 @@ pub(crate) fn spawn_reader_task(
                     crate::acp::host_tools::handle(state, &owned_session_id, call).await;
                 });
                 continue;
-            }
-
-            if let (
-                Some(task),
-                MaestroRpcMessage::Response(ServerResponse::PermissionRequest(perm_req)),
-            ) = (task, &msg)
-            {
-                spawn_task_permission_request(
-                    &app_state,
-                    task,
-                    &session_id,
-                    &permission_queue,
-                    perm_req.clone(),
-                );
-                continue;
-            }
-
-            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
-                if let Some(task) = task {
-                    spawn_mark_task_blocked(&app_state, task);
-                }
-            }
-
-            // Resolving the turn touches the DB and, for remote projects, runs `git rev-parse`
-            // and `git diff` over SSH with no timeout. Run it off the reader loop so it can
-            // never delay — or with a wedged connection, indefinitely withhold — the
-            // `acp://turn-ended` emit below that takes the UI out of "thinking".
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if let Some(task) = task {
-                    let state = Arc::clone(&app_state);
-                    let stop_reason = turn_ended.stop_reason.clone();
-                    // Read and reset: a declaration applies only to the turn it appeared in.
-                    let declared =
-                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    let interrupted =
-                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    // Drained here rather than in the spawned task, so the accumulator is empty
-                    // before the next turn starts writing into it.
-                    let closing = closing_message
-                        .lock()
-                        .map(|mut m| m.take())
-                        .unwrap_or_default();
-                    tokio::spawn(async move {
-                        resolve_turn_end(
-                            &state,
-                            task,
-                            &stop_reason,
-                            declared,
-                            interrupted,
-                            closing,
-                        )
-                        .await;
-                    });
-                }
             }
 
             handle_server_message(
@@ -177,13 +117,10 @@ pub(crate) fn spawn_reader_task(
                 &replay_buffer,
                 &initialized,
                 &completion_filter,
-                &declared_complete,
-                &closing_message,
             );
         }
 
         app_state.acp.sessions.lock().await.remove(&session_id);
-        fail_task_if_still_running(&app_state, task);
         app_state.app_handle.emit("sessions-changed", ()).ok();
         if let Err(e) = app_handle.emit(&format!("acp://session-ended/{}", session_id), ()) {
             log::warn!("[acp] emit session-ended/{session_id} failed: {e}");
@@ -191,22 +128,8 @@ pub(crate) fn spawn_reader_task(
     });
 }
 
-/// Apply `event` to the session's task in the daemon, off the caller's task.
-///
-/// Off it because the caller may be the shared reader, which is also what delivers the daemon's
-/// reply: awaiting it there would wait on itself.
-pub(crate) fn spawn_transition(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    event: TaskTransition,
-    guard: TransitionGuard,
-) {
-    let app_state = Arc::clone(app_state);
-    tokio::spawn(async move { transition_task(&app_state, task, event, guard).await });
-}
-
-/// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Only for
-/// callers off the shared reader, see [`spawn_transition`].
+/// Apply `event` to the session's task in the daemon and wait for it, logging a failure. Never
+/// from the shared reader, which is also what delivers the daemon's reply.
 pub(crate) async fn transition_task(
     app_state: &Arc<crate::core::AppState>,
     task: TaskKey,
@@ -230,15 +153,12 @@ pub(crate) async fn transition_task(
     }
 }
 
-/// Record that the agent is stopped waiting on the user, so the card says so after a reload.
+/// Record that the agent is stopped waiting on the user, for the waits only this window knows of:
+/// a `canvas_await` and a `run_automation` question. The daemon marks its own permission requests
+/// and questions.
 ///
 /// Awaited, so a caller that marks, shows the question and then clears on the answer applies the
-/// two in that order: spawned separately, the clear could overtake the mark and leave the card
-/// blocked on a question already answered.
-///
-/// The `Changed` guard matters here rather than being a nicety: with auto-approve off a session
-/// raises permission requests constantly, and every write the daemon makes is pushed to every
-/// window as `TasksChanged`, which refetches the whole board.
+/// two in that order.
 pub(crate) async fn mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
     transition_task(
         app_state,
@@ -249,182 +169,24 @@ pub(crate) async fn mark_task_blocked(app_state: &Arc<crate::core::AppState>, ta
     .await;
 }
 
-/// [`mark_task_blocked`] for the reader path, which must not wait on the daemon. An elicitation's
-/// answer can in principle overtake it; the card then pulses until the next turn ends.
-fn spawn_mark_task_blocked(app_state: &Arc<crate::core::AppState>, task: TaskKey) {
-    spawn_transition(
-        app_state,
-        task,
-        TaskTransition::AwaitingUserInput,
-        TransitionGuard::Changed,
-    );
-}
-
-/// A session's reader has ended. If the pipeline still believes an agent is working the task,
-/// record the failure.
-///
-/// Without this a session that dies mid-phase leaves the card looking healthy, and a session that
-/// dies while blocked leaves it pulsing for an answer nothing will ever consume. Tasks that moved
-/// on under their own power — merged, stopped, parked at a review gate — are left untouched.
+/// Fail the task if an agent was still working it, for a session this window ended or could not
+/// load. Spawned, because a caller may be on the shared reader that delivers the daemon's reply.
+/// A dead agent is the daemon's to report.
 pub(crate) fn fail_task_if_still_running(
     app_state: &Arc<crate::core::AppState>,
     task: Option<TaskKey>,
 ) {
     if let Some(task) = task {
-        spawn_transition(
-            app_state,
-            task,
-            TaskTransition::PhaseFailed,
-            TransitionGuard::AgentRunning,
-        );
-    }
-}
-
-/// Hand the daemon a turn's ending, which it resolves under one lock: the phase read, a reviewer's
-/// verdict and its round, the transition while the task still has a phase, and the thread entry.
-///
-/// Guarded on the task still having a live phase, because this runs detached: by the time it lands
-/// the user may have stopped the session or moved the card, and every one of those parks the task.
-/// `None` when it had been parked.
-async fn end_task_turn(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    ending: TurnEnding,
-    closing_message: String,
-) -> Result<Option<crate::models::Task>, String> {
-    use crate::acp::completion::{classify_verdict, ReviewVerdict};
-
-    // Consulted by the daemon only when the phase it reads is `SelfReview`.
-    let review_approved = classify_verdict(&closing_message) == ReviewVerdict::Approved;
-    let ended = crate::acp::connection_server::query_project_store(
-        app_state,
-        task.project_id,
-        |project_path| {
-            ServerRequest::EndTaskTurn(maestro_protocol::EndTaskTurnRequest {
-                project_path,
-                task_id: task.task_id,
-                ending,
-                review_approved,
-                closing_message,
-            })
-        },
-        reply!(ServerResponse::EndTaskTurnOk(ended) => ended),
-    )
-    .await?;
-    Ok(ended
-        .task
-        .map(|stored| crate::models::Task::from_wire(stored, task.project_id)))
-}
-
-/// Decide what a turn ending means for the task, and record it.
-///
-/// A turn ending is not the same as the work being finished: an agent that stops to ask a
-/// question ends its turn exactly like one that finished the job. `classify_turn` weighs the stop
-/// reason, whether the agent declared completion, and whether the repository actually changed.
-async fn resolve_turn_end(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    stop_reason: &str,
-    declared_complete: bool,
-    user_interrupted: bool,
-    closing_message: String,
-) {
-    use crate::acp::completion::{classify_turn, TurnOutcome};
-    use crate::models::TaskPhase;
-
-    let is_git_repo = is_project_git_repo(app_state, task.project_id).await;
-
-    // The phase the agent was in, which decides what to ask below. The daemon reads it again under
-    // its lock when it applies the ending, so the outcome is filed under the phase that produced
-    // it, not the one the task lands in.
-    let stored =
-        match crate::task::crud::get_task_on_server(app_state, task.project_id, task.task_id).await
-        {
-            Ok(Some(stored)) => stored,
-            Ok(None) => return,
-            Err(e) => {
-                log::warn!(
-                    "[acp] could not read task {} to end its turn: {e}",
-                    task.task_id
-                );
-                return;
-            }
-        };
-    let phase = stored.phase;
-
-    // Three of the four roles write nothing, so asking whether the repository changed cannot say
-    // anything about whether they finished — and asking anyway is actively wrong: a clean tree
-    // would read as `Some(false)` and stall a refiner that had just produced a perfectly good
-    // proposal.
-    let writes = matches!(
-        phase,
-        Some(TaskPhase::Implementing | TaskPhase::Rework | TaskPhase::AwaitingMerge)
-    );
-
-    // A declared completion used to skip this call, on the grounds that the agent was believed
-    // either way. It no longer is: an agent that declares itself done having changed nothing goes
-    // to Done as `NoChanges` rather than opening an empty review, and that is precisely the case
-    // the answer is needed for.
-    //
-    // Skipped outright for an interrupted turn — `classify_turn` ignores it either way, and the
-    // answer costs a `git diff` that runs over SSH for a remote project.
-    let has_changes = if !user_interrupted && writes && is_git_repo && stop_reason == "end_turn" {
-        task_has_changes(app_state, &stored).await
-    } else {
-        None
-    };
-
-    let outcome = classify_turn(
-        stop_reason,
-        declared_complete,
-        has_changes,
-        user_interrupted,
-    );
-
-    // An agent fixing a red build is already on an open pull request, so its turn ending means
-    // "push what you changed", not "advance the task". Nothing else moves: the PR stays open and
-    // the branch stays its head, which is the point of fixing rather than re-approving.
-    if phase == Some(TaskPhase::AwaitingMerge) && outcome == TurnOutcome::Complete {
-        if let Err(e) =
-            crate::git::merge::push_ci_fix(app_state, task.project_id, task.task_id).await
-        {
-            log::error!("Could not push the CI fix for task {}: {}", task.task_id, e);
-            // The push already failed and was reported above. Failing to record that leaves the
-            // task showing as running with nothing behind it, which the user cannot act on and no
-            // later sweep corrects.
-            if let Err(e) = crate::task::ops::apply_transition_on_server(
-                app_state,
-                task.project_id,
-                task.task_id,
+        let app_state = Arc::clone(app_state);
+        tokio::spawn(async move {
+            transition_task(
+                &app_state,
+                task,
                 TaskTransition::PhaseFailed,
-                TransitionGuard::Active,
+                TransitionGuard::AgentRunning,
             )
-            .await
-            {
-                log::error!("Could not mark task {} as failed: {}", task.task_id, e);
-            }
-        }
-        return;
-    }
-
-    // A review agent finishing is not "the phase is done, advance" — its reply *is* the decision,
-    // which the daemon turns into a verdict when it finds the task at `SelfReview`.
-    let ending = match outcome {
-        TurnOutcome::Complete => TurnEnding::Completed {
-            is_git_repo,
-            has_changes,
-            reviewer_pending: writes && reviewer_should_run(app_state, &stored).await,
-        },
-        TurnOutcome::Stalled => TurnEnding::Stalled,
-        TurnOutcome::Failed => TurnEnding::Failed,
-        TurnOutcome::Ignore => return,
-    };
-
-    if let Err(e) = end_task_turn(app_state, task, ending, closing_message).await {
-        log::warn!(
-            "[acp] could not resolve turn end for task {}: {e}",
-            task.task_id
-        );
+            .await;
+        });
     }
 }
 
@@ -586,304 +348,6 @@ pub(crate) async fn is_project_git_repo(
     }
 }
 
-/// Settle a task session's permission request off the reader, and show the user what nobody
-/// answered.
-///
-/// Off it because deciding asks the daemon for the task, and on the shared reader the daemon's
-/// reply arrives through the very loop that would be waiting on it.
-fn spawn_task_permission_request(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    session_id: &str,
-    permission_queue: &crate::acp::session_types::PermissionQueue,
-    perm_req: crate::acp::transport::PermissionRequest,
-) {
-    let app_state = Arc::clone(app_state);
-    let session_id = session_id.to_string();
-    // Each request makes its own round trips before it is shown, so two raised back to back could
-    // otherwise reach the UI in either order. Taken and replaced here, on the reader, which sees
-    // them in the order the agent raised them.
-    let mut queue = permission_queue
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let previous = queue.take();
-    *queue = Some(tokio::spawn(async move {
-        if let Some(previous) = previous {
-            if let Err(e) = previous.await {
-                log::warn!("[acp] an earlier permission request of {session_id} failed: {e}");
-            }
-        }
-        if handle_permission_request(&app_state, task, &session_id, &perm_req).await {
-            return;
-        }
-        if let Some(session) = app_state.acp.sessions.lock().await.get(&session_id) {
-            session
-                .has_pending_permission
-                .store(true, Ordering::Release);
-        }
-        if let Err(e) = app_state.app_handle.emit(
-            &format!("acp://permission-request/{}", session_id),
-            &perm_req,
-        ) {
-            log::warn!("[acp] emit permission-request/{session_id} failed: {e}");
-        }
-    }));
-}
-
-/// Decide what the board does with a permission request, and report whether it answered.
-///
-/// `true` means the request is settled and must not reach the UI. `false` leaves it for the user,
-/// having first marked the task blocked so the card says the agent is stopped.
-///
-/// Both readers go through here, and that is the point. They did not before: the shared reader —
-/// which is the *ordinary local path*, since a connection server serves every session on a
-/// connection and only a directly-spawned session gets its own loop — called auto-approve alone.
-/// So the plan interception was written, tested, and never once ran outside SSH. Two call sites
-/// that must agree on which of three answers a request gets will not stay agreeing, so there is
-/// now one.
-async fn handle_permission_request(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    let stored =
-        crate::task::crud::get_task_on_server(app_state, task.project_id, task.task_id).await;
-    match stored {
-        Ok(Some(stored)) => {
-            if try_auto_approve_permission(app_state, stored.phase, session_id, perm_req).await {
-                return true;
-            }
-            if try_conclude_plan_mode_phase(app_state, task, stored.phase, session_id, perm_req)
-                .await
-            {
-                return true;
-            }
-        }
-        Ok(None) => {}
-        Err(e) => log::warn!(
-            "[acp] could not read task {} to answer a permission request: {e}",
-            task.task_id
-        ),
-    }
-    // Nobody answered for it: the agent is stopped until the user does. Awaited before the prompt
-    // reaches the UI, so the user's answer, which clears the mark, cannot overtake it.
-    mark_task_blocked(app_state, task).await;
-    false
-}
-
-async fn try_auto_approve_permission(
-    app_state: &Arc<crate::core::AppState>,
-    phase: Option<crate::models::TaskPhase>,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    // There used to be a per-task `auto_approve` flag in front of this, and a checkbox on the card
-    // driving it. It said the same thing twice: a role's permission mode already decides whether
-    // the agent stops to ask, and a task carrying "Tasks" through this pipeline wants the workflow
-    // to run. Two switches that can disagree about one question is how a task ended up in a mode
-    // that prompts with nothing allowed to answer.
-    //
-    // The phase is the whole gate now, and it is the right one: it already encodes whether the role
-    // running may write.
-    //
-    // Auto-approve is a coder's affordance: it exists so a task that has been told to get on with
-    // it is not stopped by a prompt for an edit it was always going to be allowed to make. It must
-    // not answer for a role that exists *because* it cannot write.
-    //
-    // The request that matters is `ExitPlanMode`. In plan mode an agent's writes are refused
-    // outright rather than prompted, so it is close to the only permission a read-only role ever
-    // asks for — and the `allow_always` option this function prefers means "leave plan mode and
-    // stop asking". Approving it handed the read-only guarantee back: a live run had the *planner*
-    // implement its own task, tests and all, and then stop at the plan gate to ask whether the plan
-    // was any good.
-    //
-    // Refusing sends it to the user as a blocked task, which is the decision the gates are built
-    // on being human in the first place.
-    if phase.is_some_and(|p| p.is_read_only()) {
-        log::debug!(
-            "[acp] not auto-approving a permission request on session {session_id}: \
-             {phase:?} is a read-only phase"
-        );
-        return false;
-    }
-
-    let option_id = perm_req
-        .payload
-        .get("options")
-        .and_then(|v| v.as_array())
-        .and_then(|opts| {
-            opts.iter()
-                .find_map(|opt| {
-                    let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                    if kind == "allow_always" {
-                        return opt
-                            .get("optionId")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                    }
-                    None
-                })
-                .or_else(|| {
-                    opts.iter().find_map(|opt| {
-                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                        if kind == "allow_once" {
-                            return opt
-                                .get("optionId")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        None
-                    })
-                })
-                .or_else(|| {
-                    opts.iter().find_map(|opt| {
-                        let kind = opt.get("kind").and_then(|v| v.as_str())?;
-                        if kind.contains("allow") {
-                            return opt
-                                .get("optionId")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        None
-                    })
-                })
-        });
-
-    let Some(oid) = option_id else { return false };
-
-    let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
-        crate::acp::transport::PermissionResponse {
-            session_id: session_id.to_string(),
-            request_id: perm_req.request_id.clone(),
-            option_id: Some(oid),
-        },
-    ));
-    let _ = crate::acp::write_to_acp_session(app_state, session_id, &response).await;
-    true
-}
-
-/// Take a plan-mode agent's exit request as the end of its phase, and close the session.
-///
-/// An agent held in a read-only mode has no way to say "I am finished": its conclusion arrives as a
-/// request to leave that mode, mid-turn, with the plan attached. Both obvious answers to that
-/// request are wrong, and wrong in a way no wording of the prompt fixes. Granting it hands a
-/// read-only role write access — a live run had the *planner* implement its own task, tests and
-/// all, and then stop at the gate to ask whether the plan was any good. Refusing it makes the agent
-/// reread its plan, polish it and ask again, so the gate never opens.
-///
-/// The way out is that this is not a question to answer at all. The plan is a *deliverable*, and
-/// the session that produced it has no further part to play: a project can put a different agent
-/// behind `Planner` and `Coder`, on a different model or a different vendor entirely, so approving
-/// a plan cannot mean "let this session continue" — there may be no session to continue into. So
-/// the request is read as the artifact: keep the plan, refuse the mode change, and end the session.
-/// What the user approves later is a plan on the board, and approving it starts a fresh coder.
-///
-/// Ending it rather than interrupting the turn is deliberate. An interrupted planner is a live
-/// agent sitting in plan mode with nothing to do, holding a subprocess and an agent slot for however
-/// many days pass before someone looks at the gate — and still able to be prompted into
-/// implementing the work it was supposed to only describe.
-///
-/// Narrow on purpose, and narrow on the payload rather than on the session's mode. The first version
-/// asked whether the session was currently held in `plan`, which is a question the host cannot
-/// reliably answer — the cached mode is only as fresh as the last `SetModeOk` or
-/// `current_mode_update` the agent chose to send. The plan in the payload is the better
-/// discriminator and needs no cache: a request to write a file does not carry one, so a refiner or
-/// reviewer running in `default` asking for permission to write still reaches the user as the real
-/// question it is. `rawInput.plan` rather than a tool name, so this is not about one agent's
-/// vocabulary.
-///
-/// The three read-only phases are not interchangeable. `is_read_only` admits `SelfReview`, so a
-/// plan-mode reviewer reaches this path too, and plan mode is the *default* a reviewer runs in when
-/// its profile names no `permission_mode`. The daemon reads its verdict off the plan, which is what
-/// the request carries: the `tool_call` announcing `ExitPlanMode` resets the closing message before
-/// the permission request arrives. A plan that does not open with the verdict line classifies as
-/// `Approved`, which is the documented safe direction — the human gate, not another coder round on
-/// a guess.
-async fn try_conclude_plan_mode_phase(
-    app_state: &Arc<crate::core::AppState>,
-    task: TaskKey,
-    phase: Option<crate::models::TaskPhase>,
-    session_id: &str,
-    perm_req: &crate::acp::transport::PermissionRequest,
-) -> bool {
-    let task_id = task.task_id;
-    let Some(plan) = perm_req
-        .payload
-        .get("toolCall")
-        .and_then(|call| call.get("rawInput"))
-        .and_then(|input| input.get("plan"))
-        .and_then(|plan| plan.as_str())
-        .map(str::trim)
-        .filter(|plan| !plan.is_empty())
-    else {
-        log::debug!(
-            "[acp] task {task_id}: permission request carries no plan, leaving it to the user"
-        );
-        return false;
-    };
-
-    if !phase.is_some_and(|p| p.is_read_only()) {
-        log::debug!("[acp] task {task_id}: {phase:?} may write, so its plan is not a gate");
-        return false;
-    }
-
-    // The thread entry is what the gate reads, and the daemon files it in the same transaction as
-    // the transition, so a gate never opens with nothing in it.
-    match end_task_turn(
-        app_state,
-        task,
-        TurnEnding::ArtifactDelivered,
-        plan.to_string(),
-    )
-    .await
-    {
-        Ok(Some(_)) => {}
-        Ok(None) => return false,
-        Err(e) => {
-            log::warn!("[acp] could not close the read-only phase of task {task_id}: {e}");
-            return false;
-        }
-    }
-
-    let refusal = perm_req
-        .payload
-        .get("options")
-        .and_then(|v| v.as_array())
-        .and_then(|options| {
-            options.iter().find_map(|option| {
-                let kind = option.get("kind").and_then(|v| v.as_str())?;
-                kind.contains("reject")
-                    .then(|| option.get("optionId").and_then(|v| v.as_str()))
-                    .flatten()
-                    .map(str::to_string)
-            })
-        });
-
-    // An agent that offers no refusal is left unanswered rather than granted: the session is closed
-    // below either way, and the one thing that must not happen is the mode changing.
-    if let Some(option_id) = refusal {
-        let response = MaestroRpcMessage::Request(ServerRequest::PermitResponse(
-            crate::acp::transport::PermissionResponse {
-                session_id: session_id.to_string(),
-                request_id: perm_req.request_id.clone(),
-                option_id: Some(option_id),
-            },
-        ));
-        if let Err(e) = crate::acp::write_to_acp_session(app_state, session_id, &response).await {
-            log::warn!("[acp] could not refuse the mode change for task {task_id}: {e}");
-        }
-    }
-
-    // After the transition, not before: ending a session fails a task whose phase is still
-    // `Running`, which would turn the card red. It is a no-op against the `Waiting` the gate above
-    // just wrote, which is the ordering this depends on.
-    crate::acp::session_handlers::end_acp_session(app_state, session_id).await;
-    log::info!("[acp] took the plan for task {task_id} and closed its planning session");
-
-    true
-}
-
 fn emit_session_init_events(
     models: Option<&SessionModelState>,
     modes: Option<&SessionModeState>,
@@ -933,8 +397,6 @@ fn handle_server_message(
     replay_buffer: &crate::acp::session_types::ReplayBuffer,
     initialized: &Arc<std::sync::Mutex<bool>>,
     completion_filter: &Arc<std::sync::Mutex<crate::acp::completion::CompletionMarkerFilter>>,
-    declared_complete: &Arc<std::sync::atomic::AtomicBool>,
-    closing_message: &Arc<std::sync::Mutex<crate::acp::completion::ClosingMessage>>,
 ) -> Option<String> {
     match msg {
         MaestroRpcMessage::Response(ServerResponse::SessionUpdate(upd)) => {
@@ -953,24 +415,13 @@ fn handle_server_message(
                     }
                 }
             }
-            // Strip the completion marker, so it is removed from what the user sees while
-            // recording that the agent declared the task done.
+            // Strip the completion marker, so it is removed from what the user sees.
             let payload_opt = crate::acp::completion::strip_completion_marker_from_payload(
                 upd.payload,
                 completion_filter,
-                declared_complete,
             );
 
             if let Some(payload) = payload_opt {
-                // After stripping, so the marker never reaches the outcome thread either.
-                crate::acp::completion::track_closing_message(
-                    &payload,
-                    payload
-                        .get("content")
-                        .and_then(|c| c.get("text"))
-                        .and_then(|t| t.as_str()),
-                    closing_message,
-                );
                 emit_or_buffer_payload(payload, replay_buffer, app_handle, session_id);
             }
         }
@@ -1444,10 +895,6 @@ pub(crate) async fn handle_shared_server_message(
                     Arc::clone(&s.replay_buffer),
                     Arc::clone(&s.initialized),
                     Arc::clone(&s.completion_filter),
-                    Arc::clone(&s.declared_complete),
-                    Arc::clone(&s.user_interrupted),
-                    Arc::clone(&s.closing_message),
-                    Arc::clone(&s.permission_queue),
                     s.agent_id_meta.clone(),
                     s.task_key(),
                 )
@@ -1462,66 +909,10 @@ pub(crate) async fn handle_shared_server_message(
             replay,
             initialized,
             completion_filter,
-            declared_complete,
-            user_interrupted,
-            closing_message,
-            permission_queue,
             agent_id,
             task,
         )) = caches
         {
-            if let (
-                Some(task),
-                MaestroRpcMessage::Response(ServerResponse::PermissionRequest(perm_req)),
-            ) = (task, &msg)
-            {
-                spawn_task_permission_request(
-                    app_state,
-                    task,
-                    &session_id,
-                    &permission_queue,
-                    perm_req.clone(),
-                );
-                return;
-            }
-
-            if let MaestroRpcMessage::Response(ServerResponse::ElicitationRequest(_)) = msg {
-                if let Some(task) = task {
-                    spawn_mark_task_blocked(app_state, task);
-                }
-            }
-
-            // Off the reader loop — see the matching comment in `spawn_reader_task`. This
-            // path is worse: the shared reader serves every session on the connection, so
-            // one task's hung `git rev-parse` would stall turn-ended for all of them.
-            if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
-                if let Some(task) = task {
-                    let state = Arc::clone(app_state);
-                    let stop_reason = turn_ended.stop_reason.clone();
-                    let declared =
-                        declared_complete.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    let interrupted =
-                        user_interrupted.swap(false, std::sync::atomic::Ordering::AcqRel);
-                    // Drained here rather than in the spawned task, so the accumulator is empty
-                    // before the next turn starts writing into it.
-                    let closing = closing_message
-                        .lock()
-                        .map(|mut m| m.take())
-                        .unwrap_or_default();
-                    tokio::spawn(async move {
-                        resolve_turn_end(
-                            &state,
-                            task,
-                            &stop_reason,
-                            declared,
-                            interrupted,
-                            closing,
-                        )
-                        .await;
-                    });
-                }
-            }
-
             // If the agent completed a turn without needing auth, it has valid credentials.
             // This covers token-configured agents that never go through the explicit auth flow.
             if let MaestroRpcMessage::Response(ServerResponse::TurnEnded(ref turn_ended)) = msg {
@@ -1574,8 +965,6 @@ pub(crate) async fn handle_shared_server_message(
                 &replay,
                 &initialized,
                 &completion_filter,
-                &declared_complete,
-                &closing_message,
             );
             if is_permission_request {
                 let sessions = app_state.acp.sessions.lock().await;
@@ -1795,9 +1184,7 @@ pub(crate) async fn handle_shared_server_message(
             for session_id_str in &lost.affected_session_ids {
                 {
                     let session_id = session_id_str.clone();
-                    // The removed entry is the only place the task id is still available.
-                    let removed = app_state.acp.sessions.lock().await.remove(&session_id);
-                    fail_task_if_still_running(app_state, removed.and_then(|s| s.task_key()));
+                    app_state.acp.sessions.lock().await.remove(&session_id);
                     if let Err(e) =
                         app_handle.emit(&format!("acp://session-ended/{}", session_id), ())
                     {

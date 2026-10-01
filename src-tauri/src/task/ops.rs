@@ -3,8 +3,8 @@ use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::Task;
 use maestro_protocol::{
-    AgentRole, ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskStatus,
-    TaskTransition, TransitionGuard,
+    AgentRole, ApplyTaskTransitionRequest, CloseRefinementRequest, TaskPhase, TaskTransition,
+    TransitionGuard,
 };
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -224,7 +224,7 @@ pub async fn send_task_to_review(
     // reviewer, which nothing on it says it is.
     let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, &task).await;
 
-    apply_transition_on_server(
+    let task = apply_transition_on_server(
         &app_state,
         project_id,
         task_id,
@@ -235,7 +235,11 @@ pub async fn send_task_to_review(
         },
         TransitionGuard::Always,
     )
-    .await
+    .await?;
+    if let Some(task) = &task {
+        start_handoff(&app_state, task);
+    }
+    Ok(task)
 }
 
 /// End the review agent's pass and hand the task to the human gate.
@@ -264,95 +268,6 @@ pub async fn end_self_review(
     .await
 }
 
-/// Claims a task for execution, before anything is spawned.
-///
-/// The claim is the start of the spawn, not the end of it. The task keeps its column and takes the
-/// `Spawning` phase, which does three things at once: the board shows that the task is being
-/// started, the queue drain stops re-picking it, and a spawn that fails leaves it where the user
-/// launched it rather than stranded in In Progress.
-///
-/// Returns `None` when the task is not in a column execution can start from, or when it is already
-/// being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
-/// from building two sessions for one task.
-#[tauri::command]
-#[specta::specta]
-pub async fn mark_task_execution_started(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-) -> Result<Option<Task>, String> {
-    // InProgress is here only for the plan gate: the claim refuses any phase but the gate's, so
-    // this cannot start a task an agent is already working on.
-    apply_transition_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        TaskTransition::ExecutionStarted,
-        TransitionGuard::Claim(vec![
-            TaskStatus::Planning,
-            TaskStatus::Queue,
-            TaskStatus::InProgress,
-        ]),
-    )
-    .await
-}
-
-/// Records that the session is up and the agent is working.
-///
-/// The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
-/// In Progress — and the mapping lives in the daemon's `transition::resolve` so the four spawn
-/// paths cannot disagree about it.
-///
-/// Guarded on the task still being the one that was claimed: a user who dragged the card away
-/// mid-spawn, or stopped it, must not have that undone by a session that finished starting
-/// afterwards. `None` tells the caller its session no longer belongs to anything and should be
-/// torn down.
-#[tauri::command]
-#[specta::specta]
-pub async fn mark_task_session_ready(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    role: crate::project::profiles::AgentRole,
-) -> Result<Option<Task>, String> {
-    apply_transition_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        TaskTransition::SessionReady(AgentRole::from(role)),
-        TransitionGuard::Spawning,
-    )
-    .await
-}
-
-/// Releases a claim whose spawn never completed.
-///
-/// `failed` separates the two ways that happens. A spawn that errored leaves the card red at
-/// `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
-/// simply parks the task again, because nothing went wrong.
-#[tauri::command]
-#[specta::specta]
-pub async fn release_task_execution_claim(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    failed: bool,
-) -> Result<Option<Task>, String> {
-    let event = if failed {
-        TaskTransition::PhaseFailed
-    } else {
-        TaskTransition::SpawnAborted
-    };
-    apply_transition_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        event,
-        TransitionGuard::Spawning,
-    )
-    .await
-}
-
 /// Take or renew a hold on a task the user is interacting with.
 ///
 /// The scheduler skips held tasks. Renewal rather than a one-shot flag because the thing being
@@ -366,14 +281,6 @@ pub async fn hold_task(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
-    // ponytail: the app's drain still reads its own holds until D14 removes it with the drain.
-    app_state.task_holds.hold(
-        crate::acp::TaskKey {
-            project_id,
-            task_id,
-        },
-        crate::task::holds::HOLD_TTL,
-    );
     crate::acp::connection_server::query_project_store(
         &app_state,
         project_id,
@@ -389,13 +296,7 @@ pub async fn hold_task(
     .await
 }
 
-/// Release a hold, and tell the scheduler to look again.
-///
-/// The event matters. A drag that ends where it started changes nothing, so it emits no
-/// `tasks-changed` — without this the task would sit unscheduled until some unrelated thing
-/// happened to move the board, which is the stalled-queue failure this design keeps running into.
-/// It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
-/// would be a cost paid on every drag.
+/// Release a hold. The daemon's scheduler looks at the queue again when one is released.
 #[tauri::command]
 #[specta::specta]
 pub async fn release_task_hold(
@@ -403,10 +304,6 @@ pub async fn release_task_hold(
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
-    app_state.task_holds.release(crate::acp::TaskKey {
-        project_id,
-        task_id,
-    });
     crate::acp::connection_server::query_project_store(
         &app_state,
         project_id,
@@ -418,15 +315,7 @@ pub async fn release_task_hold(
         },
         reply!(ServerResponse::ReleaseTaskHoldOk => ()),
     )
-    .await?;
-    app_state
-        .app_handle
-        .emit(
-            "task-hold-released",
-            serde_json::json!({ "project_id": project_id, "task_id": task_id }),
-        )
-        .ok();
-    Ok(())
+    .await
 }
 
 /// Answer the refiner's proposal gate.
@@ -479,18 +368,64 @@ pub async fn start_task(
     unattended: bool,
     respect_capacity: bool,
 ) -> Result<Option<String>, String> {
+    start_task_on_server(
+        &app_state,
+        project_id,
+        task_id,
+        AgentRole::from(role),
+        feedback,
+        unattended,
+        respect_capacity,
+    )
+    .await
+}
+
+/// Start the stage a window's own write handed to an agent: a review asked for by hand, or a CI
+/// fix the pull request poll requested. The daemon starts the next stage after its own turn ends,
+/// not after a window's write. Spawned, since a start waits for the agent to come up.
+pub(crate) fn start_handoff(app_state: &Arc<AppState>, task: &Task) {
+    if task.phase_status != Some(crate::models::PhaseStatus::Waiting)
+        || task.ball != crate::models::TaskBall::Agent
+    {
+        return;
+    }
+    use crate::models::TaskPhase as Phase;
+    let role = match task.phase {
+        Some(Phase::SelfReview) => AgentRole::Reviewer,
+        Some(Phase::Rework | Phase::AwaitingMerge) => AgentRole::Coder,
+        _ => return,
+    };
+    let (app_state, project_id, task_id) = (Arc::clone(app_state), task.project_id, task.id);
+    tokio::spawn(async move {
+        if let Err(e) =
+            start_task_on_server(&app_state, project_id, task_id, role, None, true, false).await
+        {
+            log::warn!("[task] could not start {role:?} for task {task_id}: {e}");
+        }
+    });
+}
+
+async fn start_task_on_server(
+    app_state: &Arc<AppState>,
+    project_id: i32,
+    task_id: i32,
+    role: AgentRole,
+    feedback: Option<String>,
+    unattended: bool,
+    respect_capacity: bool,
+) -> Result<Option<String>, String> {
     let (connection_key, project_path) =
-        crate::project::automations::target(&app_state, project_id).await?;
+        crate::project::automations::target(app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
     crate::acp::connection_server::query_via_server(
         connection_key,
-        &app_state,
+        app_state,
         &format!("No connection server for connection {connection_key:?}"),
         crate::acp::transport::MaestroRpcMessage::Request(ServerRequest::StartTask(
             maestro_protocol::StartTaskRequest {
                 project_path,
                 task_id,
-                role: AgentRole::from(role),
+                role,
                 feedback,
                 unattended,
                 respect_capacity,

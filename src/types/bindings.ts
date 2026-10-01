@@ -469,25 +469,6 @@ async createWorktree(projectId: number, taskId: number | null, baseBranch: strin
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
- * 
- * Everything that asks "where does task N work" — the review panel, the approve/merge queries,
- * the archive prompt, the diff gate — finds the answer through `worktrees.task_id`. Rather than
- * teach each of them about a second pin, a task that reuses a workspace takes ownership of it
- * when it starts, and all of those keep working unchanged.
- * 
- * Any worktree the task owned before is released rather than left behind, so the one-worktree-
- * per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
- */
-async claimWorktreeForTask(projectId: number, taskId: number, worktreeId: number) : Promise<Result<Worktree, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("claim_worktree_for_task", { projectId, taskId, worktreeId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async deleteWorktree(projectId: number, worktreePath: string, branchName: string, worktreeId: number | null, deleteBranch: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_worktree", { projectId, worktreePath, branchName, worktreeId, deleteBranch }) };
@@ -576,42 +557,9 @@ async spawnInteractiveExecution(projectId: number, branchName: string | null, re
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Pick the tasks that should be started next on this project's host.
- * 
- * Returns ids for the frontend to run rather than starting anything itself: only Rust can decide
- * *which* tasks run, because the limit is per host and a host serves every project pointed at it,
- * but only the frontend can start one — spawning means a worktree, an ACP session and a prompt.
- */
-async drainReadyQueue(projectId: number, projectPath: string) : Promise<Result<number[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("drain_ready_queue", { projectId, projectPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getQueueCapacity(projectId: number) : Promise<Result<QueueCapacity, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_queue_capacity", { projectId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Ask whether a manually-executed task can start now.
- * 
- * Advisory, not a gate: `claim_for_execution` remains the authority on whether a task is startable
- * at all. This answers the narrower question of whether the host has room, so that Execute can keep
- * D24's promise — never refuse, but defer against a fixed limit rather than quietly exceeding it.
- * 
- * Deferring moves a Planning task into Queue, because that is where the promise is kept: the
- * scheduler only draws from Queue, so a deferred task left in Planning would wait forever.
- */
-async requestTaskExecution(projectId: number, taskId: number) : Promise<Result<ExecuteDecision, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("request_task_execution", { projectId, taskId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2935,46 +2883,6 @@ async endSelfReview(projectId: number, taskId: number) : Promise<Result<Task | n
 }
 },
 /**
- * Claims a task for execution, before anything is spawned.
- * 
- * The claim is the start of the spawn, not the end of it. The task keeps its column and takes the
- * `Spawning` phase, which does three things at once: the board shows that the task is being
- * started, the queue drain stops re-picking it, and a spawn that fails leaves it where the user
- * launched it rather than stranded in In Progress.
- * 
- * Returns `None` when the task is not in a column execution can start from, or when it is already
- * being spawned. The second case is what stops two clicks, or a click racing the auto-mode drain,
- * from building two sessions for one task.
- */
-async markTaskExecutionStarted(projectId: number, taskId: number) : Promise<Result<Task | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_execution_started", { projectId, taskId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Records that the session is up and the agent is working.
- * 
- * The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
- * In Progress — and the mapping lives in the daemon's `transition::resolve` so the four spawn
- * paths cannot disagree about it.
- * 
- * Guarded on the task still being the one that was claimed: a user who dragged the card away
- * mid-spawn, or stopped it, must not have that undone by a session that finished starting
- * afterwards. `None` tells the caller its session no longer belongs to anything and should be
- * torn down.
- */
-async markTaskSessionReady(projectId: number, taskId: number, role: AgentRole) : Promise<Result<Task | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("mark_task_session_ready", { projectId, taskId, role }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Run one stage of a task in the daemon: claim it, make or reuse its worktree, spawn the role's
  * agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
  * 
@@ -3010,21 +2918,6 @@ async closeRefinement(projectId: number, taskId: number, accept: boolean) : Prom
 }
 },
 /**
- * Releases a claim whose spawn never completed.
- * 
- * `failed` separates the two ways that happens. A spawn that errored leaves the card red at
- * `Spawning`/`Failed` so the user can see it and retry; a spawn the user cancelled at a prompt
- * simply parks the task again, because nothing went wrong.
- */
-async releaseTaskExecutionClaim(projectId: number, taskId: number, failed: boolean) : Promise<Result<Task | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("release_task_execution_claim", { projectId, taskId, failed }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Take or renew a hold on a task the user is interacting with.
  * 
  * The scheduler skips held tasks. Renewal rather than a one-shot flag because the thing being
@@ -3041,13 +2934,7 @@ async holdTask(projectId: number, taskId: number) : Promise<Result<null, string>
 }
 },
 /**
- * Release a hold, and tell the scheduler to look again.
- * 
- * The event matters. A drag that ends where it started changes nothing, so it emits no
- * `tasks-changed` — without this the task would sit unscheduled until some unrelated thing
- * happened to move the board, which is the stalled-queue failure this design keeps running into.
- * It is deliberately not `tasks-changed`: nothing changed, and refetching the board to say so
- * would be a cost paid on every drag.
+ * Release a hold. The daemon's scheduler looks at the queue again when one is released.
  */
 async releaseTaskHold(projectId: number, taskId: number) : Promise<Result<null, string>> {
     try {
@@ -3691,23 +3578,6 @@ export type DockerConnection = { id: number; container_name: string; image_name:
 export type DockerContainer = { id: string; name: string; image: string; state: DockerContainerState }
 export type DockerContainerState = "Running" | "Stopped"
 export type EnterKeyBehavior = "send_prompt" | "new_line"
-export type ExecuteDecision = { verdict: ExecuteVerdict; reason: string }
-/**
- * What a manual Execute should do about a host that is already full.
- * 
- * It never refuses. Which of the other two applies depends on what kind of limit is in force: a
- * fixed number the user chose is a rule and can be deferred against, while a figure derived from
- * live memory is a reading, and a user who knows their machine is fine should not be blocked by it.
- */
-export type ExecuteVerdict = "Start" | 
-/**
- * The task has been marked and queued; the scheduler takes it before its own picks.
- */
-"Deferred" | 
-/**
- * Over a memory-derived limit. Start anyway, having said so.
- */
-"Warn"
 /**
  * Session kind: an ACP-managed AI agent or a user-controlled PTY shell.
  * 

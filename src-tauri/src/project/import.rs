@@ -100,6 +100,9 @@ async fn import(
     let sessions = sessions_from_state(&state, &aliases, &task_titles, project_path);
     request.sessions = sessions;
 
+    // Auto mode was this app's global switch before it became the project's, kept by its daemon.
+    // Not carried over by an app whose board the daemon refused, since another app's went in.
+    let mut first_in = true;
     if !is_empty(&request) {
         if let Err(e) = app_state.app_handle.emit("project-importing", project_id) {
             log::warn!("[import] emitting project-importing failed: {e}");
@@ -156,6 +159,34 @@ async fn import(
         if response.imported {
             copy_attachments(app_state, &git_conn, project_path, copies).await;
         }
+        first_in = response.imported;
+    }
+
+    let auto_mode = {
+        let conn = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Lock failed: {e}"))?;
+        crate::core::settings::load_settings(&conn)
+            .map_err(|e| format!("Failed to load settings: {e}"))?
+            .auto_mode
+    };
+    if first_in && auto_mode {
+        query_via_server(
+            connection_key,
+            app_state,
+            &format!("No connection server for connection {connection_key:?}"),
+            MaestroRpcMessage::Request(ServerRequest::SetAutoMode(
+                maestro_protocol::AutoModeSetting {
+                    project_path: project_path.to_string(),
+                    enabled: true,
+                },
+            )),
+            reply!(ServerResponse::SetAutoModeOk => ()),
+            IMPORT_TIMEOUT_SECS,
+            "The project's server did not set auto mode in time",
+        )
+        .await?;
     }
 
     let conn = app_state

@@ -7,8 +7,8 @@ use crate::acp::transport::{ServerRequest, ServerResponse};
 use crate::core::AppState;
 use crate::models::{Worktree, WORKTREE_DIR};
 use maestro_protocol::{
-    ClaimWorktreeForTaskRequest, DeleteWorktreesRequest, InsertWorktreeRequest,
-    ListWorktreesRequest, ProjectRef, UpdateWorktreeRequest,
+    DeleteWorktreesRequest, InsertWorktreeRequest, ListWorktreesRequest, ProjectRef,
+    UpdateWorktreeRequest,
 };
 
 /// The project's worktree rows, or only the one a task owns: the daemon keeps a task to one.
@@ -348,39 +348,6 @@ pub async fn create_worktree(
         }
     };
 
-    Ok(Worktree::from_wire(worktree, project_id))
-}
-
-/// Hand an existing worktree to a task, for a task whose workspace mode is `ReuseWorkspace`.
-///
-/// Everything that asks "where does task N work" — the review panel, the approve/merge queries,
-/// the archive prompt, the diff gate — finds the answer through `worktrees.task_id`. Rather than
-/// teach each of them about a second pin, a task that reuses a workspace takes ownership of it
-/// when it starts, and all of those keep working unchanged.
-///
-/// Any worktree the task owned before is released rather than left behind, so the one-worktree-
-/// per-task assumption those queries make (`LIMIT 1`) still holds after a task switches workspace.
-#[tauri::command]
-#[specta::specta]
-pub async fn claim_worktree_for_task(
-    app_state: State<'_, Arc<AppState>>,
-    project_id: i32,
-    task_id: i32,
-    worktree_id: i32,
-) -> Result<Worktree, String> {
-    let worktree = query_project_store(
-        &app_state,
-        project_id,
-        |project_path| {
-            ServerRequest::ClaimWorktreeForTask(ClaimWorktreeForTaskRequest {
-                project_path,
-                task_id,
-                worktree_id,
-            })
-        },
-        reply!(ServerResponse::ClaimWorktreeForTaskOk(worktree) => worktree),
-    )
-    .await?;
     Ok(Worktree::from_wire(worktree, project_id))
 }
 

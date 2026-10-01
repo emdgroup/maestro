@@ -284,21 +284,8 @@ pub struct AcpProcess {
     /// Set to `true` when SpawnOk or SessionLoadOk is received. Used by drain to avoid
     /// emitting `replay-drained` before the session is ready (empty buffer race).
     pub initialized: Arc<std::sync::Mutex<bool>>,
-    /// Strips the completion marker from `agent_message_chunk` text and reports when the agent
-    /// declares the task done.
+    /// Strips the completion marker from `agent_message_chunk` text before it is shown.
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
-    /// Set when the agent emits the completion marker. Read and reset on each turn ending, so it
-    /// only applies to the turn it appeared in.
-    pub declared_complete: Arc<AtomicBool>,
-    /// Set when the user pressed stop on this session, and read and reset by the next turn ending.
-    ///
-    /// The stop reason cannot carry this: agents disagree about what an interrupted turn reports —
-    /// some answer `cancelled`, some `end_turn` — and an `end_turn` from a coder that had already
-    /// touched files reads as a finished phase, which hands the task straight to the next role. So
-    /// the interrupt is recorded where it is known first-hand rather than inferred from the reply.
-    pub user_interrupted: Arc<AtomicBool>,
-    /// The agent's last run of prose before the turn ends, drained into the task's outcome thread.
-    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
     /// Session capability flags from SpawnOk. Used by get_active_sessions.
     pub session_capabilities: SessionCapabilitiesInfo,
     /// Raw config_options catalog from SpawnOk/SessionLoadOk/config updates.
@@ -309,14 +296,7 @@ pub struct AcpProcess {
     /// Set while a `RequestPermission` is outstanding on this session's shared Claude Code
     /// connection. Prevents new sessions from joining the same connection until resolved.
     pub has_pending_permission: Arc<AtomicBool>,
-    /// The last of this session's permission requests still being decided, see
-    /// `reader_task::spawn_task_permission_request`.
-    pub permission_queue: PermissionQueue,
 }
-
-/// The handling of a session's latest permission request, which the next one waits for so the
-/// prompts reach the UI in the order the agent raised them.
-pub type PermissionQueue = Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>;
 
 /// A session's task as the daemon keys it: task ids are per project, so the number alone does not
 /// name one.
@@ -424,11 +404,6 @@ pub struct ReaderTaskContext {
     pub replay_buffer: ReplayBuffer,
     pub initialized: Arc<std::sync::Mutex<bool>>,
     pub completion_filter: Arc<std::sync::Mutex<super::completion::CompletionMarkerFilter>>,
-    pub declared_complete: Arc<AtomicBool>,
-    pub user_interrupted: Arc<AtomicBool>,
-    pub closing_message: Arc<std::sync::Mutex<super::completion::ClosingMessage>>,
-    pub permission_queue: PermissionQueue,
-    pub task: Option<TaskKey>,
 }
 
 impl AcpProcess {
@@ -456,12 +431,6 @@ impl AcpProcess {
         let completion_filter = Arc::new(std::sync::Mutex::new(
             super::completion::CompletionMarkerFilter::new(),
         ));
-        let declared_complete = Arc::new(AtomicBool::new(false));
-        let user_interrupted = Arc::new(AtomicBool::new(false));
-        let closing_message = Arc::new(std::sync::Mutex::new(
-            super::completion::ClosingMessage::default(),
-        ));
-        let permission_queue = PermissionQueue::default();
         let ctx = ReaderTaskContext {
             session_id,
             app_handle,
@@ -474,11 +443,6 @@ impl AcpProcess {
             replay_buffer: Arc::clone(&replay_buffer),
             initialized: Arc::clone(&initialized),
             completion_filter: Arc::clone(&completion_filter),
-            declared_complete: Arc::clone(&declared_complete),
-            user_interrupted: Arc::clone(&user_interrupted),
-            closing_message: Arc::clone(&closing_message),
-            permission_queue: Arc::clone(&permission_queue),
-            task: TaskKey::of(params.project_id, params.task.task_id),
         };
         let process = Self {
             writer: params.writer,
@@ -503,14 +467,10 @@ impl AcpProcess {
             replay_buffer,
             initialized,
             completion_filter,
-            declared_complete,
-            user_interrupted,
-            closing_message,
             session_capabilities: SessionCapabilitiesInfo::default(),
             config_options: Vec::new(),
             prompt_capabilities: None,
             has_pending_permission: Arc::new(AtomicBool::new(false)),
-            permission_queue,
         };
         (process, ctx)
     }
