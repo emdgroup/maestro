@@ -461,3 +461,44 @@ pub async fn close_refinement(
     .await?;
     Ok(Task::from_wire(task, project_id))
 }
+
+/// Run one stage of a task in the daemon: claim it, make or reuse its worktree, spawn the role's
+/// agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
+///
+/// The session itself reaches this window as `TaskSessionStarted`, adopted like an automation's.
+/// A sign-in the agent needs fails this with `auth_required`, the message the board already turns
+/// into its sign-in prompt; the daemon has given the claim back by then.
+#[tauri::command]
+#[specta::specta]
+pub async fn start_task(
+    app_state: State<'_, Arc<AppState>>,
+    project_id: i32,
+    task_id: i32,
+    role: crate::project::profiles::AgentRole,
+    feedback: Option<String>,
+    unattended: bool,
+    respect_capacity: bool,
+) -> Result<Option<String>, String> {
+    let (connection_key, project_path) =
+        crate::project::automations::target(&app_state, project_id).await?;
+    // Spawning an agent, and signing it in, takes far longer than a store write.
+    crate::acp::connection_server::query_via_server(
+        connection_key,
+        &app_state,
+        &format!("No connection server for connection {connection_key:?}"),
+        crate::acp::transport::MaestroRpcMessage::Request(ServerRequest::StartTask(
+            maestro_protocol::StartTaskRequest {
+                project_path,
+                task_id,
+                role: AgentRole::from(role),
+                feedback,
+                unattended,
+                respect_capacity,
+            },
+        )),
+        reply!(ServerResponse::StartTaskOk(response) => response.session_id),
+        120,
+        "The project's server did not start the task within 120s",
+    )
+    .await
+}

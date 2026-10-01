@@ -440,7 +440,7 @@ Tasks:
 - [x] D6 Prompt composition in Rust, with the TypeScript tests ported
 - [x] D7 Task worktrees in `worktree.rs`: `task-<id>`, branch naming, reuse, start sha
 - [x] D8 `task_runner::start`: claim, worktree, spawn, settings, prompt, ready, supersede
-- [ ] D9 The app adopts sessions the daemon started for a task
+- [x] D9 The app adopts sessions the daemon started for a task
 - [x] D10 Daemon stream tracking: completion marker, closing message, user interrupt
 - [x] D11 Daemon turn end: classify, diff gate, reviewer, `EndTaskTurn`, the next stage, the CI fix
       push

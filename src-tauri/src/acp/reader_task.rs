@@ -1672,6 +1672,27 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "collection": "project", "project_id": project_id }),
             );
         }
+        // Only the window holding the project takes the session over. Adopting asks the daemon
+        // for its row, and a reply comes back through this reader, so it runs on a task of its own.
+        MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(started)) => {
+            let held = app_state
+                .active_project_lock
+                .lock()
+                .ok()
+                .and_then(|held| *held);
+            let project_id = project_id_for_path(app_state, connection_key, &started.project_path);
+            if let Some(project_id) =
+                crate::acp::session_ops::task_session_target(held, connection_key, project_id)
+            {
+                tokio::spawn(crate::acp::session_ops::adopt_task_session(
+                    connection_key,
+                    project_id,
+                    started.task_id,
+                    started.session_id,
+                    Arc::clone(app_state),
+                ));
+            }
+        }
         // The machine's capacity or a project's auto mode: either can let the queue move.
         MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(_)) => {
             crate::core::emit_or_log(app_handle, "settings-changed", &());

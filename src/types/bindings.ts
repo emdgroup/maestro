@@ -2975,6 +2975,22 @@ async markTaskSessionReady(projectId: number, taskId: number, role: AgentRole) :
 }
 },
 /**
+ * Run one stage of a task in the daemon: claim it, make or reuse its worktree, spawn the role's
+ * agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
+ * 
+ * The session itself reaches this window as `TaskSessionStarted`, adopted like an automation's.
+ * A sign-in the agent needs fails this with `auth_required`, the message the board already turns
+ * into its sign-in prompt; the daemon has given the claim back by then.
+ */
+async startTask(projectId: number, taskId: number, role: AgentRole, feedback: string | null, unattended: boolean, respectCapacity: boolean) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_task", { projectId, taskId, role, feedback, unattended, respectCapacity }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Answer the refiner's proposal gate.
  * 
  * The proposal is the refiner's closing message, kept in the outcome thread — the refiner writes

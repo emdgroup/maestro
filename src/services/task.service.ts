@@ -767,6 +767,22 @@ export function useMarkTaskExecutionStartedMutation() {
 }
 
 /**
+ * Run one stage of a task in the daemon. Resolves to the session id, or null when the task was
+ * deferred to the queue; the session reaches the window as `TaskSessionStarted`. Rejects with
+ * `auth_required` when the agent needs a sign-in.
+ */
+export function startTask(
+  projectId: number,
+  taskId: number,
+  role: AgentRole,
+  feedback: string | null,
+  unattended: boolean,
+  respectCapacity: boolean,
+): Promise<string | null> {
+  return api.startTask(projectId, taskId, role, feedback, unattended, respectCapacity);
+}
+
+/**
  * Mutation hook for moving a claimed task to In Progress once its session is live.
  *
  * Resolves to null when the task is no longer the one that was claimed.

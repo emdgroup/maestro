@@ -182,6 +182,70 @@ pub(crate) async fn forget_sessions(
     }
 }
 
+/// The project a `TaskSessionStarted` is for, when it is the one this window holds on that
+/// connection. Every other window leaves the session to whoever holds its project.
+pub(crate) fn task_session_target(
+    held: Option<(i32, crate::acp::ConnectionKey)>,
+    connection_key: crate::acp::ConnectionKey,
+    project_id: Option<i32>,
+) -> Option<i32> {
+    match (held, project_id) {
+        (Some((held_id, held_key)), Some(project_id))
+            if held_id == project_id && held_key == connection_key =>
+        {
+            Some(project_id)
+        }
+        _ => None,
+    }
+}
+
+/// Entries for a task's earlier sessions: the daemon closed them when it started `keep`.
+fn superseded_task_sessions<'a>(
+    entries: impl Iterator<Item = (&'a String, Option<i32>, Option<i32>)>,
+    project_id: i32,
+    task_id: i32,
+    keep: &str,
+) -> Vec<String> {
+    entries
+        .filter(|(session_id, entry_project, entry_task)| {
+            *entry_project == Some(project_id)
+                && *entry_task == Some(task_id)
+                && session_id.as_str() != keep
+        })
+        .map(|(session_id, _, _)| session_id.clone())
+        .collect()
+}
+
+/// Take over a session the daemon started for a task, dropping what this window still held of
+/// the task's earlier ones. The row carries the task and role, so the card and the session panel
+/// read them as they would for a session this window spawned.
+///
+/// Boxed as `Send` because the reader spawns it and it reaches the reader again through
+/// [`attach_project_sessions`]; without the box the compiler cannot prove that cycle `Send`.
+pub(crate) fn adopt_task_session(
+    connection_key: crate::acp::ConnectionKey,
+    project_id: i32,
+    task_id: i32,
+    session_id: String,
+    app_state: Arc<crate::core::AppState>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        let stale = {
+            let sessions = app_state.acp.sessions.lock().await;
+            superseded_task_sessions(
+                sessions
+                    .iter()
+                    .map(|(id, proc)| (id, proc.project_id, proc.task_id)),
+                project_id,
+                task_id,
+                &session_id,
+            )
+        };
+        forget_sessions(&app_state, &stale).await;
+        attach_project_sessions(connection_key, project_id, Some(&session_id), &app_state).await;
+    })
+}
+
 /// Bring this project's open conversations into this window, from the daemon's own rows.
 ///
 /// The daemon outlives the app and keeps one row per conversation, so a freshly opened project, a
@@ -796,7 +860,48 @@ pub async fn restore_acp_sessions(
 
 #[cfg(test)]
 mod tests {
-    use super::{holds_row, row_action, RowAction};
+    use super::{holds_row, row_action, superseded_task_sessions, task_session_target, RowAction};
+    use crate::acp::ConnectionKey;
+
+    #[test]
+    fn a_task_session_is_adopted_only_by_the_window_holding_its_project() {
+        let held = Some((7, ConnectionKey::Local));
+        assert_eq!(
+            task_session_target(held, ConnectionKey::Local, Some(7)),
+            Some(7)
+        );
+        assert_eq!(
+            task_session_target(held, ConnectionKey::Local, Some(8)),
+            None
+        );
+        assert_eq!(
+            task_session_target(held, ConnectionKey::Ssh { id: 1 }, Some(7)),
+            None
+        );
+        assert_eq!(task_session_target(held, ConnectionKey::Local, None), None);
+        assert_eq!(
+            task_session_target(None, ConnectionKey::Local, Some(7)),
+            None
+        );
+    }
+
+    #[test]
+    fn only_the_tasks_earlier_sessions_are_superseded() {
+        let ids: Vec<String> = ["new", "old", "other-task", "other-project", "plain"]
+            .map(String::from)
+            .into();
+        let entries = [
+            (&ids[0], Some(7), Some(3)),
+            (&ids[1], Some(7), Some(3)),
+            (&ids[2], Some(7), Some(4)),
+            (&ids[3], Some(8), Some(3)),
+            (&ids[4], Some(7), None),
+        ];
+        assert_eq!(
+            superseded_task_sessions(entries.into_iter(), 7, 3, "new"),
+            vec!["old".to_string()]
+        );
+    }
 
     #[test]
     fn a_running_row_is_held_only_under_its_live_routing_id() {

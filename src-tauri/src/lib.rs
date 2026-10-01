@@ -284,6 +284,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::end_self_review,
         crate::ipc::mark_task_execution_started,
         crate::ipc::mark_task_session_ready,
+        crate::ipc::start_task,
         crate::ipc::close_refinement,
         crate::ipc::release_task_execution_claim,
         crate::ipc::hold_task,
