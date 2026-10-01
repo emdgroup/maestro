@@ -1517,7 +1517,13 @@ pub(crate) async fn dispatch_message(
             | ServerRequest::ClaimWorktreeForTask(_)
             | ServerRequest::GetTaskReview(_)
             | ServerRequest::SaveTaskReview(_)
-            | ServerRequest::ClearTaskReview(_)),
+            | ServerRequest::ClearTaskReview(_)
+            | ServerRequest::ListPrompts(_)
+            | ServerRequest::GetPrompt(_)
+            | ServerRequest::CreatePrompt(_)
+            | ServerRequest::UpdatePrompt(_)
+            | ServerRequest::SetPromptFavorite(_)
+            | ServerRequest::DeletePrompt(_)),
         ) => {
             let Some(store) = project_store else {
                 send_or_return!(
@@ -1529,7 +1535,17 @@ pub(crate) async fn dispatch_message(
                 );
                 return true;
             };
-            let answered = crate::task_store::requests::answer(&mut *store.lock().await, request);
+            let answered = match request {
+                request @ (ServerRequest::ListPrompts(_)
+                | ServerRequest::GetPrompt(_)
+                | ServerRequest::CreatePrompt(_)
+                | ServerRequest::UpdatePrompt(_)
+                | ServerRequest::SetPromptFavorite(_)
+                | ServerRequest::DeletePrompt(_)) => {
+                    crate::prompt_store::answer(&*store.lock().await, request)
+                }
+                request => crate::task_store::requests::answer(&mut *store.lock().await, request),
+            };
             match answered {
                 Ok((reply, pushes)) => {
                     send_or_return!(

@@ -254,6 +254,15 @@ pub enum ServerRequest {
     GetTaskReview(TaskRef),
     SaveTaskReview(SaveTaskReviewRequest),
     ClearTaskReview(TaskRef),
+    /// The project's prompt collection, favorites first, then most recently edited.
+    ListPrompts(ProjectRef),
+    GetPrompt(PromptRef),
+    CreatePrompt(CreatePromptRequest),
+    /// Bumps `updated_at`; leaves the favorite flag alone.
+    UpdatePrompt(UpdatePromptRequest),
+    /// Leaves `updated_at`, and so the order within favorites and others, alone.
+    SetPromptFavorite(SetPromptFavoriteRequest),
+    DeletePrompt(PromptRef),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -1819,6 +1828,67 @@ pub struct WorktreeList {
     pub worktrees: Vec<Worktree>,
 }
 
+/// One prompt of a project's collection. The shared collection is the app's and never crosses the
+/// wire, so there is no `shared` here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Prompt {
+    pub id: i32,
+    pub project_path: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub favorite: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PromptRef {
+    pub project_path: String,
+    pub prompt_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct OptionalPrompt {
+    #[serde(default)]
+    pub prompt: Option<Prompt>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct PromptList {
+    pub prompts: Vec<Prompt>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct CreatePromptRequest {
+    pub project_path: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub favorite: bool,
+}
+
+/// An edit: title, body and tags replaced whole. The favorite flag is not an edit and has its own
+/// request.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct UpdatePromptRequest {
+    pub project_path: String,
+    pub prompt_id: i32,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SetPromptFavoriteRequest {
+    pub project_path: String,
+    pub prompt_id: i32,
+    pub favorite: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct WorktreeRef {
     pub project_path: String,
@@ -2008,6 +2078,12 @@ pub enum ServerResponse {
     GetTaskReviewOk(OptionalTaskReview),
     SaveTaskReviewOk(SaveTaskReviewResponse),
     ClearTaskReviewOk,
+    ListPromptsOk(PromptList),
+    GetPromptOk(OptionalPrompt),
+    CreatePromptOk(Prompt),
+    UpdatePromptOk(Prompt),
+    SetPromptFavoriteOk(Prompt),
+    DeletePromptOk,
     /// Some task of the project changed. Pushed to every client, whoever wrote it, so a second
     /// window refetches its board.
     TasksChanged(ProjectRef),
@@ -2015,6 +2091,8 @@ pub enum ServerResponse {
     TaskCommentsChanged(TaskRef),
     /// Some worktree row of the project changed.
     WorktreesChanged(ProjectRef),
+    /// Some prompt of the project's collection changed.
+    PromptsChanged(ProjectRef),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,
@@ -2046,6 +2124,7 @@ impl ServerResponse {
             | Self::TasksChanged(_)
             | Self::TaskCommentsChanged(_)
             | Self::WorktreesChanged(_)
+            | Self::PromptsChanged(_)
             | Self::Ping { .. }
             | Self::Diagnostic(_) => false,
             Self::HandshakeOk(_)
@@ -2126,7 +2205,13 @@ impl ServerResponse {
             | Self::ClaimWorktreeForTaskOk(_)
             | Self::GetTaskReviewOk(_)
             | Self::SaveTaskReviewOk(_)
-            | Self::ClearTaskReviewOk => true,
+            | Self::ClearTaskReviewOk
+            | Self::ListPromptsOk(_)
+            | Self::GetPromptOk(_)
+            | Self::CreatePromptOk(_)
+            | Self::UpdatePromptOk(_)
+            | Self::SetPromptFavoriteOk(_)
+            | Self::DeletePromptOk => true,
         }
     }
 }
@@ -2715,7 +2800,76 @@ mod tests {
             })),
         ];
         samples.extend(task_messages());
+        samples.extend(prompt_messages());
         samples
+    }
+
+    fn sample_prompt() -> Prompt {
+        Prompt {
+            id: 3,
+            project_path: "/srv/shop".to_string(),
+            title: "Review".to_string(),
+            body: "Review the diff".to_string(),
+            tags: vec!["review".to_string()],
+            favorite: true,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-02T00:00:00Z".to_string(),
+        }
+    }
+
+    fn prompt_messages() -> Vec<MaestroRpcMessage> {
+        let prompt = PromptRef {
+            project_path: "/srv/shop".to_string(),
+            prompt_id: 3,
+        };
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::ListPrompts(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::CreatePrompt(CreatePromptRequest {
+                project_path: "/srv/shop".to_string(),
+                title: "Review".to_string(),
+                body: "Review the diff".to_string(),
+                tags: vec!["review".to_string()],
+                favorite: true,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::UpdatePrompt(UpdatePromptRequest {
+                project_path: "/srv/shop".to_string(),
+                prompt_id: 3,
+                title: "Review".to_string(),
+                body: "Review the diff".to_string(),
+                tags: vec![],
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SetPromptFavorite(
+                SetPromptFavoriteRequest {
+                    project_path: "/srv/shop".to_string(),
+                    prompt_id: 3,
+                    favorite: false,
+                },
+            )),
+            MaestroRpcMessage::Request(ServerRequest::DeletePrompt(prompt)),
+            MaestroRpcMessage::Response(ServerResponse::ListPromptsOk(PromptList {
+                prompts: vec![sample_prompt()],
+            })),
+            MaestroRpcMessage::Response(ServerResponse::GetPromptOk(OptionalPrompt {
+                prompt: None,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::CreatePromptOk(sample_prompt())),
+            MaestroRpcMessage::Response(ServerResponse::DeletePromptOk),
+            MaestroRpcMessage::Response(ServerResponse::PromptsChanged(ProjectRef {
+                project_path: "/srv/shop".to_string(),
+            })),
+        ]
+    }
+
+    #[test]
+    fn prompt_pushes_are_not_replies_and_prompt_answers_are() {
+        assert!(!ServerResponse::PromptsChanged(ProjectRef {
+            project_path: "/srv/shop".to_string(),
+        })
+        .is_reply());
+        assert!(ServerResponse::SetPromptFavoriteOk(sample_prompt()).is_reply());
+        assert!(ServerResponse::DeletePromptOk.is_reply());
     }
 
     fn sample_task() -> Task {

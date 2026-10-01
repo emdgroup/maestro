@@ -314,7 +314,7 @@ it is there in every project that app opens. The two are separate stores with se
 
 Tasks:
 
-- [ ] P1 `maestro-protocol` and `maestro-server`: a `prompts` table (migration v4), requests to list,
+- [x] P1 `maestro-protocol` and `maestro-server`: a `prompts` table (migration v4), requests to list,
       create, update, delete and favorite, `PromptsChanged { project_path }`
 - [ ] P2 The gateway answers the project's prompt tools and forwards the shared ones, with
       `project-N` / `shared-N` ids; `update_prompt` loses `shared`

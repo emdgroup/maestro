@@ -30,6 +30,7 @@ mod mcp_stdio;
 mod mcp_store;
 mod project_locks;
 mod project_store;
+mod prompt_store;
 mod session;
 mod sessions;
 mod skills;

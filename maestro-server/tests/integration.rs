@@ -908,3 +908,54 @@ fn test_task_changes_reach_every_window() {
         let _ = child.wait();
     }
 }
+
+/// A prompt one window saves is announced to the other, under the path the daemon resolved.
+#[test]
+fn test_prompt_changes_reach_every_window() {
+    use maestro_protocol::{CreatePromptRequest, ProjectRef};
+
+    let daemon = Daemon::new();
+    let mut a = daemon.attach();
+    let mut b = daemon.attach();
+    let project = tempfile::tempdir().expect("tempdir");
+    let canonical = {
+        let path = std::fs::canonicalize(project.path()).unwrap();
+        let path = path.to_string_lossy().replace('\\', "/");
+        path.strip_prefix("//?/").unwrap_or(&path).to_string()
+    };
+    let changed = || {
+        ServerResponse::PromptsChanged(ProjectRef {
+            project_path: canonical.clone(),
+        })
+    };
+
+    let (a_in, a_out) = (a.stdin.as_mut().unwrap(), a.stdout.as_mut().unwrap());
+    let b_out = b.stdout.as_mut().unwrap();
+
+    write_msg_with_id(
+        a_in,
+        Some(41),
+        ServerRequest::CreatePrompt(CreatePromptRequest {
+            project_path: format!("{}/", project.path().to_string_lossy()),
+            title: "Review".to_string(),
+            body: "Review the diff".to_string(),
+            tags: vec!["Review".to_string()],
+            favorite: true,
+        }),
+    );
+    let (id, response) = read_msg_with_id(a_out);
+    assert_eq!(id, Some(41));
+    let ServerResponse::CreatePromptOk(prompt) = response else {
+        panic!("expected CreatePromptOk, got: {response:?}");
+    };
+    assert_eq!((prompt.id, prompt.favorite), (1, true));
+    assert_eq!(prompt.project_path, canonical);
+    assert_eq!(prompt.tags, vec!["review".to_string()]);
+    assert_eq!(read_msg_with_id(a_out), (None, changed()));
+    assert_eq!(read_msg_with_id(b_out), (None, changed()));
+
+    for mut child in [a, b] {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}

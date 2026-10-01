@@ -68,6 +68,7 @@ const MIGRATIONS: &[&str] = &[
     V1_SESSIONS,
     crate::task_store::V2_TASKS,
     crate::task_store::worktrees::V3_WORKTREES_REVIEWS,
+    crate::prompt_store::V4_PROMPTS,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -501,7 +502,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("version");
-        assert_eq!(version, 3);
+        assert_eq!(version, MIGRATIONS.len() as i64);
         let title: String = conn
             .query_row("SELECT title FROM tasks WHERE id = 4", [], |row| row.get(0))
             .expect("the task survived");
@@ -518,6 +519,62 @@ mod tests {
             )
             .expect("the counter survived");
         assert_eq!(counters, (4, 0));
+    }
+
+    /// Version 4 adds the prompt collection, and its counter beside the ones a project holds.
+    #[test]
+    fn a_version_three_database_migrates_and_keeps_its_rows() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = Connection::open(directory.path().join("projects.db")).expect("open");
+            conn.execute_batch(&MIGRATIONS[..3].concat())
+                .expect("version 3 schema");
+            conn.pragma_update(None, "user_version", 3)
+                .expect("version");
+            conn.execute(
+                "INSERT INTO tasks (project_path, id, title, base_branch, created_at, updated_at)
+                 VALUES ('/p', 4, 'kept task', 'main', 'now', 'now')",
+                [],
+            )
+            .expect("a task");
+            conn.execute(
+                "INSERT INTO project_counters (project_path, last_task_id, last_worktree_id)
+                 VALUES ('/p', 4, 2)",
+                [],
+            )
+            .expect("its counters");
+        }
+
+        let conn = open(directory.path()).expect("migrate");
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("version");
+        assert_eq!(version, 4);
+        let title: String = conn
+            .query_row("SELECT title FROM tasks WHERE id = 4", [], |row| row.get(0))
+            .expect("the task survived");
+        assert_eq!(title, "kept task");
+        let created = crate::prompt_store::create(
+            &conn,
+            &maestro_protocol::CreatePromptRequest {
+                project_path: "/p".to_string(),
+                title: "Review".to_string(),
+                body: "Review the diff".to_string(),
+                tags: vec![],
+                favorite: false,
+            },
+        )
+        .expect("a prompt");
+        assert_eq!(created.id, 1);
+        let counters: (i32, i32, i32) = conn
+            .query_row(
+                "SELECT last_task_id, last_worktree_id, last_prompt_id FROM project_counters
+                 WHERE project_path = '/p'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the counters survived");
+        assert_eq!(counters, (4, 2, 1));
     }
 
     fn full_meta() -> SessionMeta {
