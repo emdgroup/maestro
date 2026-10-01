@@ -216,9 +216,396 @@ pub async fn discard(project_path: &str, worktree_path: &str, branch: &str) -> R
     Ok(())
 }
 
+/// The namespace every branch Maestro makes for itself lives under. The app's
+/// `list_prunable_branches` decides what it may delete from this prefix alone.
+const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
+
+/// Where a task's worktree goes, relative to the repository root. The app's
+/// `worktree_path_for_task`.
+pub fn task_relative_path(task_id: i32) -> String {
+    format!("{WORKTREE_DIR}/task-{task_id}")
+}
+
+/// Free text as a git-safe branch segment, exactly as the app's `slugifyName`: lowercase, runs of
+/// anything but `a-z0-9` become one dash, cut at 50 and then trimmed of dashes, so it can be empty.
+fn slugify_name(name: &str) -> String {
+    let mut slug = String::new();
+    for character in name.to_lowercase().chars() {
+        if character.is_ascii_lowercase() || character.is_ascii_digit() {
+            slug.push(character);
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.truncate(50);
+    slug.trim_matches('-').to_string()
+}
+
+/// A task's branch, the app's `taskBranchName`: the id leads so branches sort and grep by task.
+pub fn task_branch_name(task_id: i32, title: &str) -> String {
+    format!("{MAESTRO_BRANCH_PREFIX}{task_id}-{}", slugify_name(title))
+}
+
+/// Where a task's session works, and what it was anchored at.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // D8 (`task_runner::start`) is the caller.
+pub struct TaskWorkspace {
+    /// Absolute directory the agent works in.
+    pub cwd: String,
+    /// The branch checked out there; `None` for the repository itself.
+    pub branch: Option<String>,
+    /// The worktree row the task owns; `None` for the repository itself.
+    pub worktree_id: Option<i32>,
+    /// The task's `execution_start_sha`, kept from an earlier run when it has one.
+    pub start_sha: Option<String>,
+}
+
+/// A row's path made absolute: rows hold paths relative to the project.
+fn absolute(project_path: &str, path: &str) -> String {
+    if Path::new(path).is_absolute() {
+        path.to_string()
+    } else {
+        format!("{project_path}/{path}")
+    }
+}
+
+/// `git worktree add` for a task, returning the branch it landed on. The app's `create_worktree`:
+/// with a new name, a branch cut from `base`; without, `base` checked out where it is, and a
+/// remote branch with no local one of its name lands on a local tracking branch.
+async fn add_task_worktree(
+    project_path: &str,
+    base: &str,
+    relative: &str,
+    new_branch: Option<&str>,
+) -> Result<String, String> {
+    if let Some(branch) = new_branch {
+        git(
+            project_path,
+            &["worktree", "add", relative, "-b", branch, base],
+        )
+        .await?;
+        return Ok(branch.to_string());
+    }
+    if let Some((_remote, local)) = base.split_once('/').filter(|(_, rest)| !rest.is_empty()) {
+        let local_exists = verify(project_path, &format!("refs/heads/{base}")).await;
+        if !local_exists && verify(project_path, &format!("refs/remotes/{base}")).await {
+            git(
+                project_path,
+                &["worktree", "add", "--track", "-b", local, relative, base],
+            )
+            .await?;
+            return Ok(local.to_string());
+        }
+    }
+    git(project_path, &["worktree", "add", relative, base]).await?;
+    Ok(base.to_string())
+}
+
+/// Whether `reference` names a commit.
+async fn verify(project_path: &str, reference: &str) -> bool {
+    git(
+        project_path,
+        &["rev-parse", "--verify", "--quiet", reference],
+    )
+    .await
+    .is_ok_and(|out| !out.trim().is_empty())
+}
+
+/// Find or make the workspace a task's session runs in, and anchor the task's start sha.
+///
+/// As the app's `useExecuteTask` chooses: a refiner reads the repository and writes nothing, so it
+/// runs there whatever the task says; every other role follows `workspace_mode`. The repository and
+/// a pinned workspace create nothing on disk; a pinned one is claimed, so every "where does task N
+/// work" query finds it through `task_id`. A new worktree is reused when the task already owns one.
+///
+/// Order, so a failure leaves no half state: git first, then the row, then the sha. A failed `git
+/// worktree add` has written nothing. A failed insert removes the worktree it just made (and the
+/// branch, when this call created it). A failed sha write leaves a worktree and a row the task
+/// owns, which the next call reuses rather than duplicates. The store's lock is never held across
+/// git, so a slow checkout does not stall every other request.
+#[allow(dead_code)] // D8 (`task_runner::start`) is the caller.
+pub async fn prepare_task_workspace(
+    store: &tokio::sync::Mutex<rusqlite::Connection>,
+    task: &maestro_protocol::Task,
+    role: maestro_protocol::AgentRole,
+) -> Result<TaskWorkspace, String> {
+    use crate::task_store::worktrees;
+    use maestro_protocol::{
+        AgentRole, BranchMode, ClaimWorktreeForTaskRequest, InsertWorktreeRequest, WorkspaceMode,
+    };
+
+    let project_path = task.project_path.as_str();
+    let mode = if role == AgentRole::Refiner {
+        WorkspaceMode::RepositoryDirectory
+    } else {
+        task.workspace_mode
+    };
+
+    let (cwd, branch, worktree_id) = match mode {
+        WorkspaceMode::RepositoryDirectory => (project_path.to_string(), None, None),
+        WorkspaceMode::ReuseWorkspace => {
+            let worktree_id = task.workspace_worktree_id.ok_or_else(|| {
+                "This task is pinned to no workspace. Pick one before running it.".to_string()
+            })?;
+            let claimed = worktrees::claim_for_task(
+                &mut *store.lock().await,
+                &ClaimWorktreeForTaskRequest {
+                    project_path: project_path.to_string(),
+                    task_id: task.id,
+                    worktree_id,
+                },
+            )?;
+            (
+                absolute(project_path, &claimed.path),
+                Some(claimed.branch_name),
+                Some(claimed.id),
+            )
+        }
+        WorkspaceMode::NewWorktree => {
+            let owned = worktrees::list(&*store.lock().await, project_path, Some(task.id))?;
+            if let Some(existing) = owned.into_iter().next() {
+                (
+                    absolute(project_path, &existing.path),
+                    Some(existing.branch_name),
+                    Some(existing.id),
+                )
+            } else {
+                if !is_repository(project_path).await {
+                    return Err(
+                        "This project is not a git repository, so worktrees are unavailable."
+                            .to_string(),
+                    );
+                }
+                tokio::fs::create_dir_all(Path::new(project_path).join(WORKTREE_DIR))
+                    .await
+                    .map_err(|e| format!("Failed to create worktree directory: {e}"))?;
+                let relative = task_relative_path(task.id);
+                let new_branch = match task.workspace_branch_mode {
+                    BranchMode::Checkout => None,
+                    BranchMode::Create => Some(
+                        task.workspace_branch
+                            .clone()
+                            .filter(|b| !b.trim().is_empty())
+                            .unwrap_or_else(|| task_branch_name(task.id, &task.title)),
+                    ),
+                };
+                let base = match task.base_branch.trim() {
+                    "" => "HEAD",
+                    base => base,
+                };
+                let branch =
+                    add_task_worktree(project_path, base, &relative, new_branch.as_deref()).await?;
+                let inserted = worktrees::insert(
+                    &*store.lock().await,
+                    &InsertWorktreeRequest {
+                        project_path: project_path.to_string(),
+                        task_id: Some(task.id),
+                        branch_name: branch.clone(),
+                        base_branch: Some(task.base_branch.clone()),
+                        path: relative.clone(),
+                    },
+                );
+                let row = match inserted {
+                    Ok(row) => row,
+                    Err(e) => {
+                        let _ =
+                            git(project_path, &["worktree", "remove", &relative, "--force"]).await;
+                        if new_branch.is_some() {
+                            let _ = git(project_path, &["branch", "-D", &branch]).await;
+                        }
+                        return Err(e);
+                    }
+                };
+                (
+                    absolute(project_path, &relative),
+                    Some(branch),
+                    Some(row.id),
+                )
+            }
+        }
+    };
+
+    // Best effort, as in the app: a session starts even when HEAD cannot be read. A task that
+    // already has a sha keeps it, or a resumed run would hide everything the earlier one changed.
+    let head = git(&cwd, &["rev-parse", "HEAD"])
+        .await
+        .ok()
+        .map(|s| s.trim().to_string());
+    let stored = match head {
+        Some(sha) => {
+            crate::task_store::update(
+                &mut *store.lock().await,
+                project_path,
+                task.id,
+                &maestro_protocol::TaskUpdate {
+                    execution_start_sha_if_empty: Some(sha),
+                    ..Default::default()
+                },
+            )?
+            .execution_start_sha
+        }
+        None => task.execution_start_sha.clone(),
+    };
+
+    Ok(TaskWorkspace {
+        cwd,
+        branch,
+        worktree_id,
+        start_sha: stored.filter(|sha| !sha.is_empty()),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_task_branch_matches_the_apps_name() {
+        assert_eq!(slugify_name("Fix Windows Path"), "fix-windows-path");
+        assert_eq!(slugify_name("feat: add  --  thing"), "feat-add-thing");
+        assert_eq!(slugify_name("  !hello!  "), "hello");
+        let long = slugify_name(&format!("{} tail", "a".repeat(49)));
+        assert!(long.len() <= 50 && !long.ends_with('-'));
+        assert_eq!(slugify_name("!!!"), "");
+        assert_eq!(
+            task_branch_name(12, "Fix Windows Path"),
+            "maestro/12-fix-windows-path"
+        );
+        assert_eq!(task_branch_name(7, "add caching"), "maestro/7-add-caching");
+        assert_eq!(task_branch_name(9, "!!!"), "maestro/9-");
+        assert_eq!(task_relative_path(4), ".maestro/worktrees/task-4");
+    }
+
+    async fn repo_with_commit() -> tempfile::TempDir {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let project = repo.path().to_str().expect("utf-8 path");
+        for args in [
+            vec!["init", "-q", "-b", "main"],
+            vec![
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "root",
+            ],
+        ] {
+            git(project, &args).await.expect("setup");
+        }
+        repo
+    }
+
+    fn store_with_task(
+        project: &str,
+        title: &str,
+        edit: impl FnOnce(&mut maestro_protocol::CreateTaskRequest),
+    ) -> (
+        tokio::sync::Mutex<rusqlite::Connection>,
+        maestro_protocol::Task,
+    ) {
+        use maestro_protocol::{BranchMode, CreateTaskRequest, WorkspaceMode};
+        let mut conn = crate::project_store::open_in_memory();
+        let mut request = CreateTaskRequest {
+            project_path: project.to_string(),
+            title: title.to_string(),
+            description: None,
+            skills: vec![],
+            labels: vec![],
+            base_branch: "main".to_string(),
+            agent_id: None,
+            priority: None,
+            auto_approve: false,
+            workspace_mode: WorkspaceMode::NewWorktree,
+            workspace_worktree_id: None,
+            workspace_branch_mode: BranchMode::Create,
+            workspace_branch: None,
+            model_override: None,
+        };
+        edit(&mut request);
+        let task = crate::task_store::create(&mut conn, &request).expect("create a task");
+        (tokio::sync::Mutex::new(conn), task)
+    }
+
+    #[tokio::test]
+    async fn a_task_gets_its_own_worktree_once() {
+        use maestro_protocol::AgentRole;
+        let repo = repo_with_commit().await;
+        let project = repo.path().to_str().expect("utf-8 path");
+        let (store, task) = store_with_task(project, "Fix Windows Path", |_| {});
+
+        let first = prepare_task_workspace(&store, &task, AgentRole::Coder)
+            .await
+            .expect("prepare");
+        let branch = format!("maestro/{}-fix-windows-path", task.id);
+        assert_eq!(
+            first.cwd,
+            format!("{project}/.maestro/worktrees/task-{}", task.id)
+        );
+        assert_eq!(first.branch.as_deref(), Some(branch.as_str()));
+        assert!(Path::new(&first.cwd).is_dir());
+        let head = git(project, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_eq!(first.start_sha.as_deref(), Some(head.trim()));
+
+        let again = prepare_task_workspace(&store, &task, AgentRole::Reviewer)
+            .await
+            .expect("reuse");
+        assert_eq!(again, first);
+        let rows = crate::task_store::worktrees::list(&*store.lock().await, project, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].task_id, Some(task.id));
+    }
+
+    #[tokio::test]
+    async fn checkout_mode_lands_on_the_existing_branch() {
+        use maestro_protocol::{AgentRole, BranchMode};
+        let repo = repo_with_commit().await;
+        let project = repo.path().to_str().expect("utf-8 path");
+        git(project, &["branch", "feature"]).await.expect("branch");
+        let (store, task) = store_with_task(project, "demo task", |r| {
+            r.workspace_branch_mode = BranchMode::Checkout;
+            r.base_branch = "feature".to_string();
+        });
+
+        let workspace = prepare_task_workspace(&store, &task, AgentRole::Coder)
+            .await
+            .expect("prepare");
+        assert_eq!(workspace.branch.as_deref(), Some("feature"));
+        let checked_out = git(&workspace.cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .unwrap();
+        assert_eq!(checked_out.trim(), "feature");
+    }
+
+    #[tokio::test]
+    async fn the_repository_and_a_refiner_create_nothing() {
+        use maestro_protocol::{AgentRole, WorkspaceMode};
+        let repo = repo_with_commit().await;
+        let project = repo.path().to_str().expect("utf-8 path");
+        let (store, repository_task) = store_with_task(project, "demo task", |r| {
+            r.workspace_mode = WorkspaceMode::RepositoryDirectory;
+        });
+        let in_repo = prepare_task_workspace(&store, &repository_task, AgentRole::Coder)
+            .await
+            .expect("prepare");
+        assert_eq!(in_repo.cwd, project);
+        assert_eq!((in_repo.branch, in_repo.worktree_id), (None, None));
+        assert!(in_repo.start_sha.is_some());
+
+        let (store, worktree_task) = store_with_task(project, "demo task", |_| {});
+        let refiner = prepare_task_workspace(&store, &worktree_task, AgentRole::Refiner)
+            .await
+            .expect("prepare");
+        assert_eq!(refiner.cwd, project);
+        assert!(!Path::new(project).join(WORKTREE_DIR).exists());
+        assert!(
+            crate::task_store::worktrees::list(&*store.lock().await, project, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn a_slug_survives_whatever_the_automation_is_called() {
