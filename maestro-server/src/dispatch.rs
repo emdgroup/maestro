@@ -1076,6 +1076,12 @@ pub(crate) async fn dispatch_message(
                     serde_json::Value::Array(blocks) => SessionCommand::PromptStructured(blocks),
                     other => SessionCommand::Prompt(other.as_str().unwrap_or("").to_string()),
                 };
+                // A user answering a blocked task's agent is what unblocks it.
+                if let (Some(store), Some(task)) =
+                    (project_store, crate::task_turn::task_of(session))
+                {
+                    crate::task_turn::window_acted(store, stdout, task, false);
+                }
                 if session.cmd_tx.send(cmd).await.is_err() {
                     send_or_return!(
                         send_response(
@@ -1109,6 +1115,16 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
+            // A window closing a task's session ends the stage it was running. Only here: a newer
+            // session superseding it goes through `cancel_session` alone.
+            if let (Some(store), Some(task)) = (
+                project_store,
+                sessions
+                    .get(&req.session_id)
+                    .and_then(crate::task_turn::task_of),
+            ) {
+                crate::task_turn::window_acted(store, stdout, task, true);
+            }
             cancel_session(
                 &req.session_id,
                 sessions,

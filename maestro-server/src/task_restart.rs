@@ -220,19 +220,8 @@ pub(crate) fn spawn(driver: Driver, planned: Vec<(String, i32, Action)>) {
                     .await
                 }
                 Action::Fail(why) => fail(&driver, &everyone, &path, task_id, why).await,
-                Action::StartNext(role) => {
-                    let driver = Driver {
-                        store: Arc::clone(&driver.store),
-                        agent_connections: Arc::clone(&driver.agent_connections),
-                        settle_tx: driver.settle_tx.clone(),
-                        stdout: Arc::clone(&driver.stdout),
-                        agents: driver.agents.clone(),
-                    };
-                    Box::pin(crate::task_turn::start_next(
-                        driver, &everyone, path, task_id, role,
-                    ))
-                    .await
-                }
+                // The drain starts hand-offs, whoever left them.
+                Action::StartNext(_) => crate::scheduler::request_drain(&path),
                 Action::Resume { row, role, unblock } => {
                     let acp_session_id = row.acp_session_id.clone();
                     let resumed = Box::pin(resume(

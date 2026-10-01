@@ -290,7 +290,7 @@ pub(crate) struct Driver {
     pub agents: Vec<crate::agent::registry::DiscoveredAgentWithSpawn>,
 }
 
-/// Resolve a task session's turn end and start what follows, off the main loop.
+/// Resolve a task session's turn end off the main loop. What follows is the drain's to start.
 pub(crate) fn spawn(
     driver: Driver,
     project_path: String,
@@ -301,7 +301,7 @@ pub(crate) fn spawn(
     // Each step boxed, so the spawned future stays small: it is built on the main thread's stack.
     tokio::spawn(async move {
         let everyone = crate::client_sink::ClientSink::everyone(&driver.stdout).await;
-        let (next, pushes) = Box::pin(resolve(
+        let (_, pushes) = Box::pin(resolve(
             &driver.store,
             &project_path,
             task_id,
@@ -312,10 +312,9 @@ pub(crate) fn spawn(
         for push in pushes {
             broadcast(&everyone, push).await;
         }
+        // The drain starts the hand-off, as it does after any write that leaves one: one driver,
+        // so a stage is never started twice.
         crate::scheduler::request_drain(&project_path);
-        if let Some(role) = next {
-            Box::pin(start_next(driver, &everyone, project_path, task_id, role)).await;
-        }
     });
 }
 
@@ -376,22 +375,84 @@ pub(crate) async fn fail_if_still_running(
     project_path: &str,
     task_id: i32,
 ) {
-    let mut pushes = Vec::new();
-    let request = transition(
+    apply(
+        store,
+        stdout,
         project_path,
         task_id,
         TaskTransition::PhaseFailed,
         TransitionGuard::AgentRunning,
         None,
-        None,
-    );
+    )
+    .await;
+}
+
+/// One guarded transition, written and pushed.
+async fn apply(
+    store: &crate::project_store::Store,
+    stdout: &crate::ClientOut,
+    project_path: &str,
+    task_id: i32,
+    event: TaskTransition,
+    guard: TransitionGuard,
+    comment: Option<NewTaskComment>,
+) {
+    let mut pushes = Vec::new();
+    let request = transition(project_path, task_id, event, guard, None, comment);
     if let Err(e) = store_write(&mut *store.lock().await, request, &mut pushes) {
-        send_diag("warn", format!("[task] cannot fail task {task_id}: {e}"));
+        send_diag("warn", format!("[task] cannot move task {task_id}: {e}"));
     }
     let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
     for push in pushes {
         broadcast(&everyone, push).await;
     }
+}
+
+/// The task a session works, with its project path canonical.
+pub(crate) fn task_of(session: &crate::sessions::ActiveSession) -> Option<(String, i32)> {
+    let binding = session.project.as_ref()?;
+    Some((
+        crate::automations::canonical_project_path(&binding.project_path),
+        binding.meta.task_id?,
+    ))
+}
+
+/// What a window did to a task's session: a prompt answers a blocked task, a close ends the stage
+/// it was running. Off the loop, which must not wait on the store.
+pub(crate) fn window_acted(
+    store: &crate::project_store::Store,
+    stdout: &crate::ClientOut,
+    task: (String, i32),
+    closed: bool,
+) {
+    let (store, stdout) = (Arc::clone(store), Arc::clone(stdout));
+    tokio::spawn(Box::pin(async move {
+        on_window_action(&store, &stdout, task, closed).await;
+    }));
+}
+
+async fn on_window_action(
+    store: &crate::project_store::Store,
+    stdout: &crate::ClientOut,
+    (project_path, task_id): (String, i32),
+    closed: bool,
+) {
+    let (event, guard, comment) = if closed {
+        (
+            TaskTransition::PhaseFailed,
+            TransitionGuard::AgentRunning,
+            Some(NewTaskComment {
+                kind: "note".to_string(),
+                author: "maestro".to_string(),
+                body: Some("The session was ended while the agent was still working.".to_string()),
+                external_ref: None,
+                phase: None,
+            }),
+        )
+    } else {
+        (TaskTransition::Unblocked, TransitionGuard::Blocked, None)
+    };
+    apply(store, stdout, &project_path, task_id, event, guard, comment).await;
 }
 
 #[cfg(test)]
@@ -584,6 +645,52 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(task.phase_status, Some(PhaseStatus::Failed));
+    }
+
+    #[tokio::test]
+    async fn a_prompt_unblocks_and_a_close_fails_with_a_note() {
+        let (_dir, project, store, id) = setup(false);
+        let out = crate::client_sink::ClientSink::detached();
+        let get = |conn: &rusqlite::Connection| {
+            crate::task_store::get(conn, &project, id).unwrap().unwrap()
+        };
+        // A prompt to a running task changes nothing.
+        on_window_action(&store, &out, (project.clone(), id), false).await;
+        assert_eq!(
+            get(&*store.lock().await).phase_status,
+            Some(PhaseStatus::Running)
+        );
+
+        store_write(
+            &mut *store.lock().await,
+            transition(
+                &project,
+                id,
+                TaskTransition::AwaitingUserInput,
+                TransitionGuard::Always,
+                None,
+                None,
+            ),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            get(&*store.lock().await).phase_status,
+            Some(PhaseStatus::Blocked)
+        );
+        on_window_action(&store, &out, (project.clone(), id), false).await;
+        assert_eq!(
+            get(&*store.lock().await).phase_status,
+            Some(PhaseStatus::Running)
+        );
+
+        on_window_action(&store, &out, (project.clone(), id), true).await;
+        let conn = store.lock().await;
+        assert_eq!(get(&conn).phase_status, Some(PhaseStatus::Failed));
+        let notes = crate::task_store::list_comments(&conn, &project, id).unwrap();
+        assert!(notes
+            .iter()
+            .any(|c| c.body.as_deref().is_some_and(|b| b.contains("was ended"))));
     }
 
     #[tokio::test]

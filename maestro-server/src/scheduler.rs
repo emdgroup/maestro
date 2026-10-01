@@ -6,11 +6,17 @@
 //! project and never overlap for one project; across projects the slot count is taken under one
 //! lock, since the limit is the machine's and two drains must not both see the same free slot.
 //!
+//! A drain also starts hand-offs: a task some write left `Waiting` on an agent (a turn ending, a
+//! review asked for, a CI fix) gets the stage it asks for, unless a session of its own is mid-turn.
+//! Every write that can leave one pushes `TasksChanged`, so this is the one place a stage is handed
+//! over, and the claim keeps a second start from doing anything. A hand-off is not held back by the
+//! limit: the session it follows usually still holds the slot it takes over.
+//!
 //! A slot is a live task session in the map, which only the main loop holds, so a drain asks the
 //! loop for it (`Snapshot`). Starts this scheduler launched that are not in the map yet are counted
 //! in `IN_FLIGHT`, so a drain cannot overshoot while its own spawns are still coming up.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Duration;
@@ -34,6 +40,17 @@ const TICK: Duration = Duration::from_secs(60);
 pub(crate) struct Snapshot {
     pub used: usize,
     pub agents: Vec<DiscoveredAgentWithSpawn>,
+    /// Tasks with a session mid-turn, as `(canonical project path, task id)`.
+    pub busy: HashSet<(String, i32)>,
+}
+
+/// The tasks whose session is mid-turn: a hand-off waits for the turn rather than cut it off.
+pub(crate) fn busy_tasks(sessions: &crate::sessions::SessionMap) -> HashSet<(String, i32)> {
+    sessions
+        .values()
+        .filter(|s| s.turn_active.load(Ordering::SeqCst))
+        .filter_map(crate::task_turn::task_of)
+        .collect()
 }
 
 pub(crate) type SnapshotRx = mpsc::Receiver<oneshot::Sender<Snapshot>>;
@@ -253,7 +270,11 @@ async fn run(
 
 fn projects_with_candidates(conn: &Connection) -> Result<Vec<String>, String> {
     let mut statement = conn
-        .prepare("SELECT DISTINCT project_path FROM tasks WHERE status = 'Queue' AND phase IS NULL")
+        .prepare(
+            "SELECT DISTINCT project_path FROM tasks
+             WHERE (status = 'Queue' AND phase IS NULL)
+                OR (phase_status = 'Waiting' AND ball = 'Agent')",
+        )
         .map_err(|e| format!("Failed to prepare query: {e}"))?;
     let paths = statement
         .query_map([], |row| row.get(0))
@@ -272,14 +293,14 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
     };
     let queued = crate::task_store::queue_candidates(conn, &request)?;
     let mut refused = refused();
+    // Any write changes the row, leaving the queue or a hand-off included.
     refused.retain(|(path, id), seen| {
         path != project_path
-            || (queued.contains(id)
-                && crate::task_store::get(conn, path, *id)
-                    .ok()
-                    .flatten()
-                    .as_ref()
-                    == Some(seen))
+            || crate::task_store::get(conn, path, *id)
+                .ok()
+                .flatten()
+                .as_ref()
+                == Some(seen)
     });
     Ok(queued
         .into_iter()
@@ -290,16 +311,50 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
         .collect())
 }
 
+/// The hand-offs a drain may start: tasks waiting on an agent, neither held nor refused, with no
+/// session of their own mid-turn.
+fn handoffs(
+    conn: &Connection,
+    project_path: &str,
+    busy: &HashSet<(String, i32)>,
+) -> Result<Vec<(i32, AgentRole)>, String> {
+    let tasks = crate::task_store::list(conn, project_path)?;
+    let refused = refused();
+    Ok(tasks
+        .iter()
+        .filter_map(|task| Some((task.id, crate::task_turn::next_stage(task)?)))
+        .filter(|(id, _)| {
+            let key = (project_path.to_string(), *id);
+            !busy.contains(&key)
+                && !refused.contains_key(&key)
+                && !crate::pipeline_settings::is_held(project_path, *id)
+        })
+        .collect())
+}
+
+/// A task refused for want of an agent is left alone until it is written to.
+fn refuse(conn: &Connection, path: &str, task_id: i32, e: &crate::task_runner::NotBegun) {
+    if let crate::task_runner::NotBegun::NoAgent(_) = e {
+        if let Ok(Some(task)) = crate::task_store::get(conn, path, task_id) {
+            refused().insert((path.to_string(), task_id), task);
+        }
+    }
+}
+
 /// Slots left once live sessions and starts still coming up are counted.
 fn free_slots(capacity: i32, used: usize, in_flight: usize) -> usize {
     (capacity.max(0) as usize).saturating_sub(used + in_flight)
 }
 
 async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>>, path: &str) {
-    let found = candidates(&*deps.store.lock().await, path);
+    let found = {
+        let conn = deps.store.lock().await;
+        candidates(&conn, path)
+            .and_then(|queued| Ok((queued, handoffs(&conn, path, &HashSet::new())?)))
+    };
     let candidates = match found {
-        Ok(candidates) if candidates.is_empty() => return,
-        Ok(candidates) => candidates,
+        Ok((queued, waiting)) if queued.is_empty() && waiting.is_empty() => return,
+        Ok((queued, _)) => queued,
         Err(e) => {
             send_diag(
                 "warn",
@@ -314,7 +369,12 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
     if snapshot_tx.send(reply_tx).await.is_err() {
         return;
     }
-    let Ok(Snapshot { used, mut agents }) = reply_rx.await else {
+    let Ok(Snapshot {
+        used,
+        mut agents,
+        busy,
+    }) = reply_rx.await
+    else {
         return;
     };
     crate::agent::registry::apply_custom_agents(&mut agents);
@@ -323,6 +383,29 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
     let mut claimed = Vec::new();
     {
         let mut conn = deps.store.lock().await;
+        // Read again under the lock that claims them, now the busy sessions are known.
+        for (task_id, role) in handoffs(&conn, path, &busy).unwrap_or_default() {
+            let request = StartTaskRequest {
+                project_path: path.to_string(),
+                task_id,
+                role,
+                feedback: None,
+                unattended: true,
+                respect_capacity: false,
+                agent_id: None,
+            };
+            match crate::task_runner::begin(&mut conn, &request, used, &agents, &mut pushes) {
+                Ok(crate::task_runner::Begun::Claimed(task)) => {
+                    IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+                    claimed.push(task);
+                }
+                Ok(crate::task_runner::Begun::Deferred) => {}
+                Err(e) => {
+                    refuse(&conn, path, task_id, &e);
+                    send_diag("info", format!("[queue] hand-off of task {task_id}: {e}"));
+                }
+            }
+        }
         let capacity = match crate::pipeline_settings::capacity_status(&conn) {
             Ok(status) => status,
             Err(e) => {
@@ -353,11 +436,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
                 }
                 Ok(crate::task_runner::Begun::Deferred) => {}
                 Err(e) => {
-                    if let crate::task_runner::NotBegun::NoAgent(_) = e {
-                        if let Ok(Some(task)) = crate::task_store::get(&conn, path, task_id) {
-                            refused().insert((path.to_string(), task_id), task);
-                        }
-                    }
+                    refuse(&conn, path, task_id, &e);
                     send_diag("info", format!("[queue] task {task_id} not started: {e}"));
                 }
             }
@@ -468,6 +547,45 @@ mod tests {
             projects_with_candidates(&conn).unwrap(),
             vec![project.clone()]
         );
+    }
+
+    #[test]
+    fn handoffs_skip_busy_held_and_refused_tasks() {
+        let project = canonical_project_path("/srv/handoff-test");
+        let mut conn = crate::project_store::open_in_memory();
+        let id = queued(&mut conn, &project, "rework", false);
+        conn.execute(
+            "UPDATE tasks SET status = 'InProgress', phase = 'Rework', phase_status = 'Waiting',
+                ball = 'Agent' WHERE project_path = ?1 AND id = ?2",
+            rusqlite::params![project, id],
+        )
+        .unwrap();
+        let none = HashSet::new();
+        assert_eq!(
+            handoffs(&conn, &project, &none).unwrap(),
+            vec![(id, AgentRole::Coder)]
+        );
+        assert_eq!(
+            projects_with_candidates(&conn).unwrap(),
+            vec![project.clone()]
+        );
+
+        let busy = HashSet::from([(project.clone(), id)]);
+        assert!(handoffs(&conn, &project, &busy).unwrap().is_empty());
+
+        let seen = crate::task_store::get(&conn, &project, id)
+            .unwrap()
+            .unwrap();
+        refused().insert((project.clone(), id), seen);
+        assert!(handoffs(&conn, &project, &none).unwrap().is_empty());
+        // A write tries it again: the queue's read drops the stale refusal.
+        conn.execute(
+            "UPDATE tasks SET agent_id = 'other' WHERE project_path = ?1 AND id = ?2",
+            rusqlite::params![project, id],
+        )
+        .unwrap();
+        candidates(&conn, &project).unwrap();
+        assert_eq!(handoffs(&conn, &project, &none).unwrap().len(), 1);
     }
 
     #[test]

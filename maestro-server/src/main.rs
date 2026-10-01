@@ -704,6 +704,7 @@ async fn run_server(
                 if let Some(reply) = asked {
                     let _ = reply.send(scheduler::Snapshot {
                         used: pipeline_settings::used_slots(&sessions),
+                        busy: scheduler::busy_tasks(&sessions),
                         agents: agents_with_spawn.clone(),
                     });
                 }
