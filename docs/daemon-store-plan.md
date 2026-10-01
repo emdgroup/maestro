@@ -349,13 +349,14 @@ A task id is embedded in things that outlive the row: the `task-<id>` worktree f
 
 Decisions:
 
-| Topic                     | Decision                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| When                      | Automatically, while the project opens and before its sessions are attached, with a short progress line. Nothing to click. A failure opens the project with the error and tries again on the next open                                                                                                                     |
-| What                      | Tasks and their threads, worktrees, reviews and their comments, the project's prompts with their stars, and sessions: `state.json`'s restorable sessions become dormant rows, named from `session_aliases`                                                                                                                 |
-| All or nothing            | One request, one transaction in the daemon. Ids are kept, and each counter starts above the highest imported id                                                                                                                                                                                                            |
-| Another machine got there | The daemon refuses an import for a project it already holds tasks, worktrees or prompts for, and the app marks its rows imported without a word. Nothing of this app's is written, sessions included, since their task ids are this app's. On a successful import, a session row the daemon already holds is kept as it is |
-| Marking                   | The app stamps its own `projects` row, so it never asks again. The daemon needs no marker: holding rows is the marker                                                                                                                                                                                                      |
+| Topic                     | Decision                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| When                      | Automatically, while the project opens and before its sessions are attached, with a short progress line. Nothing to click. A failed import does not open the project: the picker shows the cause with a Retry button that runs the open again. Two opens of one project in this app import one at a time, so the second finds the stamp    |
+| What                      | Tasks and their threads, worktrees, reviews and their comments, the project's prompts with their stars, and sessions: `state.json`'s restorable sessions become dormant rows, named from `session_aliases`                                                                                                                                 |
+| All or nothing            | One transaction in the daemon, however many requests carry it. Ids are kept, and each counter starts above the highest imported id                                                                                                                                                                                                         |
+| Chunks                    | The rows travel in chunks of about 4 MB, staged by the daemon and committed together in one transaction. Each counter's floor also comes from the app's `sqlite_sequence`, so an id the app minted and then deleted is not handed out again. Past sessions arrive closed, so Session History lists them and nothing loads them             |
+| Another machine got there | The daemon keeps a per-project import marker and refuses an import only when it is set; the app then marks its rows imported without a word. With no marker, rows the daemon wrote itself before the import are merged, renumbered above the imported ids. On a successful import, a session row the daemon already holds is kept as it is |
+| Marking                   | The app stamps its own `projects` row, so it never asks again. The daemon sets its own marker in the import's transaction                                                                                                                                                                                                                  |
 
 Tasks:
 
@@ -363,7 +364,8 @@ Tasks:
       counters above the imported ids
 - [x] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
       project, send the import before attaching sessions, stamp the project
-- [ ] I3 Review, docs, a live run against a copy of a released app's database
+- [x] I3 Review and docs
+- [ ] I3 A live run against a copy of a released app's database
 
 ### Phase 5: the pipeline runs with no window
 

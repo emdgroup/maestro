@@ -597,6 +597,13 @@ the canonical path from the app's `project_id`.
 With no window attached the daemon still answers the MCP task tools, so an agent can read and write
 its board. The pipeline that moves a task from stage to stage is still driven from the app.
 
+A board from before this move reaches the daemon once, from `project/import.rs`, while the project
+opens and before its sessions are attached. The rows go in chunks of about 4 MB that the daemon
+commits in one transaction, with counters kept above the app's ids and its `sqlite_sequence`. The
+daemon keeps a per-project import marker and refuses a second import only when it is set; rows it
+wrote itself before the import are merged above the imported ids. A failed import keeps the project
+closed and the picker offers Retry, since a board shown without its rows would look empty.
+
 ### Automations live in the daemon
 
 An automation is a prompt, an agent and a workspace, run on a schedule or on demand. **None of it
