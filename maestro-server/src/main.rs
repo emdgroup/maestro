@@ -29,6 +29,7 @@ mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
 mod project_locks;
+mod profiles;
 mod project_store;
 mod prompt_store;
 mod session;
