@@ -228,7 +228,7 @@ export const KanbanView: React.FC = () => {
 
         <QueueCapacityBadge projectId={projectId} />
 
-        <AutoModeToggle />
+        <AutoModeToggle projectId={projectId} />
 
         <Tooltip>
           <TooltipTrigger

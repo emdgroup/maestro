@@ -1672,6 +1672,10 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "collection": "project", "project_id": project_id }),
             );
         }
+        // The machine's capacity or a project's auto mode: either can let the queue move.
+        MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(_)) => {
+            crate::core::emit_or_log(app_handle, "settings-changed", &());
+        }
         // Named by project as well, since task ids are per project.
         MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(task)) => {
             let project_id = project_id_for_path(app_state, connection_key, &task.project_path);

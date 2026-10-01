@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri-utils";
 import { createErrorToastHandler } from "@/lib/error-utils";
 import { toast } from "sonner";
@@ -24,6 +26,8 @@ const settingsQueryKeys = {
   logDirectory: () => [...settingsQueryKeys.base, "logDirectory"] as const,
   connectionCapacity: (connection: ConnectionKey) =>
     [...settingsQueryKeys.base, "connectionCapacity", connectionKeyStr(connection)] as const,
+  autoMode: (projectId: number | null) =>
+    [...settingsQueryKeys.base, "autoMode", projectId] as const,
 };
 
 /**
@@ -94,6 +98,36 @@ export function useSaveConnectionCapacity() {
       });
     },
     onError: createErrorToastHandler("Failed to save the agent limit"),
+  });
+}
+
+/**
+ * Whether the project's queued tasks start on their own. Kept by the project's daemon and shared by
+ * every window on it, so it is re-read on `settings-changed`, which the daemon's push becomes.
+ */
+export function useAutoMode(projectId: number | null) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (projectId === null) return;
+    const unlisten = listen("settings-changed", () => {
+      void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.autoMode(projectId) });
+    });
+    return () => void unlisten.then((fn) => fn());
+  }, [projectId, queryClient]);
+
+  return useQuery({
+    queryKey: settingsQueryKeys.autoMode(projectId),
+    queryFn: () => api.getAutoMode(projectId!),
+    enabled: projectId !== null,
+    staleTime: Infinity,
+  });
+}
+
+export function useSetAutoMode() {
+  return useMutation({
+    mutationFn: ({ projectId, enabled }: { projectId: number; enabled: boolean }) =>
+      api.setAutoMode(projectId, enabled),
+    onError: createErrorToastHandler("Failed to switch auto mode"),
   });
 }
 

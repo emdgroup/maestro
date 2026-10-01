@@ -433,8 +433,8 @@ Tasks:
 
 - [x] D1 Protocol: capacity and auto mode get/set, holds, a start-task request for the gates and
       the Execute button, a push telling windows the daemon started a task session; version 10
-- [ ] D2 Daemon capacity: per-machine setting, local memory probe, slots from the session map
-- [ ] D3 Daemon holds, the app's hold commands as round trips
+- [x] D2 Daemon capacity: per-machine setting, local memory probe, slots from the session map
+- [x] D3 Daemon holds, the app's hold commands as round trips
 - [ ] D4 Daemon scheduler: drain on task writes, session close, turn end, hold release and a tick
 - [x] D5 Profiles in the daemon: `.maestro/profiles.json`, `apply_capabilities`, automatic mode
 - [x] D6 Prompt composition in Rust, with the TypeScript tests ported

@@ -357,7 +357,7 @@ async saveSettings(settings: AppSettings) : Promise<Result<null, string>> {
 }
 },
 /**
- * How many agents may run at once on one connection.
+ * How many agents may run at once on one connection, as its daemon stores it.
  */
 async getConnectionCapacity(connection: ConnectionKey) : Promise<Result<ConnectionCapacitySettings, string>> {
     try {
@@ -367,9 +367,35 @@ async getConnectionCapacity(connection: ConnectionKey) : Promise<Result<Connecti
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The daemon answers with `PipelineSettingsChanged`, which every window turns into
+ * `settings-changed`, so raising a limit can start work at once.
+ */
 async saveConnectionCapacity(connection: ConnectionKey, settings: ConnectionCapacitySettings) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_connection_capacity", { connection, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether the project's queued tasks start on their own. The project's, kept by its daemon.
+ */
+async getAutoMode(projectId: number) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_auto_mode", { projectId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Answered by `PipelineSettingsChanged` like the capacity, so the queue drains at once.
+ */
+async setAutoMode(projectId: number, enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_auto_mode", { projectId, enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3565,8 +3591,7 @@ export type ConcurrencyMode =
  * 
  * The default, because the limit exists to stop auto-mode starting agents a host has no
  * memory for — and a fixed number chosen before anyone knew what the machine looks like
- * cannot do that. A host that cannot be measured falls back to the fixed number; see
- * `resolve_capacity`.
+ * cannot do that. A host that cannot be measured falls back to the fixed number.
  */
 "Auto"
 /**

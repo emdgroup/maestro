@@ -28,6 +28,7 @@ mod mcp_config;
 mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
+mod pipeline_settings;
 mod project_locks;
 mod profiles;
 mod project_store;

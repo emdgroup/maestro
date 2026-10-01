@@ -1577,16 +1577,41 @@ pub(crate) async fn dispatch_message(
             }
         }
 
-        // Phase 5 wire types, answered by D2-D8 as they land.
         MaestroRpcMessage::Request(
-            ServerRequest::GetCapacity
+            request @ (ServerRequest::GetCapacity
             | ServerRequest::SetCapacity(_)
             | ServerRequest::GetAutoMode(_)
-            | ServerRequest::SetAutoMode(_)
-            | ServerRequest::HoldTask(_)
-            | ServerRequest::ReleaseTaskHold(_)
-            | ServerRequest::StartTask(_),
+            | ServerRequest::SetAutoMode(_)),
         ) => {
+            let answered = match project_store {
+                Some(store) => crate::pipeline_settings::answer(&*store.lock().await, request),
+                None => Err(crate::project_store::UNAVAILABLE.to_string()),
+            };
+            match answered {
+                Ok((reply, pushes)) => {
+                    send_or_return!(
+                        send_response(stdout, &MaestroRpcMessage::Response(reply)).await
+                    );
+                    for push in pushes {
+                        crate::helpers::broadcast(stdout, push).await;
+                    }
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
+        }
+
+        MaestroRpcMessage::Request(
+            request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)),
+        ) => {
+            let reply = match crate::pipeline_settings::answer_hold(request) {
+                Ok(reply) => MaestroRpcMessage::Response(reply),
+                Err(e) => error_response(e),
+            };
+            send_or_return!(send_response(stdout, &reply).await);
+        }
+
+        // Phase 5 wire types, answered by D4-D8 as they land.
+        MaestroRpcMessage::Request(ServerRequest::StartTask(_)) => {
             send_or_return!(
                 send_response(stdout, &error_response("not yet supported".to_string())).await
             );

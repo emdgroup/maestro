@@ -361,11 +361,12 @@ pub async fn release_task_execution_claim(
 /// started a moment early.
 #[tauri::command]
 #[specta::specta]
-pub fn hold_task(
+pub async fn hold_task(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     task_id: i32,
 ) -> Result<(), String> {
+    // ponytail: the app's drain still reads its own holds until D14 removes it with the drain.
     app_state.task_holds.hold(
         crate::acp::TaskKey {
             project_id,
@@ -373,7 +374,19 @@ pub fn hold_task(
         },
         crate::task::holds::HOLD_TTL,
     );
-    Ok(())
+    crate::acp::connection_server::query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::HoldTask(maestro_protocol::HoldTaskRequest {
+                project_path,
+                task_id,
+                ttl_ms: None,
+            })
+        },
+        reply!(ServerResponse::HoldTaskOk => ()),
+    )
+    .await
 }
 
 /// Release a hold, and tell the scheduler to look again.
@@ -385,7 +398,7 @@ pub fn hold_task(
 /// would be a cost paid on every drag.
 #[tauri::command]
 #[specta::specta]
-pub fn release_task_hold(
+pub async fn release_task_hold(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
     task_id: i32,
@@ -394,6 +407,18 @@ pub fn release_task_hold(
         project_id,
         task_id,
     });
+    crate::acp::connection_server::query_project_store(
+        &app_state,
+        project_id,
+        |project_path| {
+            ServerRequest::ReleaseTaskHold(maestro_protocol::TaskRef {
+                project_path,
+                task_id,
+            })
+        },
+        reply!(ServerResponse::ReleaseTaskHoldOk => ()),
+    )
+    .await?;
     app_state
         .app_handle
         .emit(

@@ -25,60 +25,26 @@ async fn occupied_slots(app_state: &Arc<AppState>, connection: ConnectionKey) ->
         .count() as i32
 }
 
-/// The connection a project runs on, and the limit in force there.
-///
-/// The host is measured only when the measurement is used. A `Hard` limit discards `available_mb` —
-/// `resolve_capacity` returns the configured number whatever the third argument is — while measuring
-/// means an exec over SSH for a remote host, and the badge asks this on every board event.
-///
-/// Reading the project row is unavoidable now that the limit is per connection, but it is a local
-/// query; the round trip this ordering avoids is the memory probe, not the lookup.
+/// The connection a project runs on, and the limit in force there, as its daemon measures it.
 async fn capacity_for_project(
     app_state: &Arc<AppState>,
     project_id: i32,
 ) -> Result<(ConnectionKey, crate::execution::capacity::HostCapacity), String> {
-    use crate::execution::capacity::{available_memory_mb, resolve_capacity, ConcurrencyMode};
-
-    let (connection, settings) = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        let connection = conn
-            .query_row(
-                "SELECT connection_id, wsl_connection_id, docker_connection_id FROM projects WHERE id = ?",
-                [project_id],
-                |row| {
-                    Ok(ConnectionKey::from_all_ids(row.get(0)?, row.get(1)?, row.get(2)?))
-                },
-            )
-            .map_err(|e| format!("Project {} not found: {}", project_id, e))?;
-        let settings = crate::core::settings::load_connection_capacity(&conn, connection)?;
-        (connection, settings)
-    };
-
-    if settings.concurrency_mode == ConcurrencyMode::Hard {
-        return Ok((
-            connection,
-            resolve_capacity(
-                settings.concurrency_mode,
-                settings.max_concurrent_agents,
-                None,
-            ),
-        ));
-    }
-
-    let available_mb = match crate::core::get_project_with_git_conn(app_state, project_id).await {
-        Ok((_, git_conn)) => available_memory_mb(&git_conn).await,
-        Err(_) => None,
-    };
+    let (connection, _) = crate::project::automations::target(app_state, project_id).await?;
+    let status = crate::acp::connection_server::query_project_store(
+        app_state,
+        project_id,
+        |_| ServerRequest::GetCapacity,
+        reply!(ServerResponse::GetCapacityOk(status) => status),
+    )
+    .await?;
     Ok((
         connection,
-        resolve_capacity(
-            settings.concurrency_mode,
-            settings.max_concurrent_agents,
-            available_mb,
-        ),
+        crate::execution::capacity::HostCapacity {
+            slots: status.slots,
+            mode: status.settings.concurrency_mode.into(),
+            reason: status.reason,
+        },
     ))
 }
 
@@ -207,18 +173,14 @@ pub async fn drain_ready_queue(
 ) -> Result<Vec<i32>, String> {
     let _ = project_path; // reserved for future use
 
-    // Auto-mode is still an application-wide switch: it says whether the scheduler may start
-    // anything at all, which is about the user's way of working rather than about any one host.
-    // Load it in a block so the sync MutexGuard drops before the async lock below.
-    let auto_mode = {
-        let conn = app_state
-            .db
-            .lock()
-            .map_err(|e| format!("Lock failed: {}", e))?;
-        crate::core::settings::load_settings(&conn)
-            .map_err(|e| format!("Failed to load settings: {}", e))?
-            .auto_mode
-    };
+    // Auto mode is the project's, kept by its daemon.
+    let auto_mode = crate::acp::connection_server::query_project_store(
+        &app_state,
+        project_id,
+        |project_path| ServerRequest::GetAutoMode(maestro_protocol::ProjectRef { project_path }),
+        reply!(ServerResponse::AutoModeOk(setting) => setting.enabled),
+    )
+    .await?;
 
     // Candidates before capacity, because measuring capacity means probing the host — an exec over
     // SSH for a remote one — and a drain fires on every board event. Asking a remote box how much

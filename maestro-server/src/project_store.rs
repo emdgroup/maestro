@@ -70,6 +70,7 @@ const MIGRATIONS: &[&str] = &[
     crate::task_store::worktrees::V3_WORKTREES_REVIEWS,
     crate::prompt_store::V4_PROMPTS,
     crate::task_store::project_import::V5_PROJECT_IMPORTS,
+    crate::pipeline_settings::V6_PIPELINE_SETTINGS,
 ];
 
 /// Open, or create, the daemon's project database.
