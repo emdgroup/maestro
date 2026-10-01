@@ -260,7 +260,7 @@ pub struct TaskWorkspace {
 }
 
 /// A row's path made absolute: rows hold paths relative to the project.
-fn absolute(project_path: &str, path: &str) -> String {
+pub(crate) fn absolute(project_path: &str, path: &str) -> String {
     if Path::new(path).is_absolute() {
         path.to_string()
     } else {

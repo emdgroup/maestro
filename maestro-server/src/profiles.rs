@@ -80,6 +80,7 @@ impl ProfilesDocument {
 #[serde(default)]
 struct ProjectSettings {
     default_agent: Option<String>,
+    remote_name: Option<String>,
 }
 
 fn role_key(role: AgentRole) -> &'static str {
@@ -110,6 +111,13 @@ pub fn read_profiles(project_path: &str) -> ProfilesDocument {
 
 pub fn default_agent(project_path: &str) -> Option<String> {
     read_maestro_json::<ProjectSettings>(project_path, "settings.json").default_agent
+}
+
+/// The git remote the project's branches live on, when the user chose one.
+pub fn remote_name(project_path: &str) -> Option<String> {
+    read_maestro_json::<ProjectSettings>(project_path, "settings.json")
+        .remote_name
+        .filter(|name| !name.trim().is_empty())
 }
 
 /// Whether the project defines a profile for `role`, which is how a project opts into it.

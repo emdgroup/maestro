@@ -170,9 +170,6 @@ fn fail_task(
     let Some(task_id) = binding.meta.task_id else {
         return;
     };
-    if !crate::task_turn::DAEMON_DRIVES_TASKS {
-        return;
-    }
     let (store, stdout, project_path) = (
         Arc::clone(store),
         Arc::clone(stdout),

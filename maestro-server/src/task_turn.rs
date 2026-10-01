@@ -16,11 +16,6 @@ use crate::helpers::{broadcast, send_diag};
 use crate::turn::{classify_turn, classify_verdict, ReviewVerdict, TurnFacts, TurnOutcome};
 use crate::worktree::git;
 
-/// The daemon resolves a task's turn ends and starts its next stage. The app still runs its own
-/// resolver until D14 removes it; until then both drive, and every write here is guarded, so the
-/// second of two identical writes changes nothing.
-pub(crate) const DAEMON_DRIVES_TASKS: bool = true;
-
 /// What a turn ending asks of the task, git already consulted.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Resolution {
@@ -96,7 +91,12 @@ fn task_worktree(
         .ok()?
         .into_iter()
         .next()
-        .map(|w| (format!("{project_path}/{}", w.path), w.branch_name))
+        .map(|w| {
+            (
+                crate::worktree::absolute(project_path, &w.path),
+                w.branch_name,
+            )
+        })
 }
 
 /// Whether the agent changed anything since `execution_start_sha`, tracked or untracked. `None`
@@ -126,15 +126,25 @@ async fn has_changes(project_path: &str, task: &Task, worktree: Option<&str>) ->
     }
 }
 
-/// Push `branch` from `dir` to the remote it tracks, `origin` when it tracks none.
-pub(crate) async fn push_branch(dir: &str, branch: &str) -> Result<(), String> {
-    let key = format!("branch.{branch}.remote");
-    let remote = git(dir, &["config", "--get", &key])
+/// Push `branch` from `dir` to the project's configured remote, else the one it tracks, else
+/// `origin`.
+pub(crate) async fn push_branch(
+    dir: &str,
+    branch: &str,
+    configured: Option<String>,
+) -> Result<(), String> {
+    let remote = match configured {
+        Some(remote) => remote,
+        None => git(
+            dir,
+            &["config", "--get", &format!("branch.{branch}.remote")],
+        )
         .await
         .ok()
         .map(|r| r.trim().to_string())
         .filter(|r| !r.is_empty())
-        .unwrap_or_else(|| "origin".to_string());
+        .unwrap_or_else(|| "origin".to_string()),
+    };
     git(dir, &["push", "--set-upstream", &remote, branch])
         .await
         .map(|_| ())
@@ -212,7 +222,9 @@ pub(crate) async fn resolve(
         Resolution::Ignore => return (None, pushes),
         Resolution::PushCiFix => {
             let pushed = match &worktree {
-                Some((dir, branch)) => push_branch(dir, branch).await,
+                Some((dir, branch)) => {
+                    push_branch(dir, branch, crate::profiles::remote_name(project_path)).await
+                }
                 None => Err(format!("no worktree for task {task_id}")),
             };
             match pushed {
@@ -574,7 +586,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_ci_fix_is_pushed_to_the_branch_remote() {
+    async fn a_ci_fix_is_pushed_to_the_configured_remote_else_origin() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_string_lossy().to_string();
         let remote = format!("{root}/remote.git");
@@ -589,8 +601,17 @@ mod tests {
         ] {
             git(&repo, args).await.unwrap();
         }
-        push_branch(&repo, "fix").await.unwrap();
+        push_branch(&repo, "fix", None).await.unwrap();
         let heads = git(&remote, &["branch", "--list", "fix"]).await.unwrap();
+        assert!(heads.contains("fix"));
+
+        let fork = format!("{root}/fork.git");
+        git(&root, &["init", "--bare", &fork]).await.unwrap();
+        git(&repo, &["remote", "add", "fork", &fork]).await.unwrap();
+        push_branch(&repo, "fix", Some("fork".to_string()))
+            .await
+            .unwrap();
+        let heads = git(&fork, &["branch", "--list", "fix"]).await.unwrap();
         assert!(heads.contains("fix"));
     }
 }

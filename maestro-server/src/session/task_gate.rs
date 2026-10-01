@@ -105,15 +105,11 @@ pub(crate) async fn bind(
     }
 }
 
-/// The task a session works and the role it was bound with, `None` when it works none or the
-/// daemon does not drive tasks.
+/// The task a session works and the role it was bound with, `None` when it works none.
 pub(crate) async fn task_of(
     state: &SharedSessionState,
     session_id: &str,
 ) -> Option<((String, i32), Option<AgentRole>)> {
-    if !crate::task_turn::DAEMON_DRIVES_TASKS {
-        return None;
-    }
     if let Some((path, id, role)) = state.task.get() {
         return Some(((path.clone(), *id), Some(*role)));
     }

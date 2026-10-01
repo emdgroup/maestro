@@ -533,19 +533,18 @@ async fn run_server(
     // Before the first request, because a project opening on this connection loads its sessions
     // before it lists any agents, and a custom agent missing here would make those loads final.
     agent::registry::apply_custom_agents(&mut agents_with_spawn);
-    // The queue drains itself once the daemon drives tasks. Its slot count is asked of this loop.
-    let mut scheduler_rx = match (task_turn::DAEMON_DRIVES_TASKS, project_store.as_ref()) {
-        (true, Some(store)) => Some(scheduler::start(scheduler::Deps {
+    // The queue drains itself. Its slot count is asked of this loop.
+    let mut scheduler_rx = project_store.as_ref().map(|store| {
+        scheduler::start(scheduler::Deps {
             store: Arc::clone(store),
             agent_connections: Arc::clone(&agent_connections),
             settle_tx: settle_tx.clone(),
             stdout: Arc::clone(&stdout),
-        })),
-        _ => None,
-    };
+        })
+    });
     // Once, with the map empty: the tasks the last daemon left in flight are picked up off the loop,
     // their reloaded sessions arriving through `settle_rx` like any task session.
-    if let (true, Some(store)) = (task_turn::DAEMON_DRIVES_TASKS, project_store.as_ref()) {
+    if let Some(store) = project_store.as_ref() {
         let planned = task_restart::plan(&*store.lock().await);
         task_restart::spawn(
             task_turn::Driver {
@@ -822,11 +821,9 @@ async fn run_server(
                     .get(&ended.session_id)
                     .and_then(|s| s.project.as_ref())
                     .and_then(|b| Some((b.project_path.clone(), b.meta.task_id?)));
-                if let (true, Some(store), Some((project_path, task_id))) = (
-                    task_turn::DAEMON_DRIVES_TASKS,
-                    project_store.as_ref(),
-                    task_binding,
-                ) {
+                if let (Some(store), Some((project_path, task_id))) =
+                    (project_store.as_ref(), task_binding)
+                {
                     task_turn::spawn(
                         task_turn::Driver {
                             store: Arc::clone(store),
