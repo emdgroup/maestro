@@ -457,6 +457,7 @@ async fn run_server(
         tokio::sync::mpsc::channel::<(String, ActiveSession)>(8);
     // Requests answered off the loop hand back what touches state only the loop owns.
     let (settle_tx, mut settle_rx) = tokio::sync::mpsc::unbounded_channel::<dispatch::Settle>();
+    let _ = dispatch::SETTLE_TX.set(settle_tx.clone());
 
     let (diag_tx, diag_rx) = tokio::sync::mpsc::unbounded_channel::<DiagnosticPayload>();
     let _ = DIAG_TX.set(diag_tx);

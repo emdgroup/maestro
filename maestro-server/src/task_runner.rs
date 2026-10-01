@@ -434,6 +434,15 @@ async fn run(
             .is_some(),
     };
 
+    // Before the prompt, which `prepare` sends: the session's row is only written once it is
+    // adopted, and the agent may ask a question before then.
+    crate::session::task_gate::bind(
+        &connection.router,
+        &result.acp_session_id,
+        &project_path,
+        task.id,
+    )
+    .await;
     let prepared = prepare(
         launcher,
         everyone,

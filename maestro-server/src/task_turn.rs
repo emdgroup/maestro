@@ -280,7 +280,7 @@ pub(crate) struct Driver {
 
 /// Resolve a task session's turn end and start what follows, off the main loop.
 pub(crate) fn spawn(
-    mut driver: Driver,
+    driver: Driver,
     project_path: String,
     task_id: i32,
     stop_reason: String,
@@ -293,49 +293,59 @@ pub(crate) fn spawn(
         for push in pushes {
             broadcast(&everyone, push).await;
         }
-        let Some(role) = next else { return };
-
-        crate::agent::registry::apply_custom_agents(&mut driver.agents);
-        let request = StartTaskRequest {
-            project_path,
-            task_id,
-            role,
-            feedback: None,
-            unattended: true,
-            // The session handing over is superseded by this one, so the slot is the same.
-            respect_capacity: false,
-        };
-        let mut pushes = Vec::new();
-        let begun = crate::task_runner::begin(
-            &mut *driver.store.lock().await,
-            &request,
-            0,
-            &driver.agents,
-            &mut pushes,
-        );
-        for push in pushes {
-            broadcast(&everyone, push).await;
-        }
-        match begun {
-            Ok(crate::task_runner::Begun::Claimed(claimed)) => {
-                // Nobody asked, so the one reply goes to a client that does not exist.
-                let reply =
-                    crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await;
-                crate::task_runner::launch(
-                    crate::task_runner::Launcher {
-                        store: Arc::clone(&driver.store),
-                        agent_connections: driver.agent_connections,
-                        settle_tx: driver.settle_tx,
-                        reply,
-                    },
-                    claimed,
-                )
-                .await;
-            }
-            Ok(crate::task_runner::Begun::Deferred) => {}
-            Err(e) => send_diag("warn", format!("[task] next stage of task {task_id}: {e}")),
+        if let Some(role) = next {
+            start_next(driver, &everyone, project_path, task_id, role).await;
         }
     });
+}
+
+/// Start the stage a task waiting on an agent asks for.
+pub(crate) async fn start_next(
+    mut driver: Driver,
+    everyone: &crate::ClientOut,
+    project_path: String,
+    task_id: i32,
+    role: AgentRole,
+) {
+    crate::agent::registry::apply_custom_agents(&mut driver.agents);
+    let request = StartTaskRequest {
+        project_path,
+        task_id,
+        role,
+        feedback: None,
+        unattended: true,
+        // The session handing over is superseded by this one, so the slot is the same.
+        respect_capacity: false,
+    };
+    let mut pushes = Vec::new();
+    let begun = crate::task_runner::begin(
+        &mut *driver.store.lock().await,
+        &request,
+        0,
+        &driver.agents,
+        &mut pushes,
+    );
+    for push in pushes {
+        broadcast(everyone, push).await;
+    }
+    match begun {
+        Ok(crate::task_runner::Begun::Claimed(claimed)) => {
+            // Nobody asked, so the one reply goes to a client that does not exist.
+            let reply = crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await;
+            crate::task_runner::launch(
+                crate::task_runner::Launcher {
+                    store: Arc::clone(&driver.store),
+                    agent_connections: driver.agent_connections,
+                    settle_tx: driver.settle_tx,
+                    reply,
+                },
+                claimed,
+            )
+            .await;
+        }
+        Ok(crate::task_runner::Begun::Deferred) => {}
+        Err(e) => send_diag("warn", format!("[task] next stage of task {task_id}: {e}")),
+    }
 }
 
 /// A task session died with its agent: fail the task if an agent was still working it.

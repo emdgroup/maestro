@@ -236,9 +236,19 @@ pub(crate) enum Settle {
     },
     /// A task's session up and prompted, to go into the map.
     TaskStarted(Box<crate::task_runner::Started>),
+    /// A read-only stage delivered its plan through a permission request: close its session, and
+    /// start the stage that follows, if the task asks for one.
+    ArtifactTaken {
+        session_id: String,
+        next: Option<(String, i32, maestro_protocol::AgentRole)>,
+        stdout: crate::ClientOut,
+    },
 }
 
 pub(crate) type SettleTx = tokio::sync::mpsc::UnboundedSender<Settle>;
+
+/// The loop's settle channel, for code that runs inside an agent connection and is handed none.
+pub(crate) static SETTLE_TX: std::sync::OnceLock<SettleTx> = std::sync::OnceLock::new();
 
 /// Finish a request whose slow part ran off the loop, and answer it.
 #[allow(clippy::too_many_arguments)]
@@ -262,6 +272,39 @@ pub(crate) async fn settle(
                 pending_host_tools,
             )
             .await;
+            return;
+        }
+        Settle::ArtifactTaken {
+            session_id,
+            next,
+            stdout,
+        } => {
+            let everyone = crate::client_sink::ClientSink::everyone(&stdout).await;
+            cancel_session(
+                &session_id,
+                sessions,
+                pending_host_tools,
+                agent_connections,
+                project_store,
+                automation_store,
+                &everyone,
+            )
+            .await;
+            if let (Some((project_path, task_id, role)), Some(store), Some(settle_tx)) =
+                (next, project_store, SETTLE_TX.get())
+            {
+                let driver = crate::task_turn::Driver {
+                    store: Arc::clone(store),
+                    agent_connections: Arc::clone(agent_connections),
+                    settle_tx: settle_tx.clone(),
+                    stdout,
+                    agents: agents_with_spawn.clone(),
+                };
+                tokio::spawn(async move {
+                    crate::task_turn::start_next(driver, &everyone, project_path, task_id, role)
+                        .await;
+                });
+            }
             return;
         }
         Settle::Detected(mut response, stdout) => {

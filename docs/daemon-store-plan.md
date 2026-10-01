@@ -444,7 +444,7 @@ Tasks:
 - [x] D10 Daemon stream tracking: completion marker, closing message, user interrupt
 - [x] D11 Daemon turn end: classify, diff gate, reviewer, `EndTaskTurn`, the next stage, the CI fix
       push
-- [ ] D12 Daemon permission and elicitation handling for task sessions: auto-approve, plan, blocked
+- [x] D12 Daemon permission and elicitation handling for task sessions: auto-approve, plan, blocked
 - [ ] D13 Daemon startup pass
 - [ ] D14 Remove the app's drivers; Execute and the gates ask the daemon
 - [ ] D15 Docs, review, a live run with every window closed

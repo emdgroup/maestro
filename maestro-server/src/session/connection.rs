@@ -359,6 +359,7 @@ pub(crate) async fn create_session_on_connection(
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
         pending_elicitations: Arc::clone(&pending_elicitations),
+        task: Default::default(),
     });
 
     conn.router
@@ -460,6 +461,7 @@ pub(crate) async fn load_session_on_connection(
     let session_state = Arc::new(SharedSessionState {
         pending_permissions: Arc::clone(&pending_permissions),
         pending_elicitations: Arc::clone(&pending_elicitations),
+        task: Default::default(),
     });
 
     // Register the route before sending the request so that history notifications
