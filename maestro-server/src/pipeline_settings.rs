@@ -165,12 +165,10 @@ pub fn capacity_status(conn: &Connection) -> Result<CapacityStatus, String> {
 
 /// Slots taken: live sessions bound to a task. A task at a human gate whose session has gone
 /// takes none.
-#[allow(dead_code)] // D4's scheduler is the caller.
 pub fn used_slots(sessions: &SessionMap) -> usize {
     count_task_sessions(sessions.values().map(|s| s.project.as_ref()))
 }
 
-#[allow(dead_code)]
 fn count_task_sessions<'a>(bindings: impl Iterator<Item = Option<&'a ProjectBinding>>) -> usize {
     bindings
         .filter(|binding| binding.is_some_and(|b| b.meta.task_id.is_some()))

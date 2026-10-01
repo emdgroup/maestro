@@ -3722,6 +3722,7 @@ version = "0.33.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "chrono-tz",
@@ -3735,6 +3736,7 @@ dependencies = [
  "hyper-util",
  "iana-time-zone",
  "ignore",
+ "image",
  "maestro-protocol",
  "reqwest",
  "rusqlite",

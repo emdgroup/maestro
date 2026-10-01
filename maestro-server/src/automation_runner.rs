@@ -305,7 +305,7 @@ pub async fn apply_all_retention(store: &Store) {
     }
 }
 
-fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
+pub(crate) fn effort_option_id(config_options: Option<&Vec<serde_json::Value>>) -> Option<String> {
     config_options?
         .iter()
         .find(|option| {

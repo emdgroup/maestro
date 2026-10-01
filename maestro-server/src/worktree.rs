@@ -248,7 +248,6 @@ pub fn task_branch_name(task_id: i32, title: &str) -> String {
 
 /// Where a task's session works, and what it was anchored at.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)] // D8 (`task_runner::start`) is the caller.
 pub struct TaskWorkspace {
     /// Absolute directory the agent works in.
     pub cwd: String,
@@ -323,7 +322,6 @@ async fn verify(project_path: &str, reference: &str) -> bool {
 /// branch, when this call created it). A failed sha write leaves a worktree and a row the task
 /// owns, which the next call reuses rather than duplicates. The store's lock is never held across
 /// git, so a slow checkout does not stall every other request.
-#[allow(dead_code)] // D8 (`task_runner::start`) is the caller.
 pub async fn prepare_task_workspace(
     store: &tokio::sync::Mutex<rusqlite::Connection>,
     task: &maestro_protocol::Task,

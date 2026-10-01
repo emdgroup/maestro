@@ -29,14 +29,15 @@ mod mcp_gateway;
 mod mcp_stdio;
 mod mcp_store;
 mod pipeline_settings;
-mod project_locks;
 mod profiles;
+mod project_locks;
 mod project_store;
 mod prompt_store;
 mod session;
 mod sessions;
 mod skills;
 mod task_prompt;
+mod task_runner;
 mod task_store;
 mod terminal;
 mod tool_check;
@@ -374,8 +375,8 @@ async fn reap_idle_sessions(
 /// Unless its row was closed while it was coming up: nothing would own it and no list would show
 /// it, and the idle sweep never closes it while a window is attached. The client was already sent
 /// its `SpawnOk` or `SessionLoadOk`, and needs nothing more: every host path that closes a row
-/// has dropped its own entry first, so it holds nothing waiting on this session.
-async fn register_started_session(
+/// has dropped its own entry first, so it holds nothing waiting on this session. `false` then.
+pub(crate) async fn register_started_session(
     session_id: String,
     session: ActiveSession,
     sessions: &mut SessionMap,
@@ -383,7 +384,7 @@ async fn register_started_session(
     project_store: Option<&project_store::Store>,
     automation_store: Option<&automation_runner::Store>,
     stdout: &crate::ClientOut,
-) {
+) -> bool {
     let recorded = match (
         project_store,
         session.project.as_ref(),
@@ -422,7 +423,7 @@ async fn register_started_session(
                 stdout,
             )
             .await;
-            return;
+            return false;
         }
         Err(e) => project_store::report(Err(e)),
     }
@@ -434,6 +435,7 @@ async fn register_started_session(
     if let Some(store) = automation_store {
         automation_runner::announce_session(store, stdout, &session_id).await;
     }
+    true
 }
 
 /// The server proper: dispatch requests until the client channel closes.
@@ -642,12 +644,15 @@ async fn run_server(
 
             settled = settle_rx.recv() => {
                 if let Some(settled) = settled {
-                    dispatch::settle(
+                    Box::pin(dispatch::settle(
                         settled,
                         &mut sessions,
                         &mut agents_with_spawn,
+                        &agent_connections,
                         project_store.as_ref(),
-                    )
+                        automation_store.as_ref(),
+                        &mut pending_host_tools,
+                    ))
                     .await;
                 }
                 continue;
@@ -791,7 +796,9 @@ async fn run_server(
         let reply_sink =
             client_sink::ClientSink::for_request(route.as_ref().unwrap_or(&stdout), request_id)
                 .await;
-        if !dispatch_message(
+        // Boxed: inlined, its state machine sits in this loop's future on the main thread's stack,
+        // which a debug build on Windows (1 MB) overflows.
+        if !Box::pin(dispatch_message(
             msg,
             &mut sessions,
             &agent_connections,
@@ -803,7 +810,7 @@ async fn run_server(
             &mut pending_host_tools,
             automation_store.as_ref(),
             project_store.as_ref(),
-        )
+        ))
         .await
         {
             break;

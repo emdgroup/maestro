@@ -182,6 +182,45 @@ pub(crate) async fn close_session(
     }
 }
 
+/// How the project lets go of a session: its row closed, whether or not the session is still in
+/// the map, and the session closed when it is. `Cancel`, and a task's newer session superseding it.
+pub(crate) async fn cancel_session(
+    session_id: &str,
+    sessions: &mut SessionMap,
+    pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
+    agent_connections: &SharedAgentConnections,
+    project_store: Option<&crate::project_store::Store>,
+    automation_store: Option<&crate::automation_runner::Store>,
+    stdout: &crate::ClientOut,
+) {
+    crate::mcp_gateway::cancel_session(pending_host_tools, session_id);
+    let session = sessions.remove(session_id);
+    if let Some(store) = project_store {
+        let key = session.as_ref().and_then(|session| {
+            session
+                .cleanup
+                .as_ref()
+                .map(|cleanup| (session.agent_id.as_str(), cleanup.acp_session_id.as_str()))
+        });
+        crate::project_store::report(crate::project_store::close(
+            &*store.lock().await,
+            session_id,
+            key,
+            chrono::Utc::now(),
+        ));
+    }
+    if let Some(session) = session {
+        close_session(
+            session_id,
+            session,
+            agent_connections,
+            automation_store,
+            stdout,
+        )
+        .await;
+    }
+}
+
 /// The loop's share of a request answered off it: what the slow part found, and the sink the
 /// answer goes out on. Only what touches state the loop owns comes back here.
 pub(crate) enum Settle {
@@ -195,18 +234,36 @@ pub(crate) enum Settle {
         session_id: String,
         stdout: crate::ClientOut,
     },
+    /// A task's session up and prompted, to go into the map.
+    TaskStarted(Box<crate::task_runner::Started>),
 }
 
 pub(crate) type SettleTx = tokio::sync::mpsc::UnboundedSender<Settle>;
 
 /// Finish a request whose slow part ran off the loop, and answer it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn settle(
     settle: Settle,
     sessions: &mut SessionMap,
     agents_with_spawn: &mut Vec<agent::registry::DiscoveredAgentWithSpawn>,
+    agent_connections: &SharedAgentConnections,
     project_store: Option<&crate::project_store::Store>,
+    automation_store: Option<&crate::automation_runner::Store>,
+    pending_host_tools: &mut crate::mcp_gateway::PendingHostTools,
 ) {
     let (stdout, response) = match settle {
+        Settle::TaskStarted(started) => {
+            crate::task_runner::adopt(
+                *started,
+                sessions,
+                agent_connections,
+                project_store,
+                automation_store,
+                pending_host_tools,
+            )
+            .await;
+            return;
+        }
         Settle::Detected(mut response, stdout) => {
             // The detection table only knows the bundled agents, and the host drops anything it
             // does not report. A custom agent is one the user declared themselves, so take their
@@ -1003,34 +1060,16 @@ pub(crate) async fn dispatch_message(
         }
 
         MaestroRpcMessage::Request(ServerRequest::Cancel(req)) => {
-            crate::mcp_gateway::cancel_session(pending_host_tools, &req.session_id);
-            let session = sessions.remove(&req.session_id);
-            // Whether or not the session is still in the map: this is how the project lets go of
-            // a session, and one whose entry is already gone is no less let go of.
-            if let Some(store) = project_store {
-                let key = session.as_ref().and_then(|session| {
-                    session
-                        .cleanup
-                        .as_ref()
-                        .map(|cleanup| (session.agent_id.as_str(), cleanup.acp_session_id.as_str()))
-                });
-                crate::project_store::report(crate::project_store::close(
-                    &*store.lock().await,
-                    &req.session_id,
-                    key,
-                    chrono::Utc::now(),
-                ));
-            }
-            if let Some(session) = session {
-                close_session(
-                    &req.session_id,
-                    session,
-                    agent_connections,
-                    automation_store,
-                    stdout,
-                )
-                .await;
-            }
+            cancel_session(
+                &req.session_id,
+                sessions,
+                pending_host_tools,
+                agent_connections,
+                project_store,
+                automation_store,
+                stdout,
+            )
+            .await;
         }
 
         MaestroRpcMessage::Request(ServerRequest::InterruptTurn(req)) => {
@@ -1610,11 +1649,55 @@ pub(crate) async fn dispatch_message(
             send_or_return!(send_response(stdout, &reply).await);
         }
 
-        // Phase 5 wire types, answered by D4-D8 as they land.
-        MaestroRpcMessage::Request(ServerRequest::StartTask(_)) => {
-            send_or_return!(
-                send_response(stdout, &error_response("not yet supported".to_string())).await
+        MaestroRpcMessage::Request(ServerRequest::StartTask(req)) => {
+            let Some(store) = project_store else {
+                send_or_return!(
+                    send_response(
+                        stdout,
+                        &error_response(crate::project_store::UNAVAILABLE.to_string())
+                    )
+                    .await
+                );
+                return true;
+            };
+            // A custom agent added since startup is merged before it is looked for, as `ListAgents`
+            // does on every call.
+            agent::registry::apply_custom_agents(agents_with_spawn);
+            let mut pushes = Vec::new();
+            let begun = crate::task_runner::begin(
+                &mut *store.lock().await,
+                &req,
+                crate::pipeline_settings::used_slots(sessions),
+                agents_with_spawn,
+                &mut pushes,
             );
+            for push in pushes {
+                crate::helpers::broadcast(stdout, push).await;
+            }
+            match begun {
+                Ok(crate::task_runner::Begun::Deferred) => send_or_return!(
+                    send_response(
+                        stdout,
+                        &MaestroRpcMessage::Response(ServerResponse::StartTaskOk(
+                            maestro_protocol::StartTaskResponse { session_id: None },
+                        )),
+                    )
+                    .await
+                ),
+                // Answered once the session is in the map, or once the start has failed.
+                Ok(crate::task_runner::Begun::Claimed(claimed)) => {
+                    tokio::spawn(crate::task_runner::launch(
+                        crate::task_runner::Launcher {
+                            store: Arc::clone(store),
+                            agent_connections: Arc::clone(agent_connections),
+                            settle_tx: settle_tx.clone(),
+                            reply: Arc::clone(stdout),
+                        },
+                        claimed,
+                    ));
+                }
+                Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
+            }
         }
 
         MaestroRpcMessage::Response(_) => {}

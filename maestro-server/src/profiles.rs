@@ -4,7 +4,6 @@
 //! reading `.maestro/profiles.json` and `.maestro/settings.json` with `std::fs`, because the daemon
 //! runs on the machine the project is on. The rules are the app's; see its module for why each
 //! one is what it is.
-#![allow(dead_code)] // wired by task_runner in phase 5 D8
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -114,6 +113,7 @@ pub fn default_agent(project_path: &str) -> Option<String> {
 }
 
 /// Whether the project defines a profile for `role`, which is how a project opts into it.
+#[allow(dead_code)] // D11 asks whether a reviewer follows.
 pub fn has_profile_for_role(project_path: &str, role: AgentRole) -> bool {
     read_profiles(project_path).resolve(role, None).is_some()
 }
@@ -129,7 +129,7 @@ pub fn role_is_skipped(overrides_json: Option<&str>, role: AgentRole) -> bool {
 }
 
 /// The profile id the task names for `role`, if any (`profileIdFor`).
-fn profile_id_for(task: &Task, role: AgentRole) -> Option<String> {
+pub(crate) fn profile_id_for(task: &Task, role: AgentRole) -> Option<String> {
     overrides(task.profile_overrides.as_deref())?
         .remove(role_key(role))
         .flatten()

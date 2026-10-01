@@ -4,7 +4,6 @@
 //! prompt, the task, the role's protocol line, then what the thread and the review hold for this
 //! stage, then the attachments. The texts are the app's, word for word, because the agent reads
 //! the same instructions whichever side started it.
-#![allow(dead_code)] // wired by task_runner in phase 5 D8
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -29,6 +28,7 @@ const PLANNER_PROTOCOL: &str = "Investigate the repository and reply with an imp
 const REVIEWER_PROTOCOL: &str = "Review the changes on this branch against the task. Start your reply with a single line reading exactly `APPROVED` or `CHANGES REQUESTED`, then say why — for changes, be specific about what to fix and where, because your reply is what the coder is given. Do not modify any files.";
 
 /// Where a task's attachments are copied, relative to the project root.
+#[cfg(test)]
 const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
 
 const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
@@ -189,20 +189,11 @@ fn attachment_block(path: &str) -> Result<Value, String> {
                 MAX_IMAGE_BYTES / 1_048_576
             ));
         }
-        // ponytail: the app scales an image this size down; the daemon has no image crate, so it
-        // skips one. Add `image` here if unattended starts with large screenshots matter.
-        if size > SCALE_THRESHOLD_BYTES && (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt() < 0.9
-        {
-            return Err(format!(
-                "Image too large to send unscaled ({} MB, max {} MB)",
-                size / 1_048_576,
-                SCALE_THRESHOLD_BYTES / 1_048_576
-            ));
-        }
         let bytes = std::fs::read(path).map_err(|e| format!("Cannot read '{path}': {e}"))?;
+        let bytes = scale_image(bytes)?;
         return Ok(json!({
             "type": "image",
-            "data": base64(&bytes),
+            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
             "mimeType": mime.unwrap_or("image/png"),
             "uri": uri,
         }));
@@ -276,23 +267,31 @@ fn is_pdf_extension(path: &str) -> bool {
     extension(path) == "pdf"
 }
 
-/// Standard padded base64. Twenty lines rather than a crate for the one place the daemon needs it.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = (u32::from(chunk[0]) << 16)
-            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        for i in 0..4 {
-            if i <= chunk.len() {
-                out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
-            } else {
-                out.push('=');
-            }
-        }
+/// An image over the threshold scaled down to it, as the app's `prepare_image_bytes` does. The
+/// mime type stays the file's, as it does there.
+fn scale_image(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let size = bytes.len() as u64;
+    if size <= SCALE_THRESHOLD_BYTES {
+        return Ok(bytes);
     }
-    out
+    let ratio = (SCALE_THRESHOLD_BYTES as f64 / size as f64).sqrt();
+    if ratio >= 0.9 {
+        return Ok(bytes);
+    }
+    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let resized = img.resize(
+        (img.width() as f64 * ratio) as u32,
+        (img.height() as f64 * ratio) as u32,
+        image::imageops::FilterType::Triangle,
+    );
+    let mut output = Vec::new();
+    resized
+        .write_to(
+            &mut std::io::Cursor::new(&mut output),
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -515,20 +514,5 @@ mod tests {
                 .len(),
             5
         );
-    }
-
-    #[test]
-    fn base64_matches_the_rfc_vectors() {
-        for (input, expected) in [
-            ("", ""),
-            ("f", "Zg=="),
-            ("fo", "Zm8="),
-            ("foo", "Zm9v"),
-            ("foob", "Zm9vYg=="),
-            ("fooba", "Zm9vYmE="),
-            ("foobar", "Zm9vYmFy"),
-        ] {
-            assert_eq!(base64(input.as_bytes()), expected);
-        }
     }
 }
