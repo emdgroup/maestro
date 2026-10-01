@@ -423,6 +423,7 @@ fn gather(
         reviews,
         prompts,
         sessions: Vec::new(),
+        floors: Default::default(),
     })
 }
 
@@ -504,6 +505,7 @@ fn sessions_from_state(
                 acp_session_id: snapshot.acp_session_id,
                 cwd,
                 can_reload: None,
+                closed: false,
             }
         })
         .collect()

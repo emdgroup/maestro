@@ -90,13 +90,22 @@ fn make_room(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), Str
         .optional()
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
-    let task_offset = request.tasks.iter().map(|t| t.id).fold(tasks, i32::max);
+    let floors = &request.floors;
+    let task_offset = request
+        .tasks
+        .iter()
+        .map(|t| t.id)
+        .fold(tasks.max(floors.tasks.unwrap_or(0)), i32::max);
     let worktree_offset = request
         .worktrees
         .iter()
         .map(|w| w.id)
-        .fold(worktrees, i32::max);
-    let prompt_offset = request.prompts.iter().map(|p| p.id).fold(prompts, i32::max);
+        .fold(worktrees.max(floors.worktrees.unwrap_or(0)), i32::max);
+    let prompt_offset = request
+        .prompts
+        .iter()
+        .map(|p| p.id)
+        .fold(prompts.max(floors.prompts.unwrap_or(0)), i32::max);
 
     // Sessions first, while `tasks` still has the old ids: a session row naming a task the daemon
     // does not hold names one of the app's, which keeps its id.
@@ -359,24 +368,31 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
     }
 
     // Never lowered: each counter ends at the highest id the project now holds, imported or moved,
-    // or stays where it was if that is higher.
+    // the app's floor (an id it minted for a row since deleted), or where it was if that is higher.
+    let floors = &request.floors;
     tx.execute(
         "INSERT INTO project_counters (project_path, last_task_id, last_worktree_id,
                                        last_prompt_id)
          VALUES (?1,
-                 (SELECT COALESCE(MAX(id), 0) FROM tasks WHERE project_path = ?1),
-                 (SELECT COALESCE(MAX(id), 0) FROM worktrees WHERE project_path = ?1),
-                 (SELECT COALESCE(MAX(id), 0) FROM prompts WHERE project_path = ?1))
+                 MAX(?2, (SELECT COALESCE(MAX(id), 0) FROM tasks WHERE project_path = ?1)),
+                 MAX(?3, (SELECT COALESCE(MAX(id), 0) FROM worktrees WHERE project_path = ?1)),
+                 MAX(?4, (SELECT COALESCE(MAX(id), 0) FROM prompts WHERE project_path = ?1)))
          ON CONFLICT(project_path) DO UPDATE SET
              last_task_id = MAX(last_task_id, excluded.last_task_id),
              last_worktree_id = MAX(last_worktree_id, excluded.last_worktree_id),
              last_prompt_id = MAX(last_prompt_id, excluded.last_prompt_id)",
-        params![project],
+        params![
+            project,
+            floors.tasks.unwrap_or(0),
+            floors.worktrees.unwrap_or(0),
+            floors.prompts.unwrap_or(0),
+        ],
     )
     .map_err(sql)?;
 
-    // Dormant and open, so the project loads them on its next open. A row the daemon already has
-    // for the conversation is the newer word on it and is kept.
+    // Dormant. An open one is loaded on the project's next open; a closed one is there for Session
+    // History's name and folder. A row the daemon already has for the conversation is the newer
+    // word on it and is kept.
     let now = Utc::now().to_rfc3339();
     for session in &request.sessions {
         let meta = &session.meta;
@@ -385,7 +401,7 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
                                              session_name, task_id, task_name, branch_name, role,
                                              session_start_sha, can_reload, session_id,
                                              created_at, closed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12, NULL)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12, ?13)",
             params![
                 session.agent_id,
                 session.acp_session_id,
@@ -399,6 +415,7 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
                 meta.session_start_sha,
                 session.can_reload.unwrap_or(true),
                 now,
+                session.closed.then_some(&now),
             ],
         )
         .map_err(sql)?;
@@ -420,9 +437,9 @@ fn write(tx: &Transaction, request: &ImportProjectRequest) -> Result<(), String>
 mod tests {
     use super::*;
     use maestro_protocol::{
-        BranchMode, CreatePromptRequest, CreateTaskRequest, ImportedSession, InsertWorktreeRequest,
-        Prompt, ReviewComment, SessionMeta, Task, TaskBall, TaskComment, TaskPhase, TaskPriority,
-        TaskRelationship, TaskReview, TaskStatus, WorkspaceMode, Worktree,
+        BranchMode, CreatePromptRequest, CreateTaskRequest, ImportFloors, ImportedSession,
+        InsertWorktreeRequest, Prompt, ReviewComment, SessionMeta, Task, TaskBall, TaskComment,
+        TaskPhase, TaskPriority, TaskRelationship, TaskReview, TaskStatus, WorkspaceMode, Worktree,
     };
 
     const PROJECT: &str = "/nonexistent/import-project";
@@ -496,6 +513,7 @@ mod tests {
                 ..SessionMeta::default()
             },
             can_reload: None,
+            closed: false,
         }
     }
 
@@ -549,6 +567,7 @@ mod tests {
                 updated_at: AT.to_string(),
             }],
             sessions: vec![session("acp-1", "imported")],
+            floors: ImportFloors::default(),
         }
     }
 
@@ -796,15 +815,7 @@ mod tests {
         let mut conn = crate::project_store::open_in_memory();
         let empty = ImportProjectRequest {
             project_path: PROJECT.to_string(),
-            tasks: vec![],
-            relationships: vec![],
-            instructions: vec![],
-            comments: vec![],
-            attachments: vec![],
-            worktrees: vec![],
-            reviews: vec![],
-            prompts: vec![],
-            sessions: vec![],
+            ..ImportProjectRequest::default()
         };
         let (reply, _) = answer(&mut conn, empty).expect("empty import");
         assert_eq!(
@@ -887,6 +898,35 @@ mod tests {
                 ("acp-2", Some("new"), false)
             ]
         );
+    }
+
+    #[test]
+    fn floors_raise_the_counters_and_a_closed_session_stays_closed() {
+        let mut conn = crate::project_store::open_in_memory();
+        let mut request = full_request();
+        request.floors = ImportFloors {
+            tasks: Some(40),
+            worktrees: None,
+            prompts: Some(2),
+        };
+        let mut past = session("acp-old", "past");
+        past.closed = true;
+        request.sessions = vec![past];
+        answer(&mut conn, request).expect("import");
+
+        let counters: (i32, i32) = conn
+            .query_row(
+                "SELECT last_task_id, last_prompt_id FROM project_counters WHERE project_path = ?1",
+                params![PROJECT],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("counters");
+        // The task floor is above every imported id; the prompt floor is below the imported 4.
+        assert_eq!(counters, (40, 4));
+
+        let sessions = crate::project_store::list(&conn, PROJECT, true).expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert!(sessions[0].0.closed);
     }
 
     #[test]

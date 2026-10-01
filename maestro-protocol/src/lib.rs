@@ -1979,7 +1979,7 @@ pub struct SaveTaskReviewResponse {
 /// and branch names. The ids of relationships, instructions, comments, attachments, reviews and
 /// review comments are minted again: the daemon numbers those across every project. The
 /// `project_path` inside each row is ignored for the request's own, canonicalized.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ImportProjectRequest {
     pub project_path: String,
     #[serde(default)]
@@ -2001,9 +2001,25 @@ pub struct ImportProjectRequest {
     pub prompts: Vec<Prompt>,
     #[serde(default)]
     pub sessions: Vec<ImportedSession>,
+    #[serde(default)]
+    pub floors: ImportFloors,
 }
 
-/// A conversation the app had open, imported as a dormant, open row.
+/// The highest id the app ever minted of each kind, deleted rows' included (its
+/// `sqlite_sequence`), so the daemon never hands out a number whose folder or branch may linger.
+/// Each counter ends at the highest of its current value, the highest imported id and this.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ImportFloors {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktrees: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<i32>,
+}
+
+/// A conversation the app had, imported as a dormant row: open, so the project loads it on its
+/// next open, or closed, so Session History still lists it with its name and folder.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ImportedSession {
     pub agent_id: String,
@@ -2015,12 +2031,14 @@ pub struct ImportedSession {
     /// back, and a load the agent cannot answer closes the row, where false would hide it for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub can_reload: Option<bool>,
+    /// Stored closed as of the import.
+    #[serde(default)]
+    pub closed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ImportProjectResponse {
-    /// False when the daemon already held tasks, worktrees or prompts for the project, in which
-    /// case nothing was written.
+    /// False when the project was imported before, in which case nothing was written.
     pub imported: bool,
 }
 
@@ -2902,7 +2920,12 @@ mod tests {
                     cwd: "/srv/shop".to_string(),
                     meta: sample_meta(),
                     can_reload: None,
+                    closed: true,
                 }],
+                floors: ImportFloors {
+                    tasks: Some(12),
+                    ..ImportFloors::default()
+                },
             })),
             MaestroRpcMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
                 imported: false,

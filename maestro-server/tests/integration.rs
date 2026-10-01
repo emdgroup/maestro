@@ -994,6 +994,7 @@ fn test_import_project_over_the_wire() {
             reviews: vec![],
             prompts: vec![],
             sessions: vec![],
+            floors: Default::default(),
         })
     };
     let project_ref = || ProjectRef {
