@@ -316,7 +316,7 @@ Tasks:
 
 - [x] P1 `maestro-protocol` and `maestro-server`: a `prompts` table (migration v4), requests to list,
       create, update, delete and favorite, `PromptsChanged { project_path }`
-- [ ] P2 The gateway answers the project's prompt tools and forwards the shared ones, with
+- [x] P2 The gateway answers the project's prompt tools and forwards the shared ones, with
       `project-N` / `shared-N` ids; `update_prompt` loses `shared`
 - [ ] P3 `src-tauri`: the app's `prompts` table holds the shared collection only, with its own
       favorite column; `prompt_favorites` dropped; project prompt commands ask the daemon; copy both

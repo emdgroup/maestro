@@ -7,8 +7,9 @@
 //!
 //! Canvas calls are answered here: they are session updates, and the server already owns that
 //! channel. So are the task tools, from the project store, so an agent can reach its board with no
-//! window open. Everything else is forwarded to Tauri as a `HostToolCall` and parked in
-//! `PendingHostTools` until the matching `HostToolResult` comes back.
+//! window open. The prompt tools are split: the project's collection is answered here, the shared
+//! one is forwarded (see `prompt_call`). Everything else is forwarded to Tauri as a
+//! `HostToolCall` and parked in `PendingHostTools` until the matching `HostToolResult` comes back.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -175,6 +176,23 @@ pub(crate) async fn handle_host_tool_call(
         return;
     };
 
+    if PROMPT_TOOLS.contains(&call.name.as_str()) {
+        let project_path = session
+            .project
+            .as_ref()
+            .map(|project| project.project_path.clone());
+        prompt_call(
+            call,
+            reply_tx,
+            project_path,
+            project_store.cloned(),
+            pending_host_tools,
+            stdout,
+        )
+        .await;
+        return;
+    }
+
     // Off the loop: `create_task` reads the project's settings and runs `git`.
     if TASK_TOOLS.contains(&call.name.as_str()) {
         let binding = session.project.as_ref().map(|project| SessionTask {
@@ -222,13 +240,26 @@ pub(crate) async fn handle_host_tool_call(
         }
     }
 
+    let arguments = call.arguments.clone();
+    forward(&call, arguments, reply_tx, pending_host_tools, stdout).await;
+}
+
+/// Send `call` to the host with `arguments`, and park `reply_tx` for its answer. A failure to send
+/// is answered on `reply_tx` at once.
+async fn forward(
+    call: &HostToolCall,
+    arguments: Value,
+    reply_tx: oneshot::Sender<HostToolResult>,
+    pending_host_tools: &mut PendingHostTools,
+    stdout: &crate::ClientOut,
+) {
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);
     let request_id = format!("host-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
     let forwarded = HostToolCall {
         session_id: call.session_id.clone(),
         request_id: request_id.clone(),
         name: call.name.clone(),
-        arguments: call.arguments.clone(),
+        arguments,
     };
     if let Err(e) = send_response(
         stdout,
@@ -236,10 +267,384 @@ pub(crate) async fn handle_host_tool_call(
     )
     .await
     {
-        let _ = reply_tx.send(fail(&call, &format!("cannot reach Maestro: {e}")));
+        let _ = reply_tx.send(fail(call, &format!("cannot reach Maestro: {e}")));
         return;
     }
-    pending_host_tools.insert(request_id, (call.session_id, reply_tx));
+    pending_host_tools.insert(request_id, (call.session_id.clone(), reply_tx));
+}
+
+const PROMPT_TOOLS: [&str; 5] = [
+    "list_prompts",
+    "get_prompt",
+    "create_prompt",
+    "update_prompt",
+    "delete_prompt",
+];
+
+/// What an agent sees when it reaches for the shared collection with no window to hold it.
+const NO_WINDOW: &str = "the shared prompts are kept by the Maestro app, and no Maestro window is \
+                         open; only this project's prompts are available";
+
+/// How long `list_prompts` waits for the shared half before answering with the project's alone.
+const SHARED_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// One prompt tool, split between the two collections.
+///
+/// The contract with the host, which `src-tauri` implements to match:
+///
+/// - The agent names a prompt `project-<n>` or `shared-<n>`, because the daemon and the app mint
+///   ids independently. The project collection is answered here, from `prompt_store`, scoped to
+///   the calling session's project.
+/// - A call on the shared collection is forwarded as a `HostToolCall` with the **same tool name**,
+///   and its arguments rewritten: `id`, where there is one, is the bare integer `<n>`, and
+///   `create_prompt` loses `collection`. Every other argument (`title`, `body`, `tags`,
+///   `favorite`, `list_prompts`' `tag`) passes through as the agent sent it. The host only ever
+///   deals with the shared collection and bare integer ids, and answers with bare integer ids.
+/// - The gateway prefixes `shared-` on every id in the host's result: `id` on an object or on each
+///   element of an array, and `deleted` on `delete_prompt`'s `{deleted}`.
+/// - `list_prompts` is the one call that goes both ways. The host answers with an array of
+///   `{id, title, tags, favorite}`; the agent gets `{prompts}`, the project's first, then the
+///   shared ones. With no window attached, or a host that fails or takes longer than
+///   `SHARED_LIST_TIMEOUT`, it gets the project's alone and a `shared_unavailable` note saying
+///   why. Any other shared call with no window attached is refused with `NO_WINDOW`.
+/// - `update_prompt` has no `shared` argument any more: moving a prompt is a create in the other
+///   collection. Its `favorite` stars the prompt in its own collection.
+async fn prompt_call(
+    call: HostToolCall,
+    reply_tx: oneshot::Sender<HostToolResult>,
+    project_path: Option<String>,
+    store: Option<Store>,
+    pending_host_tools: &mut PendingHostTools,
+    stdout: &crate::ClientOut,
+) {
+    let attached = stdout.lock().await.is_attached();
+
+    if call.name == "list_prompts" {
+        let shared = if attached {
+            let (tx, rx) = oneshot::channel();
+            let arguments = call.arguments.clone();
+            forward(&call, arguments, tx, pending_host_tools, stdout).await;
+            Some(rx)
+        } else {
+            None
+        };
+        let stdout = Arc::clone(stdout);
+        tokio::spawn(async move {
+            let result = match project_prompt_tool(store, project_path, &call, &stdout).await {
+                Ok(project) => Ok(merge_lists(project, shared).await),
+                Err(message) => Err(message),
+            };
+            let _ = reply_tx.send(answer(&call, result));
+        });
+        return;
+    }
+
+    let shared_arguments = match shared_arguments(&call) {
+        Ok(arguments) => arguments,
+        Err(message) => {
+            let _ = reply_tx.send(fail(&call, &message));
+            return;
+        }
+    };
+    let Some(arguments) = shared_arguments else {
+        let stdout = Arc::clone(stdout);
+        tokio::spawn(async move {
+            let result = project_prompt_tool(store, project_path, &call, &stdout).await;
+            let _ = reply_tx.send(answer(&call, result));
+        });
+        return;
+    };
+
+    if !attached {
+        let _ = reply_tx.send(fail(&call, NO_WINDOW));
+        return;
+    }
+    let (tx, rx) = oneshot::channel();
+    forward(&call, arguments, tx, pending_host_tools, stdout).await;
+    tokio::spawn(async move {
+        let result = match tokio::time::timeout(HOST_TIMEOUT, rx).await {
+            Ok(Ok(HostToolResult {
+                error: None,
+                mut result,
+                ..
+            })) => {
+                prefix_shared_ids(&mut result);
+                Ok(result)
+            }
+            Ok(Ok(HostToolResult {
+                error: Some(message),
+                ..
+            })) => Err(message),
+            Ok(Err(_)) => Err("Maestro dropped the call".to_string()),
+            Err(_) => Err("host did not answer".to_string()),
+        };
+        let _ = reply_tx.send(answer(&call, result));
+    });
+}
+
+fn answer(call: &HostToolCall, result: Result<Value, String>) -> HostToolResult {
+    match result {
+        Ok(result) => HostToolResult {
+            session_id: call.session_id.clone(),
+            request_id: call.request_id.clone(),
+            result,
+            error: None,
+        },
+        Err(message) => fail(call, &message),
+    }
+}
+
+/// The arguments to forward if `call` is on the shared collection, `None` if it is on the
+/// project's. `list_prompts` is neither and never comes here.
+fn shared_arguments(call: &HostToolCall) -> Result<Option<Value>, String> {
+    let mut arguments = call.arguments.clone();
+    if call.name == "create_prompt" {
+        let collection = arguments
+            .as_object_mut()
+            .and_then(|object| object.remove("collection"));
+        return match collection {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(name)) if name == "project" => Ok(None),
+            Some(Value::String(name)) if name == "shared" => Ok(Some(arguments)),
+            Some(other) => Err(format!(
+                "collection must be \"project\" or \"shared\", got {other}"
+            )),
+        };
+    }
+    match parse_prompt_id(&call.arguments)? {
+        PromptId::Project(_) => Ok(None),
+        PromptId::Shared(id) => {
+            if let Some(object) = arguments.as_object_mut() {
+                object.insert("id".into(), json!(id));
+            }
+            Ok(Some(arguments))
+        }
+    }
+}
+
+enum PromptId {
+    Project(i32),
+    Shared(i32),
+}
+
+fn parse_prompt_id(arguments: &Value) -> Result<PromptId, String> {
+    let invalid =
+        || "id must be a prompt id from list_prompts, like project-3 or shared-3".to_string();
+    let raw = arguments
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid)?;
+    let number = |digits: &str| digits.parse::<i32>().map_err(|_| invalid());
+    if let Some(digits) = raw.strip_prefix("project-") {
+        Ok(PromptId::Project(number(digits)?))
+    } else if let Some(digits) = raw.strip_prefix("shared-") {
+        Ok(PromptId::Shared(number(digits)?))
+    } else {
+        Err(invalid())
+    }
+}
+
+fn prefix_shared_ids(value: &mut Value) {
+    match value {
+        Value::Array(items) => items.iter_mut().for_each(prefix_shared_ids),
+        Value::Object(object) => {
+            for key in ["id", "deleted"] {
+                if let Some(id) = object.get(key).and_then(Value::as_i64) {
+                    object.insert(key.into(), json!(format!("shared-{id}")));
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The project's list followed by the host's, or the project's alone with a note saying why.
+async fn merge_lists(
+    mut project: Value,
+    shared: Option<oneshot::Receiver<HostToolResult>>,
+) -> Value {
+    let shared = match shared {
+        None => Err(NO_WINDOW.to_string()),
+        Some(rx) => match tokio::time::timeout(SHARED_LIST_TIMEOUT, rx).await {
+            Ok(Ok(HostToolResult {
+                error: None,
+                mut result,
+                ..
+            })) => {
+                prefix_shared_ids(&mut result);
+                match result {
+                    Value::Array(rows) => Ok(rows),
+                    other => Err(format!("the app answered with {other}, not a list")),
+                }
+            }
+            Ok(Ok(HostToolResult {
+                error: Some(message),
+                ..
+            })) => Err(format!("the shared prompts could not be read: {message}")),
+            Ok(Err(_)) | Err(_) => {
+                Err("the Maestro app did not answer for the shared prompts".into())
+            }
+        },
+    };
+    match shared {
+        Ok(rows) => {
+            if let Some(Value::Array(list)) = project.get_mut("prompts") {
+                list.extend(rows);
+            }
+        }
+        Err(note) => {
+            if let Some(object) = project.as_object_mut() {
+                object.insert("shared_unavailable".into(), json!(note));
+            }
+        }
+    }
+    project
+}
+
+/// One prompt tool on the project's collection, answered from the store. Every lookup is scoped to
+/// the session's project, so an id from another project's collection finds nothing.
+async fn project_prompt_tool(
+    store: Option<Store>,
+    project_path: Option<String>,
+    call: &HostToolCall,
+    stdout: &crate::ClientOut,
+) -> Result<Value, String> {
+    let project_path = project_path
+        .ok_or_else(|| "this session is not attached to a Maestro project".to_string())?;
+    let store = store.ok_or_else(|| crate::project_store::UNAVAILABLE.to_string())?;
+    let project_path = crate::automations::canonical_project_path(&project_path);
+    let (result, changed) = {
+        let conn = store.lock().await;
+        project_prompt(&conn, &project_path, &call.name, &call.arguments)?
+    };
+    if changed {
+        crate::helpers::broadcast(
+            stdout,
+            ServerResponse::PromptsChanged(ProjectRef { project_path }),
+        )
+        .await;
+    }
+    Ok(result)
+}
+
+/// The result, and whether the collection changed.
+fn project_prompt(
+    conn: &Connection,
+    project_path: &str,
+    name: &str,
+    arguments: &Value,
+) -> Result<(Value, bool), String> {
+    use crate::prompt_store;
+    let id = || match parse_prompt_id(arguments)? {
+        PromptId::Project(id) => Ok(id),
+        PromptId::Shared(_) => Err(UNEXPECTED_PROMPT.to_string()),
+    };
+    let visible = |id: i32| {
+        prompt_store::get(conn, project_path, id)?
+            .ok_or_else(|| format!("no prompt project-{id} in this project"))
+    };
+    Ok(match name {
+        "list_prompts" => {
+            let tag = string_argument(arguments, "tag")?;
+            let rows: Vec<Value> = prompt_store::list(conn, project_path)?
+                .iter()
+                .filter(|prompt| tag.as_ref().is_none_or(|tag| prompt.tags.contains(tag)))
+                .map(|prompt| {
+                    json!({
+                        "id": format!("project-{}", prompt.id),
+                        "title": prompt.title,
+                        "tags": prompt.tags,
+                        "favorite": prompt.favorite,
+                    })
+                })
+                .collect();
+            (json!({ "prompts": rows }), false)
+        }
+        "get_prompt" => (prompt_json(&visible(id()?)?), false),
+        "create_prompt" => {
+            let request = maestro_protocol::CreatePromptRequest {
+                project_path: project_path.to_string(),
+                title: string_argument(arguments, "title")?.unwrap_or_default(),
+                body: string_argument(arguments, "body")?.unwrap_or_default(),
+                tags: tags_argument(arguments)?.unwrap_or_default(),
+                favorite: bool_argument(arguments, "favorite")?.unwrap_or(false),
+            };
+            (prompt_json(&prompt_store::create(conn, &request)?), true)
+        }
+        // Partial, as the host's was: what the agent leaves out keeps its value. The store's update
+        // replaces title, body and tags together, so the gap is filled from the row first, under the
+        // same lock. The favorite is not an edit and goes on its own.
+        "update_prompt" => {
+            let mut prompt = visible(id()?)?;
+            let title = string_argument(arguments, "title")?;
+            let body = string_argument(arguments, "body")?;
+            let tags = tags_argument(arguments)?;
+            let favorite = bool_argument(arguments, "favorite")?;
+            if title.is_some() || body.is_some() || tags.is_some() {
+                let request = maestro_protocol::UpdatePromptRequest {
+                    project_path: project_path.to_string(),
+                    prompt_id: prompt.id,
+                    title: title.unwrap_or(prompt.title),
+                    body: body.unwrap_or(prompt.body),
+                    tags: tags.unwrap_or(prompt.tags),
+                };
+                prompt = prompt_store::update(conn, &request)?;
+            }
+            if let Some(favorite) = favorite {
+                prompt = prompt_store::set_favorite(conn, project_path, prompt.id, favorite)?;
+            }
+            (prompt_json(&prompt), true)
+        }
+        "delete_prompt" => {
+            let id = id()?;
+            if !prompt_store::delete(conn, project_path, id)? {
+                return Err("That prompt no longer exists".to_string());
+            }
+            (json!({ "deleted": format!("project-{id}") }), true)
+        }
+        other => return Err(format!("unknown Maestro tool: {other}")),
+    })
+}
+
+const UNEXPECTED_PROMPT: &str = "a shared prompt reached the project's collection";
+
+fn prompt_json(prompt: &maestro_protocol::Prompt) -> Value {
+    json!({
+        "id": format!("project-{}", prompt.id),
+        "title": prompt.title,
+        "body": prompt.body,
+        "tags": prompt.tags,
+        "favorite": prompt.favorite,
+        "created_at": prompt.created_at,
+        "updated_at": prompt.updated_at,
+    })
+}
+
+// Absent and null both mean "leave it"; a value of the wrong type is refused with the field's
+// name rather than coerced, since nothing validates a tool's schema before it gets here.
+fn string_argument(arguments: &Value, key: &str) -> Result<Option<String>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(format!("{key} must be a string")),
+    }
+}
+
+fn bool_argument(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
+    match arguments.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
+        Some(_) => Err(format!("{key} must be true or false")),
+    }
+}
+
+fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
+    match arguments.get("tags") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|_| "tags must be a list of strings".to_string()),
+    }
 }
 
 const TASK_TOOLS: [&str; 5] = [
@@ -949,6 +1354,205 @@ mod tests {
         assert!(untouched
             .iter()
             .all(|task| task.status == TaskStatus::Planning));
+    }
+
+    #[tokio::test]
+    async fn project_prompts_are_answered_from_the_store() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let store: Store = Arc::new(tokio::sync::Mutex::new(
+            crate::project_store::open_in_memory(),
+        ));
+        let mut sessions = SessionMap::new();
+        sessions.insert("session".to_string(), session_in(&project_path, None));
+        let store = Some(&store);
+
+        let created = ok(call(
+            &sessions,
+            store,
+            "create_prompt",
+            json!({ "title": "Review", "body": "Review the diff", "tags": ["Code"] }),
+        )
+        .await);
+        assert_eq!(created["id"], "project-1");
+        assert_eq!(created["tags"], json!(["code"]));
+        ok(call(
+            &sessions,
+            store,
+            "create_prompt",
+            json!({ "title": "Plan", "body": "Plan it", "collection": "project" }),
+        )
+        .await);
+
+        // Partial: the body and tags the agent left out are kept.
+        let updated = ok(call(
+            &sessions,
+            store,
+            "update_prompt",
+            json!({ "id": "project-1", "title": "Review again", "favorite": true }),
+        )
+        .await);
+        assert_eq!(updated["title"], "Review again");
+        assert_eq!(updated["body"], "Review the diff");
+        assert_eq!(updated["tags"], json!(["code"]));
+        assert_eq!(updated["favorite"], true);
+
+        // No window: the project's alone, and a note saying why.
+        let listed = ok(call(&sessions, store, "list_prompts", json!({})).await);
+        let ids: Vec<&str> = listed["prompts"]
+            .as_array()
+            .expect("prompts")
+            .iter()
+            .filter_map(|row| row["id"].as_str())
+            .collect();
+        assert_eq!(ids, ["project-1", "project-2"]);
+        assert_eq!(listed["shared_unavailable"], NO_WINDOW);
+        let tagged = ok(call(&sessions, store, "list_prompts", json!({ "tag": "code" })).await);
+        assert_eq!(tagged["prompts"].as_array().map(Vec::len), Some(1));
+
+        let read = ok(call(&sessions, store, "get_prompt", json!({ "id": "project-2" })).await);
+        assert_eq!(read["body"], "Plan it");
+
+        let deleted = ok(call(
+            &sessions,
+            store,
+            "delete_prompt",
+            json!({ "id": "project-2" }),
+        )
+        .await);
+        assert_eq!(deleted, json!({ "deleted": "project-2" }));
+
+        let error = |result: HostToolResult| result.error.expect("an error");
+        assert_eq!(
+            error(
+                call(
+                    &sessions,
+                    store,
+                    "delete_prompt",
+                    json!({ "id": "project-2" })
+                )
+                .await
+            ),
+            "That prompt no longer exists"
+        );
+        assert_eq!(
+            error(call(&sessions, store, "get_prompt", json!({ "id": 1 })).await),
+            "id must be a prompt id from list_prompts, like project-3 or shared-3"
+        );
+        assert_eq!(
+            error(call(&sessions, store, "get_prompt", json!({ "id": "project-9" })).await),
+            "no prompt project-9 in this project"
+        );
+        // A shared call with no window is refused here, not left waiting on nobody.
+        assert_eq!(
+            error(call(&sessions, store, "get_prompt", json!({ "id": "shared-1" })).await),
+            NO_WINDOW
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_prompts_go_to_the_host_with_bare_ids() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let store: Store = Arc::new(tokio::sync::Mutex::new(
+            crate::project_store::open_in_memory(),
+        ));
+        let mut sessions = SessionMap::new();
+        sessions.insert("session".to_string(), session_in(&project_path, None));
+        let sink = crate::client_sink::ClientSink::detached();
+        let (ours, mut window) = tokio::io::duplex(1 << 16);
+        sink.lock().await.attach(Box::new(ours)).await;
+        let mut pending = PendingHostTools::new();
+
+        // Yields the reply's receiver unawaited: the host answers only after every call is parked.
+        #[allow(clippy::async_yields_async)]
+        let mut send = async |name: &str, arguments: Value| {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            let call = HostToolCall {
+                session_id: "session".to_string(),
+                request_id: "request".to_string(),
+                name: name.to_string(),
+                arguments,
+            };
+            handle_host_tool_call(call, reply_tx, &sessions, Some(&store), &mut pending, &sink)
+                .await;
+            reply_rx
+        };
+        let next =
+            async |window: &mut tokio::io::DuplexStream| match maestro_protocol::read_message(
+                window,
+            )
+            .await
+            .expect("a message")
+            {
+                MaestroRpcMessage::Response(response) => response,
+                other => panic!("not a response: {other:?}"),
+            };
+
+        // A write to the project's collection is pushed to every window.
+        let created = send("create_prompt", json!({ "title": "Mine", "body": "Do it" })).await;
+        assert!(matches!(
+            next(&mut window).await,
+            ServerResponse::PromptsChanged(_)
+        ));
+        assert_eq!(ok(created.await.expect("an answer"))["id"], "project-1");
+
+        let got = send("get_prompt", json!({ "id": "shared-4" })).await;
+        let ServerResponse::HostToolCall(forwarded) = next(&mut window).await else {
+            panic!("not forwarded");
+        };
+        assert_eq!(forwarded.name, "get_prompt");
+        assert_eq!(forwarded.arguments, json!({ "id": 4 }));
+
+        let created = send(
+            "create_prompt",
+            json!({ "title": "Ours", "body": "Do it", "collection": "shared" }),
+        )
+        .await;
+        let ServerResponse::HostToolCall(forwarded_create) = next(&mut window).await else {
+            panic!("not forwarded");
+        };
+        assert_eq!(
+            forwarded_create.arguments,
+            json!({ "title": "Ours", "body": "Do it" })
+        );
+
+        let listed = send("list_prompts", json!({})).await;
+        let ServerResponse::HostToolCall(forwarded_list) = next(&mut window).await else {
+            panic!("not forwarded");
+        };
+
+        let mut answer_host = |forwarded: HostToolCall, result: Value| {
+            let (_, tx) = pending.remove(&forwarded.request_id).expect("parked");
+            tx.send(HostToolResult {
+                session_id: forwarded.session_id,
+                request_id: forwarded.request_id,
+                result,
+                error: None,
+            })
+            .expect("waiting");
+        };
+        answer_host(forwarded, json!({ "id": 4, "title": "Theirs" }));
+        answer_host(forwarded_create, json!({ "id": 5, "title": "Ours" }));
+        answer_host(
+            forwarded_list,
+            json!([{ "id": 4, "title": "Theirs", "tags": [], "favorite": false }]),
+        );
+
+        let got = ok(got.await.expect("an answer"));
+        assert_eq!(got["id"], "shared-4");
+        let created = created.await.expect("an answer");
+        assert_eq!(created.request_id, "request");
+        assert_eq!(ok(created)["id"], "shared-5");
+        let listed = ok(listed.await.expect("an answer"));
+        let ids: Vec<&str> = listed["prompts"]
+            .as_array()
+            .expect("prompts")
+            .iter()
+            .filter_map(|row| row["id"].as_str())
+            .collect();
+        assert_eq!(ids, ["project-1", "shared-4"]);
+        assert!(listed.get("shared_unavailable").is_none());
     }
 
     #[tokio::test]
