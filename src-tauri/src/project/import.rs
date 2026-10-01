@@ -13,12 +13,12 @@ use crate::task::attachments::{
     attachment_relative_path, on_project_machine, TASK_ATTACHMENTS_DIR,
 };
 use maestro_protocol::{
-    split_import, BeginImportRequest, ImportChunkRequest, ImportProjectRequest, ImportRef,
-    ImportedSession, Prompt, ReviewComment, SessionMeta, Task, TaskAttachment, TaskComment,
-    TaskInstruction, TaskRelationship, TaskReview, Worktree, IMPORT_CHUNK_BYTES,
+    split_import, BeginImportRequest, ImportChunkRequest, ImportFloors, ImportProjectRequest,
+    ImportRef, ImportedSession, Prompt, ReviewComment, SessionMeta, Task, TaskAttachment,
+    TaskComment, TaskInstruction, TaskRelationship, TaskReview, Worktree, IMPORT_CHUNK_BYTES,
 };
 use rusqlite::types::{FromSql, Value, ValueRef};
-use rusqlite::{params, Connection, Row, RowIndex};
+use rusqlite::{params, Connection, OptionalExtension, Row, RowIndex};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -520,7 +520,25 @@ fn gather(
         reviews,
         prompts,
         sessions: Vec::new(),
-        floors: Default::default(),
+        floors: floors(conn)?,
+    })
+}
+
+/// The highest id the app ever minted per kind, deleted rows' included. The sequence is the app's
+/// across every project, so it overshoots this project's, which only costs unused numbers.
+fn floors(conn: &Connection) -> rusqlite::Result<ImportFloors> {
+    let floor = |table: &str| -> rusqlite::Result<Option<i32>> {
+        conn.query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name = ?1",
+            [table],
+            |row| row.get(0),
+        )
+        .optional()
+    };
+    Ok(ImportFloors {
+        tasks: floor("tasks")?,
+        worktrees: floor("worktrees")?,
+        prompts: floor("prompts")?,
     })
 }
 
@@ -576,13 +594,19 @@ fn sessions_from_state(
                 )
             })
             .collect();
-    entries::<LegacySnapshot>(state, "restorable_sessions")
+    let folder_cwd = |relative: &String| {
+        if relative.is_empty() {
+            project_path.to_string()
+        } else {
+            on_project_machine(project_path, relative)
+        }
+    };
+    let open: Vec<ImportedSession> = entries::<LegacySnapshot>(state, "restorable_sessions")
         .into_iter()
         .map(|snapshot| {
             let key = (snapshot.agent_id.clone(), snapshot.acp_session_id.clone());
             let cwd = match folders.get(&key) {
-                Some(relative) if relative.is_empty() => project_path.to_string(),
-                Some(relative) => on_project_machine(project_path, relative),
+                Some(relative) => folder_cwd(relative),
                 None if !snapshot.cwd.is_empty() => snapshot.cwd,
                 None => project_path.to_string(),
             };
@@ -605,7 +629,37 @@ fn sessions_from_state(
                 closed: false,
             }
         })
-        .collect()
+        .collect();
+
+    // Every other conversation the user named or gave a folder arrives closed, so Session History
+    // still shows both.
+    let is_open: HashSet<(String, String)> = open
+        .iter()
+        .map(|session| (session.agent_id.clone(), session.acp_session_id.clone()))
+        .collect();
+    let past: HashSet<&(String, String)> = aliases
+        .keys()
+        .chain(folders.keys())
+        .filter(|key| !is_open.contains(*key))
+        .collect();
+    let mut sessions = open;
+    sessions.extend(past.into_iter().map(|key| {
+        ImportedSession {
+            agent_id: key.0.clone(),
+            acp_session_id: key.1.clone(),
+            cwd: folders
+                .get(key)
+                .map(folder_cwd)
+                .unwrap_or_else(|| project_path.to_string()),
+            meta: SessionMeta {
+                session_name: aliases.get(key).cloned(),
+                ..SessionMeta::default()
+            },
+            can_reload: None,
+            closed: true,
+        }
+    }));
+    sessions
 }
 
 /// `state.json` as builds before the daemon wrote it. A missing file holds no sessions and an
@@ -887,14 +941,16 @@ mod tests {
             "session_folders": [
                 { "agent_id": "claude-acp", "acp_session_id": "acp-1",
                   "relative_path": ".maestro/worktrees/task-7" },
-                { "agent_id": "codex", "acp_session_id": "acp-3", "relative_path": "" }
+                { "agent_id": "codex", "acp_session_id": "acp-3", "relative_path": "" },
+                { "agent_id": "codex", "acp_session_id": "acp-past", "relative_path": "sub" }
             ]
         });
         let aliases = aliases(&app_db(), 1).unwrap();
         let titles = HashMap::from([(7, "Seven")]);
 
         let sessions = sessions_from_state(&state, &aliases, &titles, PROJECT);
-        assert_eq!(sessions.len(), 3);
+        assert_eq!(sessions.len(), 4);
+        assert!(sessions[..3].iter().all(|session| !session.closed));
 
         assert_eq!(sessions[0].cwd, "/srv/shop/.maestro/worktrees/task-7");
         assert_eq!(sessions[0].meta.session_name.as_deref(), Some("Named"));
@@ -911,6 +967,24 @@ mod tests {
         assert_eq!(sessions[1].meta.task_name, None);
 
         assert_eq!(sessions[2].cwd, PROJECT);
+
+        assert_eq!(sessions[3].acp_session_id, "acp-past");
+        assert!(sessions[3].closed);
+        assert_eq!(sessions[3].cwd, "/srv/shop/sub");
+    }
+
+    #[test]
+    fn floors_come_from_the_app_sequence() {
+        let conn = app_db();
+        let floors = floors(&conn).unwrap();
+        let tasks: Option<i32> = conn
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'tasks'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        assert_eq!(floors.tasks, tasks);
     }
 
     #[test]
