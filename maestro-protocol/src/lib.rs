@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 pub const AUTH_REQUIRED_ERROR: &str = "auth_required";
@@ -269,6 +269,17 @@ pub enum ServerRequest {
     ImportChunk(ImportChunkRequest),
     /// Applies everything staged under the id, all or nothing, answered with `ImportProjectOk`.
     CommitImport(ImportRef),
+    /// This machine's agent limit and what it resolves to now.
+    GetCapacity,
+    SetCapacity(CapacitySettings),
+    /// Answered with `AutoModeOk`; `enabled` is ignored.
+    GetAutoMode(ProjectRef),
+    SetAutoMode(AutoModeSetting),
+    /// Take or renew a hold.
+    HoldTask(HoldTaskRequest),
+    /// Drop a hold and let the scheduler look at the task again.
+    ReleaseTaskHold(TaskRef),
+    StartTask(StartTaskRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -1702,6 +1713,93 @@ pub struct RequestTaskExecutionResponse {
     pub deferred: bool,
 }
 
+/// How the machine's agent limit is decided. Serialized as the app's `ConcurrencyMode` is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ConcurrencyMode {
+    /// The number the user set, regardless of what the machine is doing.
+    Hard,
+    /// Derived from the machine's free memory, `max_concurrent_agents` when it cannot be read.
+    #[default]
+    Auto,
+}
+
+/// How many agents may run at once on this machine, shared by every app attached to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapacitySettings {
+    pub concurrency_mode: ConcurrencyMode,
+    /// The cap in `Hard` mode, and in `Auto` the fallback for a machine that cannot be measured.
+    pub max_concurrent_agents: i32,
+}
+
+/// The stored settings and the limit they resolve to right now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapacityStatus {
+    pub settings: CapacitySettings,
+    /// The limit in force, measured when the mode is `Auto`.
+    pub slots: i32,
+    /// Why `slots` is what it is, for the board to show when the queue is not moving.
+    pub reason: String,
+}
+
+/// Whether a project's queued tasks start on their own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutoModeSetting {
+    pub project_path: String,
+    pub enabled: bool,
+}
+
+/// Keep the scheduler off a task a user is working with, renewed by the client while the
+/// interaction lasts. A hold not renewed within `ttl_ms` (10 seconds when absent) lapses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HoldTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_ms: Option<u64>,
+}
+
+/// Run one stage of a task: claim it, make or reuse its worktree, spawn the role's agent and send
+/// the prompt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartTaskRequest {
+    pub project_path: String,
+    pub task_id: i32,
+    pub role: AgentRole,
+    /// What the user wrote at a gate, folded into the prompt and not stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
+    /// Nobody pressed anything: skip what would stop to ask rather than default it.
+    #[serde(default)]
+    pub unattended: bool,
+    /// Defer the task to the queue rather than start it when the machine has no free slot.
+    #[serde(default)]
+    pub respect_capacity: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StartTaskResponse {
+    /// The routing id of the session started, `None` when the task was deferred to the queue.
+    pub session_id: Option<String>,
+}
+
+/// The daemon started a session for a task. Pushed to every window, which adopts it the way it
+/// adopts an automation's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskSessionStarted {
+    pub project_path: String,
+    pub task_id: i32,
+    pub session_id: String,
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub role: AgentRole,
+}
+
+/// A pipeline setting changed: a project's auto mode, or with no project the machine's capacity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PipelineSettingsChanged {
+    pub project_path: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ListQueueCandidatesRequest {
     pub project_path: String,
@@ -2242,6 +2340,17 @@ pub enum ServerResponse {
     WorktreesChanged(ProjectRef),
     /// Some prompt of the project's collection changed.
     PromptsChanged(ProjectRef),
+    GetCapacityOk(CapacityStatus),
+    SetCapacityOk,
+    AutoModeOk(AutoModeSetting),
+    SetAutoModeOk,
+    HoldTaskOk,
+    ReleaseTaskHoldOk,
+    StartTaskOk(StartTaskResponse),
+    /// Pushed to every window, which re-reads what it shows and drains its queue.
+    PipelineSettingsChanged(PipelineSettingsChanged),
+    /// Pushed to every window: nobody owns the session yet, so it does not route by its id.
+    TaskSessionStarted(TaskSessionStarted),
     /// Periodic heartbeat from maestro-server. Tauri responds with `Pong { seq }`.
     Ping {
         seq: u64,
@@ -2274,6 +2383,8 @@ impl ServerResponse {
             | Self::TaskCommentsChanged(_)
             | Self::WorktreesChanged(_)
             | Self::PromptsChanged(_)
+            | Self::PipelineSettingsChanged(_)
+            | Self::TaskSessionStarted(_)
             | Self::Ping { .. }
             | Self::Diagnostic(_) => false,
             Self::HandshakeOk(_)
@@ -2363,7 +2474,14 @@ impl ServerResponse {
             | Self::DeletePromptOk
             | Self::BeginImportOk(_)
             | Self::ImportChunkOk
-            | Self::ImportProjectOk(_) => true,
+            | Self::ImportProjectOk(_)
+            | Self::GetCapacityOk(_)
+            | Self::SetCapacityOk
+            | Self::AutoModeOk(_)
+            | Self::SetAutoModeOk
+            | Self::HoldTaskOk
+            | Self::ReleaseTaskHoldOk
+            | Self::StartTaskOk(_) => true,
         }
     }
 }
@@ -2952,6 +3070,7 @@ mod tests {
             })),
         ];
         samples.extend(task_messages());
+        samples.extend(pipeline_messages());
         samples.extend(prompt_messages());
         samples.extend(import_messages());
         samples
@@ -3327,6 +3446,103 @@ mod tests {
             assert_eq!(message, back);
             assert_eq!(message.session_id(), None);
         }
+    }
+
+    fn pipeline_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::GetCapacity),
+            MaestroRpcMessage::Request(ServerRequest::SetCapacity(CapacitySettings {
+                concurrency_mode: ConcurrencyMode::Hard,
+                max_concurrent_agents: 2,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::GetCapacityOk(CapacityStatus {
+                settings: CapacitySettings {
+                    concurrency_mode: ConcurrencyMode::Auto,
+                    max_concurrent_agents: 3,
+                },
+                slots: 4,
+                reason: "4 slots, 2.6 GB free".to_string(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
+                project_path: "/srv/shop".to_string(),
+                enabled: true,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::HoldTask(HoldTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                ttl_ms: None,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ReleaseTaskHold(TaskRef {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+            })),
+            MaestroRpcMessage::Request(ServerRequest::StartTask(StartTaskRequest {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                role: AgentRole::Planner,
+                feedback: Some("Split the migration out".to_string()),
+                unattended: false,
+                respect_capacity: true,
+            })),
+            MaestroRpcMessage::Response(ServerResponse::StartTaskOk(StartTaskResponse {
+                session_id: Some("session-9".to_string()),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::PipelineSettingsChanged(
+                PipelineSettingsChanged { project_path: None },
+            )),
+            MaestroRpcMessage::Response(ServerResponse::TaskSessionStarted(TaskSessionStarted {
+                project_path: "/srv/shop".to_string(),
+                task_id: 3,
+                session_id: "session-9".to_string(),
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "conversation-9".to_string(),
+                role: AgentRole::Coder,
+            })),
+        ]
+    }
+
+    #[test]
+    fn roundtrip_pipeline_messages() {
+        for message in pipeline_messages() {
+            let json = serde_json::to_string(&message).unwrap();
+            let back: MaestroRpcMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(message, back);
+            // A started session is broadcast: nobody owns it until a window adopts it.
+            assert_eq!(message.session_id(), None);
+        }
+    }
+
+    #[test]
+    fn start_task_defaults_what_the_button_leaves_out() {
+        let json = r#"{"direction":"request","type":"start_task","project_path":"/srv/shop","task_id":3,"role":"Coder"}"#;
+        let MaestroRpcMessage::Request(ServerRequest::StartTask(request)) =
+            serde_json::from_str(json).unwrap()
+        else {
+            panic!("not a start_task");
+        };
+        assert_eq!(request.feedback, None);
+        assert!(!request.unattended && !request.respect_capacity);
+    }
+
+    #[test]
+    fn pipeline_pushes_are_not_replies_and_answers_are() {
+        assert!(!ServerResponse::TaskSessionStarted(TaskSessionStarted {
+            project_path: "/srv/shop".to_string(),
+            task_id: 3,
+            session_id: "s".to_string(),
+            agent_id: "a".to_string(),
+            acp_session_id: "c".to_string(),
+            role: AgentRole::Coder,
+        })
+        .is_reply());
+        assert!(
+            !ServerResponse::PipelineSettingsChanged(PipelineSettingsChanged {
+                project_path: Some("/srv/shop".to_string()),
+            })
+            .is_reply()
+        );
+        assert!(ServerResponse::StartTaskOk(StartTaskResponse { session_id: None }).is_reply());
+        assert!(ServerResponse::HoldTaskOk.is_reply());
     }
 
     #[test]

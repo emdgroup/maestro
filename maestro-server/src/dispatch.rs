@@ -1577,6 +1577,21 @@ pub(crate) async fn dispatch_message(
             }
         }
 
+        // Phase 5 wire types, answered by D2-D8 as they land.
+        MaestroRpcMessage::Request(
+            ServerRequest::GetCapacity
+            | ServerRequest::SetCapacity(_)
+            | ServerRequest::GetAutoMode(_)
+            | ServerRequest::SetAutoMode(_)
+            | ServerRequest::HoldTask(_)
+            | ServerRequest::ReleaseTaskHold(_)
+            | ServerRequest::StartTask(_),
+        ) => {
+            send_or_return!(
+                send_response(stdout, &error_response("not yet supported".to_string())).await
+            );
+        }
+
         MaestroRpcMessage::Response(_) => {}
     }
 

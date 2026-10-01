@@ -431,7 +431,7 @@ Decisions:
 
 Tasks:
 
-- [ ] D1 Protocol: capacity and auto mode get/set, holds, a start-task request for the gates and
+- [x] D1 Protocol: capacity and auto mode get/set, holds, a start-task request for the gates and
       the Execute button, a push telling windows the daemon started a task session; version 10
 - [ ] D2 Daemon capacity: per-machine setting, local memory probe, slots from the session map
 - [ ] D3 Daemon holds, the app's hold commands as round trips
