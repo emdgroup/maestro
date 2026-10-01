@@ -25,6 +25,10 @@ pub(crate) struct TurnEnd {
     pub session_id: String,
     pub stop_reason: String,
     pub final_message: Option<String>,
+    /// What the stream said about the turn, for resolving a task's turn. Taken here, at every turn
+    /// end, so the per-session state never outlives a turn.
+    #[allow(dead_code)] // ponytail: read once the daemon classifies task turns
+    pub facts: crate::turn::TurnFacts,
 }
 
 pub(crate) type TurnSender = tokio::sync::mpsc::UnboundedSender<TurnEnd>;
@@ -93,11 +97,13 @@ fn take_final_message(session_id: &str) -> Option<String> {
 /// Note that a turn has ended. No-op until the main loop is running.
 pub(crate) fn note_turn_ended(session_id: &str, stop_reason: &str) {
     let final_message = take_final_message(session_id);
+    let facts = crate::turn::take_turn_facts(session_id);
     if let Some(tx) = TURN_TX.get() {
         if let Err(e) = tx.send(TurnEnd {
             session_id: session_id.to_string(),
             stop_reason: stop_reason.to_string(),
             final_message,
+            facts,
         }) {
             send_diag("warn", format!("[prompt] turn end went unheard: {e}"));
         }

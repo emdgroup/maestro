@@ -566,6 +566,7 @@ pub async fn finish_for_session(
         session_id,
         stop_reason,
         final_message,
+        ..
     } = ended;
     let run = {
         let conn = store.lock().await;

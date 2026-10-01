@@ -198,6 +198,7 @@ pub(crate) async fn run_command_loop(
                 );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
+                crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
                 turn_active.store(true, Ordering::SeqCst);
                 let turn_flag = Arc::clone(&turn_active);
@@ -231,6 +232,7 @@ pub(crate) async fn run_command_loop(
                 );
                 let so = Arc::clone(&so);
                 let so_err = Arc::clone(&so);
+                crate::turn::note_turn_started(&maestro_sid);
                 let sid = maestro_sid.clone();
                 let content_blocks: Vec<acp::schema::v1::ContentBlock> = blocks
                     .into_iter()
@@ -262,6 +264,8 @@ pub(crate) async fn run_command_loop(
                 }
             }
             SessionCommand::CancelTurn => {
+                // Only `InterruptTurn` sends this, and only a user stops a turn.
+                crate::turn::note_interrupted(&maestro_sid);
                 if turn_active.load(Ordering::SeqCst) {
                     let _ = cx.send_notification(CancelNotification::new(session_id.clone()));
                 } else {
