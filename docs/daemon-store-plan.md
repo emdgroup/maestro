@@ -59,14 +59,14 @@ belongs to a project.
 
 ## Phases
 
-| Phase | What                                               | State                  |
-| ----- | -------------------------------------------------- | ---------------------- |
-| 0     | Request ids on the wire                            | Done                   |
-| 1     | Sessions: the daemon knows what a project has open | Done                   |
-| 2     | Tasks, their threads, worktrees and reviews        | Done, not yet run live |
-| 3     | Project prompts                                    | Not started            |
-| 4     | Import what apps already hold, then drop it        | Not started            |
-| 5     | The pipeline runs with no window                   | Not started            |
+| Phase | What                                               | State       |
+| ----- | -------------------------------------------------- | ----------- |
+| 0     | Request ids on the wire                            | Done        |
+| 1     | Sessions: the daemon knows what a project has open | Done        |
+| 2     | Tasks, their threads, worktrees and reviews        | Done        |
+| 3     | Project prompts                                    | Not started |
+| 4     | Import what apps already hold, then drop it        | Not started |
+| 5     | The pipeline runs with no window                   | Not started |
 
 ### Phase 0: request ids on the wire
 
@@ -100,7 +100,7 @@ Tasks:
 - [x] T3 `src-tauri`: the id map, `query_via_server`, the reader, and the four slot users outside it
 - [x] T4 Whole-workspace check, an independent review, and
       `test_sessionless_reply_echoes_request_id` against the real server binary
-- [ ] A run of the app against a live daemon, which no test here replaces
+- [x] A run of the app against a live daemon, which no test here replaces
 
 What the review found:
 
@@ -253,7 +253,8 @@ Tasks:
         (`1636b440`)
   - [x] T10b Attachments embedded from the project copy again, the app's task SQL removed (the
         tables stay until phase 4), docs
-- [ ] A run of the app against a live daemon, with two windows seeing `TasksChanged`
+- [x] A run of the app against a live daemon: board, thread, attachment, agent run to Review, restart, and the gateway task tools
+- [ ] The acceptance test proper: a second machine opening the project over SSH
 
 Notes from phase 2:
 
