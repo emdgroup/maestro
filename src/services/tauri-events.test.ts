@@ -124,12 +124,16 @@ describe("useServerEventSync", () => {
     renderHook(() => useServerEventSync(7));
     await flush();
 
-    fire("prompts-changed", { project_id: null });
+    fire("prompts-changed", { collection: "shared", project_id: null });
     expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.shared });
 
-    fire("prompts-changed", { project_id: 7 });
+    fire("prompts-changed", { collection: "project", project_id: 7 });
     expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.project(7) });
-    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+
+    // A project the app could not name: every project's list, never the shared one.
+    fire("prompts-changed", { collection: "project", project_id: null });
+    expect(invalidateQueries).toHaveBeenLastCalledWith({ queryKey: promptQueryKeys.projects });
+    expect(invalidateQueries).toHaveBeenCalledTimes(3);
   });
 
   /**

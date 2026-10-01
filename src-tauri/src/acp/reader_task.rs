@@ -1391,6 +1391,21 @@ pub(crate) async fn handle_shared_server_message(
         }
         update_session_from_response(&session_id, &msg, app_state).await;
 
+        // The shared prompt tools need no session, and the daemon sends each one to a single
+        // window (`ClientSink::write_to_one`), so whichever window gets it answers, held or not.
+        if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = &msg {
+            if crate::acp::host_tools::is_prompt_tool(&call.name) {
+                if let MaestroRpcMessage::Response(ServerResponse::HostToolCall(call)) = msg {
+                    let state = Arc::clone(app_state);
+                    tokio::spawn(async move {
+                        crate::acp::host_tools::answer_prompt_tool(&state, connection_key, call)
+                            .await;
+                    });
+                }
+                return;
+            }
+        }
+
         // Before the cache borrow below: this needs none of it, and the shared reader serves
         // every session on the connection, so a `canvas_await` answered inline would block all
         // of them for as long as the user takes.
@@ -1650,10 +1665,11 @@ pub(crate) async fn handle_shared_server_message(
         }
         MaestroRpcMessage::Response(ServerResponse::PromptsChanged(project)) => {
             let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            // `project_id` is null when the path matches no project this app knows of.
             crate::core::emit_or_log(
                 app_handle,
                 "prompts-changed",
-                &serde_json::json!({ "project_id": project_id }),
+                &serde_json::json!({ "collection": "project", "project_id": project_id }),
             );
         }
         // Named by project as well, since task ids are per project.

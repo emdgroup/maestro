@@ -6,6 +6,7 @@ import type { PromptInput } from "@/types/bindings";
 export const promptQueryKeys = {
   base: ["prompts"] as const,
   shared: ["prompts", "shared"] as const,
+  projects: ["prompts", "project"] as const,
   project: (projectId: number) => ["prompts", "project", projectId] as const,
 };
 

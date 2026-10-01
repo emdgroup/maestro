@@ -442,8 +442,9 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     Ok(())
 }
 
-/// A favorite becomes a column on the shared prompt, starring it in every project, and the
-/// per-project stars go with `prompt_favorites`. Every shared prompt starts unstarred.
+/// A favorite becomes a column on the prompt, and `prompt_favorites` goes. A project prompt keeps
+/// the star its own project gave it, for the phase 4 import to carry into the daemon. A shared
+/// prompt starts unstarred: its stars were per project, and no one of them speaks for all.
 fn migrate_to_v31(conn: &Connection) -> SqlResult<()> {
     let column_exists: bool = conn.query_row(
         "SELECT COUNT(*) FROM pragma_table_info('prompts') WHERE name = 'favorite'",
@@ -452,6 +453,19 @@ fn migrate_to_v31(conn: &Connection) -> SqlResult<()> {
     )? > 0;
     if !column_exists {
         conn.execute_batch("ALTER TABLE prompts ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    let favorites_exist: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'prompt_favorites'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if favorites_exist {
+        conn.execute_batch(
+            "UPDATE prompts SET favorite = 1 WHERE project_id IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM prompt_favorites f
+                 WHERE f.prompt_id = prompts.id AND f.project_id = prompts.project_id
+             );",
+        )?;
     }
     conn.execute_batch("DROP TABLE IF EXISTS prompt_favorites;")
 }
@@ -898,8 +912,9 @@ mod tests {
         assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
     }
 
-    /// v30 -> v31 moves the star onto the shared prompt and drops the per-project stars, keeping
-    /// every prompt row. Run twice, since the step must be safe to re-run.
+    /// v30 -> v31 keeps a project prompt's own star on its row, drops the shared prompts' stars and
+    /// the per-project table, and keeps every prompt row. Run twice, since the step must be safe to
+    /// re-run.
     #[test]
     fn test_migration_to_v31_moves_the_favorite_onto_the_prompt() {
         let conn = Connection::open_in_memory().unwrap();
@@ -913,11 +928,14 @@ mod tests {
                  PRIMARY KEY (prompt_id, project_id)
              );
              INSERT INTO projects (id, name, path, created_at, updated_at)
-                 VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01');
+                 VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01'),
+                        (2, 'other', '/tmp/other', '2026-01-01', '2026-01-01');
              INSERT INTO prompts (id, project_id, title, body, created_at, updated_at)
                  VALUES (1, NULL, 'shared', 'b', '2026-01-01', '2026-01-01'),
-                        (2, 1, 'own', 'b', '2026-01-01', '2026-01-01');
-             INSERT INTO prompt_favorites VALUES (1, 1), (2, 1);",
+                        (2, 1, 'own', 'b', '2026-01-01', '2026-01-01'),
+                        (3, 1, 'unstarred', 'b', '2026-01-01', '2026-01-01');
+             -- 3 is starred only from project 2, which a project prompt never showed in.
+             INSERT INTO prompt_favorites VALUES (1, 1), (2, 1), (3, 2);",
         )
         .unwrap();
 
@@ -933,7 +951,10 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert_eq!(rows, vec![(1, None, false), (2, Some(1), false)]);
+        assert_eq!(
+            rows,
+            vec![(1, None, false), (2, Some(1), true), (3, Some(1), false)]
+        );
         let favorites_table: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE name = 'prompt_favorites'",

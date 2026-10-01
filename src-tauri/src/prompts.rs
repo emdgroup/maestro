@@ -189,10 +189,22 @@ fn copy_input(prompt: Prompt, shared: bool) -> PromptInput {
 
 /// Answer one of the agent's prompt tools for the shared collection. The gateway answers a
 /// project's collection itself and forwards only the shared ones here, with the bare integer id;
-/// it prefixes the ids this returns with `shared-`.
+/// it prefixes the ids this returns with `shared-`. A prompt carries the keys the gateway's
+/// project prompts do, so the agent sees one shape; the id's prefix says which collection.
 pub(crate) fn tool(conn: &Connection, name: &str, arguments: &Value) -> Result<Value, String> {
-    let json = |value: &Prompt| serde_json::to_value(value).map_err(|e| e.to_string());
-    let existing = |id: i32| read(conn, id)?.ok_or_else(|| format!("no shared prompt {id}"));
+    let json = |prompt: &Prompt| -> Result<Value, String> {
+        Ok(json!({
+            "id": prompt.id,
+            "title": prompt.title,
+            "body": prompt.body,
+            "tags": prompt.tags,
+            "favorite": prompt.favorite,
+            "created_at": prompt.created_at,
+            "updated_at": prompt.updated_at,
+        }))
+    };
+    // Named as the agent knows it: the gateway hands over the bare id.
+    let existing = |id: i32| read(conn, id)?.ok_or_else(|| format!("no prompt shared-{id}"));
     match name {
         "list_prompts" => {
             let tag = arguments.get("tag").and_then(Value::as_str);
@@ -223,17 +235,28 @@ pub(crate) fn tool(conn: &Connection, name: &str, arguments: &Value) -> Result<V
             };
             json(&save(conn, &input)?)
         }
+        // The favorite is not an edit and goes on its own, so starring alone leaves `updated_at`.
         "update_prompt" => {
-            let current = existing(id_argument(arguments)?)?;
-            let input = PromptInput {
-                id: Some(current.id),
-                title: string_argument(arguments, "title")?.unwrap_or(current.title),
-                body: string_argument(arguments, "body")?.unwrap_or(current.body),
-                tags: tags_argument(arguments)?.unwrap_or(current.tags),
-                shared: true,
-                favorite: bool_argument(arguments, "favorite")?.unwrap_or(current.favorite),
-            };
-            json(&save(conn, &input)?)
+            let mut prompt = existing(id_argument(arguments)?)?;
+            let title = string_argument(arguments, "title")?;
+            let body = string_argument(arguments, "body")?;
+            let tags = tags_argument(arguments)?;
+            let favorite = bool_argument(arguments, "favorite")?;
+            if title.is_some() || body.is_some() || tags.is_some() {
+                let input = PromptInput {
+                    id: Some(prompt.id),
+                    title: title.unwrap_or(prompt.title),
+                    body: body.unwrap_or(prompt.body),
+                    tags: tags.unwrap_or(prompt.tags),
+                    shared: true,
+                    favorite: prompt.favorite,
+                };
+                prompt = save(conn, &input)?;
+            }
+            if let Some(favorite) = favorite {
+                prompt = set_favorite(conn, prompt.id, favorite)?;
+            }
+            json(&prompt)
         }
         "delete_prompt" => {
             let prompt = existing(id_argument(arguments)?)?;
@@ -279,8 +302,8 @@ fn tags_argument(arguments: &Value) -> Result<Option<Vec<String>>, String> {
     }
 }
 
-/// Run `f` against the shared collection. A write tells every listener the shared collection
-/// changed with `prompts-changed` and `project_id: null`, where the daemon's push names a project.
+/// Run `f` against the shared collection. A write tells every listener with `prompts-changed` and
+/// `collection: "shared"`; the daemon's push for a project's collection says `"project"`.
 pub(crate) fn with_shared<T>(
     app_state: &AppState,
     write: bool,
@@ -297,7 +320,7 @@ pub(crate) fn with_shared<T>(
         crate::core::emit_or_log(
             &app_state.app_handle,
             "prompts-changed",
-            json!({ "project_id": null }),
+            json!({ "collection": "shared", "project_id": null }),
         );
     }
     Ok(result)
@@ -588,7 +611,25 @@ mod tests {
         .unwrap();
         let id = created["id"].as_i64().unwrap();
         assert_eq!(created["tags"], json!(["review"]));
-        assert_eq!(created["shared"], true);
+        let mut keys: Vec<&str> = created
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "body",
+                "created_at",
+                "favorite",
+                "id",
+                "tags",
+                "title",
+                "updated_at"
+            ]
+        );
         save(&conn, &input("Other")).unwrap();
 
         let listed = tool(&conn, "list_prompts", &json!({})).unwrap();
@@ -605,8 +646,24 @@ mod tests {
 
         for name in ["get_prompt", "update_prompt", "delete_prompt"] {
             let error = tool(&conn, name, &json!({ "id": 99 })).unwrap_err();
-            assert_eq!(error, "no shared prompt 99");
+            assert_eq!(error, "no prompt shared-99");
         }
+
+        // Starring alone is not an edit.
+        let unstarred = tool(
+            &conn,
+            "update_prompt",
+            &json!({ "id": id, "favorite": false }),
+        )
+        .unwrap();
+        assert_eq!(unstarred["favorite"], false);
+        assert_eq!(unstarred["updated_at"], created["updated_at"]);
+        tool(
+            &conn,
+            "update_prompt",
+            &json!({ "id": id, "favorite": true }),
+        )
+        .unwrap();
 
         let updated = tool(
             &conn,

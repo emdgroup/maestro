@@ -207,7 +207,9 @@ function PromptColumn({
     accept: collection === "shared" ? "project" : "shared",
   });
   return (
+    // The whole column takes the drop, header included.
     <section
+      ref={ref}
       aria-label={title}
       className={cn(
         "flex min-h-64 flex-col overflow-hidden rounded-lg border border-border bg-background transition-colors sm:min-h-0",
@@ -244,7 +246,6 @@ function PromptColumn({
         </Button>
       </header>
       <div
-        ref={ref}
         data-testid={`prompts-${collection}`}
         className={cn(
           "flex-1 overflow-y-auto p-3 transition-colors",

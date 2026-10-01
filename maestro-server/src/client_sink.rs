@@ -359,6 +359,45 @@ impl ClientSink {
         }
     }
 
+    /// Write to exactly one client: the owner of `session_id` if it is attached, otherwise the one
+    /// attached longest. False when nobody is attached to take it. For a call any window can
+    /// answer and only one may, which `write`'s broadcast of an unowned session would send to all.
+    pub async fn write_to_one(&mut self, session_id: &str, buf: &[u8]) -> bool {
+        match &mut self.route {
+            Route::Stdio(slot) => {
+                let mut slot = slot.lock().await;
+                let Some(writer) = slot.as_mut() else {
+                    return false;
+                };
+                if write_all(writer, buf).await.is_err() {
+                    *slot = None;
+                    return false;
+                }
+                true
+            }
+            Route::Daemon { clients, .. } => {
+                let mut clients = clients.lock().await;
+                // A client whose write fails is removed, so the next pass picks another.
+                let written = loop {
+                    let owner = clients
+                        .owners
+                        .get(session_id)
+                        .copied()
+                        .filter(|id| clients.writers.contains_key(id));
+                    let Some(id) = owner.or_else(|| clients.writers.keys().min().copied()) else {
+                        break false;
+                    };
+                    clients.write_to(id, buf).await;
+                    if clients.writers.contains_key(&id) {
+                        break true;
+                    }
+                };
+                clients.flush().await;
+                written
+            }
+        }
+    }
+
     /// Write already-framed bytes and flush.
     ///
     /// A message about a session goes to its owner. One whose owner is gone, or that never had
@@ -463,6 +502,29 @@ mod tests {
         // A reply to a window that has gone goes nowhere, not to another window.
         to_b.lock().await.write(None, &[5]).await.unwrap();
         assert_eq!(read(&mut a_rx).await, None);
+    }
+
+    #[tokio::test]
+    async fn write_to_one_reaches_a_single_window() {
+        let root = ClientSink::detached();
+        assert!(!root.lock().await.write_to_one("s", &[0]).await);
+        let (a, mut a_rx) = client(&root).await;
+        let (b, mut b_rx) = client(&root).await;
+
+        // Unowned: the window attached longest, and only it.
+        assert!(root.lock().await.write_to_one("s", &[1]).await);
+        assert_eq!(read(&mut a_rx).await, Some(1));
+        assert_eq!(read(&mut b_rx).await, None);
+
+        // Owned: the owner.
+        root.lock().await.claim(b, "s").await;
+        assert!(root.lock().await.write_to_one("s", &[2]).await);
+        assert_eq!(read(&mut b_rx).await, Some(2));
+        assert_eq!(read(&mut a_rx).await, None);
+
+        root.lock().await.detach(a).await;
+        root.lock().await.detach(b).await;
+        assert!(!root.lock().await.write_to_one("s", &[3]).await);
     }
 
     #[tokio::test]

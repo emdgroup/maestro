@@ -30,7 +30,7 @@ export function useServerEventSync(projectId: number | undefined) {
 
     // `tasks-changed` and `worktrees-changed` name the project they concern; another project's
     // change is not this window's to refetch.
-    type Payload = { project_id?: number | null };
+    type Payload = { project_id?: number | null; collection?: "shared" | "project" };
     const subscribe = (
       event: string,
       invalidate: (payload: Payload) => void,
@@ -71,12 +71,17 @@ export function useServerEventSync(projectId: number | undefined) {
       void queryClient.invalidateQueries({ queryKey: templateQueryKeys.list });
     });
 
-    // `project_id: null` is the app's shared collection; a number is that project's own.
+    // `collection` says which one changed. A project's push with no `project_id` names a path this
+    // app could not match to a project, so every project's list is refetched rather than none.
     subscribe("prompts-changed", (payload) => {
       const id = payload.project_id ?? null;
-      void queryClient.invalidateQueries({
-        queryKey: id === null ? promptQueryKeys.shared : promptQueryKeys.project(id),
-      });
+      const queryKey =
+        payload.collection === "shared"
+          ? promptQueryKeys.shared
+          : id === null
+            ? promptQueryKeys.projects
+            : promptQueryKeys.project(id);
+      void queryClient.invalidateQueries({ queryKey });
     });
 
     // Keyed on the project, so there is nothing to listen for until one is open.

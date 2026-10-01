@@ -50,9 +50,8 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
             automation_tools::save_as_template(&app_state, session_id, &call.arguments).await
         }
         "delete_template" => automation_tools::delete_template(&app_state, &call.arguments),
-        "list_prompts" | "get_prompt" | "create_prompt" | "update_prompt" | "delete_prompt" => {
-            prompt_tool(&app_state, &call)
-        }
+        // A direct session's own reader; the shared reader answers through `answer_prompt_tool`.
+        name if is_prompt_tool(name) => prompt_tool(&app_state, &call),
         "canvas_await" => canvas_await(&app_state, session_id, &call).await,
         "canvas_create" | "canvas_update" | "canvas_data" => {
             canvas_ack(&app_state, session_id, &call.arguments).await
@@ -78,12 +77,48 @@ pub(crate) async fn handle(app_state: Arc<AppState>, session_id: &str, call: Hos
     }
 }
 
+const PROMPT_TOOLS: [&str; 5] = [
+    "list_prompts",
+    "get_prompt",
+    "create_prompt",
+    "update_prompt",
+    "delete_prompt",
+];
+
+pub(crate) fn is_prompt_tool(name: &str) -> bool {
+    PROMPT_TOOLS.contains(&name)
+}
+
 /// The shared collection only: the gateway answers a project's prompts itself.
 fn prompt_tool(app_state: &Arc<AppState>, call: &HostToolCall) -> Result<Value, String> {
     let write = !matches!(call.name.as_str(), "list_prompts" | "get_prompt");
     crate::prompts::with_shared(app_state, write, |conn| {
         crate::prompts::tool(conn, &call.name, &call.arguments)
     })
+}
+
+/// Answer a shared prompt call on the connection it came in on rather than through the session,
+/// which this window may not hold.
+pub(crate) async fn answer_prompt_tool(
+    app_state: &Arc<AppState>,
+    connection_key: crate::acp::ConnectionKey,
+    call: HostToolCall,
+) {
+    let (result, error) = match prompt_tool(app_state, &call) {
+        Ok(result) => (result, None),
+        Err(message) => (Value::Null, Some(message)),
+    };
+    let reply = MaestroRpcMessage::Request(ServerRequest::HostToolResult(HostToolResult {
+        session_id: call.session_id,
+        request_id: call.request_id,
+        result,
+        error,
+    }));
+    if let Err(e) =
+        crate::acp::connection_server::send_via_server(connection_key, app_state, reply).await
+    {
+        log::warn!("[acp] could not answer {}: {e}", call.name);
+    }
 }
 
 pub(super) async fn session_project_id(

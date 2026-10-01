@@ -253,14 +253,8 @@ async fn forward(
     pending_host_tools: &mut PendingHostTools,
     stdout: &crate::ClientOut,
 ) {
-    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-    let request_id = format!("host-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
-    let forwarded = HostToolCall {
-        session_id: call.session_id.clone(),
-        request_id: request_id.clone(),
-        name: call.name.clone(),
-        arguments,
-    };
+    let forwarded = host_call(call, arguments);
+    let request_id = forwarded.request_id.clone();
     if let Err(e) = send_response(
         stdout,
         &MaestroRpcMessage::Response(ServerResponse::HostToolCall(forwarded)),
@@ -271,6 +265,49 @@ async fn forward(
         return;
     }
     pending_host_tools.insert(request_id, (call.session_id.clone(), reply_tx));
+}
+
+/// `call` as the host sees it: `arguments`, and an id of the server's own.
+fn host_call(call: &HostToolCall, arguments: Value) -> HostToolCall {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    HostToolCall {
+        session_id: call.session_id.clone(),
+        request_id: format!("host-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed)),
+        name: call.name.clone(),
+        arguments,
+    }
+}
+
+/// Send a shared prompt call to one window, and park a receiver for its answer. Any window can
+/// answer it, held session or not, so it goes to exactly one or two would race. `None` when no
+/// window is attached to take it.
+async fn forward_to_one(
+    call: &HostToolCall,
+    arguments: Value,
+    pending_host_tools: &mut PendingHostTools,
+    stdout: &crate::ClientOut,
+) -> Option<oneshot::Receiver<HostToolResult>> {
+    let forwarded = host_call(call, arguments);
+    let request_id = forwarded.request_id.clone();
+    let message = MaestroRpcMessage::Response(ServerResponse::HostToolCall(forwarded));
+    let buf = match maestro_protocol::encode_message(None, &message) {
+        Ok(buf) => buf,
+        Err(e) => {
+            send_diag("warn", format!("[mcp] cannot encode a host call: {e}"));
+            return None;
+        }
+    };
+    if !stdout
+        .lock()
+        .await
+        .write_to_one(&call.session_id, &buf)
+        .await
+    {
+        return None;
+    }
+    let (tx, rx) = oneshot::channel();
+    pending_host_tools.insert(request_id, (call.session_id.clone(), tx));
+    Some(rx)
 }
 
 const PROMPT_TOOLS: [&str; 5] = [
@@ -296,7 +333,9 @@ const SHARED_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 ///   ids independently. The project collection is answered here, from `prompt_store`, scoped to
 ///   the calling session's project.
 /// - A call on the shared collection is forwarded as a `HostToolCall` with the **same tool name**,
-///   and its arguments rewritten: `id`, where there is one, is the bare integer `<n>`, and
+///   to exactly one window (`ClientSink::write_to_one`: the session's owner, else the window
+///   attached longest), which answers it whether or not it holds the session, and its arguments
+///   rewritten: `id`, where there is one, is the bare integer `<n>`, and
 ///   `create_prompt` loses `collection`. Every other argument (`title`, `body`, `tags`,
 ///   `favorite`, `list_prompts`' `tag`) passes through as the agent sent it. The host only ever
 ///   deals with the shared collection and bare integer ids, and answers with bare integer ids.
@@ -306,7 +345,10 @@ const SHARED_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 ///   `{id, title, tags, favorite}`; the agent gets `{prompts}`, the project's first, then the
 ///   shared ones. With no window attached, or a host that fails or takes longer than
 ///   `SHARED_LIST_TIMEOUT`, it gets the project's alone and a `shared_unavailable` note saying
-///   why. Any other shared call with no window attached is refused with `NO_WINDOW`.
+///   why; with no project store or no project bound, the shared ones and `project_unavailable`.
+///   Any other shared call with no window attached is refused with `NO_WINDOW`.
+/// - Both collections answer a prompt with the same keys: `id`, `title`, `body`, `tags`,
+///   `favorite`, `created_at`, `updated_at`.
 /// - `update_prompt` has no `shared` argument any more: moving a prompt is a create in the other
 ///   collection. Its `favorite` stars the prompt in its own collection.
 async fn prompt_call(
@@ -317,24 +359,13 @@ async fn prompt_call(
     pending_host_tools: &mut PendingHostTools,
     stdout: &crate::ClientOut,
 ) {
-    let attached = stdout.lock().await.is_attached();
-
     if call.name == "list_prompts" {
-        let shared = if attached {
-            let (tx, rx) = oneshot::channel();
-            let arguments = call.arguments.clone();
-            forward(&call, arguments, tx, pending_host_tools, stdout).await;
-            Some(rx)
-        } else {
-            None
-        };
+        let arguments = call.arguments.clone();
+        let shared = forward_to_one(&call, arguments, pending_host_tools, stdout).await;
         let stdout = Arc::clone(stdout);
         tokio::spawn(async move {
-            let result = match project_prompt_tool(store, project_path, &call, &stdout).await {
-                Ok(project) => Ok(merge_lists(project, shared).await),
-                Err(message) => Err(message),
-            };
-            let _ = reply_tx.send(answer(&call, result));
+            let project = project_prompt_tool(store, project_path, &call, &stdout).await;
+            let _ = reply_tx.send(answer(&call, Ok(merge_lists(project, shared).await)));
         });
         return;
     }
@@ -355,12 +386,10 @@ async fn prompt_call(
         return;
     };
 
-    if !attached {
+    let Some(rx) = forward_to_one(&call, arguments, pending_host_tools, stdout).await else {
         let _ = reply_tx.send(fail(&call, NO_WINDOW));
         return;
-    }
-    let (tx, rx) = oneshot::channel();
-    forward(&call, arguments, tx, pending_host_tools, stdout).await;
+    };
     tokio::spawn(async move {
         let result = match tokio::time::timeout(HOST_TIMEOUT, rx).await {
             Ok(Ok(HostToolResult {
@@ -458,9 +487,10 @@ fn prefix_shared_ids(value: &mut Value) {
     }
 }
 
-/// The project's list followed by the host's, or the project's alone with a note saying why.
+/// The project's list followed by the host's. A half that cannot be read is left out, with a note
+/// saying why in its place, so one collection failing never hides the other.
 async fn merge_lists(
-    mut project: Value,
+    project: Result<Value, String>,
     shared: Option<oneshot::Receiver<HostToolResult>>,
 ) -> Value {
     let shared = match shared {
@@ -486,19 +516,26 @@ async fn merge_lists(
             }
         },
     };
-    match shared {
-        Ok(rows) => {
-            if let Some(Value::Array(list)) = project.get_mut("prompts") {
-                list.extend(rows);
+    let mut prompts = Vec::new();
+    let mut result = serde_json::Map::new();
+    match project {
+        Ok(mut project) => {
+            if let Some(Value::Array(rows)) = project.get_mut("prompts").map(Value::take) {
+                prompts = rows;
             }
         }
         Err(note) => {
-            if let Some(object) = project.as_object_mut() {
-                object.insert("shared_unavailable".into(), json!(note));
-            }
+            result.insert("project_unavailable".into(), json!(note));
         }
     }
-    project
+    match shared {
+        Ok(rows) => prompts.extend(rows),
+        Err(note) => {
+            result.insert("shared_unavailable".into(), json!(note));
+        }
+    }
+    result.insert("prompts".into(), Value::Array(prompts));
+    Value::Object(result)
 }
 
 /// One prompt tool on the project's collection, answered from the store. Every lookup is scoped to
@@ -598,7 +635,7 @@ fn project_prompt(
         "delete_prompt" => {
             let id = id()?;
             if !prompt_store::delete(conn, project_path, id)? {
-                return Err("That prompt no longer exists".to_string());
+                return Err(format!("no prompt project-{id} in this project"));
             }
             (json!({ "deleted": format!("project-{id}") }), true)
         }
@@ -1433,7 +1470,7 @@ mod tests {
                 )
                 .await
             ),
-            "That prompt no longer exists"
+            "no prompt project-2 in this project"
         );
         assert_eq!(
             error(call(&sessions, store, "get_prompt", json!({ "id": 1 })).await),
@@ -1448,6 +1485,55 @@ mod tests {
             error(call(&sessions, store, "get_prompt", json!({ "id": "shared-1" })).await),
             NO_WINDOW
         );
+
+        // Neither half: an empty list and a note for each, not a failure.
+        let listed = ok(call(&sessions, None, "list_prompts", json!({})).await);
+        assert_eq!(listed["prompts"], json!([]));
+        assert_eq!(
+            listed["project_unavailable"],
+            crate::project_store::UNAVAILABLE
+        );
+        assert_eq!(listed["shared_unavailable"], NO_WINDOW);
+    }
+
+    /// Every window answers a shared prompt call whether it holds the session or not, so the call
+    /// must reach one of them only.
+    #[tokio::test]
+    async fn a_shared_prompt_call_reaches_one_window() {
+        let project = tempfile::tempdir().expect("project dir");
+        let project_path = project.path().to_string_lossy().into_owned();
+        let mut sessions = SessionMap::new();
+        sessions.insert("session".to_string(), session_in(&project_path, None));
+        let sink = crate::client_sink::ClientSink::detached();
+        let mut windows = Vec::new();
+        for _ in 0..2 {
+            let (ours, theirs) = tokio::io::duplex(1 << 16);
+            sink.lock().await.attach(Box::new(ours)).await;
+            windows.push(theirs);
+        }
+        let mut pending = PendingHostTools::new();
+        let (reply_tx, _reply_rx) = oneshot::channel();
+        let call = HostToolCall {
+            session_id: "session".to_string(),
+            request_id: "request".to_string(),
+            name: "get_prompt".to_string(),
+            arguments: json!({ "id": "shared-1" }),
+        };
+        handle_host_tool_call(call, reply_tx, &sessions, None, &mut pending, &sink).await;
+        assert_eq!(pending.len(), 1);
+
+        let mut received = 0;
+        for window in &mut windows {
+            let read = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                maestro_protocol::read_message(window),
+            )
+            .await;
+            if let Ok(Ok(MaestroRpcMessage::Response(ServerResponse::HostToolCall(_)))) = read {
+                received += 1;
+            }
+        }
+        assert_eq!(received, 1);
     }
 
     #[tokio::test]
