@@ -39,7 +39,7 @@ const MB_PER_AGENT: u64 = 400;
 /// Left for the operating system and whatever else the machine is doing.
 const RESERVED_MB: u64 = 1024;
 /// How long a hold survives unrenewed when the client names no TTL.
-const HOLD_TTL: Duration = Duration::from_secs(10);
+pub(crate) const HOLD_TTL: Duration = Duration::from_secs(10);
 
 const DEFAULT_CAPACITY: CapacitySettings = CapacitySettings {
     concurrency_mode: ConcurrencyMode::Auto,
@@ -196,7 +196,6 @@ fn release(project_path: &str, task_id: i32) {
 
 /// Whether a user is working with the task, so the scheduler leaves it alone. `project_path` is
 /// canonical.
-#[allow(dead_code)] // D4's scheduler is the caller.
 pub fn is_held(project_path: &str, task_id: i32) -> bool {
     holds().contains_key(&(project_path.to_string(), task_id))
 }

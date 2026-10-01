@@ -1685,6 +1685,7 @@ pub(crate) async fn dispatch_message(
         MaestroRpcMessage::Request(
             request @ (ServerRequest::HoldTask(_) | ServerRequest::ReleaseTaskHold(_)),
         ) => {
+            crate::scheduler::hold_changed(&request);
             let reply = match crate::pipeline_settings::answer_hold(request) {
                 Ok(reply) => MaestroRpcMessage::Response(reply),
                 Err(e) => error_response(e),

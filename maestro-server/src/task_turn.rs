@@ -293,6 +293,7 @@ pub(crate) fn spawn(
         for push in pushes {
             broadcast(&everyone, push).await;
         }
+        crate::scheduler::request_drain(&project_path);
         if let Some(role) = next {
             start_next(driver, &everyone, project_path, task_id, role).await;
         }

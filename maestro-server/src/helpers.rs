@@ -212,6 +212,7 @@ pub(crate) async fn send_response(
 
 /// Push `response` to every attached client, the one `stdout` replies to included.
 pub(crate) async fn broadcast(stdout: &crate::ClientOut, response: ServerResponse) {
+    crate::scheduler::observe(&response);
     let everyone = crate::client_sink::ClientSink::everyone(stdout).await;
     if let Err(e) = send_response(&everyone, &MaestroRpcMessage::Response(response)).await {
         send_diag(

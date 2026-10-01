@@ -33,6 +33,7 @@ mod profiles;
 mod project_locks;
 mod project_store;
 mod prompt_store;
+mod scheduler;
 mod session;
 mod sessions;
 mod skills;
@@ -531,6 +532,17 @@ async fn run_server(
     // Before the first request, because a project opening on this connection loads its sessions
     // before it lists any agents, and a custom agent missing here would make those loads final.
     agent::registry::apply_custom_agents(&mut agents_with_spawn);
+    // The queue drains itself once the daemon drives tasks. Its slot count is asked of this loop.
+    let mut scheduler_rx = match (task_turn::DAEMON_DRIVES_TASKS, project_store.as_ref()) {
+        (true, Some(store)) => Some(scheduler::start(scheduler::Deps {
+            store: Arc::clone(store),
+            agent_connections: Arc::clone(&agent_connections),
+            settle_tx: settle_tx.clone(),
+            stdout: Arc::clone(&stdout),
+        })),
+        _ => None,
+    };
+    let mut task_slots = 0;
     let auth_terminals: Arc<
         tokio::sync::Mutex<std::collections::HashMap<String, AuthTerminalState>>,
     > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -595,6 +607,13 @@ async fn run_server(
     automations_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
+        // A task session left the map, however it went: a slot is free on this machine.
+        let used = pipeline_settings::used_slots(&sessions);
+        if used < task_slots {
+            scheduler::request_all();
+        }
+        task_slots = used;
+
         let (msg, route, request_id) = tokio::select! {
             biased;
 
@@ -656,6 +675,22 @@ async fn run_server(
                         &mut pending_host_tools,
                     ))
                     .await;
+                }
+                continue;
+            }
+
+            // After `settle_rx`: a start handed over before the question is in the map by the answer.
+            asked = async {
+                match scheduler_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(reply) = asked {
+                    let _ = reply.send(scheduler::Snapshot {
+                        used: pipeline_settings::used_slots(&sessions),
+                        agents: agents_with_spawn.clone(),
+                    });
                 }
                 continue;
             }
