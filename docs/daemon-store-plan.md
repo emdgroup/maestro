@@ -65,7 +65,7 @@ belongs to a project.
 | 1     | Sessions: the daemon knows what a project has open | Done        |
 | 2     | Tasks, their threads, worktrees and reviews        | Done        |
 | 3     | Project prompts                                    | Done        |
-| 4     | Import what apps already hold, then drop it        | Not started |
+| 4     | Import what apps already hold, then drop it        | In progress |
 | 5     | The pipeline runs with no window                   | Not started |
 
 ### Phase 0: request ids on the wire
@@ -346,6 +346,24 @@ A task id is embedded in things that outlive the row: the `task-<id>` worktree f
 
 - The app's tables stay, unread, for one release, then a schema migration drops them.
 - Attachment rows whose file is on this app's disk are copied into the project on the way in.
+
+Decisions:
+
+| Topic                     | Decision                                                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| When                      | Automatically, while the project opens and before its sessions are attached, with a short progress line. Nothing to click. A failure opens the project with the error and tries again on the next open         |
+| What                      | Tasks and their threads, worktrees, reviews and their comments, the project's prompts with their stars, and sessions: `state.json`'s restorable sessions become dormant rows, named from `session_aliases`     |
+| All or nothing            | One request, one transaction in the daemon. Ids are kept, and each counter starts above the highest imported id                                                                                                |
+| Another machine got there | The daemon refuses an import for a project it already holds tasks, worktrees or prompts for, and the app marks its rows imported without a word. Session rows already there are kept, an imported one is added |
+| Marking                   | The app stamps its own `projects` row, so it never asks again. The daemon needs no marker: holding rows is the marker                                                                                          |
+
+Tasks:
+
+- [ ] I1 `maestro-protocol` and `maestro-server`: `ImportProject`, one transaction, the refusal,
+      counters above the imported ids
+- [ ] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
+      project, send the import before attaching sessions, stamp the project
+- [ ] I3 Review, docs, a live run against a copy of a released app's database
 
 ### Phase 5: the pipeline runs with no window
 
