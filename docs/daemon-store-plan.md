@@ -413,9 +413,8 @@ window may edit the board.
 - **The daemon drives, not only stores.** Phase 5 is in scope.
 - **Project prompts move to the daemon.** Shared prompts stay in the app.
 - **No offline board.** A project does not open without its daemon, so nothing is lost.
-- **Import is first app in.** If the daemon already holds tasks for a project, a second app's rows
-  for it are not imported. No user is in that position today, so nothing merges and nothing
-  deduplicates.
+- **Import is first app in.** Once a project is imported, a second app's rows for it are not. Rows
+  the daemon wrote itself before the first import are merged above the imported ids (phase 4).
 - **Forge work pauses with no token.** After a daemon restart, pull request and CI steps wait until
   an app connects and pushes the token. Nothing is written to the daemon's disk.
 - **A permission prompt waits for a user.** An unattended task runs in the permission mode it was
