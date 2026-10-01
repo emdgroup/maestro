@@ -17,11 +17,12 @@ use maestro_protocol::{
     ImportedSession, Prompt, ReviewComment, SessionMeta, Task, TaskAttachment, TaskComment,
     TaskInstruction, TaskRelationship, TaskReview, Worktree, IMPORT_CHUNK_BYTES,
 };
-use rusqlite::{params, Connection, Row};
+use rusqlite::types::{FromSql, Value, ValueRef};
+use rusqlite::{params, Connection, Row, RowIndex};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Emitter;
 
@@ -77,8 +78,7 @@ async fn import(
     };
 
     let (_, git_conn) = crate::core::get_project_with_git_conn(app_state, project_id).await?;
-    let state: serde_json::Value =
-        crate::core::project_storage::read_maestro_json(&git_conn, "state.json").await;
+    let state = read_legacy_state(&git_conn).await?;
     let aliases = read_aliases(app_state, project_id)?;
     let task_titles: HashMap<i32, &str> = request
         .tasks
@@ -92,7 +92,7 @@ async fn import(
         if let Err(e) = app_state.app_handle.emit("project-importing", project_id) {
             log::warn!("[import] emitting project-importing failed: {e}");
         }
-        copy_attachments(app_state, &git_conn, project_path, &mut request.attachments).await;
+        let copies = plan_attachments(&git_conn, project_path, &mut request.attachments).await?;
         let not_found = format!("No connection server for connection {connection_key:?}");
         let timed_out = "The project's server did not finish the import in time";
         let import_id = query_via_server(
@@ -141,6 +141,9 @@ async fn import(
                 "its server already held rows, this app's were left out"
             }
         );
+        if response.imported {
+            copy_attachments(app_state, &git_conn, project_path, copies).await;
+        }
     }
 
     let conn = app_state
@@ -197,57 +200,108 @@ fn json_list(value: Option<String>) -> Option<Vec<String>> {
 
 fn task_from_row(row: &Row, project_path: &str) -> rusqlite::Result<Task> {
     Ok(Task {
-        id: row.get("id")?,
+        id: get(row, "id")?,
         project_path: project_path.to_string(),
-        title: row.get("title")?,
-        description: row.get("description")?,
-        status: variant(row.get("status")?).unwrap_or(maestro_protocol::TaskStatus::Planning),
-        priority: variant(row.get("priority")?).unwrap_or(maestro_protocol::TaskPriority::Medium),
-        base_branch: row.get("base_branch")?,
-        archived_at: row.get("archived_at")?,
-        external_id: row.get("external_id")?,
-        is_imported: row.get("is_imported")?,
-        import_source: row.get("import_source")?,
-        skills: json_list(row.get("skills")?).unwrap_or_default(),
-        model_override: row.get("model_override")?,
-        mcp_allowlist: json_list(row.get("mcp_allowlist")?),
-        skills_override: json_list(row.get("skills_override")?),
-        labels: json_list(row.get("labels")?).unwrap_or_default(),
-        external_url: row.get("external_url")?,
-        external_updated_at: row.get("external_updated_at")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
-        auto_approve: row.get::<_, Option<bool>>("auto_approve")?.unwrap_or(false),
-        workspace_mode: variant(row.get("workspace_mode")?)
+        title: get(row, "title")?,
+        description: get(row, "description")?,
+        status: variant(get(row, "status")?).unwrap_or(maestro_protocol::TaskStatus::Planning),
+        priority: variant(get(row, "priority")?).unwrap_or(maestro_protocol::TaskPriority::Medium),
+        base_branch: get(row, "base_branch")?,
+        archived_at: get(row, "archived_at")?,
+        external_id: get(row, "external_id")?,
+        is_imported: get(row, "is_imported")?,
+        import_source: get(row, "import_source")?,
+        skills: json_list(get(row, "skills")?).unwrap_or_default(),
+        model_override: get(row, "model_override")?,
+        mcp_allowlist: json_list(get(row, "mcp_allowlist")?),
+        skills_override: json_list(get(row, "skills_override")?),
+        labels: json_list(get(row, "labels")?).unwrap_or_default(),
+        external_url: get(row, "external_url")?,
+        external_updated_at: get(row, "external_updated_at")?,
+        created_at: get(row, "created_at")?,
+        updated_at: get(row, "updated_at")?,
+        auto_approve: get::<Option<bool>, _>(row, "auto_approve")?.unwrap_or(false),
+        workspace_mode: variant(get(row, "workspace_mode")?)
             .unwrap_or(maestro_protocol::WorkspaceMode::NewWorktree),
-        workspace_worktree_id: row.get("workspace_worktree_id")?,
-        workspace_branch_mode: variant(row.get("workspace_branch_mode")?)
+        workspace_worktree_id: get(row, "workspace_worktree_id")?,
+        workspace_branch_mode: variant(get(row, "workspace_branch_mode")?)
             .unwrap_or(maestro_protocol::BranchMode::Create),
-        workspace_branch: row.get("workspace_branch")?,
-        agent_id: row.get("agent_id")?,
-        permission_mode_override: row.get("permission_mode_override")?,
-        execution_start_sha: row.get("execution_start_sha")?,
-        phase: variant(row.get("phase")?),
-        phase_status: variant(row.get("phase_status")?),
-        ball: variant(row.get("ball")?).unwrap_or(maestro_protocol::TaskBall::None),
-        completion: variant(row.get("completion")?),
-        execute_requested_at: row.get("execute_requested_at")?,
-        pull_request_url: row.get("pull_request_url")?,
-        pull_request_number: row.get("pull_request_number")?,
-        review_rounds: row.get("review_rounds")?,
-        fix_rounds: row.get("fix_rounds")?,
-        pull_request_ci: variant(row.get("pull_request_ci")?),
-        profile_overrides: row.get("profile_overrides")?,
+        workspace_branch: get(row, "workspace_branch")?,
+        agent_id: get(row, "agent_id")?,
+        permission_mode_override: get(row, "permission_mode_override")?,
+        execution_start_sha: get(row, "execution_start_sha")?,
+        phase: variant(get(row, "phase")?),
+        phase_status: variant(get(row, "phase_status")?),
+        ball: variant(get(row, "ball")?).unwrap_or(maestro_protocol::TaskBall::None),
+        completion: variant(get(row, "completion")?),
+        execute_requested_at: get(row, "execute_requested_at")?,
+        pull_request_url: get(row, "pull_request_url")?,
+        pull_request_number: get(row, "pull_request_number")?,
+        review_rounds: get(row, "review_rounds")?,
+        fix_rounds: get(row, "fix_rounds")?,
+        pull_request_ci: variant(get(row, "pull_request_ci")?),
+        profile_overrides: get(row, "profile_overrides")?,
     })
 }
 
+/// A cell read as `T`, or, when it holds another storage class, converted to the nearest one `T`
+/// reads: SQLite's affinity lets an old build leave text in an integer column and the like.
+fn get<T: FromSql, I: RowIndex + Copy>(row: &Row, index: I) -> rusqlite::Result<T> {
+    let error = match row.get::<_, T>(index) {
+        Err(error @ rusqlite::Error::InvalidColumnType(..)) => error,
+        other => return other,
+    };
+    let candidates = match row.get::<_, Value>(index)? {
+        Value::Integer(number) => vec![Value::Text(number.to_string())],
+        Value::Real(number) if number.fract() == 0.0 => {
+            vec![
+                Value::Integer(number as i64),
+                Value::Text(number.to_string()),
+            ]
+        }
+        Value::Real(number) => vec![Value::Text(number.to_string())],
+        Value::Text(text) => {
+            let trimmed = text.trim();
+            let mut candidates = Vec::new();
+            if let Ok(number) = trimmed.parse::<i64>() {
+                candidates.push(Value::Integer(number));
+            }
+            if let Ok(number) = trimmed.parse::<f64>() {
+                candidates.push(Value::Real(number));
+            }
+            candidates
+        }
+        Value::Blob(bytes) => vec![Value::Text(String::from_utf8_lossy(&bytes).into_owned())],
+        Value::Null => Vec::new(),
+    };
+    candidates
+        .iter()
+        .find_map(|candidate| T::column_result(ValueRef::from(candidate)).ok())
+        .ok_or(error)
+}
+
+/// The rows `map` reads. One whose cells cannot be read is logged and left out, so a single odd
+/// cell does not fail every open; any other error still fails the read.
 fn select<T>(
     conn: &Connection,
     sql: &str,
     project_id: i32,
     map: impl FnMut(&Row) -> rusqlite::Result<T>,
 ) -> rusqlite::Result<Vec<T>> {
-    conn.prepare(sql)?.query_map([project_id], map)?.collect()
+    let mut statement = conn.prepare(sql)?;
+    let mut kept = Vec::new();
+    for row in statement.query_map([project_id], map)? {
+        match row {
+            Ok(value) => kept.push(value),
+            Err(
+                error @ (rusqlite::Error::InvalidColumnType(..)
+                | rusqlite::Error::FromSqlConversionFailure(..)
+                | rusqlite::Error::IntegralValueOutOfRange(..)),
+            ) => log::warn!("[import] a row was left out, a cell could not be read: {error}"),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(kept)
 }
 
 /// Every row the app holds for the project, shaped so the daemon accepts it: a row naming a task
@@ -275,11 +329,11 @@ fn gather(
         project_id,
         |row| {
             Ok(TaskRelationship {
-                id: row.get(0)?,
-                from_task_id: row.get(1)?,
-                to_task_id: row.get(2)?,
-                relationship_type: row.get(3)?,
-                created_at: row.get(4)?,
+                id: get(row, 0)?,
+                from_task_id: get(row, 1)?,
+                to_task_id: get(row, 2)?,
+                relationship_type: get(row, 3)?,
+                created_at: get(row, 4)?,
             })
         },
     )?
@@ -296,11 +350,11 @@ fn gather(
         project_id,
         |row| {
             Ok(TaskInstruction {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                content: row.get(2)?,
-                source: row.get(3)?,
-                created_at: row.get(4)?,
+                id: get(row, 0)?,
+                task_id: get(row, 1)?,
+                content: get(row, 2)?,
+                source: get(row, 3)?,
+                created_at: get(row, 4)?,
             })
         },
     )?;
@@ -316,14 +370,14 @@ fn gather(
         project_id,
         |row| {
             Ok(TaskComment {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                kind: row.get(2)?,
-                author: row.get(3)?,
-                body: row.get(4)?,
-                external_ref: row.get(5)?,
-                phase: row.get(6)?,
-                created_at: row.get(7)?,
+                id: get(row, 0)?,
+                task_id: get(row, 1)?,
+                kind: get(row, 2)?,
+                author: get(row, 3)?,
+                body: get(row, 4)?,
+                external_ref: get(row, 5)?,
+                phase: get(row, 6)?,
+                created_at: get(row, 7)?,
             })
         },
     )?;
@@ -338,12 +392,12 @@ fn gather(
         project_id,
         |row| {
             Ok(TaskAttachment {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                filename: row.get(2)?,
-                file_path: row.get(3)?,
-                file_size: row.get(4)?,
-                created_at: row.get(5)?,
+                id: get(row, 0)?,
+                task_id: get(row, 1)?,
+                filename: get(row, 2)?,
+                file_path: get(row, 3)?,
+                file_size: get(row, 4)?,
+                created_at: get(row, 5)?,
             })
         },
     )?;
@@ -356,14 +410,14 @@ fn gather(
         project_id,
         |row| {
             Ok(Worktree {
-                id: row.get(0)?,
+                id: get(row, 0)?,
                 project_path: project_path.to_string(),
-                task_id: row.get(1)?,
-                branch_name: row.get(2)?,
-                base_branch: row.get(3)?,
-                path: row.get(4)?,
-                git_status: row.get(5)?,
-                created_at: row.get(6)?,
+                task_id: get(row, 1)?,
+                branch_name: get(row, 2)?,
+                base_branch: get(row, 3)?,
+                path: get(row, 4)?,
+                git_status: get(row, 5)?,
+                created_at: get(row, 6)?,
             })
         },
     )?;
@@ -387,11 +441,11 @@ fn gather(
         project_id,
         |row| {
             Ok(ReviewComment {
-                id: row.get(0)?,
-                review_id: row.get(1)?,
-                file_path: row.get(2)?,
-                comment: row.get(3)?,
-                created_at: row.get(4)?,
+                id: get(row, 0)?,
+                review_id: get(row, 1)?,
+                file_path: get(row, 2)?,
+                comment: get(row, 3)?,
+                created_at: get(row, 4)?,
             })
         },
     )? {
@@ -409,12 +463,12 @@ fn gather(
         project_id,
         |row| {
             Ok(TaskReview {
-                id: row.get(0)?,
-                task_id: row.get(1)?,
-                decision: row.get(2)?,
-                general_feedback: row.get(3)?,
-                reviewed_at: row.get(4)?,
-                created_at: row.get(5)?,
+                id: get(row, 0)?,
+                task_id: get(row, 1)?,
+                decision: get(row, 2)?,
+                general_feedback: get(row, 3)?,
+                reviewed_at: get(row, 4)?,
+                created_at: get(row, 5)?,
                 comments: Vec::new(),
             })
         },
@@ -431,14 +485,14 @@ fn gather(
         project_id,
         |row| {
             Ok(Prompt {
-                id: row.get(0)?,
+                id: get(row, 0)?,
                 project_path: project_path.to_string(),
-                title: row.get(1)?,
-                body: row.get(2)?,
-                tags: json_list(row.get(3)?).unwrap_or_default(),
-                favorite: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                title: get(row, 1)?,
+                body: get(row, 2)?,
+                tags: json_list(get(row, 3)?).unwrap_or_default(),
+                favorite: get(row, 4)?,
+                created_at: get(row, 5)?,
+                updated_at: get(row, 6)?,
             })
         },
     )?;
@@ -542,44 +596,145 @@ fn sessions_from_state(
         .collect()
 }
 
-/// Copy each attachment still on this machine into the project, and point its row at the copy.
-/// A file that is gone, or fails to copy, keeps its old path and shows as missing.
-async fn copy_attachments(
-    app_state: &AppState,
-    git_conn: &GitConnection,
-    project_path: &str,
+/// `state.json` as builds before the daemon wrote it. A missing file holds no sessions and an
+/// unparseable one is logged and read as none, but one that is there and cannot be read fails the
+/// import, so the project is not stamped with its sessions left behind.
+async fn read_legacy_state(conn: &GitConnection) -> Result<serde_json::Value, String> {
+    let path = format!("{}/.maestro/state.json", conn.path());
+    if !crate::connectivity::files::try_exists(conn, &path).await? {
+        return Ok(serde_json::Value::Null);
+    }
+    let text = if matches!(conn, GitConnection::Local { .. }) {
+        tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("Failed to read {path}: {e}"))?
+    } else {
+        let output = crate::connectivity::exec_channel::run_on(conn, None, "cat", &[&path]).await?;
+        if !output.success() {
+            return Err(format!("Failed to read {path}: {}", output.stderr_string()));
+        }
+        output.stdout_string()
+    };
+    Ok(serde_json::from_str(&text).unwrap_or_else(|e| {
+        log::warn!("[import] {path} is not JSON, its sessions are left out: {e}");
+        serde_json::Value::Null
+    }))
+}
+
+/// A file on this machine to copy into the project once the daemon has taken the rows.
+struct PendingCopy {
+    attachment_id: i32,
+    task_id: i32,
+    source: PathBuf,
+    relative: String,
+}
+
+/// Point each attachment whose file is on this machine (`present`) at a name of its own under its
+/// task's folder, one `existing` does not hold, and return the copies that makes owed. A row
+/// whose file is elsewhere keeps the path it has and shows as missing.
+fn assign_destinations(
     attachments: &mut [TaskAttachment],
-) {
+    present: &HashSet<i32>,
+    existing: &HashMap<i32, HashSet<String>>,
+) -> Vec<PendingCopy> {
     let mut taken: HashMap<i32, HashSet<String>> = HashMap::new();
+    let mut copies = Vec::new();
     for attachment in attachments.iter_mut() {
-        let source = Path::new(&attachment.file_path);
-        if !source.is_absolute() || !tokio::fs::try_exists(source).await.unwrap_or(false) {
+        if !present.contains(&attachment.id) {
             continue;
         }
+        let source = PathBuf::from(&attachment.file_path);
         let Some(name) = source.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        let task_taken = taken.entry(attachment.task_id).or_default();
+        let task_taken = taken.entry(attachment.task_id).or_insert_with(|| {
+            existing
+                .get(&attachment.task_id)
+                .into_iter()
+                .flatten()
+                .map(|name| format!("{TASK_ATTACHMENTS_DIR}/{}/{name}", attachment.task_id))
+                .collect()
+        });
         let relative = attachment_relative_path(
             attachment.task_id,
             name,
             &task_taken.iter().map(String::as_str).collect(),
         );
+        task_taken.insert(relative.clone());
+        attachment.file_path = relative.clone();
+        copies.push(PendingCopy {
+            attachment_id: attachment.id,
+            task_id: attachment.task_id,
+            source,
+            relative,
+        });
+    }
+    copies
+}
+
+/// Decide where each attachment on this machine goes in the project, reading every destination
+/// folder first so no file already there is overwritten. Nothing is copied yet.
+async fn plan_attachments(
+    git_conn: &GitConnection,
+    project_path: &str,
+    attachments: &mut [TaskAttachment],
+) -> Result<Vec<PendingCopy>, String> {
+    let mut present = HashSet::new();
+    let mut existing: HashMap<i32, HashSet<String>> = HashMap::new();
+    for attachment in attachments.iter() {
+        let source = Path::new(&attachment.file_path);
+        if !source.is_absolute() || !tokio::fs::try_exists(source).await.unwrap_or(false) {
+            continue;
+        }
+        present.insert(attachment.id);
+        if existing.contains_key(&attachment.task_id) {
+            continue;
+        }
         let dir = on_project_machine(
             project_path,
             &format!("{TASK_ATTACHMENTS_DIR}/{}", attachment.task_id),
         );
-        let dest = on_project_machine(project_path, &relative);
-        match crate::acp::attachment_handlers::copy_to_machine(
-            app_state, git_conn, source, &dir, &dest,
+        let names = if crate::connectivity::files::try_dir_exists(git_conn, &dir).await? {
+            crate::connectivity::files::contents(git_conn, &dir, true)
+                .await?
+                .into_iter()
+                .map(|entry| entry.name)
+                .collect()
+        } else {
+            HashSet::new()
+        };
+        existing.insert(attachment.task_id, names);
+    }
+    Ok(assign_destinations(attachments, &present, &existing))
+}
+
+/// Make the copies the daemon's rows now point at. A failure is logged and the row shows as
+/// missing; the rows are already in, so it does not fail the import.
+async fn copy_attachments(
+    app_state: &AppState,
+    git_conn: &GitConnection,
+    project_path: &str,
+    copies: Vec<PendingCopy>,
+) {
+    for copy in copies {
+        let dir = on_project_machine(
+            project_path,
+            &format!("{TASK_ATTACHMENTS_DIR}/{}", copy.task_id),
+        );
+        let dest = on_project_machine(project_path, &copy.relative);
+        if let Err(e) = crate::acp::attachment_handlers::copy_to_machine(
+            app_state,
+            git_conn,
+            &copy.source,
+            &dir,
+            &dest,
         )
         .await
         {
-            Ok(()) => {
-                task_taken.insert(relative.clone());
-                attachment.file_path = relative;
-            }
-            Err(e) => log::warn!("[import] attachment {} was not copied: {e}", attachment.id),
+            log::warn!(
+                "[import] attachment {} was not copied: {e}",
+                copy.attachment_id
+            );
         }
     }
 }
@@ -756,5 +911,85 @@ mod tests {
         ] {
             assert!(sessions_from_state(&state, &HashMap::new(), &titles, PROJECT).is_empty());
         }
+    }
+
+    #[test]
+    fn a_row_with_an_unreadable_cell_is_left_out_and_odd_cells_are_coerced() {
+        let conn = app_db();
+        conn.execute_batch(
+            "UPDATE tasks SET review_rounds = 'many' WHERE id = 9;
+             UPDATE tasks SET title = X'5365766e' WHERE id = 7;
+             UPDATE prompts SET favorite = '1' WHERE id = 4;",
+        )
+        .unwrap();
+
+        let request = gather(&conn, 1, PROJECT).unwrap();
+        let ids: Vec<i32> = request.tasks.iter().map(|task| task.id).collect();
+        assert_eq!(ids, vec![7]);
+        assert_eq!(request.tasks[0].title, "Sevn");
+        assert!(request.comments.iter().all(|comment| comment.task_id == 7));
+        assert!(request.prompts[0].favorite);
+    }
+
+    fn attachment(id: i32, task_id: i32, file_path: &str) -> TaskAttachment {
+        TaskAttachment {
+            id,
+            task_id,
+            filename: "notes.txt".to_string(),
+            file_path: file_path.to_string(),
+            file_size: 1,
+            created_at: "t".to_string(),
+        }
+    }
+
+    #[test]
+    fn destinations_step_around_files_already_in_the_project() {
+        let mut attachments = vec![
+            attachment(1, 7, "/home/me/notes.txt"),
+            attachment(2, 7, "/tmp/notes.txt"),
+            attachment(3, 9, "/home/me/notes.txt"),
+            attachment(4, 7, "/elsewhere/gone.txt"),
+        ];
+        let present = HashSet::from([1, 2, 3]);
+        let existing = HashMap::from([(7, HashSet::from(["notes.txt".to_string()]))]);
+
+        let copies = assign_destinations(&mut attachments, &present, &existing);
+        let paths: Vec<&str> = attachments.iter().map(|a| a.file_path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                ".maestro/attachments/tasks/7/notes-1.txt",
+                ".maestro/attachments/tasks/7/notes-2.txt",
+                ".maestro/attachments/tasks/9/notes.txt",
+                "/elsewhere/gone.txt",
+            ]
+        );
+        assert_eq!(copies.len(), 3);
+        assert_eq!(copies[0].source, PathBuf::from("/home/me/notes.txt"));
+        assert_eq!(copies[0].relative, paths[0]);
+    }
+
+    #[tokio::test]
+    async fn state_json_missing_is_empty_malformed_is_logged_and_unreadable_fails() {
+        let project = tempfile::tempdir().unwrap();
+        let conn = GitConnection::Local {
+            path: project.path().to_string_lossy().into_owned(),
+        };
+        assert_eq!(
+            read_legacy_state(&conn).await.unwrap(),
+            serde_json::Value::Null
+        );
+
+        let maestro = project.path().join(".maestro");
+        std::fs::create_dir_all(&maestro).unwrap();
+        std::fs::write(maestro.join("state.json"), "{ not json").unwrap();
+        assert_eq!(
+            read_legacy_state(&conn).await.unwrap(),
+            serde_json::Value::Null
+        );
+
+        std::fs::remove_file(maestro.join("state.json")).unwrap();
+        std::fs::create_dir(maestro.join("state.json")).unwrap();
+        assert!(read_legacy_state(&conn).await.is_err());
     }
 }
