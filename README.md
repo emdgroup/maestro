@@ -58,7 +58,7 @@ The `.dmg`, `.AppImage` and `-setup.exe` builds update themselves in-app. The `.
 | Integrations        | Import issues from GitHub, GitLab, Jira, Linear and others; open pull requests on your forge  |
 | Persistent sessions | Sessions keep running when you close the window and pick up again when you return             |
 
-The full guide, from setting up an agent to how a task moves across the board, is on the [Maestro website](https://emdgroup.github.io/maestro/guide/getting-started). Release notes are in the [changelog](https://emdgroup.github.io/maestro/changelog).
+The full guide, from setting up an agent to how a task moves across the board, is on the [Maestro website](https://emdgroup.github.io/maestro). Release notes are in the [changelog](https://emdgroup.github.io/maestro/changelog).
 
 ---
 
