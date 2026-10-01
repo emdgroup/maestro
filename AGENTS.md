@@ -646,11 +646,14 @@ copies into an agent: title, body, tags, a favorite flag. A project's collection
 (`maestro-server/src/prompt_store.rs`), so every app opening the project sees it. The **shared**
 collection is the app's `prompts` table, `project_id IS NULL`, read by `src-tauri/src/prompts.rs`,
 because a shared prompt belongs to no project and has to be listed in every one this app opens.
-Rows with a `project_id` are earlier builds' project prompts, unread until the phase 4 import.
-Moving a prompt between the two is a copy into the other store, unstarred, with no link back.
-Favorite is a column in both, and favoriting goes through its own command so it leaves
-`updated_at`, and the list order, alone. Every change is the `prompts-changed` event, with the
-project's id for a project collection and `null` for the shared one.
+Rows with a `project_id` are earlier builds' project prompts, unread until the phase 4 import; the
+v31 migration kept the star each one had in its own project for that import to carry. Moving a
+prompt between the two is a copy into the other store, unstarred, with no link back, and nothing
+syncs them. Favorite is a column on each row in both, one star per prompt rather than per project,
+and favoriting goes through its own command so it leaves `updated_at`, and the list order, alone.
+Every change is the `prompts-changed` event, whose `collection` is `"shared"` or `"project"`; a
+project's carries its `project_id`, which is `null` when the daemon named a path the app cannot
+match, and then every project's list is refetched.
 
 ### A worktree an automation made
 
@@ -784,10 +787,19 @@ Three files:
   surfaces itself by emitting a `SessionUpdate`, and parks every call — canvas ones included — in
   `PendingHostTools` until Tauri answers.
 - `src-tauri/src/acp/host_tools.rs` — the host end: `canvas_await`, with the automation and
-  template tools in `acp/automation_tools.rs` and the prompt tools in `prompts.rs`.
+  template tools in `acp/automation_tools.rs` and the shared prompt tools in `prompts.rs`.
 
 The task tools are the exception: the gateway answers them itself from `projects.db`, through the
 same `task_store::requests::answer` a window's request goes through, so they are never parked.
+
+The prompt tools are split by collection, and the agent names a prompt `project-N` or `shared-N`
+because the daemon and the app mint ids independently. A project prompt is answered by the gateway
+from `prompt_store`, scoped to the session's project, with no window needed. A shared one is
+forwarded with its bare id to exactly one window, the session's owner or else the window attached
+longest, and that window answers it whether or not it holds the session, since the call needs no
+session state. With no window attached a shared call is refused, and `list_prompts` returns
+whichever collection it could read with a `project_unavailable` or `shared_unavailable` note for
+the other. Both collections answer with the same keys.
 
 Port, token and session id reach the shim as environment variables on the `McpServerStdio` entry,
 so nothing is inherited or guessed. The listener binds loopback only and the token is a v4 uuid;
@@ -804,7 +816,8 @@ without canvas and task tools.
 | `get_task` / `update_task` / `comment_task`       | the gateway, scoped to the session's project   | the task, or the new entry    |
 | automation and run tools (`*_automation*`)        | the host, scoped to the session's project      | the automation, or the run    |
 | template tools (`*_template*`)                    | the host, app-wide; built-ins are read-only    | the template                  |
-| prompt tools (`*_prompt*`)                        | the host, the project's own and shared ones    | the prompt, or the list       |
+| prompt tools on `project-N`                       | the gateway, scoped to the session's project   | the prompt, or the list       |
+| prompt tools on `shared-N`                        | the host, any one attached window              | the prompt, or the list       |
 
 A task tool works with no window attached: the session's project and task come from its binding
 in the daemon's session map, and the write is pushed to whatever windows there are, or to none.

@@ -64,7 +64,7 @@ belongs to a project.
 | 0     | Request ids on the wire                            | Done        |
 | 1     | Sessions: the daemon knows what a project has open | Done        |
 | 2     | Tasks, their threads, worktrees and reviews        | Done        |
-| 3     | Project prompts                                    | In progress |
+| 3     | Project prompts                                    | Done        |
 | 4     | Import what apps already hold, then drop it        | Not started |
 | 5     | The pipeline runs with no window                   | Not started |
 
@@ -323,7 +323,18 @@ Tasks:
       ways; the host's prompt tools answer for the shared collection
 - [x] P4 Frontend: two columns, drag to copy, the menu item, favorites first, filter All and
       Favorites
-- [ ] P5 Review, docs, a live run
+- [x] P5 Review, docs, a live run
+
+Notes from phase 3:
+
+- A shared prompt call goes to one window, the session's owner or else the window attached
+  longest, and that window answers it whether or not it holds the session. If that window cannot
+  answer, the call waits out the gateway's timeout (10 seconds for the shared half of
+  `list_prompts`, 90 for the rest) rather than being retried on another window.
+- A database that ran v31 before it learned to keep project prompts' stars lost them. v31 never
+  shipped, so only dev databases are affected.
+- A project push whose path the app cannot match (a symlinked project path, as in phase 2) carries
+  a null `project_id`, and every project's prompt list is refetched.
 
 ### Phase 4: import, then drop
 
