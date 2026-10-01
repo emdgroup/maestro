@@ -2923,8 +2923,8 @@ async markTaskExecutionStarted(projectId: number, taskId: number) : Promise<Resu
  * Records that the session is up and the agent is working.
  * 
  * The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
- * In Progress — and the mapping lives in `transition::resolve` so the four spawn paths cannot
- * disagree about it.
+ * In Progress — and the mapping lives in the daemon's `transition::resolve` so the four spawn
+ * paths cannot disagree about it.
  * 
  * Guarded on the task still being the one that was claimed: a user who dragged the card away
  * mid-spawn, or stopped it, must not have that undone by a session that finished starting
@@ -4206,8 +4206,8 @@ workspace_branch?: string | null; agent_id?: string | null; permission_mode_over
 /**
  * Pipeline activity, orthogonal to `status`. `status` is the board column; these three are
  * what is happening inside it. `None` means no pipeline activity, in which case
- * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only via
- * `task::transition`, never by ad-hoc SQL.
+ * `phase_status` is `None` and `ball` is `TaskBall::None`. Written only by the daemon's
+ * transition table (`maestro-server/src/task_store/transition.rs`).
  */
 phase?: TaskPhase | null; phase_status?: PhaseStatus | null; ball: TaskBall; 
 /**

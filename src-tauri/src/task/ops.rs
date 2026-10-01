@@ -300,8 +300,8 @@ pub async fn mark_task_execution_started(
 /// Records that the session is up and the agent is working.
 ///
 /// The role decides where that leaves the task — a refiner stays in the backlog, a coder moves to
-/// In Progress — and the mapping lives in `transition::resolve` so the four spawn paths cannot
-/// disagree about it.
+/// In Progress — and the mapping lives in the daemon's `transition::resolve` so the four spawn
+/// paths cannot disagree about it.
 ///
 /// Guarded on the task still being the one that was claimed: a user who dragged the card away
 /// mid-spawn, or stopped it, must not have that undone by a session that finished starting

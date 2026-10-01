@@ -22,8 +22,7 @@ pub use crate::integration::{
 };
 pub use crate::project::models as project;
 pub use crate::project::{
-    now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, ProjectStatus,
-    TaskSnapshot, WorktreeSnapshot,
+    now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectStatus,
 };
 pub use crate::settings::models as settings;
 pub use crate::task::models as task;
@@ -31,7 +30,6 @@ pub use crate::task::{
     BranchMode, CreateTaskRequest, PhaseStatus, ProjectConfigRequest, ProjectConfigResponse,
     PullRequestCi, Task, TaskAttachment, TaskBall, TaskComment, TaskCompletion, TaskConfigRequest,
     TaskInstruction, TaskPhase, TaskPriority, TaskRelationship, TaskStatus, WorkspaceMode,
-    TASK_SELECT,
 };
 pub use settings::{
     ActivityVisibility, AgentStreamWidth, AppSettings, ConnectionCapacitySettings,

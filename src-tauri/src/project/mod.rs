@@ -8,7 +8,4 @@ pub mod prime;
 pub mod profiles;
 pub mod settings;
 
-pub use models::{
-    now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectState, ProjectStatus,
-    TaskSnapshot, WorktreeSnapshot,
-};
+pub use models::{now_rfc3339, Project, ProjectConfig, ProjectIssueTrackingConfig, ProjectStatus};

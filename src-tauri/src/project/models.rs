@@ -236,71 +236,6 @@ pub fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
 }
 
-/// Snapshot of a task at a specific point in time for project state storage
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct TaskSnapshot {
-    pub id: i32,
-    pub title: String,
-    pub description: String,
-    /// Task status as string (e.g., "Backlog", "Ready", "InProgress", "Review", "Failed", "Done")
-    pub status: String,
-    pub skills: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model_override: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp_allowlist: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skills_override: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub external_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_imported: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub import_source: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// Snapshot of a worktree at a specific point in time for project state storage
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[specta(export)]
-pub struct WorktreeSnapshot {
-    pub id: i32,
-    pub branch_name: String,
-    pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_id: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_status: Option<String>,
-    pub created_at: String,
-}
-
-/// Project-level state stored in .maestro/state.json
-/// Contains snapshots of all tasks and worktrees for this project
-#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
-#[serde(default)]
-#[specta(export)]
-pub struct ProjectState {
-    pub tasks: Vec<TaskSnapshot>,
-    pub worktrees: Vec<WorktreeSnapshot>,
-    pub updated_at: String,
-    /// Schema version for future migrations; defaults to 1 for backward compatibility
-    pub schema_version: u32,
-}
-
-impl ProjectState {
-    /// Create an empty ProjectState with current timestamp
-    pub fn empty() -> Self {
-        ProjectState {
-            tasks: vec![],
-            worktrees: vec![],
-            updated_at: Utc::now().to_rfc3339(),
-            schema_version: 1,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,7 +330,7 @@ mod tests {
     /// content reads back as the default rather than failing — every caller treats a project that
     /// has never written the file as one holding defaults.
     #[tokio::test]
-    async fn settings_and_state_saves_replace_existing_json() {
+    async fn a_settings_save_replaces_existing_json() {
         use crate::core::project_storage::{read_maestro_json, write_maestro_json};
         use crate::models::GitConnection;
 
@@ -403,7 +338,6 @@ mod tests {
         let maestro_dir = dir.path().join(".maestro");
         std::fs::create_dir(&maestro_dir).expect("create .maestro");
         std::fs::write(maestro_dir.join("settings.json"), "stale settings").expect("seed settings");
-        std::fs::write(maestro_dir.join("state.json"), "stale state").expect("seed state");
 
         let conn = GitConnection::Local {
             path: dir.path().to_str().expect("UTF-8 path").to_string(),
@@ -412,29 +346,13 @@ mod tests {
         write_maestro_json(&conn, "settings.json", &ProjectConfig::default())
             .await
             .expect("save settings");
-        write_maestro_json(&conn, "state.json", &ProjectState::empty())
-            .await
-            .expect("save state");
 
         let _: ProjectConfig = read_maestro_json(&conn, "settings.json").await;
-        let _: ProjectState = read_maestro_json(&conn, "state.json").await;
         assert_eq!(
             std::fs::read_dir(maestro_dir)
                 .expect("list .maestro")
                 .count(),
-            2
+            1
         );
-    }
-
-    /// Files written before sessions moved to the daemon still carry their session lists.
-    #[test]
-    fn a_state_file_with_the_old_session_fields_still_parses() {
-        let state: ProjectState = serde_json::from_str(
-            r#"{"tasks":[],"worktrees":[],"updated_at":"","schema_version":1,
-                "restorable_sessions":[{"agent_id":"a","acp_session_id":"s","cwd":"/p"}],
-                "session_folders":[{"agent_id":"a","acp_session_id":"s","relative_path":""}]}"#,
-        )
-        .expect("an old state file parses");
-        assert_eq!(state.schema_version, 1);
     }
 }
