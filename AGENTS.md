@@ -149,7 +149,7 @@ Shared crate defining the JSON message types between maestro (Tauri) and maestro
 
 ### Database Schema
 
-SQLite with foreign key constraints enabled. Schema V30. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
+SQLite with foreign key constraints enabled. Schema V31. Configured with WAL mode and 5s `busy_timeout` for concurrent access.
 
 `SCHEMA_VERSION` lives in `src-tauri/src/core/schema.rs` — that constant is the source of truth; update this doc when you bump it.
 
@@ -157,7 +157,7 @@ SQLite with foreign key constraints enabled. Schema V30. Configured with WAL mod
 
 | Stored version      | Behaviour                                                                  |
 | ------------------- | -------------------------------------------------------------------------- |
-| `0` (fresh install) | create the full schema from `SCHEMA_V30_FULL`                              |
+| `0` (fresh install) | create the full schema from `SCHEMA_V31_FULL`                              |
 | `>= 22`             | apply incremental migrations in `run_migrations()` — **data is preserved** |
 | `1..=21` (legacy)   | drop every table and recreate — **data is lost**                           |
 
@@ -173,10 +173,10 @@ repository was ever in is three code paths maintained to serve nobody. This is o
 the versions in question are absent from `main` and from every tag; check both before doing it,
 and expect to delete `.maestro/dev-data/` on any machine that ran the intermediate builds.
 
-Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`, `prompt_favorites`
+Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`
 
 The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
-`connection_settings`, `templates`, `prompts` and `prompt_favorites`. The rest are no longer read or
+`connection_settings`, `templates` and the shared rows of `prompts`. The rest are no longer read or
 written: tasks and everything hanging off them are the daemon's (see "Tasks live in the daemon"),
 and a session's name is on the daemon's row for it (see "The resident maestro-server"). Those tables
 stay where they are, holding what earlier builds wrote, until phase 4 of `docs/daemon-store-plan.md`
@@ -641,12 +641,16 @@ servers are a new `TemplateBody` variant rather than a new table. The built-in t
 are not stored: they are `src-tauri/assets/builtin-templates.json`, read by `templates.ts` for the
 Templates page and by `templates::builtins` for the agent's template tools.
 
-**Prompts are app-side too, and not templates.** A prompt is text the user copies into an agent:
-title, body, tags, a favorite flag. `src-tauri/src/prompts.rs` keeps them in the app's `prompts`
-table rather than in `.maestro/`, because a **shared** prompt belongs to no project and has to be
-listed in every one: shared is `project_id IS NULL`, and unsharing hands the prompt to the project
-it was unshared from. Favoriting goes through its own command so it leaves `updated_at`, and the
-list order, alone.
+**Prompts are two collections, and only the shared one is app-side.** A prompt is text the user
+copies into an agent: title, body, tags, a favorite flag. A project's collection is in its daemon
+(`maestro-server/src/prompt_store.rs`), so every app opening the project sees it. The **shared**
+collection is the app's `prompts` table, `project_id IS NULL`, read by `src-tauri/src/prompts.rs`,
+because a shared prompt belongs to no project and has to be listed in every one this app opens.
+Rows with a `project_id` are earlier builds' project prompts, unread until the phase 4 import.
+Moving a prompt between the two is a copy into the other store, unstarred, with no link back.
+Favorite is a column in both, and favoriting goes through its own command so it leaves
+`updated_at`, and the list order, alone. Every change is the `prompts-changed` event, with the
+project's id for a project collection and `null` for the shared one.
 
 ### A worktree an automation made
 
@@ -986,7 +990,7 @@ Read/write via `project_storage.rs`. Follow this pattern when adding new project
 ## Important Notes
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see below)
-- Schema version: 30 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
+- Schema version: 31 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
 - `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 9.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it

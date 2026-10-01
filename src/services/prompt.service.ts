@@ -8,11 +8,17 @@ export const promptQueryKeys = {
   list: (projectId: number) => ["prompts", projectId] as const,
 };
 
-/** The project's own prompts and every shared one, most recently edited first, starred for this project. */
+/** The project's collection, from its daemon, then the app's shared one; favorites first in each. */
 export function usePromptsQuery(projectId: number) {
   return useQuery({
     queryKey: promptQueryKeys.list(projectId),
-    queryFn: () => api.listPrompts(projectId),
+    queryFn: async () => {
+      const [own, shared] = await Promise.all([
+        api.listPrompts(projectId, false),
+        api.listPrompts(projectId, true),
+      ]);
+      return [...own, ...shared];
+    },
   });
 }
 
@@ -39,31 +45,35 @@ export function useSetPromptFavoriteMutation() {
     mutationFn: ({
       projectId,
       id,
+      shared,
       favorite,
     }: {
       projectId: number;
       id: number;
+      shared: boolean;
       favorite: boolean;
-    }) => api.setPromptFavorite(projectId, id, favorite),
+    }) => api.setPromptFavorite(projectId, id, shared, favorite),
     onSuccess: invalidate,
     onError: createErrorToastHandler("Failed to update the prompt"),
   });
 }
 
-export function useSetPromptSharedMutation() {
+/** Copy a prompt into the other collection; `shared` names the one it is copied from. */
+export function useCopyPromptMutation() {
   const invalidate = useInvalidatePrompts();
   return useMutation({
     mutationFn: ({ projectId, id, shared }: { projectId: number; id: number; shared: boolean }) =>
-      api.setPromptShared(projectId, id, shared),
+      api.copyPrompt(projectId, id, shared),
     onSuccess: invalidate,
-    onError: createErrorToastHandler("Failed to update the prompt"),
+    onError: createErrorToastHandler("Failed to copy the prompt"),
   });
 }
 
 export function useDeletePromptMutation() {
   const invalidate = useInvalidatePrompts();
   return useMutation({
-    mutationFn: (id: number) => api.deletePrompt(id),
+    mutationFn: ({ projectId, id, shared }: { projectId: number; id: number; shared: boolean }) =>
+      api.deletePrompt(projectId, id, shared),
     onSuccess: invalidate,
     onError: createErrorToastHandler("Failed to delete the prompt"),
   });

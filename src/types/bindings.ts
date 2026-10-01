@@ -1085,16 +1085,21 @@ async deleteTemplate(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async listPrompts(projectId: number) : Promise<Result<Prompt[], string>> {
+/**
+ * One collection: the app's shared one, or the project's from its daemon. Favorites first, then
+ * most recently edited.
+ */
+async listPrompts(projectId: number, shared: boolean) : Promise<Result<Prompt[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_prompts", { projectId }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_prompts", { projectId, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Create a prompt, or replace the one `prompt.id` names.
+ * Create a prompt in the collection `prompt.shared` names, or replace the one `prompt.id` names
+ * there.
  */
 async savePrompt(projectId: number, prompt: PromptInput) : Promise<Result<Prompt, string>> {
     try {
@@ -1104,25 +1109,29 @@ async savePrompt(projectId: number, prompt: PromptInput) : Promise<Result<Prompt
     else return { status: "error", error: e  as any };
 }
 },
-async setPromptFavorite(projectId: number, id: number, favorite: boolean) : Promise<Result<Prompt, string>> {
+async setPromptFavorite(projectId: number, id: number, shared: boolean, favorite: boolean) : Promise<Result<Prompt, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_prompt_favorite", { projectId, id, favorite }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_prompt_favorite", { projectId, id, shared, favorite }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async setPromptShared(projectId: number, id: number, shared: boolean) : Promise<Result<Prompt, string>> {
+/**
+ * Copy a prompt into the other collection: from the shared one (`shared`) into the project's, or
+ * back. The copy is a new, unstarred row; the original stays, and nothing links the two.
+ */
+async copyPrompt(projectId: number, id: number, shared: boolean) : Promise<Result<Prompt, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_prompt_shared", { projectId, id, shared }) };
+    return { status: "ok", data: await TAURI_INVOKE("copy_prompt", { projectId, id, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async deletePrompt(id: number) : Promise<Result<null, string>> {
+async deletePrompt(projectId: number, id: number, shared: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_prompt", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("delete_prompt", { projectId, id, shared }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -3988,23 +3997,20 @@ from_fork: boolean;
  * produced the row, so on GitHub that command is never called at all.
  */
 detail: PullRequestRowDetail | null }
-export type Prompt = { id: number; title: string; body: string; tags: string[]; 
+export type Prompt = { 
 /**
- * Listed in every project rather than only the one it was saved in.
+ * Unique within its collection only: the two stores mint ids independently.
  */
-shared: boolean; 
+id: number; title: string; body: string; tags: string[]; 
 /**
- * Starred in the project it was read for.
+ * In the app's shared collection rather than the project's.
  */
-favorite: boolean; created_at: string; updated_at: string }
+shared: boolean; favorite: boolean; created_at: string; updated_at: string }
 /**
- * What the editor sends. `id` is `None` for a new prompt.
+ * What the editor sends. `id` is `None` for a new prompt, and `shared` names the collection it is
+ * saved in; saving never moves a prompt between collections.
  */
-export type PromptInput = { id: number | null; title: string; body: string; tags: string[]; shared: boolean; 
-/**
- * Starred in the project it is saved from. Other projects' stars are left alone.
- */
-favorite: boolean }
+export type PromptInput = { id: number | null; title: string; body: string; tags: string[]; shared: boolean; favorite: boolean }
 /**
  * A Maestro branch with no worktree and nothing on the remote holding it — the only kind this
  * offers to delete.

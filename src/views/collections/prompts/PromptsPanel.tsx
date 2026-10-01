@@ -24,10 +24,10 @@ import {
 } from "@/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
+  useCopyPromptMutation,
   useDeletePromptMutation,
   usePromptsQuery,
   useSetPromptFavoriteMutation,
-  useSetPromptSharedMutation,
 } from "@/services/prompt.service";
 import { PromptEditorDialog } from "./PromptEditorDialog";
 import { allTags, filterPrompts, type PromptFilter } from "./prompts";
@@ -94,10 +94,7 @@ function PromptCard({
               <button
                 type="button"
                 onClick={onShare}
-                aria-label={
-                  prompt.shared ? "Stop sharing with all projects" : "Share with all projects"
-                }
-                aria-pressed={prompt.shared}
+                aria-label={prompt.shared ? "Copy to this project" : "Copy to shared"}
                 className={cn(
                   "relative shrink-0",
                   prompt.shared
@@ -110,7 +107,9 @@ function PromptCard({
             <Users className={cn("size-4", !prompt.shared && "[&_*]:[stroke-dasharray:2_2.5]")} />
           </TooltipTrigger>
           <TooltipContent>
-            {prompt.shared ? "Shared with all projects" : "Share with all projects"}
+            {prompt.shared
+              ? "Shared with all projects. Click to copy into this project"
+              : "Copy to the prompts shared with all projects"}
           </TooltipContent>
         </Tooltip>
         <DropdownMenu>
@@ -204,7 +203,7 @@ export function PromptsPanel({
 }) {
   const { data } = usePromptsQuery(projectId);
   const setFavorite = useSetPromptFavoriteMutation();
-  const setShared = useSetPromptSharedMutation();
+  const copyTo = useCopyPromptMutation();
   const remove = useDeletePromptMutation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PromptFilter>("all");
@@ -221,12 +220,17 @@ export function PromptsPanel({
 
   const card = (prompt: Prompt) => (
     <PromptCard
-      key={prompt.id}
+      key={`${prompt.shared ? "shared" : "project"}-${prompt.id}`}
       prompt={prompt}
       onFavorite={() =>
-        setFavorite.mutate({ projectId, id: prompt.id, favorite: !prompt.favorite })
+        setFavorite.mutate({
+          projectId,
+          id: prompt.id,
+          shared: prompt.shared,
+          favorite: !prompt.favorite,
+        })
       }
-      onShare={() => setShared.mutate({ projectId, id: prompt.id, shared: !prompt.shared })}
+      onShare={() => copyTo.mutate({ projectId, id: prompt.id, shared: prompt.shared })}
       onEdit={() => onEdit(prompt)}
       onDelete={() => setDeleting(prompt)}
     />
@@ -344,9 +348,12 @@ export function PromptsPanel({
               onClick={() => {
                 if (deleting) {
                   const title = deleting.title;
-                  remove.mutate(deleting.id, {
-                    onSuccess: () => toast.success(`Deleted “${title}”`),
-                  });
+                  remove.mutate(
+                    { projectId, id: deleting.id, shared: deleting.shared },
+                    {
+                      onSuccess: () => toast.success(`Deleted “${title}”`),
+                    },
+                  );
                 }
                 setDeleting(null);
               }}

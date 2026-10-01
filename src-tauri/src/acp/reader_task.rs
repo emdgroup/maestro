@@ -1648,6 +1648,14 @@ pub(crate) async fn handle_shared_server_message(
                 &serde_json::json!({ "project_id": project_id }),
             );
         }
+        MaestroRpcMessage::Response(ServerResponse::PromptsChanged(project)) => {
+            let project_id = project_id_for_path(app_state, connection_key, &project.project_path);
+            crate::core::emit_or_log(
+                app_handle,
+                "prompts-changed",
+                &serde_json::json!({ "project_id": project_id }),
+            );
+        }
         // Named by project as well, since task ids are per project.
         MaestroRpcMessage::Response(ServerResponse::TaskCommentsChanged(task)) => {
             let project_id = project_id_for_path(app_state, connection_key, &task.project_path);

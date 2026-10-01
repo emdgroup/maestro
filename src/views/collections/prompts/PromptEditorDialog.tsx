@@ -38,7 +38,7 @@ export function PromptEditorDialog({
   // Reset whenever the dialog opens, during render rather than from an effect, which would paint
   // one frame of whatever was there before.
   const [shownFor, setShownFor] = useState<string | null>(null);
-  const current = open ? `${editing?.id ?? "new"}` : null;
+  const current = open ? (editing ? `${editing.shared}-${editing.id}` : "new") : null;
   if (shownFor !== current) {
     setShownFor(current);
     if (open) {
@@ -86,7 +86,7 @@ export function PromptEditorDialog({
               pressed={favorite}
               onPressedChange={setFavorite}
               label="Favorite"
-              hint="Starred in this project only"
+              hint="Listed first"
               icon={<Star className={cn("size-3.5", favorite && "fill-current text-amber-500")} />}
               className={
                 favorite ? "border-amber-500/60 bg-amber-500/15 text-foreground" : undefined
@@ -95,6 +95,8 @@ export function PromptEditorDialog({
             <Toggle
               pressed={shared}
               onPressedChange={setShared}
+              // Saving never moves a prompt between collections; copying from its card does.
+              disabled={editing !== null}
               label="Shared"
               hint="Shared with all projects"
               icon={<Users className={cn("size-3.5", shared && "text-accent")} />}
@@ -182,8 +184,8 @@ export function PromptEditorDialog({
         <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-3">
           <span className="min-w-0 truncate text-[11px] text-muted-foreground">
             {shared
-              ? "Shared with all projects. Favorite applies to this project only."
-              : "Only in this project."}
+              ? "Shared with all projects this app opens."
+              : "In this project, for everyone who opens it."}
           </span>
           <Button variant="ghost" className="ml-auto" onClick={() => onOpenChange(false)}>
             Cancel
@@ -205,8 +207,10 @@ function Toggle({
   hint,
   icon,
   className,
+  disabled,
 }: {
   pressed: boolean;
+  disabled?: boolean;
   onPressedChange: (pressed: boolean) => void;
   label: string;
   hint: string;
@@ -221,7 +225,8 @@ function Toggle({
             variant="outline"
             size="sm"
             aria-pressed={pressed}
-            onClick={() => onPressedChange(!pressed)}
+            disabled={disabled}
+            onClick={() => !disabled && onPressedChange(!pressed)}
             className={cn("h-7 gap-1.5 text-xs", !pressed && "text-muted-foreground", className)}
           />
         }

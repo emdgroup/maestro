@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
   listPrompts: vi.fn(),
   savePrompt: vi.fn(),
   setPromptFavorite: vi.fn(),
-  setPromptShared: vi.fn(),
+  copyPrompt: vi.fn(),
   deletePrompt: vi.fn(),
 }));
 vi.mock("@/lib/tauri-utils", () => ({ api }));
@@ -60,10 +60,11 @@ function renderPanel() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listPrompts.mockResolvedValue([
-    prompt(1, { title: "Review changes", tags: ["review"], shared: true, favorite: true }),
-    prompt(2, { title: "Local only", tags: ["tests"] }),
-  ]);
+  api.listPrompts.mockImplementation(async (_projectId: number, shared: boolean) =>
+    shared
+      ? [prompt(1, { title: "Review changes", tags: ["review"], shared: true, favorite: true })]
+      : [prompt(2, { title: "Local only", tags: ["tests"] })],
+  );
   api.savePrompt.mockImplementation(async (_projectId: number, input: PromptInput) =>
     prompt(3, { ...input, id: 3 }),
   );
@@ -78,7 +79,8 @@ describe("PromptsPanel", () => {
     )!;
     expect(within(favorites).getByText("Review changes")).toBeInTheDocument();
     expect(screen.getByText("Local only")).toBeInTheDocument();
-    expect(api.listPrompts).toHaveBeenCalledWith(7);
+    expect(api.listPrompts).toHaveBeenCalledWith(7, false);
+    expect(api.listPrompts).toHaveBeenCalledWith(7, true);
 
     await user.click(screen.getByRole("button", { name: "Shared" }));
     expect(screen.queryByText("Local only")).not.toBeInTheDocument();
@@ -100,20 +102,18 @@ describe("PromptsPanel", () => {
     renderPanel();
     await screen.findByText("Local only");
     await user.click(screen.getByRole("button", { name: "Add to favorites" }));
-    expect(api.setPromptFavorite).toHaveBeenCalledWith(7, 2, true);
+    expect(api.setPromptFavorite).toHaveBeenCalledWith(7, 2, false, true);
     expect(api.savePrompt).not.toHaveBeenCalled();
   });
 
-  it("shares from the card without an edit", async () => {
+  it("copies into the other collection from the card", async () => {
     const user = userEvent.setup();
-    api.setPromptShared.mockResolvedValue(prompt(2, { shared: true }));
+    api.copyPrompt.mockResolvedValue(prompt(3, { shared: true }));
     renderPanel();
     await screen.findByText("Local only");
-    expect(
-      screen.getByRole("button", { name: "Stop sharing with all projects" }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Share with all projects" }));
-    expect(api.setPromptShared).toHaveBeenCalledWith(7, 2, true);
+    expect(screen.getByRole("button", { name: "Copy to this project" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy to shared" }));
+    expect(api.copyPrompt).toHaveBeenCalledWith(7, 2, false);
     expect(api.savePrompt).not.toHaveBeenCalled();
   });
 
@@ -151,6 +151,6 @@ describe("PromptsPanel", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
     expect(api.deletePrompt).not.toHaveBeenCalled();
     await user.click(await screen.findByRole("button", { name: "Delete" }));
-    expect(api.deletePrompt).toHaveBeenCalledWith(2);
+    expect(api.deletePrompt).toHaveBeenCalledWith(7, 2, false);
   });
 });

@@ -116,7 +116,7 @@ pub fn create_builder() -> Builder<tauri::Wry> {
         crate::ipc::list_prompts,
         crate::ipc::save_prompt,
         crate::ipc::set_prompt_favorite,
-        crate::ipc::set_prompt_shared,
+        crate::ipc::copy_prompt,
         crate::ipc::delete_prompt,
         crate::ipc::list_mcp_servers,
         crate::ipc::save_mcp_server,
