@@ -66,7 +66,7 @@ belongs to a project.
 | 2     | Tasks, their threads, worktrees and reviews        | Done        |
 | 3     | Project prompts                                    | Done        |
 | 4     | Import what apps already hold, then drop it        | Done        |
-| 5     | The pipeline runs with no window                   | Not started |
+| 5     | The pipeline runs with no window                   | In progress |
 
 ### Phase 0: request ids on the wire
 
@@ -408,6 +408,47 @@ a simplification this phase makes possible, not something it needs.
 The project lock changes meaning here. It no longer decides who drives the pipeline, only which
 window may edit the board.
 
+Research before starting found two things the step table above misses. The app's reader also
+answers a coder's permission prompts (auto-approve for phases that may write) and catches a plan
+delivered in plan mode, so a task with no window would stop at its first prompt: both move with
+5c. And the app's drivers must go in the same change as the daemon's arrive, or both drive.
+
+Decisions:
+
+| Topic                   | Decision                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auto mode               | Per project, in the daemon, seeded from the app's setting on import. With it on, a queued task starts with every window closed                                                                                       |
+| Capacity                | The machine's, in the daemon: Auto mode measured on the daemon's own machine, 3 as the fallback, shared by every app                                                                                                 |
+| Slots                   | Only live sessions with a task count. A task waiting at a human gate frees its slot once its session goes                                                                                                            |
+| Daemon restart mid-turn | The startup pass reloads the task's session and sends "resume". A `Spawning` claim with nothing behind it is released, and a `Waiting` hand-off is started again                                                     |
+| Forge work              | Stays in the app: opening a pull request, polling CI, asking for a CI fix, merging and approving. With no window a task waiting on its pull request waits. 5d shrinks to one step, and `SetForgeTokens` is not built |
+| CI fix push             | The daemon pushes the fixed branch itself with plain `git push` on its machine, so CI starts with no window. The app reads the result on its next poll                                                               |
+| Issue sync              | Nothing drives it today, so 5e is dropped                                                                                                                                                                            |
+| Unattended starts       | As unattended starts behave today: missing attachments are skipped, the dirty-worktree check is skipped, and a start with no agent or a sign-in needed fails with a note in the thread                               |
+| What the board shows    | The same cards, fed by the daemon's pushes                                                                                                                                                                           |
+| A gate with no window   | Waits for the board on the next open. The daemon has no channel to notify anyone                                                                                                                                     |
+| Profile skills and MCP  | Resolved but never applied at spawn today. Left as is                                                                                                                                                                |
+
+Tasks:
+
+- [ ] D1 Protocol: capacity and auto mode get/set, holds, a start-task request for the gates and
+      the Execute button, a push telling windows the daemon started a task session; version 10
+- [ ] D2 Daemon capacity: per-machine setting, local memory probe, slots from the session map
+- [ ] D3 Daemon holds, the app's hold commands as round trips
+- [ ] D4 Daemon scheduler: drain on task writes, session close, turn end, hold release and a tick
+- [ ] D5 Profiles in the daemon: `.maestro/profiles.json`, `apply_capabilities`, automatic mode
+- [ ] D6 Prompt composition in Rust, with the TypeScript tests ported
+- [ ] D7 Task worktrees in `worktree.rs`: `task-<id>`, branch naming, reuse, start sha
+- [ ] D8 `task_runner::start`: claim, worktree, spawn, settings, prompt, ready, supersede
+- [ ] D9 The app adopts sessions the daemon started for a task
+- [ ] D10 Daemon stream tracking: completion marker, closing message, user interrupt
+- [ ] D11 Daemon turn end: classify, diff gate, reviewer, `EndTaskTurn`, the next stage, the CI fix
+      push
+- [ ] D12 Daemon permission and elicitation handling for task sessions: auto-approve, plan, blocked
+- [ ] D13 Daemon startup pass
+- [ ] D14 Remove the app's drivers; Execute and the gates ask the daemon
+- [ ] D15 Docs, review, a live run with every window closed
+
 ## Decisions taken during planning
 
 - **The daemon drives, not only stores.** Phase 5 is in scope.
@@ -415,8 +456,7 @@ window may edit the board.
 - **No offline board.** A project does not open without its daemon, so nothing is lost.
 - **Import is first app in.** Once a project is imported, a second app's rows for it are not. Rows
   the daemon wrote itself before the first import are merged above the imported ids (phase 4).
-- **Forge work pauses with no token.** After a daemon restart, pull request and CI steps wait until
-  an app connects and pushes the token. Nothing is written to the daemon's disk.
+- **Forge work stays in the app.** Pull request and CI steps run only while a window is attached (phase 5).
 - **A permission prompt waits for a user.** An unattended task runs in the permission mode it was
   given and blocks on a prompt until someone attaches.
 - **Prompts are copied between collections, never synced.** A mesh of stores reconciling shared
