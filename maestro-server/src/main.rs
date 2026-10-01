@@ -808,6 +808,15 @@ async fn run_server(
 
             ended = turn_rx.recv() => {
                 let Some(ended) = ended else { continue };
+                // A task session the daemon prompted before adopting it: held until it is.
+                let ended = if sessions.contains_key(&ended.session_id) {
+                    ended
+                } else {
+                    match task_runner::hold_turn_end(ended) {
+                        Some(ended) => ended,
+                        None => continue,
+                    }
+                };
                 // A task's session: resolve the turn and start the next stage, off the loop.
                 let task_binding = sessions
                     .get(&ended.session_id)

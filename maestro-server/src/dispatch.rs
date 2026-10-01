@@ -301,8 +301,14 @@ pub(crate) async fn settle(
                     agents: agents_with_spawn.clone(),
                 };
                 tokio::spawn(async move {
-                    crate::task_turn::start_next(driver, &everyone, project_path, task_id, role)
-                        .await;
+                    Box::pin(crate::task_turn::start_next(
+                        driver,
+                        &everyone,
+                        project_path,
+                        task_id,
+                        role,
+                    ))
+                    .await;
                 });
             }
             return;
@@ -1730,7 +1736,7 @@ pub(crate) async fn dispatch_message(
                 ),
                 // Answered once the session is in the map, or once the start has failed.
                 Ok(crate::task_runner::Begun::Claimed(claimed)) => {
-                    tokio::spawn(crate::task_runner::launch(
+                    tokio::spawn(Box::pin(crate::task_runner::launch(
                         crate::task_runner::Launcher {
                             store: Arc::clone(store),
                             agent_connections: Arc::clone(agent_connections),
@@ -1738,7 +1744,7 @@ pub(crate) async fn dispatch_message(
                             reply: Arc::clone(stdout),
                         },
                         claimed,
-                    ));
+                    )));
                 }
                 Err(e) => send_or_return!(send_response(stdout, &error_response(e)).await),
             }

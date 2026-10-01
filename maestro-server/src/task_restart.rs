@@ -302,11 +302,16 @@ async fn resume(
     if unblock {
         crate::session::task_gate::unblock(&Some((path.to_string(), task_id)), everyone).await;
     }
-    session
+    crate::task_runner::expect_turn_ends(&session_id);
+    if session
         .cmd_tx
         .send(SessionCommand::Prompt(RESUME.to_string()))
         .await
-        .map_err(|_| "the session ended before it could resume".to_string())?;
+        .is_err()
+    {
+        crate::task_runner::forget_turn_ends(&session_id);
+        return Err("the session ended before it could resume".to_string());
+    }
 
     session.agent_id = row.agent_id.clone();
     session.cwd = row.cwd;
@@ -325,7 +330,7 @@ async fn resume(
             acp_session_id: row.acp_session_id,
             role,
         },
-        session_id,
+        session_id: session_id.clone(),
         session,
         // Nobody asked, so the one reply goes to a client that does not exist.
         reply: crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await,
@@ -334,6 +339,7 @@ async fn resume(
         .settle_tx
         .send(crate::dispatch::Settle::TaskStarted(Box::new(started)))
     {
+        crate::task_runner::forget_turn_ends(&session_id);
         send_diag("warn", format!("[task] the server stopped: {e}"));
     }
     Ok(())

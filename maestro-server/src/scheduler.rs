@@ -360,7 +360,7 @@ async fn drain(deps: &Deps, snapshot_tx: &mpsc::Sender<oneshot::Sender<Snapshot>
             reply,
         };
         tokio::spawn(async move {
-            crate::task_runner::launch(launcher, task).await;
+            Box::pin(crate::task_runner::launch(launcher, task)).await;
             // The session is handed to the loop before `launch` returns, and the loop takes it
             // before it answers the next snapshot.
             IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);

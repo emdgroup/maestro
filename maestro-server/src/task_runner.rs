@@ -11,7 +11,7 @@
 //! sessions it supersedes and answers.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
@@ -27,6 +27,38 @@ use crate::profiles;
 use crate::sessions::{ActiveSession, SessionCommand, SessionMap, SharedAgentConnections};
 
 type SpawnParams = (String, Vec<String>, HashMap<String, String>);
+
+/// Task sessions prompted before the loop adopted them, by routing id, each with the turn end that
+/// came in meanwhile. The loop resolves a turn end only for a session in its map, so a prompt that
+/// fails fast would otherwise leave its task `Running` with nothing behind it.
+static UNADOPTED: LazyLock<Mutex<HashMap<String, Option<crate::helpers::TurnEnd>>>> =
+    LazyLock::new(Default::default);
+
+fn unadopted() -> std::sync::MutexGuard<'static, HashMap<String, Option<crate::helpers::TurnEnd>>> {
+    UNADOPTED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Before the first prompt: a turn end of this session is held until [`adopt`].
+pub(crate) fn expect_turn_ends(session_id: &str) {
+    unadopted().insert(session_id.to_string(), None);
+}
+
+/// The session will never be adopted.
+pub(crate) fn forget_turn_ends(session_id: &str) {
+    unadopted().remove(session_id);
+}
+
+/// A turn end of a session the loop does not hold: kept when the session is on its way to being
+/// adopted, handed back otherwise.
+pub(crate) fn hold_turn_end(ended: crate::helpers::TurnEnd) -> Option<crate::helpers::TurnEnd> {
+    match unadopted().get_mut(&ended.session_id) {
+        Some(slot) => {
+            *slot = Some(ended);
+            None
+        }
+        None => Some(ended),
+    }
+}
 
 /// What the loop decided: the task waits for a slot, or it is claimed and ready to launch.
 pub(crate) enum Begun {
@@ -278,11 +310,13 @@ pub(crate) async fn launch(launcher: Launcher, claimed: Box<Claimed>) {
     );
     let failure = match run(&launcher, &everyone, *claimed).await {
         Ok(started) => {
+            let session_id = started.session_id.clone();
             if let Err(e) = launcher
                 .settle_tx
                 .send(crate::dispatch::Settle::TaskStarted(Box::new(started)))
             {
                 // The loop is gone, and the session with it.
+                forget_turn_ends(&session_id);
                 send_diag("warn", format!("[task] the server stopped: {e}"));
             }
             return;
@@ -449,6 +483,7 @@ async fn run(
         task.id,
     )
     .await;
+    expect_turn_ends(&session_id);
     let prepared = prepare(
         launcher,
         everyone,
@@ -466,6 +501,7 @@ async fn run(
     let profile_id = match prepared {
         Ok(profile_id) => profile_id,
         Err(failure) => {
+            forget_turn_ends(&session_id);
             // Not in the map yet, so closed here rather than through `Cancel`.
             crate::dispatch::close_session(
                 &session_id,
@@ -649,13 +685,43 @@ pub(crate) async fn adopt(
     .await;
     // In the map now, or closed: either way a window's load of it is no longer refused.
     crate::task_restart::reloaded(&acp_session_id);
+    let held = unadopted().remove(&session_id).flatten();
     if !registered {
+        // Its row was closed while it came up, so nothing works the task any more.
+        if let Some(store) = project_store {
+            let mut pushes = Vec::new();
+            let failed = transition(
+                &mut *store.lock().await,
+                &push.project_path,
+                push.task_id,
+                TaskTransition::PhaseFailed,
+                TransitionGuard::AgentRunning,
+                Some(note(format!(
+                    "The {} session was closed while it started.",
+                    stage(push.role)
+                ))),
+                &mut pushes,
+            );
+            if let Err(e) = failed {
+                send_diag(
+                    "warn",
+                    format!("[task] could not fail task {}: {e}", push.task_id),
+                );
+            }
+            for push in pushes {
+                broadcast(&everyone, push).await;
+            }
+        }
         reply_error(
             &reply,
             "The session was closed while it started".to_string(),
         )
         .await;
         return;
+    }
+    // A turn that ended before the session was in the map, handed to the loop again now it is.
+    if let (Some(ended), Some(tx)) = (held, crate::helpers::TURN_TX.get()) {
+        let _ = tx.send(ended);
     }
 
     let superseded: Vec<String> = sessions
@@ -841,6 +907,29 @@ mod tests {
             .unwrap();
         assert_eq!(after.status, TaskStatus::Queue);
         assert_eq!(after.phase, None);
+    }
+
+    fn turn_end(session_id: &str) -> crate::helpers::TurnEnd {
+        crate::helpers::TurnEnd {
+            session_id: session_id.to_string(),
+            stop_reason: "refusal".to_string(),
+            final_message: None,
+            facts: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_turn_end_before_adoption_is_held_for_it() {
+        assert!(hold_turn_end(turn_end("stranger")).is_some());
+
+        expect_turn_ends("early");
+        assert!(hold_turn_end(turn_end("early")).is_none());
+        let held = unadopted().remove("early").flatten().unwrap();
+        assert_eq!(held.stop_reason, "refusal");
+
+        expect_turn_ends("gone");
+        forget_turn_ends("gone");
+        assert!(hold_turn_end(turn_end("gone")).is_some());
     }
 
     /// The claim leaves `Spawning`, so the prompt must be composed from the phase before it.

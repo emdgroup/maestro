@@ -286,16 +286,23 @@ pub(crate) fn spawn(
     stop_reason: String,
     facts: TurnFacts,
 ) {
+    // Each step boxed, so the spawned future stays small: it is built on the main thread's stack.
     tokio::spawn(async move {
         let everyone = crate::client_sink::ClientSink::everyone(&driver.stdout).await;
-        let (next, pushes) =
-            resolve(&driver.store, &project_path, task_id, &stop_reason, facts).await;
+        let (next, pushes) = Box::pin(resolve(
+            &driver.store,
+            &project_path,
+            task_id,
+            &stop_reason,
+            facts,
+        ))
+        .await;
         for push in pushes {
             broadcast(&everyone, push).await;
         }
         crate::scheduler::request_drain(&project_path);
         if let Some(role) = next {
-            start_next(driver, &everyone, project_path, task_id, role).await;
+            Box::pin(start_next(driver, &everyone, project_path, task_id, role)).await;
         }
     });
 }
@@ -333,7 +340,7 @@ pub(crate) async fn start_next(
         Ok(crate::task_runner::Begun::Claimed(claimed)) => {
             // Nobody asked, so the one reply goes to a client that does not exist.
             let reply = crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await;
-            crate::task_runner::launch(
+            Box::pin(crate::task_runner::launch(
                 crate::task_runner::Launcher {
                     store: Arc::clone(&driver.store),
                     agent_connections: driver.agent_connections,
@@ -341,7 +348,7 @@ pub(crate) async fn start_next(
                     reply,
                 },
                 claimed,
-            )
+            ))
             .await;
         }
         Ok(crate::task_runner::Begun::Deferred) => {}
