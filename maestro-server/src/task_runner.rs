@@ -16,8 +16,8 @@ use std::sync::Arc;
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
     MaestroRpcMessage, NewTaskComment, RequestTaskExecutionRequest, ServerRequest, ServerResponse,
-    StartTaskRequest, StartTaskResponse, Task, TaskSessionStarted, TaskStatus, TaskTransition,
-    TransitionGuard, AUTH_REQUIRED_ERROR,
+    StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
+    TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
 use rusqlite::Connection;
 
@@ -38,6 +38,9 @@ pub(crate) struct Claimed {
     pub project_path: String,
     /// As the claim left it.
     pub task: Task,
+    /// The phase before the claim, which is always `Spawning` after it: what tells a coder it is
+    /// reworking a review or fixing CI.
+    pub prior_phase: Option<TaskPhase>,
     /// The role that runs, the planner where the request asked for a coder that has to plan first.
     pub role: AgentRole,
     pub agent_id: String,
@@ -208,6 +211,7 @@ pub(crate) fn begin(
         return Err(reason);
     };
 
+    let prior_phase = task.phase;
     // InProgress only for the plan gate: the claim refuses any phase but the gate's.
     let claimed = transition(
         conn,
@@ -229,6 +233,7 @@ pub(crate) fn begin(
     Ok(Begun::Claimed(Box::new(Claimed {
         project_path,
         task,
+        prior_phase,
         role,
         agent_id,
         spawn,
@@ -362,6 +367,7 @@ async fn run(
     let Claimed {
         project_path,
         task,
+        prior_phase,
         role,
         agent_id,
         spawn: (command, args, env),
@@ -448,6 +454,7 @@ async fn run(
         everyone,
         &project_path,
         &task,
+        prior_phase,
         role,
         &capabilities,
         result.config_options.as_ref(),
@@ -512,6 +519,7 @@ async fn prepare(
     everyone: &crate::ClientOut,
     project_path: &str,
     task: &Task,
+    prior_phase: Option<TaskPhase>,
     role: AgentRole,
     capabilities: &profiles::AgentCapabilities,
     config_options: Option<&Vec<serde_json::Value>>,
@@ -526,32 +534,33 @@ async fn prepare(
     }
 
     let mut pushes = Vec::new();
-    let composed = {
-        let mut conn = launcher.store.lock().await;
-        let composed = crate::task_prompt::compose(
-            &conn,
+    let draft = crate::task_prompt::compose(
+        &*launcher.store.lock().await,
+        project_path,
+        task,
+        prior_phase,
+        role,
+        settings.role_prompt.as_deref(),
+        feedback,
+    )?;
+    // Files read and images scaled with the store let go, and off the runtime.
+    let composed = tokio::task::spawn_blocking(move || draft.embed())
+        .await
+        .map_err(|e| format!("Could not read the task's attachments: {e}"))?;
+    if unattended && !composed.skipped_attachments.is_empty() {
+        let count = composed.skipped_attachments.len();
+        add_note(
+            &mut *launcher.store.lock().await,
             project_path,
-            task,
-            role,
-            settings.role_prompt.as_deref(),
-            feedback,
-        )?;
-        if unattended && !composed.skipped_attachments.is_empty() {
-            let count = composed.skipped_attachments.len();
-            add_note(
-                &mut conn,
-                project_path,
-                task.id,
-                format!(
-                    "Started without {count} attachment{}: {}",
-                    if count == 1 { "" } else { "s" },
-                    composed.skipped_attachments.join("; ")
-                ),
-                &mut pushes,
-            );
-        }
-        composed
-    };
+            task.id,
+            format!(
+                "Started without {count} attachment{}: {}",
+                if count == 1 { "" } else { "s" },
+                composed.skipped_attachments.join("; ")
+            ),
+            &mut pushes,
+        );
+    }
 
     // Each is a request the agent answers in order, and the prompt behind them cannot overtake
     // them on one command channel, so none is waited on.
@@ -832,6 +841,70 @@ mod tests {
             .unwrap();
         assert_eq!(after.status, TaskStatus::Queue);
         assert_eq!(after.phase, None);
+    }
+
+    /// The claim leaves `Spawning`, so the prompt must be composed from the phase before it.
+    #[test]
+    fn a_rework_coder_is_given_the_review_findings() {
+        let (_dir, project, mut conn, task) = setup(Some("fake"));
+        let mut pushes = Vec::new();
+        for event in [
+            TaskTransition::ExecutionStarted,
+            TaskTransition::SessionReady(AgentRole::Coder),
+            TaskTransition::ReviewRejected,
+        ] {
+            transition(
+                &mut conn,
+                &project,
+                task.id,
+                event,
+                TransitionGuard::Always,
+                None,
+                &mut pushes,
+            )
+            .unwrap();
+        }
+        crate::task_store::append(
+            &conn,
+            &project,
+            task.id,
+            "verdict",
+            "agent",
+            Some(
+                "CHANGES REQUESTED
+missing test",
+            ),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let Ok(Begun::Claimed(claimed)) = begin(
+            &mut conn,
+            &request(&project, &task),
+            0,
+            &[agent("fake")],
+            &mut pushes,
+        ) else {
+            panic!("expected a claim");
+        };
+        assert_eq!(claimed.task.phase, Some(TaskPhase::Spawning));
+        let prompt = crate::task_prompt::compose(
+            &conn,
+            &project,
+            &claimed.task,
+            claimed.prior_phase,
+            claimed.role,
+            None,
+            None,
+        )
+        .unwrap()
+        .embed();
+        assert!(prompt.blocks.iter().any(|b| b["text"]
+            == "## Review findings to address
+
+CHANGES REQUESTED
+missing test"));
     }
 
     #[test]

@@ -41,14 +41,45 @@ pub struct ComposedPrompt {
     pub skipped_attachments: Vec<String>,
 }
 
+/// What the store holds for the prompt, read under its lock. The attachments are files, read by
+/// [`Draft::embed`] once the lock is let go.
+pub struct Draft {
+    head: Vec<Value>,
+    /// `(filename, absolute path)`, in the order they are sent.
+    attachments: Vec<(String, String)>,
+    tail: Vec<Value>,
+}
+
+impl Draft {
+    /// The prompt with its attachments read in. Blocking file IO: run it off the runtime.
+    pub fn embed(self) -> ComposedPrompt {
+        let mut blocks = self.head;
+        let mut skipped_attachments = Vec::new();
+        for (filename, path) in self.attachments {
+            match attachment_block(&path) {
+                Ok(block) => blocks.push(block),
+                Err(reason) => skipped_attachments.push(format!("{filename}: {reason}")),
+            }
+        }
+        blocks.extend(self.tail);
+        ComposedPrompt {
+            blocks,
+            skipped_attachments,
+        }
+    }
+}
+
+/// `phase` is the task's phase before its claim, which is what says a coder is reworking or fixing
+/// CI: the claim itself always leaves `Spawning`.
 pub fn compose(
     conn: &Connection,
     project_path: &str,
     task: &Task,
+    phase: Option<TaskPhase>,
     role: AgentRole,
     role_prompt: Option<&str>,
     feedback: Option<&str>,
-) -> Result<ComposedPrompt, String> {
+) -> Result<Draft, String> {
     let mut blocks = Vec::new();
     let text = |text: String| json!({ "type": "text", "text": text });
 
@@ -95,12 +126,12 @@ pub fn compose(
         if let Some(plan) = latest("plan")? {
             blocks.push(text(format!("## The approved plan\n\n{plan}")));
         }
-        if task.phase == Some(TaskPhase::Rework) {
+        if phase == Some(TaskPhase::Rework) {
             if let Some(verdict) = latest("verdict")? {
                 blocks.push(text(format!("## Review findings to address\n\n{verdict}")));
             }
         }
-        if task.phase == Some(TaskPhase::AwaitingMerge) {
+        if phase == Some(TaskPhase::AwaitingMerge) {
             if let Some(ci) = latest("ci")? {
                 blocks.push(text(format!(
                     "## CI is failing on the open pull request\n\n{ci}\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request."
@@ -109,14 +140,15 @@ pub fn compose(
         }
     }
 
-    let mut skipped_attachments = Vec::new();
-    for attachment in task_store::list_attachments(conn, project_path, task.id)? {
-        let path = on_project_machine(project_path, &attachment.file_path);
-        match attachment_block(&path) {
-            Ok(block) => blocks.push(block),
-            Err(reason) => skipped_attachments.push(format!("{}: {reason}", attachment.filename)),
-        }
-    }
+    let attachments = task_store::list_attachments(conn, project_path, task.id)?
+        .into_iter()
+        .map(|a| {
+            let path = on_project_machine(project_path, &a.file_path);
+            (a.filename, path)
+        })
+        .collect();
+
+    let mut tail = Vec::new();
 
     // Only the coder acts on a review's per-file comments.
     if role == AgentRole::Coder {
@@ -144,14 +176,15 @@ pub fn compose(
                 feedback_text.push_str(&format!("## General feedback\n{general}\n"));
             }
             if !feedback_text.is_empty() {
-                blocks.push(text(feedback_text));
+                tail.push(text(feedback_text));
             }
         }
     }
 
-    Ok(ComposedPrompt {
-        blocks,
-        skipped_attachments,
+    Ok(Draft {
+        head: blocks,
+        attachments,
+        tail,
     })
 }
 
@@ -353,7 +386,17 @@ mod tests {
     #[test]
     fn a_fresh_coder_gets_the_role_prompt_the_task_and_the_completion_line() {
         let (conn, task) = setup(P, Some("The button is dead."));
-        let prompt = compose(&conn, P, &task, AgentRole::Coder, Some("Be careful."), None).unwrap();
+        let prompt = compose(
+            &conn,
+            P,
+            &task,
+            None,
+            AgentRole::Coder,
+            Some("Be careful."),
+            None,
+        )
+        .unwrap()
+        .embed();
         assert_eq!(
             texts(&prompt),
             vec![format!(
@@ -368,11 +411,13 @@ mod tests {
                 description: None,
                 ..task
             },
+            None,
             AgentRole::Coder,
             Some(""),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .embed();
         assert_eq!(
             texts(&bare),
             vec![format!("# Fix login\n\n---\n{COMPLETION_PROTOCOL}")]
@@ -381,7 +426,7 @@ mod tests {
 
     #[test]
     fn a_coder_in_rework_gets_the_plan_the_findings_and_the_review_comments() {
-        let (mut conn, mut task) = setup(P, None);
+        let (mut conn, task) = setup(P, None);
         note(&conn, &task, "plan", "old plan");
         note(&conn, &task, "plan", "  1. do it  ");
         note(&conn, &task, "verdict", "CHANGES REQUESTED\nmissing test");
@@ -410,9 +455,11 @@ mod tests {
             },
         )
         .unwrap();
-        task.phase = Some(TaskPhase::Rework);
+        let rework = Some(TaskPhase::Rework);
 
-        let prompt = compose(&conn, P, &task, AgentRole::Coder, None, None).unwrap();
+        let prompt = compose(&conn, P, &task, rework, AgentRole::Coder, None, None)
+            .unwrap()
+            .embed();
         let t = texts(&prompt);
         assert_eq!(t.len(), 4);
         assert_eq!(t[1], "## The approved plan\n\n1. do it");
@@ -426,7 +473,9 @@ mod tests {
         );
 
         // The reviewer reads none of it.
-        let reviewer = compose(&conn, P, &task, AgentRole::Reviewer, None, None).unwrap();
+        let reviewer = compose(&conn, P, &task, rework, AgentRole::Reviewer, None, None)
+            .unwrap()
+            .embed();
         assert_eq!(
             texts(&reviewer),
             vec![format!("# Fix login\n\n---\n{REVIEWER_PROTOCOL}")]
@@ -435,11 +484,13 @@ mod tests {
 
     #[test]
     fn a_coder_awaiting_merge_gets_the_ci_report() {
-        let (conn, mut task) = setup(P, None);
+        let (conn, task) = setup(P, None);
         note(&conn, &task, "verdict", "ignored outside rework");
         note(&conn, &task, "ci", "build failed: test_login");
-        task.phase = Some(TaskPhase::AwaitingMerge);
-        let prompt = compose(&conn, P, &task, AgentRole::Coder, None, None).unwrap();
+        let phase = Some(TaskPhase::AwaitingMerge);
+        let prompt = compose(&conn, P, &task, phase, AgentRole::Coder, None, None)
+            .unwrap()
+            .embed();
         assert_eq!(
             texts(&prompt)[1..],
             ["## CI is failing on the open pull request\n\nbuild failed: test_login\n\nReproduce the failure locally, fix it, and commit. Your commits are pushed to the existing pull request."]
@@ -450,7 +501,17 @@ mod tests {
     fn a_planner_with_feedback_sees_its_last_plan_and_without_it_starts_over() {
         let (conn, task) = setup(P, None);
         note(&conn, &task, "plan", "the plan");
-        let prompt = compose(&conn, P, &task, AgentRole::Planner, None, Some(" smaller ")).unwrap();
+        let prompt = compose(
+            &conn,
+            P,
+            &task,
+            None,
+            AgentRole::Planner,
+            None,
+            Some(" smaller "),
+        )
+        .unwrap()
+        .embed();
         assert_eq!(
             texts(&prompt),
             vec![
@@ -459,9 +520,13 @@ mod tests {
                 "## What the user wants changed about it\n\nsmaller\n\nReply with the revised plan in full — it replaces the one above.".to_string(),
             ]
         );
-        let fresh = compose(&conn, P, &task, AgentRole::Planner, None, Some("  ")).unwrap();
+        let fresh = compose(&conn, P, &task, None, AgentRole::Planner, None, Some("  "))
+            .unwrap()
+            .embed();
         assert_eq!(texts(&fresh).len(), 1);
-        let refiner = compose(&conn, P, &task, AgentRole::Refiner, None, None).unwrap();
+        let refiner = compose(&conn, P, &task, None, AgentRole::Refiner, None, None)
+            .unwrap()
+            .embed();
         assert_eq!(
             texts(&refiner),
             vec![format!("# Fix login\n\n---\n{REFINER_PROTOCOL}")]
@@ -489,7 +554,17 @@ mod tests {
             task_store::add_attachment(&conn, &project, task.id, name, &rel(name)).unwrap();
         }
 
-        let prompt = compose(&conn, &project, &task, AgentRole::Reviewer, None, None).unwrap();
+        let prompt = compose(
+            &conn,
+            &project,
+            &task,
+            None,
+            AgentRole::Reviewer,
+            None,
+            None,
+        )
+        .unwrap()
+        .embed();
         let blocks = &prompt.blocks[1..];
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0]["type"], "resource");
