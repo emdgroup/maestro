@@ -437,7 +437,7 @@ Tasks:
 - [ ] D3 Daemon holds, the app's hold commands as round trips
 - [ ] D4 Daemon scheduler: drain on task writes, session close, turn end, hold release and a tick
 - [x] D5 Profiles in the daemon: `.maestro/profiles.json`, `apply_capabilities`, automatic mode
-- [ ] D6 Prompt composition in Rust, with the TypeScript tests ported
+- [x] D6 Prompt composition in Rust, with the TypeScript tests ported
 - [x] D7 Task worktrees in `worktree.rs`: `task-<id>`, branch naming, reuse, start sha
 - [ ] D8 `task_runner::start`: claim, worktree, spawn, settings, prompt, ready, supersede
 - [ ] D9 The app adopts sessions the daemon started for a task
