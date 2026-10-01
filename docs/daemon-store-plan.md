@@ -64,7 +64,7 @@ belongs to a project.
 | 0     | Request ids on the wire                            | Done        |
 | 1     | Sessions: the daemon knows what a project has open | Done        |
 | 2     | Tasks, their threads, worktrees and reviews        | Done        |
-| 3     | Project prompts                                    | Not started |
+| 3     | Project prompts                                    | In progress |
 | 4     | Import what apps already hold, then drop it        | Not started |
 | 5     | The pipeline runs with no window                   | Not started |
 
@@ -290,8 +290,8 @@ it is there in every project that app opens. The two are separate stores with se
 - **The two collections sit side by side, in two columns**, each scrolling on its own, the way the
   board's columns do. Stacked, a long project collection pushes the shared one below the fold and a
   drag has to auto-scroll to reach it; side by side a drag is always a short sideways move. A copy
-  lands at the top of its column, after the favorites. The width below which the columns stack
-  again is a question for the start of this phase.
+  lands at the top of its column, after the favorites. The columns stack below Tailwind's `sm`
+  (640px).
 - **Copying is a drag or a menu item.** Dragging a card onto the other collection copies it there:
   the target lights up and says a drop copies, and the original stays. "Copy to shared" or "Copy to
   this project" is the first item of the card's menu, which is the path for the keyboard and for
@@ -307,6 +307,23 @@ it is there in every project that app opens. The two are separate stores with se
   `update_prompt` loses its `shared` argument, which meant a move. The gateway answers for the
   project's collection and forwards to the host for the shared one, so with no window attached an
   agent sees the project's only.
+- **Existing stars on shared prompts are dropped** with `prompt_favorites`. Every shared prompt
+  starts unstarred.
+- **Project prompts the app already holds move in the phase 4 import**, with everything else. Until
+  then a dev build shows an empty project collection.
+
+Tasks:
+
+- [ ] P1 `maestro-protocol` and `maestro-server`: a `prompts` table (migration v4), requests to list,
+      create, update, delete and favorite, `PromptsChanged { project_path }`
+- [ ] P2 The gateway answers the project's prompt tools and forwards the shared ones, with
+      `project-N` / `shared-N` ids; `update_prompt` loses `shared`
+- [ ] P3 `src-tauri`: the app's `prompts` table holds the shared collection only, with its own
+      favorite column; `prompt_favorites` dropped; project prompt commands ask the daemon; copy both
+      ways; the host's prompt tools answer for the shared collection
+- [ ] P4 Frontend: two columns, drag to copy, the menu item, favorites first, filter All and
+      Favorites
+- [ ] P5 Review, docs, a live run
 
 ### Phase 4: import, then drop
 
