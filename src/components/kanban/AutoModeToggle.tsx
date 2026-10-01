@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
  * on the Agents, Worktrees and Settings tabs it is a control with no visible subject.
  *
  * The flag is the project's, kept by its daemon rather than held here, because the scheduler
- * gates on it. Setting it pushes `settings-changed` to every window, which refetches the flag and
- * drains the queue (`useQueueDrain`), so nothing is drained here.
+ * gates on it and drains the queue itself. Setting it pushes `settings-changed` to every window,
+ * which refetches the flag.
  */
 export function AutoModeToggle({ projectId }: { projectId: number | null }) {
   const { data: autoMode = false, isSuccess } = useAutoMode(projectId);

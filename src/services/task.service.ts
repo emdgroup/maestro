@@ -746,27 +746,6 @@ export function useAddTaskNoteMutation() {
 }
 
 /**
- * Mutation hook for claiming a task before its session is spawned.
- *
- * Not `updateTask({ status: "InProgress" })` — that is a manual move, which parks the task with
- * no phase and the ball on nobody, so the card looks idle for the whole run.
- *
- * Resolves to null when the task cannot be claimed, which the caller must treat as a refusal to
- * start rather than an error.
- */
-export function useMarkTaskExecutionStartedMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, taskId }: { projectId: number; taskId: number }) =>
-      api.markTaskExecutionStarted(projectId, taskId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to mark task as started"),
-  });
-}
-
-/**
  * Run one stage of a task in the daemon. Resolves to the session id, or null when the task was
  * deferred to the queue; the session reaches the window as `TaskSessionStarted`. Rejects with
  * `auth_required` when the agent needs a sign-in.
@@ -780,55 +759,6 @@ export function startTask(
   respectCapacity: boolean,
 ): Promise<string | null> {
   return api.startTask(projectId, taskId, role, feedback, unattended, respectCapacity);
-}
-
-/**
- * Mutation hook for moving a claimed task to In Progress once its session is live.
- *
- * Resolves to null when the task is no longer the one that was claimed.
- */
-export function useMarkTaskSessionReadyMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      role,
-    }: {
-      projectId: number;
-      taskId: number;
-      role: AgentRole;
-    }) => api.markTaskSessionReady(projectId, taskId, role),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to mark the session as ready"),
-  });
-}
-
-/**
- * Mutation hook for handing back a claim whose spawn never produced a session.
- *
- * `failed` decides what the user sees: true leaves the card red so a spawn error is visible and
- * retryable, false simply parks the task again because cancelling is not a failure.
- */
-export function useReleaseTaskExecutionClaimMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      projectId,
-      taskId,
-      failed,
-    }: {
-      projectId: number;
-      taskId: number;
-      failed: boolean;
-    }) => api.releaseTaskExecutionClaim(projectId, taskId, failed),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
-    },
-    onError: createErrorToastHandler("Failed to release the execution claim"),
-  });
 }
 
 /**

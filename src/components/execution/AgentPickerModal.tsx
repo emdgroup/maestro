@@ -35,27 +35,36 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
 
   const agents = discovery?.agents ?? [];
 
-  function handleApply() {
+  // Awaited before `proceed`: the daemon reads the choice from the task and the project's
+  // settings when the start is asked for again.
+  async function handleApply() {
     if (!selected) return;
-    updateTask.mutate({
-      projectId: task.project_id,
-      taskId: task.id,
-      updates: { agent_id: selected },
-    });
+    const writes: Promise<unknown>[] = [];
+    writes.push(
+      updateTask.mutateAsync({
+        projectId: task.project_id,
+        taskId: task.id,
+        updates: { agent_id: selected },
+      }),
+    );
     if (saveAsDefault && projectId) {
-      updateSettings.mutate({
-        projectId,
-        config: {
-          default_agent: selected,
-          startup_tab: projectSettings?.startup_tab ?? null,
-          default_workspace_mode: projectSettings?.default_workspace_mode ?? "NewWorktree",
-          // Carried through for the same reason as the fields above: the command takes the whole
-          // config, so anything omitted here is written away.
-          remote_name: projectSettings?.remote_name ?? null,
-          base_branch: projectSettings?.base_branch ?? null,
-        },
-      });
+      writes.push(
+        updateSettings.mutateAsync({
+          projectId,
+          config: {
+            default_agent: selected,
+            startup_tab: projectSettings?.startup_tab ?? null,
+            default_workspace_mode: projectSettings?.default_workspace_mode ?? "NewWorktree",
+            // Carried through for the same reason as the fields above: the command takes the whole
+            // config, so anything omitted here is written away.
+            remote_name: projectSettings?.remote_name ?? null,
+            base_branch: projectSettings?.base_branch ?? null,
+          },
+        }),
+      );
     }
+    // A failed write has toasted already; the start then reports what is still missing.
+    await Promise.allSettled(writes);
     proceed(selected);
     onClose();
   }

@@ -8,9 +8,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri-utils";
 
 /**
- * Matches `useQueueDrain`, for the same reason and against the same events: one transition emits
- * several of them, and answering each separately means several `get_queue_capacity` calls for one
- * change. `tasks-changed` alone fires on every permission prompt and every answer to one.
+ * One transition emits several events, and answering each separately means several
+ * `get_queue_capacity` calls for one change. `tasks-changed` alone fires on every permission prompt and every answer to one.
  */
 const DEBOUNCE_MS = 400;
 

@@ -35,7 +35,7 @@ export function sweepInterval(anyUnreported: boolean, burstsLeft: number): numbe
  * an app launched a week later learns exactly what a running one would have.
  *
  * The backend does all the work and returns the ids it changed, so there is nothing to drive here
- * beyond the timer — unlike `useQueueDrain`, where only the frontend can act on the answer.
+ * beyond the timer.
  *
  * `tasks` is what turns the steady timer into something that reacts. `open_pull_request_for_task`
  * writes the number synchronously and sets `pull_request_ci = NULL`, so a card approved with "open
