@@ -960,11 +960,14 @@ fn test_prompt_changes_reach_every_window() {
     }
 }
 
-/// An app's rows go in once, under the path the daemon resolved and with their ids, and a second
-/// import for the same project is refused without a push.
+/// An app's rows go in once, in chunks, under the path the daemon resolved and with their ids,
+/// and a second import for the same project is refused without a push.
 #[test]
 fn test_import_project_over_the_wire() {
-    use maestro_protocol::{ImportProjectRequest, ImportProjectResponse, ProjectRef};
+    use maestro_protocol::{
+        BeginImportRequest, BeginImportResponse, ImportChunkRequest, ImportProjectRequest,
+        ImportProjectResponse, ImportRef, ProjectRef,
+    };
 
     let daemon = Daemon::new();
     let mut a = daemon.attach();
@@ -982,29 +985,61 @@ fn test_import_project_over_the_wire() {
         "review_rounds": 0, "fix_rounds": 0
     }))
     .expect("a task");
-    let import = || {
-        ServerRequest::ImportProject(ImportProjectRequest {
-            project_path: format!("{}/", project.path().to_string_lossy()),
-            tasks: vec![task.clone()],
-            relationships: vec![],
-            instructions: vec![],
-            comments: vec![],
-            attachments: vec![],
-            worktrees: vec![],
-            reviews: vec![],
-            prompts: vec![],
-            sessions: vec![],
-            floors: Default::default(),
-        })
-    };
+    let project_path = format!("{}/", project.path().to_string_lossy());
     let project_ref = || ProjectRef {
         project_path: canonical.clone(),
     };
 
     let (a_in, a_out) = (a.stdin.as_mut().unwrap(), a.stdout.as_mut().unwrap());
-    write_msg_with_id(a_in, Some(51), import());
+    // Begin, three chunks of one task each, commit: the reply to the commit, under `id`.
+    let import =
+        |a_in: &mut std::process::ChildStdin, a_out: &mut std::process::ChildStdout, id: u64| {
+            write_msg_with_id(
+                a_in,
+                Some(id),
+                ServerRequest::BeginImport(BeginImportRequest {
+                    project_path: project_path.clone(),
+                    floors: Default::default(),
+                }),
+            );
+            let import_id = match read_msg_with_id(a_out) {
+                (Some(got), ServerResponse::BeginImportOk(BeginImportResponse { import_id }))
+                    if got == id =>
+                {
+                    import_id
+                }
+                other => panic!("expected BeginImportOk, got: {other:?}"),
+            };
+            for n in 0..3 {
+                let mut chunk_task = task.clone();
+                chunk_task.id = 5 + n;
+                write_msg_with_id(
+                    a_in,
+                    Some(id),
+                    ServerRequest::ImportChunk(ImportChunkRequest {
+                        import_id: import_id.clone(),
+                        chunk: ImportProjectRequest {
+                            project_path: "ignored".to_string(),
+                            tasks: vec![chunk_task],
+                            ..ImportProjectRequest::default()
+                        },
+                    }),
+                );
+                assert_eq!(
+                    read_msg_with_id(a_out),
+                    (Some(id), ServerResponse::ImportChunkOk)
+                );
+            }
+            write_msg_with_id(
+                a_in,
+                Some(id),
+                ServerRequest::CommitImport(ImportRef { import_id }),
+            );
+            read_msg_with_id(a_out)
+        };
+
     assert_eq!(
-        read_msg_with_id(a_out),
+        import(a_in, a_out, 51),
         (
             Some(51),
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
@@ -1018,23 +1053,38 @@ fn test_import_project_over_the_wire() {
         assert_eq!(read_msg_with_id(a_out), (None, push));
     }
 
-    write_msg_with_id(a_in, Some(52), import());
     assert_eq!(
-        read_msg_with_id(a_out),
+        import(a_in, a_out, 52),
         (
             Some(52),
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
         )
     );
-    // Straight to the next reply: the refusal pushed nothing.
-    write_msg_with_id(a_in, Some(53), ServerRequest::ListTasks(project_ref()));
+    // A commit naming nothing staged is refused.
+    write_msg_with_id(
+        a_in,
+        Some(53),
+        ServerRequest::CommitImport(ImportRef {
+            import_id: "nothing".to_string(),
+        }),
+    );
+    assert!(matches!(
+        read_msg_with_id(a_out),
+        (Some(53), ServerResponse::Error(_))
+    ));
+    // Straight to the next reply: the refusals pushed nothing.
+    write_msg_with_id(a_in, Some(54), ServerRequest::ListTasks(project_ref()));
     let (id, response) = read_msg_with_id(a_out);
-    assert_eq!(id, Some(53));
+    assert_eq!(id, Some(54));
     match response {
         ServerResponse::ListTasksOk(listed) => {
-            assert_eq!(listed.tasks.len(), 1);
-            assert_eq!(listed.tasks[0].id, 5);
-            assert_eq!(listed.tasks[0].project_path, canonical);
+            let ids: Vec<i32> = listed.tasks.iter().map(|task| task.id).collect();
+            assert_eq!(ids.len(), 3, "{ids:?}");
+            assert!([5, 6, 7].iter().all(|id| ids.contains(id)), "{ids:?}");
+            assert!(listed
+                .tasks
+                .iter()
+                .all(|task| task.project_path == canonical));
         }
         other => panic!("expected ListTasksOk, got: {other:?}"),
     }

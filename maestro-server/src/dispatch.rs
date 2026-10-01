@@ -1524,7 +1524,9 @@ pub(crate) async fn dispatch_message(
             | ServerRequest::UpdatePrompt(_)
             | ServerRequest::SetPromptFavorite(_)
             | ServerRequest::DeletePrompt(_)
-            | ServerRequest::ImportProject(_)),
+            | ServerRequest::BeginImport(_)
+            | ServerRequest::ImportChunk(_)
+            | ServerRequest::CommitImport(_)),
         ) => {
             let Some(store) = project_store else {
                 send_or_return!(
@@ -1545,8 +1547,20 @@ pub(crate) async fn dispatch_message(
                 | ServerRequest::DeletePrompt(_)) => {
                     crate::prompt_store::answer(&*store.lock().await, request)
                 }
-                ServerRequest::ImportProject(request) => {
-                    crate::task_store::project_import::answer(&mut *store.lock().await, request)
+                ServerRequest::BeginImport(request) => {
+                    crate::task_store::project_import::begin(request).map(|r| (r, Vec::new()))
+                }
+                ServerRequest::ImportChunk(request) => {
+                    crate::task_store::project_import::chunk(request).map(|r| (r, Vec::new()))
+                }
+                ServerRequest::CommitImport(request) => {
+                    match crate::task_store::project_import::take_staged(&request.import_id) {
+                        Ok(staged) => crate::task_store::project_import::answer(
+                            &mut *store.lock().await,
+                            staged,
+                        ),
+                        Err(e) => Err(e),
+                    }
                 }
                 request => crate::task_store::requests::answer(&mut *store.lock().await, request),
             };

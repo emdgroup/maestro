@@ -13,8 +13,9 @@ use crate::task::attachments::{
     attachment_relative_path, on_project_machine, TASK_ATTACHMENTS_DIR,
 };
 use maestro_protocol::{
-    ImportProjectRequest, ImportedSession, Prompt, ReviewComment, SessionMeta, Task,
-    TaskAttachment, TaskComment, TaskInstruction, TaskRelationship, TaskReview, Worktree,
+    split_import, BeginImportRequest, ImportChunkRequest, ImportProjectRequest, ImportRef,
+    ImportedSession, Prompt, ReviewComment, SessionMeta, Task, TaskAttachment, TaskComment,
+    TaskInstruction, TaskRelationship, TaskReview, Worktree, IMPORT_CHUNK_BYTES,
 };
 use rusqlite::{params, Connection, Row};
 use serde::de::DeserializeOwned;
@@ -92,14 +93,44 @@ async fn import(
             log::warn!("[import] emitting project-importing failed: {e}");
         }
         copy_attachments(app_state, &git_conn, project_path, &mut request.attachments).await;
+        let not_found = format!("No connection server for connection {connection_key:?}");
+        let timed_out = "The project's server did not finish the import in time";
+        let import_id = query_via_server(
+            connection_key,
+            app_state,
+            &not_found,
+            MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
+                project_path: request.project_path.clone(),
+                floors: std::mem::take(&mut request.floors),
+            })),
+            reply!(ServerResponse::BeginImportOk(response) => response.import_id),
+            IMPORT_TIMEOUT_SECS,
+            timed_out,
+        )
+        .await?;
+        for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
+            query_via_server(
+                connection_key,
+                app_state,
+                &not_found,
+                MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                    import_id: import_id.clone(),
+                    chunk,
+                })),
+                reply!(ServerResponse::ImportChunkOk => ()),
+                IMPORT_TIMEOUT_SECS,
+                timed_out,
+            )
+            .await?;
+        }
         let response = query_via_server(
             connection_key,
             app_state,
-            &format!("No connection server for connection {connection_key:?}"),
-            MaestroRpcMessage::Request(ServerRequest::ImportProject(request)),
+            &not_found,
+            MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef { import_id })),
             reply!(ServerResponse::ImportProjectOk(response) => response),
             IMPORT_TIMEOUT_SECS,
-            "The project's server did not finish the import in time",
+            timed_out,
         )
         .await?;
         log::info!(

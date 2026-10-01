@@ -10,12 +10,99 @@
 //! import carries and above its floors, and every reference to them moves along, so the imported
 //! rows keep their ids and the folders and branches named after them still match.
 
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
+
 use chrono::Utc;
-use maestro_protocol::{ImportProjectRequest, ImportProjectResponse, ProjectRef, ServerResponse};
+use maestro_protocol::{
+    BeginImportRequest, BeginImportResponse, ImportChunkRequest, ImportProjectRequest,
+    ImportProjectResponse, ProjectRef, ServerResponse,
+};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::{commit, json, text, transaction};
 use crate::automations::canonical_project_path;
+
+/// What every staged import together may hold before a begin or a chunk is refused.
+const STAGED_LIMIT_BYTES: usize = 512 * 1024 * 1024;
+/// A staged import nobody committed for this long is dropped on the next begin or chunk.
+const STAGED_TTL: Duration = Duration::from_secs(10 * 60);
+
+struct Staged {
+    request: ImportProjectRequest,
+    bytes: usize,
+    touched: Instant,
+}
+
+// ponytail: process-wide map rather than main-loop state, one daemon per machine makes them the same.
+static STAGED: LazyLock<Mutex<HashMap<String, Staged>>> = LazyLock::new(Default::default);
+
+fn staged() -> std::sync::MutexGuard<'static, HashMap<String, Staged>> {
+    let mut staged = STAGED.lock().unwrap_or_else(|e| e.into_inner());
+    staged.retain(|_, entry| entry.touched.elapsed() < STAGED_TTL);
+    staged
+}
+
+/// Opens a staged import; its rows arrive with `chunk`, and `take_staged` hands them to `answer`.
+pub fn begin(request: BeginImportRequest) -> Result<ServerResponse, String> {
+    let mut staged = staged();
+    if staged.values().map(|entry| entry.bytes).sum::<usize>() >= STAGED_LIMIT_BYTES {
+        return Err("Too many imports are staged on this server".to_string());
+    }
+    let import_id = uuid::Uuid::new_v4().to_string();
+    staged.insert(
+        import_id.clone(),
+        Staged {
+            request: ImportProjectRequest {
+                project_path: request.project_path,
+                floors: request.floors,
+                ..ImportProjectRequest::default()
+            },
+            bytes: 0,
+            touched: Instant::now(),
+        },
+    );
+    Ok(ServerResponse::BeginImportOk(BeginImportResponse {
+        import_id,
+    }))
+}
+
+pub fn chunk(request: ImportChunkRequest) -> Result<ServerResponse, String> {
+    let mut staged = staged();
+    let bytes = serde_json::to_vec(&request.chunk).map_or(0, |bytes| bytes.len());
+    if staged.values().map(|entry| entry.bytes).sum::<usize>() + bytes > STAGED_LIMIT_BYTES {
+        return Err("Too many imports are staged on this server".to_string());
+    }
+    let entry = staged
+        .get_mut(&request.import_id)
+        .ok_or_else(|| unknown(&request.import_id))?;
+    let (into, from) = (&mut entry.request, request.chunk);
+    into.tasks.extend(from.tasks);
+    into.relationships.extend(from.relationships);
+    into.instructions.extend(from.instructions);
+    into.comments.extend(from.comments);
+    into.attachments.extend(from.attachments);
+    into.worktrees.extend(from.worktrees);
+    into.reviews.extend(from.reviews);
+    into.prompts.extend(from.prompts);
+    into.sessions.extend(from.sessions);
+    entry.bytes += bytes;
+    entry.touched = Instant::now();
+    Ok(ServerResponse::ImportChunkOk)
+}
+
+/// Takes the staged import out, to be applied with `answer`.
+pub fn take_staged(import_id: &str) -> Result<ImportProjectRequest, String> {
+    staged()
+        .remove(import_id)
+        .map(|entry| entry.request)
+        .ok_or_else(|| unknown(import_id))
+}
+
+fn unknown(import_id: &str) -> String {
+    format!("No import {import_id} is staged on this server")
+}
 
 /// The reply, and the pushes to broadcast after it: none when the import was refused.
 pub fn answer(

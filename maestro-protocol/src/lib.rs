@@ -263,8 +263,12 @@ pub enum ServerRequest {
     /// Leaves `updated_at`, and so the order within favorites and others, alone.
     SetPromptFavorite(SetPromptFavoriteRequest),
     DeletePrompt(PromptRef),
-    /// An app's rows for a project the daemon holds none for, all or nothing.
-    ImportProject(ImportProjectRequest),
+    /// Opens an import of an app's rows for a project, staged in memory until `CommitImport`.
+    /// A frame is capped at `MAX_MESSAGE_SIZE`, so the rows travel in `ImportChunk`s.
+    BeginImport(BeginImportRequest),
+    ImportChunk(ImportChunkRequest),
+    /// Applies everything staged under the id, all or nothing, answered with `ImportProjectOk`.
+    CommitImport(ImportRef),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -2037,6 +2041,76 @@ pub struct ImportedSession {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BeginImportRequest {
+    pub project_path: String,
+    #[serde(default)]
+    pub floors: ImportFloors,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BeginImportResponse {
+    pub import_id: String,
+}
+
+/// Rows appended to a staged import. The chunk's `project_path` and `floors` are ignored for the
+/// ones `BeginImport` carried.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportChunkRequest {
+    pub import_id: String,
+    pub chunk: ImportProjectRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportRef {
+    pub import_id: String,
+}
+
+/// What a chunk's rows may serialize to, well under `MAX_MESSAGE_SIZE`.
+pub const IMPORT_CHUNK_BYTES: usize = 4 * 1024 * 1024;
+
+/// Splits an import's rows into chunks whose JSON stays under `budget`, each list's order kept,
+/// so appending the chunks' lists in order gives the input's back. A row larger than the budget
+/// gets a chunk of its own, which then fails at encode. `floors` are left out: `BeginImport`
+/// carries them.
+pub fn split_import(request: ImportProjectRequest, budget: usize) -> Vec<ImportProjectRequest> {
+    let empty = || ImportProjectRequest {
+        project_path: request.project_path.clone(),
+        ..ImportProjectRequest::default()
+    };
+    // The envelope around the rows: the empty chunk, the frame's own keys and the import id.
+    let base = serde_json::to_vec(&empty()).map_or(0, |bytes| bytes.len()) + 256;
+    let mut chunks = Vec::new();
+    let mut current = empty();
+    let mut size = base;
+    macro_rules! pack {
+        ($($field:ident),*) => {$(
+            for row in request.$field {
+                let len = serde_json::to_vec(&row).map_or(0, |bytes| bytes.len()) + 1;
+                if size + len > budget && size > base {
+                    chunks.push(std::mem::replace(&mut current, empty()));
+                    size = base;
+                }
+                size += len;
+                current.$field.push(row);
+            }
+        )*};
+    }
+    pack!(
+        tasks,
+        relationships,
+        instructions,
+        comments,
+        attachments,
+        worktrees,
+        reviews,
+        prompts,
+        sessions
+    );
+    chunks.push(current);
+    chunks
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ImportProjectResponse {
     /// False when the project was imported before, in which case nothing was written.
     pub imported: bool,
@@ -2156,6 +2230,8 @@ pub enum ServerResponse {
     UpdatePromptOk(Prompt),
     SetPromptFavoriteOk(Prompt),
     DeletePromptOk,
+    BeginImportOk(BeginImportResponse),
+    ImportChunkOk,
     ImportProjectOk(ImportProjectResponse),
     /// Some task of the project changed. Pushed to every client, whoever wrote it, so a second
     /// window refetches its board.
@@ -2285,6 +2361,8 @@ impl ServerResponse {
             | Self::UpdatePromptOk(_)
             | Self::SetPromptFavoriteOk(_)
             | Self::DeletePromptOk
+            | Self::BeginImportOk(_)
+            | Self::ImportChunkOk
             | Self::ImportProjectOk(_) => true,
         }
     }
@@ -2881,51 +2959,23 @@ mod tests {
 
     fn import_messages() -> Vec<MaestroRpcMessage> {
         vec![
-            MaestroRpcMessage::Request(ServerRequest::ImportProject(ImportProjectRequest {
+            MaestroRpcMessage::Request(ServerRequest::BeginImport(BeginImportRequest {
                 project_path: "/srv/shop".to_string(),
-                tasks: vec![sample_task()],
-                relationships: vec![],
-                instructions: vec![],
-                comments: vec![TaskComment {
-                    id: 8,
-                    task_id: 3,
-                    kind: "outcome".to_string(),
-                    author: "agent".to_string(),
-                    body: Some("Done".to_string()),
-                    external_ref: None,
-                    phase: None,
-                    created_at: "2026-01-01T00:00:00Z".to_string(),
-                }],
-                attachments: vec![],
-                worktrees: vec![],
-                reviews: vec![TaskReview {
-                    id: 2,
-                    task_id: 3,
-                    decision: "RequestChanges".to_string(),
-                    general_feedback: None,
-                    reviewed_at: None,
-                    created_at: "2026-01-01T00:00:00Z".to_string(),
-                    comments: vec![ReviewComment {
-                        id: 5,
-                        review_id: 2,
-                        file_path: "src/lib.rs".to_string(),
-                        comment: "Name this".to_string(),
-                        created_at: "2026-01-01T00:00:00Z".to_string(),
-                    }],
-                }],
-                prompts: vec![sample_prompt()],
-                sessions: vec![ImportedSession {
-                    agent_id: "claude-acp".to_string(),
-                    acp_session_id: "acp-1".to_string(),
-                    cwd: "/srv/shop".to_string(),
-                    meta: sample_meta(),
-                    can_reload: None,
-                    closed: true,
-                }],
                 floors: ImportFloors {
                     tasks: Some(12),
                     ..ImportFloors::default()
                 },
+            })),
+            MaestroRpcMessage::Response(ServerResponse::BeginImportOk(BeginImportResponse {
+                import_id: "import-1".to_string(),
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ImportChunkOk),
+            MaestroRpcMessage::Request(ServerRequest::CommitImport(ImportRef {
+                import_id: "import-1".to_string(),
+            })),
+            MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                import_id: "import-1".to_string(),
+                chunk: sample_import(),
             })),
             MaestroRpcMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
                 imported: false,
@@ -2933,11 +2983,113 @@ mod tests {
         ]
     }
 
+    fn sample_import() -> ImportProjectRequest {
+        ImportProjectRequest {
+            project_path: "/srv/shop".to_string(),
+            tasks: vec![sample_task()],
+            relationships: vec![],
+            instructions: vec![],
+            comments: vec![TaskComment {
+                id: 8,
+                task_id: 3,
+                kind: "outcome".to_string(),
+                author: "agent".to_string(),
+                body: Some("Done".to_string()),
+                external_ref: None,
+                phase: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            }],
+            attachments: vec![],
+            worktrees: vec![],
+            reviews: vec![TaskReview {
+                id: 2,
+                task_id: 3,
+                decision: "RequestChanges".to_string(),
+                general_feedback: None,
+                reviewed_at: None,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                comments: vec![ReviewComment {
+                    id: 5,
+                    review_id: 2,
+                    file_path: "src/lib.rs".to_string(),
+                    comment: "Name this".to_string(),
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                }],
+            }],
+            prompts: vec![sample_prompt()],
+            sessions: vec![ImportedSession {
+                agent_id: "claude-acp".to_string(),
+                acp_session_id: "acp-1".to_string(),
+                cwd: "/srv/shop".to_string(),
+                meta: sample_meta(),
+                can_reload: None,
+                closed: true,
+            }],
+            floors: ImportFloors::default(),
+        }
+    }
+
     #[test]
     fn an_import_answer_is_a_reply() {
         assert!(
             ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true }).is_reply()
         );
+    }
+
+    #[test]
+    fn an_import_larger_than_a_frame_splits_into_chunks_under_budget() {
+        let mut request = sample_import();
+        let row = request.tasks.remove(0);
+        let comment = request.comments.remove(0);
+        for id in 0..9_000 {
+            let mut task = row.clone();
+            task.id = id;
+            task.description = Some("x".repeat(2_000));
+            request.tasks.push(task);
+            let mut comment = comment.clone();
+            comment.task_id = id;
+            request.comments.push(comment);
+        }
+        let total = serde_json::to_vec(&request).unwrap().len();
+        assert!(total > MAX_MESSAGE_SIZE, "{total}");
+
+        let budget = IMPORT_CHUNK_BYTES;
+        let chunks = split_import(
+            serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap(),
+            budget,
+        );
+        assert!(chunks.len() > 4, "{}", chunks.len());
+        let mut joined = ImportProjectRequest {
+            project_path: request.project_path.clone(),
+            ..ImportProjectRequest::default()
+        };
+        for chunk in chunks {
+            let message =
+                MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                    import_id: "00000000-0000-4000-8000-000000000000".to_string(),
+                    chunk,
+                }));
+            let frame = encode_message(Some(u64::MAX), &message).unwrap();
+            assert!(frame.len() < budget, "{}", frame.len());
+            let MaestroRpcMessage::Request(ServerRequest::ImportChunk(ImportChunkRequest {
+                chunk,
+                ..
+            })) = message
+            else {
+                unreachable!()
+            };
+            assert_eq!(chunk.project_path, request.project_path);
+            joined.tasks.extend(chunk.tasks);
+            joined.relationships.extend(chunk.relationships);
+            joined.instructions.extend(chunk.instructions);
+            joined.comments.extend(chunk.comments);
+            joined.attachments.extend(chunk.attachments);
+            joined.worktrees.extend(chunk.worktrees);
+            joined.reviews.extend(chunk.reviews);
+            joined.prompts.extend(chunk.prompts);
+            joined.sessions.extend(chunk.sessions);
+        }
+        assert_eq!(joined, request);
     }
 
     fn sample_prompt() -> Prompt {
