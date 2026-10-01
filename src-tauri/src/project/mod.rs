@@ -2,6 +2,7 @@ pub mod automations;
 pub mod crud;
 pub mod git_ops;
 pub mod handlers;
+pub(crate) mod import;
 pub mod lock;
 pub mod models;
 pub mod prime;

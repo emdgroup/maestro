@@ -12,11 +12,11 @@ use tauri::State;
 
 /// Where a task's attachments are copied, relative to the project root. The daemon deletes a
 /// copy under here when its row goes; a deleted task's folder is left behind.
-const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
+pub(crate) const TASK_ATTACHMENTS_DIR: &str = ".maestro/attachments/tasks";
 
 /// Where a task's copy of `name` goes, relative to the project: the name itself, or the first
 /// `stem-N.ext` no other attachment of the task holds.
-fn attachment_relative_path(task_id: i32, name: &str, taken: &HashSet<&str>) -> String {
+pub(crate) fn attachment_relative_path(task_id: i32, name: &str, taken: &HashSet<&str>) -> String {
     let dir = format!("{TASK_ATTACHMENTS_DIR}/{task_id}");
     let plain = format!("{dir}/{name}");
     if !taken.contains(plain.as_str()) {
@@ -38,7 +38,7 @@ fn attachment_relative_path(task_id: i32, name: &str, taken: &HashSet<&str>) -> 
 /// A row's path as an absolute path on the project's machine. Rows written before attachments were
 /// copied hold the host path the user picked, which is kept as it is: on any machine but that host
 /// it names nothing, and shows as missing.
-fn on_project_machine(project_path: &str, file_path: &str) -> String {
+pub(crate) fn on_project_machine(project_path: &str, file_path: &str) -> String {
     if file_path.starts_with('/') || Path::new(file_path).is_absolute() {
         return file_path.to_string();
     }

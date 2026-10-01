@@ -361,7 +361,7 @@ Tasks:
 
 - [x] I1 `maestro-protocol` and `maestro-server`: `ImportProject`, one transaction, the refusal,
       counters above the imported ids
-- [ ] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
+- [x] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
       project, send the import before attaching sessions, stamp the project
 - [ ] I3 Review, docs, a live run against a copy of a released app's database
 

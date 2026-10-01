@@ -181,6 +181,10 @@ pub async fn prime_project_server(
         }
     }
 
+    // Before the sessions are attached, so the dormant rows the import writes are loaded with the
+    // rest, and before the board is shown, which reads what the import writes.
+    super::import::import_once(&app_state, project_id, &project_path, connection_key).await;
+
     // A config that cannot be read is a project with no default agent, not a failed prime: the
     // session restore below is the more valuable half and must still happen.
     let config = super::settings::load_project_config_for(&app_state, project_id)

@@ -36,7 +36,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 export function ProjectList() {
   const { activeConnection, preflightStatus } = useConnectionContext();
@@ -62,11 +63,32 @@ export function ProjectList() {
   const [showFilePickerModal, setShowFilePickerModal] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectLoading, setLoading] = useState(false);
   const [takeover, setTakeover] = useState<{ projectId: number; holder: string } | null>(null);
   const [waitingOn, setWaitingOn] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const setProjectLoading = (loading: boolean) => {
+    setLoading(loading);
+    if (!loading) setImporting(false);
+  };
   const { setSelectedProject } = useSelectedProjectActions();
   const { mutateAsync: requestTakeover } = useRequestProjectTakeover();
+
+  // The first open after the upgrade moves the project's board from this app into its server.
+  useEffect(() => {
+    const unlistenStarted = listen<number>("project-importing", () => setImporting(true));
+    const unlistenFailed = listen<{ project_id: number; error: string }>(
+      "project-import-failed",
+      ({ payload }) =>
+        toast.error(
+          `Could not move this project's board to its server: ${payload.error}. Maestro tries again next time it opens.`,
+        ),
+    );
+    return () => {
+      void unlistenStarted.then((stop) => stop());
+      void unlistenFailed.then((stop) => stop());
+    };
+  }, []);
 
   const { mutateAsync: createProject } = useCreateProject();
   const { mutate: removeProject } = useDeleteProject(connectionQueryKey(activeConnectionKey));
@@ -295,7 +317,11 @@ export function ProjectList() {
             <div className="flex flex-col items-center justify-center h-full gap-3 py-8">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
               <span className="text-sm text-muted-foreground">
-                {waitingOn ? `Waiting for Maestro on ${waitingOn}…` : "Warming up…"}
+                {waitingOn
+                  ? `Waiting for Maestro on ${waitingOn}…`
+                  : importing
+                    ? "Moving this project's board to its server…"
+                    : "Warming up…"}
               </span>
             </div>
           )}

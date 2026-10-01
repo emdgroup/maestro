@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: u32 = 31;
+pub const SCHEMA_VERSION: u32 = 32;
 
-pub const SCHEMA_V31_FULL: &str = r#"
+pub const SCHEMA_V32_FULL: &str = r#"
 -- Enable foreign keys
 PRAGMA foreign_keys = ON;
 
@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS projects (
     last_opened TEXT,
     connection_id INTEGER REFERENCES ssh_connections(id) ON DELETE SET NULL,
     wsl_connection_id INTEGER REFERENCES wsl_connections(id) ON DELETE SET NULL,
-    docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL
+    docker_connection_id INTEGER REFERENCES docker_connections(id) ON DELETE SET NULL,
+    -- When this app sent its rows for the project to the project's daemon, which is asked once.
+    daemon_imported_at TEXT
 );
 
 -- Tasks table: stores individual tasks for projects
@@ -369,7 +371,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
 
     if current_version == 0 {
         // Fresh install: create full schema
-        conn.execute_batch(SCHEMA_V31_FULL)?;
+        conn.execute_batch(SCHEMA_V32_FULL)?;
     } else if current_version < 22 {
         // Legacy drop-recreate: no data to preserve before V22
         conn.execute_batch(
@@ -392,7 +394,7 @@ fn apply_schema(conn: &Connection, current_version: u32) -> SqlResult<()> {
             PRAGMA foreign_keys = ON;
         "#,
         )?;
-        conn.execute_batch(SCHEMA_V31_FULL)?;
+        conn.execute_batch(SCHEMA_V32_FULL)?;
     } else {
         // current_version >= 22: apply incremental migrations.
         // Committing the migrations and the version bump together means a failure part-way
@@ -438,6 +440,22 @@ fn run_migrations(conn: &Connection, from: u32) -> SqlResult<()> {
     }
     if from < 31 {
         migrate_to_v31(conn)?;
+    }
+    if from < 32 {
+        migrate_to_v32(conn)?;
+    }
+    Ok(())
+}
+
+/// The stamp the phase 4 import leaves on a project, so it is sent to the daemon once.
+fn migrate_to_v32(conn: &Connection) -> SqlResult<()> {
+    let column_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'daemon_imported_at'",
+        [],
+        |row| row.get::<_, i32>(0),
+    )? > 0;
+    if !column_exists {
+        conn.execute_batch("ALTER TABLE projects ADD COLUMN daemon_imported_at TEXT;")?;
     }
     Ok(())
 }
@@ -771,7 +789,7 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(version, 31);
+        assert_eq!(version, 32);
         assert!(tables.contains(&"docker_connections".to_string()));
         assert!(tables.contains(&"connection_settings".to_string()));
         assert!(tables.contains(&"templates".to_string()));
@@ -963,6 +981,34 @@ mod tests {
             )
             .unwrap();
         assert_eq!(favorites_table, 0);
+    }
+
+    /// v31 -> v32 adds the import stamp to every project row, and is safe to re-run.
+    #[test]
+    fn test_migration_to_v32_adds_the_import_stamp() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE projects DROP COLUMN daemon_imported_at;
+             INSERT INTO projects (id, name, path, created_at, updated_at)
+                 VALUES (1, 'demo', '/tmp/demo', '2026-01-01', '2026-01-01');",
+        )
+        .unwrap();
+
+        for _ in 0..2 {
+            conn.execute("PRAGMA user_version = 31", []).unwrap();
+            initialize_schema(&conn).unwrap();
+        }
+
+        let stamp: Option<String> = conn
+            .query_row(
+                "SELECT daemon_imported_at FROM projects WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stamp, None);
+        assert_eq!(read_user_version(&conn), SCHEMA_VERSION);
     }
 
     /// v28 moves the agent limit from one app-wide value to one per connection. The old keys must
