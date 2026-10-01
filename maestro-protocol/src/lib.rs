@@ -263,6 +263,8 @@ pub enum ServerRequest {
     /// Leaves `updated_at`, and so the order within favorites and others, alone.
     SetPromptFavorite(SetPromptFavoriteRequest),
     DeletePrompt(PromptRef),
+    /// An app's rows for a project the daemon holds none for, all or nothing.
+    ImportProject(ImportProjectRequest),
     /// Heartbeat acknowledgment sent by Tauri in response to a `Ping`.
     Pong {
         seq: u64,
@@ -1970,6 +1972,58 @@ pub struct SaveTaskReviewResponse {
     pub review_id: i32,
 }
 
+/// Everything an app held for one project before the daemon kept it, sent once, applied in one
+/// transaction.
+///
+/// Task, worktree and prompt ids are kept, since they are per project and are embedded in folder
+/// and branch names. The ids of relationships, instructions, comments, attachments, reviews and
+/// review comments are minted again: the daemon numbers those across every project. The
+/// `project_path` inside each row is ignored for the request's own, canonicalized.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportProjectRequest {
+    pub project_path: String,
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+    #[serde(default)]
+    pub relationships: Vec<TaskRelationship>,
+    #[serde(default)]
+    pub instructions: Vec<TaskInstruction>,
+    #[serde(default)]
+    pub comments: Vec<TaskComment>,
+    #[serde(default)]
+    pub attachments: Vec<TaskAttachment>,
+    #[serde(default)]
+    pub worktrees: Vec<Worktree>,
+    /// Each with its comments; a comment's `review_id` is ignored for the review it sits in.
+    #[serde(default)]
+    pub reviews: Vec<TaskReview>,
+    #[serde(default)]
+    pub prompts: Vec<Prompt>,
+    #[serde(default)]
+    pub sessions: Vec<ImportedSession>,
+}
+
+/// A conversation the app had open, imported as a dormant, open row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportedSession {
+    pub agent_id: String,
+    pub acp_session_id: String,
+    pub cwd: String,
+    #[serde(default)]
+    pub meta: SessionMeta,
+    /// `None` when the app never recorded it, stored as true: the app kept the session to load it
+    /// back, and a load the agent cannot answer closes the row, where false would hide it for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_reload: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ImportProjectResponse {
+    /// False when the daemon already held tasks, worktrees or prompts for the project, in which
+    /// case nothing was written.
+    pub imported: bool,
+}
+
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -2084,6 +2138,7 @@ pub enum ServerResponse {
     UpdatePromptOk(Prompt),
     SetPromptFavoriteOk(Prompt),
     DeletePromptOk,
+    ImportProjectOk(ImportProjectResponse),
     /// Some task of the project changed. Pushed to every client, whoever wrote it, so a second
     /// window refetches its board.
     TasksChanged(ProjectRef),
@@ -2211,7 +2266,8 @@ impl ServerResponse {
             | Self::CreatePromptOk(_)
             | Self::UpdatePromptOk(_)
             | Self::SetPromptFavoriteOk(_)
-            | Self::DeletePromptOk => true,
+            | Self::DeletePromptOk
+            | Self::ImportProjectOk(_) => true,
         }
     }
 }
@@ -2801,7 +2857,64 @@ mod tests {
         ];
         samples.extend(task_messages());
         samples.extend(prompt_messages());
+        samples.extend(import_messages());
         samples
+    }
+
+    fn import_messages() -> Vec<MaestroRpcMessage> {
+        vec![
+            MaestroRpcMessage::Request(ServerRequest::ImportProject(ImportProjectRequest {
+                project_path: "/srv/shop".to_string(),
+                tasks: vec![sample_task()],
+                relationships: vec![],
+                instructions: vec![],
+                comments: vec![TaskComment {
+                    id: 8,
+                    task_id: 3,
+                    kind: "outcome".to_string(),
+                    author: "agent".to_string(),
+                    body: Some("Done".to_string()),
+                    external_ref: None,
+                    phase: None,
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                }],
+                attachments: vec![],
+                worktrees: vec![],
+                reviews: vec![TaskReview {
+                    id: 2,
+                    task_id: 3,
+                    decision: "RequestChanges".to_string(),
+                    general_feedback: None,
+                    reviewed_at: None,
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                    comments: vec![ReviewComment {
+                        id: 5,
+                        review_id: 2,
+                        file_path: "src/lib.rs".to_string(),
+                        comment: "Name this".to_string(),
+                        created_at: "2026-01-01T00:00:00Z".to_string(),
+                    }],
+                }],
+                prompts: vec![sample_prompt()],
+                sessions: vec![ImportedSession {
+                    agent_id: "claude-acp".to_string(),
+                    acp_session_id: "acp-1".to_string(),
+                    cwd: "/srv/shop".to_string(),
+                    meta: sample_meta(),
+                    can_reload: None,
+                }],
+            })),
+            MaestroRpcMessage::Response(ServerResponse::ImportProjectOk(ImportProjectResponse {
+                imported: false,
+            })),
+        ]
+    }
+
+    #[test]
+    fn an_import_answer_is_a_reply() {
+        assert!(
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true }).is_reply()
+        );
     }
 
     fn sample_prompt() -> Prompt {

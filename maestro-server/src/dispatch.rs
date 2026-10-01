@@ -1523,7 +1523,8 @@ pub(crate) async fn dispatch_message(
             | ServerRequest::CreatePrompt(_)
             | ServerRequest::UpdatePrompt(_)
             | ServerRequest::SetPromptFavorite(_)
-            | ServerRequest::DeletePrompt(_)),
+            | ServerRequest::DeletePrompt(_)
+            | ServerRequest::ImportProject(_)),
         ) => {
             let Some(store) = project_store else {
                 send_or_return!(
@@ -1543,6 +1544,9 @@ pub(crate) async fn dispatch_message(
                 | ServerRequest::SetPromptFavorite(_)
                 | ServerRequest::DeletePrompt(_)) => {
                     crate::prompt_store::answer(&*store.lock().await, request)
+                }
+                ServerRequest::ImportProject(request) => {
+                    crate::task_store::project_import::answer(&mut *store.lock().await, request)
                 }
                 request => crate::task_store::requests::answer(&mut *store.lock().await, request),
             };

@@ -8,6 +8,7 @@
 //! Every function that reads and then writes runs in one transaction. The app got that atomicity
 //! from its one `Mutex<Connection>`; here the guard travels with the request instead.
 
+pub mod project_import;
 pub mod requests;
 pub mod reviews;
 mod threads;

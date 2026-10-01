@@ -359,7 +359,7 @@ Decisions:
 
 Tasks:
 
-- [ ] I1 `maestro-protocol` and `maestro-server`: `ImportProject`, one transaction, the refusal,
+- [x] I1 `maestro-protocol` and `maestro-server`: `ImportProject`, one transaction, the refusal,
       counters above the imported ids
 - [ ] I2 `src-tauri`: gather the rows and the old `state.json` sessions, copy attachments into the
       project, send the import before attaching sessions, stamp the project

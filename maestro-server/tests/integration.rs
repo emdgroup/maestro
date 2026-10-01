@@ -959,3 +959,85 @@ fn test_prompt_changes_reach_every_window() {
         let _ = child.wait();
     }
 }
+
+/// An app's rows go in once, under the path the daemon resolved and with their ids, and a second
+/// import for the same project is refused without a push.
+#[test]
+fn test_import_project_over_the_wire() {
+    use maestro_protocol::{ImportProjectRequest, ImportProjectResponse, ProjectRef};
+
+    let daemon = Daemon::new();
+    let mut a = daemon.attach();
+    let project = tempfile::tempdir().expect("tempdir");
+    let canonical = {
+        let path = std::fs::canonicalize(project.path()).unwrap();
+        let path = path.to_string_lossy().replace('\\', "/");
+        path.strip_prefix("//?/").unwrap_or(&path).to_string()
+    };
+    let task: maestro_protocol::Task = serde_json::from_value(serde_json::json!({
+        "id": 5, "project_path": "/elsewhere", "title": "Kept id", "status": "Review",
+        "priority": "Medium", "base_branch": "main", "created_at": "2025-01-01T00:00:00Z",
+        "updated_at": "2025-01-01T00:00:00Z", "auto_approve": false,
+        "workspace_mode": "NewWorktree", "workspace_branch_mode": "Create", "ball": "None",
+        "review_rounds": 0, "fix_rounds": 0
+    }))
+    .expect("a task");
+    let import = || {
+        ServerRequest::ImportProject(ImportProjectRequest {
+            project_path: format!("{}/", project.path().to_string_lossy()),
+            tasks: vec![task.clone()],
+            relationships: vec![],
+            instructions: vec![],
+            comments: vec![],
+            attachments: vec![],
+            worktrees: vec![],
+            reviews: vec![],
+            prompts: vec![],
+            sessions: vec![],
+        })
+    };
+    let project_ref = || ProjectRef {
+        project_path: canonical.clone(),
+    };
+
+    let (a_in, a_out) = (a.stdin.as_mut().unwrap(), a.stdout.as_mut().unwrap());
+    write_msg_with_id(a_in, Some(51), import());
+    assert_eq!(
+        read_msg_with_id(a_out),
+        (
+            Some(51),
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: true })
+        )
+    );
+    for push in [
+        ServerResponse::TasksChanged(project_ref()),
+        ServerResponse::WorktreesChanged(project_ref()),
+        ServerResponse::PromptsChanged(project_ref()),
+    ] {
+        assert_eq!(read_msg_with_id(a_out), (None, push));
+    }
+
+    write_msg_with_id(a_in, Some(52), import());
+    assert_eq!(
+        read_msg_with_id(a_out),
+        (
+            Some(52),
+            ServerResponse::ImportProjectOk(ImportProjectResponse { imported: false })
+        )
+    );
+    // Straight to the next reply: the refusal pushed nothing.
+    write_msg_with_id(a_in, Some(53), ServerRequest::ListTasks(project_ref()));
+    let (id, response) = read_msg_with_id(a_out);
+    assert_eq!(id, Some(53));
+    match response {
+        ServerResponse::ListTasksOk(listed) => {
+            assert_eq!(listed.tasks.len(), 1);
+            assert_eq!(listed.tasks[0].id, 5);
+            assert_eq!(listed.tasks[0].project_path, canonical);
+        }
+        other => panic!("expected ListTasksOk, got: {other:?}"),
+    }
+
+    let _ = a.kill();
+    let _ = a.wait();
+}
