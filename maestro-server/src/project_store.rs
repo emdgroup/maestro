@@ -55,6 +55,13 @@ CREATE INDEX IF NOT EXISTS sessions_by_project ON sessions(project_path, created
 CREATE INDEX IF NOT EXISTS sessions_by_live_id ON sessions(session_id);
 ";
 
+/// Whether a turn was in flight when the daemon stopped with the session live: written at shutdown
+/// and cleared whenever the session comes up, so a crash leaves it 0. The startup pass reads it to
+/// tell a task blocked on a prompt that died mid-turn from one whose agent ended its turn to ask.
+const V7_SESSION_TURNS: &str = "
+ALTER TABLE sessions ADD COLUMN turn_active INTEGER NOT NULL DEFAULT 0;
+";
+
 /// The schema, one step per version: entry `n` takes a database at `PRAGMA user_version` `n` to
 /// `n + 1`.
 ///
@@ -71,6 +78,7 @@ const MIGRATIONS: &[&str] = &[
     crate::prompt_store::V4_PROMPTS,
     crate::task_store::project_import::V5_PROJECT_IMPORTS,
     crate::pipeline_settings::V6_PIPELINE_SETTINGS,
+    V7_SESSION_TURNS,
 ];
 
 /// Open, or create, the daemon's project database.
@@ -219,6 +227,7 @@ pub fn upsert(conn: &Connection, started: &Started, now: DateTime<Utc>) -> Resul
              {meta_columns},
              can_reload        = excluded.can_reload,
              session_id        = excluded.session_id,
+             turn_active       = 0,
              closed_at         = NULL"
     );
     run(
@@ -297,6 +306,29 @@ pub fn go_dormant(conn: &Connection, session_id: &str, now: DateTime<Utc>) -> Re
         params![now.to_rfc3339(), session_id],
     )
     .map(|_| ())
+}
+
+/// The daemon is stopping with these sessions mid-turn. Before [`all_dormant`] clears their ids.
+pub fn note_live_turns(conn: &Connection, session_ids: &[String]) -> Result<(), String> {
+    for session_id in session_ids {
+        run(
+            conn,
+            "note a live turn",
+            "UPDATE sessions SET turn_active = 1 WHERE session_id = ?1",
+            [session_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Whether the conversation was mid-turn when the last daemon stopped. See [`V7_SESSION_TURNS`].
+pub fn turn_was_active(conn: &Connection, agent_id: &str, acp_session_id: &str) -> bool {
+    conn.query_row(
+        "SELECT turn_active FROM sessions WHERE agent_id = ?1 AND acp_session_id = ?2",
+        params![agent_id, acp_session_id],
+        |row| row.get(0),
+    )
+    .unwrap_or(false)
 }
 
 /// Every live session at once, for a daemon that is stopping or has just started.
@@ -461,7 +493,16 @@ mod tests {
         {
             let conn = Connection::open(directory.path().join("projects.db")).expect("open");
             conn.execute_batch(V1_SESSIONS).expect("phase 1 schema");
-            start(&conn, "a", "/p", &full_meta(), true, "live-1");
+            // Raw, since today's upsert names columns phase 1 lacks.
+            conn.execute(
+                "INSERT INTO sessions (agent_id, acp_session_id, project_path, cwd, session_name,
+                     task_id, task_name, branch_name, role, session_start_sha, can_reload,
+                     session_id, created_at)
+                 VALUES ('claude', 'a', '/p', '/p/work', 'Coder', 7, 'Fix it', 'maestro/fix',
+                     'coder', 'abc', 1, 'live-1', 'now')",
+                [],
+            )
+            .expect("a phase 1 row");
         }
 
         let conn = open(directory.path()).expect("migrate");

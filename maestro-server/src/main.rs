@@ -906,6 +906,20 @@ async fn run_server(
 
     // Nothing is live past this point. The rows stay open, so the sessions reload afterwards.
     if let Some(store) = project_store.as_ref() {
+        // A session blocked on a prompt is mid-turn too, so this covers both.
+        let live_turns: Vec<String> = sessions
+            .iter()
+            .filter(|(_, session)| {
+                session
+                    .turn_active
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        project_store::report(project_store::note_live_turns(
+            &*store.lock().await,
+            &live_turns,
+        ));
         project_store::report(project_store::all_dormant(
             &*store.lock().await,
             chrono::Utc::now(),

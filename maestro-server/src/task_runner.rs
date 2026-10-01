@@ -449,30 +449,11 @@ async fn run(
         }
     };
 
-    let capabilities = profiles::AgentCapabilities {
-        model_ids: result
-            .models
-            .as_ref()
-            .map(|m| {
-                m.available_models
-                    .iter()
-                    .map(|m| m.model_id.clone())
-                    .collect()
-            })
-            .unwrap_or_default(),
-        mode_ids: result
-            .modes
-            .as_ref()
-            .map(|m| {
-                m.available_modes
-                    .iter()
-                    .map(|m| m.mode_id.clone())
-                    .collect()
-            })
-            .unwrap_or_default(),
-        supports_effort: crate::automation_runner::effort_option_id(result.config_options.as_ref())
-            .is_some(),
-    };
+    let capabilities = capabilities(
+        result.models.as_ref(),
+        result.modes.as_ref(),
+        result.config_options.as_ref(),
+    );
 
     // Before the prompt, which `prepare` sends: the session's row is only written once it is
     // adopted, and the agent may ask a question before then.
@@ -547,6 +528,58 @@ async fn run(
     })
 }
 
+/// What the session says its agent can be set to.
+pub(crate) fn capabilities(
+    models: Option<&maestro_protocol::SessionModelState>,
+    modes: Option<&maestro_protocol::SessionModeState>,
+    config_options: Option<&Vec<serde_json::Value>>,
+) -> profiles::AgentCapabilities {
+    profiles::AgentCapabilities {
+        model_ids: models
+            .map(|m| {
+                m.available_models
+                    .iter()
+                    .map(|m| m.model_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        mode_ids: modes
+            .map(|m| {
+                m.available_modes
+                    .iter()
+                    .map(|m| m.mode_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        supports_effort: crate::automation_runner::effort_option_id(config_options).is_some(),
+    }
+}
+
+/// The stage's model, effort and permission mode as commands, sent ahead of a prompt. Each is a
+/// request the agent answers in order, and the prompt behind them cannot overtake them on one
+/// command channel, so none is waited on.
+pub(crate) fn settings_commands(
+    settings: &profiles::StageSettings,
+    config_options: Option<&Vec<serde_json::Value>>,
+) -> Vec<SessionCommand> {
+    let effort = settings
+        .effort
+        .clone()
+        .zip(crate::automation_runner::effort_option_id(config_options))
+        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
+    [
+        settings.model.clone().map(SessionCommand::SetModel),
+        effort,
+        settings
+            .permission_mode
+            .clone()
+            .map(SessionCommand::SetMode),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
 /// Steps seven to ten on a session that is up: settings, prompt, review cleared, task moved on.
 /// Returns the profile the stage ran on.
 #[allow(clippy::too_many_arguments)]
@@ -598,23 +631,9 @@ async fn prepare(
         );
     }
 
-    // Each is a request the agent answers in order, and the prompt behind them cannot overtake
-    // them on one command channel, so none is waited on.
-    let effort = settings
-        .effort
-        .clone()
-        .zip(crate::automation_runner::effort_option_id(config_options))
-        .map(|(value, config_id)| SessionCommand::SetConfigOption { config_id, value });
-    let commands = [
-        settings.model.clone().map(SessionCommand::SetModel),
-        effort,
-        settings
-            .permission_mode
-            .clone()
-            .map(SessionCommand::SetMode),
-        Some(SessionCommand::PromptStructured(composed.blocks)),
-    ];
-    for command in commands.into_iter().flatten() {
+    let mut commands = settings_commands(&settings, config_options);
+    commands.push(SessionCommand::PromptStructured(composed.blocks));
+    for command in commands {
         if session.cmd_tx.send(command).await.is_err() {
             return Err(Failure::Failed(
                 "The session ended before it was asked anything".to_string(),
