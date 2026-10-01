@@ -113,7 +113,6 @@ pub fn default_agent(project_path: &str) -> Option<String> {
 }
 
 /// Whether the project defines a profile for `role`, which is how a project opts into it.
-#[allow(dead_code)] // D11 asks whether a reviewer follows.
 pub fn has_profile_for_role(project_path: &str, role: AgentRole) -> bool {
     read_profiles(project_path).resolve(role, None).is_some()
 }

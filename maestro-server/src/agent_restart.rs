@@ -47,6 +47,7 @@ pub(crate) async fn handle_agent_restart(
     for (maestro_sid, _, _, _) in &to_restore {
         if let Some(mut session) = sessions.remove(maestro_sid) {
             session.task.abort();
+            fail_task(project_store, stdout, session.project.as_ref());
             carried.insert(maestro_sid.clone(), session.project.take());
             // Dormant until the reload below succeeds, so a session that does not make it back is
             // not left looking live.
@@ -77,6 +78,7 @@ pub(crate) async fn handle_agent_restart(
     for maestro_sid in cold_path_sids {
         if let Some(session) = sessions.remove(&maestro_sid) {
             session.task.abort();
+            fail_task(project_store, stdout, session.project.as_ref());
             let _ = send_response(
                 stdout,
                 &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -153,4 +155,30 @@ pub(crate) async fn handle_agent_restart(
         .lock()
         .await
         .insert(dead_agent_id, new_conn);
+}
+
+/// The agent under a task's session died mid-phase: fail the task if an agent was still working
+/// it, as the app does when a session's reader ends. Spawned, so this loop's future stays small.
+fn fail_task(
+    project_store: Option<&crate::project_store::Store>,
+    stdout: &crate::ClientOut,
+    binding: Option<&crate::sessions::ProjectBinding>,
+) {
+    let (Some(store), Some(binding)) = (project_store, binding) else {
+        return;
+    };
+    let Some(task_id) = binding.meta.task_id else {
+        return;
+    };
+    if !crate::task_turn::DAEMON_DRIVES_TASKS {
+        return;
+    }
+    let (store, stdout, project_path) = (
+        Arc::clone(store),
+        Arc::clone(stdout),
+        binding.project_path.clone(),
+    );
+    tokio::spawn(async move {
+        crate::task_turn::fail_if_still_running(&store, &stdout, &project_path, task_id).await;
+    });
 }

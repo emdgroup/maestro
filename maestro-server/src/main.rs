@@ -39,6 +39,7 @@ mod skills;
 mod task_prompt;
 mod task_runner;
 mod task_store;
+mod task_turn;
 mod terminal;
 mod tool_check;
 mod tool_config;
@@ -754,7 +755,32 @@ async fn run_server(
             }
 
             ended = turn_rx.recv() => {
-                if let (Some(ended), Some(store)) = (ended, automation_store.as_ref()) {
+                let Some(ended) = ended else { continue };
+                // A task's session: resolve the turn and start the next stage, off the loop.
+                let task_binding = sessions
+                    .get(&ended.session_id)
+                    .and_then(|s| s.project.as_ref())
+                    .and_then(|b| Some((b.project_path.clone(), b.meta.task_id?)));
+                if let (true, Some(store), Some((project_path, task_id))) = (
+                    task_turn::DAEMON_DRIVES_TASKS,
+                    project_store.as_ref(),
+                    task_binding,
+                ) {
+                    task_turn::spawn(
+                        task_turn::Driver {
+                            store: Arc::clone(store),
+                            agent_connections: Arc::clone(&agent_connections),
+                            settle_tx: settle_tx.clone(),
+                            stdout: Arc::clone(&stdout),
+                            agents: agents_with_spawn.clone(),
+                        },
+                        project_path,
+                        task_id,
+                        ended.stop_reason.clone(),
+                        ended.facts.clone(),
+                    );
+                }
+                if let Some(store) = automation_store.as_ref() {
                     automation_runner::finish_for_session(store, &stdout, ended).await;
                     automation_runner::drain_webhook_queues(
                         store,

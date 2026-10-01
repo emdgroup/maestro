@@ -1677,7 +1677,7 @@ pub enum TurnEnding {
 /// (counting the round when it rejects), apply the transition while the task still has a phase,
 /// and file the closing message in the thread by what the phase produced.
 ///
-/// A CI fix ending at `AwaitingMerge` is not sent here: the app pushes it and applies
+/// A CI fix ending at `AwaitingMerge` is not sent here: the daemon pushes it and applies
 /// `CiFixPushed` itself.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct EndTaskTurnRequest {

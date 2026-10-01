@@ -27,7 +27,6 @@ pub(crate) struct TurnEnd {
     pub final_message: Option<String>,
     /// What the stream said about the turn, for resolving a task's turn. Taken here, at every turn
     /// end, so the per-session state never outlives a turn.
-    #[allow(dead_code)] // ponytail: read once the daemon classifies task turns
     pub facts: crate::turn::TurnFacts,
 }
 
