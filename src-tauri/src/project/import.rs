@@ -142,6 +142,16 @@ async fn import(
                 begun.task_offset,
             )
             .await?;
+            // Before the commit, so a committed row never points at a file not yet there. A copy
+            // left behind by an import that then fails or is refused is harmless.
+            copy_attachments(
+                app_state,
+                &git_conn,
+                project_path,
+                copies,
+                &mut request.attachments,
+            )
+            .await;
             let import_id = begun.import_id;
             for chunk in split_import(request, IMPORT_CHUNK_BYTES) {
                 query_via_server(
@@ -176,9 +186,6 @@ async fn import(
                     (false, _) => "this app's rows reached its server before",
                 }
             );
-            if response.imported {
-                copy_attachments(app_state, &git_conn, project_path, copies).await;
-            }
             first_in = response.imported && !begun.merge;
         }
     }
@@ -749,7 +756,7 @@ async fn read_legacy_state(conn: &GitConnection) -> Result<serde_json::Value, St
     }))
 }
 
-/// A file on this machine to copy into the project once the daemon has taken the rows.
+/// A file on this machine to copy into the project before the rows are committed.
 struct PendingCopy {
     attachment_id: i32,
     task_id: i32,
@@ -844,14 +851,16 @@ async fn plan_attachments(
     ))
 }
 
-/// Make the copies the daemon's rows now point at. A failure is logged and the row shows as
-/// missing; the rows are already in, so it does not fail the import.
+/// Make the copies the rows are about to point at. A failure is logged and its row keeps the
+/// file's original path, so it shows as missing rather than naming a copy that is not there.
 async fn copy_attachments(
     app_state: &AppState,
     git_conn: &GitConnection,
     project_path: &str,
     copies: Vec<PendingCopy>,
+    attachments: &mut [TaskAttachment],
 ) {
+    let mut failed = HashMap::new();
     for copy in copies {
         let dir = on_project_machine(
             project_path,
@@ -871,6 +880,17 @@ async fn copy_attachments(
                 "[import] attachment {} was not copied: {e}",
                 copy.attachment_id
             );
+            failed.insert(copy.attachment_id, copy.source);
+        }
+    }
+    restore_failed(attachments, failed);
+}
+
+/// Point each attachment whose copy failed back at its original file.
+fn restore_failed(attachments: &mut [TaskAttachment], mut failed: HashMap<i32, PathBuf>) {
+    for attachment in attachments {
+        if let Some(source) = failed.remove(&attachment.id) {
+            attachment.file_path = source.to_string_lossy().into_owned();
         }
     }
 }
@@ -1141,6 +1161,23 @@ mod tests {
             attachments[0].task_id, 7,
             "the server moves the row's own id"
         );
+    }
+
+    #[test]
+    fn a_failed_copy_keeps_the_original_path() {
+        let mut attachments = vec![
+            attachment(1, 7, "/home/me/a.txt"),
+            attachment(2, 7, "/home/me/b.txt"),
+        ];
+        let present = HashSet::from([1, 2]);
+        let copies = assign_destinations(&mut attachments, &present, &HashMap::new(), 0);
+        let failed = HashMap::from([(2, copies[1].source.clone())]);
+        restore_failed(&mut attachments, failed);
+        assert_eq!(
+            attachments[0].file_path,
+            ".maestro/attachments/tasks/7/a.txt"
+        );
+        assert_eq!(attachments[1].file_path, "/home/me/b.txt");
     }
 
     #[tokio::test]
