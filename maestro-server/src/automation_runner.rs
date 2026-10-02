@@ -357,8 +357,9 @@ async fn fail(store: &Store, stdout: &crate::ClientOut, run_id: &str, error: Str
 
 /// Start one automation, whatever its schedule says.
 ///
-/// Returns the run it opened, which is already recorded by the time this returns: the spawn itself
-/// happens in the background, so a slow agent does not hold up the loop that asked.
+/// Returns the run it opened, which is already recorded by the time this returns: the workspace and
+/// the spawn happen in the background, so a slow checkout or agent does not hold up the loop that
+/// asked, and a failure there fails the run.
 pub async fn start(
     store: &Store,
     automation_id: &str,
@@ -378,22 +379,6 @@ pub async fn start(
         automations::start_run(&conn, &automation, trigger)?
     };
     announce(spawner.stdout, &run).await;
-
-    let cwd = match resolve_cwd(
-        store,
-        spawner.stdout,
-        &automation,
-        &run.id,
-        run.ordinal.unwrap_or(1),
-    )
-    .await
-    {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            fail(store, spawner.stdout, &run.id, e.clone()).await;
-            return Err(e);
-        }
-    };
 
     let Some((command, args, env)) = resolve_agent_spawn_params(
         &automation.agent_id,
@@ -420,6 +405,15 @@ pub async fn start(
     let opened = run.clone();
 
     tokio::spawn(async move {
+        // Off the loop: a new worktree is a checkout, and waits behind any other in the project.
+        let ordinal = opened.ordinal.unwrap_or(1);
+        let cwd = match resolve_cwd(&store, &stdout, &automation, &opened.id, ordinal).await {
+            Ok(cwd) => cwd,
+            Err(e) => {
+                fail(&store, &stdout, &opened.id, e).await;
+                return;
+            }
+        };
         let Some(connection) = ensure_and_get_connection(
             &opened.automation_id,
             &agent_connections,
