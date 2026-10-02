@@ -236,7 +236,8 @@ moved above them, which waits (a retryable failure) while a session, hold or sta
 those tasks. A later source is merged: `BeginImport` reserves id ranges above the counters and
 answers the task offset, the app copies attachments into each task's final folder before it
 commits, and the incoming rows move up with every reference. An incoming worktree whose folder or
-branch is already there is left out. A marker from before sources were recorded has a NULL source
+branch is already there is left out, and a task whose `task-<id>` folder, row or generated
+`maestro/<id>-` branch is already taken starts in `task-<id>-2` on `maestro/<id>-2-<slug>`, and so on. A marker from before sources were recorded has a NULL source
 and refuses every source, so a store imported by an older build is never imported twice. A failed
 import keeps the project closed and the picker offers Retry, since a board shown without its rows
 would look empty.
