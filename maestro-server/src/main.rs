@@ -504,9 +504,9 @@ async fn run_server(
     // After the runs above are closed out, so a workspace left by a server that died mid-run is
     // evaluated rather than sitting there for ever.
     if let Some(store) = automation_store.as_ref() {
-        automation_runner::sweep_worktrees(store, &stdout).await;
-        automation_runner::apply_all_retention(store).await;
-        webhook::restart(store).await;
+        Box::pin(automation_runner::sweep_worktrees(store, &stdout)).await;
+        Box::pin(automation_runner::apply_all_retention(store)).await;
+        Box::pin(webhook::restart(store)).await;
     }
     // Every run is over by now, `fail_interrupted_runs` having ended the ones this daemon's
     // predecessor died in, so none of their sessions is running and none is left for a project
@@ -514,7 +514,12 @@ async fn run_server(
     if let (Some(automation_store), Some(project_store)) =
         (automation_store.as_ref(), project_store.as_ref())
     {
-        automation_runner::close_finished_run_rows(automation_store, project_store, None).await;
+        Box::pin(automation_runner::close_finished_run_rows(
+            automation_store,
+            project_store,
+            None,
+        ))
+        .await;
     }
 
     // Agent discovery (which::which PATH scanning) runs after the handshake so the client does not
@@ -525,7 +530,7 @@ async fn run_server(
 
     // After the handshake so a client of the wrong protocol version never opens a listener, and
     // before the first session so `mcp_servers_for` has an address to inject.
-    let mut gateway_rx = mcp_gateway::start().await;
+    let mut gateway_rx = Box::pin(mcp_gateway::start()).await;
     let mut pending_host_tools = mcp_gateway::PendingHostTools::new();
 
     let mut agents_with_spawn: Vec<agent::registry::DiscoveredAgentWithSpawn> =
@@ -664,7 +669,7 @@ async fn run_server(
 
             result = spawn_result_rx.recv() => {
                 if let Some((session_id, session)) = result {
-                    register_started_session(
+                    Box::pin(register_started_session(
                         session_id,
                         session,
                         &mut sessions,
@@ -672,7 +677,7 @@ async fn run_server(
                         project_store.as_ref(),
                         automation_store.as_ref(),
                         &stdout,
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -721,14 +726,14 @@ async fn run_server(
                 }
             } => {
                 if let Some((call, reply_tx)) = call {
-                    mcp_gateway::handle_host_tool_call(
+                    Box::pin(mcp_gateway::handle_host_tool_call(
                         call,
                         reply_tx,
                         &sessions,
                         project_store.as_ref(),
                         &mut pending_host_tools,
                         &stdout,
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -743,14 +748,14 @@ async fn run_server(
                         .collect()
                 };
                 for agent_id in agents_with_dead {
-                    handle_agent_restart(
+                    Box::pin(handle_agent_restart(
                         agent_id,
                         &agent_connections,
                         &mut sessions,
                         &agents_with_spawn,
                         project_store.as_ref(),
                         &stdout,
-                    )
+                    ))
                     .await;
                 }
                 // A command loop that ended on a transport error leaves its entry in the map for
@@ -771,19 +776,19 @@ async fn run_server(
             }
 
             _ = reap_interval.tick() => {
-                reap_idle_sessions(
+                Box::pin(reap_idle_sessions(
                     &mut sessions,
                     &stdout,
                     automation_store.as_ref(),
                     project_store.as_ref(),
-                )
+                ))
                 .await;
                 continue;
             }
 
             _ = automations_interval.tick() => {
                 if let Some(store) = automation_store.as_ref() {
-                    automation_runner::tick(
+                    Box::pin(automation_runner::tick(
                         store,
                         automations_floor,
                         automation_runner::Spawner {
@@ -792,9 +797,9 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
-                    automation_runner::drain_webhook_queues(
+                    Box::pin(automation_runner::drain_webhook_queues(
                         store,
                         automation_runner::Spawner {
                             agents_with_spawn: &mut agents_with_spawn,
@@ -802,7 +807,7 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -842,8 +847,8 @@ async fn run_server(
                     );
                 }
                 if let Some(store) = automation_store.as_ref() {
-                    automation_runner::finish_for_session(store, &stdout, ended).await;
-                    automation_runner::drain_webhook_queues(
+                    Box::pin(automation_runner::finish_for_session(store, &stdout, ended)).await;
+                    Box::pin(automation_runner::drain_webhook_queues(
                         store,
                         automation_runner::Spawner {
                             agents_with_spawn: &mut agents_with_spawn,
@@ -851,7 +856,7 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                 }
                 continue;
@@ -859,7 +864,7 @@ async fn run_server(
 
             fired = fire_rx.recv() => {
                 if let (Some(fired), Some(store)) = (fired, automation_store.as_ref()) {
-                    let started = automation_runner::start(
+                    let started = Box::pin(automation_runner::start(
                         store,
                         &fired.automation_id,
                         maestro_protocol::RunTrigger::Webhook,
@@ -870,7 +875,7 @@ async fn run_server(
                             stdout: &stdout,
                             spawn_result_tx: &spawn_result_tx,
                         },
-                    )
+                    ))
                     .await;
                     if fired.reply.send(started).is_err() {
                         send_diag("debug", "[webhook] the request gave up before its run opened");
