@@ -186,10 +186,7 @@ pub(crate) async fn run_command_loop(
                         .block_task(),
                 )
                 .await;
-                if let Some(ref router) = router {
-                    router.unregister(&session_id.to_string()).await;
-                }
-                return;
+                break;
             }
             SessionCommand::Prompt(content) => {
                 crate::send_diag(
@@ -214,6 +211,7 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
+                    crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
                         &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -252,6 +250,7 @@ pub(crate) async fn run_command_loop(
                     });
                 if result.is_err() {
                     turn_active.store(false, Ordering::SeqCst);
+                    crate::helpers::note_turn_ended(&maestro_sid, "error");
                     let _ = send_response(
                         &so_err,
                         &MaestroRpcMessage::Response(ServerResponse::TurnEnded(TurnEnded {
@@ -393,8 +392,9 @@ pub(crate) async fn run_command_loop(
         }
     }
     // Idempotent cleanup: ensure router unregistered regardless of how loop exited
-    // (send error, cmd_tx dropped, or any other break path).
+    // (close, send error, cmd_tx dropped, or any other break path).
     if let Some(ref router) = router {
         router.unregister(&session_id.to_string()).await;
     }
+    crate::helpers::forget_session(&maestro_sid);
 }

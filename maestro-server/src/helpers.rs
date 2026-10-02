@@ -93,6 +93,12 @@ fn take_final_message(session_id: &str) -> Option<String> {
         .filter(|message| !message.trim().is_empty())
 }
 
+/// A session's command loop ended: drop what its turns left behind, which nothing will take now.
+pub(crate) fn forget_session(session_id: &str) {
+    let _ = take_final_message(session_id);
+    let _ = crate::turn::take_turn_facts(session_id);
+}
+
 /// Note that a turn has ended. No-op until the main loop is running.
 pub(crate) fn note_turn_ended(session_id: &str, stop_reason: &str) {
     let final_message = take_final_message(session_id);

@@ -292,14 +292,14 @@ fn candidates(conn: &Connection, project_path: &str) -> Result<Vec<i32>, String>
     };
     let queued = crate::task_store::queue_candidates(conn, &request)?;
     let mut refused = refused();
-    // Any write changes the row, leaving the queue or a hand-off included.
+    // Any write changes the row, leaving the queue or a hand-off included. Every project's, so a
+    // project never drained again does not keep its entries, nor a deleted task its own.
     refused.retain(|(path, id), seen| {
-        path != project_path
-            || crate::task_store::get(conn, path, *id)
-                .ok()
-                .flatten()
-                .as_ref()
-                == Some(seen)
+        crate::task_store::get(conn, path, *id)
+            .ok()
+            .flatten()
+            .as_ref()
+            == Some(seen)
     });
     Ok(queued
         .into_iter()
