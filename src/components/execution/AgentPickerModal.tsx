@@ -4,7 +4,6 @@ import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,15 +28,14 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
   const { data: projectSettings } = useProjectSettings(projectId ?? undefined);
   const updateSettings = useUpdateProjectSettings();
   const [selected, setSelected] = useState<string | null>(null);
-  const [saveAsDefault, setSaveAsDefault] = useState(true);
 
   const agents = discovery?.agents ?? [];
 
-  // The choice is passed to this start alone. The project default, when asked for, is written
+  // The choice becomes the project default and is also passed to this start. The default is written
   // first so a failure has toasted before the start reports what is still missing.
   async function handleApply() {
     if (!selected) return;
-    if (saveAsDefault && projectId) {
+    if (projectId) {
       await updateSettings
         .mutateAsync({
           projectId,
@@ -72,7 +70,7 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
               Naming the wrong cause would send the user to fix something that is not broken. */}
           <DialogDescription>
             Nothing this project is configured to use is installed here. Pick an agent to run "
-            {task.title}".
+            {task.title}". It becomes this project's default.
           </DialogDescription>
         </DialogHeader>
 
@@ -102,14 +100,6 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
             <p className="text-xs text-muted-foreground text-center py-4">No agents discovered</p>
           )}
         </div>
-
-        <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-foreground">
-          <Checkbox
-            checked={saveAsDefault}
-            onCheckedChange={(checked) => setSaveAsDefault(checked === true)}
-          />
-          Set as default for this project
-        </label>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

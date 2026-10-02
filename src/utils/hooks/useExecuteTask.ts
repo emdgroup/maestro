@@ -204,7 +204,8 @@ export function useExecuteTask(
         const message = error instanceof Error ? error.message : String(error);
         const installed = discovery?.agents ?? [];
         if (!isNoAgentError(message) || !canPickAgent || installed.length === 0) throw error;
-        // The choice is for this start only; the picker writes the project default when asked.
+        // The picker writes the choice as the project default; it is passed here as well, so this
+        // start does not depend on that write.
         const picked = await new Promise<string | null>((resolve) => {
           agentPickerResolveRef.current = resolve;
           setAgentPickerState({ task, resolve });
