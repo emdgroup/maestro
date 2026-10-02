@@ -277,7 +277,7 @@ const MAESTRO_BRANCH_PREFIX: &str = "maestro/";
 
 /// Where a task's worktree goes, relative to the repository root. The app's
 /// `worktree_path_for_task`.
-pub fn task_relative_path(task_id: impl std::fmt::Display) -> String {
+pub fn task_relative_path(task_id: i32) -> String {
     format!("{WORKTREE_DIR}/task-{task_id}")
 }
 
@@ -297,7 +297,7 @@ fn slugify_name(name: &str) -> String {
 }
 
 /// A task's branch, the app's `taskBranchName`: the id leads so branches sort and grep by task.
-pub fn task_branch_name(task_id: impl std::fmt::Display, title: &str) -> String {
+pub fn task_branch_name(task_id: i32, title: &str) -> String {
     format!("{MAESTRO_BRANCH_PREFIX}{task_id}-{}", slugify_name(title))
 }
 
@@ -353,44 +353,6 @@ async fn add_task_worktree(
     }
     git(project_path, &["worktree", "add", relative, base]).await?;
     Ok(base.to_string())
-}
-
-/// The folder and generated branch a task's new worktree takes: `task-7` and `maestro/7-<slug>`,
-/// or `task-7-2` and `maestro/7-2-<slug>` and so on when either is already there. A merged board
-/// can hold another task 7's worktree row, folder and branch, and `git worktree add` would fail on
-/// them every time. A branch the user named is used as it is.
-async fn free_task_names(
-    project_path: &str,
-    task: &maestro_protocol::Task,
-    create: bool,
-    named: Option<String>,
-    taken: &[String],
-) -> (String, Option<String>) {
-    for n in 1.. {
-        let key = if n == 1 {
-            task.id.to_string()
-        } else {
-            format!("{}-{n}", task.id)
-        };
-        let relative = task_relative_path(&key);
-        let folder = absolute(project_path, &relative);
-        if taken.contains(&folder) || Path::new(&folder).exists() {
-            continue;
-        }
-        let branch = match (create, &named) {
-            (false, _) => None,
-            (true, Some(named)) => Some(named.clone()),
-            (true, None) => {
-                let branch = task_branch_name(&key, &task.title);
-                if verify(project_path, &format!("refs/heads/{branch}")).await {
-                    continue;
-                }
-                Some(branch)
-            }
-        };
-        return (relative, branch);
-    }
-    unreachable!("an unbounded range ends only by returning")
 }
 
 /// Whether `reference` names a commit.
@@ -472,22 +434,16 @@ pub async fn prepare_task_workspace(
                 tokio::fs::create_dir_all(Path::new(project_path).join(WORKTREE_DIR))
                     .await
                     .map_err(|e| format!("Failed to create worktree directory: {e}"))?;
-                let named = task
-                    .workspace_branch
-                    .clone()
-                    .filter(|b| !b.trim().is_empty());
-                let taken: Vec<String> = worktrees::list(&*store.lock().await, project_path, None)?
-                    .into_iter()
-                    .map(|row| absolute(project_path, &row.path))
-                    .collect();
-                let (relative, new_branch) = free_task_names(
-                    project_path,
-                    task,
-                    task.workspace_branch_mode == BranchMode::Create,
-                    named,
-                    &taken,
-                )
-                .await;
+                let relative = task_relative_path(task.id);
+                let new_branch = match task.workspace_branch_mode {
+                    BranchMode::Checkout => None,
+                    BranchMode::Create => Some(
+                        task.workspace_branch
+                            .clone()
+                            .filter(|b| !b.trim().is_empty())
+                            .unwrap_or_else(|| task_branch_name(task.id, &task.title)),
+                    ),
+                };
                 let base = match task.base_branch.trim() {
                     "" => "HEAD",
                     base => base,
@@ -655,42 +611,6 @@ mod tests {
         let rows = crate::task_store::worktrees::list(&*store.lock().await, project, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].task_id, Some(task.id));
-    }
-
-    #[tokio::test]
-    async fn a_task_steps_around_another_task_s_folder_branch_and_row() {
-        use maestro_protocol::{AgentRole, InsertWorktreeRequest};
-        let repo = repo_with_commit().await;
-        let project = repo.path().to_str().expect("utf-8 path");
-        let (store, task) = store_with_task(project, "demo task", |_| {});
-        let id = task.id;
-        // A merged board left task 7's branch, a folder and a row naming the next two.
-        git(project, &["branch", &format!("maestro/{id}-demo-task")])
-            .await
-            .expect("branch");
-        std::fs::create_dir_all(Path::new(project).join(task_relative_path(format!("{id}-2"))))
-            .expect("folder");
-        crate::task_store::worktrees::insert(
-            &*store.lock().await,
-            &InsertWorktreeRequest {
-                project_path: project.to_string(),
-                task_id: None,
-                branch_name: "elsewhere".to_string(),
-                base_branch: None,
-                path: task_relative_path(format!("{id}-3")),
-            },
-        )
-        .expect("row");
-
-        let workspace = prepare_task_workspace(&store, &task, AgentRole::Coder)
-            .await
-            .expect("prepare");
-        assert_eq!(
-            workspace.cwd,
-            format!("{project}/.maestro/worktrees/task-{id}-4")
-        );
-        assert_eq!(workspace.branch, Some(format!("maestro/{id}-4-demo-task")));
-        assert!(Path::new(&workspace.cwd).is_dir());
     }
 
     #[tokio::test]
