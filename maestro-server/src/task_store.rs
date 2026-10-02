@@ -221,6 +221,7 @@ fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         fix_rounds: row.get("fix_rounds")?,
         pull_request_ci: optional_text("pull_request_ci")?.and_then(|s| parse(&s)),
         profile_overrides: row.get("profile_overrides")?,
+        claimed_from: optional_text("claimed_from")?.and_then(|s| parse(&s)),
     })
 }
 

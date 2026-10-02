@@ -1345,6 +1345,10 @@ pub struct Task {
     /// JSON keyed by role name, stored and returned as the app wrote it.
     #[serde(default)]
     pub profile_overrides: Option<String>,
+    /// The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+    /// failure is a start that did not come up, which a retry of that phase's stage answers.
+    #[serde(default)]
+    pub claimed_from: Option<TaskPhase>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1592,6 +1596,9 @@ pub enum TaskTransition {
     ExecutionStarted,
     SessionReady(AgentRole),
     SpawnAborted,
+    /// The daemon stopped before a claimed start came up. A hand-off goes back to waiting on its
+    /// agent so the drain starts it again; anything else is put back as `SpawnAborted` would.
+    SpawnInterrupted,
     AwaitingUserInput,
     Unblocked,
     TurnCompleted {
@@ -3369,6 +3376,7 @@ mod tests {
             fix_rounds: 0,
             pull_request_ci: Some(PullRequestCi::Pending),
             profile_overrides: Some(r#"{"Planner":null}"#.to_string()),
+            claimed_from: None,
         }
     }
 

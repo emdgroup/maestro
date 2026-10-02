@@ -1414,6 +1414,64 @@ describe("TaskCard after a pull request is closed", () => {
   });
 });
 
+describe("TaskCard after a hand-off failed to start", () => {
+  // The daemon puts the task back in the phase it claimed it from with `claimed_from` equal to it,
+  // and nothing retries it on its own.
+  const failedStart = (phase: Task["phase"], status: Task["status"]): Partial<Task> => ({
+    status,
+    phase,
+    phase_status: "Failed",
+    ball: "User",
+    claimed_from: phase,
+  });
+
+  it.each([
+    ["Rework", "InProgress", "Coder"],
+    ["SelfReview", "Review", "Reviewer"],
+    ["AwaitingMerge", "Review", "Coder"],
+  ] as const)("offers a retry of the %s stage's agent", async (phase, status, role) => {
+    renderCard({
+      ...failedStart(phase, status),
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+      pull_request_number: 42,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      expect.objectContaining({ role }),
+    );
+  });
+
+  it("names a CI fix that did not start rather than a closed pull request", () => {
+    renderCard({
+      ...failedStart("AwaitingMerge", "Review"),
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+      pull_request_number: 42,
+    });
+
+    expect(screen.getByText(/ci fix failed to start/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pull request closed/i)).not.toBeInTheDocument();
+  });
+
+  it("offers no retry when the stage failed at its work", () => {
+    renderCard({ ...failedStart("Rework", "InProgress"), claimed_from: null });
+
+    expect(screen.queryByRole("button", { name: /^retry$/i })).not.toBeInTheDocument();
+  });
+
+  it("offers no retry on a closed pull request", () => {
+    renderCard({
+      ...failedStart("AwaitingMerge", "Review"),
+      claimed_from: null,
+      pull_request_url: "https://github.com/acme/widgets/pull/42",
+    });
+
+    expect(screen.queryByRole("button", { name: /^retry$/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("TaskCard for an imported task", () => {
   const imported: Partial<Task> = {
     status: "Planning",

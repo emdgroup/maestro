@@ -312,6 +312,7 @@ fn task_from_row(row: &Row, project_path: &str) -> rusqlite::Result<Task> {
         fix_rounds: get(row, "fix_rounds")?,
         pull_request_ci: variant(get(row, "pull_request_ci")?),
         profile_overrides: get(row, "profile_overrides")?,
+        claimed_from: None,
     })
 }
 

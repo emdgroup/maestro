@@ -95,6 +95,10 @@ pub struct Task {
     /// backend decides on its own.
     #[specta(optional)]
     pub profile_overrides: Option<String>,
+    /// The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+    /// stage that phase hands to failed to start, rather than failing at its work.
+    #[specta(optional)]
+    pub claimed_from: Option<TaskPhase>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -448,6 +452,7 @@ impl Task {
             fix_rounds: task.fix_rounds,
             pull_request_ci: task.pull_request_ci.map(Into::into),
             profile_overrides: task.profile_overrides,
+            claimed_from: task.claimed_from.map(Into::into),
         }
     }
 }

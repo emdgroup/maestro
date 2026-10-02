@@ -173,10 +173,13 @@ function PhaseLine({ task }: { task: Task }) {
   const failed = task.phase_status === "Failed";
   if (task.phase === "AwaitingMerge" && !failed) return <PullRequestLine task={task} />;
   // A pull request somebody closed did not "fail to await merge". It is still the error state
-  // D28 asks for — red, ball with the user — but the words have to say what happened.
+  // D28 asks for — red, ball with the user — but the words have to say what happened. The same
+  // state is also a CI fix whose agent failed to start, which `claimed_from` tells apart.
   const label =
     failed && task.phase === "AwaitingMerge"
-      ? "Pull request closed"
+      ? task.claimed_from === "AwaitingMerge"
+        ? "CI fix failed to start"
+        : "Pull request closed"
       : (!failed && task.ball === "User" && USER_GATE_LABELS[task.phase]) ||
         PHASE_LABELS[task.phase] + (failed ? " · failed" : "");
   return (
@@ -538,6 +541,7 @@ function TaskCardImpl({ task, index, dndGroup }: TaskCardProps) {
             onLogin: () => setDialog("auth"),
             onRecover: () => recoverSession.mutate({ taskId: task.id, projectId }),
             onSendToReview: handleSendToReview,
+            onRetry: (role) => void handleExecute(task, { role, canPickAgent: true }),
           }}
         />
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Task } from "@/types/bindings";
+import type { AgentRole, Task } from "@/types/bindings";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -37,6 +37,20 @@ export interface FooterActions {
   onLogin: () => void;
   onRecover: () => void;
   onSendToReview: () => void;
+  /** Start the stage a failed hand-off start was handing to, see `failedStartRole`. */
+  onRetry: (role: AgentRole) => void;
+}
+
+/**
+ * The stage to start again when a hand-off failed to start: the daemon keeps `claimed_from` equal
+ * to the phase it put the task back in. Nothing retries it on its own, so the card has to. A stage
+ * that failed at its work, and a pull request somebody closed, are not this.
+ */
+export function failedStartRole(task: Task): AgentRole | null {
+  if (task.phase_status !== "Failed" || task.claimed_from !== task.phase) return null;
+  if (task.phase === "SelfReview") return "Reviewer";
+  if (task.phase === "Rework" || task.phase === "AwaitingMerge") return "Coder";
+  return null;
 }
 
 /**
@@ -98,6 +112,7 @@ export function FooterCTAs({
     onLogin,
     onRecover,
     onSendToReview,
+    onRetry,
   },
 }: FooterCTAsProps & { actions: FooterActions }) {
   /**
@@ -124,6 +139,33 @@ export function FooterCTAs({
     Agents. Buttons rendered as the trigger directly carry `flex-1` through `base` already.
   */
   const tooltipWrapper = "inline-flex flex-1";
+
+  const retryRole = failedStartRole(task);
+  const retryButton = retryRole && (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry(retryRole);
+            }}
+            disabled={isExecuting}
+            variant="ghost"
+            className={cn(base, "h-auto")}
+          />
+        }
+      >
+        <Play className="w-2.5 h-2.5 fill-current" />
+        {isExecuting ? "Starting…" : "Retry"}
+      </TooltipTrigger>
+      <TooltipContent>
+        {retryRole === "Reviewer"
+          ? "Try starting the review agent again"
+          : "Try starting the coding agent again"}
+      </TooltipContent>
+    </Tooltip>
+  );
 
   // A claimed task is InProgress with no session for the whole spawn — seconds, longer on a cold
   // agent or a remote connection — so `starting` is part of the reading rather than a filter over
@@ -380,6 +422,15 @@ export function FooterCTAs({
       </Tooltip>
     );
 
+    // A failed start has no session to recover: the agent never came up.
+    if (retryButton) {
+      return (
+        <div className="flex gap-1 mt-1.5">
+          {retryButton}
+          {sendToReview}
+        </div>
+      );
+    }
     if (showSessionLost) {
       return (
         <div className="flex flex-col gap-1 mt-1.5">
@@ -524,7 +575,8 @@ export function FooterCTAs({
           Pull request
           {task.pull_request_number ? ` #${task.pull_request_number}` : ""}
         </Button>
-        {task.ball === "User" && (
+        {retryButton}
+        {task.ball === "User" && !retryButton && (
           <Button
             onClick={(e) => {
               e.stopPropagation();
@@ -550,6 +602,7 @@ export function FooterCTAs({
 
     return (
       <div className="flex gap-1 mt-1.5">
+        {retryButton}
         {selfReviewing ? (
           <Tooltip>
             <TooltipTrigger

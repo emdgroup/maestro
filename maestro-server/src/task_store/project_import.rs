@@ -844,6 +844,7 @@ mod tests {
             fix_rounds: 2,
             pull_request_ci: None,
             profile_overrides: None,
+            claimed_from: None,
         }
     }
 

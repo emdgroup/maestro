@@ -212,7 +212,7 @@ pub(crate) fn spawn(driver: Driver, planned: Vec<(String, i32, Action)>) {
                         &driver,
                         &everyone,
                         (&path, task_id),
-                        TaskTransition::SpawnAborted,
+                        TaskTransition::SpawnInterrupted,
                         TransitionGuard::Spawning,
                         "Maestro restarted while this task was starting, so it was put back."
                             .to_string(),

@@ -4164,7 +4164,12 @@ pull_request_ci?: PullRequestCi | null;
  * when it names nothing. `role_is_skipped` parses it on the Rust side, for the one stage the
  * backend decides on its own.
  */
-profile_overrides?: string | null }
+profile_overrides?: string | null; 
+/**
+ * The phase the last claim took the task from. Equal to `phase` on a `Failed` task when the
+ * stage that phase hands to failed to start, rather than failing at its work.
+ */
+claimed_from?: TaskPhase | null }
 export type TaskAttachment = { id: number; task_id: number; filename: string; file_path: string; file_size: number; created_at: string }
 /**
  * Who the pipeline is blocked on — not who owns the ticket.

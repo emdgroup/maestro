@@ -71,11 +71,14 @@ impl TaskState {
 
     /// A claimed start that did not come up, back in the phase it was claimed from, failed and the
     /// user's: a retry claims it again. With no such phase there is nothing to go back to.
+    /// `claimed_from` stays, equal to the phase, which is how the card tells a failed start from a
+    /// failed stage.
     fn unclaimed(self, otherwise: TaskState) -> TaskState {
         match self.claimed_from {
-            Some(phase) if self.phase == Some(TaskPhase::Spawning) => {
-                TaskState::active(self.status, phase, PhaseStatus::Failed, TaskBall::User)
-            }
+            Some(phase) if self.phase == Some(TaskPhase::Spawning) => TaskState {
+                claimed_from: Some(phase),
+                ..TaskState::active(self.status, phase, PhaseStatus::Failed, TaskBall::User)
+            },
             _ => otherwise,
         }
     }
@@ -124,6 +127,16 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
         },
 
         TaskTransition::SpawnAborted => current.unclaimed(TaskState::parked(current.status)),
+
+        // A hand-off waits on its agent again, so the drain starts it as if nothing had happened.
+        TaskTransition::SpawnInterrupted => match current.claimed_from {
+            Some(phase @ (SelfReview | Rework | AwaitingMerge))
+                if current.phase == Some(Spawning) =>
+            {
+                TaskState::active(current.status, phase, Waiting, Ball::Agent)
+            }
+            _ => current.unclaimed(TaskState::parked(current.status)),
+        },
 
         TaskTransition::AwaitingUserInput => TaskState {
             phase_status: Some(Blocked),
@@ -592,12 +605,15 @@ mod tests {
         );
         let claimed = resolve(TaskTransition::ExecutionStarted, handoff);
         assert_eq!(claimed.claimed_from, Some(TaskPhase::SelfReview));
-        let back = TaskState::active(
-            TaskStatus::Review,
-            TaskPhase::SelfReview,
-            PhaseStatus::Failed,
-            TaskBall::User,
-        );
+        let back = TaskState {
+            claimed_from: Some(TaskPhase::SelfReview),
+            ..TaskState::active(
+                TaskStatus::Review,
+                TaskPhase::SelfReview,
+                PhaseStatus::Failed,
+                TaskBall::User,
+            )
+        };
         assert_eq!(resolve(TaskTransition::SpawnAborted, claimed), back);
         assert_eq!(resolve(TaskTransition::PhaseFailed, claimed), back);
         assert!(admit(
@@ -620,6 +636,42 @@ mod tests {
         };
         let retried = resolve(TaskTransition::ExecutionStarted, failed_spawn);
         assert_eq!(retried.claimed_from, Some(TaskPhase::Rework));
+    }
+
+    /// A restart puts a hand-off back on its agent for the drain, and every other claim back where
+    /// `SpawnAborted` would.
+    #[test]
+    fn an_interrupted_hand_off_waits_on_its_agent_again() {
+        for (status, phase) in [
+            (TaskStatus::Review, TaskPhase::SelfReview),
+            (TaskStatus::InProgress, TaskPhase::Rework),
+            (TaskStatus::Review, TaskPhase::AwaitingMerge),
+        ] {
+            let waiting = TaskState::active(status, phase, PhaseStatus::Waiting, TaskBall::Agent);
+            let claimed = resolve(TaskTransition::ExecutionStarted, waiting);
+            assert_eq!(
+                resolve(TaskTransition::SpawnInterrupted, claimed),
+                waiting,
+                "{phase:?}"
+            );
+        }
+        for claimed in [
+            spawning(TaskStatus::Queue),
+            resolve(
+                TaskTransition::ExecutionStarted,
+                TaskState::active(
+                    TaskStatus::InProgress,
+                    TaskPhase::PlanReview,
+                    PhaseStatus::Waiting,
+                    TaskBall::User,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                resolve(TaskTransition::SpawnInterrupted, claimed),
+                resolve(TaskTransition::SpawnAborted, claimed)
+            );
+        }
     }
 
     #[test]
