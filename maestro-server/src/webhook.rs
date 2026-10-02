@@ -291,7 +291,7 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 /// Whether the request proves it knows the secret: a GitHub-style signature of the body, or the
 /// secret itself as a bearer token. Both compared in constant time.
 fn authorized(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     if let Some(signature) = header(headers, "x-hub-signature-256") {
         let Some(expected) = signature
             .strip_prefix("sha256=")
@@ -725,7 +725,7 @@ async fn serve(listener: tokio::net::TcpListener, store: Store) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmac::Mac;
+    use hmac::{KeyInit, Mac};
 
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
         let mut map = HeaderMap::new();

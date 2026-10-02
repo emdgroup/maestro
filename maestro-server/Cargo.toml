@@ -49,7 +49,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
 hmac = "0.13"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 subtle = "2"
 # The Auto agent limit measures this machine's free memory, as the app does for a local project.
