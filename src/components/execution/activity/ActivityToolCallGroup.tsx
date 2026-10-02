@@ -11,13 +11,13 @@ import {
   labelBecomesCommand,
   rowIcon,
   rowKeyDown,
-  rowLabel,
   RowMeta,
   StatusWord,
   titleSuffix,
   ToolCallTimeline,
   ToolCallTitle,
 } from "./ToolCallTimeline";
+import { rowLabel } from "./tool-call-labels";
 import type { ToolCallItem } from "./types";
 
 const KIND_LABEL: Record<string, string> = {

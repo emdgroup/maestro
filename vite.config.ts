@@ -20,12 +20,22 @@ export default defineConfig(async () => ({
     // A second React copy in the macOS WebKit bundle throws "Invalid hook call" at startup.
     dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
+    // Drops highlight.js from the bundle: see the stub for why nothing is lost but rare languages.
+    alias: [
+      {
+        find: /^lowlight$/,
+        replacement: path.resolve(projectRoot, "src/utils/helpers/lowlight-stub.ts"),
+      },
+    ],
   },
   test: {
     include: ["./src/**/*.{test,spec}.{ts,tsx}"],
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    // Externalized dependencies skip `resolve.alias`; inlined, the diff view gets the lowlight stub
+    // the app ships with.
+    server: { deps: { inline: [/@git-diff-view\//] } },
   },
 
   // Keep Rust errors on screen; Tauri expects the dev server on a fixed port.

@@ -5,7 +5,7 @@ import type {
   ToolCallItem,
   ToolCallLocation,
 } from "@/components/execution/activity/types";
-import { isTerminalKind, rowLabel } from "@/components/execution/activity/ToolCallTimeline";
+import { isTerminalKind, rowLabel } from "@/components/execution/activity/tool-call-labels";
 import { extractAgentMeta } from "@/components/execution/activity/agentMeta";
 
 export interface PermissionOption {

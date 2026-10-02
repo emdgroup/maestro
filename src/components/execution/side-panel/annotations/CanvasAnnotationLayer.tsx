@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SquareDashedMousePointer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -81,7 +81,7 @@ export function CanvasAnnotationLayer({
   sessionId,
   surface,
   frameNodes,
-  frame,
+  frame: frameHandleRef,
   onSend,
   sendDisabled,
   canCapture,
@@ -120,7 +120,7 @@ export function CanvasAnnotationLayer({
   // of every measurement. Re-read on scroll and resize for the reason `plan-anchor` rebuilds its
   // Ranges: anything stored before the surface moved is a lie.
   const refresh = useCallback(() => {
-    const origin = frame.current?.origin();
+    const origin = frameHandleRef.current?.origin();
     if (origin) {
       setContentOrigin((prev) =>
         prev.left === origin.left && prev.top === origin.top ? prev : origin,
@@ -132,7 +132,7 @@ export function CanvasAnnotationLayer({
         prev.left === box.left && prev.top === box.top ? prev : { left: box.left, top: box.top },
       );
     }
-  }, [frame]);
+  }, [frameHandleRef]);
 
   useEffect(() => {
     refresh();
@@ -149,18 +149,23 @@ export function CanvasAnnotationLayer({
   // Only adopt a report that found something. A collapsed side panel lays its contents out at
   // zero size and the frame reports nothing — adopting that discards the geometry every saved
   // note is resolved against, and re-opening the panel would leave them all reading as stale.
-  const measured = useMemo(
-    () => toCanvasNodes(frameNodes, contentOrigin),
-    [frameNodes, contentOrigin],
+  // Keyed on the inputs rather than the derived array: the compiler's memo cache does not survive
+  // a render-phase re-render on mount, so a fresh array every pass would never settle.
+  const [measuredFrom, setMeasuredFrom] = useState<[FrameNode[], typeof contentOrigin] | null>(
+    null,
   );
-  if (measured.length > 0 && nodes !== measured) setNodes(measured);
+  if (measuredFrom?.[0] !== frameNodes || measuredFrom[1] !== contentOrigin) {
+    setMeasuredFrom([frameNodes, contentOrigin]);
+    const measured = toCanvasNodes(frameNodes, contentOrigin);
+    if (measured.length > 0) setNodes(measured);
+  }
 
   // The reporter runs while the mode is on, and while this surface carries notes — those have to
   // be resolvable from the bar without entering the mode first.
   const reporting = active || mine.length > 0;
   useEffect(() => {
-    frame.current?.setAnnotating(reporting);
-  }, [reporting, frame, surface]);
+    frameHandleRef.current?.setAnnotating(reporting);
+  }, [reporting, frameHandleRef, surface]);
 
   // Leaving the mode drops everything transient with it — a highlight with no way to act on it is
   // just a decoration the user cannot dismiss. Adjusted during render rather than from an effect,
@@ -237,7 +242,7 @@ export function CanvasAnnotationLayer({
       if (!capture) return;
       // Taken now rather than at send: by then the agent may have redrawn the surface, and a
       // screenshot of something the user never saw is worse than none.
-      void captureRegion(frame.current, {
+      void captureRegion(frameHandleRef.current, {
         left: rect.left - contentOrigin.left,
         top: rect.top - contentOrigin.top,
         width: rect.width,
@@ -246,7 +251,7 @@ export function CanvasAnnotationLayer({
         setPending((prev) => (prev ? { ...prev, shot, capture: shot ? "done" : "failed" } : prev)),
       );
     },
-    [place, frame, contentOrigin],
+    [place, frameHandleRef, contentOrigin],
   );
 
   const openAnnotation = useCallback(
@@ -388,7 +393,7 @@ export function CanvasAnnotationLayer({
       // surface as it works, and a note has to keep describing what the user was looking at.
       const subtree =
         pending.ids.length > 0
-          ? await frame.current?.describe(pending.ids, MAX_SUBTREE_CHARS)
+          ? await frameHandleRef.current?.describe(pending.ids, MAX_SUBTREE_CHARS)
           : undefined;
       addAnnotation(sessionId, {
         id: crypto.randomUUID(),
@@ -403,7 +408,7 @@ export function CanvasAnnotationLayer({
       });
       setPending(null);
     },
-    [pending, nodes, addAnnotation, sessionId, surface, frame],
+    [pending, nodes, addAnnotation, sessionId, surface, frameHandleRef],
   );
 
   /** Reveal one note: page to its surface if needed, scroll to it, and open its bubble. */
@@ -428,7 +433,7 @@ export function CanvasAnnotationLayer({
       // Re-read the origin after the scroll so the bubble lands on the elements, not where they
       // were. The frame's own rects do not change — it does not scroll — so only this moved.
       requestAnimationFrame(() => {
-        const origin = frame.current?.origin() ?? contentOrigin;
+        const origin = frameHandleRef.current?.origin() ?? contentOrigin;
         const settled = toCanvasNodes(frameNodes, origin);
         setNodes(settled);
         openAnnotation(a, resolveRects(settled, a.componentIds));
@@ -439,7 +444,7 @@ export function CanvasAnnotationLayer({
       surface.surfaceId,
       nodes,
       frameNodes,
-      frame,
+      frameHandleRef,
       contentOrigin,
       onRequestSurface,
       openAnnotation,

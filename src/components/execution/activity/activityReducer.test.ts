@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activityReducer, type ActivityAction } from "./activityReducer";
-import { rowLabel } from "./ToolCallTimeline";
+import { rowLabel } from "./tool-call-labels";
 import { INITIAL_ACTIVITY_STATE } from "./types";
 import type {
   ActivityState,

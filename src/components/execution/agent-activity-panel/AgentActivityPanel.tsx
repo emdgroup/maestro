@@ -1,4 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useReducer,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -484,7 +492,11 @@ export function AgentActivityPanel({
   // a tool outside a turn. So a control with no wait behind it sends its event as a prompt, which
   // starts one — after which the agent answers and re-arms, and everything that follows takes the
   // direct path above. Without this a restored canvas is a picture of a UI rather than a UI.
-  const [queuedCanvasEvents, setQueuedCanvasEvents] = useState<CanvasEvent[]>([]);
+  //
+  // Both queues below are refs, not state: nothing renders them, and draining state from an
+  // effect re-renders for no reason. Queuing bumps `canvasQueueTick` so the drain still runs.
+  const queuedCanvasEventsRef = useRef<CanvasEvent[]>([]);
+  const [canvasQueueTick, wakeCanvasQueues] = useReducer((n: number) => n + 1, 0);
   const handleCanvasEvent = useCallback(
     (requestId: string | null, event: unknown) => {
       if (requestId) {
@@ -499,7 +511,8 @@ export function AgentActivityPanel({
       // `canvas_await` returning and the next one arming is on every turn, and a click lost there
       // leaves the agent acting on a surface it can no longer see.
       if (isProcessing) {
-        setQueuedCanvasEvents((queued) => [...queued, event as CanvasEvent]);
+        queuedCanvasEventsRef.current.push(event as CanvasEvent);
+        wakeCanvasQueues();
         return;
       }
       void handleSend(buildCanvasEventPrompt([event as CanvasEvent]));
@@ -507,15 +520,16 @@ export function AgentActivityPanel({
     [sessionId, setActivity, isProcessing, handleSend],
   );
 
-  // Drains one event per pass: answering a wait consumes it, which brings the agent back here with
-  // a new one, and the effect runs again for the next event. Only when no wait can take them and
-  // the agent has gone idle do the rest travel together as a prompt.
+  // Drains one event per pass: answering a wait consumes it, and its `canvas-await-ended` changes
+  // `pendingCanvasAwaits`, which runs the effect again for the next event. Only when no wait can
+  // take them and the agent has gone idle do the rest travel together as a prompt.
   useEffect(() => {
-    const [next, ...rest] = queuedCanvasEvents;
+    const queued = queuedCanvasEventsRef.current;
+    const [next, ...rest] = queued;
     if (!next || liveState.sessionEnded) return;
     const waiting = awaitForSurface(pendingCanvasAwaits, next.surfaceId);
     if (waiting) {
-      setQueuedCanvasEvents(rest);
+      queuedCanvasEventsRef.current = rest;
       void api
         .respondHostTool(sessionId, waiting.requestId, next as unknown as JsonValue)
         .catch(() => toast.error("Could not send your answer to the agent"));
@@ -523,10 +537,10 @@ export function AgentActivityPanel({
       return;
     }
     if (isProcessing) return;
-    setQueuedCanvasEvents([]);
-    void handleSend(buildCanvasEventPrompt(queuedCanvasEvents));
+    queuedCanvasEventsRef.current = [];
+    void handleSend(buildCanvasEventPrompt(queued));
   }, [
-    queuedCanvasEvents,
+    canvasQueueTick,
     pendingCanvasAwaits,
     isProcessing,
     liveState.sessionEnded,
@@ -538,16 +552,17 @@ export function AgentActivityPanel({
   // An import happens whenever the user says so, which may be mid-turn — and ACP allows one
   // `session/prompt` per turn. Held until the agent is idle, then drained one at a time: sending
   // the first makes it busy again, so the next waits for that turn in its turn.
-  const [queuedCanvasPrompts, setQueuedCanvasPrompts] = useState<string[]>([]);
+  const queuedCanvasPromptsRef = useRef<string[]>([]);
   const queueCanvasPrompt = useCallback((text: string) => {
-    setQueuedCanvasPrompts((queued) => [...queued, text]);
+    queuedCanvasPromptsRef.current.push(text);
+    wakeCanvasQueues();
   }, []);
   useEffect(() => {
-    const [next, ...rest] = queuedCanvasPrompts;
+    const [next, ...rest] = queuedCanvasPromptsRef.current;
     if (!next || isProcessing || liveState.sessionEnded) return;
-    setQueuedCanvasPrompts(rest);
+    queuedCanvasPromptsRef.current = rest;
     void handleSend(next);
-  }, [queuedCanvasPrompts, isProcessing, liveState.sessionEnded, handleSend]);
+  }, [canvasQueueTick, isProcessing, liveState.sessionEnded, handleSend]);
 
   const canvasImport = useCanvasImport({
     sessionId: sessionId,
