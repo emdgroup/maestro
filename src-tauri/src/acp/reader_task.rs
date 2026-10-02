@@ -883,6 +883,15 @@ pub(crate) async fn handle_shared_server_message(
             }
         }
 
+        if is_reloading_session_error(&msg) {
+            // The daemon's startup pass is reloading this conversation itself and announces it with
+            // `TaskSessionStarted`, which adopts it. So this load's entry goes, and neither the task
+            // nor the row is touched.
+            app_state.acp.sessions.lock().await.remove(&session_id);
+            app_handle.emit("sessions-changed", ()).ok();
+            return;
+        }
+
         let caches = {
             let sessions = app_state.acp.sessions.lock().await;
             sessions.get(&session_id).map(|s| {
@@ -1554,6 +1563,16 @@ fn is_gone_session_error(msg: &MaestroRpcMessage) -> bool {
     )
 }
 
+/// Whether a load was refused because the daemon is reloading that session itself.
+fn is_reloading_session_error(msg: &MaestroRpcMessage) -> bool {
+    matches!(
+        msg,
+        MaestroRpcMessage::Response(ServerResponse::Error(e))
+            if e.session_id.is_some()
+                && e.message.starts_with(maestro_protocol::SESSION_RELOADING_ERROR)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1638,6 +1657,18 @@ mod tests {
                 "ACP session/load failed: the session is gone",
                 None,
             )));
+        }
+
+        /// The daemon's own reload is not a failed load: the task is not failed and the row stays.
+        #[test]
+        fn a_load_the_daemon_is_reloading_is_not_a_failure() {
+            let reloading = error(
+                "session_reloading: the server is reloading this session itself",
+                Some("session-3"),
+            );
+            assert!(is_reloading_session_error(&reloading));
+            assert!(!is_fatal_session_error(&reloading));
+            assert!(!is_gone_session_error(&reloading));
         }
 
         #[test]

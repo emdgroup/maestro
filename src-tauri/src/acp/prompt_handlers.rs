@@ -22,14 +22,7 @@ async fn send_prompt_impl(
     session_id: &str,
     content: serde_json::Value,
 ) -> Result<(), String> {
-    // Any reply puts the agent back to work, including a plain message answering a question the
-    // agent asked. The daemon clears the block on an answer to its own requests, not on this.
-    let task = {
-        let sessions = app_state.acp.sessions.lock().await;
-        sessions.get(session_id).and_then(|s| s.task_key())
-    };
-    clear_task_blocked(app_state, task).await;
-
+    // The daemon clears a task's block on any prompt, an answer to a question included.
     let msg = MaestroRpcMessage::Request(ServerRequest::Prompt(PromptRequest {
         session_id: session_id.to_string(),
         content,

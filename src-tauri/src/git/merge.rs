@@ -903,7 +903,6 @@ async fn request_ci_fix(
         task.fix_rounds,
         FIX_ROUND_CAP
     );
-    crate::task::ops::start_handoff(app_state, &task);
     Ok(true)
 }
 

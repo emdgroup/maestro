@@ -224,7 +224,7 @@ pub async fn send_task_to_review(
     // reviewer, which nothing on it says it is.
     let reviewer_pending = crate::acp::reader_task::reviewer_should_run(&app_state, &task).await;
 
-    let task = apply_transition_on_server(
+    apply_transition_on_server(
         &app_state,
         project_id,
         task_id,
@@ -235,11 +235,7 @@ pub async fn send_task_to_review(
         },
         TransitionGuard::Always,
     )
-    .await?;
-    if let Some(task) = &task {
-        start_handoff(&app_state, task);
-    }
-    Ok(task)
+    .await
 }
 
 /// End the review agent's pass and hand the task to the human gate.
@@ -371,78 +367,18 @@ pub async fn start_task(
     respect_capacity: bool,
     agent_id: Option<String>,
 ) -> Result<StartTaskResult, String> {
-    start_task_on_server(
-        &app_state,
-        project_id,
-        task_id,
-        AgentRole::from(role),
-        feedback,
-        unattended,
-        respect_capacity,
-        agent_id,
-    )
-    .await
-}
-
-/// What `start_task` answers with.
-#[derive(Debug, Clone, serde::Serialize, specta::Type)]
-pub struct StartTaskResult {
-    /// The session started, `None` when the task was deferred to the queue.
-    pub session_id: Option<String>,
-    /// The attachments the prompt went without, each as `<file>: <why>`.
-    pub skipped_attachments: Vec<String>,
-}
-
-/// Start the stage a window's own write handed to an agent: a review asked for by hand, or a CI
-/// fix the pull request poll requested. The daemon starts the next stage after its own turn ends,
-/// not after a window's write. Spawned, since a start waits for the agent to come up.
-pub(crate) fn start_handoff(app_state: &Arc<AppState>, task: &Task) {
-    if task.phase_status != Some(crate::models::PhaseStatus::Waiting)
-        || task.ball != crate::models::TaskBall::Agent
-    {
-        return;
-    }
-    use crate::models::TaskPhase as Phase;
-    let role = match task.phase {
-        Some(Phase::SelfReview) => AgentRole::Reviewer,
-        Some(Phase::Rework | Phase::AwaitingMerge) => AgentRole::Coder,
-        _ => return,
-    };
-    let (app_state, project_id, task_id) = (Arc::clone(app_state), task.project_id, task.id);
-    tokio::spawn(async move {
-        if let Err(e) = start_task_on_server(
-            &app_state, project_id, task_id, role, None, true, false, None,
-        )
-        .await
-        {
-            log::warn!("[task] could not start {role:?} for task {task_id}: {e}");
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn start_task_on_server(
-    app_state: &Arc<AppState>,
-    project_id: i32,
-    task_id: i32,
-    role: AgentRole,
-    feedback: Option<String>,
-    unattended: bool,
-    respect_capacity: bool,
-    agent_id: Option<String>,
-) -> Result<StartTaskResult, String> {
     let (connection_key, project_path) =
-        crate::project::automations::target(app_state, project_id).await?;
+        crate::project::automations::target(&app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
     crate::acp::connection_server::query_via_server(
         connection_key,
-        app_state,
+        &app_state,
         &format!("No connection server for connection {connection_key:?}"),
         crate::acp::transport::MaestroRpcMessage::Request(ServerRequest::StartTask(
             maestro_protocol::StartTaskRequest {
                 project_path,
                 task_id,
-                role,
+                role: AgentRole::from(role),
                 feedback,
                 unattended,
                 respect_capacity,
@@ -457,4 +393,13 @@ async fn start_task_on_server(
         "The project's server did not start the task within 120s",
     )
     .await
+}
+
+/// What `start_task` answers with.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct StartTaskResult {
+    /// The session started, `None` when the task was deferred to the queue.
+    pub session_id: Option<String>,
+    /// The attachments the prompt went without, each as `<file>: <why>`.
+    pub skipped_attachments: Vec<String>,
 }

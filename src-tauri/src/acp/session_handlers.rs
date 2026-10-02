@@ -462,17 +462,9 @@ pub(crate) async fn close_superseded_sessions_for_task(
 
 /// The body of `cancel_acp_session`.
 pub(crate) async fn end_acp_session(app_state: &Arc<AppState>, session_id: &str) {
-    // This used to refuse outright when the owning task was InProgress or Review, telling the user
-    // to press a Stop button that does not exist on a Review card — and, because the callers
-    // swallowed the error, "Force end session" in the agent monitor silently did nothing in the
-    // stale-connection case it exists for. What the guard was protecting is handled below instead:
-    // the task is failed here rather than being refused.
-    let task = tear_down_session(app_state, session_id).await;
-
-    // The daemon fails a task whose agent died, not one whose session was ended on purpose, so a
-    // task an agent was still working on is failed here. A task parked at a gate is left alone.
-    crate::acp::reader_task::fail_task_if_still_running(app_state, task);
-
+    // The daemon fails a task an agent was still working on when its session is cancelled, and
+    // leaves one parked at a gate alone.
+    tear_down_session(app_state, session_id).await;
     app_state.app_handle.emit("sessions-changed", ()).ok();
 }
 

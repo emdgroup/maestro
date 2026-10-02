@@ -27,13 +27,8 @@ const planPermission = {
   payload: { toolCall: { toolCallId: "tc-1", kind: "switch_mode" } },
 };
 
-function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {}): ReturnType<
-  typeof renderHook<ReturnType<typeof useMessageSender>, void>
-> & {
-  autoResumeSpentRef: { current: boolean };
-} {
-  const autoResumeSpentRef = { current: false };
-  const view = renderHook(() =>
+function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {}) {
+  return renderHook(() =>
     useMessageSender({
       sessionId: "7",
       isProcessing: true,
@@ -48,13 +43,11 @@ function render(overrides: Partial<Parameters<typeof useMessageSender>[0]> = {})
       isCenteredCompose: false,
       onCenteredTransition: vi.fn(),
       pendingSendRef: { current: false },
-      autoResumeSpentRef,
       isTurnActiveRef: { current: false },
       pendingCanvasAwaitsRef: { current: [] },
       ...overrides,
     }),
   );
-  return { ...view, autoResumeSpentRef };
 }
 
 beforeEach(() => {
@@ -64,49 +57,26 @@ beforeEach(() => {
 });
 
 describe("handleCancel", () => {
-  it("marks auto-resume spent before the interrupt goes out", async () => {
-    // Held open on purpose: the turn end that marks tool calls `interrupted` can land while the
-    // interrupt request is still in flight, so setting the ref after the await would be too late.
-    let release = () => {};
-    interruptAcpTurn.mockReturnValue(
-      new Promise<void>((resolve) => {
-        release = resolve;
-      }),
-    );
-    const { result, autoResumeSpentRef } = render();
-    const cancelled = result.current.handleCancel();
-    expect(autoResumeSpentRef.current).toBe(true);
-    release();
-    await cancelled;
-  });
-
-  it("marks auto-resume spent even when the interrupt call fails", async () => {
+  it("interrupts the turn even when the call fails", async () => {
     interruptAcpTurn.mockRejectedValue(new Error("no session"));
-    const { result, autoResumeSpentRef } = render();
+    const { result } = render();
     await result.current.handleCancel();
     expect(interruptAcpTurn).toHaveBeenCalledWith("7");
-    expect(autoResumeSpentRef.current).toBe(true);
   });
 });
 
 describe("handleSend", () => {
-  it("marks auto-resume spent when it cancels a turn to revise a plan", async () => {
-    const { result, autoResumeSpentRef } = render({
-      isProcessing: false,
-      pendingPermission: planPermission,
-    });
-    const sent = result.current.handleSend("do it differently");
-    // Synchronously: the cancel's turn end can land while this send is still waiting for it.
-    expect(autoResumeSpentRef.current).toBe(true);
-    await sent;
+  it("cancels the turn to revise a plan", async () => {
+    const { result } = render({ isProcessing: false, pendingPermission: planPermission });
+    await result.current.handleSend("do it differently");
     expect(interruptAcpTurn).toHaveBeenCalledWith("7");
+    expect(sendAcpPrompt).toHaveBeenCalledWith("7", "do it differently");
   });
 
-  it("leaves auto-resume alone on an ordinary send", async () => {
-    const { result, autoResumeSpentRef } = render({ isProcessing: false });
+  it("sends an ordinary message without interrupting", async () => {
+    const { result } = render({ isProcessing: false });
     await result.current.handleSend("hello");
     expect(interruptAcpTurn).not.toHaveBeenCalled();
-    expect(autoResumeSpentRef.current).toBe(false);
   });
 
   // An agent that keeps `canvas_await` armed is "busy" for as long as the user leaves the surface
