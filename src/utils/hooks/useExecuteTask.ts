@@ -6,15 +6,22 @@ import { isRoleSkipped, parseProfileOverrides, profileIdFor } from "@/lib/profil
 import type { Task, ConnectionKey, AgentRole, WorktreeWithStatus } from "@/types/bindings";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { useActiveSessionsQuery, useAgentDiscoveryQuery } from "@/services/execution.service";
-import { startTask } from "@/services/task.service";
+import { startTask, useDeleteTaskAttachmentMutation } from "@/services/task.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
+import type { UnusableAttachment } from "@/components/execution/MissingAttachmentsDialog";
 
 interface DirtyState {
   modifiedCount: number;
   untrackedCount: number;
   resolve: (choice: DirtyChoice | "cancel") => void;
+}
+
+/** The attachments a start cannot send, and the promise the user's answer settles. */
+interface MissingAttachmentsState {
+  files: UnusableAttachment[];
+  resolve: (proceed: boolean) => void;
 }
 
 /** The task waiting on an agent to be chosen for it, and the promise that choice settles. */
@@ -30,8 +37,8 @@ function isNoAgentError(message: string): boolean {
 
 /**
  * Starts a task's stage. The daemon does the work, from the claim to the prompt (`start_task`);
- * what is left here is what only a person at the board can answer: the dirty-worktree question,
- * the agent picker, and the sign-in prompt.
+ * what is left here is what only a person at the board can answer: the attachments it cannot send,
+ * the dirty-worktree question, the agent picker, and the sign-in prompt.
  */
 export function useExecuteTask(
   projectId: number | null,
@@ -43,6 +50,9 @@ export function useExecuteTask(
   const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
   const [dirtyState, setDirtyState] = useState<DirtyState | null>(null);
   const dirtyResolveRef = useRef<((choice: DirtyChoice | "cancel") => void) | null>(null);
+  const [missingState, setMissingState] = useState<MissingAttachmentsState | null>(null);
+  const missingResolveRef = useRef<((proceed: boolean) => void) | null>(null);
+  const deleteAttachment = useDeleteTaskAttachmentMutation();
   const [agentPickerState, setAgentPickerState] = useState<AgentPickerState | null>(null);
   const agentPickerResolveRef = useRef<((agentId: string | null) => void) | null>(null);
   const { data: discovery } = useAgentDiscoveryQuery(connection, projectId != null);
@@ -98,6 +108,49 @@ export function useExecuteTask(
   };
 
   /**
+   * Offers the attachments the daemon would leave out of the prompt: a copy gone from the project,
+   * or one there but too big to send. Only on a click: the daemon's unattended starts skip them
+   * with a note in the thread. False means the user cancelled.
+   */
+  const settleAttachments = async (task: Task, id: number): Promise<boolean> => {
+    let unusable: UnusableAttachment[];
+    try {
+      const attachments = await api.listTaskAttachments(id, task.id);
+      if (attachments.length === 0) return true;
+      const prepared = await api.prepareTaskAttachments(id, attachments);
+      unusable = attachments.flatMap((attachment, i) => {
+        const entry = prepared[i];
+        if (!entry || entry.content_block !== null) return [];
+        return [
+          entry.rejection === null
+            ? { ...attachment, problem: "Not found in the project", missing: true }
+            : { ...attachment, problem: entry.rejection, missing: false },
+        ];
+      });
+    } catch (err) {
+      // Could not ask, which is not the same as missing: nothing is offered for removal.
+      console.warn("Attachment check failed, proceeding anyway:", err);
+      return true;
+    }
+    if (unusable.length === 0) return true;
+    const proceed = await new Promise<boolean>((resolve) => {
+      missingResolveRef.current = resolve;
+      setMissingState({ files: unusable, resolve });
+    });
+    setMissingState(null);
+    missingResolveRef.current = null;
+    if (!proceed) return false;
+    // Only the rows whose copy is gone, so the next start does not ask again. A file too big to
+    // send is still in the project and stays attached.
+    for (const attachment of unusable.filter((entry) => entry.missing)) {
+      await deleteAttachment
+        .mutateAsync({ projectId: id, attachmentId: attachment.id, taskId: task.id })
+        .catch((err) => console.warn("Failed to remove a missing attachment:", err));
+    }
+    return true;
+  };
+
+  /**
    * Whether the daemon will run the planner before this coder, which writes nothing and so needs no
    * dirty-worktree question. The same test as `task_runner::begin`.
    */
@@ -131,6 +184,7 @@ export function useExecuteTask(
   ) => {
     if (!projectId) return;
     const id = projectId;
+    if (!unattended && !(await settleAttachments(task, id))) return;
     if (
       role === "Coder" &&
       !unattended &&
@@ -166,13 +220,6 @@ export function useExecuteTask(
         return;
       }
       toast.success(`Session started for "${task.title}"`);
-      const skipped = started.skipped_attachments;
-      if (!unattended && skipped.length > 0) {
-        toast.warning(
-          `Started "${task.title}" without ${skipped.length} attachment${skipped.length === 1 ? "" : "s"}`,
-          { description: skipped.join(", ") },
-        );
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // `auth_required:<agent_id>`, from `maestro_protocol::auth_required_for`.
@@ -210,6 +257,14 @@ export function useExecuteTask(
     dirtyResolveRef.current?.("cancel");
   }, []);
 
+  const onAttachmentsContinue = useCallback(() => {
+    missingResolveRef.current?.(true);
+  }, []);
+
+  const onAttachmentsCancel = useCallback(() => {
+    missingResolveRef.current?.(false);
+  }, []);
+
   const onAgentPicked = useCallback((agentId: string) => {
     agentPickerResolveRef.current?.(agentId);
   }, []);
@@ -229,6 +284,10 @@ export function useExecuteTask(
     dirtyUntrackedCount: dirtyState?.untrackedCount ?? 0,
     onDirtyChoice,
     onDirtyCancel,
+    /** The attachments this start cannot send, or `null`. Never set on an unattended start. */
+    missingAttachments: missingState?.files ?? null,
+    onAttachmentsContinue,
+    onAttachmentsCancel,
     /** Only ever set for a caller that passed `canPickAgent`. */
     agentPickerTask: agentPickerState?.task ?? null,
     onAgentPicked,

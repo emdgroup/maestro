@@ -39,6 +39,7 @@ import {
 } from "@/services/task.service";
 import { useExecuteTask, useTaskActiveSession } from "@/hooks/useExecuteTask";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
+import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useCodeHostingStatus } from "@/services/integration.service";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -130,6 +131,9 @@ export function TaskReviewPanel({
     dirtyUntrackedCount,
     onDirtyChoice,
     onDirtyCancel,
+    missingAttachments,
+    onAttachmentsContinue,
+    onAttachmentsCancel,
   } = useExecuteTask(projectId, projectPath, connection);
   const activeSession = useTaskActiveSession(task.id, projectId);
   const codeHostingQuery = useCodeHostingStatus(projectId);
@@ -587,6 +591,12 @@ export function TaskReviewPanel({
         untrackedCount={dirtyUntrackedCount}
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
+      />
+      <MissingAttachmentsDialog
+        open={missingAttachments !== null}
+        files={missingAttachments ?? []}
+        onContinue={onAttachmentsContinue}
+        onCancel={onAttachmentsCancel}
       />
     </div>
   );

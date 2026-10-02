@@ -5,6 +5,7 @@ import { useActiveSessionsQuery } from "@/services/execution.service";
 import { useWorktreesQuery } from "@/services/worktree.service";
 import { useAgentProfilesQuery, useProjectSettings } from "@/services/project.service";
 import { DirtyWorktreeDialog } from "@/components/execution/DirtyWorktreeDialog";
+import { MissingAttachmentsDialog } from "@/components/execution/MissingAttachmentsDialog";
 import { AgentPickerModal } from "@/components/execution/AgentPickerModal";
 import type { ActiveSessionInfo, Task, WorktreeWithStatus } from "@/types/bindings";
 
@@ -51,6 +52,9 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
     dirtyUntrackedCount,
     onDirtyChoice,
     onDirtyCancel,
+    missingAttachments,
+    onAttachmentsContinue,
+    onAttachmentsCancel,
     agentPickerTask,
     onAgentPicked,
     onAgentPickerCancel,
@@ -114,6 +118,12 @@ export function BoardActionsProvider({ children }: { children: ReactNode }) {
         untrackedCount={dirtyUntrackedCount}
         onChoice={onDirtyChoice}
         onCancel={onDirtyCancel}
+      />
+      <MissingAttachmentsDialog
+        open={missingAttachments !== null}
+        files={missingAttachments ?? []}
+        onContinue={onAttachmentsContinue}
+        onCancel={onAttachmentsCancel}
       />
       {agentPickerTask && (
         <AgentPickerModal
