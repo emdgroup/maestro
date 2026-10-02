@@ -313,22 +313,51 @@ async fn resume(
         crate::session::task_gate::unblock(&Some((path.to_string(), task_id)), everyone).await;
     }
     // A reloaded session comes up in the agent's defaults, so the stage's settings go first.
-    let task = crate::task_store::get(&*driver.store.lock().await, path, task_id)?
-        .ok_or_else(|| "the task is gone".to_string())?;
-    let capabilities =
-        crate::task_runner::capabilities(models.as_ref(), modes.as_ref(), config_options.as_ref());
-    let settings = crate::profiles::resolve_stage(path, &task, role, &capabilities)?;
-    for warning in &settings.warnings {
-        send_diag("warn", format!("[task] task {task_id}: {warning}"));
-    }
-    let mut commands = crate::task_runner::settings_commands(&settings, config_options.as_ref());
-    commands.push(SessionCommand::Prompt(RESUME.to_string()));
-    crate::task_runner::expect_turn_ends(&session_id);
-    for command in commands {
-        if session.cmd_tx.send(command).await.is_err() {
-            crate::task_runner::forget_turn_ends(&session_id);
-            return Err("the session ended before it could resume".to_string());
+    let commands = async {
+        let task = crate::task_store::get(&*driver.store.lock().await, path, task_id)?
+            .ok_or_else(|| "the task is gone".to_string())?;
+        let capabilities = crate::task_runner::capabilities(
+            models.as_ref(),
+            modes.as_ref(),
+            config_options.as_ref(),
+        );
+        let settings = crate::profiles::resolve_stage(path, &task, role, &capabilities)?;
+        for warning in &settings.warnings {
+            send_diag("warn", format!("[task] task {task_id}: {warning}"));
         }
+        let mut commands =
+            crate::task_runner::settings_commands(&settings, config_options.as_ref());
+        commands.push(SessionCommand::Prompt(RESUME.to_string()));
+        Ok::<_, String>(commands)
+    }
+    .await;
+    let sent = match commands {
+        Ok(commands) => {
+            crate::task_runner::expect_turn_ends(&session_id);
+            let mut sent = Ok(());
+            for command in commands {
+                if session.cmd_tx.send(command).await.is_err() {
+                    crate::task_runner::forget_turn_ends(&session_id);
+                    sent = Err("the session ended before it could resume".to_string());
+                    break;
+                }
+            }
+            sent
+        }
+        Err(why) => Err(why),
+    };
+    if let Err(why) = sent {
+        // Loaded but never handed to the loop, so closed here rather than through `Cancel`.
+        session.agent_id = row.agent_id.clone();
+        crate::dispatch::close_session(
+            &session_id,
+            session,
+            &driver.agent_connections,
+            None,
+            everyone,
+        )
+        .await;
+        return Err(why);
     }
 
     session.agent_id = row.agent_id.clone();
