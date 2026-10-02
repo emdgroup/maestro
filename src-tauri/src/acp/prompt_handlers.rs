@@ -233,12 +233,8 @@ mod tests {
 
         let json = serde_json::to_string(&msg).unwrap();
         assert!(
-            json.contains("\"direction\":\"request\""),
-            "must be a request direction"
-        );
-        assert!(
-            json.contains("\"type\":\"prompt\""),
-            "must have type=prompt"
+            json.starts_with("{\"request\":{\"prompt\":"),
+            "must be a prompt request"
         );
         assert!(
             json.contains(&format!("\"session_id\":\"{}\"", session_id)),
@@ -266,8 +262,8 @@ mod tests {
             }));
         let allow_json = serde_json::to_string(&allow_msg).unwrap();
         assert!(
-            allow_json.contains("\"type\":\"permit_response\""),
-            "must have type=permit_response"
+            allow_json.starts_with("{\"request\":{\"permit_response\":"),
+            "must be a permit_response request"
         );
         assert!(
             allow_json.contains("\"option_id\""),

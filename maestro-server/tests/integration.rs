@@ -37,21 +37,13 @@ fn server_binary() -> PathBuf {
 }
 
 fn write_msg(writer: &mut impl Write, msg: &MaestroRpcMessage) {
-    let body = serde_json::to_vec(msg).expect("serialize");
-    let len = body.len() as u32;
-    writer.write_all(&len.to_le_bytes()).expect("write len");
-    writer.write_all(&body).expect("write body");
+    let frame = maestro_protocol::encode_message(None, msg).expect("encode");
+    writer.write_all(&frame).expect("write frame");
     writer.flush().expect("flush");
 }
 
 fn read_frame(reader: &mut impl Read) -> MaestroRpcMessage {
-    let mut len_buf = [0u8; 4];
-    reader.read_exact(&mut len_buf).expect("read len prefix");
-    let len = u32::from_le_bytes(len_buf) as usize;
-    assert!(len < 16 * 1024 * 1024, "response too large: {} bytes", len);
-    let mut body = vec![0u8; len];
-    reader.read_exact(&mut body).expect("read body");
-    serde_json::from_slice(&body).expect("deserialize response")
+    maestro_protocol::read_message_sync(reader).expect("read frame")
 }
 
 // Skip Diagnostic and Ping frames — both arrive asynchronously and are not

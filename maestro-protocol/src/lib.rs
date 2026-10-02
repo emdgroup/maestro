@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -48,7 +48,7 @@ pub const SERVER_BUSY_ERROR: &str = "server_busy";
 // --- Top-level envelope ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "direction", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum MaestroRpcMessage {
     Request(ServerRequest),
     Response(ServerResponse),
@@ -124,7 +124,7 @@ pub struct AuthMethodInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ServerRequest {
     Handshake(HandshakeRequest),
     Spawn(SpawnRequest),
@@ -2269,7 +2269,7 @@ pub struct ImportProjectResponse {
 // --- Server -> Client ---
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ServerResponse {
     HandshakeOk(HandshakeResponse),
     SpawnOk(SpawnResponse),
@@ -2935,18 +2935,14 @@ pub fn read_message_sync<R: std::io::Read>(
     Ok(read_message_with_id_sync(stream)?.1)
 }
 
-/// Pairs a reply with the request it answers. Rides as a top-level `rpc_id` key beside
-/// `direction` and `type`, and is absent on anything unprompted.
-///
-/// Not `id` and not `request_id`: the message is flattened into the same object, and payloads
-/// already own both (`Automation.id`, `PermissionRequest.request_id`). A shared key fails to decode.
+/// Pairs a reply with the request it answers. Rides as the frame's `rpc_id` key beside `message`,
+/// and is absent on anything unprompted.
 pub type RequestId = u64;
 
 #[derive(Serialize)]
 struct OutgoingFrame<'a> {
     #[serde(rename = "rpc_id", skip_serializing_if = "Option::is_none")]
     id: Option<RequestId>,
-    #[serde(flatten)]
     message: &'a MaestroRpcMessage,
 }
 
@@ -2954,7 +2950,6 @@ struct OutgoingFrame<'a> {
 struct IncomingFrame {
     #[serde(rename = "rpc_id", default)]
     id: Option<RequestId>,
-    #[serde(flatten)]
     message: MaestroRpcMessage,
 }
 
@@ -3595,7 +3590,8 @@ mod tests {
 
     #[test]
     fn start_task_defaults_what_the_button_leaves_out() {
-        let json = r#"{"direction":"request","type":"start_task","project_path":"/srv/shop","task_id":3,"role":"Coder"}"#;
+        let json =
+            r#"{"request":{"start_task":{"project_path":"/srv/shop","task_id":3,"role":"Coder"}}}"#;
         let MaestroRpcMessage::Request(ServerRequest::StartTask(request)) =
             serde_json::from_str(json).unwrap()
         else {
@@ -3649,7 +3645,7 @@ mod tests {
     /// cannot tell apart on the way in.
     #[test]
     fn task_update_tells_a_cleared_column_from_an_untouched_one() {
-        let json = r#"{"direction":"request","type":"update_task","project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}"#;
+        let json = r#"{"request":{"update_task":{"project_path":"/srv/shop","task_id":3,"update":{"pull_request_ci":null,"description":"New"}}}}"#;
         let MaestroRpcMessage::Request(ServerRequest::UpdateTask(request)) =
             serde_json::from_str(json).unwrap()
         else {
@@ -3663,7 +3659,7 @@ mod tests {
 
     #[test]
     fn a_transition_without_a_guard_is_unguarded() {
-        let json = r#"{"direction":"request","type":"apply_task_transition","project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}"#;
+        let json = r#"{"request":{"apply_task_transition":{"project_path":"/srv/shop","task_id":3,"event":{"ManualMove":"Queue"}}}}"#;
         let MaestroRpcMessage::Request(ServerRequest::ApplyTaskTransition(request)) =
             serde_json::from_str(json).unwrap()
         else {
@@ -3824,7 +3820,8 @@ mod tests {
 
     #[test]
     fn spawn_request_without_project_keys_still_deserializes() {
-        let json = r#"{"direction":"request","type":"spawn","agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}"#;
+        let json =
+            r#"{"request":{"spawn":{"agent_id":"claude-acp","session_id":"sess-1","cwd":"/tmp"}}}"#;
         let MaestroRpcMessage::Request(ServerRequest::Spawn(request)) =
             serde_json::from_str(json).unwrap()
         else {
@@ -4226,7 +4223,7 @@ mod tests {
     #[test]
     fn request_and_response_are_distinguishable() {
         // Verify that a Spawn request and a SpawnOk response both containing session_id
-        // are correctly distinguished by the "direction" tag
+        // are correctly distinguished by the outer `request`/`response` key
         let req = MaestroRpcMessage::Request(ServerRequest::Spawn(SpawnRequest {
             agent_id: "test".to_string(),
             session_id: "sess-1".to_string(),
