@@ -45,15 +45,3 @@ impl From<ConcurrencyMode> for maestro_protocol::ConcurrencyMode {
         }
     }
 }
-
-/// The limit in force for a host, and why.
-///
-/// `reason` is not decoration. A queue that has silently stopped moving is the failure mode this
-/// whole design keeps running into, so the board has to be able to say *"0 slots — 1.2 GB free"*
-/// rather than simply doing nothing.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub struct HostCapacity {
-    pub slots: i32,
-    pub mode: ConcurrencyMode,
-    pub reason: String,
-}

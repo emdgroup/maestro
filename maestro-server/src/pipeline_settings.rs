@@ -147,6 +147,8 @@ fn resolve(settings: CapacitySettings, available_mb: Option<u64>) -> CapacitySta
         slots,
         reason,
         stored: false,
+        // The session map's to count: see `taken_slots`.
+        used: 0,
     }
 }
 

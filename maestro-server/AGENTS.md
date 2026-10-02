@@ -274,6 +274,8 @@ a TTL) and which dies with the daemon,
 so a hold cannot outlive a crash and keep a task off the queue with nothing to explain it.
 `CapacityStatus.stored` says whether the machine has a setting of its own: the app reads its old
 `connection_settings` row once per connection and sends it as `SetCapacity` only when it is false.
+`CapacityStatus.used` is the slots taken as the limit counts them, every attached app's included,
+and is what the board's badge shows.
 
 **Forge work stays in the window.** Opening a pull request, polling its CI, asking for a CI fix,
 merging and approving need the forge token, which is in the app's keychain and never reaches the

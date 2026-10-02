@@ -6,7 +6,7 @@ pub mod exec;
 
 pub const MSG_LEN_SIZE: usize = 4;
 pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16 MB — reject oversized payloads (T-41-01)
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 /// Canonical error string returned by spawn when the agent requires authentication.
 /// Both Rust (session_ops) and TypeScript frontends check for this exact value.
 ///
@@ -1756,6 +1756,10 @@ pub struct CapacityStatus {
     /// Whether the machine has a stored setting, false while it runs on the default.
     #[serde(default)]
     pub stored: bool,
+    /// Slots taken right now, counted as the limit is checked: live task sessions and starts
+    /// still coming up.
+    #[serde(default)]
+    pub used: u32,
 }
 
 /// Whether a project's queued tasks start on their own.
@@ -3487,6 +3491,7 @@ mod tests {
                 slots: 4,
                 reason: "4 slots, 2.6 GB free".to_string(),
                 stored: true,
+                used: 1,
             })),
             MaestroRpcMessage::Request(ServerRequest::SetAutoMode(AutoModeSetting {
                 project_path: "/srv/shop".to_string(),

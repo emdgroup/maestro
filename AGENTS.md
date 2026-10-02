@@ -245,7 +245,7 @@ genuinely changed — a diff there means a model changed and should be committed
 
 - SQLite DB location managed by Tauri app data directory, overridable with `MAESTRO_DATA_DIR` (see `src-tauri/AGENTS.md`)
 - Schema version: 32 (`SCHEMA_VERSION` in `core/schema.rs`). Databases at v22 or later migrate in place and keep their data; only pre-v22 databases are dropped and recreated
-- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 10.
+- `maestro-protocol` crate shared between maestro and maestro-server; `PROTOCOL_VERSION` is 11.
   Bumping it redeploys `maestro-server` on every connection at first use, because `deploy.rs`
   compares `--app-version`, which embeds it
 - Two-phase startup: settings load → project selection → main UI

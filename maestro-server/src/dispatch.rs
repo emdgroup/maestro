@@ -1692,7 +1692,10 @@ pub(crate) async fn dispatch_message(
                 None => Err(crate::project_store::UNAVAILABLE.to_string()),
             };
             match answered {
-                Ok((reply, pushes)) => {
+                Ok((mut reply, pushes)) => {
+                    if let ServerResponse::GetCapacityOk(status) = &mut reply {
+                        status.used = crate::pipeline_settings::taken_slots(sessions) as u32;
+                    }
                     send_or_return!(
                         send_response(stdout, &MaestroRpcMessage::Response(reply)).await
                     );
