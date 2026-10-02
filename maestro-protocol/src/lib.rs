@@ -2863,6 +2863,15 @@ pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
 pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
     stream: &mut R,
 ) -> Result<T, Box<dyn std::error::Error>> {
+    Ok(serde_json::from_slice(&read_body(stream).await?)?)
+}
+
+/// One frame's body, the length prefix consumed and checked. Bytes only, so the generic readers
+/// leave decoding to [`decode_message`]: a decode inside them would be compiled again in every
+/// crate that calls them, and the message enum's decode tree is the largest code in the protocol.
+async fn read_body<R: AsyncRead + Unpin>(
+    stream: &mut R,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut len_buf = [0u8; MSG_LEN_SIZE];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_le_bytes(len_buf) as usize;
@@ -2875,20 +2884,41 @@ pub async fn read_frame<R: AsyncRead + Unpin, T: serde::de::DeserializeOwned>(
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
-    Ok(serde_json::from_slice(&body)?)
+    Ok(body)
+}
+
+/// Synchronous [`read_body`].
+fn read_body_sync<R: std::io::Read>(
+    stream: &mut R,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut len_buf = [0u8; MSG_LEN_SIZE];
+    stream.read_exact(&mut len_buf)?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if len > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Message too large: {} bytes (max {})",
+            len, MAX_MESSAGE_SIZE
+        )
+        .into());
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body)?;
+    Ok(body)
 }
 
 pub async fn write_message<W: AsyncWrite + Unpin>(
     stream: &mut W,
     msg: &MaestroRpcMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    write_frame(stream, msg).await
+    let frame = encode_message(None, msg).map_err(|e| e as Box<dyn std::error::Error>)?;
+    stream.write_all(&frame).await?;
+    Ok(())
 }
 
 pub async fn read_message<R: AsyncRead + Unpin>(
     stream: &mut R,
 ) -> Result<MaestroRpcMessage, Box<dyn std::error::Error>> {
-    read_frame(stream).await
+    Ok(read_message_with_id(stream).await?.1)
 }
 
 /// Synchronous version of [`read_message`] for use in `spawn_blocking` reader threads.
@@ -2902,25 +2932,7 @@ pub async fn read_message<R: AsyncRead + Unpin>(
 pub fn read_message_sync<R: std::io::Read>(
     stream: &mut R,
 ) -> Result<MaestroRpcMessage, Box<dyn std::error::Error + Send + Sync>> {
-    read_message_sync_as(stream)
-}
-
-fn read_message_sync_as<R: std::io::Read, T: serde::de::DeserializeOwned>(
-    stream: &mut R,
-) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
-    let mut len_buf = [0u8; MSG_LEN_SIZE];
-    stream.read_exact(&mut len_buf)?;
-    let len = u32::from_le_bytes(len_buf) as usize;
-    if len > MAX_MESSAGE_SIZE {
-        return Err(format!(
-            "Message too large: {} bytes (max {})",
-            len, MAX_MESSAGE_SIZE
-        )
-        .into());
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body)?;
-    Ok(serde_json::from_slice(&body)?)
+    Ok(read_message_with_id_sync(stream)?.1)
 }
 
 /// Pairs a reply with the request it answers. Rides as a top-level `rpc_id` key beside
@@ -2981,16 +2993,14 @@ pub fn decode_message(
 pub async fn read_message_with_id<R: AsyncRead + Unpin>(
     stream: &mut R,
 ) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error>> {
-    let frame: IncomingFrame = read_frame(stream).await?;
-    Ok((frame.id, frame.message))
+    Ok(decode_message(&read_body(stream).await?)?)
 }
 
 /// [`read_message_sync`], keeping the request id the frame carried.
 pub fn read_message_with_id_sync<R: std::io::Read>(
     stream: &mut R,
 ) -> Result<(Option<RequestId>, MaestroRpcMessage), Box<dyn std::error::Error + Send + Sync>> {
-    let frame: IncomingFrame = read_message_sync_as(stream)?;
-    Ok((frame.id, frame.message))
+    Ok(decode_message(&read_body_sync(stream)?)?)
 }
 
 // --- CDN registry types — used by maestro-server for agent discovery ---
