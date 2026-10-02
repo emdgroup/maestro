@@ -699,7 +699,8 @@ async fn run_server(
                 continue;
             }
 
-            // After `settle_rx`: a start handed over before the question is in the map by the answer.
+            // A start counts in `in_flight` until `adopt` has its session in the map, so a start
+            // handed over but not settled yet is counted once whichever arm runs first.
             asked = async {
                 match scheduler_rx.as_mut() {
                     Some(rx) => rx.recv().await,

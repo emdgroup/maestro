@@ -92,7 +92,7 @@ impl Drop for InFlight {
 }
 
 pub(crate) struct Claimed {
-    /// Taken by `launch`, which holds it until the session is handed to the loop.
+    /// Taken by `launch`, which hands it to the loop with the session, or drops it on a failure.
     pub in_flight: Option<InFlight>,
     pub project_path: String,
     /// As the claim left it.
@@ -117,6 +117,9 @@ pub(crate) struct Started {
     pub reply: crate::ClientOut,
     /// The attachments the prompt went without.
     pub skipped_attachments: Vec<String>,
+    /// The start's slot, dropped by `adopt` once the session is in the map, so a request the loop
+    /// answers before this settles still counts it.
+    pub in_flight: Option<InFlight>,
 }
 
 /// What the app's Settings calls each stage.
@@ -379,8 +382,9 @@ pub(crate) struct Launcher {
 /// Steps five onwards, off the loop. Hands a started session to the loop, or releases the claim
 /// and answers with why.
 pub(crate) async fn launch(launcher: Launcher, mut claimed: Box<Claimed>) {
-    // Dropped as this returns: after the session is handed to the loop, which counts it from then.
-    let _in_flight = claimed.in_flight.take();
+    // Handed to the loop with the session, which drops it once the session is in the map; on a
+    // failure, dropped as this returns.
+    let in_flight = claimed.in_flight.take();
     let everyone = crate::client_sink::ClientSink::everyone(&launcher.reply).await;
     let (project_path, task_id, role, unattended, title, agent_id) = (
         claimed.project_path.clone(),
@@ -391,7 +395,8 @@ pub(crate) async fn launch(launcher: Launcher, mut claimed: Box<Claimed>) {
         claimed.agent_id.clone(),
     );
     let failure = match run(&launcher, &everyone, *claimed).await {
-        Ok(started) => {
+        Ok(mut started) => {
+            started.in_flight = in_flight;
             let session_id = started.session_id.clone();
             if let Err(e) = launcher
                 .settle_tx
@@ -609,6 +614,7 @@ async fn run(
         session: result.session,
         reply: Arc::clone(&launcher.reply),
         skipped_attachments,
+        in_flight: None,
     })
 }
 
@@ -774,6 +780,7 @@ pub(crate) async fn adopt(
         push,
         reply,
         skipped_attachments,
+        in_flight,
     } = started;
     let everyone = crate::client_sink::ClientSink::everyone(&reply).await;
     let acp_session_id = push.acp_session_id.clone();
@@ -787,6 +794,8 @@ pub(crate) async fn adopt(
         &everyone,
     )
     .await;
+    // Counted by the map from here, or closed.
+    drop(in_flight);
     // In the map now, or closed: either way a window's load of it is no longer refused.
     crate::task_restart::reloaded(&acp_session_id);
     let held = unadopted().remove(&session_id).flatten();

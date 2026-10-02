@@ -382,6 +382,7 @@ async fn resume(
         // Nobody asked, so the one reply goes to a client that does not exist.
         reply: crate::client_sink::ClientSink::for_client(&driver.stdout, u64::MAX).await,
         skipped_attachments: vec![],
+        in_flight: None,
     };
     if let Err(e) = driver
         .settle_tx
