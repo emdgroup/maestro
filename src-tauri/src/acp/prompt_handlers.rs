@@ -228,10 +228,7 @@ mod tests {
         });
 
         let json = serde_json::to_string(&msg).unwrap();
-        assert!(
-            json.starts_with("{\"prompt\":"),
-            "must be a prompt request"
-        );
+        assert!(json.starts_with("{\"prompt\":"), "must be a prompt request");
         assert!(
             json.contains(&format!("\"session_id\":\"{}\"", session_id)),
             "session_id must match session_id pattern"
