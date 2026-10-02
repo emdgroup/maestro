@@ -187,6 +187,8 @@ pub(crate) async fn resolve(
     facts: TurnFacts,
 ) -> (Option<AgentRole>, Vec<ServerResponse>) {
     let mut pushes = Vec::new();
+    // A window-loaded session's binding holds the app's spelling of the path.
+    let project_path = &crate::automations::canonical_project_path(project_path);
     let is_git_repo = crate::worktree::is_repository(project_path).await;
     let (task, worktree) = {
         let conn = store.lock().await;
@@ -629,6 +631,14 @@ mod tests {
         let (_dir, project, store, id) = setup(false);
         let (next, _) = resolve(&store, &project, id, "end_turn", facts(true, "done")).await;
         assert_eq!(next, None);
+    }
+
+    #[tokio::test]
+    async fn a_turn_end_resolves_the_path_a_window_spelled() {
+        let (dir, _, store, id) = setup(true);
+        let raw = format!("{}/", dir.path().to_string_lossy());
+        let (next, _) = resolve(&store, &raw, id, "end_turn", facts(true, "done")).await;
+        assert_eq!(next, Some(AgentRole::Reviewer));
     }
 
     #[tokio::test]
