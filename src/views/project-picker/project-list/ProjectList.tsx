@@ -105,6 +105,8 @@ export function ProjectList() {
       toast.error(`Failed to open project: ${getErrorMessage(error)}`);
       return;
     }
+    // The open took the project's lock before the import failed; Retry takes it again.
+    void api.releaseActiveProjectLock().catch(console.error);
     toast.error(failure, {
       action: { label: "Retry", onClick: () => void handleProjectClick(projectId) },
     });

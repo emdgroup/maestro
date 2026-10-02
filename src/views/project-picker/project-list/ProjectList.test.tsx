@@ -21,6 +21,7 @@ const openProject = vi.hoisted(() => vi.fn());
 const setSelectedProject = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 const primeProjectServer = vi.hoisted(() => vi.fn());
+const releaseActiveProjectLock = vi.hoisted(() => vi.fn());
 const eventHandlers = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 
 vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }));
@@ -36,6 +37,7 @@ vi.mock("@/lib/tauri-utils", () => ({
   api: {
     openProject,
     primeProjectServer,
+    releaseActiveProjectLock,
   },
 }));
 
@@ -144,6 +146,7 @@ describe("ProjectList", () => {
     recentProjects.length = 0;
     vi.clearAllMocks();
     primeProjectServer.mockResolvedValue(undefined);
+    releaseActiveProjectLock.mockResolvedValue(undefined);
   });
 
   describe("a project whose board could not be moved to its server", () => {
@@ -162,6 +165,7 @@ describe("ProjectList", () => {
       const [message, options] = toastError.mock.calls[0];
       expect(message).toBe("The board could not be moved: disk full");
       expect(setSelectedProject).not.toHaveBeenCalled();
+      expect(releaseActiveProjectLock).toHaveBeenCalledTimes(1);
 
       expect(options.action.label).toBe("Retry");
       options.action.onClick();
@@ -175,6 +179,7 @@ describe("ProjectList", () => {
       fireEvent.click(screen.getByText("/work/maestro"));
       await waitFor(() => expect(setSelectedProject).toHaveBeenCalled());
       expect(toastError).not.toHaveBeenCalled();
+      expect(releaseActiveProjectLock).not.toHaveBeenCalled();
     });
 
     it("says it is moving the board only for the project it is opening", async () => {
