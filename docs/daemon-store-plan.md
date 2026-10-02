@@ -447,7 +447,24 @@ Tasks:
 - [x] D12 Daemon permission and elicitation handling for task sessions: auto-approve, plan, blocked
 - [x] D13 Daemon startup pass
 - [x] D14 Remove the app's drivers; Execute and the gates ask the daemon
-- [ ] D15 Docs, review, a live run with every window closed
+- [x] D15 Docs and review
+- [ ] D16 A live run with every window closed
+
+Notes from phase 5:
+
+- Whether a session's turn was live is written at a clean shutdown, not as turns start and end. A
+  crash leaves no record, so after one the startup pass treats every `Blocked` task as a stall and
+  leaves it for the user rather than resuming it. A `Running` task is still resumed.
+- Image attachments are scaled before they are sent as the app scaled them, with the same limits,
+  so a prompt the daemon composes is the one the app would have.
+- Forge work waits for a window. A task waiting on its pull request, its CI or a merge does not
+  move until an app connects, since the token never leaves the app's keychain.
+- The daemon's main loop runs on the main thread, whose stack is 1 MB in a Windows debug build. A
+  large future awaited inline there overflowed it, so `dispatch_message`, `dispatch::settle` and
+  the turn end's steps are boxed and the slow half of a start is spawned. Anything new and large the
+  loop awaits needs the same.
+- Agent profiles' skills and MCP servers are resolved but still not applied at spawn, as before this
+  phase.
 
 ## Decisions taken during planning
 

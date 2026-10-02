@@ -129,7 +129,7 @@ and logic, so a feature touches one directory rather than three.
 - `task/` — task commands, each one round trip to the daemon that stores the task (see "Tasks live in the daemon"), the app's models converted from the protocol rows, `relationships.rs`, `instructions.rs`, `attachments.rs`, `ops.rs`
 - `git/` — worktree lifecycle/query/staging, `merge.rs`, `review.rs`, diff + review models and handlers, `remote.rs`. The git work runs here; the worktree and review rows are the daemon's
 - `acp/` — ACP session management: `manager.rs`, `registry.rs`, `transport*.rs`, `reader_task.rs`, `deploy.rs`, `replay.rs`, `host_tools.rs`, and session/prompt/discovery/file/meta/auth handlers
-- `execution/` — PTY/process spawning (local + remote), `queue.rs`, `streaming.rs`, handlers, models
+- `execution/` — PTY/process spawning (local + remote), `queue.rs` and `capacity.rs` (the app's view of the daemon's capacity), `streaming.rs`, handlers, models
 - `connectivity/` — SSH (`ssh/`), WSL, Docker, SFTP, filesystem handlers, connection models
 - `integration/` — issue-tracking providers (`providers/`), `lookup/`, `issue_sync.rs`, `keychain.rs`, `token_manager.rs`
 - `settings/` — app settings handlers and models
@@ -139,7 +139,7 @@ and logic, so a feature touches one directory rather than three.
 **maestro-server (`maestro-server/src/`):**
 
 Separate binary (must be on PATH). Acts as ACP intermediary between Tauri and AI agents. Communicates with Tauri via JSON-framed messages on stdin/stdout. Key files: `main.rs` (entry), `dispatch.rs` (message routing), `session/` (`handlers.rs` ACP session lifecycle, `connection.rs`, `command_loop.rs`), `sessions.rs` (session types), `agent/` (`spawn.rs` subprocess spawn, `detection.rs` agent discovery, `registry.rs` agent registry), `agent_restart.rs`, `terminal.rs` (terminal I/O), `file_ops.rs` (file operations), `mcp_gateway.rs` + `mcp_stdio.rs` (Maestro's own MCP server, see
-below), `tool_check.rs`.
+below), `tool_check.rs`, and the task pipeline: `scheduler.rs`, `task_runner.rs`, `task_turn.rs`, `session/task_gate.rs`, `task_restart.rs`, `pipeline_settings.rs` (see "The daemon drives the task pipeline").
 
 **maestro-protocol (`maestro-protocol/src/`):**
 
@@ -176,7 +176,8 @@ and expect to delete `.maestro/dev-data/` on any machine that ran the intermedia
 Tables: `projects`, `tasks`, `task_relationships`, `task_instructions`, `task_attachments`, `task_comments`, `worktrees`, `settings`, `task_reviews`, `review_comments`, `known_hosts`, `ssh_connections`, `wsl_connections`, `docker_connections`, `session_aliases`, `connection_settings`, `templates`, `prompts`
 
 The app reads and writes `projects`, `settings`, `known_hosts`, the three connection tables,
-`connection_settings`, `templates` and the shared rows of `prompts`. The rest are no longer read or
+`templates` and the shared rows of `prompts`. It reads `connection_settings` only to carry a
+connection's agent limit into its daemon once (see "The daemon drives the task pipeline"). The rest are no longer read or
 written: tasks and everything hanging off them are the daemon's (see "Tasks live in the daemon"),
 and a session's name is on the daemon's row for it (see "The resident maestro-server"). Those tables
 stay where they are, holding what earlier builds wrote, until phase 4 of `docs/daemon-store-plan.md`
@@ -595,13 +596,7 @@ the canonical path from the app's `project_id`.
   row still names.
 
 With no window attached the daemon still answers the MCP task tools, so an agent can read and write
-its board. The daemon also drives the pipeline that moves a task from stage to stage: it drains the
-queue, starts each stage (`StartTask`, which Execute and the gates call too), resolves a turn's end,
-answers or gates a task session's permission requests, and pushes a CI fix. Forge work stays in the
-window: opening a pull request, polling its CI, asking for a CI fix, merging and approving, so a
-task waiting on its pull request waits for a window. A handoff a window writes itself, a manual
-send to review or a requested CI fix, is started by that window through `start_task`, since the
-daemon starts the next stage only after a turn of its own ends.
+its board. The pipeline that moves a task from stage to stage runs there too; see the next section.
 
 A board from before this move reaches the daemon once, from `project/import.rs`, while the project
 opens and before its sessions are attached. The rows go in chunks of about 4 MB that the daemon
@@ -609,6 +604,89 @@ commits in one transaction, with counters kept above the app's ids and its `sqli
 daemon keeps a per-project import marker and refuses a second import only when it is set; rows it
 wrote itself before the import are merged above the imported ids. A failed import keeps the project
 closed and the picker offers Retry, since a board shown without its rows would look empty.
+
+### The daemon drives the task pipeline
+
+A task goes from the queue to its coder, its reviewer and back with every window closed, the way an
+automation already runs. That is the reason the driver had to move: while the app classified each
+turn and started the next stage, closing the window stopped every task where it stood. Five files
+in `maestro-server/src/` carry it. `scheduler.rs` drains a project's queue and hands every stage
+over. `task_runner.rs` starts one stage (`StartTask`): the planner first where the project has one,
+capacity, the agent, the claim, the worktree from `worktree.rs`'s `prepare_task_workspace`, the
+spawn, the stage's profile from `profiles.rs`, the prompt from `task_prompt.rs`, the session ready,
+and the session it supersedes closed. `task_turn.rs` reads a turn's end. `session/task_gate.rs`
+settles a task session's prompts. `task_restart.rs` is the startup pass. `pipeline_settings.rs`
+holds capacity, auto mode and holds.
+
+**There is one driver, and it is the daemon.** The app's drivers, `useQueueDrain`,
+`useAgentPipeline`, `useAutoResume`, its turn-end resolver and its auto-approve, went in the same
+change that the daemon's arrived, because two drivers both start the next stage. Execute and the
+gates call `start_task`, which is one `StartTask` round trip, and the session reaches every window
+as `TaskSessionStarted`, adopted like an automation's. A hand-off is never started by the side that
+wrote it: every write that can leave a task `Waiting` on an agent (a turn end, a send to review, a
+requested CI fix) pushes `TasksChanged`, and the scheduler's debounced drain is the one place a stage
+is handed over. The claim on the task keeps a second start from doing anything. The drain also runs
+on session close, hold release and a one-minute tick.
+
+**A guarded step is still one request.** The turn end classifies the turn, runs the diff gate with
+local `git` (the daemon is on the repository's machine), and writes the outcome as one `EndTaskTurn`
+under the store's lock, exactly as a window's would. A start that cannot go ahead with nobody
+watching, for want of an agent or a sign-in, fails with a note in the thread rather than retrying.
+
+**Capacity is the machine's, and a slot is a live task session.** The limit is per daemon, shared by
+every app attached to it, and in Auto it is measured on the daemon's own machine. Only task sessions
+in the session map count, plus the starts the scheduler launched that are not in the map yet
+(`IN_FLIGHT`), so a task waiting at a human gate frees its slot once its session goes. A hand-off is
+not held back by the limit, since the session it follows usually still holds the slot it takes. Auto
+mode is per project, and holds are an in-memory map whose entries lapse unless renewed (ten seconds unless the window names
+a TTL) and which dies with the daemon,
+so a hold cannot outlive a crash and keep a task off the queue with nothing to explain it.
+`CapacityStatus.stored` says whether the machine has a setting of its own: the app reads its old
+`connection_settings` row once per connection and sends it as `SetCapacity` only when it is false.
+
+**Forge work stays in the window.** Opening a pull request, polling its CI, asking for a CI fix,
+merging and approving need the forge token, which is in the app's keychain and never reaches the
+daemon. A task waiting on its pull request therefore waits for a window, and everything else keeps
+moving. The one exception is the CI fix's push: the daemon pushes the fixed branch with plain
+`git push` to the configured remote, so CI starts with no window, and the app reads the result on
+its next poll. The dirty-worktree question is the app's too, since it needs someone to answer it.
+
+**A coder's prompts are answered without asking.** `task_gate.rs` approves the permission requests
+of a coder in a phase that may write, and nobody else's. A read-only stage that delivers a plan by
+asking to leave plan mode has the plan taken as its artifact and the session closed. Anything else
+marks the task blocked and waits for a user; a window's answer, or any prompt it sends the session,
+clears the mark.
+
+**The main loop runs on the main thread's stack, 1 MB in a Windows debug build.** A future awaited
+inline in that loop is part of the loop's own state machine, so one large `async fn` there
+overflows the stack with no hint of where. That is why `dispatch_message` and `dispatch::settle` are
+`Box::pin`ned, why the turn end boxes each step, and why the slow half of a start (`launch`: the
+worktree and the agent) is spawned and hands back through `Settle::TaskStarted`. Box or spawn
+anything new and large that the loop awaits.
+
+**Nothing on the shared reader awaits a daemon reply**, as in the section above. A task session's
+permission request is settled on a task of its own, its blocked mark awaited there.
+
+**The startup pass runs once, before the loop.** Every session died with the previous daemon, so a
+task the board shows as worked on has nothing behind it. A `Spawning` claim with no session is
+released, and a `Waiting` hand-off is started again. A task whose session was mid-turn has that
+session reloaded, its model, mode and effort applied again, and is told to resume. A `Blocked` task
+is resumed only when its turn was live at shutdown, since the prompt it waited on died with the
+agent, which asks again if it still needs the answer; one whose agent ended its turn to ask the user
+is waiting on that user and is left alone. Whether a turn was live is recorded at a clean shutdown,
+so after a crash a blocked task is left for the user. A task whose agent cannot reload a session
+fails with a note. The queue drains after.
+
+**`SESSION_RELOADING_ERROR` is not a load failure.** A window opening the project while the startup
+pass is reloading a session would load it a second time, so the daemon refuses that load with
+`session_reloading`. The window drops its pending entry, neither closing the row nor touching the
+task, and waits for `TaskSessionStarted`. It is deliberately not prefixed with
+`SESSION_LOAD_FAILED_ERROR`, which would tear the session down.
+
+**A sign-in refusal names its agent.** `StartTask` refuses with `auth_required:<agent_id>`
+(`auth_required_for`), because the daemon picks the stage's agent and the window cannot know which
+one to sign in to. The picker's choice travels as the request's one-shot `agent_id`, which wins over
+the task's and is never written to it.
 
 ### Automations live in the daemon
 
