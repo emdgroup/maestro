@@ -88,6 +88,29 @@ describe("useServerEventSync", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: taskQueryKeys.lists() });
   });
 
+  it("invalidates that project's per-task queries on tasks-changed", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: 7 });
+
+    for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["tasks", kind, 7] });
+    }
+    // The prefix matches the keys the hooks use.
+    expect(taskQueryKeys.attachments(7, 3).slice(0, 3)).toEqual(["tasks", "attachments", 7]);
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["tasks", "comments", 7] });
+  });
+
+  it("invalidates every project's per-task queries when tasks-changed names none", async () => {
+    renderHook(() => useServerEventSync(7));
+    await flush();
+
+    fire("tasks-changed", { project_id: null });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["tasks", "attachments"] });
+  });
+
   it("ignores another project's tasks-changed and worktrees-changed", async () => {
     renderHook(() => useServerEventSync(7));
     await flush();

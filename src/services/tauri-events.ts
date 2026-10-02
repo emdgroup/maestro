@@ -46,10 +46,19 @@ export function useServerEventSync(projectId: number | undefined) {
       });
     };
 
+    // The open task's own queries too, so an edit from another machine reaches its detail modal.
+    // Comments have their own event.
     subscribe(
       "tasks-changed",
-      () => {
+      (payload) => {
         void queryClient.invalidateQueries({ queryKey: taskQueryKeys.lists() });
+        const id = payload.project_id ?? null;
+        for (const kind of ["relationships", "instructions", "attachments", "commitMessage"]) {
+          const queryKey = [...taskQueryKeys.base, kind];
+          void queryClient.invalidateQueries({
+            queryKey: id === null ? queryKey : [...queryKey, id],
+          });
+        }
       },
       true,
     );
