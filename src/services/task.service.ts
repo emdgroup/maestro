@@ -18,6 +18,7 @@ import type {
   UpdateTaskRequest,
   AgentRole,
   MergeResult,
+  StartTaskResult,
 } from "@/types/bindings";
 
 /**
@@ -757,8 +758,9 @@ export function startTask(
   feedback: string | null,
   unattended: boolean,
   respectCapacity: boolean,
-): Promise<string | null> {
-  return api.startTask(projectId, taskId, role, feedback, unattended, respectCapacity);
+  agentId: string | null = null,
+): Promise<StartTaskResult> {
+  return api.startTask(projectId, taskId, role, feedback, unattended, respectCapacity, agentId);
 }
 
 /**

@@ -31,9 +31,6 @@ vi.mock("@/services/execution.service", () => ({
   useActiveSessionsQuery: () => ({ data: [] }),
   useAgentDiscoveryQuery: () => ({ data: { agents: [{ id: "claude" }] } }),
 }));
-vi.mock("@/services/project.service", () => ({
-  useProjectSettings: () => ({ data: { default_agent: "claude" } }),
-}));
 vi.mock("@/store/boardStore", () => ({
   useBoardStore: { getState: () => ({ setAuthRequired }) },
 }));
@@ -65,7 +62,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.checkWorktreeDirty.mockResolvedValue({ modified_count: 0, untracked_count: 0 });
   api.resolveAgentProfile.mockResolvedValue(null);
-  startTask.mockResolvedValue("42");
+  startTask.mockResolvedValue({ session_id: "42", skipped_attachments: [] });
 });
 
 describe("useExecuteTask", () => {
@@ -78,29 +75,38 @@ describe("useExecuteTask", () => {
         respectCapacity: true,
       }),
     );
-    expect(startTask).toHaveBeenCalledWith(7, 3, "Planner", "shorter", false, true);
+    expect(startTask).toHaveBeenCalledWith(7, 3, "Planner", "shorter", false, true, null);
     expect(toast.success).toHaveBeenCalled();
   });
 
+  it("names the attachments an attended start went without", async () => {
+    startTask.mockResolvedValue({ session_id: "42", skipped_attachments: ["a.png: missing"] });
+    const { result } = render();
+    await act(() => result.current.execute(TASK));
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining("1 attachment"), {
+      description: "a.png: missing",
+    });
+  });
+
   it("says a deferred start is queued", async () => {
-    startTask.mockResolvedValue(null);
+    startTask.mockResolvedValue({ session_id: null, skipped_attachments: [] });
     const { result } = render();
     await act(() => result.current.execute(TASK));
     expect(toast.info).toHaveBeenCalledWith(expect.stringContaining("will start when an agent"));
   });
 
-  it("opens the sign-in prompt for the task's agent", async () => {
-    startTask.mockRejectedValue(new Error("auth_required"));
+  it("opens the sign-in prompt for the agent the daemon names", async () => {
+    startTask.mockRejectedValue(new Error("auth_required:gemini"));
     const { result } = render();
     await act(() => result.current.execute(TASK));
-    expect(setAuthRequired).toHaveBeenCalledWith("3", "claude", { type: "local" }, null);
+    expect(setAuthRequired).toHaveBeenCalledWith("3", "gemini", { type: "local" }, null);
     expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("offers the agent picker and starts again with the choice", async () => {
     startTask
       .mockRejectedValueOnce(new Error('No agent to run the Implementation stage of "x".'))
-      .mockResolvedValueOnce("42");
+      .mockResolvedValueOnce({ session_id: "42", skipped_attachments: [] });
     const { result } = render();
 
     let started: Promise<void>;
@@ -114,6 +120,7 @@ describe("useExecuteTask", () => {
     });
 
     expect(startTask).toHaveBeenCalledTimes(2);
+    expect(startTask).toHaveBeenLastCalledWith(7, 3, "Coder", null, false, false, "codex");
     expect(toast.success).toHaveBeenCalled();
   });
 
@@ -133,6 +140,15 @@ describe("useExecuteTask", () => {
       result.current.onDirtyCancel();
       await started;
     });
+    expect(startTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask about uncommitted work when the planner runs first", async () => {
+    api.checkWorktreeDirty.mockResolvedValue({ modified_count: 2, untracked_count: 0 });
+    api.resolveAgentProfile.mockResolvedValue({ agent_id: "claude" });
+    const { result } = render();
+    await act(() => result.current.execute(TASK));
+    expect(api.checkWorktreeDirty).not.toHaveBeenCalled();
     expect(startTask).toHaveBeenCalledTimes(1);
   });
 });

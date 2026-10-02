@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useKanban } from "@/contexts/KanbanContext";
 import { useAgentDiscoveryQuery } from "@/services/execution.service";
 import { useProjectSettings, useUpdateProjectSettings } from "@/services/project.service";
-import { useUpdateTask } from "@/services/task.service";
 import { BrandIcon, hasBrandIcon } from "@/components/common/brand-icon/BrandIcon";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -29,27 +28,18 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
   const { data: discovery } = useAgentDiscoveryQuery(connection);
   const { data: projectSettings } = useProjectSettings(projectId ?? undefined);
   const updateSettings = useUpdateProjectSettings();
-  const updateTask = useUpdateTask();
   const [selected, setSelected] = useState<string | null>(null);
   const [saveAsDefault, setSaveAsDefault] = useState(true);
 
   const agents = discovery?.agents ?? [];
 
-  // Awaited before `proceed`: the daemon reads the choice from the task and the project's
-  // settings when the start is asked for again.
+  // The choice is passed to this start alone. The project default, when asked for, is written
+  // first so a failure has toasted before the start reports what is still missing.
   async function handleApply() {
     if (!selected) return;
-    const writes: Promise<unknown>[] = [];
-    writes.push(
-      updateTask.mutateAsync({
-        projectId: task.project_id,
-        taskId: task.id,
-        updates: { agent_id: selected },
-      }),
-    );
     if (saveAsDefault && projectId) {
-      writes.push(
-        updateSettings.mutateAsync({
+      await updateSettings
+        .mutateAsync({
           projectId,
           config: {
             default_agent: selected,
@@ -60,11 +50,9 @@ export function AgentPickerModal({ open, task, proceed, onClose }: AgentPickerMo
             remote_name: projectSettings?.remote_name ?? null,
             base_branch: projectSettings?.base_branch ?? null,
           },
-        }),
-      );
+        })
+        .catch(() => {});
     }
-    // A failed write has toasted already; the start then reports what is still missing.
-    await Promise.allSettled(writes);
     proceed(selected);
     onClose();
   }

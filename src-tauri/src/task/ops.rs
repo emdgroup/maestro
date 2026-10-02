@@ -355,10 +355,12 @@ pub async fn close_refinement(
 /// agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
 ///
 /// The session itself reaches this window as `TaskSessionStarted`, adopted like an automation's.
-/// A sign-in the agent needs fails this with `auth_required`, the message the board already turns
-/// into its sign-in prompt; the daemon has given the claim back by then.
+/// A sign-in the agent needs fails this with `auth_required:<agent_id>`, which the board turns into
+/// its sign-in prompt; the daemon has given the claim back by then. `agent_id` overrides the agent
+/// for this start only, and is written nowhere.
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_task(
     app_state: State<'_, Arc<AppState>>,
     project_id: i32,
@@ -367,7 +369,8 @@ pub async fn start_task(
     feedback: Option<String>,
     unattended: bool,
     respect_capacity: bool,
-) -> Result<Option<String>, String> {
+    agent_id: Option<String>,
+) -> Result<StartTaskResult, String> {
     start_task_on_server(
         &app_state,
         project_id,
@@ -376,8 +379,18 @@ pub async fn start_task(
         feedback,
         unattended,
         respect_capacity,
+        agent_id,
     )
     .await
+}
+
+/// What `start_task` answers with.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct StartTaskResult {
+    /// The session started, `None` when the task was deferred to the queue.
+    pub session_id: Option<String>,
+    /// The attachments the prompt went without, each as `<file>: <why>`.
+    pub skipped_attachments: Vec<String>,
 }
 
 /// Start the stage a window's own write handed to an agent: a review asked for by hand, or a CI
@@ -397,14 +410,17 @@ pub(crate) fn start_handoff(app_state: &Arc<AppState>, task: &Task) {
     };
     let (app_state, project_id, task_id) = (Arc::clone(app_state), task.project_id, task.id);
     tokio::spawn(async move {
-        if let Err(e) =
-            start_task_on_server(&app_state, project_id, task_id, role, None, true, false).await
+        if let Err(e) = start_task_on_server(
+            &app_state, project_id, task_id, role, None, true, false, None,
+        )
+        .await
         {
             log::warn!("[task] could not start {role:?} for task {task_id}: {e}");
         }
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_task_on_server(
     app_state: &Arc<AppState>,
     project_id: i32,
@@ -413,7 +429,8 @@ async fn start_task_on_server(
     feedback: Option<String>,
     unattended: bool,
     respect_capacity: bool,
-) -> Result<Option<String>, String> {
+    agent_id: Option<String>,
+) -> Result<StartTaskResult, String> {
     let (connection_key, project_path) =
         crate::project::automations::target(app_state, project_id).await?;
     // Spawning an agent, and signing it in, takes far longer than a store write.
@@ -429,10 +446,13 @@ async fn start_task_on_server(
                 feedback,
                 unattended,
                 respect_capacity,
-                agent_id: None,
+                agent_id,
             },
         )),
-        reply!(ServerResponse::StartTaskOk(response) => response.session_id),
+        reply!(ServerResponse::StartTaskOk(response) => StartTaskResult {
+            session_id: response.session_id,
+            skipped_attachments: response.skipped_attachments,
+        }),
         120,
         "The project's server did not start the task within 120s",
     )

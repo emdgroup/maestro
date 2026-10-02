@@ -2,12 +2,11 @@ import { useState, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/tauri-utils";
-import { parseProfileOverrides, profileIdFor } from "@/lib/profile-overrides";
+import { isRoleSkipped, parseProfileOverrides, profileIdFor } from "@/lib/profile-overrides";
 import type { Task, ConnectionKey, AgentRole, WorktreeWithStatus } from "@/types/bindings";
 import { worktreeQueryKeys } from "@/services/worktree.service";
 import { useActiveSessionsQuery, useAgentDiscoveryQuery } from "@/services/execution.service";
 import { startTask } from "@/services/task.service";
-import { useProjectSettings } from "@/services/project.service";
 import { useNavigationActions } from "@/store/navigationStore";
 import { useBoardStore } from "@/store/boardStore";
 import type { DirtyChoice } from "@/components/execution/DirtyWorktreeDialog";
@@ -39,7 +38,6 @@ export function useExecuteTask(
   projectPath: string,
   connection: ConnectionKey,
 ) {
-  const defaultAgent = useProjectSettings(projectId).data?.default_agent ?? null;
   const queryClient = useQueryClient();
   // Which task is mid-start, not merely that one is: the board shares one instance across cards.
   const [executingTaskId, setExecutingTaskId] = useState<number | null>(null);
@@ -99,20 +97,17 @@ export function useExecuteTask(
     return true;
   };
 
-  /** The agent a sign-in is for. The daemon's `auth_required` does not name it. */
-  const agentFor = async (task: Task, role: AgentRole, id: number): Promise<string | null> => {
-    if (role === "Coder" && task.agent_id) return task.agent_id;
-    const profile = await api
-      .resolveAgentProfile(
-        id,
-        role,
-        profileIdFor(parseProfileOverrides(task.profile_overrides), role),
-        [],
-        [],
-        true,
-      )
-      .catch(() => null);
-    return profile?.agent_id ?? defaultAgent;
+  /**
+   * Whether the daemon will run the planner before this coder, which writes nothing and so needs no
+   * dirty-worktree question. The same test as `task_runner::begin`.
+   */
+  const plannerFirst = async (task: Task, id: number): Promise<boolean> => {
+    const overrides = parseProfileOverrides(task.profile_overrides);
+    if (task.phase != null || isRoleSkipped(overrides, "Planner")) return false;
+    return api
+      .resolveAgentProfile(id, "Planner", profileIdFor(overrides, "Planner"), [], [], true)
+      .then((profile) => profile !== null)
+      .catch(() => false);
   };
 
   const openAgentSettings = {
@@ -136,21 +131,26 @@ export function useExecuteTask(
   ) => {
     if (!projectId) return;
     const id = projectId;
-    if (role === "Coder" && !unattended && !(await settleDirtyWorkspace(task, id))) return;
+    if (
+      role === "Coder" &&
+      !unattended &&
+      !(await plannerFirst(task, id)) &&
+      !(await settleDirtyWorkspace(task, id))
+    )
+      return;
 
     setExecutingTaskId(task.id);
-    const start = () =>
-      startTask(id, task.id, role, feedback.trim() || null, unattended, respectCapacity);
+    const start = (agentId: string | null = null) =>
+      startTask(id, task.id, role, feedback.trim() || null, unattended, respectCapacity, agentId);
     try {
-      let sessionId: string | null;
+      let started;
       try {
-        sessionId = await start();
+        started = await start();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const installed = discovery?.agents ?? [];
         if (!isNoAgentError(message) || !canPickAgent || installed.length === 0) throw error;
-        // The picker writes its choice onto the task, and onto the project default when asked,
-        // which is where the daemon reads it from, so the start is simply asked for again.
+        // The choice is for this start only; the picker writes the project default when asked.
         const picked = await new Promise<string | null>((resolve) => {
           agentPickerResolveRef.current = resolve;
           setAgentPickerState({ task, resolve });
@@ -158,23 +158,30 @@ export function useExecuteTask(
         setAgentPickerState(null);
         agentPickerResolveRef.current = null;
         if (!picked) return;
-        sessionId = await start();
+        started = await start(picked);
       }
 
-      if (sessionId === null) {
+      if (started.session_id === null) {
         toast.info(`"${task.title}" will start when an agent is free`);
         return;
       }
       toast.success(`Session started for "${task.title}"`);
+      const skipped = started.skipped_attachments;
+      if (!unattended && skipped.length > 0) {
+        toast.warning(
+          `Started "${task.title}" without ${skipped.length} attachment${skipped.length === 1 ? "" : "s"}`,
+          { description: skipped.join(", ") },
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message === "auth_required" || message.startsWith("auth_required:")) {
-        // The daemon names the agent as `auth_required:<agent_id>`.
-        const agentId = message.split(":")[1] || (await agentFor(task, role, id));
-        if (agentId) {
-          useBoardStore.getState().setAuthRequired(String(task.id), agentId, connection, null);
-          return;
-        }
+      // `auth_required:<agent_id>`, from `maestro_protocol::auth_required_for`.
+      const authAgent = message.startsWith("auth_required:")
+        ? message.slice("auth_required:".length)
+        : "";
+      if (authAgent) {
+        useBoardStore.getState().setAuthRequired(String(task.id), authAgent, connection, null);
+        return;
       }
       if (isNoAgentError(message)) {
         if ((discovery?.agents ?? []).length === 0) {

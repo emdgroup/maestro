@@ -2887,12 +2887,13 @@ async endSelfReview(projectId: number, taskId: number) : Promise<Result<Task | n
  * agent and send the prompt. `None` means the task was deferred to the queue for want of a slot.
  * 
  * The session itself reaches this window as `TaskSessionStarted`, adopted like an automation's.
- * A sign-in the agent needs fails this with `auth_required`, the message the board already turns
- * into its sign-in prompt; the daemon has given the claim back by then.
+ * A sign-in the agent needs fails this with `auth_required:<agent_id>`, which the board turns into
+ * its sign-in prompt; the daemon has given the claim back by then. `agent_id` overrides the agent
+ * for this start only, and is written nowhere.
  */
-async startTask(projectId: number, taskId: number, role: AgentRole, feedback: string | null, unattended: boolean, respectCapacity: boolean) : Promise<Result<string | null, string>> {
+async startTask(projectId: number, taskId: number, role: AgentRole, feedback: string | null, unattended: boolean, respectCapacity: boolean, agentId: string | null) : Promise<Result<StartTaskResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_task", { projectId, taskId, role, feedback, unattended, respectCapacity }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_task", { projectId, taskId, role, feedback, unattended, respectCapacity, agentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -4097,6 +4098,18 @@ export type SshAuthMethod =
  * Saved SSH connection for quick reconnection
  */
 export type SshConnection = { id: number; connection_string: string; username: string; host: string; port: number; auth_method: SshAuthMethod; display_name: string | null; last_used_at: string; created_at: string }
+/**
+ * What `start_task` answers with.
+ */
+export type StartTaskResult = { 
+/**
+ * The session started, `None` when the task was deferred to the queue.
+ */
+session_id: string | null; 
+/**
+ * The attachments the prompt went without, each as `<file>: <why>`.
+ */
+skipped_attachments: string[] }
 export type TAURI_CHANNEL<TSend> = null
 export type Task = { id: number; project_id: number; title: string; description?: string | null; status: TaskStatus; priority: TaskPriority; base_branch: string; archived_at?: string | null; external_id?: string | null; is_imported?: boolean | null; import_source?: string | null; skills: string[]; model_override?: string | null; mcp_allowlist?: string[] | null; skills_override?: string[] | null; labels: string[]; external_url?: string | null; external_updated_at?: string | null; created_at: string; updated_at: string; auto_approve: boolean; 
 /**
