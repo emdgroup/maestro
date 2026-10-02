@@ -257,6 +257,9 @@ on session close, hold release and a one-minute tick.
 local `git` (the daemon is on the repository's machine), and writes the outcome as one `EndTaskTurn`
 under the store's lock, exactly as a window's would. A start that cannot go ahead with nobody
 watching, for want of an agent or a sign-in, fails with a note in the thread rather than retrying.
+The claim overwrites the phase with `Spawning`, so it keeps the one it took in `claimed_from`: a start
+that does not come up goes back to that phase, failed, where the stage it hands to can claim it again,
+and a retry's prompt still knows it is reworking or fixing CI.
 
 **Capacity is the machine's, and a slot is a live task session.** The limit is per daemon, shared by
 every app attached to it, and in Auto it is measured on the daemon's own machine. Only task sessions

@@ -56,7 +56,7 @@ pub(crate) enum Action {
 }
 
 /// The role a phase is worked by.
-fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
+pub(crate) fn role(phase: Option<TaskPhase>) -> Option<AgentRole> {
     match phase? {
         TaskPhase::Refining => Some(AgentRole::Refiner),
         TaskPhase::Drafting => Some(AgentRole::Planner),

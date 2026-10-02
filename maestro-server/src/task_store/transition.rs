@@ -22,7 +22,15 @@ pub struct TaskState {
     pub phase_status: Option<PhaseStatus>,
     pub ball: TaskBall,
     pub completion: Option<TaskCompletion>,
+    /// The phase a claim took the task from, which `Spawning` overwrites: a start that does not
+    /// come up puts the task back there, and a retry tells its agent what it is resuming.
+    pub claimed_from: Option<TaskPhase>,
 }
+
+/// The column holding [`TaskState::claimed_from`].
+pub const V8_TASK_CLAIMED_FROM: &str = "
+ALTER TABLE tasks ADD COLUMN claimed_from TEXT;
+";
 
 impl TaskState {
     /// No pipeline activity. Clears `completion` as well, so a task dragged out of Done cannot keep
@@ -34,6 +42,7 @@ impl TaskState {
             phase_status: None,
             ball: TaskBall::None,
             completion: None,
+            claimed_from: None,
         }
     }
 
@@ -56,6 +65,21 @@ impl TaskState {
             phase_status: Some(phase_status),
             ball,
             completion: None,
+            claimed_from: None,
+        }
+    }
+
+    /// A claimed start that did not come up, back in the phase it was claimed from, failed and the
+    /// user's: a retry claims it again. With no such phase there is nothing to go back to.
+    fn unclaimed(self, otherwise: TaskState) -> TaskState {
+        match self.claimed_from {
+            Some(phase) if self.phase == Some(TaskPhase::Spawning) => TaskState::active(
+                self.status,
+                phase,
+                PhaseStatus::Failed,
+                TaskBall::User,
+            ),
+            _ => otherwise,
         }
     }
 }
@@ -81,6 +105,12 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             phase_status: Some(Running),
             ball: Ball::Agent,
             completion: None,
+            // A retry of a failed spawn is still the start of what the first claim took it from.
+            claimed_from: if current.phase == Some(Spawning) {
+                current.claimed_from
+            } else {
+                current.phase
+            },
             ..current
         },
 
@@ -96,7 +126,7 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
             AgentRole::Reviewer => TaskState::active(Review, SelfReview, Running, Ball::Agent),
         },
 
-        TaskTransition::SpawnAborted => TaskState::parked(current.status),
+        TaskTransition::SpawnAborted => current.unclaimed(TaskState::parked(current.status)),
 
         TaskTransition::AwaitingUserInput => TaskState {
             phase_status: Some(Blocked),
@@ -182,21 +212,21 @@ pub fn resolve(event: TaskTransition, current: TaskState) -> TaskState {
 
         TaskTransition::Cancelled => TaskState::parked(TaskStatus::Cancelled),
 
-        TaskTransition::PhaseFailed => TaskState {
+        TaskTransition::PhaseFailed => current.unclaimed(TaskState {
             phase_status: Some(Failed),
             ball: Ball::User,
             ..current
-        },
+        }),
     }
 }
 
-pub(super) fn read_state(
+pub(crate) fn read_state(
     conn: &Connection,
     project_path: &str,
     task_id: i32,
 ) -> Result<TaskState, String> {
     conn.query_row(
-        "SELECT status, phase, phase_status, ball, completion FROM tasks
+        "SELECT status, phase, phase_status, ball, completion, claimed_from FROM tasks
          WHERE project_path = ?1 AND id = ?2",
         params![project_path, task_id],
         |row| {
@@ -207,6 +237,7 @@ pub(super) fn read_state(
                 phase_status: optional(2)?.and_then(|s| parse(&s)),
                 ball: parse(&row.get::<_, String>(3)?).unwrap_or(TaskBall::None),
                 completion: optional(4)?.and_then(|s| parse(&s)),
+                claimed_from: optional(5)?.and_then(|s| parse(&s)),
             })
         },
     )
@@ -233,9 +264,24 @@ fn admit(
                     Some(PhaseStatus::Waiting)
                 )
             );
+            // A stage that failed, or a start put back in the phase it was claimed from, is the
+            // retry of the stage that phase hands to, wherever its card is.
+            let retry = matches!(
+                (current.phase, current.phase_status),
+                (
+                    Some(
+                        TaskPhase::PlanReview
+                            | TaskPhase::SelfReview
+                            | TaskPhase::Rework
+                            | TaskPhase::AwaitingMerge
+                    ),
+                    Some(PhaseStatus::Failed)
+                )
+            );
             // A failed spawn is claimable, since it is the retry, and so is the plan gate, since
             // approving the plan is what starts the coder.
             let claimable = handoff
+                || retry
                 || matches!(
                     (current.phase, current.phase_status),
                     (None, _)
@@ -244,7 +290,7 @@ fn admit(
                 );
             // Through `ExecutionStarted` whatever was asked, so the phase becomes `Spawning` and a
             // second claim finds nothing claimable.
-            return (claimable && (handoff || expected.contains(&current.status)))
+            return (claimable && (handoff || retry || expected.contains(&current.status)))
                 .then_some(TaskTransition::ExecutionStarted);
         }
         // `Failed` counts as still spawning, so a retry of a failed spawn can succeed.
@@ -328,7 +374,7 @@ fn write(
     conn.execute(
         "UPDATE tasks SET status = ?1, phase = ?2, phase_status = ?3, ball = ?4, completion = ?5,
              execute_requested_at = CASE WHEN ?6 THEN execute_requested_at ELSE NULL END,
-             updated_at = ?7
+             updated_at = ?7, claimed_from = ?10
          WHERE project_path = ?8 AND id = ?9",
         params![
             text(next.status),
@@ -340,6 +386,7 @@ fn write(
             Utc::now().to_rfc3339(),
             project_path,
             task_id,
+            next.claimed_from.map(text),
         ],
     )
     .map_err(|e| format!("Failed to apply transition to task {task_id}: {e}"))?;
@@ -534,6 +581,48 @@ mod tests {
             let next = resolve(TaskTransition::SpawnAborted, spawning(status));
             assert_eq!(next, TaskState::parked(status));
         }
+    }
+
+    /// A hand-off that does not come up goes back to the phase it was claimed from, failed, where
+    /// the stage it hands to can claim it again and still knows what it is resuming.
+    #[test]
+    fn a_start_that_does_not_come_up_goes_back_to_the_phase_it_was_claimed_from() {
+        let handoff = TaskState::active(
+            TaskStatus::Review,
+            TaskPhase::SelfReview,
+            PhaseStatus::Waiting,
+            TaskBall::Agent,
+        );
+        let claimed = resolve(TaskTransition::ExecutionStarted, handoff);
+        assert_eq!(claimed.claimed_from, Some(TaskPhase::SelfReview));
+        let back = TaskState::active(
+            TaskStatus::Review,
+            TaskPhase::SelfReview,
+            PhaseStatus::Failed,
+            TaskBall::User,
+        );
+        assert_eq!(resolve(TaskTransition::SpawnAborted, claimed), back);
+        assert_eq!(resolve(TaskTransition::PhaseFailed, claimed), back);
+        assert!(admit(
+            &TransitionGuard::Claim(vec![TaskStatus::Queue]),
+            TaskTransition::Stopped,
+            back
+        )
+        .is_some());
+
+        // A failed spawn's retry is still the start of the rework the first claim took.
+        let rework = TaskState::active(
+            TaskStatus::InProgress,
+            TaskPhase::Rework,
+            PhaseStatus::Waiting,
+            TaskBall::User,
+        );
+        let failed_spawn = TaskState {
+            phase_status: Some(PhaseStatus::Failed),
+            ..resolve(TaskTransition::ExecutionStarted, rework)
+        };
+        let retried = resolve(TaskTransition::ExecutionStarted, failed_spawn);
+        assert_eq!(retried.claimed_from, Some(TaskPhase::Rework));
     }
 
     #[test]
@@ -963,7 +1052,13 @@ mod tests {
             assert_eq!(state(&conn, task_id).phase, Some(TaskPhase::PlanReview));
 
             assert!(claim(&conn, task_id, &[TaskStatus::InProgress]).is_some());
-            assert_eq!(state(&conn, task_id), spawning(TaskStatus::InProgress));
+            assert_eq!(
+                state(&conn, task_id),
+                TaskState {
+                    claimed_from: Some(TaskPhase::PlanReview),
+                    ..spawning(TaskStatus::InProgress)
+                }
+            );
         }
 
         /// Every handoff is claimable from the column its role works in, which no caller lists.
@@ -994,7 +1089,13 @@ mod tests {
                     TaskState::active(status, phase, PhaseStatus::Waiting, TaskBall::Agent)
                 );
                 assert!(claim(&conn, task_id, &USER_COLUMNS).is_some(), "{phase:?}");
-                assert_eq!(state(&conn, task_id), spawning(status));
+                assert_eq!(
+                    state(&conn, task_id),
+                    TaskState {
+                        claimed_from: Some(phase),
+                        ..spawning(status)
+                    }
+                );
                 assert!(claim(&conn, task_id, &USER_COLUMNS).is_none(), "{phase:?}");
             }
         }
@@ -1064,6 +1165,35 @@ mod tests {
                 [task_id],
             )
             .expect("defer the task");
+        }
+
+        /// The phase a claim took the task from is stored, and survives to the failed start.
+        #[test]
+        fn a_failed_handoff_in_review_can_be_claimed_again() {
+            let (conn, task_id) = db_with_task();
+            always(&conn, task_id, TaskTransition::ReviewFinished);
+            always(
+                &conn,
+                task_id,
+                TaskTransition::TurnCompleted {
+                    is_git_repo: true,
+                    has_changes: Some(true),
+                    reviewer_pending: true,
+                },
+            );
+            claim(&conn, task_id, &USER_COLUMNS).expect("the hand-off is claimed");
+            assert_eq!(state(&conn, task_id).claimed_from, Some(TaskPhase::SelfReview));
+            when_spawning(&conn, task_id, TaskTransition::PhaseFailed).expect("fail");
+            let failed = state(&conn, task_id);
+            assert_eq!(
+                (failed.status, failed.phase, failed.phase_status),
+                (
+                    TaskStatus::Review,
+                    Some(TaskPhase::SelfReview),
+                    Some(PhaseStatus::Failed)
+                )
+            );
+            claim(&conn, task_id, &USER_COLUMNS).expect("and claimed again");
         }
 
         #[test]

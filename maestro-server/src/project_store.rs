@@ -79,6 +79,7 @@ const MIGRATIONS: &[&str] = &[
     crate::task_store::project_import::V5_PROJECT_IMPORTS,
     crate::pipeline_settings::V6_PIPELINE_SETTINGS,
     V7_SESSION_TURNS,
+    crate::task_store::transition::V8_TASK_CLAIMED_FROM,
 ];
 
 /// Open, or create, the daemon's project database.

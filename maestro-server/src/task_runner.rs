@@ -15,7 +15,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use maestro_protocol::{
     AddTaskCommentRequest, AgentRole, ApplyTaskTransitionRequest, ConcurrencyMode, ErrorResponse,
-    MaestroRpcMessage, NewTaskComment, RequestTaskExecutionRequest, ServerRequest, ServerResponse,
+    MaestroRpcMessage, NewTaskComment, PhaseStatus, RequestTaskExecutionRequest, ServerRequest,
+    ServerResponse,
     StartTaskRequest, StartTaskResponse, Task, TaskPhase, TaskSessionStarted, TaskStatus,
     TaskTransition, TransitionGuard, AUTH_REQUIRED_ERROR,
 };
@@ -249,7 +250,28 @@ pub(crate) fn begin(
         return Err(NotBegun::NoAgent(reason));
     };
 
-    let prior_phase = task.phase;
+    // A retry of a failed spawn is still the start of the phase the first claim took it from.
+    let prior_phase = match task.phase {
+        Some(TaskPhase::Spawning) => {
+            crate::task_store::transition::read_state(conn, &project_path, task.id)?.claimed_from
+        }
+        phase => phase,
+    };
+    // A failed stage is retried by the role it hands to, and by no other.
+    if task.phase_status == Some(PhaseStatus::Failed) {
+        let retries = match task.phase {
+            Some(TaskPhase::PlanReview) => Some(AgentRole::Coder),
+            phase => crate::task_restart::role(phase),
+        };
+        if retries.is_some_and(|expected| expected != role) {
+            return Err(format!(
+                "\"{}\" is waiting on its {} stage to be retried",
+                task.title,
+                stage(retries.unwrap_or(role))
+            )
+            .into());
+        }
+    }
     // InProgress only for the plan gate: the claim refuses any phase but the gate's.
     let claimed = transition(
         conn,
