@@ -3460,6 +3460,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "11.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek 2.2.0",
+ "getrandom 0.2.17",
+ "hmac 0.12.1",
+ "js-sys",
+ "p256 0.13.2",
+ "p384 0.13.1",
+ "pem",
+ "rand 0.8.8",
+ "rsa 0.9.10",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signature 2.2.0",
+ "simple_asn1",
+ "zeroize",
+]
+
+[[package]]
 name = "keccak"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3669,7 +3693,7 @@ dependencies = [
  "htmd",
  "image",
  "jc-adf",
- "jsonwebtoken",
+ "jsonwebtoken 11.1.0",
  "keyring",
  "log",
  "machine-uid",
@@ -4399,7 +4423,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
- "jsonwebtoken",
+ "jsonwebtoken 10.4.0",
  "percent-encoding",
  "pin-project",
  "rustls",
