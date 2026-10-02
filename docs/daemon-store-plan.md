@@ -59,14 +59,14 @@ belongs to a project.
 
 ## Phases
 
-| Phase | What                                               | State       |
-| ----- | -------------------------------------------------- | ----------- |
-| 0     | Request ids on the wire                            | Done        |
-| 1     | Sessions: the daemon knows what a project has open | Done        |
-| 2     | Tasks, their threads, worktrees and reviews        | Done        |
-| 3     | Project prompts                                    | Done        |
-| 4     | Import what apps already hold, then drop it        | Done        |
-| 5     | The pipeline runs with no window                   | In progress |
+| Phase | What                                               | State |
+| ----- | -------------------------------------------------- | ----- |
+| 0     | Request ids on the wire                            | Done  |
+| 1     | Sessions: the daemon knows what a project has open | Done  |
+| 2     | Tasks, their threads, worktrees and reviews        | Done  |
+| 3     | Project prompts                                    | Done  |
+| 4     | Import what apps already hold, then drop it        | Done  |
+| 5     | The pipeline runs with no window                   | Done  |
 
 ### Phase 0: request ids on the wire
 
@@ -448,7 +448,7 @@ Tasks:
 - [x] D13 Daemon startup pass
 - [x] D14 Remove the app's drivers; Execute and the gates ask the daemon
 - [x] D15 Docs and review
-- [ ] D16 A live run with every window closed
+- [x] D16 A live run with every window closed
 
 Notes from phase 5:
 
